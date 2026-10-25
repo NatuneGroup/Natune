@@ -1,0 +1,37 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    kotlin("multiplatform")
+    kotlin("plugin.serialization")
+    kotlin("plugin.compose")
+    id("org.jetbrains.compose")
+    id("com.android.kotlin.multiplatform.library")
+}
+kotlin {
+    android {
+        namespace = "moe.rukamori.archivetune.shared"
+        compileSdk = 37
+        minSdk = 26
+        androidResources.enable = true
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
+    }
+    jvm("desktop") { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
+    iosArm64()
+    iosSimulatorArm64()
+    jvmToolchain(21)
+    sourceSets {
+        commonMain.dependencies {
+            implementation("org.jetbrains.compose.runtime:runtime:1.12.2")
+            implementation("org.jetbrains.compose.foundation:foundation:1.12.2")
+            implementation("org.jetbrains.compose.components:components-resources:1.12.2")
+            implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+        }
+        commonTest.dependencies { implementation(kotlin("test")) }
+    }
+}
+compose.resources {
+    publicResClass = true
+    packageOfResClass = "moe.rukamori.archivetune.shared.resources"
+}
