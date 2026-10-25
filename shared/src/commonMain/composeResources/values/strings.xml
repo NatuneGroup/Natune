@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">ArchiveTune KMP</string>
+    <string name="foundation_status">Independent shared foundation — full port in progress.</string>
+    <string name="no_engine">No playback adapter attached. Audio playback is not implemented here yet.</string>
+    <string name="observed_position">Last observed media position: %1$d ms</string>
+    <string name="show_details">Show foundation details</string>
+    <string name="hide_details">Hide foundation details</string>
+    <string name="foundation_details">Shared state and Compose resources are active. Existing Android features, all player styles, settings and menus remain migration requirements. This window is not a completed player.</string>
+</resources>
