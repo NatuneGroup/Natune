@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.shared.data.provider.QobuzBundleScrape
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceProbe
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
 import moe.rukamori.archivetune.shared.data.provider.TidalRefreshResult
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCookieOnlyBrowserAuth
 import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceState
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
@@ -75,6 +76,7 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
+import moe.rukamori.archivetune.shared.ui.settings.DeezerLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TidalLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
@@ -86,7 +88,8 @@ import org.jetbrains.compose.resources.stringResource
  * TIDAL account endpoints. The device link shows when this build carries a TIDAL device client, and a pasted refresh
  * token is always verified with TIDAL.
  */
-internal class IosSettingsOwners(private val graph: IosSessionGraph) {
+internal class IosSettingsOwners(private val graph: IosSessionGraph, browser: IosCookieOnlyBrowserAuth) {
+    val deezerWeb = IosDeezerWebSignIn(graph, browser)
     val controller = SettingsController(
         graph.settings,
         graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY,
@@ -284,7 +287,7 @@ internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.subst
 
 private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
-    "settings/qobuz", QobuzLoginRoute, TidalLoginRoute,
+    "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute,
 )
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
@@ -331,6 +334,16 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                     onNotice = onNotice,
                     onFailure = onFailure,
                     scrollTo = scrollTo,
+                )
+            }
+            DeezerLoginRoute -> {
+                val signInState by owners.deezerWeb.state.collectAsState()
+                ProviderSignInPage(
+                    kind = ProviderSignInKind.DEEZER_WEB,
+                    state = signInState,
+                    onStart = { scope.launch { owners.deezerWeb.signIn() } },
+                    onCancel = owners.deezerWeb::cancel,
+                    onDone = { navigation.back() },
                 )
             }
             TidalLoginRoute -> {

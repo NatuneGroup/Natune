@@ -76,6 +76,7 @@ class IosHost {
 
     /** The embedded WKWebView sheet that catches the fixed TIDAL PKCE HTTPS return. */
     val tidalPkceSheet = IosTidalPkceSheet({ viewController }, TIDAL_PKCE_REDIRECT_URI)
+    val cookieBrowser = IosCookieOnlyBrowserAuth { viewController }
 
     /** Stateless: each evaluation owns a fresh bounded QuickJS runtime, so there is nothing to close. */
     val challenges: ChallengeEvaluator = IosChallengeEvaluator()
