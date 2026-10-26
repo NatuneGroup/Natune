@@ -298,7 +298,13 @@ internal data class YouTubeContinuation(val requestKey: String, val offset: Int,
 private fun String.escapeField(): String = replace("%", "%25").replace("|", "%7C")
 
 private fun ContentRequest.toBrowse(): YouTubeBrowse {
-    if (section != null) throw UnsupportedContentOperation()
+    val section = section
+    if (section != null && surface != ContentSurface.RADIO) {
+        return when (surface) {
+            ContentSurface.ARTIST -> YouTubeBrowse.ArtistItems(section.id, section.params)
+            else -> YouTubeBrowse.Section(section.id, section.params)
+        }
+    }
     return when (surface) {
         ContentSurface.PLAYLIST -> {
             val playlist = parent?.takeIf { it.kind == ContentKind.PLAYLIST } ?: throw UnsupportedContentOperation()

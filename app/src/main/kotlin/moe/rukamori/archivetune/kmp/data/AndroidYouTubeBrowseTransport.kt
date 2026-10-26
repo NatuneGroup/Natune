@@ -110,7 +110,16 @@ class AndroidYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTran
     }
 
     private suspend fun searchPage(browse: YouTubeBrowse.Search, continuation: String?): YouTubeEntryPage {
-        val filter = browse.filter.innerTubeFilter() ?: throw UnsupportedContentOperation()
+        val filter = browse.filter.innerTubeFilter()
+        if (filter == null) {
+            // Unfiltered search is the summary page, like the Android search screen's default view; the
+            // filters this transport does not map still refuse continuations and unknown surfaces.
+            if (browse.filter != ContentSearchFilter.ALL || continuation != null) {
+                throw UnsupportedContentOperation()
+            }
+            val page = YouTube.searchSummary(browse.query).getOrThrow()
+            return YouTubeEntryPage(page.summaries.flatMap { it.items }.map { it.toEntry() })
+        }
         val result =
             if (continuation == null) {
                 YouTube.search(browse.query, filter).getOrThrow()
