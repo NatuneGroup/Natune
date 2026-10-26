@@ -32,7 +32,6 @@ import moe.rukamori.archivetune.spotify.playedAtMillis
  */
 
 private const val COLLECTION_YT_HISTORY = "history:youtube"
-private const val COLLECTION_SPOTIFY_HISTORY = "history:spotify"
 
 /**
  * The YouTube Music account history: the provider's own sections of recently played songs, loaded on first select
@@ -43,6 +42,7 @@ internal class DesktopYouTubeHistoryPager(
 ) : RemoteHistoryPager {
     override val source = HistorySource.REMOTE
     override val playable = true
+    override val rowMenu = true
     override var sections by mutableStateOf<List<HistorySectionUi>>(emptyList())
     override var query = ""
         set(value) {
@@ -154,6 +154,7 @@ internal class DesktopSpotifyHistoryPager(
 ) : RemoteHistoryPager {
     override val source = HistorySource.SPOTIFY
     override val playable = false
+    override val rowMenu = false
     override var sections by mutableStateOf<List<HistorySectionUi>>(emptyList())
     override var query = ""
         set(value) {
@@ -178,7 +179,7 @@ internal class DesktopSpotifyHistoryPager(
         loading = true
         failed = false
         graph.scope.launch {
-            val plays = accounts.recentlyPlayed()
+            val plays = accounts.recentlyPlayed(force = initialized)
             rawSections = buildSections(plays)
             sections = rawSections.filtered(query)
         }.invokeOnCompletion { failure ->
@@ -203,12 +204,11 @@ internal class DesktopSpotifyHistoryPager(
         val lastMonday = thisMonday.minusDays(7)
         // Keys use the host's day vocabulary so the page localizes the fixed buckets; month buckets
         // carry their own formatted label like the local pager's month fallback.
-        val groups = LinkedHashMap<String, Triple<String, Int, MutableList<moe.rukamori.archivetune.spotify.models.SpotifyTrack>>>()
+        val groups = LinkedHashMap<String, Triple<String, Int, MutableList<Pair<moe.rukamori.archivetune.spotify.models.SpotifyTrack, Long>>>>()
         for (play in plays) {
             val track = play.track ?: continue
-            val played = play.playedAtMillis()
-                ?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
-                ?: today
+            val playedAtMs = play.playedAtMillis() ?: continue
+            val played = Instant.ofEpochMilli(playedAtMs).atZone(zone).toLocalDate()
             val daysAgo = ChronoUnit.DAYS.between(played, today).toInt()
             val (key, label, order) = when {
                 daysAgo <= 0 -> Triple("today", "", 0)
@@ -221,7 +221,7 @@ internal class DesktopSpotifyHistoryPager(
                 }
             }
             val bucket = groups.getOrPut(key) { Triple(label, order, ArrayList()) }
-            if (bucket.third.none { it.id == track.id }) bucket.third += track
+            if (bucket.third.none { it.first.id == track.id }) bucket.third += track to playedAtMs
         }
         return groups.entries
             .sortedBy { it.value.second }
@@ -230,8 +230,8 @@ internal class DesktopSpotifyHistoryPager(
                 HistorySectionUi(
                     key = key,
                     dateLabel = label,
-                    events = tracks.mapIndexed { index, track ->
-                        HistoryEventUi(null, track.toOccurrence(index), "")
+                    events = tracks.map { (track, playedAtMs) ->
+                        HistoryEventUi(null, accounts.historyTrackRow(track, playedAtMs), "")
                     },
                 )
             }
@@ -251,27 +251,23 @@ internal class DesktopSpotifyHistoryPager(
     }
 
     override fun activate(event: HistoryEventUi, sectionKey: String) {
-        graph.report("spotify history rows are not playable on this host")
+        if (busy) return
+        busy = true
+        graph.scope.launch {
+            try {
+                accounts.playHistoryTrack(event.row)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("spotify history row not played: ${failure.javaClass.simpleName}")
+            } finally {
+                busy = false
+            }
+        }
     }
 
-    // Never reached: [playable] hides the shuffle action for this source.
-    override fun shuffle(query: String) {
-        graph.report("spotify history rows are not playable on this host")
-    }
-
-    private fun moe.rukamori.archivetune.spotify.models.SpotifyTrack.toOccurrence(index: Int): moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence {
-        val item = moe.rukamori.archivetune.shared.domain.repository.ContentItem(
-            ref = moe.rukamori.archivetune.shared.domain.repository.ContentRef(SPOTIFY_PROVIDER, ContentKind.SONG, id),
-            title = name,
-            subtitle = artists.joinToString(", ") { it.name },
-            artworkUri = album?.images?.firstOrNull()?.url,
-            durationMs = durationMs.toLong(),
-        )
-        return moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence(
-            occurrenceId = "$COLLECTION_SPOTIFY_HISTORY:ordinal:$index",
-            item = item,
-        )
-    }
+    // Android's Spotify history offers no row shuffle; the source stays non-playable for that purpose.
+    override fun shuffle(query: String) {}
 
     private companion object {
         const val SPOTIFY_PROVIDER = "spotify"
