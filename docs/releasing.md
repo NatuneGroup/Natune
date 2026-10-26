@@ -39,10 +39,12 @@ Desktop package formats require numeric versions. Stable installers use the
 stable version; nightly installers use the next stable version as their package
 version while retaining `N<yyyyMMdd>` in the release title and artifact name.
 
-`VERSION_CODE_OVERRIDE` is allocated from the repository-wide Actions run ID
-above `trustedUpgradeVersionCodeFloor` in `app/build.gradle.kts`. It is shared
-by all artifacts in that run, is not based on this repository's commit count,
-and must fit Android's positive `Int` range. The app build rejects malformed,
+`VERSION_CODE_OVERRIDE` is allocated from the current UTC epoch minute (Unix
+seconds divided by 60) plus `trustedUpgradeVersionCodeFloor` in
+`app/build.gradle.kts`. Stable and nightly use this same formula, and the
+allocated code is shared by all artifacts in that workflow run. It is
+independent of the Actions run ID and this repository's commit count, and must
+fit Android's positive `Int` range. The app build rejects malformed,
 non-positive overrides and signed version codes at or below the trusted floor.
 
 ## Artifacts

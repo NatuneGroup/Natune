@@ -39,20 +39,19 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
 
           BASE_VERSION="$(awk -F'"' '/^val baseVersionName = "/ { print $2; exit }' app/build.gradle.kts)"
           FLOOR="$(awk -F'=' '/^val trustedUpgradeVersionCodeFloor[[:space:]]*=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' app/build.gradle.kts)"
-          if [[ -z "$BASE_VERSION" || ! "$FLOOR" =~ ^[0-9]+$ || ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
-            echo "::error::Could not read baseVersionName, trustedUpgradeVersionCodeFloor, or the Actions run ID."
+          if [[ -z "$BASE_VERSION" || ! "$FLOOR" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not read baseVersionName or trustedUpgradeVersionCodeFloor."
             exit 1
           fi
 
           VERSION="$(python3 .github/scripts/next-version.py "$BASE_VERSION")"
           TAG_NAME="v${VERSION}"
-          VERSION_CODE=$((FLOOR + RUN_ID))
+          VERSION_CODE=$((FLOOR + $(date -u +%s) / 60))
           if (( VERSION_CODE <= FLOOR || VERSION_CODE > 2147483647 )); then
             echo "::error::Allocated version code $VERSION_CODE is outside Android's supported positive Int range."
             exit 1
