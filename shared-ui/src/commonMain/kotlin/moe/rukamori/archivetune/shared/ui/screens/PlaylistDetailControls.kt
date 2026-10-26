@@ -16,7 +16,6 @@ import moe.rukamori.archivetune.shared.ui.component.LibrarySortHeader
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import moe.rukamori.archivetune.shared.ui.resources.*
 
 /**
  * The baseline My Top filter. The owner keeps its time bounds (the baseline toTimeMillis mapping); the screen only

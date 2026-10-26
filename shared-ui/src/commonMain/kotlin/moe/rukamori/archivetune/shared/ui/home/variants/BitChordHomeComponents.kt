@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -68,7 +67,6 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import moe.rukamori.archivetune.shared.ui.theme.LocalArchiveTuneFontFamily
 import org.jetbrains.compose.resources.painterResource
-import androidx.compose.foundation.layout.fillMaxSize
 
 /** The BitChord page gutter. The shared Rukamori feed uses a tighter 10dp gutter, so BitChord keeps its own 16dp. */
 internal val BitChordPageGutter = 16.dp

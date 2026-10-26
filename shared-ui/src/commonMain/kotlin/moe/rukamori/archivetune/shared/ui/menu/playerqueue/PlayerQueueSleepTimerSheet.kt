@@ -59,7 +59,6 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import moe.rukamori.archivetune.shared.ui.resources.*
 
 /** The countdown refreshes this often, which keeps the readout smooth without recomposing every millisecond. */
 private const val SLEEP_TIMER_POLL_MS = 500L
