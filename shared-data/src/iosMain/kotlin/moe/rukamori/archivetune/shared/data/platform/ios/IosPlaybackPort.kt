@@ -250,8 +250,9 @@ class IosPlaybackPort : PlaybackPort {
             PlaybackCommand.Pause -> output?.let { at_audio_pause(it) }
             is PlaybackCommand.SeekTo -> output?.let { at_audio_seek(it, micros(command.positionMs)) }
             is PlaybackCommand.SetSpeed -> output?.let { at_audio_speed(it, command.speed) }
-            // at_audio_* exposes no pitch control; the command is consumed but never applied, leaving 1.0 unshifted.
-            is PlaybackCommand.SetPitch -> Unit
+            // ae_engine only exposes an atempo stage (tempo without pitch shift), so a pitch
+            // multiplier cannot be applied here; the command is rejected instead of no-opping.
+            is PlaybackCommand.SetPitch -> fail(PlaybackFailureReason.OUTPUT_FAILED)
             PlaybackCommand.Stop -> {
                 supersede()
                 stop()
