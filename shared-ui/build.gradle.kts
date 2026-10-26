@@ -109,9 +109,5 @@ compose.resources.customDirectory(
     sourceSetName = "iosMain",
     directoryProvider = layout.projectDirectory.dir("src/iosMain/composeResources").let { providers.provider { it } },
 )
-// androidMain is a leaf too: without this the AndroidMain resource tasks see no sources and
-// composeResources never reach the APK assets.
-compose.resources.customDirectory(
-    sourceSetName = "androidMain",
-    directoryProvider = layout.projectDirectory.dir("src/commonMain/composeResources").let { providers.provider { it } },
-)
+// androidMain aggregates commonMain's declared dir through the hierarchy; a leaf declaration
+// pointing at the same directory duplicates every entry and fails the assets copy.
