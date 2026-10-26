@@ -178,7 +178,24 @@ struct ae_engine {
 
 static uint32_t min_u32(uint32_t a, uint32_t b) { return a < b ? a : b; }
 
+#ifndef __APPLE__
 static void deadline_after(struct timespec *deadline, int64_t nanoseconds);
+#endif
+
+/* Darwin has no clock-selectable condition attribute; pthread_cond_timedwait_relative_np
+ * is its monotonic-relative wait. Other platforms wait on a CLOCK_MONOTONIC deadline. */
+static int wait_changed_locked(ae_engine *e, int64_t nanoseconds) {
+#ifdef __APPLE__
+    struct timespec relative;
+    relative.tv_sec = (long)(nanoseconds / 1000000000LL);
+    relative.tv_nsec = (long)(nanoseconds % 1000000000LL);
+    return pthread_cond_timedwait_relative_np(&e->changed, &e->mutex, &relative);
+#else
+    struct timespec deadline;
+    deadline_after(&deadline, nanoseconds);
+    return pthread_cond_timedwait(&e->changed, &e->mutex, &deadline);
+#endif
+}
 
 /*
  * The realtime consumer never enters pthread_cond_* (which may acquire an internal lock).
@@ -187,9 +204,7 @@ static void deadline_after(struct timespec *deadline, int64_t nanoseconds);
  */
 static void wait_for_output_space_locked(ae_engine *e) {
     if (e->manual && e->play_intent) {
-        struct timespec deadline;
-        deadline_after(&deadline, AE_OUTPUT_SPACE_POLL_NS);
-        pthread_cond_timedwait(&e->changed, &e->mutex, &deadline);
+        wait_changed_locked(e, AE_OUTPUT_SPACE_POLL_NS);
     } else {
         pthread_cond_wait(&e->changed, &e->mutex);
     }
@@ -1229,12 +1244,14 @@ static void device_pull(void *user, float *out, uint32_t frames) {
     pthread_mutex_unlock(&e->mutex);
 }
 
+#ifndef __APPLE__
 static void deadline_after(struct timespec *deadline, int64_t nanoseconds) {
     clock_gettime(CLOCK_MONOTONIC, deadline);
     int64_t total = (int64_t)deadline->tv_nsec + nanoseconds;
     deadline->tv_sec += total / 1000000000LL;
     deadline->tv_nsec = (long)(total % 1000000000LL);
 }
+#endif
 
 static void engine_destroy_partial(ae_engine *e) {
     if (!e) {
@@ -1299,7 +1316,9 @@ ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_l
 
     pthread_condattr_t attributes;
     pthread_condattr_init(&attributes);
+#ifndef __APPLE__
     pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
+#endif
     pthread_mutex_init(&e->mutex, NULL);
     pthread_cond_init(&e->changed, &attributes);
     pthread_condattr_destroy(&attributes);
@@ -1631,16 +1650,13 @@ uint32_t ae_engine_render(ae_engine *e, float *out, uint32_t frames) {
     if (!e || !out || !e->manual) {
         return 0;
     }
-    struct timespec deadline;
-    deadline_after(&deadline, AE_RENDER_TIMEOUT_NS);
-
     pthread_mutex_lock(&e->mutex);
     uint32_t chunk = e->capacity / 2u;
     uint32_t total = 0;
     while (total < frames) {
         uint32_t need = min_u32(frames - total, chunk);
         while (!e->shutdown && manual_wait_needed_locked(e, need)) {
-            if (pthread_cond_timedwait(&e->changed, &e->mutex, &deadline) != 0) {
+            if (wait_changed_locked(e, AE_RENDER_TIMEOUT_NS) != 0) {
                 break;
             }
         }
