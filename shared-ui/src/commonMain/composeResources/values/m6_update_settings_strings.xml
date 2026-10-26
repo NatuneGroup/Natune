@@ -20,4 +20,18 @@
     <string name="m6_update_status_unavailable">Unable to check this channel. Try again.</string>
     <string name="m6_update_changelog">Changelog</string>
     <string name="m6_update_changelog_desc">Release notes for the selected channel</string>
+    <string name="m6_update_fork_warning">This is a personal fork of ArchiveTune. Issues introduced by fork-specific changes are unlikely to be fixed upstream.</string>
+    <string name="m6_update_new_available">New update available</string>
+    <string name="m6_update_release_notes_unavailable">Release notes are not available for this build.</string>
+    <string name="m6_update_download_and_install">Download and install</string>
+    <string name="m6_update_view_release">View release</string>
+    <string name="m6_update_downloading_title">%1$s %2$s</string>
+    <string name="m6_update_download_failed_title">Update download failed</string>
+    <string name="m6_update_download_failed_message">The update could not be downloaded. Try again.</string>
+    <string name="m6_update_up_to_date_title">No newer installable build</string>
+    <string name="m6_update_up_to_date_build">The selected channel has no verified newer build for this app.</string>
+    <string name="m6_update_check_error_title">Update check failed</string>
+    <string name="m6_update_check_error_body">The update feed could not be reached. Try again.</string>
+    <string name="m6_update_notification_confirm_body">Update checks read the selected channel\'s public release feed.\n\nStable releases are published from main; Nightly builds are published automatically from dev and can be unstable. Downloading directly from GitHub bypasses any additional screening performed by the store the app was originally installed from.</string>
+    <string name="m6_update_notification_confirm_ack">Enable</string>
 </resources>

@@ -43,6 +43,10 @@ import moe.rukamori.archivetune.shared.domain.settings.SourceHealth
 import moe.rukamori.archivetune.shared.domain.settings.SourceHealthStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalAuthFlowDevice
 import moe.rukamori.archivetune.shared.domain.settings.TidalDeviceLink
+import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
+import moe.rukamori.archivetune.shared.domain.update.UpdateInstallMode
+import moe.rukamori.archivetune.shared.domain.update.UpdateInstallProfile
+import moe.rukamori.archivetune.shared.data.update.SharedUpdateChecker
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceHealth
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
@@ -69,6 +73,9 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
 import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
+import moe.rukamori.archivetune.shared.ui.settings.UpdateCommit
+import moe.rukamori.archivetune.shared.ui.settings.UpdateFeedResult
+import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import org.jetbrains.compose.resources.stringResource
@@ -98,6 +105,23 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     /** Mirrors the Playback Pool switch into the feed, as on the other hosts. */
     suspend fun onPoolAccountsChanged(enabled: Boolean) = graph.playbackPool.onEnabledChanged(enabled)
 
+    /**
+     * iOS has no sideload path, so [UpdateInstallMode.UNAVAILABLE] keeps every row honest while the real
+     * checker still feeds the commit history. Version facts are unknown to this host (installedCode = 0),
+     * which is exactly the app's noBuildCode shape: nothing is ever offered.
+     */
+    val updateChecker = SharedUpdateChecker(
+        client = graph.http,
+        settings = graph.settings,
+        profile = UpdateInstallProfile(
+            updaterAvailable = false,
+            installMode = UpdateInstallMode.UNAVAILABLE,
+            isNightlyBuild = false,
+            installedCode = 0,
+            versionName = "",
+        ),
+        nowMs = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    )
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
         when (val result = graph.tidalAuth.refresh(refreshToken, TidalAuthFlowDevice)) {
@@ -214,12 +238,14 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     }
 }
 
+private const val IOS_UPDATE_COMMIT_COUNT = 20
+
 /** The settings routes this host mounts. Every other settings route keeps the unbound boundary. */
 internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.substringBefore('?') in IOS_SETTINGS_ROUTES
 
 private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
-    "settings/qobuz", QobuzLoginRoute,
+    "settings/qobuz", QobuzLoginRoute, "settings/update",
 )
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
@@ -313,6 +339,28 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 else IosTelegramSettingsPage(telegram, owners.controller, navigate, onFailure, scrollTo)
             }
             "settings/privacy" -> IosPrivacySettingsPage(host, owners.controller, onFailure, scrollTo)
+            "settings/update" -> UpdateSettings(
+                controller = owners.controller,
+                isNightlyBuild = false,
+                updaterAvailable = false,
+                installMode = UpdateInstallMode.UNAVAILABLE,
+                // Never reached: the page gates checks on updaterAvailable.
+                checkFeed = { _, _ -> UpdateFeedResult.Unavailable },
+                onChannelChanged = { },
+                onNotificationChanged = { },
+                installOffer = { },
+                loadCommits = { channel ->
+                    owners.updateChecker.commitHistory(IOS_UPDATE_COMMIT_COUNT)
+                        .getOrThrow().map {
+                            UpdateCommit(it.sha, it.message, it.author, it.date.take(10), it.authorAvatarUrl, it.htmlUrl)
+                        }
+                },
+                commitAvatar = { _, _ -> },
+                onOpenCommit = { url -> openIosUri(url, host::report) },
+                navigate = navigate,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
             "settings/logcat" -> {
                 val store = host.diagnostics
                 if (store == null) {

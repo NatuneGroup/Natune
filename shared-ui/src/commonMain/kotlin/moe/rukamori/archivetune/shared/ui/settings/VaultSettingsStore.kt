@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.platform.*
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.domain.update.canaryChannelMigration
 
 /** Sanitized: native error messages may themselves contain a credential or command output. */
 class SettingsVaultUnavailable : IllegalStateException("Secure settings storage is unavailable")
@@ -125,6 +126,15 @@ class VaultSettingsStore private constructor(
             val metadata = routes.keys.associateBy { referenceKey(it) }
             require(raw.keys.none { it.name.startsWith(REFERENCE_PREFIX) && it !in metadata })
             val logical = raw.toEditor()
+            // The Canary channel is gone: a stored CANARY selection becomes NIGHTLY once, and its retired
+            // cache keys drop — the same one-shot DataStore migration the app runs, applied at the funnel
+            // every host's settings pass through.
+            canaryChannelMigration(raw[UpdateChannelKey], raw.keys.map { it.name }.toSet()).let { migration ->
+                if (migration.channelToNightly) logical[UpdateChannelKey] = UpdateChannel.NIGHTLY.name
+                migration.dropKeyNames.forEach { name ->
+                    raw.keys.firstOrNull { it.name == name }?.let { logical[it] = null }
+                }
+            }
             metadata.forEach { (referenceKey, key) ->
                 val reference = raw[referenceKey] ?: return@forEach
                 require(raw[key] == null) { "Ambiguous plaintext and vault reference" }
