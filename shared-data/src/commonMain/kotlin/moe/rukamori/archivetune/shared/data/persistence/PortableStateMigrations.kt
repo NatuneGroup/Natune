@@ -129,6 +129,33 @@ internal object PortableStateMigrations {
      * row changes. Each statement matches its declaration on [PortableStoredSongRow] or on the album rows, because
      * Room's shape check compares them.
      */
+    /**
+     * The step from v7 to v8. It creates the persisted download queue and the local-media scan table; every
+     * column matches [PortableDownloadTaskRow] or [PortableLocalTrackRow] so the shape check passes and the
+     * owners resume interrupted rows or repeat scans on first open.
+     */
+    val V7_TO_V8: Migration = object : Migration(7, 8) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.exec(
+                "CREATE TABLE IF NOT EXISTS `portable_download_task` (`id` TEXT NOT NULL, " +
+                    "`provider` TEXT NOT NULL, `kind` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
+                    "`title` TEXT NOT NULL, `source` TEXT, `quality` TEXT NOT NULL, `phase` TEXT NOT NULL, " +
+                    "`bytesDownloaded` INTEGER NOT NULL, `totalBytes` INTEGER, `resumeBytes` INTEGER NOT NULL, " +
+                    "`failReason` TEXT, `updateTimeMs` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            )
+            connection.exec(
+                "CREATE TABLE IF NOT EXISTS `portable_local_track` (`id` TEXT NOT NULL, " +
+                    "`path` TEXT NOT NULL, `modifiedEpochMs` INTEGER NOT NULL, `sizeBytes` INTEGER NOT NULL, " +
+                    "`title` TEXT NOT NULL, `artistsJson` TEXT NOT NULL, `albumTitle` TEXT, " +
+                    "`albumArtistName` TEXT, `albumYear` INTEGER, `durationMs` INTEGER, `year` INTEGER, " +
+                    "`trackNumber` INTEGER, `artworkUri` TEXT, `lyricsText` TEXT, PRIMARY KEY(`id`))",
+            )
+            connection.exec(
+                "CREATE INDEX IF NOT EXISTS `index_portable_local_track_path` ON `portable_local_track` (`path`)",
+            )
+        }
+    }
+
     val V6_TO_V7: Migration = object : Migration(6, 7) {
         override fun migrate(connection: SQLiteConnection) {
             connection.exec("ALTER TABLE `portable_stored_song` ADD COLUMN `bytes` INTEGER")
