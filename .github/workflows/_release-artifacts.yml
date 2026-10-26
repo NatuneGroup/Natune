@@ -91,17 +91,17 @@ jobs:
       ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID }}
       ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET }}
       ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN: ${{ secrets.ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN }}
-      ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID }}
-      ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET }}
-      ARCHIVETUNE_JIOSAAVN_DES_KEY: ${{ secrets.ARCHIVETUNE_JIOSAAVN_DES_KEY }}
       ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
-      ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_ID }}
-      ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_HASH }}
-      ARCHIVETUNE_SOURCE_PROVIDER_URL: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_URL }}
-      ARCHIVETUNE_SOURCE_PROVIDER_KEY: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_KEY }}
-      ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.ARCHIVETUNE_POOL_CLIENT_KEY }}
-      ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.ARCHIVETUNE_FEEDBACK_API_URL }}
-      ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.ARCHIVETUNE_FEEDBACK_INGEST_KEY }}
+      # The Android app reads these variables under their unprefixed names
+      # (docs/build-credentials.md); secrets keep their historical names.
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+      SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+      POOL_CLIENT_KEY: ${{ secrets.POOL_CLIENT_KEY }}
+      FEEDBACK_API_URL: ${{ secrets.FEEDBACK_API_URL }}
+      FEEDBACK_INGEST_KEY: ${{ secrets.FEEDBACK_INGEST_KEY }}
+      START_IO_APP_ID: ${{ secrets.START_IO_APP_ID }}
     steps:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
@@ -265,13 +265,17 @@ jobs:
       ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET }}
       ARCHIVETUNE_JIOSAAVN_DES_KEY: ${{ secrets.ARCHIVETUNE_JIOSAAVN_DES_KEY }}
       ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
-      ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_ID }}
-      ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_HASH }}
-      ARCHIVETUNE_SOURCE_PROVIDER_URL: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_URL }}
-      ARCHIVETUNE_SOURCE_PROVIDER_KEY: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_KEY }}
-      ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.ARCHIVETUNE_POOL_CLIENT_KEY }}
-      ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.ARCHIVETUNE_FEEDBACK_API_URL }}
-      ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.ARCHIVETUNE_FEEDBACK_INGEST_KEY }}
+      # The desktop host accepts ARCHIVETUNE_* env overrides; the secrets they map
+      # to keep their historical unprefixed names (docs/build-credentials.md).
+      ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      ARCHIVETUNE_SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+      ARCHIVETUNE_SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+      ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.POOL_CLIENT_KEY }}
+      ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.FEEDBACK_API_URL }}
+      ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.FEEDBACK_INGEST_KEY }}
+      ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID }}
+      ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET }}
     steps:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
@@ -299,13 +303,38 @@ jobs:
           restore-keys: |
             konan-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Build host native dependencies
+      - name: Install native build prerequisites (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
+
+      - name: Install native build prerequisites (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v gpg >/dev/null 2>&1 || brew install gnupg
+
+      - name: Build host native dependencies (Linux and macOS)
+        if: matrix.platform != 'windows'
         shell: bash
         run: bash desktopApp/native/scripts/build-native-deps.sh
+
+      - name: Build host native dependencies (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File desktopApp/native/scripts/build-native-deps.ps1
 
       - name: Build TDLight native library (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
+        env:
+          TDLIGHT_OPENSSL_PREFIX: ${{ github.workspace }}/desktopApp/build/native/openssl-static
+          TDLIGHT_ZLIB_PREFIX: ${{ github.workspace }}/desktopApp/build/native/zlib-static
         run: powershell -NoProfile -ExecutionPolicy Bypass -File desktopApp/tdlight-jvm/native/build-tdjni.ps1
 
       - name: Build TDLight native library (Linux and macOS)
@@ -357,7 +386,6 @@ jobs:
           ./gradlew.bat :desktopApp:createDistributable :desktopApp:packageMsi --no-daemon --max-workers=2 `
             "-PdesktopPackageVersion=$env:PACKAGE_VERSION" `
             "-PdesktopDisplayVersion=$env:DISPLAY_VERSION" `
-            '-PdesktopNativeDirectory=build/native/engine-build' `
             "-PdesktopWebView2Sdk=$env:WEBVIEW2_SDK"
 
       - name: Package Linux DEB and app image
@@ -376,8 +404,7 @@ jobs:
           set -euo pipefail
           ./gradlew :desktopApp:createDistributable :desktopApp:packageDmg --no-daemon --max-workers=2 \
             "-PdesktopPackageVersion=$PACKAGE_VERSION" \
-            "-PdesktopDisplayVersion=$DISPLAY_VERSION" \
-            '-PdesktopNativeDirectory=build/native/engine-build'
+            "-PdesktopDisplayVersion=$DISPLAY_VERSION"
 
       - name: Stage Windows installers and portable ZIP
         if: matrix.platform == 'windows'
@@ -514,13 +541,13 @@ jobs:
       ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET }}
       ARCHIVETUNE_JIOSAAVN_DES_KEY: ${{ secrets.ARCHIVETUNE_JIOSAAVN_DES_KEY }}
       ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
-      ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_ID }}
-      ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_HASH }}
-      ARCHIVETUNE_SOURCE_PROVIDER_URL: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_URL }}
-      ARCHIVETUNE_SOURCE_PROVIDER_KEY: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_KEY }}
-      ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.ARCHIVETUNE_POOL_CLIENT_KEY }}
-      ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.ARCHIVETUNE_FEEDBACK_API_URL }}
-      ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.ARCHIVETUNE_FEEDBACK_INGEST_KEY }}
+      ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      ARCHIVETUNE_SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+      ARCHIVETUNE_SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+      ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.POOL_CLIENT_KEY }}
+      ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.FEEDBACK_API_URL }}
+      ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.FEEDBACK_INGEST_KEY }}
     steps:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
