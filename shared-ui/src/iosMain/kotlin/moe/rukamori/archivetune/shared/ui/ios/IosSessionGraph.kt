@@ -338,7 +338,7 @@ internal fun iosOffsetMsAt(epochMs: Long): Long =
  * The text order the portable library sorts with: the user's locale, case-insensitive, so one artist never splits into
  * two groups by case.
  */
-private val iosTextOrder: Comparator<String> = Comparator { first, second ->
+internal val iosTextOrder: Comparator<String> = Comparator { first, second ->
     NSString.create(string = first).localizedCaseInsensitiveCompare(second).toInt()
 }
 
