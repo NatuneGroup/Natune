@@ -54,7 +54,10 @@ jobs:
         run: |
           set -euo pipefail
           # Fail if this documented contract variant disappears; never test a different flavor.
+          # gradle.properties caps daemons at 1.5 GiB for the local 8 GiB workspace; the runner
+          # has more RAM, and the app module needs a bigger Kotlin daemon to compile.
           ./gradlew --console=plain --stacktrace --profile \
+            "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
             -I quality/unit-tests.init.gradle \
             :app:testGmsMobileUniversalDebugUnitTest --rerun :app:criticalPolicyCoverage
         env:
