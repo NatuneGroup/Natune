@@ -47,7 +47,6 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             // Public database/builder types expose Room to host adapters.
             api(libs.room.runtime)
-            implementation("androidx.sqlite:sqlite-bundled:2.6.2")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -57,6 +56,8 @@ kotlin {
         jvmMain.dependencies {
             // The desktop YouTube transport binds the retained InnerTube client in :core, which is JVM-only.
             implementation(project(":core"))
+            // Bundled SQLite (~0.6 MB native/ABI) stays off Android; only hosts that open the portable DB pull it.
+            implementation("androidx.sqlite:sqlite-bundled:2.6.2")
         }
         jvmTest.dependencies {
             // Real retained-version writer/reader for synthetic DataStore compatibility/rollback tests.
@@ -74,6 +75,7 @@ kotlin {
             // InnerTubeX expects the injected client to negotiate JSON bodies itself.
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
+            implementation("androidx.sqlite:sqlite-bundled:2.6.2")
         }
         // InnerTubeX (com.github.MetrolistGroup.innertubex v0.11.0, GPL-3.0) is consumed through its
         // per-target artifacts so the Android-side innertubex v0.9.2 pin keeps its own version.
