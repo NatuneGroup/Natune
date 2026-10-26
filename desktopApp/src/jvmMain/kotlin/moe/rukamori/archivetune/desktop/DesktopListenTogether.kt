@@ -261,6 +261,15 @@ internal class DesktopListenTogether(
         client.joinRoom(roomCode.uppercase(), username)
     }
 
+    /**
+     * Joins the room an `archivetune://listen` invite link carries, with the stored username or the "Guest" default the
+     * Android host uses for the same link.
+     */
+    fun joinFromLink(roomCode: String) {
+        val username = settings.snapshots.value?.listenTogetherUsername().orEmpty().ifBlank { "Guest" }
+        join(roomCode, username)
+    }
+
     fun cancelJoin() {
         local.update { it.copy(creating = false, waitingForApproval = false) }
         client.leaveRoom()

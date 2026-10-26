@@ -602,11 +602,12 @@ jobs:
           cat > "$APP_DIR/natune.desktop" <<'EOF'
           [Desktop Entry]
           Name=Natune
-          Exec=AppRun
+          Exec=AppRun %u
           Icon=natune
           Type=Application
           Terminal=false
           Categories=AudioVideo;Player;
+          MimeType=x-scheme-handler/archivetune;
           EOF
           cat > "$APP_DIR/AppRun" <<'EOF'
           #!/bin/sh

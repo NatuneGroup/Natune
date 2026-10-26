@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.desktop.integration
 
 import kotlin.test.*
+import moe.rukamori.archivetune.desktop.desktopListenTogetherCode
 
 class DeepLinkTest {
     @Test fun callbackRequiresExactSchemeHostPathAndSingleMatchingState() {
@@ -40,5 +41,19 @@ class DeepLinkTest {
         old.close()
         assertTrue(intake.accept("archivetune://oauth/spotify?state=new"))
         assertEquals(1, received.size)
+    }
+
+    @Test fun listenInvitesCarryTheRoomCodeLikeTheAndroidHost() {
+        // The Android handler reads ?code=, then ?room=, then pathSegments[1]; join() uppercases.
+        assertEquals("abcd12", desktopListenTogetherCode("archivetune://listen?code=abcd12"))
+        assertEquals("abcd12", desktopListenTogetherCode("archivetune://listen?room=abcd12"))
+        assertEquals("ABCD12", desktopListenTogetherCode("https://devilmi-vivi-music-listen-together.hf.space/listen/ABCD12"))
+        assertEquals("ABCD12", desktopListenTogetherCode("https://vivimusic-listen-together.onrender.com/listen?code=ABCD12"))
+        // Any /listen path counts on the Android handler, not only the two invite hosts.
+        assertEquals("ABCD12", desktopListenTogetherCode("https://unrelated.example/listen?code=ABCD12"))
+        // A codeless listen link and a non-listen link both open no room.
+        assertNull(desktopListenTogetherCode("archivetune://listen"))
+        assertNull(desktopListenTogetherCode("archivetune://open/track/123"))
+        assertNull(desktopListenTogetherCode("not a uri"))
     }
 }
