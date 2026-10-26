@@ -77,6 +77,7 @@ compose.resources {
 // compose.resources.customDirectory replaces a source set's default composeResources dir
 // instead of adding to it, so a generated directory would shadow the real resources.
 
+
 // The screenshot test writes into the ignored repository outputs/ directory. It must run on every
 // invocation, because a cached result would skip the capture that the evidence relies on.
 tasks.named<Test>("desktopTest") {
