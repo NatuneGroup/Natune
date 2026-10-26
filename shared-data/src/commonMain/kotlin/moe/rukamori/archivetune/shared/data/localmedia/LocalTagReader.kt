@@ -19,7 +19,7 @@ object LocalTagReader {
             head.startsWith("fLaC") -> readFlac(head)
             head.startsWith("OggS") -> readOggTags(head)
             head.size >= 12 && head.startsWith("RIFF") && head.startsWith("WAVE", 8) -> readWavInfo(head)
-            isMp4(head) -> readMp4(head + tail.ifEmpty { ByteArray(0) })
+            isMp4(head) -> readMp4(head + tail)
             else -> null
         }
         if (id3 == null && byContainer == null) return null
@@ -141,7 +141,7 @@ object LocalTagReader {
         }
         if (pos >= body.size) return null
         val bytes = body.copyOfRange(pos, body.size).copyOf().let {
-            ByteArray(it.size + 1).also { target -> it.copyInto(target); target[0] = encoding.toByte() }
+            ByteArray(it.size + 1).also { target -> it.copyInto(target, 1); target[0] = encoding.toByte() }
         }
         return decodeId3Text(bytes)?.trim()
     }
@@ -407,6 +407,16 @@ object LocalTagReader {
             if (bits >= 8) { bits -= 8; out += ((buffer ushr bits) and 0xFF).toByte() }
         }
         return out.toByteArray()
+    }
+
+    private fun isMp4(head: ByteArray): Boolean {
+        var offset = 0
+        if (head.size >= 10 && head.startsWith("ID3")) {
+            val size = ((head[6].toInt() and 0x7f) shl 21) or ((head[7].toInt() and 0x7f) shl 14) or
+                ((head[8].toInt() and 0x7f) shl 7) or (head[9].toInt() and 0x7f)
+            offset = 10 + size
+        }
+        return head.size >= offset + 8 && head.startsWith("ftyp", offset + 4)
     }
 
     private val MP4_CONTAINERS = setOf("moov", "udta", "ilst", "trak", "mdia", "minf", "stbl")

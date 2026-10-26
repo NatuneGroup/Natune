@@ -58,7 +58,7 @@ class JvmLocalMediaSource(
             }
             val tail = if (candidate.sizeBytes > head.size) {
                 Files.newByteChannel(path).use { channel ->
-                    val size = minOf(TAIL_BYTES, candidate.sizeBytes - head.size).toInt()
+                    val size = minOf(TAIL_BYTES.toLong(), candidate.sizeBytes - head.size).toInt()
                     val buffer = ByteArray(size)
                     channel.position(candidate.sizeBytes - size)
                     var read = 0

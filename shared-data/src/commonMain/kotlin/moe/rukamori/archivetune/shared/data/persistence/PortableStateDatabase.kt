@@ -3,6 +3,8 @@ package moe.rukamori.archivetune.shared.data.persistence
 import androidx.room.*
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.coroutines.Dispatchers
+import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskDao
+import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskRow
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
 
