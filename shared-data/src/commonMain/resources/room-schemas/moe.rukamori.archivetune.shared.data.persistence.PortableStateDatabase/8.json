@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 8,
-    "identityHash": "4e6fad25c4f984b4f0f7a5ef2085cc3e",
+    "identityHash": "c1e5b4afce3b4d23825dc58efeeb825b",
     "entities": [
       {
         "tableName": "queue_checkpoint",
@@ -100,7 +100,7 @@
       },
       {
         "tableName": "portable_playlist",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `tags` TEXT NOT NULL, `createdSeq` INTEGER, `songSortType` TEXT NOT NULL DEFAULT 'CUSTOM', `songSortDescending` INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `tags` TEXT NOT NULL, `createdSeq` INTEGER, `songSortType` TEXT NOT NULL DEFAULT 'CUSTOM', `songSortDescending` INTEGER NOT NULL DEFAULT 1, `isHidden` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -138,6 +138,13 @@
             "affinity": "INTEGER",
             "notNull": true,
             "defaultValue": "1"
+          },
+          {
+            "fieldPath": "isHidden",
+            "columnName": "isHidden",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -809,7 +816,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4e6fad25c4f984b4f0f7a5ef2085cc3e')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c1e5b4afce3b4d23825dc58efeeb825b')"
     ]
   }
 }
