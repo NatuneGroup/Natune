@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.ln
 import kotlin.math.round
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -331,6 +332,14 @@ class DesktopPlaybackPort(
             }
             is PlaybackCommand.SetSpeed -> {
                 stages = stages.copy(request = stages.request.copy(speed = command.speed.toDouble()))
+                applyStages()
+            }
+            is PlaybackCommand.SetPitch -> {
+                stages = stages.copy(
+                    request = stages.request.copy(
+                        pitchSemitones = 12.0 * ln(command.pitch.toDouble()) / ln(2.0)
+                    )
+                )
                 applyStages()
             }
             PlaybackCommand.Stop -> {

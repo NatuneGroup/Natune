@@ -209,6 +209,16 @@ data class PlayerQueueMenuState(
     val selectedSource: AudioSourceType?,
     val amazonSearchEnabled: Boolean,
     val searchableSources: Set<AudioSourceType>,
+    /** A host without an always-on display surface hides the AOD row instead of reporting a no-op. */
+    val alwaysOnDisplaySupported: Boolean = true,
+    /** A host without a radio-capable surface hides the Start radio grid tile. */
+    val radioSupported: Boolean = true,
+    /** A host without the acoustic graph hides the acoustic quality row. */
+    val acousticQualitySupported: Boolean = true,
+    /** A host with no equalizer UI hides the equalizer row. */
+    val equalizerSupported: Boolean = true,
+    /** A host with no download owner hides the download and remove-download rows. */
+    val downloadsSupported: Boolean = true,
 )
 
 /**
