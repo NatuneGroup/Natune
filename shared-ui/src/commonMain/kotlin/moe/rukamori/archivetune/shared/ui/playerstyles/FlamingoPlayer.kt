@@ -38,7 +38,10 @@ internal fun FlamingoPlayer(c: PlayerRenderContext) {
         }
     }
     Column(Modifier.fillMaxSize().testTag("flamingo-content")) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+        Box(Modifier.fillMaxWidth()) {
+            // Desktop has no system back gesture — Flamingo still needs a collapse affordance.
+            ActionButton(PlayerAction.COLLAPSE, c, Modifier.align(Alignment.CenterStart))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             for (panel in PlayerPanel.entries) TextButton(onClick = { c.interaction.panel = panel }) {
                 Text(
                     stringResource(
@@ -49,6 +52,7 @@ internal fun FlamingoPlayer(c: PlayerRenderContext) {
                         }
                     )
                 )
+            }
             }
         }
         HorizontalPager(pages, Modifier.weight(1f).fillMaxWidth().testTag("flamingo-content-pages")) { page ->
