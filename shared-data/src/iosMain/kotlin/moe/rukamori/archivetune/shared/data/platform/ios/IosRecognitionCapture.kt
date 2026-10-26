@@ -4,7 +4,6 @@ package moe.rukamori.archivetune.shared.data.platform.ios
 
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
-import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.get
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +24,7 @@ import platform.AVFAudio.AVAudioSessionInterruptionNotification
 import platform.AVFAudio.AVAudioSessionMediaServicesWereResetNotification
 import platform.AVFAudio.AVAudioSessionRecordPermissionDenied
 import platform.AVFAudio.AVAudioSessionRecordPermissionGranted
-import platform.AVFAudio.availableInputs
+import platform.AVFAudio.inputIsAvailable
 import platform.Foundation.NSLock
 import platform.Foundation.NSNotificationCenter
 
@@ -42,7 +41,6 @@ private val CAPTURE_SAMPLE_COUNT: Int =
     (RecognitionCaptureSpec.SAMPLE_RATE_HZ.toLong() * RecognitionCaptureSpec.DURATION_MILLIS / 1_000L).toInt()
 
 private const val INT16_FULL_SCALE = 32_768.0
-
 private const val PCM_FULL_SCALE = 32_767.0
 
 private inline fun <T> NSLock.withRecognitionLock(block: () -> T): T {
@@ -140,7 +138,7 @@ class IosRecognitionCapture : RecognitionPermissionPort, RecognitionCapturePort 
         // The native policy switches the shared session for this window and keeps playback's category intent. The claim
         // is released exactly once by teardown, whichever way the window ends.
         capture.claimRecordingSession()
-        check(session.availableInputs?.isNotEmpty() == true) { "no microphone input is available" }
+        check(session.inputIsAvailable) { "no microphone input is available" }
 
         val engine = AVAudioEngine()
         capture.attach(engine)

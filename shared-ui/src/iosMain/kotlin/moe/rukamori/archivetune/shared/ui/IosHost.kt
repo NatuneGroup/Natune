@@ -4,7 +4,6 @@ package moe.rukamori.archivetune.shared.ui
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,9 +42,6 @@ internal sealed interface IosSessionState {
     data object GraphUnavailable : IosSessionState
     data class Ready(val graph: IosSessionGraph) : IosSessionState
 }
-
-/** Deep links waiting for the root, bounded like the desktop intake so a link flood cannot grow memory. */
-private const val DEEP_LINK_CAPACITY = 16
 
 /**
  * One host per process, owned by the Swift app session (ArchiveTuneSession) and created at launch. Detaching or
@@ -93,6 +89,10 @@ class IosHost {
     private var foregroundRequested = false
     private var nowPlaying: IosNowPlaying? = null
     private val telegramSession = MutableStateFlow<IosTelegramClient?>(null)
+    private val linkRoutes = Channel<String>(capacity = LINK_ROUTE_CAPACITY)
+
+    /** Links handed to the session graph, which resolves them into routes. The bound drops a burst of opens. */
+    internal val linkRequests = linkRoutes.receiveAsFlow()
 
     /**
      * The one TDLib session of this host, created once the account store exists, because its admission is that store's
@@ -228,26 +228,11 @@ class IosHost {
     }
 
     /**
-     * Deep links accepted but not yet collected by the root. Bounded so a burst of links cannot grow memory; a link
-     * that arrives before the root collects is still delivered afterwards.
+     * The `archivetune://` link the Swift app session receives in `onOpenURL`. It is queued for the session graph,
+     * which decides which routes a link may open; a link before the graph is ready is dropped rather than replayed.
      */
-    private val deepLinks = Channel<IosDeepLink>(capacity = DEEP_LINK_CAPACITY)
-
-    /** Accepted deep links the root collects along its own routes. */
-    internal val incomingLinks: Flow<IosDeepLink> = deepLinks.receiveAsFlow()
-
-    /**
-     * The app's onOpenURL entry. A link this app does not accept is reported, never silently dropped; a link past the
-     * bound is reported too, so a link flood never appears to have opened.
-     */
-    fun acceptUrl(url: String) {
-        if (closed) return
-        val link = IosDeepLinks.classify(url)
-        if (link == null) {
-            report("link not opened: it is not a link this app accepts")
-        } else if (deepLinks.trySend(link).isFailure) {
-            report("link not opened: too many links are waiting to be opened")
-        }
+    fun openLink(link: String) {
+        if (!closed) linkRoutes.trySend(link)
     }
 
     /** One line in the persistent diagnostics log and the console, for failures the UI only reports. */
@@ -273,7 +258,6 @@ class IosHost {
     fun close() {
         if (closed) return
         closed = true
-        deepLinks.close()
         nowPlaying?.close()
         nowPlaying = null
         val session = telegramSession.value
@@ -404,5 +388,6 @@ class IosHost {
 
     private companion object {
         const val PRESENCE_CLOSE_TIMEOUT_MS = 2_000L
+        const val LINK_ROUTE_CAPACITY = 8
     }
 }

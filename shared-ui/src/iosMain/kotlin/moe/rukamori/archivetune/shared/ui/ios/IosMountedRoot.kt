@@ -13,7 +13,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,11 +43,9 @@ internal fun IosMountedRoot(host: IosHost) {
         IosSessionState.SettingsUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_settings_unavailable)) }
         IosSessionState.GraphUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_host_graph_unavailable)) }
         is IosSessionState.Ready -> {
-            // Recognition runs on the composition's UI scope and gives the microphone back when it leaves.
-            val uiScope = rememberCoroutineScope()
-            val recognition = remember(state.graph, uiScope) { IosRecognitionMount(state.graph, uiScope) }
-            DisposableEffect(recognition) { onDispose { recognition.close() } }
-            val bindings = remember(state.graph, recognition) { iosHostBindings(host, state.graph, recognition) }
+            val recognition = remember(state.graph) { IosRecognitionMount(state.graph) }
+            DisposableEffect(state.graph) { onDispose { recognition.close() } }
+            val bindings = remember(state.graph) { iosHostBindings(host, state.graph, recognition) }
             ArchiveTuneRoot(
                 host = bindings,
                 visible = active,
@@ -62,7 +59,7 @@ internal fun IosMountedRoot(host: IosHost) {
 
 /**
  * The crash report an earlier launch stored, shown once at the next launch as the Android crash screen. Delete removes
- * it; Close keeps it, so it is offered again. Share Logs opens the system share sheet with the report.
+ * it; Close keeps it, so it is offered again. iOS has no share sheet bound here, so Share Logs copies the report.
  */
 @Composable
 private fun IosCrashOverlay(host: IosHost) {
@@ -74,7 +71,7 @@ private fun IosCrashOverlay(host: IosHost) {
             appName = "Natune",
             actions = CrashReportActions(
                 copyToClipboard = ::copyToIosClipboard,
-                shareLogs = { iosShareText(host, it) },
+                shareLogs = ::copyToIosClipboard,
                 report = null,
                 delete = { if (host.clearCrash()) report = null },
                 close = { report = null },

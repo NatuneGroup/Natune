@@ -4,7 +4,7 @@ package moe.rukamori.archivetune.shared.domain.lyrics.ai
  * Pure-Kotlin SHA-256 (FIPS 180-4). It replaces `java.security.MessageDigest`, which commonMain cannot use.
  * The digest is only a process-local cache identity, so it needs to be collision-resistant, not secret.
  */
-internal object Sha256 {
+object Sha256 {
     private val ROUND_CONSTANTS: IntArray =
         longArrayOf(
             0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
