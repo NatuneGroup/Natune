@@ -12,6 +12,12 @@ import io.ktor.http.isSuccess
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,10 +71,14 @@ import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyAuth
 import moe.rukamori.archivetune.spotify.SpotifyHashProvider
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
+import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTracksRef
 
 private const val SPOTIFY_PROVIDER = "spotify"
 private const val TOKEN_EXPIRY_GRACE_MS = 60_000L
 private const val PLAYLIST_PAGE_SIZE = 50
+
+/** In-flight parallel track-count fetches in [DesktopSpotifyAccounts.fetchAllPlaylists] — the Android cap. */
+private const val COUNT_FETCH_CONCURRENCY = 8
 private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
 private const val REST_ME_URL = "https://api.spotify.com/v1/me"
 private const val WEB_PLAYER_USER_AGENT =
@@ -354,8 +364,11 @@ internal class DesktopSpotifyAccounts(
     }
 
     /*
-     * Track counts are not looked up per playlist: the desktop host shows only the playlist count, so the extra
-     * requests the Android library page needs would only spend the account's rate limit.
+     * Same method as the Android library page (SpotifyLibraryRepository.fetchAllPlaylists): the libraryV3 GraphQL
+     * response often omits `tracks.totalCount` for leaf playlists, so the missing counts are looked up one request per
+     * playlist with bounded concurrency. Eight in flight keeps the burst under Spotify's 429 threshold while cutting
+     * the wall time ~8x against serial reads; each lookup is one `playlistTracks(limit = 1)` total read through the
+     * same token-retry path.
      */
     private suspend fun fetchAllPlaylists(): List<SpotifyPlaylist> {
         val loaded = ArrayList<SpotifyPlaylist>()
@@ -363,12 +376,44 @@ internal class DesktopSpotifyAccounts(
         while (true) {
             val page = withTokenRetry { Spotify.myPlaylists(limit = PLAYLIST_PAGE_SIZE, offset = offset).getOrThrow() }
             if (page.items.isEmpty()) break
-            loaded += page.items
+            val enriched =
+                coroutineScope {
+                    val semaphore = Semaphore(COUNT_FETCH_CONCURRENCY)
+                    page.items
+                        .map { playlist ->
+                            async(Dispatchers.IO) {
+                                if (playlist.tracks?.total != null) {
+                                    playlist
+                                } else {
+                                    semaphore.withPermit {
+                                        playlistTrackCount(playlist.id)
+                                            ?.let { playlist.copy(tracks = SpotifyPlaylistTracksRef(total = it)) }
+                                            ?: playlist
+                                    }
+                                }
+                            }
+                        }.awaitAll()
+                }
+            loaded += enriched
             offset += page.items.size
             if (offset >= page.total || page.items.size < PLAYLIST_PAGE_SIZE) break
         }
         return loaded
     }
+
+    private suspend fun playlistTrackCount(playlistId: String): Int? =
+        try {
+            withTokenRetry {
+                Spotify
+                    .playlistTracks(playlistId = playlistId, limit = 1, offset = 0)
+                    .getOrThrow()
+            }.total
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            graph.report("spotify playlist track count failed: ${error.javaClass.simpleName}")
+            null
+        }
 
     private fun restoreCachedPlaylists(prefs: PreferenceSnapshot) {
         if (!playlists.isNullOrEmpty()) return

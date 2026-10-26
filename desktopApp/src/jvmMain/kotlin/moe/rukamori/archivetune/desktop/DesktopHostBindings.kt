@@ -20,6 +20,7 @@ import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -54,7 +55,7 @@ internal val DesktopOpticalCapabilities = OpticalCapabilities(blur = true, refra
  */
 internal fun desktopHostBindings(
     graph: DesktopSessionGraph,
-    backRequests: Flow<Unit>,
+    backRequests: MutableSharedFlow<Unit>,
     recognition: DesktopRecognitionMount,
     feedback: DesktopFeedbackMount,
     quit: () -> Unit,
@@ -84,7 +85,7 @@ internal fun desktopHostBindings(
         // Library, playlists, the local or liked playlist routes, search, YouTube albums and finite playlists, music
         // recognition and Listen Together read their owners. Every other destination keeps the boundary.
         page = { route ->
-            desktopGraphPage(graph, menu, createPlaylist, recognition, playlistMenus, route) { target -> ownRoutes.trySend(target) }
+            desktopGraphPage(graph, menu, createPlaylist, recognition, playlistMenus, route, back = { backRequests.tryEmit(Unit) }) { target -> ownRoutes.trySend(target) }
         },
         // Item and news images load over the graph's one client, public http or https only; a failed image keeps its frame.
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
