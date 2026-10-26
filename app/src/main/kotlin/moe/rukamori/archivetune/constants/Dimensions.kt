@@ -1,0 +1,68 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+
+package moe.rukamori.archivetune.constants
+
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+
+const val CONTENT_TYPE_HEADER = 0
+const val CONTENT_TYPE_LIST = 1
+const val CONTENT_TYPE_SONG = 2
+const val CONTENT_TYPE_ARTIST = 3
+const val CONTENT_TYPE_ALBUM = 4
+const val CONTENT_TYPE_PLAYLIST = 5
+
+val NavigationBarHorizontalPadding = 12.dp
+val NavigationBarBottomPadding = 10.dp
+val NavigationBarMaxWidth = 420.dp
+val FloatingBarStandaloneCornerRadius = 32.dp
+val FloatingBarOuterCornerRadius = 28.dp
+val FloatingBarJunctionCornerRadius = 12.dp
+val NavigationBarHeight = 78.dp
+
+// FLOATING navigation-bar style: a detached pill with larger margins and a tighter width.
+val FloatingNavigationBarHorizontalPadding = 24.dp
+val FloatingNavigationBarBottomPadding = 16.dp
+val FloatingNavigationBarMaxWidth = 360.dp
+val MiniPlayerHeight = 70.dp
+
+// The mini player's height once it shares a row with the compact round buttons (see CompactControlSize).
+val MiniPlayerCompactHeight = 64.dp
+val MiniPlayerBottomSpacing = 4.dp
+val QueuePeekHeight = 64.dp
+val AppBarHeight = 64.dp
+
+val ListItemHeight = 72.dp
+val ListThumbnailSize = 56.dp
+val GridThumbnailHeight = 128.dp
+
+val ThumbnailCornerRadius = 10.dp
+val GridThumbnailCornerRadius = 8.dp
+
+val PlayerHorizontalPadding = 32.dp
+
+val NavigationBarAnimationSpec =
+    spring<Dp>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessLow,
+    )
+
+val BottomSheetAnimationSpec =
+    spring<Dp>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    )
+
+val BottomSheetSoftAnimationSpec =
+    spring<Dp>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessLow,
+    )

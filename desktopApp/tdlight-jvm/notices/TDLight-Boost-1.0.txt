@@ -1,0 +1,14 @@
+TDLight Java binding and libtdjni, Boost Software License 1.0
+
+Bundled components: org.drinkless.tdlib Client.java and TdApi.java, the generated TDLight binding under this component's
+src/main/java, and the matching libtdjni native library when a desktop package ships it.
+
+Source: https://github.com/tdlight-team/tdlight at commit 2b51b33c8a905be96c40508e68485f8a719e26a3 (TDLib 1.8.66 base).
+Copyright: Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2026, as stated in the headers
+of the Java files.
+
+License: Boost Software License, Version 1.0. The full license text is not reproduced in this file. The recipe
+native/build-tdjni.sh copies it verbatim from LICENSE_1_0.txt of the pinned source tree into
+desktopApp/build/tdlight-jvm/stage/notices/TDLight-Boost-1.0-LICENSE.txt. The desktop packaging task copies that file
+next to this notice and refuses to stage a package when it is absent, so a shipped package always carries the complete
+license text.

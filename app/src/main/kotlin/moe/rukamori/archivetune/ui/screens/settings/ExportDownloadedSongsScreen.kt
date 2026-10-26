@@ -1,0 +1,883 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+
+package moe.rukamori.archivetune.ui.screens.settings
+
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.LocalDatabase
+import moe.rukamori.archivetune.LocalDownloadUtil
+import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
+import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.constants.DownloadSourceConfig
+import moe.rukamori.archivetune.db.entities.detectAudioExtensionFromSpans
+import moe.rukamori.archivetune.db.entities.extensionToMimeType
+import moe.rukamori.archivetune.ui.component.IconButton
+import moe.rukamori.archivetune.ui.utils.backToMain
+import androidx.compose.foundation.layout.asPaddingValues
+
+/**
+ * A single downloadable song surfaced in the export picker. The [songId] is the
+ * raw media id (no source prefix); the actual cached spans may live under any key
+ * [DownloadSourceConfig.cacheKeysFor] lists — see [resolveSpansWithSource].
+ */
+private data class DownloadedSongRow(
+    val songId: String,
+    val title: String,
+    val artist: String,
+    val thumbnailUrl: String?,
+    val durationText: String?,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ExportDownloadedSongsScreen(navController: NavController) {
+    val context = LocalContext.current
+    val database = LocalDatabase.current
+    val downloadUtil = LocalDownloadUtil.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var songs by remember { mutableStateOf<List<DownloadedSongRow>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var isExporting by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var exportedCount by remember { mutableIntStateOf(0) }
+    var deletedCount by remember { mutableIntStateOf(0) }
+    var totalCount by remember { mutableIntStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+    val selectedIds: SnapshotStateList<String> = remember { mutableStateListOf() }
+
+    // Filter songs by search query (title or artist, case-insensitive).
+    // Empty query shows all songs.
+    val displayedSongs = remember(songs, searchQuery) {
+        if (searchQuery.isBlank()) songs
+        else {
+            val q = searchQuery.lowercase().trim()
+            songs.filter {
+                it.title.lowercase().contains(q) || it.artist.lowercase().contains(q)
+            }
+        }
+    }
+
+    // Load the list of downloaded songs from the cache + database.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val cache = downloadUtil.downloadCache
+            // De-duplicate cache keys by the underlying song id so "qobuz:<id>"
+            // and "<id>" don't both show up as separate rows.
+            val songIds =
+                cache.keys
+                    .map { it.substringAfter(":") }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+            val rows =
+                songIds.mapNotNull { songId ->
+                    // Only include songs that actually have cached spans.
+                    val hasSpans =
+                        DownloadSourceConfig.cacheKeysFor(songId).any { key ->
+                            cache.getCachedSpans(key).isNotEmpty()
+                        }
+                    if (!hasSpans) return@mapNotNull null
+                    val songEntity = database.getSongByIdBlocking(songId)
+                    val title =
+                        songEntity?.song?.title?.takeIf { it.isNotBlank() }
+                            ?: "Unknown song ($songId)"
+                    val artist =
+                        songEntity?.artists?.firstOrNull()?.name?.takeIf { it.isNotBlank() }
+                            ?: songEntity?.album?.title?.takeIf { it.isNotBlank() }
+                            ?: ""
+                    val thumb = songEntity?.song?.thumbnailUrl
+                    DownloadedSongRow(
+                        songId = songId,
+                        title = title,
+                        artist = artist,
+                        thumbnailUrl = thumb,
+                        durationText = null,
+                    )
+                }.sortedBy { it.title.lowercase() }
+            songs = rows
+            isLoading = false
+        }
+    }
+
+    // SAF folder picker — fires when the user taps "Pick export folder".
+    val pickFolderLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
+            if (treeUri == null) return@rememberLauncherForActivityResult
+            val toExport = songs.filter { it.songId in selectedIds }
+            if (toExport.isEmpty()) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.export_downloaded_songs_pick_folder_first),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return@rememberLauncherForActivityResult
+            }
+            isExporting = true
+            totalCount = toExport.size
+            exportedCount = 0
+            coroutineScope.launch {
+                var exported = 0
+                var failed = 0
+                var skippedIncompatible = 0
+                try {
+                    withContext(Dispatchers.IO) {
+                        val cache = downloadUtil.downloadCache
+                        val parentDocUri =
+                            android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                                treeUri,
+                                android.provider.DocumentsContract.getTreeDocumentId(treeUri),
+                            )
+                        val tempDir = java.io.File(context.cacheDir, "export_tmp").apply { mkdirs() }
+                        loop@ for (row in toExport) {
+                            val resolved = resolveSpansWithSource(cache, row.songId) ?: run { failed++; continue@loop }
+                            val spans = resolved.spans
+                            // Reject empty / partial spans before attempting any tagging
+                            // or export — exporting a 0-byte file is what causes the
+                            // "appears downloaded but won't play back" symptom when the
+                            // user later imports the file into another player.
+                            if (spans.isEmpty()) { failed++; continue@loop }
+                            val totalSpanBytes = spans.sumOf { it.length }
+                            if (totalSpanBytes <= 0L) { failed++; continue@loop }
+                            val detectedExt = detectAudioExtensionFromSpans(spans)
+                            // Skip legacy WebM/Opus caches entirely: they come from older
+                            // YouTube Music downloads whose format picker preferred
+                            // Opus-in-WebM over AAC-in-M4A.
+                            if (detectedExt == "webm" || detectedExt == "opus") {
+                                skippedIncompatible++
+                                continue@loop
+                            }
+                            // Determine the user-visible extension.
+                            val isYouTubeSource = resolved.sourceKey == null
+                            val exportExt =
+                                if (isYouTubeSource) "mp3" else detectedExt
+                            val mime = extensionToMimeType(exportExt)
+                            val safeTitle =
+                                row.title
+                                    .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    .ifBlank { "audio_${row.songId}" }
+                            // Stage 1: assemble spans into a single temp file so jaudiotagger
+                            // can write metadata tags onto it. The temp file is named with the
+                            // *real* detected extension (m4a/flac/mp3) so jaudiotagger's
+                            // AudioFileIO.read() — which uses the extension to pick a reader —
+                            // finds the right format.
+                            val tempFile = java.io.File(tempDir, "${row.songId}.$detectedExt")
+                            try {
+                                runCatching {
+                                    java.io.FileOutputStream(tempFile).use { output ->
+                                        spans.sortedBy { it.position }.forEach { span ->
+                                            java.io.FileInputStream(span.file).use { input ->
+                                                input.copyTo(output)
+                                            }
+                                        }
+                                        output.flush()
+                                    }
+                                }.getOrElse {
+                                    tempFile.delete()
+                                    failed++
+                                    continue@loop
+                                }
+                                // Stage 2: write metadata tags (title, artist, album, year, track,
+                                // artwork) using jaudiotagger's standard tag() path. We
+                                // deliberately do NOT fall back to a manual ID3v2-prepend when
+                                // tag() fails.
+                                val resolvedMetadata = resolveExportMetadata(database, row, isYouTubeSource)
+                                moe.rukamori.archivetune.playback.AudioTagger.tag(tempFile, resolvedMetadata)
+                                // Stage 3: copy the tagged temp file to the user-selected SAF
+                                // folder. The document is created with the export extension
+                                // (which is .mp3 for YouTube-sourced files even though the
+                                // underlying bytes are MP4/AAC — see comment on exportExt above).
+                                val destUri =
+                                    android.provider.DocumentsContract.createDocument(
+                                        context.contentResolver,
+                                        parentDocUri,
+                                        mime,
+                                        "$safeTitle.$exportExt",
+                                    ) ?: run { failed++; continue@loop }
+                                runCatching {
+                                    context.contentResolver.openOutputStream(destUri, "w")?.use { output ->
+                                        java.io.FileInputStream(tempFile).use { input ->
+                                            input.copyTo(output)
+                                        }
+                                        output.flush()
+                                    }
+                                }.onSuccess {
+                                    exported++
+                                    exportedCount = exported
+                                }.onFailure { failed++ }
+                            } finally {
+                                tempFile.delete()
+                            }
+                        }
+                        // Best-effort cleanup of stale temp files from a
+                        // previous interrupted export run.
+                        runCatching { tempDir.listFiles()?.forEach { it.delete() } }
+                    }
+                } finally {
+                    isExporting = false
+                }
+                val failedMsg = if (failed > 0) ", $failed failed" else ""
+                val skippedMsg = if (skippedIncompatible > 0) {
+                    "\n" + context.getString(
+                        R.string.export_downloaded_songs_skipped_incompatible,
+                        skippedIncompatible,
+                    )
+                } else ""
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        R.string.export_downloaded_songs_complete,
+                        exported,
+                        failedMsg,
+                    ) + skippedMsg,
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+
+    val allSelected = displayedSongs.isNotEmpty() && selectedIds.size == displayedSongs.size
+
+    /**
+     * Deletes the cached spans for the currently-selected song IDs. Releases
+     * the underlying cache entries via [Cache.removeResource] for every
+     * source-prefixed key the song may live under (qobuz:, tidal:, bare id).
+     * Updates the in-memory list so the UI reflects the deletion immediately.
+     */
+    fun deleteSelected() {
+        val toDelete = songs.filter { it.songId in selectedIds }
+        if (toDelete.isEmpty()) return
+        isDeleting = true
+        totalCount = toDelete.size
+        deletedCount = 0
+        coroutineScope.launch {
+            var deleted = 0
+            var failed = 0
+            try {
+                withContext(Dispatchers.IO) {
+                    val cache = downloadUtil.downloadCache
+                    val playerCache = downloadUtil.playerCache
+                    for (row in toDelete) {
+                        var removed = false
+                        for (key in DownloadSourceConfig.cacheKeysFor(row.songId)) {
+                            runCatching { cache.removeResource(key) }.onSuccess { removed = true }
+                            runCatching { playerCache.removeResource(key) }.onSuccess { removed = true }
+                        }
+                        if (removed) deleted++ else failed++
+                        deletedCount = deleted
+                    }
+                    // Also cancel any pending Media3 download requests for these ids
+                    // so they don't immediately re-create the cache entries.
+                    runCatching {
+                        toDelete.forEach { row ->
+                            downloadUtil.downloadManager.removeDownload(row.songId)
+                        }
+                    }
+                }
+            } finally {
+                isDeleting = false
+            }
+            // Refresh the song list to reflect deletions.
+            val failedMsg = if (failed > 0) ", $failed failed" else ""
+            Toast.makeText(
+                context,
+                context.getString(
+                    R.string.export_downloaded_songs_delete_complete,
+                    deleted,
+                    failedMsg,
+                ),
+                Toast.LENGTH_LONG,
+            ).show()
+            // Update the local list + clear selection.
+            val deletedIds = toDelete.map { it.songId }.toSet()
+            songs = songs.filterNot { it.songId in deletedIds }
+            selectedIds.removeAll(deletedIds)
+        }
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            SettingsTopAppBar(
+                title = {
+                    if (isSearchActive) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text(stringResource(R.string.search)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(28.dp),
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.close),
+                                            contentDescription = stringResource(R.string.clear_search),
+                                        )
+                                    }
+                                }
+                            },
+                        )
+                    } else {
+                        Text(stringResource(R.string.export_downloaded_songs))
+                    }
+                },
+                navigationIcon = {
+                    IconButton(
+                        onClick = {
+                            if (isSearchActive) {
+                                isSearchActive = false
+                                searchQuery = ""
+                            } else {
+                                navController.navigateUp()
+                            }
+                        },
+                        onLongClick = navController::backToMain,
+                    ) {
+                        Icon(
+                            painter = painterResource(
+                                if (isSearchActive) R.drawable.arrow_back else R.drawable.arrow_back,
+                            ),
+                            contentDescription = null,
+                        )
+                    }
+                },
+                actions = {
+                    if (!isSearchActive && songs.isNotEmpty()) {
+                        // Search button — toggles the search bar in the title slot.
+                        IconButton(onClick = { isSearchActive = true }) {
+                            Icon(
+                                painter = painterResource(R.drawable.search),
+                                contentDescription = stringResource(R.string.search),
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (allSelected) selectedIds.clear()
+                                else {
+                                    selectedIds.clear()
+                                    selectedIds.addAll(displayedSongs.map { it.songId })
+                                }
+                            },
+                            onLongClick = {},
+                        ) {
+                            Icon(
+                                painter =
+                                    painterResource(
+                                        if (allSelected) R.drawable.player_deselect else R.drawable.select_all,
+                                    ),
+                                contentDescription = null,
+                            )
+                        }
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            if (songs.isNotEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 4.dp,
+                ) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .windowInsetsPadding(
+                                    LocalPlayerAwareWindowInsets.current.only(
+                                        WindowInsetsSides.Horizontal,
+                                    ),
+                                ).padding(16.dp),
+                    ) {
+                        // Count + progress line — full width so the "X of Y selected"
+                        // text never gets squeezed into a vertical strip by the two
+                        // action buttons below it.
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.export_downloaded_songs_selected_count,
+                                    selectedIds.size,
+                                    displayedSongs.size,
+                                ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                        )
+                        if (isExporting || isDeleting) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text =
+                                    if (isExporting) {
+                                        stringResource(
+                                            R.string.export_downloaded_songs_progress,
+                                            exportedCount,
+                                            totalCount,
+                                        )
+                                    } else {
+                                        stringResource(
+                                            R.string.export_downloaded_songs_delete_progress,
+                                            deletedCount,
+                                            totalCount,
+                                        )
+                                    },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // Delete button — destructive action, gated by a confirmation dialog.
+                            OutlinedButton(
+                                onClick = { showDeleteConfirm = true },
+                                enabled = !isExporting && !isDeleting && selectedIds.isNotEmpty(),
+                                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                ),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                if (isDeleting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.delete),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(stringResource(R.string.export_downloaded_songs_delete))
+                            }
+                            FilledTonalButton(
+                                onClick = { pickFolderLauncher.launch(null) },
+                                enabled = !isExporting && !isDeleting && selectedIds.isNotEmpty(),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                if (isExporting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.send),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(stringResource(R.string.export_downloaded_songs_pick_folder))
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+        val playerAwareBottomPadding =
+            LocalPlayerAwareWindowInsets.current
+                .only(WindowInsetsSides.Bottom)
+                .asPaddingValues()
+                .calculateBottomPadding()
+        when {
+            isLoading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
+            }
+            songs.isEmpty() -> {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_download),
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(R.string.export_downloaded_songs_empty),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            displayedSongs.isEmpty() -> {
+                // Search returned no matches — distinct empty state from "no songs at all".
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.search_off),
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(R.string.export_downloaded_songs_search_empty, searchQuery),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding =
+                        PaddingValues(
+                            top = innerPadding.calculateTopPadding(),
+                            bottom = playerAwareBottomPadding + 120.dp,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(displayedSongs, key = { it.songId }) { row ->
+                        val isSelected = row.songId in selectedIds
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isSelected) selectedIds.remove(row.songId)
+                                        else selectedIds.add(row.songId)
+                                    }.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (!row.thumbnailUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = row.thumbnailUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.music_note),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = row.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (row.artist.isNotBlank()) {
+                                    Text(
+                                        text = row.artist,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant
+                                            },
+                                        ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.check),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Delete confirmation dialog — destructive action needs an explicit OK.
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(R.string.export_downloaded_songs_delete_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.export_downloaded_songs_delete_confirm_message,
+                        selectedIds.size,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        deleteSelected()
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text(stringResource(R.string.export_downloaded_songs_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
+}
+
+/**
+ * A song's cached spans plus the key they were found under: a source prefix (the container is
+ * then sniffed from the bytes) or null for the bare media id, i.e. a YouTube Music copy.
+ */
+private data class ResolvedSpansWithSource(
+    val spans: java.util.NavigableSet<androidx.media3.datasource.cache.CacheSpan>,
+    val sourceKey: String?,
+)
+
+private fun resolveSpansWithSource(
+    cache: androidx.media3.datasource.cache.Cache,
+    songId: String,
+): ResolvedSpansWithSource? {
+    for (key in DownloadSourceConfig.cacheKeysFor(songId)) {
+        val spans = cache.getCachedSpans(key)
+        if (spans.isNotEmpty()) {
+            val sourceKey = key.takeIf { it != songId }
+            return ResolvedSpansWithSource(spans, sourceKey)
+        }
+    }
+    return null
+}
+
+/**
+ * Fetches the raw bytes of an album-art image from [url] so they can be embedded into the exported
+ * audio file via [AudioTagger].
+ */
+private fun fetchArtworkBytes(url: String): ByteArray? = runCatching {
+    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    connection.connectTimeout = 10_000
+    connection.readTimeout = 15_000
+    connection.requestMethod = "GET"
+    connection.setRequestProperty("User-Agent", "ArchiveTune")
+    connection.instanceFollowRedirects = true
+    connection.useCaches = true
+    try {
+        val responseCode = connection.responseCode
+        if (responseCode !in 200..299) return@runCatching null
+        val contentType = connection.contentType ?: ""
+        // Only accept image/* content types — a misconfigured CDN
+        // returning HTML (e.g. a login redirect) would corrupt the
+        // embedded artwork if we wrote it verbatim.
+        if (!contentType.startsWith("image/")) return@runCatching null
+        connection.inputStream.use { it.readBytes() }
+    } finally {
+        connection.disconnect()
+    }
+}.getOrNull()
+
+/** Resolves the metadata to embed into an exported audio file. */
+private suspend fun resolveExportMetadata(
+    database: moe.rukamori.archivetune.db.MusicDatabase,
+    row: DownloadedSongRow,
+    isYouTubeSource: Boolean,
+): moe.rukamori.archivetune.playback.AudioTagger.Metadata {
+    val songEntity = database.getSongByIdBlocking(row.songId)
+
+    // Title — fall back to the row's title (which already has a sensible
+    // "Unknown song (id)" default), then to YouTube.getMediaInfo.
+    val dbTitle = songEntity?.song?.title?.takeIf(String::isNotBlank)
+    val title = dbTitle ?: row.title.takeIf { it.isNotBlank() }
+
+    // Artist — from song_artist_map, then YouTube.getMediaInfo's author,
+    // then empty (AudioTagger skips blank fields).
+    val dbArtists = songEntity?.artists?.mapNotNull { it.name.takeIf(String::isNotBlank) }
+        ?.takeIf { it.isNotEmpty() }
+    val dbArtistStr = dbArtists?.joinToString(", ")
+
+    // Album — from song_album_map → song.album.title, then song.albumName,
+    // then null (skipped).
+    val dbAlbum = songEntity?.album?.title?.takeIf(String::isNotBlank)
+        ?: songEntity?.song?.albumName?.takeIf(String::isNotBlank)
+
+    // Year — from song.year (set when the album was browsed).
+    val dbYear = songEntity?.song?.year?.takeIf { it > 0 }
+
+    // Thumbnail URL — prefer the DB row's URL (which is the high-quality
+    // version set when the song was inserted), fall back to the row's
+    // thumbnailUrl (loaded at screen entry — may be the same or a
+    // lower-res variant).
+    val dbThumb = songEntity?.song?.thumbnailUrl?.takeIf(String::isNotBlank)
+    val thumbUrl = dbThumb ?: row.thumbnailUrl?.takeIf(String::isNotBlank)
+
+    // Fast path: if the DB has all the metadata we need, skip the
+    // YouTube.getMediaInfo() network call entirely.
+    val hasFullMetadata = title != null && !dbArtistStr.isNullOrBlank() && thumbUrl != null
+    if (hasFullMetadata) {
+        val artworkBytes = thumbUrl?.let { fetchArtworkBytes(it) }
+        return moe.rukamori.archivetune.playback.AudioTagger.Metadata(
+            title = title,
+            artist = dbArtistStr,
+            albumArtist = dbArtists?.firstOrNull(),
+            album = dbAlbum,
+            year = dbYear,
+            artworkBytes = artworkBytes,
+        )
+    }
+
+    // Fallback: query YouTube.getMediaInfo() for title/author. The watch endpoint always
+    // returns the author, which the DB row may lack when it was inserted from a playlist
+    // context (not a full browse), where the artist relation is often not persisted.
+    //
+    // mediaInfo.authorThumbnail is deliberately ignored — that's the channel's avatar,
+    // not the song's album cover. The song thumbnail is constructed from the videoId
+    // below when isYouTubeSource is true.
+    val mediaInfo = runCatching {
+        if (isYouTubeSource) {
+            moe.rukamori.archivetune.innertube.YouTube.getMediaInfo(row.songId).getOrNull()
+        } else {
+            null
+        }
+    }.getOrNull()
+
+    val resolvedTitle = title
+        ?: mediaInfo?.title?.takeIf(String::isNotBlank)
+        ?: row.title
+    val resolvedArtist = dbArtistStr
+        ?: mediaInfo?.author?.takeIf(String::isNotBlank)
+        ?: ""
+    // Construct the YouTube song-thumbnail URL from the videoId when no
+    // DB thumbnail was available. This is the canonical pattern YouTube
+    // uses for all public video thumbnails — `hqdefault.jpg` is always
+    // present (480×360, letterboxed for non-16:9 videos) and is small
+    // enough (~30 KB) to embed without bloating the audio file.
+    val resolvedThumb = thumbUrl
+        ?: if (isYouTubeSource) "https://i.ytimg.com/vi/${row.songId}/hqdefault.jpg" else null
+
+    val artworkBytes = resolvedThumb?.let { fetchArtworkBytes(it) }
+
+    return moe.rukamori.archivetune.playback.AudioTagger.Metadata(
+        title = resolvedTitle?.takeIf(String::isNotBlank),
+        artist = resolvedArtist.takeIf(String::isNotBlank),
+        albumArtist = (dbArtists?.firstOrNull() ?: mediaInfo?.author)?.takeIf(String::isNotBlank),
+        album = dbAlbum,
+        year = dbYear,
+        artworkBytes = artworkBytes,
+    )
+}

@@ -1,0 +1,23 @@
+<resources>
+    <string name="m6_amazon_audio_quality">Preferred audio quality</string>
+    <string name="m6_amazon_quality_ultra_hd">Ultra HD (24-bit)</string>
+    <string name="m6_amazon_quality_hd">HD (16-bit lossless)</string>
+    <string name="m6_amazon_quality_standard">Standard</string>
+    <string name="m6_amazon_instances">Amazon instances</string>
+    <string name="m6_amazon_instances_hint">One URL per line</string>
+    <string name="m6_amazon_instances_empty">None configured — add an instance URL to enable Amazon playback</string>
+    <string name="m6_amazon_instances_count">%1$d instance(s) configured</string>
+    <string name="m6_amazon_pool_instances">Pool instances</string>
+    <string name="m6_amazon_pool_instances_count">%1$d available from the pool — tried after your own</string>
+    <string name="m6_amazon_pool_instances_empty">None collected by the pool yet. Add your own instance above to use this source.</string>
+    <string name="m6_amazon_authorize">Authorize with Turnstile</string>
+    <string name="m6_amazon_authorize_description">Solves the Cloudflare challenge in a WebView and stores the access JWT.</string>
+    <string name="m6_amazon_jwt_status">Authorization</string>
+    <string name="m6_amazon_jwt_status_valid_until">Valid until %1$s</string>
+    <string name="m6_amazon_jwt_status_expired">Expired — authorize again</string>
+    <string name="m6_amazon_jwt_status_never">Never authorized</string>
+    <string name="m6_amazon_bypass_token">Bypass token</string>
+    <string name="m6_amazon_bypass_token_description">Operator-issued API key or bypass token. Sent as a Bearer API key to newer instances and as bypass_token to older ones. Alternative to Turnstile.</string>
+    <string name="m6_amazon_bypass_token_set">Set · ****%1$s — tap to replace</string>
+    <string name="m6_amazon_bypass_token_hint">Paste bypass token</string>
+</resources>

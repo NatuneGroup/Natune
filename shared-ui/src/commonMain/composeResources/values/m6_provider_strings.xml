@@ -1,0 +1,11 @@
+<resources>
+    <string name="m6_move_up">Up</string>
+    <string name="m6_move_down">Down</string>
+    <string name="m6_done">Done</string>
+    <string name="m6_pax_requests">Requests: %1$d</string>
+    <string name="m6_pax_success">Success rate: %1$s</string>
+    <string name="m6_pax_uptime">Uptime (seconds): %1$d</string>
+    <string name="m6_endpoint_available">Available</string>
+    <string name="m6_endpoint_retired">Retired</string>
+    <string name="m6_endpoint_unreachable">Unreachable</string>
+</resources>

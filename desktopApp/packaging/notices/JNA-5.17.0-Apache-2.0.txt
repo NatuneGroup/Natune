@@ -1,0 +1,9 @@
+JNA 5.17.0 (net.java.dev.jna:jna)
+
+Bundled component: Java Native Access 5.17.0, used by the desktop host for the native file-chooser and vault bridges.
+Source: https://github.com/java-native-access/jna at tag 5.17.0.
+
+Licence elected: Apache License, Version 2.0.
+The upstream LICENSE declares "SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later". This distribution takes the
+Apache-2.0 option, so the LGPL-2.1-or-later option is not relied on. The full text of the Apache License, Version 2.0
+is shipped beside this file as Apache-2.0.txt and applies to JNA in this package.

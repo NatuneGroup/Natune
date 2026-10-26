@@ -1,0 +1,29 @@
+<resources>
+    <string name="m6_android_auto_title">Android Auto</string>
+    <string name="m6_android_auto_connection">Connection</string>
+    <string name="m6_android_auto_disconnected">Not connected</string>
+    <string name="m6_android_auto_projection">Connected to Android Auto</string>
+    <string name="m6_android_auto_native">Running on Android Automotive</string>
+    <string name="m6_android_auto_app_permissions">App permissions</string>
+    <string name="m6_android_auto_content">Content</string>
+    <string name="m6_android_auto_online_recommendations">Online recommendations</string>
+    <string name="m6_android_auto_online_recommendations_desc">Show suggested songs, mixes and radio while driving</string>
+    <string name="m6_android_auto_online_voice_search">Online voice search</string>
+    <string name="m6_android_auto_online_voice_search_desc">Include online results when you ask for music</string>
+    <string name="m6_android_auto_local_songs">Device songs</string>
+    <string name="m6_android_auto_local_songs_desc">Include audio stored on this device</string>
+    <string name="m6_android_auto_audio_permission_missing">Audio permission is required to browse device songs</string>
+    <string name="m6_android_auto_data">Mobile data</string>
+    <string name="m6_android_auto_metered_playback">Stream on metered networks</string>
+    <string name="m6_android_auto_metered_playback_desc">Allow online playback over mobile or metered data</string>
+    <string name="m6_android_auto_metered_artwork">Load artwork on metered networks</string>
+    <string name="m6_android_auto_metered_artwork_desc">Artwork may use additional mobile data</string>
+    <string name="m6_android_auto_controls">Playback controls</string>
+    <string name="m6_android_auto_primary_action">Primary action</string>
+    <string name="m6_android_auto_secondary_action">Secondary action</string>
+    <string name="m6_android_auto_action_like">Like</string>
+    <string name="m6_android_auto_action_radio">Start radio</string>
+    <string name="m6_android_auto_action_shuffle">Shuffle</string>
+    <string name="m6_android_auto_action_repeat">Repeat</string>
+    <string name="m6_android_auto_action_none">None</string>
+</resources>

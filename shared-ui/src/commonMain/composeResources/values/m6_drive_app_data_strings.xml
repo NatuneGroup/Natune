@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="m6_drive_app_data_title">Google Drive backup</string>
+    <string name="m6_drive_app_data_account">Google account</string>
+    <string name="m6_drive_app_data_choose_account">Choose an account</string>
+    <string name="m6_drive_app_data_last_backup">Last backup</string>
+    <string name="m6_drive_app_data_no_backup">No backup found</string>
+    <string name="m6_drive_app_data_details">%1$s · %2$s</string>
+    <string name="m6_drive_app_data_contents">Back up your library, settings and accounts to private app storage in Google Drive. Downloaded audio is not uploaded.</string>
+    <string name="m6_drive_app_data_now">Back up to Google Drive</string>
+    <string name="m6_drive_app_data_restore">Restore from Google Drive</string>
+    <string name="m6_drive_app_data_restore_description">Download your latest backup and choose what to restore. Restoring replaces the selected data and restarts the app.</string>
+    <string name="m6_drive_app_data_frequency_manual">Only when I tap Back up</string>
+    <string name="m6_drive_app_data_wifi_only">Back up using Wi-Fi only</string>
+    <string name="m6_drive_app_data_wifi_description">Use an unmetered connection for manual and automatic uploads.</string>
+    <string name="m6_drive_app_data_disconnect">Disconnect account</string>
+    <string name="m6_drive_app_data_disconnect_description">Stop automatic backups on this device. Your Google Drive backup is kept.</string>
+    <string name="m6_drive_app_data_loading">Checking Google Drive…</string>
+    <string name="m6_drive_app_data_preparing">Preparing backup…</string>
+    <string name="m6_drive_app_data_uploading">Uploading backup…</string>
+    <string name="m6_drive_app_data_downloading">Downloading and verifying backup…</string>
+    <string name="m6_drive_app_data_waiting">Waiting for a connection and available background resources…</string>
+    <string name="m6_drive_app_data_authorization_failed">Google Drive access is unavailable. Choose your Google account again and grant access. Google Play services must be available.</string>
+    <string name="m6_drive_app_data_configuration_error">Google Drive is not configured for this app installation.</string>
+    <string name="m6_drive_app_data_network_error">Could not reach Google Drive. Check your connection and try again.</string>
+    <string name="m6_drive_app_data_quota_error">Your Google Drive storage is full. Free some space and try again.</string>
+    <string name="m6_drive_app_data_not_found">This backup is no longer available in Google Drive.</string>
+    <string name="m6_drive_app_data_storage_error">Not enough storage, or the backup exceeds the supported size.</string>
+    <string name="m6_drive_app_data_failed">The Google Drive operation failed. Please try again.</string>
+</resources>

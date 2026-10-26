@@ -1,0 +1,6 @@
+<resources>
+    <string name="m4_home_welcome_line">Hi, %1$s 🔥</string>
+    <string name="m4_home_welcome_line_anonymous">Hi, Welcome Back 🔥</string>
+    <string name="m4_home_headline_line1">Listen to Your</string>
+    <string name="m4_home_headline_line2">Favourite Music</string>
+</resources>

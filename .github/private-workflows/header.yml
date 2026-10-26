@@ -1,0 +1,30 @@
+# Staged private adaptation of the inherited kotlin header workflow. Inert here: GitHub runs only files directly in
+# .github/workflows/, and this copy moves there only after the import-gate disposition and the final CI
+# authorization. Manual or reusable-call only: no push, pull request, schedule or issue trigger. Results are
+# not verification until the final candidate run completes.
+name: Kotlin Header
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full 40-character private dev commit to check (must equal the checked-out head)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  kotlin-header:
+    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preserve existing copyright and validate candidate banners
+        run: python3 scripts/check_repository.py --base HEAD~1 --headers-only

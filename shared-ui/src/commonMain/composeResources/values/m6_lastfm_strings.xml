@@ -1,0 +1,28 @@
+<resources>
+    <string name="m6_lastfm_connect_button">Connect with Last.fm</string>
+    <string name="m6_lastfm_connect_button_description">Opens a one-tap Last.fm web sign-in. No API key or password needed.</string>
+    <string name="m6_lastfm_connect_librefm_button">Connect with Libre.fm</string>
+    <string name="m6_lastfm_connect_librefm_button_description">One-tap Libre.fm web sign-in. Uses the same API key as Last.fm.</string>
+    <string name="m6_lastfm_connect_custom_button">Custom endpoint</string>
+    <string name="m6_lastfm_connect_custom_button_description">Self-hosted GNU FM / ListenBrainz-compatible scrobbler. Enter endpoint, API key, and shared secret.</string>
+    <string name="m6_lastfm_custom_endpoint">Custom endpoint</string>
+    <string name="m6_lastfm_endpoint_invalid">Enter a valid HTTP or HTTPS endpoint.</string>
+    <string name="m6_lastfm_api_key_override">API key</string>
+    <string name="m6_lastfm_secret_override">Shared secret</string>
+    <string name="m6_lastfm_api_credentials_hint">Leave credentials blank for compatible services that accept arbitrary API keys and shared secrets.</string>
+    <string name="m6_action_logout">Log out</string>
+    <string name="m6_enable_scrobbling">Enable Scrobbling</string>
+    <string name="m6_lastfm_now_playing">Now playing</string>
+    <string name="m6_lastfm_send_loves">Love liked songs</string>
+    <string name="m6_lastfm_send_loves_desc">Liking or unliking a song also loves or unloves it on your scrobbling account</string>
+    <string name="m6_lastfm_pending_scrobbles_title">Scrobbles waiting to be sent</string>
+    <string name="m6_lastfm_pending_one">%1$d play is saved and will be sent when the service can be reached</string>
+    <string name="m6_lastfm_pending_other">%1$d plays are saved and will be sent when the service can be reached</string>
+    <string name="m6_lastfm_pending_scrobbles_send_now">Send now</string>
+    <string name="m6_lastfm_prefer_yt_thumbnails">Prefer YouTube thumbnails</string>
+    <string name="m6_lastfm_prefer_yt_thumbnails_desc">Use 16:9 YouTube artwork instead of Last.fm images.</string>
+    <string name="m6_scrobble_min_track_duration">Minimum Track Duration</string>
+    <string name="m6_scrobble_delay_percent">Scrobble Delay Percent</string>
+    <string name="m6_scrobble_delay_minutes">Scrobble Delay (Seconds)</string>
+    <string name="m6_duration_seconds_short">%1$ds</string>
+</resources>

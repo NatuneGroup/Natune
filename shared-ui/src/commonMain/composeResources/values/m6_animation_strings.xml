@@ -1,0 +1,15 @@
+<resources>
+    <string name="m6_line_bounce">Line bounce effect</string>
+    <string name="m6_line_bounce_description">Enable bounce animation for line-synced lyrics</string>
+    <string name="m6_adaptive_scroll">Adaptive scroll spring</string>
+    <string name="m6_adaptive_scroll_description">Match scroll speed to the gap between lines</string>
+    <string name="m6_soft_reveal">Soft word reveal</string>
+    <string name="m6_soft_reveal_description">Feather the sung-word edge with a sliding gradient</string>
+    <string name="m6_last_word">Emphasize last word</string>
+    <string name="m6_last_word_description">Replay the final word with per-character glow and float</string>
+    <string name="m6_interlude_dots">Interlude dots</string>
+    <string name="m6_interlude_dots_description">Show breathing dots during instrumental breaks</string>
+    <string name="m6_bounce_amplitude">Bounce amplitude</string>
+    <string name="m6_glow_intensity">Glow intensity</string>
+    <string name="m6_fill_smoothness">Fill transition smoothness</string>
+</resources>

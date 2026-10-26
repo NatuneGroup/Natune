@@ -1,0 +1,33 @@
+<resources>
+    <string name="m4lf_title">Last.fm</string>
+    <string name="m4lf_list">List</string>
+    <string name="m4lf_filter_recent">Recent</string>
+    <string name="m4lf_filter_top_tracks">Top Tracks</string>
+    <string name="m4lf_filter_top_artists">Top Artists</string>
+    <string name="m4lf_filter_top_albums">Top Albums</string>
+    <string name="m4lf_start_mix">Start Mix with this Song</string>
+    <string name="m4lf_genre">Genre</string>
+    <string name="m4lf_unknown_genre">Unknown</string>
+    <string name="m4lf_play_in_natune">Play in ArchiveTune</string>
+    <string name="m4lf_play_next">Play next</string>
+    <string name="m4lf_add_to_queue">Add to queue</string>
+    <string name="m4lf_add_to_playlist">Add to playlist</string>
+    <string name="m4lf_open_in_lastfm">Open in Last.fm</string>
+    <string name="m4lf_copy_song">Copy Song</string>
+    <string name="m4lf_song_copied">Song copied to clipboard</string>
+    <string name="m4lf_no_yt_match">Couldn’t find this song on YouTube</string>
+    <string name="m4lf_player_unavailable">Player not ready. Try again in a moment.</string>
+    <string name="m4lf_search_placeholder">Search scrobbles</string>
+    <string name="m4lf_clear_search">Clear search</string>
+    <string name="m4lf_no_search_results">No matching tracks.</string>
+    <string name="m4lf_no_recent_tracks">No recent tracks to show.</string>
+    <string name="m4lf_no_top_tracks">No top tracks to show.</string>
+    <string name="m4lf_no_top_artists">No top artists to show.</string>
+    <string name="m4lf_no_top_albums">No top albums to show.</string>
+    <string name="m4lf_playcount">%1$d scrobbles</string>
+    <string name="m4lf_repeat_count">×%1$d</string>
+    <string name="m4lf_scrobbles">Scrobbles</string>
+    <string name="m4lf_sign_in_required">Sign in to Last.fm</string>
+    <string name="m4lf_sign_in_required_desc">Connect your Last.fm account to view your listening dashboard, recent tracks, and top tracks.</string>
+    <string name="m4lf_sign_in_button">Sign in to Last.fm</string>
+</resources>

@@ -1,0 +1,24 @@
+// Consumes the static iOS closure written by scripts/build_ios_native_core.sh (macOS and Xcode only; not run on Linux).
+// Keep the -l names below in step with that script's CLOSURE_ARCHIVES list, in the same dependency order.
+// Never point an iOS linker at desktop binaries or recovered reference libraries.
+ARCHIVETUNE_NATIVE_ROOT = $(SRCROOT)/../shared-data/build/ios-native/$(PLATFORM_NAME)
+FRAMEWORK_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../shared-ui/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/Native" "$(SRCROOT)/../desktopApp/native/include"
+LIBRARY_SEARCH_PATHS = $(inherited) "$(ARCHIVETUNE_NATIVE_ROOT)/lib"
+OTHER_LDFLAGS = $(inherited) -framework ArchiveTuneShared -larchivetune_engine -lavfilter -lavformat -lavcodec -lswscale -lswresample -lavutil -lssl -lcrypto -lxml2 -lz -liconv -lc++ -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework QuartzCore -framework MediaPlayer -framework Security -framework AuthenticationServices -framework WebKit -framework SystemConfiguration
+CLANG_ENABLE_MODULES = YES
+CLANG_ENABLE_OBJC_ARC = YES
+CLANG_CXX_LANGUAGE_STANDARD = c++17
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+IPHONEOS_DEPLOYMENT_TARGET = 16.0
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+SUPPORTS_MACCATALYST = NO
+SWIFT_VERSION = 5.0
+TARGETED_DEVICE_FAMILY = 1,2
+PRODUCT_BUNDLE_IDENTIFIER = moe.rukamori.archivetune
+PRODUCT_NAME = ArchiveTune
+INFOPLIST_FILE = ArchiveTune/Info.plist
+GENERATE_INFOPLIST_FILE = NO
+CURRENT_PROJECT_VERSION = 1
+MARKETING_VERSION = 0.1.0
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks

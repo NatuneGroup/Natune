@@ -1,0 +1,9 @@
+<resources>
+    <string name="m4_feedback_later">Later</string>
+    <string name="m4_feedback_send">Send</string>
+    <string name="m4_feedback_building">Preparing report…</string>
+    <string name="m4_feedback_building_failed">The report could not be prepared.</string>
+    <string name="m4_feedback_note_hint">Optional note for the developer</string>
+    <string name="m4_feedback_note_limit">Up to %1$d characters</string>
+    <string name="m4_feedback_send_failed">Could not send: %1$s</string>
+</resources>

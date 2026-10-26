@@ -1,0 +1,11 @@
+<resources>
+    <string name="m6_download">Download</string>
+    <string name="m6_downloading">Downloading</string>
+    <string name="m6_remove_download">Remove download</string>
+    <string name="m6_pin_speed_dial">Pin to speed dial</string>
+    <string name="m6_remove_speed_dial">Remove from speed dial</string>
+    <string name="m6_start_radio">Start radio</string>
+    <string name="m6_subscribe">Subscribe</string>
+    <string name="m6_subscribed">Subscribed</string>
+    <string name="m6_hide_from_home">Hide from home</string>
+</resources>

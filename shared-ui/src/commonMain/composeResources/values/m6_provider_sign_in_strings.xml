@@ -1,0 +1,26 @@
+<resources>
+    <string name="m6_provider_sign_in_start">Sign in</string>
+    <string name="m6_provider_sign_in_cancel">Cancel sign-in</string>
+    <string name="m6_provider_sign_in_opening">Opening the sign-in page…</string>
+    <string name="m6_provider_sign_in_waiting">Finish signing in on the page that opened. The session is saved automatically.</string>
+    <string name="m6_provider_sign_in_verifying">Checking the account…</string>
+    <string name="m6_provider_sign_in_signed_in">Signed in as %1$s</string>
+    <string name="m6_provider_sign_in_failed_unavailable">The sign-in page could not be opened. Check the connection and try again.</string>
+    <string name="m6_provider_sign_in_failed_declined">The sign-in was not completed.</string>
+    <string name="m6_provider_sign_in_failed_rejected">The provider did not accept this sign-in.</string>
+    <string name="m6_provider_sign_in_failed_timed_out">The sign-in timed out before it finished. Start again when you are ready.</string>
+    <string name="m6_provider_sign_in_failed_unverified">The account could not be checked. Try again when you are online.</string>
+    <string name="m6_provider_sign_in_failed_not_saved">The sign-in finished but the session could not be saved. Nothing changed.</string>
+    <string name="m6_provider_sign_in_warning_tidal">This Tidal account is not HiFi or Premium. Lossless playback through Tidal may fail, and playback falls back to YouTube.</string>
+    <string name="m6_provider_sign_in_warning_qobuz_secret">Signed in, but the app secret could not be found. Paste it in the token details to finish.</string>
+    <string name="m6_provider_sign_in_deezer_title">Sign in to Deezer</string>
+    <string name="m6_provider_sign_in_deezer_subtitle">Sign in to Deezer below. The session cookie is saved automatically.</string>
+    <string name="m6_provider_sign_in_tidal_title">Sign in to Tidal</string>
+    <string name="m6_provider_sign_in_tidal_subtitle">Sign in to Tidal below. The session is saved automatically.</string>
+    <string name="m6_provider_sign_in_qobuz_title">Sign in to Qobuz</string>
+    <string name="m6_provider_sign_in_qobuz_subtitle">Sign in to Qobuz below. Your credentials are captured automatically.</string>
+    <string name="m6_provider_sign_in_spotify_title">Sign in to the streaming account</string>
+    <string name="m6_provider_sign_in_spotify_subtitle">Opens a private sign-in that does not share cookies with the Spotify catalog account.</string>
+    <string name="m6_provider_sign_in_discord_title">Connect Discord</string>
+    <string name="m6_provider_sign_in_discord_subtitle">Link your Discord account with OAuth. This alone does not enable Rich Presence.</string>
+</resources>

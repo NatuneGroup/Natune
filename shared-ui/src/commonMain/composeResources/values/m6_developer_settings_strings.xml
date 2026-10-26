@@ -1,0 +1,12 @@
+<resources>
+    <string name="m6_dev_acoustic_quality">Acoustic quality graph</string>
+    <string name="m6_dev_acoustic_quality_desc">Check whether the current song is really full quality.</string>
+    <string name="m6_dev_show_discord_debug">Show Debug UI</string>
+    <string name="m6_dev_show_discord_debug_desc">Enable debug settings lines</string>
+    <string name="m6_dev_show_nerd_stats">Show nerd stats</string>
+    <string name="m6_dev_show_nerd_stats_desc">Display real-time playback statistics (codec, bitrate, buffer)</string>
+    <string name="m6_dev_show_codec">Display Codec on Player</string>
+    <string name="m6_dev_show_codec_desc">Show current audio codec information on the player</string>
+    <string name="m6_dev_debug_logs">Debug Logs</string>
+    <string name="m6_dev_debug_logs_desc">View and filter application logs</string>
+</resources>

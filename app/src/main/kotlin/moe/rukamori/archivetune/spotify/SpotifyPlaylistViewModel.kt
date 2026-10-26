@@ -1,0 +1,186 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+
+package moe.rukamori.archivetune.spotify
+
+import android.content.Context
+import androidx.compose.runtime.Immutable
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.common.collect.ImmutableList
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.TimeoutException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
+import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTracksRef
+import moe.rukamori.archivetune.spotify.models.SpotifyTrack
+import moe.rukamori.archivetune.utils.reportException
+import javax.inject.Inject
+
+@HiltViewModel
+class SpotifyPlaylistViewModel
+    @Inject
+    constructor(
+        savedStateHandle: SavedStateHandle,
+        private val repository: SpotifyLibraryRepository,
+        private val resolveSpotifyPlaylistDownloads: ResolveSpotifyPlaylistDownloadsUseCase,
+        @ApplicationContext private val context: Context,
+    ) : ViewModel() {
+        private val playlistId: String = savedStateHandle.get<String>("playlistId").orEmpty()
+
+        private val _uiState = MutableStateFlow(SpotifyPlaylistUiState(isLoading = true))
+        val uiState: StateFlow<SpotifyPlaylistUiState> = _uiState.asStateFlow()
+
+        private val eventChannel = Channel<SpotifyPlaylistEvent>(Channel.BUFFERED)
+        val events = eventChannel.receiveAsFlow()
+
+        private var reloadJob: Job? = null
+        private var downloadResolutionJob: Job? = null
+
+        init {
+            reload()
+        }
+
+        fun reload() {
+            if (playlistId.isBlank()) {
+                _uiState.value = SpotifyPlaylistUiState(errorMessage = "Missing Spotify playlist")
+                return
+            }
+            // The DJ is not a playlist — see [SPOTIFY_DJ_PLAYLIST_ID]. Fetching it returns nothing
+            // to play, so say why instead of showing an empty list that reads as a failure. The
+            // home feed hands the tile to Spotify before it ever gets here; this catches every
+            // other way in — a deep link, a search result, a stale cached feed.
+            if (isSpotifyDj(playlistId)) {
+                _uiState.value =
+                    SpotifyPlaylistUiState(
+                        isLoading = false,
+                        errorMessage = context.getString(R.string.spotify_dj_unsupported),
+                    )
+                return
+            }
+            reloadJob?.cancel()
+            downloadResolutionJob?.cancel()
+            downloadResolutionJob = null
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    errorMessage = null,
+                    downloadItems = ImmutableList.of(),
+                    isResolvingDownloads = false,
+                )
+            }
+            reloadJob = viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    // Bounded: without it a Spotify call that never answers leaves the page
+                    // spinning for as long as the user is willing to watch it.
+                    val (playlist, tracks) =
+                        withTimeoutOrNull(PLAYLIST_LOAD_TIMEOUT_MS) {
+                            if (playlistId == SPOTIFY_LIKED_SONGS_ID) {
+                                val likedTracks = repository.likedSongs()
+                                SpotifyPlaylist(
+                                    id = playlistId,
+                                    name = context.getString(R.string.liked_songs),
+                                    tracks = SpotifyPlaylistTracksRef(total = likedTracks.size),
+                                ) to likedTracks
+                            } else {
+                                repository.playlistWithTracks(playlistId)
+                            }
+                        } ?: throw TimeoutException(context.getString(R.string.spotify_load_timeout))
+                    _uiState.value =
+                        SpotifyPlaylistUiState(
+                            playlist = playlist,
+                            tracks = tracks,
+                            isLoading = false,
+                        )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    reportException(error)
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: context.getString(R.string.spotify_load_failed),
+                        )
+                    }
+                }
+            }
+        }
+
+        fun resolveDownloads() {
+            val state = _uiState.value
+            if (state.downloadItems.isNotEmpty()) {
+                eventChannel.trySend(SpotifyPlaylistEvent.DownloadsResolved(state.downloadItems))
+                return
+            }
+            if (state.tracks.isEmpty() || downloadResolutionJob?.isActive == true) return
+
+            val tracks = state.tracks
+            downloadResolutionJob =
+                viewModelScope.launch {
+                    _uiState.update { it.copy(isResolvingDownloads = true) }
+                    try {
+                        val items = resolveSpotifyPlaylistDownloads(tracks)
+                        if (items.isEmpty()) {
+                            _uiState.update { it.copy(isResolvingDownloads = false) }
+                            eventChannel.send(SpotifyPlaylistEvent.DownloadResolutionFailed)
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    downloadItems = items,
+                                    isResolvingDownloads = false,
+                                )
+                            }
+                            eventChannel.send(SpotifyPlaylistEvent.DownloadsResolved(items))
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        reportException(error)
+                        _uiState.update { it.copy(isResolvingDownloads = false) }
+                        eventChannel.send(SpotifyPlaylistEvent.DownloadResolutionFailed)
+                    }
+                }
+        }
+
+        private companion object {
+            /** A Spotify call that has not answered in this long is not going to. */
+            const val PLAYLIST_LOAD_TIMEOUT_MS = 20_000L
+        }
+    }
+
+sealed interface SpotifyPlaylistEvent {
+    @Immutable
+    data class DownloadsResolved(
+        val items: ImmutableList<SpotifyDownloadItem>,
+    ) : SpotifyPlaylistEvent
+
+    data object DownloadResolutionFailed : SpotifyPlaylistEvent
+}
+
+@Immutable
+data class SpotifyPlaylistUiState(
+    val playlist: SpotifyPlaylist? = null,
+    val tracks: List<SpotifyTrack> = emptyList(),
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val downloadItems: ImmutableList<SpotifyDownloadItem> = ImmutableList.of(),
+    val isResolvingDownloads: Boolean = false,
+)

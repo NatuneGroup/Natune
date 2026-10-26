@@ -1,0 +1,26 @@
+<resources>
+    <string name="m4_telegram_bot_chat_title">@%1$s</string>
+    <string name="m4_telegram_bot_chat_hint">Paste a song link (Spotify, YouTube, SoundCloud…)</string>
+    <string name="m4_telegram_bot_send">Send</string>
+    <string name="m4_telegram_bot_missing">Bot not found — tap to go back</string>
+    <string name="m4_telegram_bot_waiting">Bot is fetching your song…</string>
+    <string name="m4_telegram_bot_no_reply">The bot didn’t reply with an audio file within 60 seconds. Try another link or another bot.</string>
+    <string name="m4_telegram_bot_results">%1$d track(s) returned</string>
+    <string name="m4_telegram_bot_play_all">Play all</string>
+    <string name="m4_telegram_bot_stream">Stream</string>
+    <string name="m4_telegram_bot_download">Download</string>
+    <string name="m4_telegram_bot_add_to_playlist">Add to playlist</string>
+    <string name="m4_telegram_bot_forwarded">Forwarded to your channel</string>
+    <string name="m4_telegram_bot_forward_failed">Couldn’t forward to your channel: %1$s</string>
+    <string name="m4_telegram_cmd_start">Initialize / restart the bot</string>
+    <string name="m4_telegram_cmd_help">Show the bot’s help / usage guide</string>
+    <string name="m4_telegram_cmd_search">Search for a song by name or artist</string>
+    <string name="m4_telegram_cmd_download">Download a song from a link or search query</string>
+    <string name="m4_telegram_cmd_song">Search for a song by name</string>
+    <string name="m4_telegram_cmd_music">Search for music by query</string>
+    <string name="m4_telegram_cmd_lyrics">Fetch lyrics for a song</string>
+    <string name="m4_telegram_cmd_flac">Request FLAC (lossless) quality</string>
+    <string name="m4_telegram_cmd_alac">Request ALAC (Apple Lossless) quality</string>
+    <string name="m4_telegram_cmd_mp3">Request MP3 (lossy) quality</string>
+    <string name="m4_telegram_cmd_cancel">Cancel the current operation</string>
+</resources>

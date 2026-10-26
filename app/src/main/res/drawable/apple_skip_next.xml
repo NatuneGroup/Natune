@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Ported from vivizzz007/vivi-music (GPL-3.0, https://github.com/vivizzz007/vivi-music):
+    app/src/main/res/drawable/apple_skip_next.xml on beta (Player_V2 transport set). The
+    theme-dependent android:tint attr is stripped — AppleMusicTransportButton applies its own tint.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:fillColor="@android:color/white"
+      android:strokeColor="@android:color/white"
+      android:strokeWidth="60"
+      android:strokeLineJoin="round"
+      android:strokeLineCap="round"
+      android:pathData="M85.93,732.51L85.93,227.49L455.49,480L85.93,732.51ZM505.18,732.51L505.18,227.49L874.74,480L505.18,732.51Z"/>
+</vector>

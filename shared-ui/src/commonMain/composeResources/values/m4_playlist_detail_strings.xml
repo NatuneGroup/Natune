@@ -1,0 +1,11 @@
+<resources>
+    <string name="m4_sort_date_added">Date added</string>
+    <string name="m4_sort_artist">Artist</string>
+    <string name="m4_sort_play_time">Play time</string>
+    <string name="m4_period_all_time">All time</string>
+    <string name="m4_period_past_24_hours">Past 24 hours</string>
+    <string name="m4_period_past_week">Past week</string>
+    <string name="m4_period_past_month">Past month</string>
+    <string name="m4_period_past_year">Past year</string>
+    <string name="m4_drag_to_reorder">Drag to reorder</string>
+</resources>

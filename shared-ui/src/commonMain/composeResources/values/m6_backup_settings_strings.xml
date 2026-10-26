@@ -1,0 +1,23 @@
+<resources>
+    <string name="m6_backup_section_internal">Internal Service</string>
+    <string name="m6_backup_action_create">Backup</string>
+    <string name="m6_backup_action_restore">Restore</string>
+    <string name="m6_backup_create_description">Export library, settings, and account details.</string>
+    <string name="m6_backup_restore_description">Select a backup file to restore.</string>
+    <string name="m6_backup_options_title">What to back up?</string>
+    <string name="m6_backup_restore_options_title">What to restore?</string>
+    <string name="m6_backup_category_library">Library Data</string>
+    <string name="m6_backup_category_library_desc">Playlists, songs, history &amp; artists</string>
+    <string name="m6_backup_category_account">Account Details</string>
+    <string name="m6_backup_category_account_desc">YouTube, Spotify, Last.fm, Libre.fm, Discord &amp; proxy credentials</string>
+    <string name="m6_backup_category_settings">App Settings</string>
+    <string name="m6_backup_category_settings_desc">Appearance, playback &amp; preferences</string>
+    <string name="m6_backup_create_success">Backup created successfully</string>
+    <string name="m6_backup_create_failed">Couldn\'t create backup</string>
+    <string name="m6_backup_restore_success">Backup restored successfully</string>
+    <string name="m6_backup_restore_failed">Failed to restore backup</string>
+    <string name="m6_backup_invalid_file">The selected file is not a valid backup archive.</string>
+    <string name="m6_backup_no_restorable_data">The backup archive does not contain any restorable data.</string>
+    <string name="m6_backup_corrupted">The backup file appears to be corrupted and could not be read.</string>
+    <string name="m6_backup_ok">OK</string>
+</resources>

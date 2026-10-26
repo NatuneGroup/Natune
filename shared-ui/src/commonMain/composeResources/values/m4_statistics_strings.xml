@@ -1,0 +1,34 @@
+<resources>
+    <string name="m4_continuous">Continuous</string>
+    <string name="m4_weeks">Weeks</string>
+    <string name="m4_months">Months</string>
+    <string name="m4_years">Years</string>
+    <string name="m4_stats_complete">Listening recorded in your local library.</string>
+    <string name="m4_stats_loaded">Based only on loaded YouTube history. This is not your complete listening history.</string>
+    <string name="m4_stats_recent">Based only on recently played Spotify items. Older listening is not included.</string>
+    <string name="m4_stats_rate_limited">History is temporarily rate limited. Try again later.</string>
+    <string name="m4_stats_plays">%1$d plays</string>
+    <string name="m4_stats_listening">Listening time: %1$s</string>
+    <string name="m4_stats_unique_songs">%1$d unique songs</string>
+    <string name="m4_stats_unique_artists">%1$d unique artists</string>
+    <string name="m4_stats_unique_albums">%1$d unique albums</string>
+    <string name="m4_stats_rank_detail">%1$d plays · %2$s</string>
+    <string name="m4_stats_hour">%1$d:00</string>
+    <string name="m4_stats_no_clock_times">This history reports days, not exact times. Hourly listening is unavailable.</string>
+    <string name="m4_artist_distribution">Artist breakdown</string>
+    <string name="m4_listening_patterns">Listening patterns</string>
+    <string name="m4_top_songs">Top songs</string>
+    <string name="m4_show_less">Show less</string>
+    <string name="m4_recap_intro">Your year in music</string>
+    <string name="m4_recap_totals">Your listening, in numbers</string>
+    <string name="m4_recap_top_song">Your top track</string>
+    <string name="m4_recap_artists">Your top artists</string>
+    <string name="m4_recap_albums">Your top albums</string>
+    <string name="m4_recap_summary">Your musical passport</string>
+    <string name="m4_recap_empty">No listening data for %1$d</string>
+    <string name="m4_recap_previous">Previous card</string>
+    <string name="m4_recap_next">Next card</string>
+    <string name="m4_recap_card_count">Card %1$d of %2$d</string>
+    <string name="m4_recap_share">Share current card</string>
+    <string name="m4_recap_share_failed">Could not prepare or share this card. Try again.</string>
+</resources>

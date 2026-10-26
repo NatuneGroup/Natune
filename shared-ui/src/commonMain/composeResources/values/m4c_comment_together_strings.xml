@@ -1,0 +1,35 @@
+<resources>
+    <!-- Comment Together chat, ported from the Android CommentTogether screen. -->
+    <string name="m4c_comments">Chat</string>
+    <string name="m4c_room_code">Room: %1$s</string>
+    <string name="m4c_back">Back</string>
+    <string name="m4c_close">Close</string>
+    <string name="m4c_type_message">Type a message…</string>
+    <string name="m4c_send">Send</string>
+    <string name="m4c_pick_song">Share a song</string>
+    <string name="m4c_unsupported_server">Chat is not supported by this server</string>
+    <string name="m4c_edit_message">Edit message</string>
+    <string name="m4c_typing">typing…</string>
+    <string name="m4c_no_messages_title">No messages yet</string>
+    <string name="m4c_no_messages_body">Start the conversation!</string>
+    <string name="m4c_older_messages">Older messages</string>
+    <string name="m4c_reply">Reply</string>
+    <string name="m4c_copy">Copy</string>
+    <string name="m4c_edit">Edit</string>
+    <string name="m4c_delete">Delete</string>
+    <string name="m4c_delete_for_everyone">Delete for everyone</string>
+    <string name="m4c_pin">Pin</string>
+    <string name="m4c_unpin">Unpin</string>
+    <string name="m4c_all_emojis">All emojis</string>
+    <string name="m4c_message_deleted">This message was deleted</string>
+    <string name="m4c_edited">edited</string>
+    <string name="m4c_play_song">Play song in the room</string>
+    <string name="m4c_message_copied">Message copied</string>
+    <string name="m4c_nothing_playing">Nothing is playing right now</string>
+    <string name="m4c_pinned_position">%1$d of %2$d</string>
+    <string name="m4c_pick_song_hint">Search songs to share</string>
+    <string name="m4c_pick_song_no_results">No results found</string>
+    <string name="m4c_pick_song_failed">Search failed</string>
+    <string name="m4c_now_playing">Now playing</string>
+    <string name="m4c_share_song">Share the current song in the chat</string>
+</resources>

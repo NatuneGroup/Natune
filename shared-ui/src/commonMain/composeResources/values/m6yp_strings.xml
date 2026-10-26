@@ -1,0 +1,28 @@
+<resources>
+    <string name="m6yp_start_radio">Start radio</string>
+    <string name="m6yp_import_playlist">Import playlist</string>
+    <string name="m6yp_import_failed">Import failed</string>
+    <string name="m6yp_update_button">Update</string>
+    <string name="m6yp_ok">OK</string>
+    <string name="m6yp_pin_to_speed_dial">Pin to speed dial</string>
+    <string name="m6yp_remove_from_speed_dial">Remove from speed dial</string>
+    <string name="m6yp_yt_sync">Auto sync with account</string>
+    <string name="m6yp_remove_download">Remove download</string>
+    <string name="m6yp_downloading">Downloading</string>
+    <string name="m6yp_action_download">Download</string>
+    <string name="m6yp_remove_download_playlist_confirm">Do you really want to remove all “%s” playlist songs from the Downloaded Songs storage?</string>
+    <string name="m6yp_already_in_playlist">Already in playlist:</string>
+    <string name="m6yp_playlist_synced">Playlist synced</string>
+    <string name="m6yp_added_to_playlist">Added to %s</string>
+    <string name="m6yp_added_n_songs_to_playlist">Added %1$d songs to %2$s</string>
+    <string name="m6yp_added_to_n_playlists">Added to %d playlists</string>
+    <string name="m6yp_added_n_songs_to_n_playlists">Added %1$d songs to %2$d playlists</string>
+    <string name="m6yp_youtube_playlist_loading">Loading the finite YouTube playlist…</string>
+    <string name="m6yp_youtube_playlist_incomplete">The playlist could not be loaded completely. Known tracks are kept. Retry, or reload the playlist from the beginning.</string>
+    <string name="m6yp_youtube_playlist_retry">Retry playlist loading</string>
+    <string name="m6yp_youtube_playlist_reload">Reload playlist from beginning</string>
+    <string name="m6yp_youtube_playlist_cancel">Cancel playlist loading</string>
+    <string name="m6yp_select">Select all</string>
+    <string name="m6yp_playlist_action_failed">Playlist action failed</string>
+    <string name="m6yp_unknown_error">Unknown error</string>
+</resources>

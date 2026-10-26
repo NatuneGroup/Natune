@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ArchiveTune
+Exec=ArchiveTune %u
+Icon=archivetune
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+MimeType=x-scheme-handler/archivetune;
+StartupWMClass=ArchiveTune

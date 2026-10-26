@@ -1,0 +1,260 @@
+# iOS source status
+
+**Apple SDK compilation, framework/cinterop linkage, Xcode project loading, simulator,
+device audio and live authentication are UNVERIFIED — `unverified-on-linux-host`.**
+Kotlin metadata can check the bundled platform declarations and caught binding mistakes
+during preparation. It does not establish compilation against an actual Apple SDK or
+build/link Swift and Objective-C++. No Apple SDK/Xcode installation or simulator
+execution was attempted.
+The inactive foundation `shared/` module is not used.
+
+This is a prepared source lane, **not completed iOS runtime parity**. The Gradle cinterop, the
+static framework export, the Xcode framework build phase, the iOS quickjs-kt dependency and the
+native closure producer (`scripts/build_ios_native_core.sh`) are now present in source. None of
+them has run on an Apple host. The host root and repository wiring, the dictionary host/settings
+composition and the native preparers below remain integration blockers, not just hardware checks.
+
+## Adapter inventory
+
+Paths below are relative to the repository. Every row retains the unverified Apple boundary.
+
+| Adapter | Implementation | Behavior and remaining limits |
+| --- | --- | --- |
+| Shared UI entry | `shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/MainViewController.kt` | `ComposeUIViewController` renders the parameterless host-pending `ArchiveTuneRoot()` placeholder. The bound root that takes `ArchiveTuneHostBindings` is not mounted yet, because the owners it needs are not integrated. No duplicated player screen. |
+| Host lifetime | `shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/IosHost.kt`; `iosApp/ArchiveTune/ArchiveTuneApp.swift` | One application-owned `IosHost` per process, created by `ArchiveTuneSession` in `App.init` before the first activation. SwiftUI controller detach and recreation re-present the same single controller and close nothing. The session observes `didBecomeActive` once for foreground delivery and `willTerminate` for the one idempotent final `shutdown()`. Settings, vault, Japanese pack, challenges, player and credentials are therefore never opened twice, so the single-owner settings guard cannot fire on a view rebuild. Not verified on an Apple device or simulator; no Apple compilation is claimed. Root must still consume these same services through integrator-owned composition. |
+| Playback | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosPlaybackPort.kt`; `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosStreamLease.kt`; `IosHttpRangeSource.kt` (same directory); `iosApp/Native/ATNativeAudio.{h,mm}` | Same portable FFmpeg core in manual-output mode, native `AVAudioSourceNode` stereo float callback to `AVAudioEngine`. Existing `EnginePlaybackMapper`/`PlaybackSnapshot` supply occurrence identity, completed seeks, buffering and discontinuities. No timer advances position. `PreparedAudio` enters only through `IosPlaybackPort.submitPrepared`: an anonymous header-free `Progressive` stream is opened by the engine from its URL, an anonymous header-bearing one is read through the host byte-source lease described next, and a personal `Progressive` stream (an account scope other than `public`) is admitted against its account before its first byte and read through a lease bound to that entry, and every request of that lease rereads the account before it leaves, as described in the last increment of this file. `Native` and `TidalManifest` are admitted against their account and prepared to plaintext by `IosNativeAudioRoute` over the common `NativePlaybackRoute`, then played as `PlaybackLocator.PreparedPlaintext` through this port's own transport (see the native increment at the end of this file); every ciphertext request of that transport rereads its admitted entry and cookies before it leaves, as the final increment of this file describes. Personal `Progressive`, `Native` and `TidalManifest` audio is never fetched as an anonymous URL, and it is refused until the account store is attached. A `DeezerEncrypted` stream (`PreparedAudio.DeezerEncrypted`, converted by `toPlaybackLocator()`) is read through the same host lease by `IosDeezerStreamSource`, which decrypts it with the common `DeezerChunkByteSource` keyed by `DeezerCrypto.deriveKey(trackId)`; the engine receives plaintext, and the ciphertext is never fetched as a URL or staged on disk. Header-bearing audio uses the host lease: `at_audio_load_stream` hands `ae_stream_io` callbacks to `ae_engine_load_stream`, and `IosStreamLease` serves them from `IosHttpRangeSource`, which issues ranged `NSURLSession` requests on one ephemeral session per hop. Redirects are followed under the lease policy and only to the primary origin; headers and cookies travel only on that origin; 416 is end of stream; unknown length and seekability are reported to the engine. Interrupt only cancels in-flight work; close runs once after the engine retracts the lease and releases the connection and the StableRef. No plaintext file or loopback broker is used. Teardown drains in-flight render callbacks and waits until the owning source node deallocates before freeing the decoder; an overrun of that bound leaks the decoder rather than freeing it live. Requires the M8 realtime callback symbol (`ae_engine_render_realtime`, M8 `bee7a838`, dev `5c35a8c`), the host lease ABI (`ae_engine_load_stream`, dev `51accca`) and the M7 header locator (`PlaybackLocator.Remote(url, headers)`, dev `4468c98`), all now on dev, plus the M7 typed Deezer locator and decryptor (`PlaybackLocator.DeezerEncrypted`, `PreparedAudio.DeezerEncrypted`, and the `DeezerChunkByteSource` withholding of partial encrypted chunks; `fafb969`, on dev as `074dc5b`) and its static native closure. |
+| Audio session | `iosApp/Native/ATNativeAudio.mm` | Playback category, explicit activation, interruption freeze/conditional resume, pause on disconnected output, error on media-services reset requiring recreation. The playback category and activation go through one shared session policy that also serves recognition capture (`at_audio_session_begin_recording` and `at_audio_session_end_recording` in `ATNativeAudio.h`): an output holds a claim while it should be audible, every session change happens under one lock outside the render callback, a recording window keeps play-and-record for playback started inside it, and a claimed output the system stops is restarted on the main thread. Observer and restart callbacks capture a per-output lifetime gate rather than the output address, so a callback queued before destroy cannot act on a later output that reuses the address (see the asynchronous lifetime increment). Snapshot advancement is masked on stopped/stale output or zero decoded frames. Fixed 48 kHz stereo float mixer is **not bit-perfect**; physical DAC latency and AirPlay/Bluetooth presentation are unmeasured. |
+| Recognition capture | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosRecognitionCapture.kt`; `iosApp/ArchiveTune/Info.plist` and `iosApp/ArchiveTune/en.lproj/InfoPlist.strings` (microphone prompt) | `IosRecognitionCapture` implements the committed M4 `RecognitionPermissionPort` and `RecognitionCapturePort`. Permission is read from `AVAudioSession.recordPermission` and, while undetermined, requested once through `requestRecordPermission` on the main thread (iOS 16 API; no `AVAudioApplication`). Each capture records exactly `RecognitionCaptureSpec` (16 kHz, 8,400 ms, 134,400 mono PCM16 samples) from a real `AVAudioEngine` input tap in the hardware format, averages channels and box-filter resamples to 16 kHz. Partial buffers fill the window across callbacks; nothing is padded or synthesized, and no sample is written to disk or logged. One window runs at a time; close is idempotent; each window is deadline-bounded and fails closed on an all-zero window, an input configuration change, an interruption, a media-services reset or missing input. [Superseded in the audio-session coordination increment: The session is switched to play-and-record for the window only (speaker output and Bluetooth allowed), then its previous category, mode and options are restored; it is never deactivated here.] Current: the window claims the shared session through the native policy in `ATNativeAudio.mm` (speaker output, Bluetooth headset input and A2DP output allowed). Playback started inside the window keeps play-and-record. The release restores the category for the current playback intent, or the one from before the window, and never deactivates the session. Authored, not compiled, not run on any Apple host; no permission, hardware or audio success is claimed. Integrator obligations are listed under Host/build integration. |
+| Now Playing | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosNowPlaying.kt` | Snapshot-driven elapsed time/rate/duration, occurrence-keyed `ContentItem` title/artist, remote play/pause/toggle/stop/seek/next/previous. Next/previous must dispatch to the authoritative queue owner. Obsolete-occurrence events are rejected before application; scoped callback tokens are removed. Artwork, can-next/previous availability and full metadata refresh without a new snapshot need later queue integration. |
+| Credentials | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosKeychainCredentialStore.kt` | Generic-password Security Keychain; length-prefixed provider/scope/name account ID; device-only after-first-unlock accessibility; no synchronization, shared access group, plaintext or preferences fallback. Not-found differs from OS failure. Catalog, streaming and Pool are separate items. |
+| Settings | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosSettingsStore.kt` and `IosPreferencePayload.kt`; `shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/settings/IosVaultSettings.kt` | Ordinary M6 `SettingsStore` persisted as device-only Keychain items in two bounded slots: a head written last publishes a SHA-256-verified payload, and a guard refuses credential-bearing names before any write. M6 `VaultSettingsStore` is composed over the real `IosKeychainCredentialStore` with opaque UUID references and no plaintext or memory fallback. `IosHost.settingsState` reports Opening, Ready or Unavailable. Typed consumers, sessions and root binding are not bound here. Depends on committed M6 `SettingsStore`/`VaultSettingsStore` and M7 `ContentDigest`. |
+| External OAuth | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosBrowserAuth.kt` | `ASWebAuthenticationSession`, strongly retained presentation anchor, ephemeral preference, exact redirect and single-state checks, bounded timeout and cancellation. Ephemeral preference is not proof of provider/OS cookie isolation; live account verification remains required. No tokens are logged/persisted by the browser. |
+| Embedded OAuth | same file | Fresh nonpersistent `WKWebsiteDataStore` per provider/scope attempt; HTTPS-only navigation, exact callback validation, retained delegates, cancellation and cleanup. Cookie-only provider login/private-context verification is **not implemented** by M7's callback-URI contract. No claim of YouTube/Spotify embedded-cookie-login parity. |
+| Files | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosPlatformFiles.kt` | UIKit document picker, opaque Base64 bookmark handles, scoped/coordinated I/O, bounded reads, atomic NSData replacement, coordinated delete, explicit stale/revoked bookmark failure. Uses iOS bookmark flags, not the macOS-only security-scope creation flag. File-provider atomic-write behavior needs Apple tests. |
+| Custom artwork files | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosCustomArtworkFiles.kt` | `CustomArtworkFiles` over the app-private Application Support folders `custom_artwork` and `custom_canvas`, the same folder names the Android and desktop hosts use. Lists regular files only, refuses a symbolic-link folder, accepts only plain file names, writes through POSIX `fopen`/`fwrite`/`fclose`, replaces a version with a same-folder POSIX `rename`, and checks decodability through UIKit's `UIImage` (header-level, no cache file). `uriOf` returns a `file:` URL. Authored but UNRUN: not compiled and not run on an Apple host. The host still binds it into `FileCustomArtworkRepository`, and the picker that supplies a `CustomArtworkSource` is host-owned and not present. |
+| Japanese tokenizer / pack | common `JapaneseLanguagePackManager`, `KuromojiIpadicArchive`, accepted tokenizer; iosMain `IosJapanesePackIo` / `IosJapanesePackDownload` | Prepared common lifecycle plus bounded iOS ephemeral URLSession writer, app-private storage, raw zlib and atomic rename. Exact archive digest precedes ZIP parsing; all eight data pins and actual tokenizer probe precede readiness. Existing UTF-16/unknown/timed-word behavior is unchanged. `IosHost` creates one pack manager on the real vault snapshot with `iosNetworkAvailable`, forwards real activations through `foregrounded()`, closes it with the host, and exposes `japaneseLanguagePack` for settings rows. **dictionary host/settings/root composition remains required** for integrator root binding; no Apple compilation/runtime assurance is claimed. |
+| Challenge | `shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosChallengeEvaluator.kt`; `IosHost.challenges` | Platform `ChallengeEvaluator` over a fresh `quickjs-kt` 1.0.10 runtime per evaluation, mirroring the desktop bounds: engine-enforced time, memory, stack and output limits, no host bindings, Atomics or SharedArrayBuffer, and at most two concurrent runtimes. Failures are sanitized. The iosMain dependency on `libs.quickjs.kt` is declared in `shared-data/build.gradle.kts`; iOS arm64 and simulator availability of the artifact is unverified here. |
+| Capability diagnostics | `shared-domain/src/iosMain/kotlin/moe/rukamori/archivetune/shared/domain/platform/IosCapabilities.kt` | Machine-readable adapter/dependency IDs, explicitly unverified; CarPlay, Android raw USB, physical bit-perfect proof and protected-media PCM are unavailable. IDs are not user-visible translated labels. |
+
+## Host/build integration
+
+1. Present in source: `shared-ui/build.gradle.kts` declares the static `ArchiveTuneShared`
+   framework on both iOS targets and exports `:shared-domain` and `:shared-data`. The Xcode
+   target runs `./gradlew :shared-ui:embedAndSignAppleFrameworkForXcode` from a build phase
+   and links `-framework ArchiveTuneShared` through `Native.xcconfig`. Swift imports that
+   framework, never `Shared`. Unverified on an Apple host.
+2. Present in source: `shared-data/build.gradle.kts` registers the `archivetuneAudio`
+   cinterop (`src/nativeInterop/cinterop/archivetuneAudio.def`) on each iOS main compilation,
+   with the `iosApp/Native` and `desktopApp/native/include` include directories. No common
+   ABI/queue DTO is replaced. Unverified on an Apple host.
+3. The M8 core (`bee7a838`) declares `ae_engine_render_realtime`; the existing
+   `ae_engine_render` may wait on prebuffer and is **not safe in the output callback**.
+   The bridge uses only the non-waiting entrypoint, never a local simulation or fallback.
+4. Producer in source, never executed: `scripts/build_ios_native_core.sh [iphoneos|iphonesimulator|all]`
+   builds the static arm64 closure into `shared-data/build/ios-native/<PLATFORM>/lib`, or into
+   `ARCHIVETUNE_NATIVE_ROOT` for one platform. The closure is the portable core compiled from
+   `desktopApp/native/src` (JNI and desktop system code excluded), FFmpeg 8.1.3 (LGPL v3 set, no
+   programs), OpenSSL 3.5.9, libxml2 2.15.4 and zlib 1.3.2. The pins match
+   `desktopApp/native/scripts/build-native-deps.sh`. `closure.txt` beside `lib/` records the pins,
+   toolchain and SHA-256 of every archive. Prerequisites: an Apple Silicon Mac with Xcode 26.4
+   selected (`ARCHIVETUNE_ALLOW_OTHER_XCODE=1` builds another release and marks it UNVERIFIED),
+   the iphoneos and iphonesimulator SDKs, gpg, pkg-config, GNU make and a space-free repository
+   path. The script refuses every host except macOS. No archive has been built, so the closure is
+   **UNVERIFIED**. `Native.xcconfig` links `-lavfilter` and the other archives in the order the
+   script lists them; iconv and libc++ come from the SDK.
+5. Root integrator binds `IosHost.player`, credentials, Files and browser to the
+   committed M7 repositories/queue and M6 settings/session consumers; calls
+   `installSystemControls` with real metadata and queue callbacks. Current foundation
+   root has no such dependency parameters. Do not add a demonstration queue.
+6. `IosHost` creates ONE `iosJapaneseLanguagePackManager(scope, Dispatchers.Default,
+   vault.snapshots, { edit -> vault.edit(edit); Unit }, { iosNetworkAvailable() })` only after
+   the real M6 vault adapter opens; null settings are not defaults. Real activations reach
+   `onForeground` through `foregrounded()`, not startup or background watchers. Integrator
+   root/settings rows must bind `japaneseLanguagePack` state and its suspend install/cancel/
+   remove actions, observe readiness/off/removal to invalidate renderer work and use
+   `tokenizerOrNull()`. The host closes the manager before the settings owner. It uses the
+   existing Japanese/off/attempted/removed keys and atomic editor, not another registry.
+   Common lifecycle preserves persisted eligible primary-region JP consideration,
+   offline consumption, explicit off/removal and manual behavior. The baseline explicit
+   manual-install quirk (enable only if nullable choice is unchanged, including false)
+   is characterized rather than silently changed. Automatic completion never overrides
+   off/removal. No downloaded classes are loaded.
+   Resource/credits owner must retain adjacent Apache-2.0 license, contributors and full
+   IPADIC NAIST/ICOT notice in packaged credits. No new Gradle dependency is required.
+   Shared Room/database and settings iOS factories depend on
+   the corresponding committed M7/M6 persistence implementation; this lane does not
+   invent a second schema or persistence implementation.
+7. The host byte-source ABI (`AE_STREAM_IO_VERSION`, `ae_stream_io`, `ae_engine_load_stream`;
+   dev `51accca`) and the M7 header-capable locator (`PlaybackLocator.Remote(url, headers)`,
+   `DirectStream.headers`, `DirectStream.toPlaybackLocator()`; dev `4468c98`) must be integrated
+   before `IosStreamLease.kt`, the header branch of `IosPlaybackPort` and `at_audio_load_stream`
+   compile. Both are on dev (`51accca`, `4468c98`), so the header-bearing path is integrated on dev;
+   no Apple compile has been run on this Linux host.
+8. The M7 Deezer locator and decryptor (`PlaybackLocator.DeezerEncrypted`, `PreparedAudio.DeezerEncrypted`, and
+   `PreparedAudio.DeezerEncrypted.toPlaybackLocator()`; M7 `fafb969`, which also makes `DeezerChunkByteSource` withhold
+   partial encrypted chunks) must be integrated before the Deezer branch of `IosPlaybackPort`, `IosDeezerStreamSource.kt`
+   and `IosStreamLease.loadDeezer` compile. They are on dev (M7 `fafb969` as `074dc5b`), and the Deezer lease was
+   adopted on dev as `7e36ac5` (M9 `da94553`); no Apple compile has been run on this Linux host.
+9. The M7 common native route and its account/plaintext surfaces (`PreparedPlaintextHandle`,
+   `PlaybackLocator.PreparedPlaintext`, `NativePlaybackRoute`, `nativePlaintext()`,
+   `ByteSourceAccount.accountScope`, `AccountAdmission.toByteSourceAccount()` and the
+   `TidalDashPreparation.prepare(prepared, opener, admission, nowEpochMs)` signature) are committed on the M7 line as
+   `e8410eb`, `a44042f` and `eef82ab`, and are on dev as `3f62ff8`, `3ba7ce8` and `54b692f`. The adopted
+   `IosNativeAudioRoute` replaces the dev caller that passed a fixed public scope to `TidalDashPreparation`. The root
+   constructs one real account store from the Ready vault and calls `IosHost.attachAccounts(store, store)` once.
+   Until then personal progressive, native and TIDAL manifest audio is refused and nothing is read. The personal
+   progressive path also reads `DirectStream.accountScope`, `AudioSourceType.accountProviderId()`,
+   `ScopedCookieSource.cookiesForLease` and `DirectStream.toPlaybackLocator()` from the same M7 sources (dev
+   `f20d8ad` at the first observation, and `9f17298` at a later one), so it must be integrated with them. Personal progressive audio must reach playback only
+   through `IosHost.loadPrepared`. A `PlaybackLocator.Remote` built from a personal `DirectStream` and sent through
+   `IosHost.player` carries no account binding and would play anonymously, so the root must never convert personal
+   progressive audio to a remote locator. An account-bound locator in the common domain is an owner decision.
+
+Recognition capture (`IosRecognitionCapture`) is wired by the integrator, not by this lane. Its obligations are:
+
+- Construct one `IosRecognitionCapture()` for the process-owned `IosHost` and pass the same instance as both the
+  `RecognitionCapturePort` and the `RecognitionPermissionPort` of the M4 `MusicRecognitionOwner`. Its single-flight
+  guard only holds for one instance, so a per-request instance would bypass it.
+- Call `IosRecognitionCapture.close()` exactly once from the same shutdown path that closes `IosHost`. It fails an open
+  window and makes later calls refuse. The M4 owner's own `close()` cancels its request but does not close the adapter.
+- [Superseded in the audio-session coordination increment: while a window is open the session is in play-and-record.
+  `iosApp/Native/ATNativeAudio.mm` reapplies `AVAudioSessionCategoryPlayback` on every `start_output`, so a playback start
+  during a window changes the input route and fails that window as a configuration change, which is fail-closed. The root
+  must either keep playback from starting during a window (a product decision) or accept that honest failure. The adapter
+  never deactivates the session, and native deactivation in `at_audio_destroy` is unchanged.]
+- Audio-session coordination (current): playback is neither blocked nor refused by a window. Playback and the window share
+  one native session policy in `iosApp/Native/ATNativeAudio.mm`, reached through `at_audio_session_begin_recording` and
+  `at_audio_session_end_recording` in `iosApp/Native/ATNativeAudio.h`. The root adds no playback gating for recognition and
+  must not add a second session owner. A genuine route or configuration failure still fails the window honestly. Native
+  deactivation in `at_audio_destroy` is skipped while a window or other playback holds the session.
+- The microphone prompt is `NSMicrophoneUsageDescription` in `iosApp/ArchiveTune/Info.plist` and in
+  `iosApp/ArchiveTune/en.lproj/InfoPlist.strings`. The Xcode project must keep both files.
+- Capture is foreground-oriented. A background window is refused or fails when the session cannot be activated; no
+  background recognition is claimed. Android and GMS capture are not part of this adapter.
+
+## Entitlements and platform differences
+
+- `Info.plist` declares background `audio`; real background behavior still requires
+  device testing. No microphone, broad ATS exception or arbitrary file permission
+  is requested. [Superseded in the recognition capture increment: `NSMicrophoneUsageDescription` now declares the
+  microphone prompt for recognition; no ATS exception or file permission was added.] Document access is granted
+  through Files, not a sandbox escape.
+- Default app-private Keychain requires no extra shared group. Cross-app keychain
+  groups require legitimate provisioning/entitlements and are **not configured**.
+  Device-only credentials are intentionally not portable backup material.
+- CarPlay requires Apple's approved audio entitlement and a separate scene/UI
+  implementation; neither is present. Android Auto/widgets/raw USB integrations are
+  not represented as iOS no-ops. Protected content needs legitimate platform/provider
+  capability, not a claim that FFmpeg supplies DRM.
+- Only `archivetune` is registered as a callback scheme. Provider-specific registered
+  schemes (for example a legitimately configured Discord app) and universal links
+  need exact approved application configuration; no client identifier is invented.
+- The project has no development team, signing keys or provisioning profile. Local
+  unsigned simulator checks do not prove signing/distribution rights or App Store
+  compatibility. Existing GPL/third-party obligations still apply.
+
+## Verification boundary
+
+- `iosApp/tests/test_source_contracts.py` checks host/plist/resource/native source
+  relationships. These are source-contract tests, **not Apple API tests**.
+- `shared-domain/src/iosTest/.../IosCapabilitiesTest.kt` and
+  `shared-data/src/iosTest/.../Ios{AuthCallback,CredentialIsolation,KeychainRoundTrip,PlatformFiles}Test.kt`
+  cover redirect/state rejection, account separation, real Keychain round trips and
+  file-grant/read-bound rejection. **Authored but UNRUN** on Linux.
+- Linux common metadata and repository lint results are recorded in the lane handoff,
+  not promoted to an AVFoundation compile, simulator, real account or audio pass.
+  The first full metadata command failed at shared-data iosMain: missing integrator-owned
+  `archivetuneAudio` cinterop plus two auth-binding mistakes (corrected in source).
+  shared-domain and shared-data common metadata tasks completed in that run; shared-ui
+  common metadata did not run. A missing binding is a real integration blocker.
+- The second, `--continue` verification command completed **685 shared-domain JVM
+  tests and 225 shared-data JVM tests**, zero failures/errors/skips, and compiled the
+  shared-ui desktop consumer. Overall exit remained **1** at shared-data iosMain
+  because `nativeaudio` bindings are absent; auth-binding errors were gone. No source
+  set was excluded to claim success. These 910 JVM tests do not execute iosMain.
+- Lightweight checks passed: 5 iOS host/source-contract tests, 15 repository-checker
+  tests, 0 non-quarantine findings and 5 expected quarantine findings. These are not
+  Apple build or runtime evidence.
+- Portable-tokenizer follow-up: common Kotlin executed on JVM with the actual
+  13,343,016-byte Kuromoji IPADIC 0.9.0 JAR, independently verified SHA-256
+  `24909fd751c0b439f7af5131b080eb65bc85062f0c4977ca4a71c76abe74e0b6`.
+  All eight uncompressed data pins were independently checked. Final focused JVM
+  run: **73 romanization tests, zero failures/errors/skips** (14 new factory/portable
+  tests), including phrases, punctuation, unknown/surrogate/combining text, 2,000 seeded
+  mixed-input comparisons to actual JVM Kuromoji, real romaji/word alignment,
+  every missing/corrupt resource, size bounds, cancellation and concurrent calls.
+  Domain common metadata compilation passed. Initial compile caught a constructor
+  scope error, corrected before execution; no iOS sources were excluded.
+  Per-call hard ceilings are 16,384 UTF-16 units, 100,000 nodes and 2,000,000 work
+  steps; exhaustion throws rather than returning a partial successful list.
+  Factory hashes have cancellation checks around each bounded resource (largest
+  9,411,048 bytes), parsing checks internally. The sync seam stays bounded; workers
+  needing mid-analysis cancellation use `tokenize(text, checkCancelled)`.
+- Installation continuation adds common lifecycle/ZIP readiness tests with actual
+  temporary bounded files, atomic moves, actual raw-DEFLATE IPADIC resources and the
+  accepted factory. Final focused run: **24 new tests, zero failures/errors/skips**,
+  common metadata passed. Regressions fence cancelled atomic promotion, stale
+  connectivity/startup after failed removal, and failed stale-partial cleanup without
+  destroying a valid target. Accepted 73 tokenizer tests/2,000 baseline comparisons
+  were not repeated. Archive SHA-256 work is bounded to 13,343,016 bytes with cancellation
+  checks before/after, not internally interruptible. iOS new sources remain UNCOMPILED and
+  unexecuted; common metadata is not a native URLSession/zlib/locale/files proof.
+  No audio-cinterop build was repeated or source excluded to hide its existing failure.
+- Follow-up on macOS: run `scripts/build_ios_native_core.sh all` with Xcode 26.4 and check
+  `closure.txt` and every archive; build framework/cinterop, load/build the Xcode project, run
+  iosSimulatorArm64 tests, exercise Files providers and cancellation, live OAuth isolation,
+  lock-screen controls, pause/buffer/seek/route/interruption/EOF snapshots, then physical-device
+  background audio and output timing. The producer's `nm` export check is necessary but is not
+  proof that the closure links into the app.
+- Code-only phase (verification `deferred_by_user`): the settings payload and vault composition,
+  prepared-audio admission, native destroy drain, challenge evaluator binding, Swift foreground
+  observer and host pack lifecycle are **Authored but UNRUN**. No Gradle, compiler, Python contract test, simulator or
+  device run was performed for them, and no Apple-host behavior is claimed. The native closure producer,
+  the `archivetuneAudio` cinterop and framework edits, the iosMain quickjs-kt dependency and the
+  `Native.xcconfig` link order (`-lavfilter` added) are also **Authored but UNRUN**. The producer has
+  not been executed on any host, and its Xcode 26.4 and SDK assumptions are unconfirmed.
+- Code-only increment (verification `deferred_by_user`): the header-bearing progressive lease
+  (`IosHttpRangeSource`, `IosStreamLease`, `at_audio_load_stream`, header branch of
+  `IosPlaybackPort`) is **Authored but UNRUN** and UNCOMPILED on this Linux host. No Apple SDK,
+  simulator, live-provider or audio check was made, and no header-bearing stream was played.
+  HLS segment leases, Apple HLS keys, Amazon CENC, QQ and Tidal manifests remain unimplemented on
+  iOS and stay refused.
+- Follow-up in the same increment (verification `deferred_by_user`, still UNRUN): a read waits at most
+  500 ms before answering RETRY, because the engine's starvation limit is time-based and a shorter slice
+  keeps seeks and stops prompt. A refused load frees its StableRef only when the engine never reached its
+  close path, and a blank progressive URI is refused before the locator is built. A reopen inside a read can
+  wait up to the 12 s head budget. Interrupt wakes that wait, except in the microsecond window between the
+  engine's interrupt check and the host call. A pending-head state carried across read calls is a named
+  follow-up.
+- Code-only increment (verification `deferred_by_user`, still UNRUN): a Deezer track is read through the host
+  lease (`IosStreamLease.loadDeezer`, `IosDeezerStreamSource`). The ciphertext comes from `IosHttpRangeSource`
+  under a `deezer` lease that permits only the primary origin and sends no cookies, and the common
+  `DeezerChunkByteSource` decrypts it with `DeezerCrypto.deriveKey(trackId)`. Probe length, unknown length, seeks,
+  the 500 ms RETRY slice and close follow the same ABI rules as the header-bearing path. A partial encrypted chunk
+  is withheld as RETRY by the common reader, and nothing is staged on disk. The decryption is not validated on
+  Apple hardware, and no Deezer track was played. It depends on the M7 `fafb969` locator and decryptor, on dev as `074dc5b`.
+- Code-only increment (verification `deferred_by_user`, still UNRUN and UNCOMPILED): native and TIDAL preparation is authored but not yet wired into playback. `IosCiphertextOpener` reads each ciphertext resource through `IosHttpRangeSource` under a lease that names the recipe's account scope. An open for another scope is refused, and cookies come only from the injected `ScopedCookieSource` for the admitted account. `IosNativeAudioRoute` captures a personal account's admission before any byte is requested and binds the transport to that same entry, and the common `NativePlaybackRoute` wraps the transport in `AdmittedCiphertextOpener`. The shared preparers' `Ready` plaintext goes to `IosPlaintextSource`, which `IosStreamLease.loadPlaintext` hands to the engine. `IosPlaybackPort` plays it as `PlaybackLocator.PreparedPlaintext`, refuses a handle whose authorization has passed its expiry, and releases the transport when the occurrence stops, is superseded or fails. `Refused` and `Failed` close every transport the attempt opened. `Native` and `TidalManifest` occurrences are refused with `UNSUPPORTED_LOCATOR` until `IosHost.attachAccounts` supplies the account store, and nothing is fetched as a URL. Apple HLS is refused by the shared preparer. A resource's probed response is released once its length is known, so a TIDAL index holds no paused connection per segment; each later read reopens at its position, which costs one request and reuses the cookies read when the transport was opened. [Superseded in commit `bb25ed9b95d530fa71c6d80bcd79be51c4f621d8` (dev `85d839a`): every request of the transport, reopens included, now rereads the admitted entry and its cookies first; see the final increment of this file.] That reopen was not yet rechecked per request in this increment (residual, see the personal progressive increment below). Telegram stays refused, because the TDLib iOS producer is not available in this lane. No Apple-host, decryption, account-admission or device behavior is claimed.
+- Code-only increment (verification `deferred_by_user`, still UNRUN and UNCOMPILED): a personal progressive stream, a
+  `DirectStream` whose `accountScope` names an account other than `public`, is no longer read anonymously.
+  `IosPlaybackPort.submitPrepared` builds no anonymous locator for it and queues it for admission, so it is refused as
+  `UNSUPPORTED_LOCATOR` until `IosHost.attachAccounts` supplies the store. `IosNativeAudioRoute.admitProgressive` refuses
+  a null or `public` scope, a stream with no account slot and an address that is not HTTP(S). It admits the account before
+  any byte is requested, and refuses when the account is not accepted or the store cannot be read. It then builds a lease
+  bound to that entry, with the stream's origin as the primary and only permitted origin, no expiry and unknown length,
+  and returns `Outcome.Streamed` carrying the lease and a recheck, reading no cookies at admission.
+  `IosStreamLease.loadAdmitted` hands the engine an `IosHttpRangeSource` over that lease under the same generation and
+  ownership rules as `loadRemote`, and `IosPlaybackPort.loadStreamed` follows the `loadPrepared` sequence without a
+  transport to release. In `IosHttpRangeSource.openAt` every hop, the probe included, asks the recheck for its cookies before its request leaves;
+  a redirect hop that carries credentials does the same. The recheck reads
+  the store again on the engine's producer thread and refuses with `ACCOUNT_NO_LONGER_ADMITTED` unless the same admission
+  is still accepted, or with `ACCOUNT_UNREADABLE` when the store cannot be read. Both refusals come before any request is sent, and nothing falls back to an anonymous read. Cookies are then read for the request origin only, a cancelled ticket stops the request before it
+  leaves the device, and cross-origin hops stay credential-free. Anonymous and Deezer leases are unchanged and never call
+  the recheck. The earlier probe window, which used admission-time cookies, is closed: the probe rechecks like every hop.
+  Qobuz backup (`mls.kouzu.in`) and the public Qobuz instance path have
+  no account scope by construction, so they stay cookie-free. The increment depends on the dev M7 surfaces named in the
+  integration list and has not been compiled or run. Personal progressive audio must enter through `IosHost.loadPrepared`
+  only; the generic `IosHost.player` path still accepts a remote locator that carries no account binding; the integrator owns that root rule.
+- Code-only increment (verification `deferred_by_user`, still UNRUN and UNCOMPILED; commit `bb25ed9b95d530fa71c6d80bcd79be51c4f621d8`): the native and TIDAL ciphertext transport now rechecks its account before every request. The residual above is closed: the probe and every later request used to reuse the cookies read when the transport opened. `IosCiphertextOpener` takes `recheckFor: ((ByteSourceLease) -> LeaseCookieRecheck)?` in place of the fixed cookie source. `IosNativeAudioRoute.prepare` passes, for a personal scope, a factory that builds `PersonalCookieRecheck(accounts, cookies, captured, lease)` from the same captured admission that the transport and the route share. An anonymous scope passes null, so it has no admission, no recheck and no cookie. `IosCiphertextOpener.open` reads no cookie itself and builds `IosHttpRangeSource` with that recheck. The probe, every retry, range, seek and redirect hop, and every reopen inside a read calls the recheck before its request leaves. The recheck rereads the admitted entry through the store, refuses with `ACCOUNT_NO_LONGER_ADMITTED` when scope, identity or generation differ, refuses with `ACCOUNT_UNREADABLE` when the store throws, and otherwise reads cookies for the lease and the request origin only. A refusal sends nothing: a probe refusal ends the open with an exception, which `IosNativeAudioRoute` reports as `Outcome.Failed` with the generic preparation message, and a refusal during a read fails the engine read. Unchanged: the origin permission check precedes the recheck, a cancelled ticket stops the request after the read and before `hop.start`, a failed open closes its source, the probed response is released, the load generation is unchanged, and the common `AdmittedCiphertextOpener` check still runs at every open and returns null when the account changed. Known limits: a body already in flight keeps flowing until its response ends or the connection is reopened; no new request is sent after a revocation, but the current body is not cut short; a revoked account during preparation shows the generic `native preparation failed` message rather than the account message, which stays fail-closed and is not changed; the recheck blocks the thread that issues the request, so the store must not dispatch to the main thread. Root obligations are unchanged: `IosHost.attachAccounts(store, store)` once from the Ready vault, and personal prepared audio only through `IosHost.loadPrepared`. Nothing here is compiled or run.
+- Code-only increment (verification `deferred_by_user`, still UNRUN and UNCOMPILED; commit `364d8436fc37bf92efdc85beedb48b20b6127ee8`): iOS microphone capture for the M4 recognition owner. `IosRecognitionCapture` (`shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios/IosRecognitionCapture.kt`) implements the committed M4 `RecognitionPermissionPort` and `RecognitionCapturePort`. It is inert until the integrator constructs it and passes it to the owner; this lane does not touch the root, the host or the common module. Each window records 134,400 PCM16 mono samples at 16 kHz (8,400 ms) from a real `AVAudioEngine` input tap, converted from the hardware format by channel averaging and box-filter resampling. Partial buffers fill the window across callbacks. An all-zero window, an input configuration change, an interruption, a media-services reset, missing input, a timeout or `close()` fails the window. Nothing is padded, synthesized, written to disk or logged. Each window tears down its engine, tap, observers and session change before returning or throwing, and the teardown runs even when the caller is cancelled. `Info.plist` and `InfoPlist.strings` carry the `NSMicrophoneUsageDescription` prompt. Known limits: [Superseded in the audio-session coordination increment: switching the session to play-and-record can disturb playback that is already running;] the box filter is not a windowed-sinc design, so resampling quality is unmeasured; permission prompts and input-route behavior are not exercised on a device; the iOS 16 permission APIs are deprecated in the iOS 17 SDK and may emit warnings. Nothing here is compiled, run, permission-tested or recorded.
+- Code-only increment (verification `deferred_by_user`, still UNRUN and UNCOMPILED; the commit is recorded in the M9 code handoff): audio-session coordination between playback and microphone capture. The unconditional Playback category that `start_output` applied on every start, and the play-and-record switch that `IosRecognitionCapture` made directly, are replaced by one native policy in `iosApp/Native/ATNativeAudio.mm`. Capture reaches it through two host-bridge declarations in `iosApp/Native/ATNativeAudio.h`: `at_audio_session_begin_recording` returns 0 when the window is claimed, 1 when the category is refused and 2 when activation is refused; `at_audio_session_end_recording` releases the claim. A playback output holds a claim while it should be audible, and each window holds its own. Every category and activation change happens under one lock outside the real-time render callback, which never takes it. While a window is open, playback starts normally and keeps play-and-record, so the window is not forced out and playback is neither refused, delayed, queued nor paused. A claimed output that the system stops after a category or hardware change is restarted on the main thread; a paused, interrupted or failed output is not. A window's release restores the category for the current playback intent when playback still holds a claim, and the category from before the first window otherwise. It never restores a stale snapshot over newer playback and never deactivates the session. Destroy deactivates only when no window and no other playback claim exists. The recording category now also allows A2DP output (`AllowBluetoothA2DP`) beside the headset input, so playback keeps its Bluetooth route during a window; this option change is device-unverified. Capture permission, the exact 134,400-sample PCM16 16 kHz window and every honest failure path (input configuration change, interruption, media-services reset, missing input, timeout, close) are unchanged. Known limits and device checks: whether the platform reconfigures the capture input when a second engine starts is unverified, and a window may still fail honestly if it does; the restart of a stopped playback engine is unverified; the Playback category set when a window closes may cause a route-change pause on some Bluetooth routes; the iOS 16 permission APIs remain deprecated in the iOS 17 SDK. Nothing here is compiled, run, permission-tested or recorded on an Apple host.
+- Code-only asynchronous lifetime increment (verification `deferred_by_user`, still UNRUN and UNCOMPILED; the commit is recorded in the M9 code handoff): queued audio-session callbacks no longer identify an output by its address. Each `at_audio_output` owns one shared `output_gate` (a mutex plus the output pointer). The interruption, route-change, media-services-reset and engine-configuration observers, and the main-queue restart scheduled after a session change, capture that gate rather than the output, and each acts only while the gate still names a live output. `at_audio_destroy` clears the gate under its mutex before it removes the observers, releases the claim, drops the registry entry and frees the output once drained. A callback queued before destroy therefore finds the gate empty and returns without touching anything, even when the allocator later reuses the address for a replacement output, which always receives its own new gate. The gate is held across each check and the action it guards, and the lock order is always gate before the session lock. The render callback is unchanged and still uses the output under its existing drain, and `ae_engine_render_realtime` takes neither lock. No bridge function, ABI, notification name, session claim or recording-window policy changes. Known limits: decoder memory is still freed only after the existing drain bound, and an overrun keeps it allocated as a bounded leak; the gate ordering and the shared-pointer lifetime are unverified on an Apple host and have not been compiled or executed; the observer and restart paths have not been exercised on a device, so permission, route, interruption, media-reset and second-engine behavior remain open device checks. Nothing here is compiled, run or tested.

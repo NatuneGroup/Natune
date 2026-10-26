@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ArchiveTune</string>
+    <string name="show_window">Show ArchiveTune</string>
+    <string name="play_pause">Play / pause</string>
+    <string name="next_track">Next track</string>
+    <string name="previous_track">Previous track</string>
+    <string name="quit">Quit</string>
+    <string name="open_file">Open audio files</string>
+    <string name="open_folder">Choose folder</string>
+    <string name="select">Select</string>
+    <string name="cancel">Cancel</string>
+    <string name="integration_unavailable">Desktop system integration is unavailable</string>
+    <string name="credential_label">ArchiveTune credentials</string>
+    <string name="credential_unavailable">Secure credential storage is unavailable. Unlock or set up your system keyring and retry.</string>
+    <string name="browser_unavailable">An isolated Chrome or Chromium browser could not start.</string>
+    <string name="native_browser_unavailable">The native sign-in browser is unavailable. Set up your system browser runtime and retry.</string>
+    <string name="browser_title">ArchiveTune sign-in</string>
+    <string name="browser_finish">Finish sign-in</string>
+    <string name="challenge_unavailable">The provider challenge could not complete within its safety limits.</string>
+    <string name="host_surface_unbound">This screen is not connected on the desktop host yet.</string>
+    <string name="liked_songs">Liked songs</string>
+    <string name="my_top">My Top</string>
+    <string name="play_next">Play next</string>
+    <string name="add_to_queue">Add to queue</string>
+    <string name="host_graph_unavailable">ArchiveTune could not open its library, settings or secure storage. Check the data folder and your system keyring, then restart.</string>
+</resources>

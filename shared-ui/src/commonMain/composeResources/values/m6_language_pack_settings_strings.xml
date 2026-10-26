@@ -1,0 +1,20 @@
+<resources>
+    <string name="m6_language_pack_base_group">Base language</string>
+    <string name="m6_language_pack_built_in">Built in</string>
+    <string name="m6_language_pack_optional_group">Optional language data</string>
+    <string name="m6_language_pack_japanese">Japanese romanization</string>
+    <string name="m6_language_pack_japanese_description">Offline Japanese lyric romanization dictionary (13,343,016 bytes). Not translation or app language data. Japan-region devices may download it once over Wi-Fi or cellular; remove it here to prevent automatic reinstallation.</string>
+    <string name="m6_language_pack_japanese_checking">Checking the offline Japanese dictionary…</string>
+    <string name="m6_language_pack_japanese_removing">Removing the Japanese dictionary…</string>
+    <string name="m6_language_pack_japanese_preparing">Downloading or verifying the Japanese dictionary…</string>
+    <string name="m6_language_pack_downloading">Downloading… %1$d%%</string>
+    <string name="m6_language_pack_installed_size">Installed · %1$s</string>
+    <string name="m6_language_pack_download">Download</string>
+    <string name="m6_language_pack_remove">Remove</string>
+    <string name="m6_language_pack_other_romanization">Korean, Chinese, Hindi, and other romanization</string>
+    <string name="m6_language_pack_other_romanization_description">Built in · no additional data or download required</string>
+    <string name="m6_additional_downloads_player_fonts">Player fonts</string>
+    <string name="m6_additional_downloads_spatialflow_font">SpatialFlow typeface</string>
+    <string name="m6_additional_downloads_spatialflow_font_description">Google Sans Flex for the SpatialFlow player · about 4 MB. The system font is used until it is installed</string>
+    <string name="m6_additional_downloads_unavailable">Not available in this build</string>
+</resources>

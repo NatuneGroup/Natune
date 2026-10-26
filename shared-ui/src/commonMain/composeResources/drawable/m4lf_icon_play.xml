@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ArchiveTune (2026) - GPL-3.0
+     Original rounded play triangle for the Last.fm track sheet. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M8.2,5.9 C7.5,5.5 6.6,6 6.6,6.8 L6.6,17.2 C6.6,18 7.5,18.5 8.2,18.1 L17.5,12.9 C18.1,12.6 18.1,11.4 17.5,11.1 Z" />
+</vector>

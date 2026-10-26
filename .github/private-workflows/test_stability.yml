@@ -1,0 +1,71 @@
+# Staged private adaptation of the inherited unit-test stability workflow. Inert here: GitHub runs only files directly in
+# .github/workflows/, and this copy moves there only after the import-gate disposition and the final CI
+# authorization. Manual or reusable-call only: no push, pull request, schedule or issue trigger. Results are
+# not verification until the final candidate run completes.
+name: Unit-test stability
+
+on:
+  workflow_call:
+    inputs:
+      candidate_sha:
+        description: Optional full commit to check out (defaults to the dispatched or calling head)
+        type: string
+        required: false
+        default: ''
+      test_filter:
+        required: false
+        type: string
+        default: '*'
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Optional full commit to check out (defaults to the dispatched or calling head)
+        type: string
+        required: false
+        default: ''
+      test_filter:
+        description: Gradle test filter, or * for the complete fork suite
+        required: true
+        type: string
+        default: '*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-stability-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repeat-tests:
+    name: Repeated isolated test execution
+    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+      - name: Detect intermittent failures without hiding the first failure
+        env:
+          TEST_FILTER: ${{ inputs.test_filter || '*' }}
+        run: python3 scripts/check_test_stability.py --repeat 3 --tests "$TEST_FILTER"
+      - name: Retain each iteration and timing evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-stability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .factory/reports/test-stability/
+            build/reports/profile/
+          if-no-files-found: error
+          retention-days: 14

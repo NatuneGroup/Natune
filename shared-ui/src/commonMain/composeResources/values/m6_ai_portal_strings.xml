@@ -1,0 +1,8 @@
+<resources>
+    <string name="m6_ai_get_api_key">Get API key</string>
+    <string name="m6_ai_portal_chatgpt">platform.openai.com/api-keys — create a key with the &quot;ChatGPT&quot; or &quot;Project&quot; scope</string>
+    <string name="m6_ai_portal_gemini">aistudio.google.com/app/apikey — free tier available with a Google account</string>
+    <string name="m6_ai_portal_deepl">deepl.com/pro-api — DeepL Pro plan required for API access</string>
+    <string name="m6_ai_portal_openrouter">openrouter.ai/keys — free + paid models, billable by usage</string>
+    <string name="m6_ai_portal_mistral">console.mistral.ai/api-keys — create a key under &quot;API Keys&quot;</string>
+</resources>
