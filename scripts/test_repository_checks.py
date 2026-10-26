@@ -37,9 +37,17 @@ class RepositoryChecksTest(unittest.TestCase):
         self.assertTrue(header_problems("app/src/main/kotlin/Example.kt", replaced, before, False))
         self.assertFalse(header_problems("app/src/main/kotlin/Example.kt", supplemented, before, False))
 
-    def test_new_kotlin_requires_license_without_relicensing_vendored_files(self):
-        self.assertTrue(header_problems("app/src/main/kotlin/New.kt", "package example", "", True))
-        self.assertFalse(header_problems("third_party/example/New.kt", "package example", "", True))
+    def test_new_kotlin_starts_with_package_without_banner(self):
+        banner = "/*\n * GPL-3.0 License | Contributors: see git history\n */\npackage example\n"
+        self.assertFalse(header_problems("app/src/main/kotlin/New.kt", "package example", "", True))
+        self.assertTrue(header_problems("app/src/main/kotlin/New.kt", banner, "", True))
+        self.assertFalse(header_problems("third_party/example/New.kt", banner, "", True))
+
+    def test_kmp_sources_carry_no_banner(self):
+        banner = "/*\n * © Rukamori\n * GPL-3.0 License | Contributors: see git history\n */\npackage example\n"
+        self.assertFalse(header_problems("shared-ui/src/commonMain/kotlin/New.kt", "package example", "", True))
+        self.assertFalse(header_problems("desktopApp/src/jvmMain/kotlin/Old.kt", "package example", banner, False))
+        self.assertTrue(header_problems("shared-domain/src/commonMain/kotlin/New.kt", banner, "", True))
 
     def test_module_boundary_matches_package_not_a_similarly_named_package(self):
         source = "import app.ui.Screen\nimport app.uihelper.Model\nimport app.ui.*\n"

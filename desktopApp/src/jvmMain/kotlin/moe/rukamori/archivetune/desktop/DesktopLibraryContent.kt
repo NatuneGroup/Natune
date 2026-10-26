@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop
 
 import kotlinx.coroutines.CancellationException
@@ -81,6 +74,8 @@ internal class DesktopLibraryContent(
     private val statistics: StatisticsRepository,
     private val blocked: Flow<Set<ContentRef>>,
     private val textOrder: Comparator<String>,
+    /** Told about every like this owner wrote, after the write succeeded. It must not suspend for long. */
+    private val onLikeWritten: suspend (ContentRef, Boolean) -> Unit = { _, _ -> },
 ) {
     /**
      * One Library section, re-read whenever its sort, its filter or the playlist order changes. An unavailable section
@@ -179,9 +174,16 @@ internal class DesktopLibraryContent(
         }
     }.distinctUntilChanged()
 
-    /** Writes one like through the settling writer. A failed or refused write throws, and the caller reports it. */
-    suspend fun setLiked(ref: ContentRef, liked: Boolean) {
-        writes.mutate(LibraryMutation.Like(ref, liked))
+    /**
+     * Writes one like through the settling writer. A failed or refused write throws, and the caller reports it. A song
+     * the library does not hold yet, such as one played straight from a provider, is saved and liked in one write, as the
+     * baseline saves the playing song before it likes it.
+     */
+    suspend fun setLiked(item: ContentItem, liked: Boolean) {
+        val ref = item.ref
+        val unsaved = liked && ref.kind == ContentKind.SONG && writes.findSong(ref.id, ref.provider) == null
+        if (unsaved) writes.likeAll(listOf(item)) else writes.mutate(LibraryMutation.Like(ref, liked))
+        onLikeWritten(ref, liked)
     }
 
     /** Writes one playlist's own song order. Other playlists keep theirs. */

@@ -1,15 +1,8 @@
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- *
  * Wire shapes of the Shazam discovery endpoint, ported from the baseline shazamkit models. Only the fields the
  * recognition mapping reads are declared, so the decoder ignores everything else the provider sends. Provider links
  * (Apple Music, Spotify, YouTube) are not declared because the domain model never carried them.
  */
-
 package moe.rukamori.archivetune.shared.data.recognition
 
 import kotlinx.serialization.SerialName

@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=ArchiveTune
-Exec=ArchiveTune %u
+Name=Natune
+Exec=Natune %u
 Icon=archivetune
 Terminal=false
 Categories=AudioVideo;Audio;Player;
 MimeType=x-scheme-handler/archivetune;
-StartupWMClass=ArchiveTune
+StartupWMClass=Natune

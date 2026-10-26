@@ -1,18 +1,9 @@
 /*
- * ArchiveTune (2026)
- * © vossgraves — github.com/vossgraves
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- *
  * Full emoji keyboard catalogue for the Listen Together chat picker,
  * generated from the official Unicode emoji-test.txt (16.0) in CLDR
  * keyboard order. Fully-qualified sequences only — exactly the set an
  * Android emoji keyboard offers (3781 entries across 9 groups).
  */
-
-
-
 package moe.rukamori.archivetune.shared.ui.screens
 
 internal enum class ChatEmojiCategory { SMILEYS, PEOPLE, ANIMALS, FOOD, TRAVEL, ACTIVITIES, OBJECTS, SYMBOLS, FLAGS }

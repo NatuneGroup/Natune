@@ -12,6 +12,8 @@ import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import android.net.Uri
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PreferenceStore
+import moe.rukamori.archivetune.constants.TidalAccessTokenKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -49,7 +51,6 @@ object TidalAudioProvider {
     internal const val PROGRESSIVE_DASH_SCHEME = "tidal-dash"
     private const val API_BASE_URL = "https://tidal.com/v1"
     private const val SONG_LINK_API_URL = "https://api.song.link/v1-alpha.1/links"
-    private const val PUBLIC_TOKEN = "49YxDN9a2aFV6RTG"
     private const val COUNTRY_CODE = "US"
     private const val LOCALE = "en_US"
     private const val DEVICE_TYPE = "BROWSER"
@@ -1202,7 +1203,17 @@ object TidalAudioProvider {
         return null
     }
 
+    /**
+     * The bearer for TIDAL catalog reads: the signed-in account first, then the first Playback Pool account. The app
+     * ships no catalog token of its own, so with neither these lookups are skipped and the instance search stands alone.
+     */
+    private fun catalogBearer(): String? {
+        PreferenceStore.get(TidalAccessTokenKey)?.takeIf { it.isNotBlank() }?.let { return it }
+        return PoolAccountManager.tidalAccounts().firstOrNull()?.token?.takeIf { it.isNotBlank() }
+    }
+
     private fun searchTracksFromTidalApi(term: String): JSONArray? {
+        val bearer = catalogBearer() ?: return null
         val url =
             "$API_BASE_URL/search/tracks"
                 .toHttpUrl()
@@ -1221,7 +1232,7 @@ object TidalAudioProvider {
                 .get()
                 .header("Accept", "application/json")
                 .header("User-Agent", BROWSER_USER_AGENT)
-                .header("x-tidal-token", PUBLIC_TOKEN)
+                .header("Authorization", "Bearer $bearer")
                 .build()
 
         return runCatching {
@@ -1234,6 +1245,7 @@ object TidalAudioProvider {
     }
 
     private fun resolveTrackById(trackId: String): MatchedTrack? {
+        val bearer = catalogBearer() ?: return null
         val url =
             "$API_BASE_URL/tracks/$trackId"
                 .toHttpUrl()
@@ -1249,7 +1261,7 @@ object TidalAudioProvider {
                 .get()
                 .header("Accept", "application/json")
                 .header("User-Agent", BROWSER_USER_AGENT)
-                .header("x-tidal-token", PUBLIC_TOKEN)
+                .header("Authorization", "Bearer $bearer")
                 .build()
 
         return runCatching {

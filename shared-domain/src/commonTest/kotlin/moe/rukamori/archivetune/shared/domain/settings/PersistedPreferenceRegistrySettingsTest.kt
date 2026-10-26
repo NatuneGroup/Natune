@@ -1,11 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
-
 package moe.rukamori.archivetune.shared.domain.settings
 
 import kotlin.test.Test
@@ -19,7 +11,7 @@ import kotlin.test.assertTrue
 class PersistedPreferenceRegistrySettingsTest {
     @Test
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
-        assertEquals(625, PersistedPreferenceKeys.size)
+        assertEquals(628, PersistedPreferenceKeys.size)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
     }
 

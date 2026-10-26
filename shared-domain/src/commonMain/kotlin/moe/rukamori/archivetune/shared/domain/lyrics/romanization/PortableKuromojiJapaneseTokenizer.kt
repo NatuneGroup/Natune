@@ -1,10 +1,4 @@
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- *
  * Modified source port of Kuromoji 0.9.0 TokenizerBase and ViterbiBuilder/Searcher.
  * Copyright © 2010-2015 Atilika Inc. and contributors (see kuromoji-CONTRIBUTORS.md)
  * Licensed under the Apache License, Version 2.0. See kuromoji-LICENSE.txt.

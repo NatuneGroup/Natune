@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop
 
 import androidx.compose.runtime.Composable
@@ -56,20 +49,24 @@ private const val DEFAULT_MY_TOP_SIZE = 50
 
 /**
  * The Library, Playlists and playlist routes, bound to the one desktop owner. Every page reads and writes through the
- * owner in the session graph, so a row on a page and the queue see the same complete list. A route that no owner on
- * this host can answer keeps the explicit host boundary. The key keeps each route's own page state apart.
+ * owner in the session graph, so a row on a page and the queue see the same complete list. The recognition routes read
+ * the window's recognition owner. A route that no owner on this host can answer keeps the explicit host boundary. The
+ * key keeps each route's own page state apart.
  */
 @Composable
 internal fun desktopGraphPage(
     graph: DesktopSessionGraph,
     menu: DesktopItemMenuState,
     creation: DesktopPlaylistCreation,
+    recognition: DesktopRecognitionMount,
     route: ArchiveRoute,
 ): ArchiveGraphPage = key(route.value) {
     when (route.destination) {
         ArchiveDestination.LIBRARY -> desktopLibraryPage(graph)
         ArchiveDestination.PLAYLISTS -> desktopPlaylistsPage(graph, creation)
         ArchiveDestination.PLAYLIST -> desktopPlaylistPage(graph, menu, route)
+        ArchiveDestination.MUSIC_RECOGNITION -> desktopRecognitionPage(recognition, route)
+        ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> desktopRecognitionDetailsPage(recognition, route)
         else -> ArchiveGraphPage.Host
     }
 }

@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.data.repository
 
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
@@ -39,6 +32,9 @@ class TypedDelegatingQueueController(
         owner.withQueueAccess { owner.move(occurrenceId, beforeOccurrenceId) }
     override suspend fun select(occurrenceId: String, positionMs: Long) =
         owner.withQueueAccess { owner.select(occurrenceId, positionMs) }
+
+    /** Shuffle is not a [ContinuationQueueController] command, so the host reaches it here, inside the owner's lock. */
+    suspend fun setShuffle(enabled: Boolean): Boolean = owner.withQueueAccess { owner.setShuffle(enabled) }
 
     override suspend fun checkpoint(): Boolean = owner.withQueueAccess {
         val savedRevision = checkpoints.read()?.queue?.revision

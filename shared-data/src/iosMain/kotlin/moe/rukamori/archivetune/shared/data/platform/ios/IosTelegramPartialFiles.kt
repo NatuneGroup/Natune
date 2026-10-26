@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 @file:OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
 
 package moe.rukamori.archivetune.shared.data.platform.ios
@@ -41,6 +34,25 @@ private const val TELEGRAM_UNKNOWN_SIZE = -1L
 
 /** The download scope of one stream. It is the only transfer that matters while a track plays, so TDLib serves it first. */
 private val telegramRetireScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+// A logout must stop every transfer before TDLib wipes its database, including a stream the engine has not closed yet,
+// so each admitted port is tracked from its admission until its retirement finishes.
+private val openPortsLock = NSLock()
+private val openPorts = mutableSetOf<IosTelegramPartialFilePort>()
+
+/** Stops the transfer of every Telegram stream that is open or still retiring. Failures are ignored per port. */
+suspend fun cancelIosTelegramTransfers() {
+    val ports = openPortsLock.locked { openPorts.toList() }
+    for (port in ports) port.cancelDownload()
+}
+
+private fun retainPort(port: IosTelegramPartialFilePort) {
+    openPortsLock.locked { openPorts.add(port) }
+}
+
+private fun releasePort(port: IosTelegramPartialFilePort) {
+    openPortsLock.locked { openPorts.remove(port) }
+}
 
 /**
  * A refused Telegram call. Its message names the operation and, where TDLib gave one, its error code. It never carries a
@@ -347,7 +359,15 @@ internal class IosTelegramStreamSource(
             retired = true
             !wasRetired
         }
-        if (first) telegramRetireScope.launch { port.cancelDownload() }
+        if (first) {
+            telegramRetireScope.launch {
+                try {
+                    port.cancelDownload()
+                } finally {
+                    releasePort(port)
+                }
+            }
+        }
     }
 }
 
@@ -378,6 +398,7 @@ internal suspend fun resolveTelegramTrack(
         val guarded = AdmittedTelegramPartialFilePort(admission, accounts, port)
         val expectedSize = guarded.state().expectedSizeBytes ?: TELEGRAM_UNKNOWN_SIZE
         val lease = telegramFileLease(track, null, admission)
+        retainPort(port)
         return IosTelegramTrackOutcome.Ready(
             IosTelegramStreamSource(TelegramLocalPartialFileSource(lease, guarded), port, expectedSize),
         )

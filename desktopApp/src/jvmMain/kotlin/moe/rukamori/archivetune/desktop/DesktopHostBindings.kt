@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop
 
 import androidx.compose.foundation.background
@@ -14,6 +7,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -29,11 +25,21 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
+import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationPresentation
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationState
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
+import moe.rukamori.archivetune.shared.ui.player.playerLyricsSettings
+import moe.rukamori.archivetune.shared.ui.player.playerLyricsSlots
 
 /**
  * Blur is the one optical effect this host draws. Refraction stays off until a native owner reports it, so the
@@ -46,7 +52,11 @@ internal val DesktopOpticalCapabilities = OpticalCapabilities(blur = true, refra
  * A surface whose content owner is not connected on this host takes the explicit unbound boundary, so no route shows an
  * empty list, a fake page or a success that never happened. Every such gap is reported in the integration request.
  */
-internal fun desktopHostBindings(graph: DesktopSessionGraph, backRequests: Flow<Unit>): ArchiveTuneHostBindings {
+internal fun desktopHostBindings(
+    graph: DesktopSessionGraph,
+    backRequests: Flow<Unit>,
+    recognition: DesktopRecognitionMount,
+): ArchiveTuneHostBindings {
     val dates = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     // One row menu per host: a row's overflow opens it, and the overlay of the page the row is on shows it.
     val menu = DesktopItemMenuState()
@@ -55,7 +65,11 @@ internal fun desktopHostBindings(graph: DesktopSessionGraph, backRequests: Flow<
     // The create dialog saves through the one library owner, and a saved playlist opens through the root.
     val createPlaylist = DesktopPlaylistCreation(graph.scope, graph.libraryContent) { route -> ownRoutes.trySend(route) }
     // The native controls observe the same queue, player and settings owners that the library rows use.
-    val controls = DesktopPlayerControls(graph)
+    val sleepSheet = DesktopSleepTimerSheetState()
+    val playerMenu = DesktopPlayerMenuState()
+    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu)
+    // One settings controller and sign-in lifecycle for every settings page of this window.
+    val settingsOwners = DesktopSettingsOwners(graph)
     return ArchiveTuneHostBindings(
         queue = graph.queue,
         settings = graph.settings,
@@ -63,19 +77,28 @@ internal fun desktopHostBindings(graph: DesktopSessionGraph, backRequests: Flow<
         // Deep links from the desktop intake open their page through the root. Back arrives from the window.
         routes = merge(desktopLaunchRoutes(graph), ownRoutes.receiveAsFlow()),
         backRequests = backRequests,
-        // Library, playlists and the local or liked playlist routes read the one owner. Every other destination keeps the boundary.
-        page = { route -> desktopGraphPage(graph, menu, createPlaylist, route) },
+        // Library, playlists, the local or liked playlist routes and music recognition read their owners. Every other
+        // destination keeps the boundary.
+        page = { route -> desktopGraphPage(graph, menu, createPlaylist, recognition, route) },
         // Item and news images load over the graph's one client, public http or https only; a failed image keeps its frame.
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
         formatNewsDate = { epochMs -> dates.format(Date(epochMs)) },
         librarySourceSelector = { },
-        hostScreen = { _, _ -> DesktopUnboundSurface(Modifier.fillMaxSize()) },
+        hostScreen = { route, navigation ->
+            if (desktopMountsSettings(route)) {
+                DesktopSettingsScreen(settingsOwners, graph, route, navigation)
+            } else {
+                DesktopUnboundSurface(Modifier.fillMaxSize())
+            }
+        },
         overlays = { route ->
             DesktopItemMenuDialog(menu, graph, route.value)
             DesktopCreatePlaylistOverlay(createPlaylist, route)
+            DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph)
+            DesktopSleepTimerOverlay(sleepSheet, graph.sleepTimer)
         },
-        playerSlots = { _, _, _ -> desktopPlayerSlots(graph) },
+        playerSlots = { expanded, active, _ -> desktopPlayerSlots(graph, expanded, active) },
         // The engine exposes no volume, so the native state keeps volume null and the volume row stays hidden.
         playerControls = controls,
         // The row menu queues the chosen row through the one queue. Other song rows need owners this host does not connect.
@@ -152,15 +175,44 @@ internal fun openDesktopUri(uri: String, report: (String) -> Unit) {
     }
 }
 
-private fun desktopPlayerSlots(graph: DesktopSessionGraph): PlayerSlots = PlayerSlots(
-    artwork = { occurrenceId, modifier -> DesktopQueueArtwork(occurrenceId, graph, modifier) },
-    // No canvas loop source is connected. The artwork slot keeps the cover, as it does for a song without a canvas.
-    canvas = { _, _, _ -> },
-    customBackground = { _, modifier -> DesktopArtworkPlaceholder(modifier) },
-    lyrics = { modifier -> DesktopUnboundSurface(modifier) },
-    compactLyrics = { modifier -> DesktopUnboundSurface(modifier) },
-    queue = { modifier -> DesktopUnboundSurface(modifier) },
-)
+/**
+ * The player's media slots. Lyrics come from the graph's lyrics owner and render through the shared renderers on the
+ * player's own snapshot, so a tap seeks the one player. Romanization is off on this host: no Japanese pack or AI
+ * session is connected here.
+ */
+@Composable
+private fun desktopPlayerSlots(graph: DesktopSessionGraph, expanded: Boolean, active: Boolean): PlayerSlots {
+    val document by graph.lyrics.current.collectAsState()
+    val saved by graph.settings.snapshots.collectAsState()
+    val preferences = saved ?: PreferenceSnapshot.EMPTY
+    val sessionKey = document?.occurrenceId ?: NO_LYRICS_SESSION
+    val romanization = remember(sessionKey) { LyricsRomanizationState(LyricsRomanizationPresentation.off(sessionKey)) }
+    val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
+    val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    val lyrics = playerLyricsSlots(
+        lines = document?.lines.orEmpty(),
+        sessionKey = sessionKey,
+        playback = graph.player.snapshot,
+        romanization = romanization,
+        settings = preferences.playerLyricsSettings(syncOffsetMs = 0L, reducedMotion = false),
+        actions = actions,
+        compactStyle = if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
+        fullVisible = expanded && active,
+        compactVisible = expanded && active,
+        resumed = active,
+    )
+    return PlayerSlots(
+        artwork = { occurrenceId, modifier -> DesktopQueueArtwork(occurrenceId, graph, modifier) },
+        // No canvas loop source is connected. The artwork slot keeps the cover, as it does for a song without a canvas.
+        canvas = { _, _, _ -> },
+        customBackground = { _, modifier -> DesktopArtworkPlaceholder(modifier) },
+        lyrics = lyrics.full,
+        compactLyrics = lyrics.compact,
+        queue = { modifier -> DesktopQueuePanel(graph, modifier) },
+    )
+}
+
+private const val NO_LYRICS_SESSION = "desktop-no-lyrics"
 
 /**
  * The frame a slot keeps while its image is absent, loading or unreadable. It draws no image it has not decoded. A

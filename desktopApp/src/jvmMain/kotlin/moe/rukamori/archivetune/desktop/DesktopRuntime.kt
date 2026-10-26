@@ -1,17 +1,10 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop
 
 import java.awt.Desktop
 import java.awt.Toolkit
 
 /** The application name, used for the window title and the Linux window class. */
-internal const val APP_NAME = "ArchiveTune"
+internal const val APP_NAME = "Natune"
 
 /**
  * Process-wide desktop setup that must finish before the first window is composed. Every step

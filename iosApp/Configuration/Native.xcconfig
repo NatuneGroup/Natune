@@ -19,6 +19,13 @@ PRODUCT_BUNDLE_IDENTIFIER = moe.rukamori.archivetune
 PRODUCT_NAME = ArchiveTune
 INFOPLIST_FILE = ArchiveTune/Info.plist
 GENERATE_INFOPLIST_FILE = NO
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
 CURRENT_PROJECT_VERSION = 1
 MARKETING_VERSION = 0.1.0
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
+
+// The Telegram api_id and api_hash reach the app through Info.plist. Leave them blank here; set them in the untracked
+// Configuration/Credentials.xcconfig or as Xcode build settings. Blank values keep Telegram not configured.
+ARCHIVETUNE_TELEGRAM_API_ID =
+ARCHIVETUNE_TELEGRAM_API_HASH =
+#include? "Credentials.xcconfig"

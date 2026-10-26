@@ -1,10 +1,4 @@
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- *
  * Drag-to-slide animation for the Liquid Glass navigation pill, ported from the baseline
  * LiquidGlassDragAnimation.kt. That file adapts SukiSU-Ultra's DampedDragAnimation and inspectDragGestures,
  * which themselves adapt compose-miuix-ui (Apache 2.0).

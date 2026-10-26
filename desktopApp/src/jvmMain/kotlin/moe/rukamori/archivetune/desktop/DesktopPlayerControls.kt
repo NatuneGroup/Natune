@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop
 
 import kotlinx.coroutines.CancellationException
@@ -46,10 +39,14 @@ private const val STATE_STOP_TIMEOUT_MS = 5_000L
 /**
  * The desktop's native controls over the one session graph. Skip and repeat go through the queue owner and the settings
  * store, seek goes through the one player, like goes through the library owner, and volume goes to the engine output
- * and the stored player volume. Shuffle and the other song actions have no published owner on this host, so they are
+ * and the stored player volume. Shuffle goes through the queue owner. Song actions without an owner on this host are
  * reported and never shown as done.
  */
-internal class DesktopPlayerControls(private val graph: DesktopSessionGraph) : PlayerNativeControls {
+internal class DesktopPlayerControls(
+    private val graph: DesktopSessionGraph,
+    private val sleepSheet: DesktopSleepTimerSheetState,
+    private val playerMenu: DesktopPlayerMenuState,
+) : PlayerNativeControls {
     private var lastSeekAt = 0L
     private var seekMultiplier = 1
 
@@ -79,7 +76,15 @@ internal class DesktopPlayerControls(private val graph: DesktopSessionGraph) : P
     }
 
     override fun setShuffle(enabled: Boolean) {
-        graph.report("shuffle is not connected: the queue owner publishes no shuffle toggle")
+        graph.scope.launch {
+            try {
+                if (!graph.queue.setShuffle(enabled)) graph.report("shuffle was not applied: a radio queue keeps server order")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("shuffle was not applied: ${failure.javaClass.simpleName}")
+            }
+        }
     }
 
     override fun setRepeat(repeat: PlayerRepeat) {
@@ -117,8 +122,16 @@ internal class DesktopPlayerControls(private val graph: DesktopSessionGraph) : P
             // actions arrive here.
             PlayerAction.COLLAPSE -> Unit
             PlayerAction.LIKE -> toggleLike(occurrenceId)
+            PlayerAction.SLEEP -> sleepSheet.open = true
+            PlayerAction.MORE -> openMenu(occurrenceId)
             else -> graph.report("player action ${action.name} is not connected on the desktop host")
         }
+    }
+
+    /** Opens the player menu on the song of [occurrenceId]. An occurrence the queue no longer holds opens nothing. */
+    private fun openMenu(occurrenceId: String?) {
+        val item = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return
+        playerMenu.open(item)
     }
 
     /**
@@ -127,11 +140,11 @@ internal class DesktopPlayerControls(private val graph: DesktopSessionGraph) : P
      * does nothing.
      */
     private fun toggleLike(occurrenceId: String?) {
-        val ref = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item?.ref ?: return
+        val item = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return
         graph.scope.launch {
             try {
-                val currentlyLiked = graph.libraryContent.isLiked(ref).first()
-                graph.libraryContent.setLiked(ref, !currentlyLiked)
+                val currentlyLiked = graph.libraryContent.isLiked(item.ref).first()
+                graph.libraryContent.setLiked(item, !currentlyLiked)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

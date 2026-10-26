@@ -192,13 +192,16 @@ not reported as stable. Evidence stays in ignored `.factory/reports/test-stabili
 ## Licensing
 
 Both rukamori/ArchiveTune and MetrolistGroup/Metrolist currently publish GPL-3.0.
-Rukamori's current banner credits Rukamori; that does not authorize erasing inherited
-notices. New fork Kotlin files use the ArchiveTune GPL banner. Modified/ported
-files retain original copyright and license text, adding accurate portions/provenance
-where warranted. Never run a bulk banner replacement or relabel third-party work.
+New Kotlin files carry no license banner and start with the package line. The KMP
+modules (`shared`, `shared-domain`, `shared-data`, `shared-ui`, `desktopApp`, `iosApp`)
+carry no ArchiveTune banners; the project lineage and per-project credits are recorded
+in [CREDITS](../CREDITS.md). Third-party notices that a licence requires, such as the
+Kuromoji Apache-2.0 notice, stay in their files, and provenance notes stay as plain
+comments. Outside the KMP modules, existing banners and inherited copyright stay
+unchanged; never relabel third-party work.
 
 The historical header workflow is now validation-only. Root `LICENSE`, vendored
-licenses and the unresolved provenance decisions in [CREDITS](../CREDITS.md) remain
+licenses and the licence status notes in [CREDITS](../CREDITS.md) remain
 unchanged. A license header cannot fix missing permission or relicense upstream code.
 
 ## Validation evidence

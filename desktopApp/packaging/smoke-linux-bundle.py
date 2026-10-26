@@ -57,7 +57,7 @@ def windows(display):
         found = []
         if x.XFetchName(display, node, c.byref(name)) and name.value:
             try:
-                if c.string_at(name.value) == b"ArchiveTune":
+                if c.string_at(name.value) == b"Natune":
                     found.append(node)
             finally:
                 x.XFree(name)
@@ -76,10 +76,10 @@ def windows(display):
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    source = root / "build/compose/binaries/main/app/ArchiveTune"
+    source = root / "build/compose/binaries/main/app/Natune"
     with tempfile.TemporaryDirectory(prefix="bundle-smoke-", dir=root / "build") as temporary:
         temporary = Path(temporary)
-        bundle = temporary / "relocated/ArchiveTune"
+        bundle = temporary / "relocated/Natune"
         shutil.copytree(source, bundle)
         resources = bundle / "lib/app/resources"
         assert (resources / "notices/FFmpeg-LGPL-3.0.txt").is_file()
@@ -100,7 +100,7 @@ def main():
         assert display, "Run on a private Xvfb display"
         environment = {**os.environ, "JAVA_TOOL_OPTIONS": os.environ.get("JAVA_TOOL_OPTIONS", "") +
                        f" -Darchivetune.instance.directory={temporary / 'instance'}"}
-        executable = str(bundle / "bin/ArchiveTune")
+        executable = str(bundle / "bin/Natune")
         # Exercise the real per-user installer without touching the test user's actual associations.
         registration = {**environment, "HOME": str(temporary / "home"),
                         "XDG_DATA_HOME": str(temporary / "data"), "XDG_CONFIG_HOME": str(temporary / "config")}

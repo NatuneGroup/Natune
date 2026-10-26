@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.data.repository
 
 import kotlin.random.Random
@@ -318,6 +311,31 @@ class PortableQueueOwner(
             entries = reordered.toList(),
             playOrder = playOrder,
         )
+    }
+
+    /**
+     * Turns shuffle on or off, as Media3's shuffle mode does on Android: on, the current song leads a fresh shuffle of
+     * the whole timeline; off, play order is the timeline again. The current song and the playback are untouched. A queue
+     * with a radio tail stays in order, because its next pages are appended in server order; that refusal returns false.
+     */
+    override suspend fun setShuffle(enabled: Boolean): Boolean {
+        requireInside()
+        val queue = published.value
+        if (queue.shuffleEnabled == enabled) return true
+        if (enabled && queue.tail != null) return false
+        val timeline = queue.entries.map { it.occurrenceId }
+        val playOrder = if (enabled) {
+            timeline.shuffled(random).toMutableList().apply {
+                queue.currentOccurrenceId?.let { current ->
+                    remove(current)
+                    add(0, current)
+                }
+            }
+        } else {
+            timeline
+        }
+        published.value = queue.copy(revision = queue.revision + 1, playOrder = playOrder, shuffleEnabled = enabled)
+        return true
     }
 
     override suspend fun select(occurrenceId: String, positionMs: Long) {

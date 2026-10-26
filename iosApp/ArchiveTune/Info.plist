@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleDisplayName</key><string>ArchiveTune</string>
+    <key>CFBundleDisplayName</key><string>Natune</string>
     <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -11,6 +11,8 @@
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>ArchiveTuneTelegramApiId</key><string>$(ARCHIVETUNE_TELEGRAM_API_ID)</string>
+    <key>ArchiveTuneTelegramApiHash</key><string>$(ARCHIVETUNE_TELEGRAM_API_HASH)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>
@@ -20,7 +22,7 @@
     <key>LSSupportsOpeningDocumentsInPlace</key><true/>
     <key>UIFileSharingEnabled</key><false/>
     <key>UIBackgroundModes</key><array><string>audio</string></array>
-    <key>NSMicrophoneUsageDescription</key><string>ArchiveTune listens to one short sample (about 8 seconds) of nearby music to identify it. The raw audio is not saved.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Natune listens to one short sample (about 8 seconds) of nearby music to identify it. The raw audio is not saved.</string>
     <key>UILaunchScreen</key><dict/>
     <key>UIApplicationSceneManifest</key><dict>
         <key>UIApplicationSupportsMultipleScenes</key><false/>

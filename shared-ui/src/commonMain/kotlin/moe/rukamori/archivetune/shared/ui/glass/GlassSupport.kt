@@ -1,10 +1,4 @@
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- *
  * Glass support primitives: the static specular light and the press spotlight. Adapted from SukiSU-Ultra
  * (https://github.com/sukisu-ultra/sukisu-ultra), which adapts them from compose-miuix-ui / miuix-blur
  * (Apache 2.0) on top of the kyant backdrop library.

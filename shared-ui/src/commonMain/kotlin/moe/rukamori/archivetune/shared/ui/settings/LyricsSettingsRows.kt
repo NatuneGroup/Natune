@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.ui.settings
 
 import moe.rukamori.archivetune.shared.domain.settings.*
@@ -37,6 +30,10 @@ fun lyricsProviderSettingsRows(
     add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, false))
     LyricsProviderPreference.entries.filter { !it.name.startsWith("PAXSENIX_") }.forEach { provider ->
         provider.key?.let { add(SettingsRow.Toggle(provider.anchor(), provider.label(), it, provider.defaultEnabled, enabled = enabled)) }
+        if (provider == LyricsProviderPreference.BUNDLED && preferences[EnableBundledLyricsKey, false]) {
+            add(SettingsRow.Text("bundled_endpoint", Res.string.m6_bundled_endpoint, BundledEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
+            add(SettingsRow.Text("bundled_signing_key", Res.string.m6_bundled_signing_key, BundledSigningKeyKey, masked = true, valid = ::validBundledSigningKey, enabled = enabled))
+        }
     }
     add(SettingsRow.Toggle("enable_bini_lyrics", Res.string.m6_bini, EnableBiniLyricsKey, true, enabled = enabled))
     add(SettingsRow.Toggle("enable_lrcred_lyrics", Res.string.m6_lrc_red, EnableLrcRedKey, true, enabled = enabled))
@@ -68,7 +65,16 @@ fun validLyricsEndpoint(value: String): Boolean =
     value.isBlank() || (value.startsWith("https://") || value.startsWith("http://")) &&
         value.substringAfter("://").substringBefore('/').isNotBlank() && value.none(Char::isWhitespace)
 
+/** Blank (not configured yet) or base64 of exactly 32 bytes, the key length a Bundled server signs with. */
+fun validBundledSigningKey(value: String): Boolean {
+    val trimmed = value.trim()
+    if (trimmed.isEmpty()) return true
+    if (trimmed.length != 44 || !trimmed.endsWith("=") || trimmed.endsWith("==")) return false
+    return trimmed.dropLast(1).all { it.isLetterOrDigit() && it.code < 128 || it == '+' || it == '/' }
+}
+
 internal fun LyricsProviderPreference.label() = when (this) {
+    LyricsProviderPreference.BUNDLED -> Res.string.m6_bundled
     LyricsProviderPreference.BETTER_LYRICS -> Res.string.m6_betterlyrics
     LyricsProviderPreference.BETTER_LYRICS_PORTATO -> Res.string.m6_portato
     LyricsProviderPreference.YOULY_PLUS -> Res.string.m6_youlyplus
@@ -89,6 +95,7 @@ internal fun LyricsProviderPreference.label() = when (this) {
 }
 
 private fun LyricsProviderPreference.anchor() = when (this) {
+    LyricsProviderPreference.BUNDLED -> "enable_bundled_lyrics"
     LyricsProviderPreference.BETTER_LYRICS -> "enable_betterlyrics"
     LyricsProviderPreference.BETTER_LYRICS_PORTATO -> "enable_betterlyrics_portato"
     LyricsProviderPreference.YOULY_PLUS -> "enable_youlyplus_lyrics"

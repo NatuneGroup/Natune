@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.domain.settings
 
 import kotlinx.serialization.json.Json
@@ -187,6 +180,25 @@ fun parseYouTubeManualAuth(text: String): YouTubeManualAuth? {
         dataSyncId = dataSyncId,
         poToken = fields[ManualPoTokenKey],
     )
+}
+
+/**
+ * The active session as the baseline export block, in the layout [parseYouTubeManualAuth] reads, or null when no
+ * signed-in session with a data-sync id is active. Only the explicit reveal gesture asks for it.
+ */
+fun PreferenceSnapshot.youTubeLoginBlock(): String? {
+    val cookie = this[InnerTubeCookieKey, ""]
+    val dataSyncId = this[DataSyncIdKey, ""]
+    if (!hasYouTubeSignInCookie(cookie) || dataSyncId.isBlank()) return null
+    return listOf(
+        "$ManualCookieKey =$cookie",
+        "$ManualVisitorKey =${this[VisitorDataKey, ""]}",
+        "$ManualDataSyncKey =$dataSyncId",
+        "$ManualPoTokenKey =${this[PoTokenKey, ""]}",
+        "***ACCOUNT NAME*** =${this[AccountNameKey, ""]}",
+        "***ACCOUNT EMAIL*** =${this[AccountEmailKey, ""]}",
+        "***ACCOUNT CHANNEL HANDLE*** =${this[AccountChannelHandleKey, ""]}",
+    ).joinToString("\n")
 }
 
 /**

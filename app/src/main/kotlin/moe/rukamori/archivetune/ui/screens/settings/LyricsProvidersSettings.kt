@@ -59,6 +59,9 @@ import moe.rukamori.archivetune.constants.EnableLrcRedKey
 import moe.rukamori.archivetune.constants.EnableBetterLyricsPortatoKey
 import moe.rukamori.archivetune.constants.EnableKugouKey
 import moe.rukamori.archivetune.constants.EnableLrcLibKey
+import moe.rukamori.archivetune.constants.EnableBundledLyricsKey
+import moe.rukamori.archivetune.constants.BundledEndpointKey
+import moe.rukamori.archivetune.constants.BundledSigningKeyKey
 import moe.rukamori.archivetune.constants.EnableMegalobizLyricsKey
 import moe.rukamori.archivetune.constants.EnableMusixmatchExperimentalKey
 import moe.rukamori.archivetune.constants.EnablePaxsenixAppleMusicLyricsKey
@@ -78,6 +81,7 @@ import moe.rukamori.archivetune.constants.LyricsProviderOrderKey
 import moe.rukamori.archivetune.constants.PrioritizeWordSyncedLyricsKey
 import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
 import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
+import moe.rukamori.archivetune.shared.ui.settings.validBundledSigningKey
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
@@ -135,6 +139,12 @@ fun LyricsProvidersSettings(
         prefs.state(key = PaxsenixEndpointKey, defaultValue = "")
     val (enableUnisonLyrics, onEnableUnisonLyricsChange) =
         prefs.state(key = EnableUnisonLyricsKey, defaultValue = true)
+    val (enableBundledLyrics, onEnableBundledLyricsChange) =
+        prefs.state(key = EnableBundledLyricsKey, defaultValue = false)
+    val (bundledEndpoint, onBundledEndpointChange) =
+        prefs.state(key = BundledEndpointKey, defaultValue = "")
+    val (bundledSigningKey, onBundledSigningKeyChange) =
+        prefs.state(key = BundledSigningKeyKey, defaultValue = "")
     val (enableTidalLyrics, onEnableTidalLyricsChange) =
         prefs.state(key = EnableTidalLyricsKey, defaultValue = true)
     val (enableDeezerLyrics, onEnableDeezerLyricsChange) =
@@ -254,6 +264,72 @@ fun LyricsProvidersSettings(
                 // user can still see their state and understand what will resume
                 // when the override is turned back off.
                 val providerTogglesEnabled = !prioritizeWordSynced
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("enable_bundled_lyrics", "bundled_lyrics"),
+                        title = { Text(stringResource(R.string.enable_bundled_lyrics)) },
+                        description = stringResource(R.string.enable_bundled_lyrics_desc),
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        checked = enableBundledLyrics,
+                        onCheckedChange = onEnableBundledLyricsChange,
+                        isEnabled = providerTogglesEnabled,
+                    )
+                }
+
+                item(visible = enableBundledLyrics) {
+                    var showEndpointDialog by remember { mutableStateOf(false) }
+                    PreferenceEntry(
+                        modifier = positions.modifierFor("bundled_endpoint"),
+                        title = { Text(stringResource(R.string.bundled_endpoint)) },
+                        description = bundledEndpoint.ifBlank { stringResource(R.string.bundled_not_configured) },
+                        icon = { Icon(painterResource(R.drawable.solar_server_linear), null) },
+                        onClick = { showEndpointDialog = true },
+                        isEnabled = providerTogglesEnabled,
+                    )
+                    if (showEndpointDialog) {
+                        TextFieldDialog(
+                            onDismiss = { showEndpointDialog = false },
+                            title = { Text(stringResource(R.string.bundled_endpoint)) },
+                            placeholder = { Text(stringResource(R.string.bundled_endpoint_hint)) },
+                            textFieldValue = bundledEndpoint,
+                            onTextFieldValueChange = onBundledEndpointChange,
+                            singleLine = true,
+                            isInputValid = {
+                                it.isBlank() ||
+                                    (it.startsWith("http://") || it.startsWith("https://")) && it.none(Char::isWhitespace)
+                            },
+                        )
+                    }
+                }
+
+                item(visible = enableBundledLyrics) {
+                    var showKeyDialog by remember { mutableStateOf(false) }
+                    PreferenceEntry(
+                        modifier = positions.modifierFor("bundled_signing_key"),
+                        title = { Text(stringResource(R.string.bundled_signing_key)) },
+                        description = if (bundledSigningKey.isNotBlank()) {
+                            stringResource(R.string.bundled_signing_key_set)
+                        } else {
+                            stringResource(R.string.bundled_not_configured)
+                        },
+                        icon = { Icon(painterResource(R.drawable.token), null) },
+                        onClick = { showKeyDialog = true },
+                        isEnabled = providerTogglesEnabled,
+                    )
+                    if (showKeyDialog) {
+                        TextFieldDialog(
+                            onDismiss = { showKeyDialog = false },
+                            title = { Text(stringResource(R.string.bundled_signing_key)) },
+                            placeholder = { Text(stringResource(R.string.bundled_signing_key_hint)) },
+                            textFieldValue = bundledSigningKey,
+                            onTextFieldValueChange = onBundledSigningKeyChange,
+                            singleLine = true,
+                            masked = true,
+                            isInputValid = ::validBundledSigningKey,
+                        )
+                    }
+                }
 
                 item {
                     SwitchPreference(

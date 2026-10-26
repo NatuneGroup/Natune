@@ -25,5 +25,6 @@
     <string name="m6_about_close">Close</string>
     <string name="m6_about_unknown_license">Unknown license</string>
     <string name="m6_about_unknown_error">Unknown error</string>
+    <string name="m6_about_host_unavailable">This list is not available in this version of the app.</string>
     <string name="m6_about_badge_debug">Debug</string>
 </resources>

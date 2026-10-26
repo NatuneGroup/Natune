@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 
 package moe.rukamori.archivetune.shared.data.platform.ios
@@ -55,6 +48,8 @@ class IosPlaybackPort : PlaybackPort {
     private var preparing: Job? = null
     private var liveTransport: IosCiphertextOpener? = null
     private var route: IosNativeAudioRoute? = null
+    private var accounts: AcceptedAccountReader? = null
+    private var telegram: IosTelegramClient? = null
 
     override val snapshots: StateFlow<PlaybackSnapshot?> = state.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = errors.asSharedFlow()
@@ -66,6 +61,7 @@ class IosPlaybackPort : PlaybackPort {
                     is Inbound.Command -> apply(item.command)
                     is Inbound.Prepare -> beginPreparation(item)
                     is Inbound.Prepared -> applyPrepared(item)
+                    is Inbound.TelegramResolved -> applyTelegram(item)
                 }
                 observe()
             }
@@ -139,6 +135,17 @@ class IosPlaybackPort : PlaybackPort {
     fun attachAccounts(accounts: AcceptedAccountReader, cookies: ScopedCookieSource) {
         check(!closed && route == null)
         route = IosNativeAudioRoute(accounts, cookies)
+        this.accounts = accounts
+    }
+
+    /**
+     * Supplies the host's one Telegram session. A Telegram track then reads through that session's TDLib file once the
+     * attached account store accepts its account. Without it, or before [attachAccounts], a Telegram track is refused.
+     * The host owns the session and closes it, so this port never creates or closes one.
+     */
+    fun attachTelegram(session: IosTelegramClient) {
+        check(!closed && telegram == null)
+        telegram = session
     }
 
     override fun close() {
@@ -147,6 +154,7 @@ class IosPlaybackPort : PlaybackPort {
         while (true) {
             val queued = inbox.tryReceive().getOrNull() ?: break
             (queued as? Inbound.Prepared)?.outcome?.release()
+            ((queued as? Inbound.TelegramResolved)?.outcome as? IosTelegramTrackOutcome.Ready)?.source?.close()
         }
         inbox.cancel() // Discard queued commands; a close must not first execute pending loads.
         scope.launch {
@@ -307,12 +315,16 @@ class IosPlaybackPort : PlaybackPort {
     private fun load(command: PlaybackCommand.Load) {
         supersede()
         val locator = command.request.locator
+        if (locator is PlaybackLocator.TelegramFile) {
+            beginTelegram(command, locator)
+            return
+        }
         val source = when (locator) {
             is PlaybackLocator.LocalFile -> locator.path.takeIf { it.startsWith("/") && '\u0000' !in it }
             is PlaybackLocator.Remote -> locator.url.takeIf { isWebUrl(it) }
             // The Deezer URL is checked like a remote one. The engine never opens it: only the lease below decrypts it.
             is PlaybackLocator.DeezerEncrypted -> locator.url.takeIf { isWebUrl(it) }
-            // A TDLib file has no URL, and the iOS host has no Telegram lease yet, so the null source refuses the load.
+            // A TDLib file has no URL. It is admitted and read through its lease in beginTelegram, never opened here.
             is PlaybackLocator.TelegramFile -> null
             // Host-prepared plaintext owns a transport, so it enters only through submitPrepared, never a bare command.
             is PlaybackLocator.PreparedPlaintext -> null
@@ -343,6 +355,69 @@ class IosPlaybackPort : PlaybackPort {
             return
         }
         mapper.beginRequest(command.request, generation.toLong())
+    }
+
+    /**
+     * Admits one Telegram track off the command loop, because the account check and the file lookup wait on TDLib. The
+     * result comes back through the loop and plays only if no newer command has superseded it.
+     */
+    private fun beginTelegram(command: PlaybackCommand.Load, locator: PlaybackLocator.TelegramFile) {
+        stop()
+        request = command.request
+        val session = telegram
+        val reader = accounts
+        if (session == null || reader == null) {
+            fail(PlaybackFailureReason.UNSUPPORTED_LOCATOR)
+            return
+        }
+        val issuedAt = ticket
+        preparing = scope.launch {
+            val outcome = resolveTelegramTrack(session, reader, IOS_TELEGRAM_ACCOUNT_SCOPE, locator.track)
+            var queued = false
+            try {
+                inbox.send(Inbound.TelegramResolved(issuedAt, command, outcome))
+                queued = true
+            } catch (_: ClosedSendChannelException) {
+                // The port closed while the track was being admitted, so its source is released below.
+            } finally {
+                if (!queued) (outcome as? IosTelegramTrackOutcome.Ready)?.source?.close()
+            }
+        }
+    }
+
+    private fun applyTelegram(item: Inbound.TelegramResolved) {
+        val outcome = item.outcome
+        if (closed || item.issuedAt != ticket) {
+            (outcome as? IosTelegramTrackOutcome.Ready)?.source?.close()
+            return
+        }
+        val occurrenceId = item.command.request.occurrenceId
+        when (outcome) {
+            is IosTelegramTrackOutcome.Refused ->
+                errors.tryEmit(PlaybackFailure(occurrenceId, PlaybackFailureReason.OPEN_FAILED, outcome.reason))
+            is IosTelegramTrackOutcome.Ready -> {
+                request = item.command.request
+                val native = outputForLoad()
+                if (native == null) {
+                    outcome.source.close()
+                    fail(PlaybackFailureReason.OUTPUT_FAILED)
+                    return
+                }
+                val generation = IosStreamLease.loadPlaintext(
+                    native,
+                    outcome.source,
+                    micros(item.command.startPositionMs),
+                    if (item.command.playWhenReady) 1 else 0,
+                )
+                if (generation == 0uL) {
+                    // Closing again is harmless when the engine accepted and then closed the lease itself.
+                    outcome.source.close()
+                    fail(PlaybackFailureReason.OPEN_FAILED)
+                    return
+                }
+                mapper.beginRequest(item.command.request, generation.toLong())
+            }
+        }
     }
 
     /** The one engine output: created on first use, and recreated only after the engine reported an output fault. */
@@ -411,6 +486,12 @@ class IosPlaybackPort : PlaybackPort {
             val issuedAt: Long,
             val source: Inbound.Prepare,
             val outcome: IosNativeAudioRoute.Outcome,
+        ) : Inbound
+
+        class TelegramResolved(
+            val issuedAt: Long,
+            val command: PlaybackCommand.Load,
+            val outcome: IosTelegramTrackOutcome,
         ) : Inbound
     }
 }
