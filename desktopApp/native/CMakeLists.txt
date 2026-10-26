@@ -70,10 +70,11 @@ target_link_libraries(archivetune_engine
         m
 )
 
-# The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
-# the same search path at link time as the loader uses at run time.
-target_link_options(archivetune_engine PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
 if(UNIX AND NOT APPLE)
+    # The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
+    # the same search path at link time as the loader uses at run time. Apple ld has no -rpath-link;
+    # the install names already point inside the prefix there (same guard as build-native-deps.sh).
+    target_link_options(archivetune_engine PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
     # DT_RPATH is inherited by the FFmpeg/TLS/XML closure; DT_RUNPATH is not.
     target_link_options(archivetune_engine PRIVATE "LINKER:--disable-new-dtags")
 endif()
@@ -92,8 +93,8 @@ if(BUILD_TESTING)
     target_link_libraries(archivetune_realtime_test PRIVATE
         ${AE_avformat_LIBRARY} ${AE_avcodec_LIBRARY} ${AE_avfilter_LIBRARY} ${AE_avutil_LIBRARY}
         Threads::Threads ${CMAKE_DL_LIBS} m)
-    target_link_options(archivetune_realtime_test PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
     if(UNIX AND NOT APPLE)
+        target_link_options(archivetune_realtime_test PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
         target_link_options(archivetune_realtime_test PRIVATE "LINKER:--disable-new-dtags")
     endif()
     set_target_properties(archivetune_realtime_test PROPERTIES BUILD_RPATH "${AE_PREFIX}/lib")

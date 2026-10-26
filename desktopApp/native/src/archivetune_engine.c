@@ -1230,7 +1230,13 @@ static void device_pull(void *user, float *out, uint32_t frames) {
 }
 
 static void deadline_after(struct timespec *deadline, int64_t nanoseconds) {
+    /* macOS pthread_cond_timedwait waits against CLOCK_REALTIME and has no condattr_setclock;
+     * Linux waits against CLOCK_MONOTONIC as configured at init below. */
+#if defined(__APPLE__)
+    clock_gettime(CLOCK_REALTIME, deadline);
+#else
     clock_gettime(CLOCK_MONOTONIC, deadline);
+#endif
     int64_t total = (int64_t)deadline->tv_nsec + nanoseconds;
     deadline->tv_sec += total / 1000000000LL;
     deadline->tv_nsec = (long)(total % 1000000000LL);
@@ -1299,7 +1305,9 @@ ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_l
 
     pthread_condattr_t attributes;
     pthread_condattr_init(&attributes);
+#if !defined(__APPLE__)
     pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
+#endif
     pthread_mutex_init(&e->mutex, NULL);
     pthread_cond_init(&e->changed, &attributes);
     pthread_condattr_destroy(&attributes);
