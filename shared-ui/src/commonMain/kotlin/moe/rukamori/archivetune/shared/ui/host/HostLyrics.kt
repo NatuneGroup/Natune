@@ -45,8 +45,17 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.session.SettingsLyricsRuntime
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 
-/** The lyrics of one queue occurrence. [lines] is empty while loading and when no provider had any. */
-data class HostLyricsDocument(val occurrenceId: String, val lines: List<LyricsLine>, val loading: Boolean)
+/**
+ * The lyrics of one queue occurrence. [lines] is empty while loading and when no provider had any.
+ * [raw] is the exact document text the provider returned; it is the AI session's identity and input
+ * and the host's share of the session key, so a refetch of different text invalidates every surface.
+ */
+data class HostLyricsDocument(
+    val occurrenceId: String,
+    val lines: List<LyricsLine>,
+    val loading: Boolean,
+    val raw: String = "",
+)
 
 /**
  * The host lyrics owner: the shared provider runtime over the settings owner, fed by the one queue. It follows the
@@ -104,16 +113,16 @@ class HostLyrics(
             return
         }
         if (state.value?.occurrenceId != occurrenceId) state.value = HostLyricsDocument(occurrenceId, emptyList(), loading = true)
-        val lines = try {
+        val (raw, lines) = try {
             val result = runtime.lyrics(request)
-            if (result.providerName.isEmpty()) emptyList() else parse(result.lyrics)
+            if (result.providerName.isEmpty()) "" to emptyList() else result.lyrics to parse(result.lyrics)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             report("lyrics lookup failed: ${failure::class.simpleName}")
-            emptyList()
+            "" to emptyList()
         }
-        state.value = HostLyricsDocument(occurrenceId, lines, loading = false)
+        state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw)
     }
 
     private fun parse(text: String): List<LyricsLine> =

@@ -11,6 +11,9 @@
     <string name="m6_language_pack_installed_size">Installed · %1$s</string>
     <string name="m6_language_pack_download">Download</string>
     <string name="m6_language_pack_remove">Remove</string>
+    <string name="m6_japanese_pack_invalid">The Japanese dictionary is damaged or unusable. Download it again.</string>
+    <string name="m6_japanese_pack_failed">Could not install the Japanese dictionary. Check your connection and free storage, then retry.</string>
+    <string name="m6_japanese_pack_remove_failed">Could not finish removing the Japanese dictionary. Try removing it again.</string>
     <string name="m6_language_pack_other_romanization">Korean, Chinese, Hindi, and other romanization</string>
     <string name="m6_language_pack_other_romanization_description">Built in · no additional data or download required</string>
     <string name="m6_additional_downloads_player_fonts">Player fonts</string>

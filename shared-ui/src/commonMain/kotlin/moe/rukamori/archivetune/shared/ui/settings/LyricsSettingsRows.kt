@@ -50,16 +50,30 @@ fun lyricsProviderSettingsRows(
     }
 }
 
+/**
+ * The five per-language toggles of the romanisation page. An active AI romanisation replaces every engine on the page,
+ * so the switches grey out behind the override note instead of flipping while changing nothing — the original's
+ * `romanization_overridden_by_ai`/`language_pack_required` descriptions carry over verbatim.
+ */
 fun romanizationSettingsRows(
     aiHandled: Boolean, japanesePackReady: Boolean, preferences: PreferenceSnapshot,
-): List<SettingsRow> = listOf(
-    SettingsRow.Toggle("lyrics_romanize_japanese", Res.string.m6_japanese, LyricsRomanizeJapaneseKey, false,
-        enabled = !aiHandled && (japanesePackReady || preferences[LyricsRomanizeJapaneseKey, false])),
-    SettingsRow.Toggle("lyrics_romanize_korean", Res.string.m6_korean, LyricsRomanizeKoreanKey, true, enabled = !aiHandled),
-    SettingsRow.Toggle("lyrics_romanize_chinese", Res.string.m6_chinese, LyricsRomanizeChineseKey, true, enabled = !aiHandled),
-    SettingsRow.Toggle("lyrics_romanize_hindi", Res.string.m6_hindi, LyricsRomanizeHindiKey, true, enabled = !aiHandled),
-    SettingsRow.Toggle("lyrics_romanize_other", Res.string.m6_other_languages, LyricsRomanizeOtherLanguagesKey, true, enabled = !aiHandled),
-)
+): List<SettingsRow> {
+    val override = Res.string.m6_romanization_overridden_by_ai.takeIf { aiHandled }
+    val japaneseReady = japanesePackReady || preferences[LyricsRomanizeJapaneseKey, false]
+    return listOf(
+        SettingsRow.Toggle("lyrics_romanize_japanese", Res.string.m6_japanese, LyricsRomanizeJapaneseKey, false,
+            description = override ?: Res.string.m6_language_pack_required.takeIf { !japaneseReady },
+            enabled = !aiHandled && japaneseReady),
+        SettingsRow.Toggle("lyrics_romanize_korean", Res.string.m6_korean, LyricsRomanizeKoreanKey, true,
+            description = override, enabled = !aiHandled),
+        SettingsRow.Toggle("lyrics_romanize_chinese", Res.string.m6_chinese, LyricsRomanizeChineseKey, true,
+            description = override, enabled = !aiHandled),
+        SettingsRow.Toggle("lyrics_romanize_hindi", Res.string.m6_hindi, LyricsRomanizeHindiKey, true,
+            description = override, enabled = !aiHandled),
+        SettingsRow.Toggle("lyrics_romanize_other", Res.string.m6_other_languages, LyricsRomanizeOtherLanguagesKey, true,
+            description = override, enabled = !aiHandled),
+    )
+}
 
 fun validLyricsEndpoint(value: String): Boolean =
     value.isBlank() || (value.startsWith("https://") || value.startsWith("http://")) &&
