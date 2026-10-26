@@ -129,10 +129,27 @@ internal object PortableStateMigrations {
      * row changes. Each statement matches its declaration on [PortableStoredSongRow] or on the album rows, because
      * Room's shape check compares them.
      */
+    val V6_TO_V7: Migration = object : Migration(6, 7) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.exec("ALTER TABLE `portable_stored_song` ADD COLUMN `bytes` INTEGER")
+            connection.exec(
+                "CREATE TABLE IF NOT EXISTS `portable_album_complete` (`albumProvider` TEXT NOT NULL, " +
+                    "`albumId` TEXT NOT NULL, `trackCount` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`albumProvider`, `albumId`))",
+            )
+            connection.exec(
+                "CREATE TABLE IF NOT EXISTS `portable_album_track` (`albumProvider` TEXT NOT NULL, " +
+                    "`albumId` TEXT NOT NULL, `position` INTEGER NOT NULL, `provider` TEXT NOT NULL, " +
+                    "`mediaId` TEXT NOT NULL, PRIMARY KEY(`albumProvider`, `albumId`, `position`))",
+            )
+        }
+    }
+
     /**
-     * The step from v7 to v8. It creates the persisted download queue and the local-media scan table; every
-     * column matches [PortableDownloadTaskRow] or [PortableLocalTrackRow] so the shape check passes and the
-     * owners resume interrupted rows or repeat scans on first open.
+     * The step from v7 to v8. It creates the persisted download queue and the local-media scan table, the search
+     * history and video-id lookup tables, and the hidden flag on playlists; every column matches
+     * [PortableDownloadTaskRow], [PortableLocalTrackRow], [PortableSearchHistoryRow] or [PortablePlaylistRow] so the
+     * shape check passes and the owners resume interrupted rows or repeat scans on first open.
      */
     val V7_TO_V8: Migration = object : Migration(7, 8) {
         override fun migrate(connection: SQLiteConnection) {
@@ -153,33 +170,6 @@ internal object PortableStateMigrations {
             connection.exec(
                 "CREATE INDEX IF NOT EXISTS `index_portable_local_track_path` ON `portable_local_track` (`path`)",
             )
-        }
-    }
-
-    val V6_TO_V7: Migration = object : Migration(6, 7) {
-        override fun migrate(connection: SQLiteConnection) {
-            connection.exec("ALTER TABLE `portable_stored_song` ADD COLUMN `bytes` INTEGER")
-            connection.exec(
-                "CREATE TABLE IF NOT EXISTS `portable_album_complete` (`albumProvider` TEXT NOT NULL, " +
-                    "`albumId` TEXT NOT NULL, `trackCount` INTEGER NOT NULL, " +
-                    "PRIMARY KEY(`albumProvider`, `albumId`))",
-            )
-            connection.exec(
-                "CREATE TABLE IF NOT EXISTS `portable_album_track` (`albumProvider` TEXT NOT NULL, " +
-                    "`albumId` TEXT NOT NULL, `position` INTEGER NOT NULL, `provider` TEXT NOT NULL, " +
-                    "`mediaId` TEXT NOT NULL, PRIMARY KEY(`albumProvider`, `albumId`, `position`))",
-            )
-        }
-    }
-
-    /**
-     * The step from v7 to v8. It creates the search history and the set-video-id tables that the Android schema-36
-     * `search_history` and `set_video_id` tables map to, so a cross-imported library keeps the searches and the
-     * synced playlist entry ids it carried. Both tables are new, so no existing row changes. Each statement matches
-     * its declaration, because Room's shape check compares them.
-     */
-    val V7_TO_V8: Migration = object : Migration(7, 8) {
-        override fun migrate(connection: SQLiteConnection) {
             connection.exec(
                 "CREATE TABLE IF NOT EXISTS `portable_search_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT " +
                     "NOT NULL, `query` TEXT NOT NULL)",
