@@ -40,8 +40,8 @@
     "moe.rukamori.archivetune.db"
   ],
   "documentedTasks": {
-    "assembleGmsMobileUniversalDebug": ".github/workflows/build_pull_request.yml",
-    ":app:lintGmsMobileUniversalDebug": ".github/workflows/build_pull_request.yml",
-    ":app:testGmsMobileUniversalDebugUnitTest": ".github/workflows/tests.yml"
+    "assembleGmsMobileUniversalDebug": ".github/inherited-workflows/build_pull_request.yml",
+    ":app:lintGmsMobileUniversalDebug": ".github/inherited-workflows/build_pull_request.yml",
+    ":app:testGmsMobileUniversalDebugUnitTest": ".github/inherited-workflows/tests.yml"
   }
 }
