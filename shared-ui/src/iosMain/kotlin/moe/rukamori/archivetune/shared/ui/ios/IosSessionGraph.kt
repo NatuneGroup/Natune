@@ -28,6 +28,8 @@ import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
+import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
+import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalPkceClient
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
@@ -201,9 +203,14 @@ internal class IosSessionGraph private constructor(
             report: (String) -> Unit,
         ): IosSessionGraph {
             val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
-            // This build carries no TIDAL client identity, so the device and browser sign-ins report themselves
-            // unavailable. A pasted refresh token is still verified with TIDAL.
-            val tidalAuth = TidalAccountAuth(http, device = null, pkce = null, nowMs = ::iosNowMillis)
+            // The device and PKCE clients come from the build's Info.plist keys; a build without them keeps
+            // those sign-ins unavailable. A pasted refresh token is still verified with TIDAL.
+            val tidalAuth = TidalAccountAuth(
+                http,
+                device = iosTidalDeviceClient(),
+                pkce = iosTidalPkceClient(),
+                nowMs = ::iosNowMillis,
+            )
             val tidalSessionRefresh = TidalSessionRefresh(
                 tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value }, nowMs = ::iosNowMillis,
             )
