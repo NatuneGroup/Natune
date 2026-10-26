@@ -5,11 +5,16 @@ import io.ktor.client.request.forms.prepareForm
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
+import io.ktor.http.encodeURLParameter
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import moe.rukamori.archivetune.shared.domain.platform.ContentDigest
 import moe.rukamori.archivetune.shared.domain.settings.TidalAuthFlowDevice
 import moe.rukamori.archivetune.shared.domain.settings.TidalAuthFlowPkce
 import moe.rukamori.archivetune.shared.domain.settings.TidalAuthFlowWebCapture
@@ -38,6 +43,22 @@ class TidalTokenGrant(
     val username: String?,
 ) {
     override fun toString(): String = "TidalTokenGrant(REDACTED)"
+}
+
+/**
+ * A generated PKCE challenge pair for the TIDAL web login. [authorizeUrl] is loaded in the login
+ * browser; [verifier] and [uniqueKey] are kept and passed to [TidalAccountAuth.exchangePkceCode]
+ * once the redirect returns the authorization code. Nothing here is a token, but the verifier is
+ * still kept out of logs like the rest of the flow.
+ */
+class TidalPkceAuthorization(
+    val verifier: String,
+    val challenge: String,
+    val uniqueKey: String,
+    val authorizeUrl: String,
+    val redirectUri: String,
+) {
+    override fun toString(): String = "TidalPkceAuthorization(REDACTED)"
 }
 
 /** How one refresh ended. Only [Refreshed] carries tokens. */
@@ -78,6 +99,9 @@ class TidalAccountAuth(
     private val api = endpoint(apiBase)
 
     val deviceSignInAvailable: Boolean get() = device != null
+
+    /** The PKCE web-login client is build-supplied; without it the embedded authorization-code flow is not offered. */
+    val pkceSignInAvailable: Boolean get() = pkce != null
 
     /** Starts a device authorization, or returns null when this build has no device client or TIDAL refused. */
     suspend fun startDeviceAuthorization(): TidalDeviceAuthorization? {
@@ -208,6 +232,68 @@ class TidalAccountAuth(
         )
 
     /**
+     * A fresh S256 PKCE challenge and the authorize URL the login browser loads, as the baseline
+     * built them: the verifier is 64 random bytes base64url-encoded, the challenge its SHA-256,
+     * and the unique key 8 random bytes as hex. Hosts that can inject cryptographic randomness
+     * (SecureRandom, SecRandomCopyBytes) should pass [randomBytes]; the default is fine for the
+     * shape of the values but not their entropy.
+     */
+    @OptIn(ExperimentalEncodingApi::class)
+    fun startPkceAuthorization(
+        randomBytes: (Int) -> ByteArray = { Random.nextBytes(it) },
+    ): TidalPkceAuthorization? {
+        val client = pkce ?: return null
+        val verifier = Base64.UrlSafe.encode(randomBytes(64)).trimEnd('=')
+        val challenge = Base64.UrlSafe.encode(hexToBytes(ContentDigest.sha256(verifier.encodeToByteArray())))
+            .trimEnd('=')
+        val uniqueKey = randomBytes(8).joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+        val url = buildString {
+            append(PKCE_AUTHORIZE_ENDPOINT)
+            append("?response_type=code")
+            append("&redirect_uri=").append(PKCE_REDIRECT_URI.encodeURLParameter())
+            append("&client_id=").append(client.clientId)
+            append("&lang=EN")
+            append("&appMode=android")
+            append("&client_unique_key=").append(uniqueKey)
+            append("&code_challenge=").append(challenge)
+            append("&code_challenge_method=S256")
+            append("&restrict_signup=true")
+        }
+        return TidalPkceAuthorization(verifier, challenge, uniqueKey, url, PKCE_REDIRECT_URI)
+    }
+
+    /**
+     * Exchanges the authorization [code] from the redirect for access + refresh tokens, exactly as
+     * the baseline's exchange did (client secret, unique key and verifier all go back). The grant
+     * then runs through [verifiedSession] so a mismatched user id or dead session is a null, never
+     * a stored token.
+     */
+    suspend fun exchangePkceCode(authorization: TidalPkceAuthorization, code: String): TidalSessionFacts? {
+        val client = pkce ?: return null
+        val (_, body) = try {
+            form(
+                "$auth/token",
+                listOf(
+                    "code" to code,
+                    "client_id" to client.clientId,
+                    "client_secret" to client.clientSecret,
+                    "grant_type" to "authorization_code",
+                    "redirect_uri" to authorization.redirectUri,
+                    "scope" to FULL_SCOPE,
+                    "code_verifier" to authorization.verifier,
+                    "client_unique_key" to authorization.uniqueKey,
+                ),
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return null
+        }
+        val grant = body?.let(::grantOf) ?: return null
+        return verifiedSession(grant, TidalAuthFlowPkce)
+    }
+
+    /**
      * The subscription tier, read as the Android account manager reads it: premiumAccess first, then a FREE type, the
      * highest sound quality and the known paid type names. Anything indeterminate is UNKNOWN.
      */
@@ -237,6 +323,9 @@ class TidalAccountAuth(
     }
 
     private fun bearer(token: String) = mapOf("Authorization" to "Bearer $token")
+
+    private fun hexToBytes(hex: String): ByteArray =
+        ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 
     private fun grantOf(body: JsonObject): TidalTokenGrant? {
         val access = body.text("access_token") ?: return null
@@ -276,6 +365,8 @@ class TidalAccountAuth(
 
     private companion object {
         const val FULL_SCOPE = "r_usr+w_usr+w_sub"
+        const val PKCE_AUTHORIZE_ENDPOINT = "https://login.tidal.com/authorize"
+        const val PKCE_REDIRECT_URI = "https://tidal.com/android/login/auth"
         const val REDUCED_SCOPE = "r_usr+w_usr"
         const val DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
         const val AUTH_USER_AGENT = "TIDAL/1000 (Linux; Android 10)"
