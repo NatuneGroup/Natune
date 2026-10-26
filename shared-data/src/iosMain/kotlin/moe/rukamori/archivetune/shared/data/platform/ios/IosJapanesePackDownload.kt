@@ -85,7 +85,7 @@ internal suspend fun downloadJapanesePack(destination: NSURL, progress: (Long, L
                 configuration.timeoutIntervalForResource = 180.0
                 configuration.URLCache = null
                 configuration.HTTPCookieStorage = null
-                configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicyNever
+                configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicy.NSHTTPCookieAcceptPolicyNever
                 val queue = NSOperationQueue().apply { maxConcurrentOperationCount = 1 }
                 val session = NSURLSession.sessionWithConfiguration(configuration, delegate, queue)
                 task = session.dataTaskWithURL(requireNotNull(NSURL.URLWithString(KuromojiJapaneseTokenizerFactory.ARCHIVE_URL)))

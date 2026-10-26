@@ -8,6 +8,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.flow.*
+import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.nativeaudio.*
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
@@ -41,6 +42,9 @@ class IosPlaybackPort : PlaybackPort {
     private var request: PlaybackRequest? = null
     private var reopenOutput = false
     private var closed = false
+
+    // Main-queue only. The app-level output level applied to every output, including one recreated after a fault.
+    private var volume = 1f
 
     // Main-queue state for host-prepared audio. Every Load, Stop and preparation advances [ticket]. A preparation whose
     // ticket no longer matches when it returns is discarded with its transport, so a superseded occurrence never plays.
@@ -86,6 +90,20 @@ class IosPlaybackPort : PlaybackPort {
     override fun submit(command: PlaybackCommand) {
         val occurrence = (command as? PlaybackCommand.Load)?.request?.occurrenceId ?: state.value?.occurrenceId
         enqueue(Inbound.Command(command), occurrence)
+    }
+
+    /**
+     * Sets the app-level output volume, 0 to 1, on the engine's mixer node for every live output and any output
+     * created or recreated later. The system route volume (hardware buttons) stays the OS's, as on Android and
+     * desktop where the device controls that route.
+     */
+    fun setVolume(level: Float) {
+        if (!level.isFinite()) return
+        scope.launch {
+            if (closed) return@launch
+            volume = level.coerceIn(0f, 1f)
+            output?.let { at_audio_volume(it, volume) }
+        }
     }
 
     /**
@@ -496,7 +514,10 @@ class IosPlaybackPort : PlaybackPort {
         return output ?: memScoped {
             val error = allocArray<ByteVar>(256)
             at_audio_create(error, 256uL)
-        }?.also { output = it }
+        }?.also {
+            output = it
+            at_audio_volume(it, volume)
+        }
     }
 
     /** Returns true while the engine plays or buffers, the states whose position and failure reads must stay prompt. */
