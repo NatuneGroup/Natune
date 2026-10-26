@@ -19,6 +19,8 @@ private val PROVIDER_AUTHORITIES: Map<String, BackupFolderProvider> = mapOf(
     "com.microsoft.skydrive.content.SkyDriveProvider" to BackupFolderProvider.ONEDRIVE,
     "com.onedrive.android.content.OneDriveDocumentsProvider" to BackupFolderProvider.ONEDRIVE,
     LOCAL_STORAGE_AUTHORITY to BackupFolderProvider.LOCAL,
+    // A filesystem folder the desktop host picked: local storage, never a cloud destination on its own.
+    "localfs" to BackupFolderProvider.LOCAL,
 )
 
 /**

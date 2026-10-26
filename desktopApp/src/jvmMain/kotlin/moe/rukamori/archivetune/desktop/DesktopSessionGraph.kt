@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -29,6 +30,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.backup.DesktopBackup
 import moe.rukamori.archivetune.desktop.backup.DesktopPendingRestore
+import moe.rukamori.archivetune.shared.data.playlistimport.PlaylistImportOwner
+import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImportSearch
 import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
@@ -638,6 +641,8 @@ class DesktopSessionGraph private constructor(
             // The override folders sit directly in the instance directory, as Android keeps them in its files directory.
             val customArtworkFiles = JvmCustomArtworkFiles(directory)
             val customArtwork = FileCustomArtworkRepository(customArtworkFiles)
+            // The backup file picker and the graph property each own a thin export facade over the same database.
+            val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
             val graph = DesktopSessionGraph(
                 scope = scope,
                 settings = vault,
@@ -680,6 +685,12 @@ class DesktopSessionGraph private constructor(
                     googleClient = { DesktopCredentials.googleDesktopClient },
                     vault = DesktopSecureCredentialStore(),
                     openBrowser = { url -> openDesktopUri(url, ::desktopDiagnostic) },
+                    playlistExport = playlistExport,
+                    playlistImport = PlaylistImportOwner(
+                        library = library,
+                        search = YouTubePlaylistImportSearch(youtubeContent),
+                    ),
+                    playlistRows = { libraryContent.playlistRows().first() },
                     report = ::desktopDiagnostic,
                 ),
                 drivers = drivers,
