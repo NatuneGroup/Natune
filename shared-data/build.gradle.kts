@@ -61,6 +61,11 @@ kotlin {
         jvmTest.dependencies {
             // Real retained-version writer/reader for synthetic DataStore compatibility/rollback tests.
             implementation("androidx.datastore:datastore-preferences-core:1.2.1")
+            // The live YouTube smoke test exercises the same InnerTubeX calls the iOS resolver makes.
+            implementation(libs.innertubex.desktop)
+            implementation(libs.ktor.client.cio)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.json)
         }
         // IosChallengeEvaluator runs provider JavaScript on the same pinned quickjs-kt artifact as desktop.
         // Kotlin 2.4 creates intermediate source sets lazily: getByName fails here, the accessor works.
