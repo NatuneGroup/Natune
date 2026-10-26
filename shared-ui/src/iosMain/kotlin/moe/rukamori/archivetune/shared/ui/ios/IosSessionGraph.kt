@@ -1,4 +1,4 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, ExperimentalCoroutinesApi::class)
 
 package moe.rukamori.archivetune.shared.ui.ios
 
@@ -13,12 +13,28 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherClient
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherMessageCodec
+import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherGzip
+import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherPreferences
+import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherSocketFactory
+import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherStore
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramBotDirectory
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramBotStore
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramChannelLibrary
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramChannelSearch
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
+import moe.rukamori.archivetune.shared.data.telegram.TelegramBotsOwner
+import moe.rukamori.archivetune.shared.data.telegram.TelegramBrowseOwner
+import moe.rukamori.archivetune.shared.domain.settings.TelegramLosslessOnlyKey
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -73,6 +89,10 @@ internal class IosSessionGraph private constructor(
     val accountLifecycle: ProviderAccountLifecycle,
     val tidalAuth: TidalAccountAuth,
     val playbackPool: IosPlaybackPool,
+    /** The shared Listen Together client: both sanctioned servers, NSURLSessionWebSocketTask transport, zlib gzip. */
+    val listenTogether: ListenTogetherClient,
+    /** The signed-in TDLib session, or none; the browse and bot owners below bind to it. */
+    val telegram: StateFlow<IosTelegramClient?>,
     val http: HttpClient,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
@@ -156,6 +176,29 @@ internal class IosSessionGraph private constructor(
         scope.cancel()
     }
 
+    /**
+     * A channel-browse owner bound to a running TDLib session. Channel search is live; opening a channel reports the
+     * honest failure until an `LPtg` playlist/sync engine exists on this host.
+     */
+    fun telegramBrowse(client: IosTelegramClient): TelegramBrowseOwner =
+        TelegramBrowseOwner(
+            channelSearch = IosTelegramChannelSearch(client),
+            channelLibrary = IosTelegramChannelLibrary(),
+            losslessOnly = { settings.snapshots.value?.get(TelegramLosslessOnlyKey) == true },
+            scope = scope,
+        )
+
+    /** A bot-management owner bound to a running TDLib session and the vault-backed bot list. */
+    fun telegramBots(client: IosTelegramClient, ready: StateFlow<Boolean>): TelegramBotsOwner =
+        TelegramBotsOwner(
+            store = IosTelegramBotStore(settings),
+            directory = IosTelegramBotDirectory(client),
+            ready = ready,
+            scope = scope,
+            nowMs = ::iosNowMillis,
+            newId = { NSUUID().UUIDString() },
+        )
+
     companion object {
         /** The position past which a previous skip restarts the current occurrence instead of stepping back. */
         const val RESTART_THRESHOLD_MS = 3_000L
@@ -217,6 +260,21 @@ internal class IosSessionGraph private constructor(
                 tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value }, nowMs = ::iosNowMillis,
             )
             val playbackPool = IosPlaybackPool(http, IosKeychainCredentialStore(), { vault.snapshots.value }, scope, report)
+            // The shared client on its own serial thread, over the NSURLSessionWebSocketTask transport. iOS publishes
+            // no network-change events to it; a dropped socket still reaches the client's retry rules.
+            val listenTogether = ListenTogetherClient(
+                scope = CoroutineScope(
+                    scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]) + Dispatchers.Default.limitedParallelism(1),
+                ),
+                sockets = IosListenTogetherSocketFactory(
+                    NSURLSession.sessionWithConfiguration(NSURLSessionConfiguration.ephemeralSessionConfiguration),
+                ),
+                codec = ListenTogetherMessageCodec(gzip = IosListenTogetherGzip()),
+                preferences = IosListenTogetherPreferences(vault),
+                store = IosListenTogetherStore(vault, report),
+                network = MutableStateFlow(iosNetworkAvailable()),
+                nowMs = ::iosNowMillis,
+            )
             val library = RoomLibraryRepository(database.library(), listens = database.listens())
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
             val history = RoomListeningHistory(database.listens(), offsetMsAt = ::iosOffsetMsAt)
@@ -323,6 +381,8 @@ internal class IosSessionGraph private constructor(
                 lyrics = lyrics,
                 artworkLoader = IosArtworkLoader(http),
                 playbackPool = playbackPool,
+                listenTogether = listenTogether,
+                telegram = host.telegram,
                 owner = owner,
                 database = database,
                 listenDriver = listenDriver,

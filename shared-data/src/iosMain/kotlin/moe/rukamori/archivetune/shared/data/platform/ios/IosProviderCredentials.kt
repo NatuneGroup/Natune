@@ -9,19 +9,19 @@ import platform.Foundation.NSBundle
  * unset answer means the feature is not configured; no value is ever logged or written to settings.
  * An unset build setting can reach the plist as its literal `$(...)` reference, which is not usable.
  */
-internal fun iosBuildSetting(name: String): String {
+fun iosBuildSetting(name: String): String {
     val value = (NSBundle.mainBundle.objectForInfoDictionaryKey(name) as? String)?.trim().orEmpty()
     return if (value.isEmpty() || value.startsWith("$(")) "" else value
 }
 
-internal fun iosTidalClient(idName: String, secretName: String): TidalClientCredentials? {
+fun iosTidalClient(idName: String, secretName: String): TidalClientCredentials? {
     val id = iosBuildSetting(idName)
     val secret = iosBuildSetting(secretName)
     if (id.isBlank() || secret.isBlank()) return null
     return TidalClientCredentials(id, secret)
 }
 
-internal object IosProviderCredentials {
+object IosProviderCredentials {
     /**
      * The TIDAL device-flow client. A dedicated device client wins; otherwise the OAuth client that
      * issued the "oauth" sessions is used, so a session copied from Android can still be refreshed

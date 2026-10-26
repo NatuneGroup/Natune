@@ -216,7 +216,7 @@ private class IosTidalSource(
             Attempt(
                 KtorTidalRepository(
                     http,
-                    TidalAccess(scope = scope, bearer = account.token, credentialScope = CredentialScope.PLAYBACK_POOL, isActive = { pool.enabled() }),
+                    TidalAccess(scope = scope, bearer = account.token, credentialScope = CredentialScope.PLAYBACK_POOL, isActive = { pool?.enabled() == true }),
                     countryCode = account.countryCode?.trim()?.takeIf { it.length == 2 } ?: "US",
                 ),
                 poolId = feedId,
@@ -386,7 +386,7 @@ private class IosQobuzSource(
                 KtorQobuzRepository(
                     http,
                     nowMs = ::iosNowMillis,
-                    access = QobuzAccess(scope, account.appId, account.token, account.appSecret, CredentialScope.PLAYBACK_POOL) { pool.enabled() },
+                    access = QobuzAccess(scope, account.appId, account.token, account.appSecret, CredentialScope.PLAYBACK_POOL) { pool?.enabled() == true },
                     digest = IosQobuzRequestDigest,
                 ),
                 poolId = feedId,
@@ -596,7 +596,7 @@ private class IosAmazonSource(
                 },
             ) ?: continue
             attempts += Attempt(
-                KtorAmazonRepository(http, base, AmazonInstanceAccess(scope, operator, poolJwt) { pool.enabled() }),
+                KtorAmazonRepository(http, base, AmazonInstanceAccess(scope, operator, poolJwt) { pool?.enabled() == true }),
                 poolId = feedId,
                 pooled = true,
             )
