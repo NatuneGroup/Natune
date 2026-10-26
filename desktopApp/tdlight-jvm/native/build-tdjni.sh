@@ -95,18 +95,27 @@ esac
 
 # TD_ENABLE_JNI builds the Java bindings' native side. Static OpenSSL keeps the staged library free of a system OpenSSL
 # dependency, which the Android build also avoids. Position-independent code is needed to link static archives into a
-# shared library.
+# shared library. The pinned tree defines tdjni only in the example/java project, which find_package(Td)s an installed
+# TDLib — so stage one builds and installs the library, stage two compiles the JNI shim against it.
+INSTALL_PREFIX="$BUILD/prefix"
 cmake -S "$SRC" -B "$CMAKE_BUILD" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DTD_ENABLE_JNI=ON \
     -DOPENSSL_ROOT_DIR="$TDLIGHT_OPENSSL_PREFIX" \
-    -DOPENSSL_USE_STATIC_LIBS=ON
-cmake --build "$CMAKE_BUILD" --config Release --target "$TDLIGHT_JNI_TARGET" --parallel "$JOBS"
+    -DOPENSSL_USE_STATIC_LIBS=ON \
+    -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX"
+cmake --build "$CMAKE_BUILD" --config Release --target install --parallel "$JOBS"
 
-LIBRARY_HITS="$(find "$CMAKE_BUILD" -name "$LIBRARY_NAME" -type f)"
+cmake -S "$SRC/example/java" -B "$CMAKE_BUILD-java" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DTd_DIR="$INSTALL_PREFIX/lib/cmake/Td" \
+    -DCMAKE_PREFIX_PATH="$INSTALL_PREFIX"
+cmake --build "$CMAKE_BUILD-java" --config Release --target "$TDLIGHT_JNI_TARGET" --parallel "$JOBS"
+
+LIBRARY_HITS="$(find "$CMAKE_BUILD-java" -name "$LIBRARY_NAME" -type f)"
 [ "$(printf '%s\n' "$LIBRARY_HITS" | grep -c .)" = "1" ] \
-    || die "expected exactly one $LIBRARY_NAME under $CMAKE_BUILD"
+    || die "expected exactly one $LIBRARY_NAME under $CMAKE_BUILD-java"
 
 mkdir -p "$STAGE/$HOST_NAME/native" "$STAGE/notices"
 rm -f "$STAGE/$HOST_NAME/native/$LIBRARY_NAME"
