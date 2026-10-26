@@ -82,13 +82,13 @@ internal class DesktopDeezerWebSignIn(private val graph: DesktopSessionGraph) {
             context.close()
         }
         if (generation != generations.get()) return
-        if (arl.isNullOrBlank()) {
+        if (arl == null || arl.reveal().isBlank()) {
             state.value = ProviderSignInState.Failed(ProviderSignInFailure.UNVERIFIED)
             return
         }
         state.value = ProviderSignInState.Verifying
         val account = try {
-            verifyDeezerArl(graph.http, arl)
+            verifyDeezerArl(graph.http, arl.reveal())
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -96,7 +96,7 @@ internal class DesktopDeezerWebSignIn(private val graph: DesktopSessionGraph) {
         }
         if (generation != generations.get()) return
         val attempt = graph.accountLifecycle.begin(ProviderAccountLifecycle.DEEZER)
-        val outcome = account?.let { graph.accountLifecycle.commitDeezer(attempt, it.userId, arl, it.name, it.lossless) }
+        val outcome = account?.let { graph.accountLifecycle.commitDeezer(attempt, it.userId, arl.reveal(), it.name, it.lossless) }
         when (outcome) {
             ProviderSignInOutcome.Accepted ->
                 state.value = ProviderSignInState.SignedIn(requireNotNull(account).name)

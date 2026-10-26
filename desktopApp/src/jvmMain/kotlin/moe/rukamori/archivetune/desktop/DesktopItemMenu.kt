@@ -20,13 +20,12 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
-import moe.rukamori.archivetune.shared.ui.resources.Res
-import moe.rukamori.archivetune.shared.ui.resources.m5pq_action_download
-import moe.rukamori.archivetune.shared.ui.resources.m5pq_details
-import moe.rukamori.archivetune.shared.ui.resources.m5pq_remove_download
-import moe.rukamori.archivetune.shared.ui.resources.m6_track_info
 import moe.rukamori.archivetune.shared.ui.screens.customartwork.BoundCustomArtworkEditDialog
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.m5pqActionDownloadRes
+import moe.rukamori.archivetune.shared.ui.resources.m5pqDetailsRes
+import moe.rukamori.archivetune.shared.ui.resources.m5pqRemoveDownloadRes
+import moe.rukamori.archivetune.shared.ui.resources.m6TrackInfoRes
 
 /**
  * The one row menu of the desktop host. A row's overflow opens it on that row's occurrence. It offers the queue
@@ -162,18 +161,18 @@ internal fun DesktopItemMenuDialog(
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(stringResource(if (downloaded) Res.string.m5pq_remove_download
-                                else Res.string.m5pq_action_download))
+                            Text(stringResource(if (downloaded) m5pqRemoveDownloadRes
+                                else m5pqActionDownloadRes))
                         }
                     }
                     TextButton(
                         onClick = { menu.dismiss(); openRoute(ArchiveRoutes.trackInfo(mediaId)) },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(Res.string.m6_track_info)) }
+                    ) { Text(stringResource(m6TrackInfoRes)) }
                     TextButton(
                         onClick = { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(mediaId)) },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(Res.string.m5pq_details)) }
+                    ) { Text(stringResource(m5pqDetailsRes)) }
                 }
             }
         },
