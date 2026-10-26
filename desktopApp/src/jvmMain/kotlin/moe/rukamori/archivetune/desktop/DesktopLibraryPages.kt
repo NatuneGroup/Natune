@@ -49,6 +49,7 @@ internal fun desktopGraphPage(
     recognition: DesktopRecognitionMount,
     playlistMenus: DesktopPlaylistMenuState,
     route: ArchiveRoute,
+    back: () -> Unit,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage = key(route.value) {
     when (route.destination) {
@@ -63,6 +64,7 @@ internal fun desktopGraphPage(
         ArchiveDestination.MUSIC_RECOGNITION -> desktopRecognitionPage(recognition, route)
         ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> desktopRecognitionDetailsPage(recognition, route)
         ArchiveDestination.LISTEN_TOGETHER -> desktopListenTogetherPage(graph, openRoute)
+        ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopListenTogetherChatPage(graph, back)
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu)
         ArchiveDestination.NEWS -> desktopNewsPage()
         ArchiveDestination.ARTICLE -> desktopArticlePage(route.arguments.getValue("newsId"))
