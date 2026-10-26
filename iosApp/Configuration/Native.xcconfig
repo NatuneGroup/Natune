@@ -33,6 +33,14 @@ LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
 // Configuration/Credentials.xcconfig or as Xcode build settings. Blank values keep Telegram not configured.
 ARCHIVETUNE_TELEGRAM_API_ID =
 ARCHIVETUNE_TELEGRAM_API_HASH =
+// The TIDAL OAuth clients reach the app through Info.plist the same way. Blank values keep TIDAL sign-in not
+// configured: the device flow needs an id and a secret, and the unprefixed pair is the fallback the desktop reads.
+ARCHIVETUNE_TIDAL_CLIENT_ID =
+ARCHIVETUNE_TIDAL_CLIENT_SECRET =
+ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID =
+ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET =
+ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID =
+ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET =
 // The opt-in listener presence origin reaches the app through Info.plist the same way. A blank value sends nothing.
 // xcconfig treats // as a comment, so write the scheme as https:/$()/host when setting it in an xcconfig file.
 ARCHIVETUNE_LISTENER_PRESENCE_URL =
