@@ -146,6 +146,10 @@ recipes are not complete yet, so the matching jobs fail until they are added:
 
 Linux x64 and arm64 use the same recipe; the scripts choose the OpenSSL target and
 the `linux-x64` or `linux-arm64` resource directory from the host architecture.
+All Linux packages register `archivetune://` with the desktop: the app image's
+`.desktop` entry gains `Exec … %u` and `MimeType=x-scheme-handler/archivetune;`
+inside `createDistributable` (jpackage's `--linux-shortcut` writes neither), and the
+AppImage's hand-written entry declares the same pair in the workflow.
 
 ## Run by hand
 

@@ -475,6 +475,34 @@ tasks.matching { it.name == "packageRpm" }.configureEach {
     finalizedBy(addLinuxBrowserRpmRequires)
 }
 
+// jpackage's --linux-shortcut writes lib/<name>.desktop into the app image without a MimeType or an Exec argument
+// placeholder, so nothing registers archivetune:// for installed Linux packages. The edit runs inside
+// createDistributable itself — not a finalizedBy, which Gradle may run concurrently with packageDeb/packageRpm — so
+// the .deb, the .rpm rebuilt from this same image and the raw app image all carry the handler.
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    doLast {
+        val appImage = layout.buildDirectory.dir("compose/binaries/main/app/$desktopPackageName").get().asFile
+        val desktopEntries = appImage.walkTopDown().filter { it.isFile && it.extension == "desktop" }.toList()
+        check(desktopEntries.isNotEmpty()) { "createDistributable wrote no .desktop entry under $appImage" }
+        desktopEntries.forEach(::registerUriSchemeHandler)
+    }
+}
+
+// Exec gets the %u placeholder a scheme handler needs to receive the clicked URI; MimeType declares the scheme once.
+private fun registerUriSchemeHandler(file: File) {
+    val lines = file.readLines().toMutableList()
+    val exec = lines.indexOfFirst { it.startsWith("Exec=") }
+    check(exec >= 0) { "no Exec= line in $file" }
+    if (!lines[exec].contains("%u")) lines[exec] += " %u"
+    val mime = lines.indexOfFirst { it.startsWith("MimeType=") }
+    when {
+        mime < 0 -> lines += "MimeType=x-scheme-handler/archivetune;"
+        !lines[mime].contains("x-scheme-handler/archivetune") ->
+            lines[mime] = lines[mime].trimEnd(';') + ";x-scheme-handler/archivetune;"
+    }
+    file.writeText(lines.joinToString("\n").trimEnd('\n') + "\n")
+}
+
 // A host packaging tool that fails stops the build with its output. Continuing would leave an unamended package behind
 // while the task reports success.
 private fun runHostTool(vararg command: String): String {
