@@ -62,4 +62,15 @@
     <string name="m6_qobuz_close">Close</string>
     <string name="m6_qobuz_show">Show</string>
     <string name="m6_qobuz_hide">Hide</string>
+    <string name="m6_qobuz_login_title">Sign in with Qobuz</string>
+    <string name="m6_qobuz_login_description">Sign in to the Qobuz web player, then paste the user_auth_token and app_id it uses. The app finds the app_secret for you by testing the bundle\'s candidates against the API — the same check the web player itself passes.</string>
+    <string name="m6_qobuz_login_open_player">Open the Qobuz web player</string>
+    <string name="m6_qobuz_login_token_hint">user_auth_token</string>
+    <string name="m6_qobuz_login_app_id_hint">app_id</string>
+    <string name="m6_qobuz_login_app_secret_hint">app_secret (32 lowercase hex)</string>
+    <string name="m6_qobuz_login_start">Sign in</string>
+    <string name="m6_qobuz_login_searching">Searching the bundle for your app_secret…</string>
+    <string name="m6_qobuz_login_no_secret">No candidate secret worked — the bundle changed shape or this token cannot sign. Paste the app_secret manually.</string>
+    <string name="m6_qobuz_login_manual_secret">Verify this app_secret</string>
+    <string name="m6_qobuz_login_success">Account saved and Qobuz enabled.</string>
 </resources>

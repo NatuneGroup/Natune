@@ -70,17 +70,26 @@ compose.resources {
 }
 
 // Keep complete upstream notices in every platform resource bundle, not just the source checkout.
+// customDirectory replaces the default src/<set>/composeResources directory in this plugin version,
+// so the merged output carries the source checkout's resources alongside the notices.
 val prepareRomanizationNotices = tasks.register<Copy>("prepareRomanizationNotices") {
+    from("src/commonMain/composeResources")
     from(rootProject.file("shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/lyrics/romanization")) {
         include("kuromoji-LICENSE.txt", "kuromoji-CONTRIBUTORS.md", "kuromoji-IPADIC-NOTICE.md")
+        into("files/notices")
     }
-    into(layout.buildDirectory.dir("generated/romanization-notices/composeResources/files/notices"))
+    into(layout.buildDirectory.dir("generated/merged-common-resources"))
 }
 compose.resources.customDirectory(
     sourceSetName = "commonMain",
-    directoryProvider = layout.buildDirectory.dir("generated/romanization-notices/composeResources"),
+    directoryProvider = layout.buildDirectory.dir("generated/merged-common-resources"),
 )
-tasks.matching { it.name.startsWith("generateResourceAccessors") || it.name.startsWith("prepareComposeResources") }
+tasks.matching {
+    it.name.startsWith("generateResourceAccessors") ||
+        it.name.startsWith("prepareComposeResources") ||
+        it.name.startsWith("copyNonXmlValueResources") ||
+        it.name.startsWith("convertXmlValueResources")
+}
     .configureEach { dependsOn(prepareRomanizationNotices) }
 
 // The screenshot test writes into the ignored repository outputs/ directory. It must run on every
