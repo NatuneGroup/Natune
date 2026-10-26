@@ -25,6 +25,12 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzBackupVideoIdKey
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzTrackIdKey
+import moe.rukamori.archivetune.shared.domain.source.SongSourceOverride
+import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzBackupVideoId
+import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzTrackId
 import moe.rukamori.archivetune.shared.ui.host.hostSourceSnapshot
 import moe.rukamori.archivetune.shared.ui.host.toAudioResolveRequest
 import moe.rukamori.archivetune.shared.ui.host.unresolvedSourceReason
@@ -70,10 +76,13 @@ internal class DesktopQueueLocatorResolver(
         storedFile(occurrence.item.ref.provider, occurrence.item.ref.id)?.let { path ->
             return PlaybackLocator.LocalFile(path.toFile().absolutePath)
         }
-        val request = occurrence.toResolveRequest(preferences())
+        val request = occurrence.toResolveRequest(preferences()).withSourcePins(preferences(), occurrence.item.ref.id)
+        // A "play from" pin forces the attempt chain for this one song, as the Android service's per-song
+        // source override does; a refused pinned source falls through to the ordinary chain.
+        val pinned = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
         var refused = emptySet<AudioSourceType>()
         while (true) {
-            val resolution = audio.resolve(request, desktopSourceSnapshot(preferences()), rejected = refused)
+            val resolution = audio.resolve(request, desktopSourceSnapshot(preferences()), pinned = pinned, rejected = refused)
             val prepared = when (resolution) {
                 is AudioResolution.Resolved -> resolution.audio
                 is AudioResolution.Unavailable ->
@@ -167,6 +176,17 @@ internal fun desktopAudioProviders(
 
 private fun ContentOccurrence.toResolveRequest(preferences: PreferenceSnapshot?): AudioResolveRequest =
     toAudioResolveRequest(preferences)
+
+/** The per-source catalogue ids the menu's source chooser stored, added to the request's authoritative ids. */
+private fun AudioResolveRequest.withSourcePins(preferences: PreferenceSnapshot?, songId: String): AudioResolveRequest {
+    val qobuzTrack = preferences?.get(SongSourceQobuzTrackIdKey)?.let { SongSourceQobuzTrackId.get(it, songId) }
+    val backupVideo = preferences?.get(SongSourceQobuzBackupVideoIdKey)?.let { SongSourceQobuzBackupVideoId.get(it, songId) }
+    val extras = listOfNotNull(
+        qobuzTrack?.let { AudioSourceType.QOBUZ to it },
+        backupVideo?.let { AudioSourceType.QOBUZ_BACKUP to it },
+    )
+    return if (extras.isEmpty()) this else copy(directIds = directIds + extras.toMap())
+}
 
 private fun unavailableReason(occurrence: ContentOccurrence, attempts: List<AudioAttempt>): String =
     unresolvedSourceReason(occurrence, attempts, host = "desktop")

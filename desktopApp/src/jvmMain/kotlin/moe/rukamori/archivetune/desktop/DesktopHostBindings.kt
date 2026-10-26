@@ -103,7 +103,7 @@ internal fun desktopHostBindings(
             DesktopItemMenuDialog(menu, graph, route.value, sleepSheet) { target -> ownRoutes.trySend(target) }
             DesktopCreatePlaylistOverlay(createPlaylist, route)
             DesktopPlaylistMenuOverlay(playlistMenus, graph, route.value)
-            DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph)
+            DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph) { target -> ownRoutes.trySend(target) }
             DesktopSleepTimerOverlay(sleepSheet, graph.sleepTimer)
             DesktopFeedbackOverlay(feedback, graph)
             DesktopBackupRestartDialog(graph, quit)

@@ -147,6 +147,8 @@ class DesktopSessionGraph private constructor(
     val textOrder: Comparator<String>,
     /** The one owner of the Library sections and playlist orders, read through [settings] and [library]. */
     internal val libraryContent: LibraryContentOwner,
+    /** The YouTube resolve owner; the source chooser's refresh drops its searched-id cache entry. */
+    internal val youtubeResolver: DesktopYouTubeResolver,
     private val owner: PortableQueueOwner,
     /** The engine behind [player], reached directly only for the output volume, which is not a queue command. */
     private val playback: DesktopPlaybackPort,
@@ -778,6 +780,7 @@ class DesktopSessionGraph private constructor(
             // The backup file picker and the graph property each own a thin export facade over the same database.
             val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
             val graph = DesktopSessionGraph(
+                youtubeResolver = youtubeResolver,
                 scope = scope,
                 settings = vault,
                 accounts = accounts,

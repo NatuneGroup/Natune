@@ -36,6 +36,13 @@ sealed interface PlaybackCommand {
         }
     }
 
+    /** Changes the pitch multiplier: 1.0 is unshifted, 2.0 is one octave up. */
+    data class SetPitch(val pitch: Float) : PlaybackCommand {
+        init {
+            require(pitch.isFinite() && pitch > 0f) { "pitch must be a positive finite number, was $pitch" }
+        }
+    }
+
     /** Ends the current occurrence and releases its decoder. The port stays usable for a new load. */
     data object Stop : PlaybackCommand
 }

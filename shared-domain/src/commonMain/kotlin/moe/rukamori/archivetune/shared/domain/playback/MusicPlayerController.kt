@@ -47,6 +47,8 @@ class MusicPlayerController(
 
     fun setPlaybackSpeed(speed: Float) = port.submit(PlaybackCommand.SetSpeed(speed))
 
+    fun setPlaybackPitch(pitch: Float) = port.submit(PlaybackCommand.SetPitch(pitch))
+
     fun stop() = port.submit(PlaybackCommand.Stop)
 
     /** The position at [nowNanos] on the [MonotonicClock] base, or null before the first load. */

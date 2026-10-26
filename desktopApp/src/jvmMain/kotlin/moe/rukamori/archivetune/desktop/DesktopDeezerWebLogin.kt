@@ -77,19 +77,18 @@ internal class DesktopDeezerWebSignIn(private val graph: DesktopSessionGraph) {
             context.cookiesFor(DEEZER_ORIGIN)
                 .plus(context.cookiesFor(DEEZER_WWW_ORIGIN))
                 .firstOrNull { it.name == DEEZER_ARL_COOKIE }
-                ?.value
-                ?.reveal()
+                ?.value?.reveal()
         } finally {
             context.close()
         }
         if (generation != generations.get()) return
-        if (arl == null || arl.reveal().isBlank()) {
+        if (arl.isNullOrBlank()) {
             state.value = ProviderSignInState.Failed(ProviderSignInFailure.UNVERIFIED)
             return
         }
         state.value = ProviderSignInState.Verifying
         val account = try {
-            verifyDeezerArl(graph.http, arl.reveal())
+            verifyDeezerArl(graph.http, arl)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -97,7 +96,7 @@ internal class DesktopDeezerWebSignIn(private val graph: DesktopSessionGraph) {
         }
         if (generation != generations.get()) return
         val attempt = graph.accountLifecycle.begin(ProviderAccountLifecycle.DEEZER)
-        val outcome = account?.let { graph.accountLifecycle.commitDeezer(attempt, it.userId, arl.reveal(), it.name, it.lossless) }
+        val outcome = account?.let { graph.accountLifecycle.commitDeezer(attempt, it.userId, arl, it.name, it.lossless) }
         when (outcome) {
             ProviderSignInOutcome.Accepted ->
                 state.value = ProviderSignInState.SignedIn(requireNotNull(account).name)
