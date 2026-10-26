@@ -14,6 +14,9 @@ CLANG_CXX_LANGUAGE_STANDARD = c++17
 ENABLE_USER_SCRIPT_SANDBOXING = NO
 IPHONEOS_DEPLOYMENT_TARGET = 16.0
 SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+// The Kotlin/Native closure ships iosArm64 + iosSimulatorArm64 only; without this Xcode's default
+// simulator ARCHS (arm64 x86_64) make :shared-ui:syncComposeResourcesForIos fail on 'x86_64'.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64
 SUPPORTS_MACCATALYST = NO
 SWIFT_VERSION = 5.0
 TARGETED_DEVICE_FAMILY = 1,2
