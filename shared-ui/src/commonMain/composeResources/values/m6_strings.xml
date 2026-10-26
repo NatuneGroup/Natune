@@ -10,6 +10,8 @@
     <string name="m6_providers">Providers</string>
     <string name="m6_provider_order">Lyrics provider order</string>
     <string name="m6_romanization">Romanisation</string>
+    <string name="m6_romanization_overridden_by_ai">Overridden — AI romanisation is on (Settings → Integration → AI integration)</string>
+    <string name="m6_language_pack_required">Download the Japanese language pack first</string>
     <string name="m6_lyrics_mode">Lyrics mode</string>
     <string name="m6_mode_v2">V2</string>
     <string name="m6_mode_enhanced">Enhanced</string>

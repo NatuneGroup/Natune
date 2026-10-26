@@ -12,8 +12,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.lyrics.BetterLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.BiniLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.GeniusLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.KuGouLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LrcLibLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.LrcRedLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.MegalobizLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider
@@ -41,8 +45,17 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.session.SettingsLyricsRuntime
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 
-/** The lyrics of one queue occurrence. [lines] is empty while loading and when no provider had any. */
-data class HostLyricsDocument(val occurrenceId: String, val lines: List<LyricsLine>, val loading: Boolean)
+/**
+ * The lyrics of one queue occurrence. [lines] is empty while loading and when no provider had any.
+ * [raw] is the exact document text the provider returned; it is the AI session's identity and input
+ * and the host's share of the session key, so a refetch of different text invalidates every surface.
+ */
+data class HostLyricsDocument(
+    val occurrenceId: String,
+    val lines: List<LyricsLine>,
+    val loading: Boolean,
+    val raw: String = "",
+)
 
 /**
  * The host lyrics owner: the shared provider runtime over the settings owner, fed by the one queue. It follows the
@@ -100,16 +113,16 @@ class HostLyrics(
             return
         }
         if (state.value?.occurrenceId != occurrenceId) state.value = HostLyricsDocument(occurrenceId, emptyList(), loading = true)
-        val lines = try {
+        val (raw, lines) = try {
             val result = runtime.lyrics(request)
-            if (result.providerName.isEmpty()) emptyList() else parse(result.lyrics)
+            if (result.providerName.isEmpty()) "" to emptyList() else result.lyrics to parse(result.lyrics)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             report("lyrics lookup failed: ${failure::class.simpleName}")
-            emptyList()
+            "" to emptyList()
         }
-        state.value = HostLyricsDocument(occurrenceId, lines, loading = false)
+        state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw)
     }
 
     private fun parse(text: String): List<LyricsLine> =
@@ -148,11 +161,16 @@ fun sharedLyricsProviders(http: HttpClient, preferences: PreferenceSnapshot): Li
     val lyprio = LyprioEndpoint.parse(preferences[LyprioEndpointKey].orEmpty(), preferences[LyprioSigningKeyKey].orEmpty())
     return listOfNotNull(
         lyprio?.let { LyprioLyricsProvider(http, it) },
+        // Same relative order as the Android baseProviders list; account-bound providers
+        // (Apple Music, Tidal, Deezer, YouTube) stay host-owned and are not shared.
+        LrcRedLyricsProvider(http),
+        BiniLyricsProvider(http),
         BetterLyricsProvider(http),
         BetterLyricsProvider.portato(http),
         YouLyPlusLyricsProvider(http),
         LrcLibLyricsProvider(http),
         KuGouLyricsProvider(http),
+        MegalobizLyricsProvider(http),
         SimpMusicLyricsProvider(http),
         UnisonLyricsProvider(http),
         PaxsenixAppleMusicLyricsProvider(http, settings = paxsenix),
@@ -160,10 +178,13 @@ fun sharedLyricsProviders(http: HttpClient, preferences: PreferenceSnapshot): Li
         PaxsenixSpotifyLyricsProvider(http, paxsenix),
         PaxsenixMusixmatchLyricsProvider(http, paxsenix),
         PaxsenixYouTubeLyricsProvider(http, paxsenix),
+        GeniusLyricsProvider(http),
     )
 }
 
 private val SHARED_PROVIDER_NAMES = setOf(
-    "Lyprio", "BetterLyrics", "BetterLyrics Portato", "YouLyPlus", "LrcLib", "Kugou", "SimpMusic", "Unison",
+    "Lyprio", "lrc.red", "BiniLyrics", "BetterLyrics", "BetterLyrics Portato", "YouLyPlus", "LrcLib",
+    "Kugou", "Megalobiz", "SimpMusic", "Unison",
     "Paxsenix: Apple Music", "Paxsenix: NetEase", "Paxsenix: Spotify", "Paxsenix: Musixmatch", "Paxsenix: YouTube",
+    "Genius",
 )
