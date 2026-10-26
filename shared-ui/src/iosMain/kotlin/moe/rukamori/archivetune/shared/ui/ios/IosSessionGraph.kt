@@ -28,14 +28,20 @@ import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
+import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
+import moe.rukamori.archivetune.shared.data.provider.IosYouTubeResolver
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
+import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
+import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
+import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
@@ -44,6 +50,7 @@ import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
+import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
@@ -52,6 +59,7 @@ import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
+import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 import platform.Foundation.*
 
@@ -211,10 +219,27 @@ internal class IosSessionGraph private constructor(
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
             val history = RoomListeningHistory(database.listens(), offsetMsAt = ::iosOffsetMsAt)
             val player = host.player
+            // One InnerTubeX transport serves the catalogue and account paths; the resolver walks the shipped
+            // player clients first and keeps InnerTubeX as the bounded extractor tier, like the desktop host.
+            val youtubeTransport = IosYouTubeBrowseTransport(http)
+            youtubeTransport.refreshSession(vault.snapshots.value)
+            val youtubeAccount = YouTubeAccountBinding(
+                transport = youtubeTransport,
+                accounts = accounts,
+                personalScope = { providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL) },
+                syncEnabled = { vault.snapshots.value?.get(YtmSyncKey) ?: true },
+            )
             val locators = IosQueueLocatorResolver(
                 audio = OrderedAudioResolver(
                     providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh),
-                    youtube = IosYouTubeUnavailable,
+                    youtube = IosYouTubeResolver(
+                        http = http,
+                        transport = youtubeTransport,
+                        preferences = { vault.snapshots.value },
+                        personalScope = {
+                            providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
+                        },
+                    ),
                 ),
                 port = host.playbackPort,
                 preferences = { vault.snapshots.value },
@@ -222,7 +247,9 @@ internal class IosSessionGraph private constructor(
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
-                content = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library))),
+                content = ContentRepositoryRouter(
+                    listOf(TypedRoomLibraryRepository(library), YouTubeContentRepository(youtubeTransport, youtubeAccount))
+                ),
                 locators = locators,
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { iosRepeatMode(vault.snapshots.value) },
