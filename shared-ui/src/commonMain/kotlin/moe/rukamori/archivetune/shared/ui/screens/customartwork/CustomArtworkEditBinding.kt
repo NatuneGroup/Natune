@@ -7,6 +7,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -62,7 +64,7 @@ class CustomArtworkEditBinding(
     private val pick: CustomArtworkSourcePicker,
     scope: CoroutineScope,
     private val onDismiss: () -> Unit,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val job: Job = SupervisorJob(scope.coroutineContext[Job])
     private val work = CoroutineScope(scope.coroutineContext + job)
@@ -213,7 +215,7 @@ fun BoundCustomArtworkEditDialog(
     pick: CustomArtworkSourcePicker,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.Default,
     preview: (@Composable (Modifier) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
