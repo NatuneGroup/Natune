@@ -19,6 +19,10 @@
 #   libssl.a libcrypto.a      OpenSSL 3.5.9 (TLS for FFmpeg).
 #   libxml2.a                 libxml2 2.15.4 (DASH MPD parsing).
 #   libz.a                    zlib 1.3.2.
+#   libarchivetune_telegram.a TDLib from the tdlight-team/tdlight pin below (TDLib 1.8.66), every static component
+#                             library of the tdjson_static target merged into one archive, linked against the
+#                             OpenSSL and zlib above. include/td/telegram beside lib/ carries td_json_client.h and
+#                             the generated tdjson_export.h that iosApp/Native/ATNativeTelegram.mm compiles against.
 # iconv and the C++ runtime come from the iOS SDK. iosApp/Configuration/Native.xcconfig links them with -liconv
 # and -lc++. closure.txt beside lib/ records the pins, toolchain, source commit and archive SHA-256 values.
 #
@@ -31,10 +35,13 @@
 #   - gpg (Homebrew gnupg) for the FFmpeg release signature, and pkg-config (Homebrew pkgconf). GNU make is
 #     needed by the FFmpeg configure script. If gmake is installed (Homebrew make), this script links it as
 #     make inside its work tree. Apple's bundled make is GNU make 3.81, which may be rejected.
-#   - curl, tar, perl, awk, shasum and the Xcode toolchain are used as shipped with macOS and Xcode.
+#   - cmake (3.10 or later) and gperf (Homebrew cmake and gperf) for TDLib. TDLib's source generators run once on
+#     the build Mac before the cross builds, as TDLib's own iOS example does.
+#   - git, curl, tar, perl, awk, shasum and the Xcode toolchain are used as shipped with macOS and Xcode.
 #   - A repository path without spaces. Configure and make arguments are space-delimited.
 #   - Network access only to the pinned download hosts below. Every download is checked against its pinned
-#     SHA-256, and the FFmpeg tarball is also checked against the FFmpeg release signing key.
+#     SHA-256, and the FFmpeg tarball is also checked against the FFmpeg release signing key. TDLib is fetched
+#     from git at its pinned commit, and the checked-out commit must equal the pin.
 #
 # Usage: scripts/build_ios_native_core.sh [iphoneos|iphonesimulator|all]        (default: all)
 # Environment:
@@ -74,12 +81,17 @@ FFMPEG_SIGNING_FPR=FCF986EA15E6E293A5644F10B4322F04D67658D8
 MINIAUDIO_VERSION=0.11.25
 MINIAUDIO_SHA256=ac7af4de748b7e26b777f37e01cee313a308a7296a3eb080e2906b320cc55c89
 MINIAUDIO_LICENSE_SHA256=457f1b500e0adf6bc059edddfa78a2f62012e7c3bb43476c20e0bd23b25ba0eb
+# The tdlight pin named in iosApp/Native/ATNativeTelegram.h. The JSON schema the Kotlin session speaks follows it.
+TDLIGHT_REPOSITORY=https://github.com/tdlight-team/tdlight.git
+TDLIGHT_COMMIT=2b51b33c8a905be96c40508e68485f8a719e26a3
 
 # Archives that iosApp/Configuration/Native.xcconfig links, in dependency order (a dependent precedes its
 # dependency). Keep this list in step with the -l flags in that file.
-CLOSURE_ARCHIVES="libarchivetune_engine.a libavfilter.a libavformat.a libavcodec.a libswscale.a libswresample.a libavutil.a libssl.a libcrypto.a libxml2.a libz.a"
+CLOSURE_ARCHIVES="libarchivetune_engine.a libarchivetune_telegram.a libavfilter.a libavformat.a libavcodec.a libswscale.a libswresample.a libavutil.a libssl.a libcrypto.a libxml2.a libz.a"
 # Entry points that iosApp/Native/ATNativeAudio.mm calls. The producer rejects a core that does not export them.
 CORE_SYMBOLS="ae_engine_create ae_engine_destroy ae_engine_load ae_engine_play ae_engine_pause ae_engine_seek ae_engine_set_speed ae_engine_stop ae_engine_snapshot ae_engine_last_error ae_engine_render_realtime"
+# Entry points that iosApp/Native/ATNativeTelegram.mm calls. The producer rejects a TDLib archive without them.
+TELEGRAM_SYMBOLS="td_json_client_create td_json_client_send td_json_client_receive td_json_client_execute td_json_client_destroy"
 
 XCODE_UNVERIFIED=0
 XCODE_LINE=""
@@ -96,7 +108,7 @@ esac
 preflight() {
     [ "$(uname -s)" = "Darwin" ] || die "this producer runs on macOS with full Xcode; this host is $(uname -s), so nothing was built"
     local tool
-    for tool in xcodebuild xcrun curl tar perl pkg-config gpg awk; do
+    for tool in xcodebuild xcrun curl tar perl pkg-config gpg awk git cmake gperf; do
         command -v "$tool" >/dev/null 2>&1 || die "$tool is required; see the prerequisites in this script's header"
     done
     if command -v gmake >/dev/null 2>&1; then
@@ -174,6 +186,36 @@ download_sources() {
     fetch "https://raw.githubusercontent.com/mackron/miniaudio/$MINIAUDIO_VERSION/LICENSE" \
         "$DOWNLOADS/miniaudio.LICENSE" "$MINIAUDIO_LICENSE_SHA256"
     verify_ffmpeg_signature
+    fetch_tdlight
+}
+
+# One shallow checkout of the pinned commit, shared by both platforms. A checkout at any other commit is refused.
+fetch_tdlight() {
+    local dir="$WORK/tdlight"
+    if [ ! -d "$dir/.git" ]; then
+        log "fetching tdlight $TDLIGHT_COMMIT"
+        rm -rf "$dir.part"
+        mkdir -p "$dir.part"
+        (cd "$dir.part" && git init -q && git remote add origin "$TDLIGHT_REPOSITORY" && \
+            git fetch -q --depth 1 origin "$TDLIGHT_COMMIT" && git checkout -q --detach FETCH_HEAD) \
+            >"$WORK/logs/tdlight-fetch.log" 2>&1 || die "tdlight could not be fetched; see $WORK/logs/tdlight-fetch.log"
+        mv "$dir.part" "$dir"
+    fi
+    [ "$(git -C "$dir" rev-parse HEAD)" = "$TDLIGHT_COMMIT" ] \
+        || die "the tdlight checkout is not at $TDLIGHT_COMMIT; remove $dir and run again"
+    TDLIGHT_SOURCE="$dir"
+}
+
+# TDLib generates part of its sources with host tools, which a cross build cannot run. This runs them once on
+# the build Mac, into the source tree that both cross builds read.
+generate_tdlight_sources() {
+    [ -f "$WORK/.stamp-tdlight-generated-$TDLIGHT_COMMIT" ] && return 0
+    log "generating TDLib sources on the build Mac"
+    mkdir -p "$WORK/tdlight-generate" "$WORK/logs"
+    (cd "$WORK/tdlight-generate" && \
+        cmake -DTD_GENERATE_SOURCE_FILES=ON "$TDLIGHT_SOURCE" && cmake --build . -j "$JOBS") \
+        >"$WORK/logs/tdlight-generate.log" 2>&1 || die "TDLib source generation failed; see $WORK/logs/tdlight-generate.log"
+    : >"$WORK/.stamp-tdlight-generated-$TDLIGHT_COMMIT"
 }
 
 configure_platform() {
@@ -285,6 +327,40 @@ build_ffmpeg() {
     stamp_set ffmpeg
 }
 
+# Cross-builds the tdjson_static target with CMake's own iOS support against the OpenSSL and zlib of this
+# platform, then merges every static library the build produced into one archive, so the Xcode link line names a
+# single TDLib library whatever component split this TDLib revision uses.
+build_telegram() {
+    # The stamp names the pin, so a changed pin rebuilds TDLib instead of reusing an older archive.
+    stamp_done "telegram-$TDLIGHT_COMMIT" && return 0
+    log "[$PLATFORM] building TDLib (tdlight $TDLIGHT_COMMIT, tdjson_static)"
+    local build="$PWORK/tdlight-build" archives
+    rm -rf "$build"
+    mkdir -p "$build"
+    (cd "$build" && \
+        cmake "$TDLIGHT_SOURCE" -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT="$SDK_PATH" -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$(xcrun --sdk "$PLATFORM" --find clang++)" \
+            -DOPENSSL_FOUND=1 -DOPENSSL_INCLUDE_DIR="$PREFIX/include" \
+            -DOPENSSL_CRYPTO_LIBRARY="$PREFIX/lib/libcrypto.a" -DOPENSSL_SSL_LIBRARY="$PREFIX/lib/libssl.a" \
+            -DZLIB_INCLUDE_DIR="$PREFIX/include" -DZLIB_LIBRARY="$PREFIX/lib/libz.a" \
+            -DTD_ENABLE_LTO=OFF -DTD_ENABLE_JNI=OFF && \
+        cmake --build . --target tdjson_static -j "$JOBS") \
+        >"$LOGS/telegram.log" 2>&1 || die "TDLib failed for $PLATFORM; see $LOGS/telegram.log"
+    archives="$(find "$build" -name 'lib*.a' -type f | sort | tr '\n' ' ')"
+    [ -n "$archives" ] || die "the TDLib build for $PLATFORM produced no static library; see $LOGS/telegram.log"
+    rm -f "$PREFIX/lib/libarchivetune_telegram.a"
+    # shellcheck disable=SC2086 # the archive paths are space-free, as the repository path is
+    xcrun --sdk "$PLATFORM" libtool -static -o "$PREFIX/lib/libarchivetune_telegram.a" $archives \
+        >>"$LOGS/telegram.log" 2>&1 || die "the TDLib archives could not be merged for $PLATFORM; see $LOGS/telegram.log"
+    mkdir -p "$PREFIX/include/td/telegram"
+    cp -f "$TDLIGHT_SOURCE/td/telegram/td_json_client.h" "$PREFIX/include/td/telegram/td_json_client.h"
+    cp -f "$build/td/telegram/tdjson_export.h" "$PREFIX/include/td/telegram/tdjson_export.h" \
+        || die "the TDLib build for $PLATFORM did not generate tdjson_export.h; see $LOGS/telegram.log"
+    stamp_set "telegram-$TDLIGHT_COMMIT"
+}
+
 # The portable core is always rebuilt from the committed sources. It has no stamp, so a source change is never
 # hidden behind an older archive.
 build_core() {
@@ -326,12 +402,16 @@ assemble() {
             cp -f "$PREFIX/lib/$name" "$LIB/$name"
         fi
     done
+    mkdir -p "$OUT/include/td/telegram"
+    cp -f "$PREFIX/include/td/telegram/td_json_client.h" "$PREFIX/include/td/telegram/tdjson_export.h" \
+        "$OUT/include/td/telegram/"
     mkdir -p "$OUT/licenses"
     copy_notice "$DOWNLOADS/miniaudio.LICENSE" "$OUT/licenses/miniaudio-LICENSE.txt"
     copy_notice "$SRC/ffmpeg-$FFMPEG_VERSION/COPYING.LGPLv3" "$OUT/licenses/ffmpeg-COPYING.LGPLv3.txt"
     copy_notice "$SRC/openssl-$OPENSSL_VERSION/LICENSE.txt" "$OUT/licenses/openssl-LICENSE.txt"
     copy_notice "$SRC/libxml2-$LIBXML2_VERSION/Copyright" "$OUT/licenses/libxml2-Copyright.txt"
     copy_notice "$SRC/zlib-$ZLIB_VERSION/LICENSE" "$OUT/licenses/zlib-LICENSE.txt"
+    copy_notice "$TDLIGHT_SOURCE/LICENSE_1_0.txt" "$OUT/licenses/tdlib-LICENSE_1_0.txt"
 }
 
 verify_closure() {
@@ -346,6 +426,14 @@ verify_closure() {
             || die "libarchivetune_engine.a does not export $symbol; ATNativeAudio.mm cannot link"
     done
     log "[$PLATFORM] the core exports every ABI entry point that ATNativeAudio.mm calls"
+    "$NM" -gU "$LIB/libarchivetune_telegram.a" >"$PWORK/telegram-exports.txt" 2>>"$LOGS/nm.log" \
+        || die "could not list the TDLib exports; see $LOGS/nm.log"
+    for symbol in $TELEGRAM_SYMBOLS; do
+        grep -q "[[:space:]]_${symbol}\$" "$PWORK/telegram-exports.txt" \
+            || die "libarchivetune_telegram.a does not export $symbol; ATNativeTelegram.mm cannot link"
+    done
+    [ -s "$OUT/include/td/telegram/td_json_client.h" ] || die "the TDLib header is missing from $OUT/include"
+    log "[$PLATFORM] the TDLib archive exports every entry point that ATNativeTelegram.mm calls"
 }
 
 write_manifest() {
@@ -367,6 +455,7 @@ write_manifest() {
         echo "libxml2: $LIBXML2_VERSION"
         echo "ffmpeg: $FFMPEG_VERSION (release signing fingerprint $FFMPEG_SIGNING_FPR)"
         echo "miniaudio: $MINIAUDIO_VERSION"
+        echo "tdlight: $TDLIGHT_COMMIT ($TDLIGHT_REPOSITORY)"
         echo "from-sdk (not packaged): -liconv -lc++"
         echo "sha256:"
         for name in $CLOSURE_ARCHIVES; do
@@ -388,6 +477,7 @@ main() {
     preflight
     mkdir -p "$DOWNLOADS" "$WORK/logs"
     download_sources
+    generate_tdlight_sources
     for platform in $platforms; do
         configure_platform "$platform"
         build_zlib
@@ -395,6 +485,7 @@ main() {
         build_libxml2
         stage_miniaudio
         build_ffmpeg
+        build_telegram
         build_core
         assemble
         verify_closure

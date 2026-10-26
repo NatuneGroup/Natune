@@ -88,7 +88,12 @@ internal fun DesktopMountedRoot(window: Window, graph: DesktopSessionGraph, clos
     val uiScope = rememberCoroutineScope()
     val recognition = remember(graph, uiScope) { DesktopRecognitionMount(graph, uiScope) }
     DisposableEffect(recognition) { onDispose { recognition.close() } }
-    val host = remember(graph, backRequests, recognition) { desktopHostBindings(graph, backRequests, recognition) }
+    // Feedback reviews live with the window, so a review stays open while the user moves between pages.
+    val feedback = remember(graph, uiScope) { DesktopFeedbackMount(graph, uiScope) }
+    DisposableEffect(feedback) { onDispose { feedback.close() } }
+    val host = remember(graph, backRequests, recognition, feedback) {
+        desktopHostBindings(graph, backRequests, recognition, feedback, quit)
+    }
     val activity by services.windowActivity.activity.collectAsState()
     ArchiveTuneRoot(
         host = host,

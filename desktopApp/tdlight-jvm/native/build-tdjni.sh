@@ -43,8 +43,11 @@ die() { printf '[tdlight-jni] error: %s\n' "$*" >&2; exit 1; }
 # The host names match the directories that desktopApp/build.gradle.kts stages for each host.
 case "$(uname -s)" in
     Linux)
-        [ "$(uname -m)" = "x86_64" ] || die "Linux packages are staged as linux-x64 only"
-        HOST_NAME="linux-x64"
+        case "$(uname -m)" in
+            x86_64) HOST_NAME="linux-x64" ;;
+            aarch64 | arm64) HOST_NAME="linux-arm64" ;;
+            *) die "unsupported Linux architecture $(uname -m)" ;;
+        esac
         LIBRARY_NAME="libtdjni.so"
         ;;
     Darwin)

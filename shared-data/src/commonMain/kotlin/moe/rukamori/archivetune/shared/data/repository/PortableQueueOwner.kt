@@ -1,15 +1,23 @@
 package moe.rukamori.archivetune.shared.data.repository
 
+import io.ktor.client.plugins.ResponseException
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -18,8 +26,10 @@ import moe.rukamori.archivetune.shared.data.persistence.AlbumCompletionIndex
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureReason
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
+import moe.rukamori.archivetune.shared.domain.playback.playbackCauses
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistPhase
 import moe.rukamori.archivetune.shared.domain.queue.IncompleteFinitePlaylistException
@@ -48,6 +58,11 @@ import moe.rukamori.archivetune.shared.domain.repository.TypedQueueOwnerPort
  *
  * Repeat and skip-on-error follow the Android rules in [QueueAdvancePolicy]. The host supplies the two settings as
  * readers, so a change applies to the next end or failure without rebuilding the owner.
+ *
+ * With a [QueueHandoffEngine] the owner also arms crossfade and automix handoffs: ahead of the end of the current song
+ * it resolves the successor and asks the engine to blend it in. When the engine commits, the playing occurrence changes
+ * without a load and the owner makes the successor current. A seek or pause before the blend starts drops the arm, and
+ * the next stretch of playback arms it again.
  */
 class PortableQueueOwner(
     override val player: MusicPlayerController,
@@ -63,6 +78,8 @@ class PortableQueueOwner(
     private val autoSkipNextOnError: () -> Boolean = { false },
     /** Records the complete track list of an album whose whole walk was loaded. Absent, nothing is recorded. */
     albumCompletion: AlbumCompletionIndex? = null,
+    /** Blends songs into each other. Absent, every song ends before its successor loads, as before. */
+    private val handoffEngine: QueueHandoffEngine? = null,
 ) : TypedQueueOwnerPort {
     private val lock = Mutex()
     private val finitePlaylists = FinitePlaylistLoader(content, albumCompletion)
@@ -77,6 +94,14 @@ class PortableQueueOwner(
     /** Failures of the automatic end-of-track advance, which has no caller to return them to. */
     val automaticAdvanceFailures: SharedFlow<Throwable> = advanceFailureFlow.asSharedFlow()
 
+    private val resolutionFailureFlow = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 8)
+
+    /**
+     * The failures the error dialog and skip-on-error act on: the engine's, and those of songs no source resolved. An
+     * unresolved song never reaches the engine, so without the second kind it would stop silently.
+     */
+    val failures: Flow<PlaybackFailure> = merge(player.failures, resolutionFailureFlow)
+
     /** The occurrence and generation whose end was already acted on, so one end advances exactly once. */
     private var lastEnded: Pair<String, Long>? = null
 
@@ -86,19 +111,53 @@ class PortableQueueOwner(
      */
     private var failureScore = 0
 
+    /** The handoff the engine holds now. Read and replaced from the watchers and the locked queue methods alike. */
+    private val armed = MutableStateFlow<ArmedHandoff?>(null)
+
+    /**
+     * The newest handoff that was armed, kept after a cancel too: a cancel can cross the engine's commit, and the queue
+     * must still follow the song that is audible. A load clears it.
+     */
+    private val lastHandoff = MutableStateFlow<ArmedHandoff?>(null)
+
+    private val publishedHandoff = MutableStateFlow<QueueHandoffState?>(null)
+
+    /** The audible blend armed from the current song into its successor. Null without one or for a gapless splice. */
+    val handoff: StateFlow<QueueHandoffState?> = publishedHandoff.asStateFlow()
+
     // Declared after every field it reads, because the watchers may start before the constructor returns.
     private val endWatcher: Job = scope.launch {
         player.snapshot.collect { snapshot -> onSnapshot(snapshot) }
     }
 
     private val failureWatcher: Job = scope.launch {
-        player.failures.collect { failure -> onFailure(failure) }
+        failures.collect { failure -> onFailure(failure) }
+    }
+
+    private val handoffWatcher: Job? = handoffEngine?.let { engine ->
+        scope.launch {
+            combine(player.snapshot.map { it?.handoffKey() }.distinctUntilChanged(), engine.configuration) { key, _ -> key }
+                .collectLatest { key -> if (key != null) scheduleHandoff(engine, key) }
+        }
     }
 
     /** Stops watching the player for ends and failures. The owner must not be used afterwards. */
     fun close() {
         endWatcher.cancel()
         failureWatcher.cancel()
+        handoffWatcher?.cancel()
+    }
+
+    /**
+     * Drops an armed handoff, so the current song plays to its own end. A host whose engine stops wanting the blend,
+     * such as the sleep timer's end-of-song choice, reaches it through [QueueHandoffEngine.configuration].
+     */
+    fun cancelHandoff() {
+        val pending = armed.value ?: return
+        if (armed.compareAndSet(pending, null)) {
+            publishedHandoff.value = null
+            handoffEngine?.cancel()
+        }
     }
 
     override suspend fun <T> withQueueAccess(operation: suspend () -> T): T = lock.withLock {
@@ -163,7 +222,7 @@ class PortableQueueOwner(
             manualKinds = emptyMap(),
             tail = tail,
         )
-        player.load(playRequest, request.positionMs, request.playWhenReady)
+        startPrepared(playRequest, request.positionMs, request.playWhenReady)
     }
 
     override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) {
@@ -183,7 +242,7 @@ class PortableQueueOwner(
             manualKinds = emptyMap(),
             tail = null,
         )
-        player.load(playRequest, 0L, playWhenReady)
+        startPrepared(playRequest, 0L, playWhenReady)
     }
 
     /**
@@ -246,7 +305,7 @@ class PortableQueueOwner(
             playOrder = nextOrder,
             manualKinds = manualKinds,
         )
-        if (playRequest != null) player.load(playRequest, 0L, playWhenReady = false)
+        if (playRequest != null) startPrepared(playRequest, 0L, playWhenReady = false) else revalidateHandoff()
     }
 
     override suspend fun remove(occurrenceIds: Set<String>) {
@@ -275,12 +334,16 @@ class PortableQueueOwner(
             manualKinds = manualKinds,
         )
         when {
-            playRequest != null -> player.load(
+            playRequest != null -> startPrepared(
                 playRequest,
                 0L,
                 playWhenReady = player.snapshot.value?.playWhenReady ?: true,
             )
-            successor == null && current != null -> player.stop()
+            successor == null && current != null -> {
+                forgetHandoff()
+                player.stop()
+            }
+            else -> revalidateHandoff()
         }
     }
 
@@ -311,6 +374,7 @@ class PortableQueueOwner(
             entries = reordered.toList(),
             playOrder = playOrder,
         )
+        revalidateHandoff()
     }
 
     /**
@@ -335,6 +399,7 @@ class PortableQueueOwner(
             timeline
         }
         published.value = queue.copy(revision = queue.revision + 1, playOrder = playOrder, shuffleEnabled = enabled)
+        revalidateHandoff()
         return true
     }
 
@@ -346,7 +411,7 @@ class PortableQueueOwner(
             ?: throw IllegalArgumentException("Occurrence is not in the queue")
         val playRequest = requestFor(target)
         published.value = queue.copy(revision = queue.revision + 1, currentOccurrenceId = occurrenceId)
-        player.load(playRequest, positionMs, playWhenReady = true)
+        startPrepared(playRequest, positionMs, playWhenReady = true)
     }
 
     /**
@@ -374,9 +439,10 @@ class PortableQueueOwner(
         published.value = queue
         if (playRequest == null) {
             failureScore = 0
+            forgetHandoff()
             player.stop()
         } else {
-            player.load(playRequest, checkpoint.positionMs, playWhenReady = false)
+            startPrepared(playRequest, checkpoint.positionMs, playWhenReady = false)
         }
     }
 
@@ -387,19 +453,183 @@ class PortableQueueOwner(
     }
 
     private fun onSnapshot(snapshot: PlaybackSnapshot?) {
-        if (snapshot == null || !snapshot.isEnded) return
+        if (snapshot == null) return
+        followHandoff(snapshot)
+        if (!snapshot.isEnded) return
         val key = snapshot.occurrenceId to snapshot.playbackGeneration
         if (key == lastEnded) return
         lastEnded = key
+        val pending = armed.value?.takeIf { it.state.fromOccurrenceId == snapshot.occurrenceId }
         scope.launch {
             try {
-                withQueueAccess { advanceAfterEnd(snapshot.occurrenceId) }
+                // An armed handoff commits as the outgoing media ends, so the end normally needs no load. The wait
+                // covers the poll that reports the commit; without one the end advances as it would have.
+                if (pending != null) delay(HANDOFF_COMMIT_GRACE_MS)
+                withQueueAccess {
+                    if (pending != null && armed.compareAndSet(pending, null)) {
+                        publishedHandoff.value = null
+                        handoffEngine?.cancel()
+                    }
+                    advanceAfterEnd(snapshot.occurrenceId)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
                 advanceFailureFlow.tryEmit(failure)
             }
         }
+    }
+
+    /**
+     * Follows the engine through a handoff. The successor becoming audible makes it current. The outgoing song seeking,
+     * pausing or reloading before the blend starts means the engine dropped the arm, so the owner drops it too.
+     */
+    private fun followHandoff(snapshot: PlaybackSnapshot) {
+        val latest = lastHandoff.value
+        if (latest != null && snapshot.occurrenceId == latest.state.toOccurrenceId) {
+            if (!lastHandoff.compareAndSet(latest, null)) return
+            scope.launch {
+                try {
+                    withQueueAccess { adoptHandoff(latest) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    advanceFailureFlow.tryEmit(failure)
+                }
+            }
+            return
+        }
+        if (!snapshot.isEnded) dropStaleHandoff(snapshot.handoffKey())
+    }
+
+    private fun dropStaleHandoff(key: HandoffKey) {
+        val pending = armed.value ?: return
+        if (pending.state.fromOccurrenceId != key.occurrenceId) return
+        val stale = key.playbackGeneration != pending.playbackGeneration ||
+            key.discontinuityGeneration != pending.discontinuityGeneration ||
+            !key.playWhenReady
+        if (stale && armed.compareAndSet(pending, null)) {
+            publishedHandoff.value = null
+            handoffEngine?.cancel()
+        }
+    }
+
+    /** Makes the audible successor current without loading it again, since the engine is already playing it. */
+    private fun adoptHandoff(handoff: ArmedHandoff) {
+        if (armed.compareAndSet(handoff, null)) publishedHandoff.value = null
+        val queue = published.value
+        val incoming = handoff.state.toOccurrenceId
+        if (queue.currentOccurrenceId != handoff.state.fromOccurrenceId) return
+        if (queue.entries.none { it.occurrenceId == incoming }) return
+        published.value = queue.copy(revision = queue.revision + 1, currentOccurrenceId = incoming)
+    }
+
+    /**
+     * Waits until the current song is [HANDOFF_PREPARE_AHEAD_MS] from its blend, resolves the successor outside the
+     * queue lock, and arms it if nothing moved meanwhile. Each new playback stretch of the song starts this again.
+     */
+    private suspend fun scheduleHandoff(engine: QueueHandoffEngine, key: HandoffKey) {
+        try {
+            dropStaleHandoff(key)
+            if (!key.playWhenReady || key.ended) return
+            val durationMs = key.durationMs?.takeIf { it > 0L } ?: return
+            if (armed.value != null) {
+                // A settings change that turns the blend off reaches an arm already made, not only the next song.
+                val stillWanted = withQueueAccess { armedStillWanted(engine, key, durationMs) }
+                if (!stillWanted) cancelHandoff()
+                return
+            }
+            val plannedOverlapMs = withQueueAccess { plannedHandoff(engine, key, durationMs)?.second } ?: return
+            val armAtMs = durationMs - plannedOverlapMs - HANDOFF_PREPARE_AHEAD_MS
+            while (true) {
+                val positionMs = player.positionMs() ?: return
+                val waitMs = ((armAtMs - positionMs) / key.speed.coerceAtLeast(MIN_SPEED)).toLong()
+                if (waitMs <= 0L) break
+                delay(waitMs)
+            }
+            val next = withQueueAccess { plannedHandoff(engine, key, durationMs)?.first } ?: return
+            // A song no source resolves is left to the ordinary end, which reports the failure where it applies.
+            val prepared = requestFor(next) as? Prepared.Ready ?: return
+            withQueueAccess { armPlanned(engine, key, durationMs, prepared.request) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            advanceFailureFlow.tryEmit(failure)
+        }
+    }
+
+    /** The successor of the song [key] plays and the overlap the engine asks for, or null when no handoff applies. */
+    private suspend fun plannedHandoff(
+        engine: QueueHandoffEngine,
+        key: HandoffKey,
+        durationMs: Long,
+    ): Pair<ContentOccurrence, Long>? {
+        val queue = published.value
+        if (queue.currentOccurrenceId != key.occurrenceId || armed.value != null) return null
+        // Repeat-one and a one-song repeat-all reload the same occurrence, which a second deck cannot carry.
+        val nextId = nextAfter(queue, key.occurrenceId)?.takeIf { it != key.occurrenceId } ?: return null
+        val entries = published.value.entries
+        val current = entries.firstOrNull { it.occurrenceId == key.occurrenceId } ?: return null
+        val next = entries.firstOrNull { it.occurrenceId == nextId } ?: return null
+        val overlapMs = engine.overlapMs(current, next, durationMs)?.takeIf { it >= 0L } ?: return null
+        return next to overlapMs
+    }
+
+    private fun armedStillWanted(engine: QueueHandoffEngine, key: HandoffKey, durationMs: Long): Boolean {
+        val pending = armed.value ?: return true
+        if (pending.state.fromOccurrenceId != key.occurrenceId) return true
+        val entries = published.value.entries
+        val current = entries.firstOrNull { it.occurrenceId == pending.state.fromOccurrenceId } ?: return false
+        val next = entries.firstOrNull { it.occurrenceId == pending.state.toOccurrenceId } ?: return false
+        val overlapMs = engine.overlapMs(current, next, durationMs) ?: return false
+        return (overlapMs == 0L) == (pending.state.overlapMs == 0L)
+    }
+
+    private suspend fun armPlanned(engine: QueueHandoffEngine, key: HandoffKey, durationMs: Long, request: PlaybackRequest) {
+        if (player.snapshot.value?.handoffKey() != key) return
+        val (next, requestedMs) = plannedHandoff(engine, key, durationMs) ?: return
+        if (next.occurrenceId != request.occurrenceId) return
+        val positionMs = player.positionMs() ?: return
+        val remainingMs = durationMs - positionMs - HANDOFF_END_GUARD_MS
+        // A resolution that ran into the blend window shortens the blend rather than skipping it, as on Android.
+        val overlapMs = when {
+            requestedMs == 0L -> 0L
+            remainingMs >= requestedMs -> requestedMs
+            remainingMs >= HANDOFF_MIN_OVERLAP_MS -> remainingMs
+            else -> return
+        }
+        if (!engine.arm(request, overlapMs)) return
+        val handoff = ArmedHandoff(
+            state = QueueHandoffState(key.occurrenceId, next.occurrenceId, durationMs - overlapMs, overlapMs),
+            playbackGeneration = key.playbackGeneration,
+            discontinuityGeneration = key.discontinuityGeneration,
+        )
+        armed.value = handoff
+        lastHandoff.value = handoff
+        publishedHandoff.value = handoff.state.takeIf { overlapMs > 0L }
+    }
+
+    /**
+     * A queue edit can change the successor under an armed handoff. The arm is dropped then, so the song that ends
+     * moves to the successor the queue shows now.
+     */
+    private fun revalidateHandoff() {
+        val pending = armed.value ?: return
+        val queue = published.value
+        val from = pending.state.fromOccurrenceId
+        if (queue.currentOccurrenceId == from &&
+            QueueAdvancePolicy.successor(repeatMode(), queue.playOrder, from) == pending.state.toOccurrenceId
+        ) {
+            return
+        }
+        cancelHandoff()
+    }
+
+    /** A load or stop replaces whatever the engine had armed, so no handoff state outlives it. */
+    private fun forgetHandoff() {
+        armed.value = null
+        lastHandoff.value = null
+        publishedHandoff.value = null
     }
 
     /**
@@ -481,8 +711,85 @@ class PortableQueueOwner(
         )
     }
 
-    private suspend fun requestFor(occurrence: ContentOccurrence): PlaybackRequest =
-        PlaybackRequest(occurrence.occurrenceId, occurrence.item.ref.id, locators.locate(occurrence))
+    /**
+     * Resolves [occurrence] before the queue changes, so the queue is published with the right current song either way.
+     * A song no source resolves still becomes current, as a Media3 item that fails to open does on Android: the player
+     * stops and the failure goes out with the engine's, rather than the queue command failing with nothing shown.
+     */
+    private suspend fun requestFor(occurrence: ContentOccurrence): Prepared = try {
+        Prepared.Ready(PlaybackRequest(occurrence.occurrenceId, occurrence.item.ref.id, locators.locate(occurrence)))
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Prepared.Unresolved(
+            PlaybackFailure(
+                occurrenceId = occurrence.occurrenceId,
+                reason = PlaybackFailureReason.SOURCE_UNAVAILABLE,
+                message = error.message.orEmpty(),
+                httpStatus = error.httpStatusOrNull(),
+                causes = error.playbackCauses(),
+            ),
+        )
+    }
+
+    private fun startPrepared(prepared: Prepared, positionMs: Long, playWhenReady: Boolean) {
+        forgetHandoff()
+        when (prepared) {
+            is Prepared.Ready -> player.load(prepared.request, positionMs, playWhenReady)
+            is Prepared.Unresolved -> {
+                player.stop()
+                resolutionFailureFlow.tryEmit(prepared.failure)
+            }
+        }
+    }
+
+    private sealed interface Prepared {
+        class Ready(val request: PlaybackRequest) : Prepared
+        class Unresolved(val failure: PlaybackFailure) : Prepared
+    }
+
+    private data class ArmedHandoff(
+        val state: QueueHandoffState,
+        val playbackGeneration: Long,
+        val discontinuityGeneration: Long,
+    )
+
+    /** The parts of a snapshot that start a new playback stretch. Position alone never does. */
+    private data class HandoffKey(
+        val occurrenceId: String,
+        val playbackGeneration: Long,
+        val discontinuityGeneration: Long,
+        val playWhenReady: Boolean,
+        val ended: Boolean,
+        val durationMs: Long?,
+        val speed: Float,
+    )
+
+    private fun PlaybackSnapshot.handoffKey() = HandoffKey(
+        occurrenceId = occurrenceId,
+        playbackGeneration = playbackGeneration,
+        discontinuityGeneration = discontinuityGeneration,
+        playWhenReady = playWhenReady,
+        ended = isEnded,
+        durationMs = durationMs,
+        speed = playbackSpeed,
+    )
+
+    private companion object {
+        /** Resolve and preload this far ahead of the blend, as Android prepares its second player. */
+        const val HANDOFF_PREPARE_AHEAD_MS = 30_000L
+
+        /** The tail no blend may claim, so the outgoing deck never runs dry under it. Android's end guard. */
+        const val HANDOFF_END_GUARD_MS = 150L
+
+        /** Android's shortest crossfade. A shorter remainder lets the song end on its own. */
+        const val HANDOFF_MIN_OVERLAP_MS = 500L
+
+        /** How long an end waits for the engine to report the commit of an armed handoff. */
+        const val HANDOFF_COMMIT_GRACE_MS = 1_500L
+
+        const val MIN_SPEED = 0.1f
+    }
 
     private fun requireInside() = check(inside) { "Queue changes must run inside withQueueAccess" }
 
@@ -530,4 +837,13 @@ class PortableQueueOwner(
         val known = existing.mapTo(HashSet()) { it.occurrenceId }
         require(incoming.none { it.occurrenceId in known }) { "Occurrence is already queued" }
     }
+}
+
+private fun Throwable.httpStatusOrNull(): Int? {
+    var throwable: Throwable? = this
+    while (throwable != null) {
+        if (throwable is ResponseException) return throwable.response.status.value
+        throwable = throwable.cause
+    }
+    return null
 }

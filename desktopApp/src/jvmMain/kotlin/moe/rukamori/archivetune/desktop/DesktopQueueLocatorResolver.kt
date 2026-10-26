@@ -6,7 +6,6 @@ import moe.rukamori.archivetune.desktop.playback.requiresAdmittedRoute
 import moe.rukamori.archivetune.desktop.provider.DesktopDeezerSource
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
 import moe.rukamori.archivetune.desktop.provider.DesktopQqMusicSource
-import moe.rukamori.archivetune.desktop.provider.DesktopTidalSessionRefresh
 import moe.rukamori.archivetune.desktop.provider.DesktopTidalSource
 import moe.rukamori.archivetune.desktop.provider.desktopJioSaavnSource
 import moe.rukamori.archivetune.shared.data.provider.AudioAttempt
@@ -22,17 +21,13 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.QueueLocatorResolver
 import moe.rukamori.archivetune.shared.domain.repository.toPlaybackLocator
-import moe.rukamori.archivetune.shared.domain.settings.AudioSourceOrderKey
-import moe.rukamori.archivetune.shared.domain.settings.DeezerAudioQualityKey
-import moe.rukamori.archivetune.shared.domain.settings.QqMusicAudioQualityKey
-import moe.rukamori.archivetune.shared.domain.settings.SaavnAudioQualityKey
-import moe.rukamori.archivetune.shared.domain.settings.TidalAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
-import moe.rukamori.archivetune.shared.domain.settings.audioSourceEnabled
-import moe.rukamori.archivetune.shared.domain.source.AudioSourceConfig
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
-import moe.rukamori.archivetune.shared.domain.source.TrackMatching
+import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
+import moe.rukamori.archivetune.shared.ui.host.hostSourceSnapshot
+import moe.rukamori.archivetune.shared.ui.host.toAudioResolveRequest
+import moe.rukamori.archivetune.shared.ui.host.unresolvedSourceReason
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 
 /** The local-file provider id. A local song has no provider to search, so it is refused until a local owner exists. */
@@ -133,20 +128,8 @@ internal class DesktopQueueLocatorResolver(
     }
 }
 
-/**
- * The source snapshot one resolution reads: the stored order and the stored toggles. Spotify streaming stays off until
- * its account owner reports ready. Without stored settings the built-in defaults apply, with the same Spotify gate.
- */
-internal fun desktopSourceSnapshot(preferences: PreferenceSnapshot?): PlaybackSourceSnapshot {
-    val order = AudioSourceConfig.parseOrder(preferences?.get(AudioSourceOrderKey))
-    val enabled = AudioSourceType.entries.filterTo(linkedSetOf<AudioSourceType>()) { source ->
-        when (preferences) {
-            null -> AudioSourceConfig.DEFAULT_ENABLED.getValue(source) && source != AudioSourceType.SPOTIFY
-            else -> preferences.audioSourceEnabled(source, spotifyStreamingReady = false)
-        }
-    }
-    return PlaybackSourceSnapshot(order = order, enabled = enabled)
-}
+/** The source snapshot one resolution reads, as every host reads it. */
+internal fun desktopSourceSnapshot(preferences: PreferenceSnapshot?): PlaybackSourceSnapshot = hostSourceSnapshot(preferences)
 
 /**
  * The audio providers this host connects, each over the one HTTP client of the graph, in no particular order: the
@@ -161,7 +144,7 @@ internal fun desktopAudioProviders(
     http: HttpClient,
     accounts: VaultProviderAccountStore,
     preferences: () -> PreferenceSnapshot?,
-    tidalSessionRefresh: DesktopTidalSessionRefresh? = null,
+    tidalSessionRefresh: TidalSessionRefresh? = null,
     pool: DesktopPlaybackPool? = null,
 ): List<AudioProviderRepository> = listOfNotNull(
     DesktopTidalSource(http, accounts, preferences, tidalSessionRefresh, pool),
@@ -171,52 +154,8 @@ internal fun desktopAudioProviders(
     DesktopQqMusicSource(http, accounts),
 )
 
-private fun ContentOccurrence.toResolveRequest(preferences: PreferenceSnapshot?): AudioResolveRequest = AudioResolveRequest(
-    mediaId = item.ref.id,
-    target = TrackMatching.Target(
-        title = item.title,
-        artists = item.artists.map { it.name },
-        album = item.album,
-        durationMs = item.durationMs,
-    ),
-    directIds = item.ref.directSourceId()?.let { mapOf(it) }.orEmpty(),
-    qualities = desktopSourceQualities(preferences),
-)
+private fun ContentOccurrence.toResolveRequest(preferences: PreferenceSnapshot?): AudioResolveRequest =
+    toAudioResolveRequest(preferences)
 
-/** A catalog id is authoritative only for the source that issued it. */
-private fun moe.rukamori.archivetune.shared.domain.repository.ContentRef.directSourceId(): Pair<AudioSourceType, String>? =
-    when (provider) {
-        "youtube" -> AudioSourceType.YOUTUBE to id
-        "tidal" -> AudioSourceType.TIDAL to id
-        "deezer" -> AudioSourceType.DEEZER to id
-        "jiosaavn" -> AudioSourceType.JIOSAAVN to id
-        "qq" -> AudioSourceType.QQ to id
-        else -> null
-    }
-
-/**
- * The stored per-source qualities in the vocabulary each repository accepts. A stored value that a repository does not
- * know is left out, so that repository keeps its own default instead of failing the request.
- */
-internal fun desktopSourceQualities(preferences: PreferenceSnapshot?): Map<AudioSourceType, String> = buildMap {
-    when (preferences?.get(TidalAudioQualityKey) ?: "FLAC") {
-        "AAC_320" -> put(AudioSourceType.TIDAL, "HIGH")
-        "FLAC" -> put(AudioSourceType.TIDAL, "LOSSLESS")
-        "HI_RES_LOSSLESS" -> put(AudioSourceType.TIDAL, "HI_RES_LOSSLESS")
-    }
-    preferences?.get(DeezerAudioQualityKey)?.takeIf { it in setOf("FLAC", "MP3_320", "MP3_128") }
-        ?.let { put(AudioSourceType.DEEZER, it) }
-    when (preferences?.get(SaavnAudioQualityKey) ?: "QUALITY_320") {
-        "QUALITY_320" -> put(AudioSourceType.JIOSAAVN, "320")
-        "QUALITY_160" -> put(AudioSourceType.JIOSAAVN, "160")
-        "QUALITY_96" -> put(AudioSourceType.JIOSAAVN, "96")
-    }
-    preferences?.get(QqMusicAudioQualityKey)?.takeIf { it in setOf("LOSSLESS", "HIGH", "STANDARD") }
-        ?.let { put(AudioSourceType.QQ, it) }
-}
-
-private fun unavailableReason(occurrence: ContentOccurrence, attempts: List<AudioAttempt>): String {
-    val tried = attempts.joinToString(separator = ", ") { "${it.source.name} ${it.result.name}" }
-    return "no connected source resolved ${occurrence.item.ref.provider} on this desktop host" +
-        if (tried.isEmpty()) "" else " ($tried)"
-}
+private fun unavailableReason(occurrence: ContentOccurrence, attempts: List<AudioAttempt>): String =
+    unresolvedSourceReason(occurrence, attempts, host = "desktop")

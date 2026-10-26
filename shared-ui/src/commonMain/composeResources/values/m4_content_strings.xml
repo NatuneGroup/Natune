@@ -34,5 +34,9 @@
     <string name="m4_spotify_history_summary">Recently played albums, playlists and artists synced from Spotify; not a complete listening log.</string>
     <string name="m4_select_all">Select all visible</string>
     <string name="m4_remove_history">Remove from local history?</string>
+    <string name="m4_today">Today</string>
+    <string name="m4_yesterday">Yesterday</string>
+    <string name="m4_this_week">This week</string>
+    <string name="m4_last_week">Last week</string>
     <string name="m4_history_remove_count">Remove %1$d selected listening events. Other plays of the same song are unchanged.</string>
 </resources>

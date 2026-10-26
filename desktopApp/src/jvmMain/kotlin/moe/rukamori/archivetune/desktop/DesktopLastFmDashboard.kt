@@ -104,7 +104,9 @@ internal class DesktopLastFmDashboardHost(
 
     override fun copyText(text: String) = copyToDesktopClipboard(text)
 
-    override fun openUrl(url: String) = openDesktopUri(url, graph::report)
+    override fun openUrl(url: String) {
+        openDesktopUri(url, graph::report)
+    }
 
     override fun openGenres() = openRoute("mood_and_genres")
 

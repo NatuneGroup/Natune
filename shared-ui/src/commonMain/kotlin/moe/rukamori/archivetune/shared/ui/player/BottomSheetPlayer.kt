@@ -70,9 +70,10 @@ fun BottomSheetPlayer(
     BoxWithConstraints(modifier.fillMaxSize()) {
         val landscape=maxWidth>maxHeight
         val surfaces=playerSurfaceActivity(presentation.style,interaction.panel,interaction.fullscreenLyrics,landscape,state.active)
-        val content=slots(preferences,surfaces)
         // Occluded or hidden shells get a static artwork policy, so decorative blur and motion stop with their surface.
         val optical=opticalPolicy(preferences,OpticalCapabilities(blur=blurSupported,refraction=false),visible=surfaces.background)
+        val handoff=rememberPlayerHandoff(state,optical.motion && !state.reducedMotion)
+        val content=slots(preferences,surfaces).withHandoff(handoff)
         val c=PlayerRenderContext(state,actions,presentation,interaction,content,landscape,artworkPager,optical)
         val showingLyrics=surfaces.fullLyrics || surfaces.compactLyrics
         val visibilityCallback by rememberUpdatedState(actions.onLyricsVisibility)

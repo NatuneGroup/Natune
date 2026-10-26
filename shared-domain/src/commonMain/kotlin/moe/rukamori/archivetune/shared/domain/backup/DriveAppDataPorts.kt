@@ -17,6 +17,12 @@ object DriveAppDataLimits {
     const val FILE_NAME: String = "ArchiveTune.backup"
 
     /**
+     * Name of the desktop backup file. Desktop archives use their own format, so they never replace the Android backup
+     * when both hosts share one Google Cloud project and therefore one app data folder.
+     */
+    const val DESKTOP_FILE_NAME: String = "ArchiveTune-desktop.backup"
+
+    /**
      * OAuth scope for the hidden app data folder. Host authorization adds whatever prefix its account API
      * requires; the scope itself is not changed.
      */

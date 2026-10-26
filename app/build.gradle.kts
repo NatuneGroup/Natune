@@ -40,24 +40,15 @@ if (localPropertiesFile.exists()) {
 fun providerCredentialLiteral(name: String, vararg legacyNames: String): String =
     ProviderCredentials.javaStringLiteral(ProviderCredentials.resolve(project, name, *legacyNames))
 
-// Base version for a stable release. The release workflow uses this value verbatim as the version
-// name and takes the monotonic versionCode from the git commit count, injecting both via
-// VERSION_NAME_OVERRIDE / VERSION_CODE_OVERRIDE. Keep each on a single line so that grep stays
-// reliable.
-//
-// Bump the name by hand before each stable release, the way rukamori names his (15.0.0, 14.1.0,
-// 14.0.0 — a plain three-part version). It is deliberately NOT derived from the commit count any
-// more: a fork that published 14.0.5336 as a version name was describing its own build counter
-// rather than a version, and nobody reads that as a release. Dispatching the workflow twice with
-// the same name is a no-op, because the tag already exists.
+// Stable workflow fallback when no vX.Y.Z release tag exists. Keep this assignment on one line
+// because CI extracts it directly; both channels inject VERSION_NAME_OVERRIDE and
+// VERSION_CODE_OVERRIDE without committing a version bump.
 //
 // The versionCode is not derived from this repository's commit count: the private KMP root has a
-// fresh history that would sit below the published builds. Signed builds take an allocated code
-// from VERSION_CODE_OVERRIDE that must exceed trustedUpgradeVersionCodeFloor (see below).
+// fresh history below the published builds. CI allocates a repository-wide run-based code above
+// trustedUpgradeVersionCodeFloor (see below), preserving the existing install/upgrade line.
 //
-// A pre-release build is named after its release tag instead — "C<yyyyMMddHHmm>" for Canary,
-// "N<yyyyMMddHHmm>" for Nightly, the way rukamori names his nightlies "N<yyyyMMdd>" — so the tag,
-// the release title and the version the app reports are all one string.
+// Nightly names use the UTC date, "N<yyyyMMdd>", for the release tag, title and app versionName.
 val baseVersionName = "15.0.0"
 val baseVersionCode = 1500
 // Last trusted published build (Nightly N202610151104, build 6833). Signed builds must install over it in place.
@@ -125,8 +116,14 @@ val hasReleaseSigningConfig =
         releaseKeyPassword != null
 // Signed builds must never be produced with a code that installs as older than the published line.
 // The check runs at configuration time, before any signing or packaging task.
-val requestedVersionCode =
-    System.getenv("VERSION_CODE_OVERRIDE")?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+val versionCodeOverride = System.getenv("VERSION_CODE_OVERRIDE")?.trim().orEmpty()
+val requestedVersionCode = versionCodeOverride.takeIf { it.isNotEmpty() }?.toIntOrNull()
+require(versionCodeOverride.isEmpty() || requestedVersionCode != null) {
+    "VERSION_CODE_OVERRIDE must be a positive Android versionCode integer."
+}
+require(requestedVersionCode == null || requestedVersionCode > 0) {
+    "VERSION_CODE_OVERRIDE must be a positive Android versionCode integer."
+}
 require(
     !hasReleaseSigningConfig ||
         (requestedVersionCode != null && requestedVersionCode > trustedUpgradeVersionCodeFloor),

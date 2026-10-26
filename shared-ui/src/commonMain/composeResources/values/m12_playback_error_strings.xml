@@ -1,0 +1,25 @@
+<resources>
+    <string name="m12_error_unknown">Unknown error</string>
+    <string name="m12_error_no_internet">No network connection</string>
+    <string name="m12_error_timeout">Timeout</string>
+    <string name="m12_error_no_stream">No stream available</string>
+    <string name="m12_error_malformed_stream">Source error</string>
+    <string name="m12_retry">Retry</string>
+    <string name="m12_close">Close</string>
+    <string name="m12_copy">Copy</string>
+    <string name="m12_copied">Copied to clipboard</string>
+    <string name="m12_login">Login</string>
+    <string name="m12_playback_login_po_token">Login PO Token</string>
+    <string name="m12_details">Details</string>
+    <string name="m12_playback_error_code">Code</string>
+    <string name="m12_playback_error_http">HTTP</string>
+    <string name="m12_playback_error_message">Message</string>
+    <string name="m12_playback_error_cause">Cause</string>
+    <string name="m12_playback_error_track">Track</string>
+    <string name="m12_playback_error_source">Source</string>
+    <string name="m12_playback_confirmation_required">Playback confirmation required</string>
+    <string name="m12_playback_requires_youtube_music_confirmation">Confirm playback in YouTube Music, then return to Natune.</string>
+    <string name="m12_playback_login_refresh_required">Refresh YouTube Music login</string>
+    <string name="m12_playback_requires_youtube_music_login_refresh">Refresh your YouTube Music login, then return to Natune.</string>
+    <string name="m12_feedback_send">Send feedback</string>
+</resources>

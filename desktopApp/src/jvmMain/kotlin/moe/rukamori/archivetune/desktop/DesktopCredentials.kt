@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.desktop
 
+import moe.rukamori.archivetune.desktop.backup.GoogleDesktopClient
 import moe.rukamori.archivetune.shared.data.provider.TidalClientCredentials
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramApiCredentials
 
@@ -62,6 +63,14 @@ internal object DesktopCredentials {
     val feedbackIngestKey: String
         get() = value("ARCHIVETUNE_FEEDBACK_INGEST_KEY").ifBlank { runtime("FEEDBACK_INGEST_KEY") }
 
+    /**
+     * The Google OAuth client of type "Desktop app" for Drive app data backup. Google issues a client secret for desktop
+     * clients that it does not treat as confidential; it is sent when set. Without an id, Drive backup is not configured.
+     */
+    val googleDesktopClient: GoogleDesktopClient?
+        get() = value("ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID").takeIf { it.isNotBlank() }
+            ?.let { GoogleDesktopClient(it, value("ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET")) }
+
     private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
 
     private fun runtime(name: String): String =
@@ -91,6 +100,8 @@ internal object DesktopCredentials {
         "ARCHIVETUNE_POOL_CLIENT_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_POOL_CLIENT_KEY
         "ARCHIVETUNE_FEEDBACK_API_URL" -> DesktopBuildCredentials.ARCHIVETUNE_FEEDBACK_API_URL
         "ARCHIVETUNE_FEEDBACK_INGEST_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_FEEDBACK_INGEST_KEY
+        "ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID" -> DesktopBuildCredentials.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID
+        "ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET" -> DesktopBuildCredentials.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET
         else -> ""
     }
 }

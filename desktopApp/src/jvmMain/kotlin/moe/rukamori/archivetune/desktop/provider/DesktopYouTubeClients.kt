@@ -32,9 +32,9 @@ import kotlinx.serialization.json.putJsonObject
  * Desktop protocol layer for the retained YouTube Music player request. It mirrors the baseline
  * `core` InnerTube client's request shape (`YouTubeClient.toContext`, `InnerTube.player`,
  * `YouTube.visitorData`) and the shipped `YTPlayerUtils` ranking, but it runs on the graph's one
- * borrowed Ktor client and parses JSON itself because that client has no ContentNegotiation. The
- * signed-in playback context (dataSyncId, cookies, SAPISIDHASH, PO tokens) is deliberately absent:
- * this layer only ever sends visitor requests, so it cannot make a personal stream look anonymous.
+ * borrowed Ktor client and parses JSON itself because that client has no ContentNegotiation. A
+ * signed-in request carries the cookie, its SAPISIDHASH and the delegated session only for a client
+ * that supports cookie authentication, as the core client does. PO tokens are not minted here.
  */
 
 private const val ORIGIN_YOUTUBE = "https://www.youtube.com"
@@ -344,8 +344,11 @@ internal suspend fun requestYouTubePlayer(
     visitorData: String?,
     gl: String,
     hl: String,
+    signIn: DesktopYouTubeSignIn? = null,
 ): JsonObject {
-    val body = playerRequestBody(videoId, playlistId, client, signatureTimestamp, visitorData, gl, hl)
+    // A client without cookie authentication would reject or ignore the cookie, so it is only ever sent as a visitor.
+    val session = signIn?.takeIf { client.supportsCookieAuthentication }
+    val body = playerRequestBody(videoId, playlistId, client, signatureTimestamp, visitorData, gl, hl, session)
     val text =
         withTransientRetry {
             val response =
@@ -359,6 +362,14 @@ internal suspend fun requestYouTubePlayer(
                     header("X-Origin", client.requestOrigin())
                     header("Referer", client.requestReferer())
                     visitorData?.let { header("X-Goog-Visitor-Id", it) }
+                    session?.let {
+                        header(HttpHeaders.Cookie, it.cookie)
+                        header(
+                            HttpHeaders.Authorization,
+                            youTubeSapisidAuthorization(it.loginValue, client.requestOrigin(), System.currentTimeMillis() / 1000),
+                        )
+                        header("X-Goog-AuthUser", "0")
+                    }
                     setBody(body.toString())
                 }
             val status = response.status.value
@@ -377,9 +388,10 @@ private fun playerRequestBody(
     visitorData: String?,
     gl: String,
     hl: String,
+    session: DesktopYouTubeSignIn?,
 ): JsonObject =
     buildJsonObject {
-        put("context", contextJson(client, videoId, visitorData, gl, hl))
+        put("context", contextJson(client, videoId, visitorData, gl, hl, session))
         put("videoId", videoId)
         playlistId?.let { put("playlistId", it) }
         put("racyCheckOk", true)
@@ -404,6 +416,7 @@ private fun contextJson(
     visitorData: String?,
     gl: String,
     hl: String,
+    session: DesktopYouTubeSignIn?,
 ): JsonObject =
     buildJsonObject {
         put(
@@ -440,6 +453,7 @@ private fun contextJson(
             "user",
             buildJsonObject {
                 put("lockedSafetyMode", false)
+                session?.dataSyncId.delegatedSessionIdOrNull()?.let { put("onBehalfOfUser", it) }
             },
         )
     }
@@ -601,7 +615,7 @@ private fun codecRank(codec: String?): Int =
 
 private val CODECS_PARAMETER_REGEX = Regex("""codecs="([^"]+)"""")
 
-private fun extractCodec(mimeType: String): String? =
+internal fun extractCodec(mimeType: String): String? =
     CODECS_PARAMETER_REGEX
         .find(mimeType)
         ?.groupValues

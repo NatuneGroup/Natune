@@ -1,4 +1,4 @@
-package moe.rukamori.archivetune.desktop
+package moe.rukamori.archivetune.shared.ui.host
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -56,14 +56,13 @@ import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.screens.PagedContentState
 import moe.rukamori.archivetune.shared.ui.screens.PlaylistCollectionRow
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
-import java.util.TimeZone
 
 /**
- * The one desktop owner of the Library lists and the playlist order controls. Every list is the owner's complete,
+ * The one host owner of the Library lists and the playlist order controls. Every list is the owner's complete,
  * sorted, block-aware flow, read with the sort keys of the one settings owner, so a page never sorts the rows it
  * already holds. A surface whose owner cannot answer on this host is unavailable, never an empty success.
  */
-internal class DesktopLibraryContent(
+class LibraryContentOwner(
     private val settings: VaultSettingsStore,
     private val library: RoomLibraryRepository,
     /**
@@ -74,6 +73,12 @@ internal class DesktopLibraryContent(
     private val statistics: StatisticsRepository,
     private val blocked: Flow<Set<ContentRef>>,
     private val textOrder: Comparator<String>,
+    /** Wall-clock milliseconds, for the My Top windows. */
+    private val nowMs: () -> Long,
+    /** The local time zone offset at an instant, for the My Top day boundaries. */
+    private val offsetMsAt: (epochMs: Long) -> Long,
+    /** Writes one sanitized diagnostic line. */
+    private val report: (String) -> Unit,
     /** Told about every like this owner wrote, after the write succeeded. It must not suspend for long. */
     private val onLikeWritten: suspend (ContentRef, Boolean) -> Unit = { _, _ -> },
 ) {
@@ -226,15 +231,15 @@ internal class DesktopLibraryContent(
     private suspend fun topList(request: ContentRequest): ContentPage? {
         val (period, size) = topParams(request) ?: return null
         return try {
-            val nowMs = System.currentTimeMillis()
-            val window = period.window(nowMs, TimeZone.getDefault().getOffset(nowMs).toLong())
+            val now = nowMs()
+            val window = period.window(now, offsetMsAt(now))
             val blockedNow = blocked.first()
             val songs = statistics.load(window).songs.filterNot { rank -> rank.item.hasBlockedArtist(blockedNow) }
             ContentPage(songs.take(size).map { rank -> keyed(rank.item) })
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: Exception) {
-            desktopDiagnostic("my top could not be read: ${failure.javaClass.simpleName}")
+            report("my top could not be read: ${failure::class.simpleName}")
             null
         }
     }
@@ -389,7 +394,7 @@ internal class DesktopLibraryContent(
 }
 
 /** A local playlist as the screen needs it. [header] is null when the library holds no such playlist. */
-internal data class LocalPlaylistView(
+data class LocalPlaylistView(
     val header: ContentItem?,
     val page: ContentPage?,
     val sort: LibrarySortState<PlaylistSongSortType>,
@@ -397,7 +402,7 @@ internal data class LocalPlaylistView(
 )
 
 /** The liked songs as the screen needs them, with the auto-playlist order that orders them. */
-internal data class AutoPlaylistView(
+data class AutoPlaylistView(
     val page: ContentPage?,
     val sort: LibrarySortState<AutoPlaylistSongSortType>,
 )
@@ -406,7 +411,7 @@ internal data class AutoPlaylistView(
  * The pseudo-playlist id of the liked songs in request and route identity. A slash keeps it apart from every stored
  * local playlist id, so a playlist can never be mistaken for the likes.
  */
-internal const val LIKED_PLAYLIST_ID = "auto_playlist/liked"
+const val LIKED_PLAYLIST_ID = "auto_playlist/liked"
 
 /** The section id that names a My Top list inside its request. It is never a stored or shown identifier. */
 private const val TOP_SECTION_ID = "my_top"
@@ -418,6 +423,6 @@ private fun keyed(item: ContentItem): ContentOccurrence =
     ContentOccurrence("${item.ref.provider}:${item.ref.kind.name}:${item.ref.id}", item)
 
 /** An unavailable owner is a failed page. A complete one is initialized, with no continuation, as the owner returns it. */
-internal fun ContentPage?.toPagedState(request: ContentRequest): PagedContentState =
+fun ContentPage?.toPagedState(request: ContentRequest): PagedContentState =
     if (this == null) PagedContentState(request = request, failed = true)
     else PagedContentState(items = items, initialized = true, request = request)

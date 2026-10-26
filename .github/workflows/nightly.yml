@@ -1,0 +1,115 @@
+name: Nightly release
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even when dev has no commits since the previous nightly
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: natune-nightly-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check nightly changes and select version
+    if: github.repository == 'NatuneGroup/ArchiveTune-KMP' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.version.outputs.should_build }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      version_name: ${{ steps.version.outputs.version_name }}
+      package_version: ${{ steps.version.outputs.package_version }}
+      version_code: ${{ steps.version.outputs.version_code }}
+      commit_sha: ${{ steps.version.outputs.commit_sha }}
+    steps:
+      - name: Check out full tag history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether to build
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ inputs.force }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          BASE_VERSION="$(awk -F'"' '/^val baseVersionName = "/ { print $2; exit }' app/build.gradle.kts)"
+          FLOOR="$(awk -F'=' '/^val trustedUpgradeVersionCodeFloor[[:space:]]*=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' app/build.gradle.kts)"
+          if [[ -z "$BASE_VERSION" || ! "$FLOOR" =~ ^[0-9]+$ || ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not read baseVersionName, trustedUpgradeVersionCodeFloor, or the Actions run ID."
+            exit 1
+          fi
+
+          VERSION_NAME="N$(date -u +'%Y%m%d')"
+          PACKAGE_VERSION="$(python3 .github/scripts/next-version.py "$BASE_VERSION")"
+          VERSION_CODE=$((FLOOR + RUN_ID))
+          if (( VERSION_CODE <= FLOOR || VERSION_CODE > 2147483647 )); then
+            echo "::error::Allocated version code $VERSION_CODE is outside Android's supported positive Int range."
+            exit 1
+          fi
+
+          {
+            echo "tag_name=$VERSION_NAME"
+            echo "version_name=$VERSION_NAME"
+            echo "package_version=$PACKAGE_VERSION"
+            echo "version_code=$VERSION_CODE"
+            echo "commit_sha=$GITHUB_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ "${FORCE:-false}" == "true" ]]; then
+            echo "Forced nightly requested."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LAST_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | test("^N[0-9]+$"))] | sort_by(.createdAt) | last | .tagName' 2>/dev/null || true)"
+          LAST_SHA=""
+          if [[ -n "${LAST_TAG:-}" && "$LAST_TAG" != "null" ]]; then
+            LAST_SHA="$(gh release view "$LAST_TAG" --repo "$GITHUB_REPOSITORY" \
+              --json targetCommitish --jq '.targetCommitish' 2>/dev/null || true)"
+          fi
+
+          if [[ -n "${LAST_SHA:-}" ]] &&
+             git cat-file -e "${LAST_SHA}^{commit}" 2>/dev/null &&
+             [[ "$(git rev-parse HEAD)" == "$(git rev-parse "${LAST_SHA}^{commit}")" ]]; then
+            echo "No new commits since the last nightly ($LAST_TAG); skipping."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "New commits since the last nightly; building $VERSION_NAME."
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
+
+  build-and-publish:
+    name: Build and publish nightly artifacts
+    needs: prepare
+    if: needs.prepare.outputs.should_build == 'true'
+    uses: ./.github/workflows/_release-artifacts.yml
+    with:
+      channel: nightly
+      tag_name: ${{ needs.prepare.outputs.tag_name }}
+      version_name: ${{ needs.prepare.outputs.version_name }}
+      package_version: ${{ needs.prepare.outputs.package_version }}
+      version_code: ${{ needs.prepare.outputs.version_code }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+    secrets: inherit
+    permissions:
+      contents: write

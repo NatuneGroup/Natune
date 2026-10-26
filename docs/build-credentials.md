@@ -43,7 +43,7 @@ name is blank, so existing local setups keep working.
 | `ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID` | Desktop only: the TIDAL device-flow client for "Link this device" and its token refresh (`TidalAccountAuth`). Falls back to `ARCHIVETUNE_TIDAL_CLIENT_ID`. | With neither set, "Link this device" shows unavailable and refresh is skipped; pasting a refresh token still needs a client. |
 | `ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET` | Client secret for the same device flow. Falls back to `ARCHIVETUNE_TIDAL_CLIENT_SECRET`. | As above. |
 | `ARCHIVETUNE_JIOSAAVN_DES_KEY` | Desktop only: the JioSaavn media URL decoder key (`desktopJioSaavnSource`). The `archivetune.jiosaavn.key` system property overrides it. | The JioSaavn source is not composed on desktop. |
-| `ARCHIVETUNE_LISTENER_PRESENCE_URL` | Opt-in listener presence heartbeat origin (`:app` `BuildConfig.ARCHIVETUNE_LISTENER_PRESENCE_URL`, desktop `DesktopCredentials`). Must be the https:// origin of `services/listener-presence`. | No heartbeat is sent and the feature stays silent. |
+| `ARCHIVETUNE_LISTENER_PRESENCE_URL` | Opt-in listener presence heartbeat origin (`:app` `BuildConfig.ARCHIVETUNE_LISTENER_PRESENCE_URL`, desktop `DesktopCredentials`, iOS `Info.plist` `ArchiveTuneListenerPresenceUrl`). Must be the https:// origin of `services/listener-presence`, for example the deployed public endpoint `https://natune-listener-presence.vercel.app` (not a secret). Every client appends `/api/heartbeat` itself, so give the origin only. | No heartbeat is sent and the feature stays silent. |
 | `ARCHIVETUNE_TELEGRAM_API_ID` (legacy `TELEGRAM_API_ID`) | Desktop only: the Telegram api_id of the TDLight session (`DesktopCredentials.telegramApi`). The Android app keeps its own `TELEGRAM_API_ID` build value. | The desktop Telegram session is not configured: no TDLight client starts and the sign-in page says so. |
 | `ARCHIVETUNE_TELEGRAM_API_HASH` (legacy `TELEGRAM_API_HASH`) | Desktop only: the api_hash paired with the api_id above. | As above. Both values are required. |
 | `ARCHIVETUNE_SOURCE_PROVIDER_URL` (legacy `SOURCE_PROVIDER_URL`) | Desktop: the ArchivePool deployment the Playback Pool reads (`DesktopPlaybackPool`). Android keeps its own `SOURCE_PROVIDER_URL` build value. | The desktop uses the same public default as Android, `https://archivepool.vercel.app`. Set `-DARCHIVETUNE_SOURCE_PROVIDER_URL=off` to turn the feed off for a launch. |
@@ -51,6 +51,8 @@ name is blank, so existing local setups keep working.
 | `ARCHIVETUNE_POOL_CLIENT_KEY` (legacy `POOL_CLIENT_KEY`) | Desktop: the legacy base64 AES-256 key for pool deployments older than the v2 feed. | Only v2 decryption is tried. |
 | `ARCHIVETUNE_FEEDBACK_API_URL` (legacy `FEEDBACK_API_URL`) | Desktop: the opt-in hosted feedback service that receives a report the user reviewed and chose to send. | The feedback action stays unavailable and nothing is sent. |
 | `ARCHIVETUNE_FEEDBACK_INGEST_KEY` (legacy `FEEDBACK_INGEST_KEY`) | Desktop: the write-only ingest key for the same service. It ships with the app, so the server must treat it as write-only access. | Reports are sent without the key; a service that requires it refuses them. |
+| `ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID` | Desktop only: the Google OAuth client of type "Desktop app" for Google Drive app data backup (`DesktopGoogleDriveAuthorization`, loopback sign-in with PKCE). It must belong to a Google Cloud project with the Drive API enabled and the `drive.appdata` scope on its consent screen. | The Google Drive backup rows show "Google Drive is not configured" and no sign-in starts. Manual backup files keep working. |
+| `ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET` | Desktop only: the client secret Google issues with the same desktop client. Google does not treat it as confidential for installed apps; it is sent when set. | Sign-in is tried without a secret; a client that requires one is reported as not configured. |
 ## How each module receives the values
 
 - **`:app`** declares each variable with `buildConfigField` in `app/build.gradle.kts`, so the value is
@@ -66,13 +68,14 @@ name is blank, so existing local setups keep working.
   entering Gradle's task history.
 - **`:desktopApp`** has its own `generateProviderCredentials` task that writes
   `moe.rukamori.archivetune.desktop.DesktopBuildCredentials` (TIDAL OAuth clients, the JioSaavn key,
-  Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed and the feedback service). `DesktopCredentials` reads each value from an environment variable of the
+  Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed, the feedback service and the Google Drive desktop client). `DesktopCredentials` reads each value from an environment variable of the
   same name, then a JVM system property of the same name (`-D<NAME>=<value>`), then the build-time value, so a
   packaged desktop build can be configured at launch without rebuilding.
-- The iOS host reads only the Telegram pair so far. Xcode takes `ARCHIVETUNE_TELEGRAM_API_ID` and
-  `ARCHIVETUNE_TELEGRAM_API_HASH` from the untracked `iosApp/Configuration/Credentials.xcconfig` (included by
-  `Native.xcconfig`) or from build settings, and writes them into `Info.plist`. The other variables must be
-  wired through the same build configuration before the dependent features work there.
+- The iOS host reads the Telegram pair and `ARCHIVETUNE_LISTENER_PRESENCE_URL` so far. Xcode takes them from the
+  untracked `iosApp/Configuration/Credentials.xcconfig` (included by `Native.xcconfig`) or from build settings,
+  and writes them into `Info.plist`. An xcconfig file treats `//` as a comment, so write the presence origin as
+  `https:/$()/host` there. The other variables must be wired through the same build configuration before the
+  dependent features work there.
 
 ## GitHub Actions
 
@@ -100,6 +103,8 @@ env:
   ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
   ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
   ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+  ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID }}
+  ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET }}
 ```
 
 The two Telegram variables reuse the existing `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` secrets of the Android build. The repository owner creates these secrets. A secret that does not exist resolves to an empty string,

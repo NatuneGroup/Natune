@@ -1,5 +1,6 @@
-package moe.rukamori.archivetune.desktop
+package moe.rukamori.archivetune.shared.ui.host
 
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
@@ -21,14 +22,14 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
  * two consecutive snapshots of one playback generation that both report audio advancing, so a pause, a seek, a stall or
  * a discontinuity is never counted as listening. There is no second clock and no progress ticker.
  */
-internal class DesktopListenDriver(
+class ListenHistoryDriver(
     scope: CoroutineScope,
     private val player: MusicPlayerController,
     private val queue: StateFlow<QueueState>,
     private val history: RoomListeningHistory,
     private val preferences: StateFlow<PreferenceSnapshot?>,
     private val report: (String) -> Unit,
-    private val nowMs: () -> Long = { System.currentTimeMillis() },
+    private val nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private var previous: PlaybackSnapshot? = null
     private var tracked: TrackedListen? = null
@@ -41,7 +42,7 @@ internal class DesktopListenDriver(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                report("listen history failed: ${failure.javaClass.simpleName}")
+                report("listen history failed: ${failure::class.simpleName}")
             }
         }
     }

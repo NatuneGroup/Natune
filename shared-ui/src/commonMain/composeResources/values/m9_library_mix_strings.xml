@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The mixed Library section's header, with the baseline strings.xml wording. -->
+    <string name="m9_library_liked_songs">Liked songs</string>
+    <string name="m9_library_tracks_count">%1$d tracks</string>
+    <string name="m9_library_offline">Offline</string>
+    <string name="m9_library_downloaded">Downloaded</string>
+    <string name="m9_library_cached">Cached</string>
+    <string name="m9_library_instant_playback">Instant playback</string>
+    <string name="m9_library_local_files">Local Files</string>
+    <string name="m9_library_on_device">On device</string>
+    <string name="m9_library_all_time">All time</string>
+    <string name="m9_library_recently_played">Recently Played</string>
+    <string name="m9_library_top_mixes">Top Mixes for You</string>
+</resources>

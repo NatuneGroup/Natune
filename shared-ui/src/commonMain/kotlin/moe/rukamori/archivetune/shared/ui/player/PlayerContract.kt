@@ -29,7 +29,22 @@ data class PlayerState(
     val spatialFont: FontFamily? = null,
     val active: Boolean = true,
     val reducedMotion: Boolean = false,
+    val handoff: PlayerHandoff? = null,
 )
+
+/**
+ * An armed transition from the playing occurrence to its successor. The blend starts at [fadeStartPositionMs] of the
+ * outgoing song and lasts [overlapMs]; a gapless handoff has no overlap and no blend.
+ */
+data class PlayerHandoff(
+    val fromOccurrenceId: String,
+    val toOccurrenceId: String,
+    val fadeStartPositionMs: Long,
+    val overlapMs: Long,
+) {
+    fun progressAt(positionMs: Long): Float =
+        if (overlapMs <= 0L) 0f else ((positionMs - fadeStartPositionMs).toFloat() / overlapMs).coerceIn(0f, 1f)
+}
 
 enum class PlayerRepeat { OFF, ALL, ONE }
 enum class PlayerAction { PREVIOUS, NEXT, SHUFFLE, REPEAT, LIKE, SHARE, MORE, SLEEP, TITLE, ARTIST, COLLAPSE, SEEK_BACKWARD, SEEK_FORWARD }

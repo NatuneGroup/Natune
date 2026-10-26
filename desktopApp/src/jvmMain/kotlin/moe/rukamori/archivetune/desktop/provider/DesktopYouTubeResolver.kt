@@ -5,6 +5,7 @@ import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import moe.rukamori.archivetune.desktop.desktopDiagnostic
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowse
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeResolutionPort
@@ -24,23 +25,31 @@ import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.source.YouTubeFallbackTier
 
 private val VIDEO_ID = Regex("^[A-Za-z0-9_-]{11}$")
+private const val SEARCHED_ID_CACHE_SIZE = 64
 
 /**
  * The desktop YouTube terminal tier over [DesktopYouTubeClients]. It walks the shipped quality ladder and client order
- * as a visitor and returns the first ranked audio format that carries a direct URL.
+ * and returns the first ranked audio format that carries a direct URL. With a personal sign-in from [signIn], the
+ * cookie-capable clients ask as that account and the login-only clients join the walk, as the shipped resolver lets
+ * them for a signed-in user. Without one every request is a visitor request.
  *
- * Ciphered formats (`signatureCipher`/`cipher`) are skipped: the base.js deobfuscation of the Android core is not ported
- * to this host, and a URL without its signature would only fail later in the engine. The clients that answer visitors
- * with direct URLs (visionOS, Android VR) are in the fallback set, so most tracks still resolve.
+ * The primary walk skips ciphered formats (`signatureCipher`/`cipher`): the base.js deobfuscation of the Android core is
+ * not part of it, and a URL without its signature would only fail later in the engine.
  *
- * InnerTubeX, NewPipe and Echo are Android-only extractor tiers. [fallback] answers null for each, which the shared
- * failsafe walk reads as a failed tier, so the chain ends honestly instead of inventing a stream.
+ * [fallback] runs the shipped extractor tiers in the order the shared failsafe walk gives them: InnerTubeX through
+ * [DesktopInnerTubeXTier], then NewPipe through [DesktopNewPipeTier], which also deciphers what the primary walk
+ * skipped. Echo is an Android-only resolver, so its tier answers null, which the walk reads as a failed tier. Every tier
+ * writes one diagnostic line with its outcome.
  */
 internal class DesktopYouTubeResolver(
     private val http: HttpClient,
     private val preferences: () -> PreferenceSnapshot?,
     private val search: YouTubeBrowseTransport? = null,
     private val locale: () -> Locale = { Locale.getDefault() },
+    private val signIn: () -> DesktopYouTubeSignIn? = { null },
+    private val innerTubeX: DesktopInnerTubeXTier = DesktopInnerTubeXTier(http),
+    private val newPipe: DesktopNewPipeTier = DesktopNewPipeTier(http, locale),
+    private val log: (String) -> Unit = ::desktopDiagnostic,
 ) : YouTubeResolutionPort {
     private val visitorLock = Mutex()
     private var visitorData: String? = null
@@ -49,14 +58,59 @@ internal class DesktopYouTubeResolver(
     @Volatile
     private var lastSuccessful: DesktopYouTubeClient? = null
 
-    override suspend fun primary(request: AudioResolveRequest): PreparedAudio? {
-        val direct = request.directIds[AudioSourceType.YOUTUBE] ?: request.mediaId.takeIf { VIDEO_ID.matches(it) }
-        if (direct != null) return resolveVideo(direct, trusted = true)
-        val found = searchVideoId(request) ?: return null
-        return resolveVideo(found, trusted = false)
+    // The fallback tiers resolve the same request after the primary did, so a searched id is kept instead of asking
+    // the search transport again inside each bounded tier.
+    private val searchedIds = object : LinkedHashMap<String, String>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean =
+            size > SEARCHED_ID_CACHE_SIZE
     }
 
-    override suspend fun fallback(tier: YouTubeFallbackTier, request: AudioResolveRequest): PreparedAudio? = null
+    private class Target(val videoId: String, val trusted: Boolean)
+
+    override suspend fun primary(request: AudioResolveRequest): PreparedAudio? {
+        val target = targetFor(request) ?: return null
+        return resolveVideo(target.videoId, target.trusted)
+    }
+
+    override suspend fun fallback(tier: YouTubeFallbackTier, request: AudioResolveRequest): PreparedAudio? {
+        if (tier == YouTubeFallbackTier.ECHO) return null
+        val target = targetFor(request) ?: return null
+        val quality = DesktopYouTubeAudioQuality.fromRequestValue(preferences()?.get(AudioQualityKey))
+        val started = System.nanoTime()
+        return try {
+            when (tier) {
+                YouTubeFallbackTier.INNERTUBE_X -> innerTubeX.resolve(target.videoId, quality, target.trusted)
+                YouTubeFallbackTier.NEWPIPE -> newPipe.resolve(target.videoId, quality, target.trusted, visitor())
+                YouTubeFallbackTier.ECHO -> null
+            }.also { audio ->
+                log("YouTube ${tier.name} tier ${if (audio != null) "resolved" else "found no stream"} in ${elapsedMs(started)} ms")
+            }
+        } catch (cancelled: CancellationException) {
+            log("YouTube ${tier.name} tier stopped after ${elapsedMs(started)} ms")
+            throw cancelled
+        } catch (failure: Exception) {
+            log("YouTube ${tier.name} tier failed in ${elapsedMs(started)} ms: ${failure.javaClass.simpleName}")
+            throw failure
+        }
+    }
+
+    /**
+     * The video artwork stream of [videoId] within [maxHeight] lines, through the NewPipe tier with this resolver's
+     * visitor identity. Null when no client answered with a video type.
+     */
+    suspend fun resolveVideoArtwork(videoId: String, maxHeight: Int): DesktopVideoArtworkResult? =
+        newPipe.resolveVideo(videoId, maxHeight, visitor())
+
+    private fun elapsedMs(startedNanos: Long): Long = (System.nanoTime() - startedNanos) / 1_000_000L
+
+    private suspend fun targetFor(request: AudioResolveRequest): Target? {
+        val direct = request.directIds[AudioSourceType.YOUTUBE] ?: request.mediaId.takeIf { VIDEO_ID.matches(it) }
+        if (direct != null) return Target(direct, trusted = true)
+        synchronized(searchedIds) { searchedIds[request.mediaId] }?.let { return Target(it, trusted = false) }
+        val found = searchVideoId(request) ?: return null
+        synchronized(searchedIds) { searchedIds[request.mediaId] = found }
+        return Target(found, trusted = false)
+    }
 
     private suspend fun searchVideoId(request: AudioResolveRequest): String? {
         val transport = search ?: return null
@@ -86,7 +140,9 @@ internal class DesktopYouTubeResolver(
         val ageGate = snapshot?.get(AllowAgeRestrictedKey) ?: false
         val preferred = preferredClient(snapshot)
         val order = streamClientOrder(preferred, lastSuccessful, ageGate)
-        val visitorData = visitor()
+        val session = signIn()
+        // The account's own visitor identity travels with its cookie; a fetched visitor id belongs to no account.
+        val visitorData = session?.visitorData ?: visitor()
         val region = locale().country.takeIf { it.length == 2 }?.uppercase(Locale.US) ?: "US"
         val language = locale().toLanguageTag().ifBlank { "en" }
         val failed = linkedSetOf<String>()
@@ -95,10 +151,10 @@ internal class DesktopYouTubeResolver(
         var lastFailure: Throwable? = null
         for (attemptQuality in qualityAttempts(quality)) {
             for (client in order) {
-                if (client.loginRequired) continue
+                if (client.loginRequired && session == null) continue
                 if (client.key in failed) continue
                 val response = try {
-                    requestYouTubePlayer(http, videoId, null, client, null, visitorData, region, language)
+                    requestYouTubePlayer(http, videoId, null, client, null, visitorData, region, language, session)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -123,11 +179,22 @@ internal class DesktopYouTubeResolver(
                     continue
                 }
                 lastSuccessful = client
-                return PreparedAudio.Progressive(format.toStream(client, response.videoDetails(), trusted))
+                val details = response.videoDetails()
+                return PreparedAudio.Progressive(
+                    format.toDirectStream(
+                        uri = requireNotNull(format.url),
+                        label = "YouTube ${client.friendlyName ?: client.clientName} ${format.bitrate / 1000} kbps",
+                        title = details?.stringOf("title"),
+                        author = details?.stringOf("author"),
+                        durationMs = details?.stringOf("lengthSeconds")?.toLongOrNull()?.times(1_000L),
+                        trusted = trusted,
+                        userAgent = client.userAgent,
+                    ),
+                )
             }
         }
         if (loginRequired != null && botBlocked.isEmpty()) {
-            // A visitor cannot pass a sign-in or age gate, and no other tier can either.
+            // No client passed the sign-in or age gate with the session this request had, and no other tier can either.
             throw TerminalPlaybackAuthentication()
         }
         if (botBlocked.isNotEmpty() && botBlocked.size == failed.size) {
@@ -151,27 +218,30 @@ internal class DesktopYouTubeResolver(
     }
 }
 
-private fun DesktopAudioFormat.toStream(
-    client: DesktopYouTubeClient,
-    details: kotlinx.serialization.json.JsonObject?,
+/**
+ * The stream for one resolved YouTube format. [userAgent] is the requesting client's, because googlevideo checks it
+ * against the one that minted the URL; a URL NewPipe's own extractor minted carries no client, so it goes without one.
+ */
+internal fun DesktopAudioFormat.toDirectStream(
+    uri: String,
+    label: String,
+    title: String?,
+    author: String?,
+    durationMs: Long?,
     trusted: Boolean,
-): DirectStream {
-    val title = details?.stringOf("title")
-    val author = details?.stringOf("author")?.removeSuffix(" - Topic")
-    val lengthMs = details?.stringOf("lengthSeconds")?.toLongOrNull()?.times(1_000L)
-    return DirectStream(
-        uri = requireNotNull(url),
+    userAgent: String?,
+): DirectStream =
+    DirectStream(
+        uri = uri,
         mimeType = mimeBase(mimeType),
         codecs = mimeCodecs(mimeType),
         contentLength = contentLength,
-        label = "YouTube ${client.friendlyName ?: client.clientName} ${bitrate / 1000} kbps",
+        label = label,
         source = AudioSourceType.YOUTUBE,
         matchedTitle = title,
-        matchedArtist = author,
-        matchedDurationMs = lengthMs,
+        matchedArtist = author?.removeSuffix(" - Topic"),
+        matchedDurationMs = durationMs,
         trustedDirectId = trusted,
         sampleRate = audioSampleRate,
-        // googlevideo checks the requesting client's user agent against the one that minted the URL.
-        headers = PlaybackHeaders.of(mapOf("User-Agent" to client.userAgent)),
+        headers = userAgent?.let { PlaybackHeaders.of(mapOf("User-Agent" to it)) } ?: PlaybackHeaders.NONE,
     )
-}

@@ -20,6 +20,9 @@ object DiagnosticRedaction {
     )
     private val urls = Regex("""(?i)(?:https?|tidal-dash|telegram|tgart|content|file)://[^\s<>"']+""")
     private val paths = Regex("""/(?:storage|sdcard|data/(?:user|data|media))/[^\s<>"',;]+""")
+
+    // Desktop and iOS paths carry the account name or the app container, which the Android patterns never see.
+    private val homePaths = Regex("""(?:/home|/Users|/var/mobile|/private/var)/[^\s<>"',;]+|\b[A-Za-z]:\\Users\\[^\s<>"',;]+""")
     private val ipv4 = Regex("""\b(?:\d{1,3}\.){3}\d{1,3}\b""")
 
     // Requires either all eight groups or a "::" so clock times such as 02:51:05 are not mistaken for addresses.
@@ -37,6 +40,7 @@ object DiagnosticRedaction {
         result = cookies.replace(result) { "${it.groupValues[1]}[redacted]" }
         result = urls.replace(result, "[url redacted]")
         result = paths.replace(result, "[path redacted]")
+        result = homePaths.replace(result, "[path redacted]")
         result = ipv4.replace(result, "[ip redacted]")
         result = ipv6.replace(result, "[ip redacted]")
         result = jwt.replace(result, "[token redacted]")

@@ -1,4 +1,4 @@
-package moe.rukamori.archivetune.desktop
+package moe.rukamori.archivetune.shared.ui.host
 
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
@@ -42,14 +42,14 @@ import moe.rukamori.archivetune.shared.ui.session.SettingsLyricsRuntime
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 
 /** The lyrics of one queue occurrence. [lines] is empty while loading and when no provider had any. */
-internal data class DesktopLyricsDocument(val occurrenceId: String, val lines: List<LyricsLine>, val loading: Boolean)
+data class HostLyricsDocument(val occurrenceId: String, val lines: List<LyricsLine>, val loading: Boolean)
 
 /**
- * The desktop lyrics owner: the shared provider runtime over the settings owner, fed by the one queue. It follows the
+ * The host lyrics owner: the shared provider runtime over the settings owner, fed by the one queue. It follows the
  * occurrence the player reports, preloads the next ones in play order, and parses the winning document once. The
- * app-only providers (account Apple Music, TIDAL, Deezer, YouTube captions and the like) are not on this host.
+ * app-only providers (account Apple Music, TIDAL, Deezer, YouTube captions and the like) are Android-only.
  */
-internal class DesktopLyrics(
+class HostLyrics(
     private val scope: CoroutineScope,
     http: HttpClient,
     settings: VaultSettingsStore,
@@ -65,11 +65,11 @@ internal class DesktopLyrics(
         providerRevision = MutableStateFlow(0L),
         providerFactory = { preferences -> sharedLyricsProviders(http, preferences) },
         networkAvailable = networkAvailable,
-        reportFailure = { name, failure -> report("lyrics provider $name failed: ${failure.javaClass.simpleName}") },
+        reportFailure = { name, failure -> report("lyrics provider $name failed: ${failure::class.simpleName}") },
     )
 
-    private val state = MutableStateFlow<DesktopLyricsDocument?>(null)
-    val current: StateFlow<DesktopLyricsDocument?> = state.asStateFlow()
+    private val state = MutableStateFlow<HostLyricsDocument?>(null)
+    val current: StateFlow<HostLyricsDocument?> = state.asStateFlow()
     private var driver: Job? = null
 
     fun start() {
@@ -99,17 +99,17 @@ internal class DesktopLyrics(
             state.value = null
             return
         }
-        if (state.value?.occurrenceId != occurrenceId) state.value = DesktopLyricsDocument(occurrenceId, emptyList(), loading = true)
+        if (state.value?.occurrenceId != occurrenceId) state.value = HostLyricsDocument(occurrenceId, emptyList(), loading = true)
         val lines = try {
             val result = runtime.lyrics(request)
             if (result.providerName.isEmpty()) emptyList() else parse(result.lyrics)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            report("lyrics lookup failed: ${failure.javaClass.simpleName}")
+            report("lyrics lookup failed: ${failure::class.simpleName}")
             emptyList()
         }
-        state.value = DesktopLyricsDocument(occurrenceId, lines, loading = false)
+        state.value = HostLyricsDocument(occurrenceId, lines, loading = false)
     }
 
     private fun parse(text: String): List<LyricsLine> =
@@ -133,15 +133,18 @@ private fun ContentItem.lyricsRequest(): LyricsRequest? {
     )
 }
 
+/** The Paxsenix endpoint and key the user set, or the public endpoint. The providers and the settings probes share it. */
+fun paxsenixSettingsOf(preferences: PreferenceSnapshot): PaxsenixSettings = PaxsenixSettings(
+    baseUrl = preferences[PaxsenixEndpointKey]?.takeIf { it.isNotBlank() } ?: PaxsenixSettings.DEFAULT_BASE_URL,
+    bearerValue = preferences[PaxsenixApiKeyKey]?.takeIf { it.isNotBlank() },
+)
+
 /**
  * Shared providers in canonical order. Paxsenix uses the user's endpoint and key when they are set. Lyprio exists only
  * once the user has entered a valid server URL and signing key; its toggle is applied by the runtime like the others.
  */
-internal fun sharedLyricsProviders(http: HttpClient, preferences: PreferenceSnapshot): List<LyricsProvider> {
-    val paxsenix = PaxsenixSettings(
-        baseUrl = preferences[PaxsenixEndpointKey]?.takeIf { it.isNotBlank() } ?: PaxsenixSettings.DEFAULT_BASE_URL,
-        bearerValue = preferences[PaxsenixApiKeyKey]?.takeIf { it.isNotBlank() },
-    )
+fun sharedLyricsProviders(http: HttpClient, preferences: PreferenceSnapshot): List<LyricsProvider> {
+    val paxsenix = paxsenixSettingsOf(preferences)
     val lyprio = LyprioEndpoint.parse(preferences[LyprioEndpointKey].orEmpty(), preferences[LyprioSigningKeyKey].orEmpty())
     return listOfNotNull(
         lyprio?.let { LyprioLyricsProvider(http, it) },

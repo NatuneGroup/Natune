@@ -1,0 +1,92 @@
+name: Stable release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: natune-stable-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Select stable release version
+    if: github.repository == 'NatuneGroup/ArchiveTune-KMP' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      version_name: ${{ steps.version.outputs.version_name }}
+      package_version: ${{ steps.version.outputs.package_version }}
+      version_code: ${{ steps.version.outputs.version_code }}
+      commit_sha: ${{ steps.version.outputs.commit_sha }}
+    steps:
+      - name: Check out full tag history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compute version and allocated build code
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          BASE_VERSION="$(awk -F'"' '/^val baseVersionName = "/ { print $2; exit }' app/build.gradle.kts)"
+          FLOOR="$(awk -F'=' '/^val trustedUpgradeVersionCodeFloor[[:space:]]*=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' app/build.gradle.kts)"
+          if [[ -z "$BASE_VERSION" || ! "$FLOOR" =~ ^[0-9]+$ || ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not read baseVersionName, trustedUpgradeVersionCodeFloor, or the Actions run ID."
+            exit 1
+          fi
+
+          VERSION="$(python3 .github/scripts/next-version.py "$BASE_VERSION")"
+          TAG_NAME="v${VERSION}"
+          VERSION_CODE=$((FLOOR + RUN_ID))
+          if (( VERSION_CODE <= FLOOR || VERSION_CODE > 2147483647 )); then
+            echo "::error::Allocated version code $VERSION_CODE is outside Android's supported positive Int range."
+            exit 1
+          fi
+
+          {
+            echo "tag_name=$TAG_NAME"
+            echo "version_name=$VERSION"
+            echo "package_version=$VERSION"
+            echo "version_code=$VERSION_CODE"
+            echo "commit_sha=$GITHUB_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+          if git rev-parse --verify --quiet "refs/tags/$TAG_NAME" >/dev/null 2>&1 ||
+             gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Tag or release $TAG_NAME already exists; skipping this stable release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
+  build-and-publish:
+    name: Build and publish stable artifacts
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    uses: ./.github/workflows/_release-artifacts.yml
+    with:
+      channel: stable
+      tag_name: ${{ needs.prepare.outputs.tag_name }}
+      version_name: ${{ needs.prepare.outputs.version_name }}
+      package_version: ${{ needs.prepare.outputs.package_version }}
+      version_code: ${{ needs.prepare.outputs.version_code }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+    secrets: inherit
+    permissions:
+      contents: write

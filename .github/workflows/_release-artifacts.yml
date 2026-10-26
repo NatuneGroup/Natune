@@ -1,0 +1,821 @@
+name: Build and publish release artifacts
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: stable or nightly
+        required: true
+        type: string
+      tag_name:
+        required: true
+        type: string
+      version_name:
+        required: true
+        type: string
+      package_version:
+        description: Numeric X.Y.Z version used by native installers
+        required: true
+        type: string
+      version_code:
+        required: true
+        type: string
+      commit_sha:
+        required: true
+        type: string
+
+jobs:
+  android:
+    name: Android ${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      signing_status: ${{ steps.sign-apk.outputs.signing_status }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distribution: gms
+            distribution_name: Gms
+            device: mobile
+            device_name: Mobile
+            abi: arm64
+          - distribution: gms
+            distribution_name: Gms
+            device: mobile
+            device_name: Mobile
+            abi: armeabi
+          - distribution: gms
+            distribution_name: Gms
+            device: mobile
+            device_name: Mobile
+            abi: x86
+          - distribution: gms
+            distribution_name: Gms
+            device: mobile
+            device_name: Mobile
+            abi: x86_64
+          - distribution: gms
+            distribution_name: Gms
+            device: mobile
+            device_name: Mobile
+            abi: universal
+          - distribution: foss
+            distribution_name: Foss
+            device: mobile
+            device_name: Mobile
+            abi: universal
+          - distribution: gms
+            distribution_name: Gms
+            device: tv
+            device_name: Tv
+            abi: universal
+    env:
+      VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
+      VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
+      IS_NIGHTLY_BUILD: ${{ inputs.channel == 'nightly' && 'true' || 'false' }}
+      NIGHTLY_BUILD_HASH: ${{ inputs.channel == 'nightly' && inputs.commit_sha || '' }}
+      PULL_REQUEST: 'false'
+      GITHUB_EVENT_NAME: ${{ github.event_name }}
+      ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
+      ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
+      ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
+      ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
+      ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
+      ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET }}
+      ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY: ${{ secrets.ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY }}
+      ARCHIVETUNE_POTOKEN_REQUEST_KEY: ${{ secrets.ARCHIVETUNE_POTOKEN_REQUEST_KEY }}
+      ARCHIVETUNE_TIDAL_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_CLIENT_SECRET }}
+      ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET }}
+      ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN: ${{ secrets.ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN }}
+      ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET }}
+      ARCHIVETUNE_JIOSAAVN_DES_KEY: ${{ secrets.ARCHIVETUNE_JIOSAAVN_DES_KEY }}
+      ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
+      ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_ID }}
+      ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_HASH }}
+      ARCHIVETUNE_SOURCE_PROVIDER_URL: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_URL }}
+      ARCHIVETUNE_SOURCE_PROVIDER_KEY: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_KEY }}
+      ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.ARCHIVETUNE_POOL_CLIENT_KEY }}
+      ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.ARCHIVETUNE_FEEDBACK_API_URL }}
+      ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.ARCHIVETUNE_FEEDBACK_INGEST_KEY }}
+    steps:
+      - name: Check out release source and submodules
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit_sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-37
+            build-tools;35.0.0
+            ndk;30.0.16248370
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+
+      - name: Resolve variant and output names
+        id: variant
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          DISTRIBUTION: ${{ matrix.distribution }}
+          DISTRIBUTION_NAME: ${{ matrix.distribution_name }}
+          DEVICE: ${{ matrix.device }}
+          DEVICE_NAME: ${{ matrix.device_name }}
+          ABI: ${{ matrix.abi }}
+        run: |
+          set -euo pipefail
+          ABI_CAP="$(tr '[:lower:]' '[:upper:]' <<< "${ABI:0:1}")${ABI:1}"
+          CHANNEL_SUFFIX=release
+          if [[ "$CHANNEL" == nightly ]]; then
+            CHANNEL_SUFFIX=nightly
+          fi
+          echo "gradle_task=assemble${DISTRIBUTION_NAME}${DEVICE_NAME}${ABI_CAP}Release" >> "$GITHUB_OUTPUT"
+          echo "apk_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}-${CHANNEL_SUFFIX}.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble Android APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew "${{ steps.variant.outputs.gradle_task }}" --no-daemon --max-workers=2
+
+      - name: Stage APK
+        shell: bash
+        env:
+          APK_NAME: ${{ steps.variant.outputs.apk_name }}
+        run: |
+          set -euo pipefail
+          mapfile -t APKS < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          if [[ "${#APKS[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one release APK, found ${#APKS[@]}."
+            find app/build/outputs/apk -maxdepth 8 -type f -print || true
+            exit 1
+          fi
+          mkdir -p release-assets
+          cp "${APKS[0]}" "release-assets/$APK_NAME"
+
+      - name: Sign APK when the historical keystore is configured
+        id: sign-apk
+        shell: bash
+        env:
+          APK_NAME: ${{ steps.variant.outputs.apk_name }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APK_PATH="release-assets/$APK_NAME"
+          if [[ -z "${KEYSTORE:-}" || -z "${KEY_ALIAS:-}" || -z "${KEYSTORE_PASSWORD:-}" || -z "${KEY_PASSWORD:-}" ]]; then
+            echo "::warning::Android signing secrets are missing or incomplete; publishing this APK unsigned."
+            echo "signing_status=unsigned" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -n 1)"
+          if [[ -z "$BUILD_TOOLS" || ! -x "$BUILD_TOOLS/apksigner" || ! -x "$BUILD_TOOLS/zipalign" ]]; then
+            echo "::error::Android build-tools do not contain apksigner and zipalign."
+            exit 1
+          fi
+          KEYSTORE_FILE="$(mktemp)"
+          ALIGNED_APK="$RUNNER_TEMP/aligned-$APK_NAME"
+          trap 'rm -f "$KEYSTORE_FILE" "$ALIGNED_APK"' EXIT
+          printf '%s' "$KEYSTORE" | base64 --decode > "$KEYSTORE_FILE"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$APK_PATH" "$ALIGNED_APK"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_FILE" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --v1-signing-enabled false \
+            "$ALIGNED_APK"
+          mv "$ALIGNED_APK" "$APK_PATH"
+          echo "signing_status=signed" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-${{ inputs.channel }}-${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
+          path: release-assets/${{ steps.variant.outputs.apk_name }}
+          if-no-files-found: error
+          retention-days: 14
+
+  desktop:
+    name: Desktop ${{ matrix.platform }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            arch: x64
+            runner: windows-latest
+          - platform: linux
+            arch: x64
+            appimage_arch: x86_64
+            runner: ubuntu-24.04
+          - platform: linux
+            arch: arm64
+            appimage_arch: aarch64
+            runner: ubuntu-24.04-arm
+          - platform: macos
+            arch: x64
+            runner: macos-13
+          - platform: macos
+            arch: arm64
+            runner: macos-latest
+    env:
+      VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
+      VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
+      PACKAGE_VERSION: ${{ inputs.package_version }}
+      DISPLAY_VERSION: ${{ inputs.version_name }}
+      ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
+      ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
+      ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
+      ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
+      ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
+      ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET }}
+      ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY: ${{ secrets.ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY }}
+      ARCHIVETUNE_POTOKEN_REQUEST_KEY: ${{ secrets.ARCHIVETUNE_POTOKEN_REQUEST_KEY }}
+      ARCHIVETUNE_TIDAL_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_CLIENT_SECRET }}
+      ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET }}
+      ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN: ${{ secrets.ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN }}
+      ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET }}
+      ARCHIVETUNE_JIOSAAVN_DES_KEY: ${{ secrets.ARCHIVETUNE_JIOSAAVN_DES_KEY }}
+      ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
+      ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_ID }}
+      ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_HASH }}
+      ARCHIVETUNE_SOURCE_PROVIDER_URL: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_URL }}
+      ARCHIVETUNE_SOURCE_PROVIDER_KEY: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_KEY }}
+      ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.ARCHIVETUNE_POOL_CLIENT_KEY }}
+      ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.ARCHIVETUNE_FEEDBACK_API_URL }}
+      ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.ARCHIVETUNE_FEEDBACK_INGEST_KEY }}
+    steps:
+      - name: Check out release source and submodules
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit_sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+
+      - name: Cache Kotlin/Native compiler and dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts') }}
+          restore-keys: |
+            konan-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build host native dependencies
+        shell: bash
+        run: bash desktopApp/native/scripts/build-native-deps.sh
+
+      - name: Build TDLight native library (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File desktopApp/tdlight-jvm/native/build-tdjni.ps1
+
+      - name: Build TDLight native library (Linux and macOS)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TDLIGHT_OPENSSL_PREFIX="$GITHUB_WORKSPACE/desktopApp/build/native/openssl-static" \
+            bash desktopApp/tdlight-jvm/native/build-tdjni.sh
+
+      - name: Download WebView2 SDK (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'webview2-sdk.zip'
+          $sdkRoot = Join-Path $env:RUNNER_TEMP 'webview2-sdk'
+          Invoke-WebRequest `
+            -Uri 'https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.4258.31' `
+            -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $sdkRoot
+          $sdk = Join-Path $sdkRoot 'build\native'
+          if (-not (Test-Path $sdk)) {
+            throw "WebView2 SDK was not found under $sdkRoot"
+          }
+          "WEBVIEW2_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build native engine before packaging (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          ./gradlew.bat :desktopApp:buildNativeEngine --no-daemon --max-workers=2 `
+            "-PdesktopPackageVersion=$env:PACKAGE_VERSION" `
+            "-PdesktopDisplayVersion=$env:DISPLAY_VERSION"
+
+      - name: Build native engine before packaging (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :desktopApp:buildNativeEngine --no-daemon --max-workers=2 \
+            "-PdesktopPackageVersion=$PACKAGE_VERSION" \
+            "-PdesktopDisplayVersion=$DISPLAY_VERSION"
+
+      - name: Package Windows MSI and app image
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          ./gradlew.bat :desktopApp:createDistributable :desktopApp:packageMsi --no-daemon --max-workers=2 `
+            "-PdesktopPackageVersion=$env:PACKAGE_VERSION" `
+            "-PdesktopDisplayVersion=$env:DISPLAY_VERSION" `
+            '-PdesktopNativeDirectory=build/native/engine-build' `
+            "-PdesktopWebView2Sdk=$env:WEBVIEW2_SDK"
+
+      - name: Package Linux DEB and app image
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :desktopApp:createDistributable :desktopApp:packageDeb --no-daemon --max-workers=2 \
+            "-PdesktopPackageVersion=$PACKAGE_VERSION" \
+            "-PdesktopDisplayVersion=$DISPLAY_VERSION"
+
+      - name: Package macOS DMG and app image
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :desktopApp:createDistributable :desktopApp:packageDmg --no-daemon --max-workers=2 \
+            "-PdesktopPackageVersion=$PACKAGE_VERSION" \
+            "-PdesktopDisplayVersion=$DISPLAY_VERSION" \
+            '-PdesktopNativeDirectory=build/native/engine-build'
+
+      - name: Stage Windows installers and portable ZIP
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'release-assets'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $msi = Get-ChildItem 'desktopApp/build/compose/binaries' -Filter '*.msi' -File -Recurse | Select-Object -First 1
+          if ($null -eq $msi) { throw 'Gradle did not produce an MSI.' }
+          Copy-Item $msi.FullName (Join-Path $out "natune-desktop-windows-x64-$env:DISPLAY_VERSION.msi")
+
+          $appImage = Join-Path $env:GITHUB_WORKSPACE 'desktopApp/build/compose/binaries/main/app/Natune'
+          if (-not (Test-Path (Join-Path $appImage 'bin/Natune.exe'))) { throw "Desktop app image is missing: $appImage" }
+          $exeDir = Join-Path $env:RUNNER_TEMP 'natune-exe'
+          New-Item -ItemType Directory -Force -Path $exeDir | Out-Null
+          & (Join-Path $env:JAVA_HOME 'bin/jpackage.exe') `
+            --type exe `
+            --app-image $appImage `
+            --dest $exeDir `
+            --name Natune `
+            --app-version $env:PACKAGE_VERSION `
+            --vendor 'Natune contributors' `
+            --description 'Natune music player' `
+            --icon 'desktopApp/packaging/archivetune.ico' `
+            --win-per-user-install `
+            --win-menu `
+            --win-shortcut `
+            --win-upgrade-uuid '3e762519-f005-4fcf-8201-59ef24b5528e'
+          if ($LASTEXITCODE -ne 0) { throw "jpackage exited with $LASTEXITCODE" }
+          $exe = Get-ChildItem $exeDir -Filter '*.exe' -File -Recurse | Select-Object -First 1
+          if ($null -eq $exe) { throw 'jpackage did not produce an EXE installer.' }
+          Copy-Item $exe.FullName (Join-Path $out "natune-desktop-windows-x64-$env:DISPLAY_VERSION.exe")
+
+          Compress-Archive `
+            -Path (Join-Path $appImage '*') `
+            -DestinationPath (Join-Path $out "natune-desktop-windows-x64-$env:DISPLAY_VERSION.zip") `
+            -CompressionLevel Optimal
+
+      - name: Stage Linux DEB and AppImage
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          APPIMAGE_ARCH: ${{ matrix.appimage_arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          mapfile -t DEBS < <(find desktopApp/build/compose/binaries -type f -name '*.deb' | sort)
+          if [[ "${#DEBS[@]}" -ne 1 ]]; then
+            echo "::error::Expected one DEB package, found ${#DEBS[@]}."
+            exit 1
+          fi
+          cp "${DEBS[0]}" "release-assets/natune-desktop-linux-${ARCH}-${DISPLAY_VERSION}.deb"
+
+          APP_IMAGE="desktopApp/build/compose/binaries/main/app/Natune"
+          if [[ ! -d "$APP_IMAGE" ]]; then
+            echo "::error::Gradle did not produce the Linux app image at $APP_IMAGE."
+            exit 1
+          fi
+          APP_DIR="$(mktemp -d "$RUNNER_TEMP/natune-appdir.XXXXXX")"
+          cp -a "$APP_IMAGE/." "$APP_DIR/"
+          cp desktopApp/packaging/archivetune.png "$APP_DIR/natune.png"
+          cat > "$APP_DIR/natune.desktop" <<'EOF'
+          [Desktop Entry]
+          Name=Natune
+          Exec=AppRun
+          Icon=natune
+          Type=Application
+          Terminal=false
+          Categories=AudioVideo;Player;
+          EOF
+          cat > "$APP_DIR/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/bin/Natune" "$@"
+          EOF
+          chmod +x "$APP_DIR/AppRun"
+
+          TOOL="$RUNNER_TEMP/appimagetool-${APPIMAGE_ARCH}.AppImage"
+          curl --fail --location --retry 3 \
+            "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-${APPIMAGE_ARCH}.AppImage" \
+            --output "$TOOL"
+          chmod +x "$TOOL"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" "$APP_DIR" \
+            "release-assets/natune-desktop-linux-${ARCH}-${DISPLAY_VERSION}.AppImage"
+
+      - name: Stage macOS DMG
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          mapfile -t DMGS < <(find desktopApp/build/compose/binaries -type f -name '*.dmg' | sort)
+          if [[ "${#DMGS[@]}" -ne 1 ]]; then
+            echo "::error::Expected one DMG package, found ${#DMGS[@]}."
+            exit 1
+          fi
+          cp "${DMGS[0]}" "release-assets/natune-desktop-macos-${ARCH}-${DISPLAY_VERSION}.dmg"
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ inputs.channel }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: Unsigned iOS IPA
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
+      PACKAGE_VERSION: ${{ inputs.package_version }}
+      VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
+      ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
+      ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
+      ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
+      ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
+      ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
+      ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET }}
+      ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY: ${{ secrets.ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY }}
+      ARCHIVETUNE_POTOKEN_REQUEST_KEY: ${{ secrets.ARCHIVETUNE_POTOKEN_REQUEST_KEY }}
+      ARCHIVETUNE_TIDAL_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_CLIENT_SECRET }}
+      ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET }}
+      ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN: ${{ secrets.ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN }}
+      ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID }}
+      ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET }}
+      ARCHIVETUNE_JIOSAAVN_DES_KEY: ${{ secrets.ARCHIVETUNE_JIOSAAVN_DES_KEY }}
+      ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
+      ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_ID }}
+      ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.ARCHIVETUNE_TELEGRAM_API_HASH }}
+      ARCHIVETUNE_SOURCE_PROVIDER_URL: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_URL }}
+      ARCHIVETUNE_SOURCE_PROVIDER_KEY: ${{ secrets.ARCHIVETUNE_SOURCE_PROVIDER_KEY }}
+      ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.ARCHIVETUNE_POOL_CLIENT_KEY }}
+      ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.ARCHIVETUNE_FEEDBACK_API_URL }}
+      ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.ARCHIVETUNE_FEEDBACK_INGEST_KEY }}
+    steps:
+      - name: Check out release source and submodules
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit_sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+
+      - name: Cache Kotlin/Native compiler and dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts') }}
+          restore-keys: |
+            konan-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build the iOS native dependency closure
+        shell: bash
+        run: bash scripts/build_ios_native_core.sh
+
+      - name: Build unsigned device app and create IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          DERIVED_DATA="$RUNNER_TEMP/NatuneDerivedData"
+          xcodebuild \
+            -project iosApp/ArchiveTune.xcodeproj \
+            -scheme ArchiveTune \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            "ARCHIVETUNE_VERSION_NAME=$PACKAGE_VERSION" \
+            "ARCHIVETUNE_VERSION_CODE=$VERSION_CODE_OVERRIDE" \
+            "ARCHIVETUNE_TELEGRAM_API_ID=$ARCHIVETUNE_TELEGRAM_API_ID" \
+            "ARCHIVETUNE_TELEGRAM_API_HASH=$ARCHIVETUNE_TELEGRAM_API_HASH" \
+            "ARCHIVETUNE_LISTENER_PRESENCE_URL=$ARCHIVETUNE_LISTENER_PRESENCE_URL" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=''
+
+          APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/ArchiveTune.app"
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "::error::Xcode did not produce ArchiveTune.app at $APP_PATH."
+            exit 1
+          fi
+          IPA_ROOT="$(mktemp -d "$RUNNER_TEMP/natune-ipa.XXXXXX")"
+          mkdir -p "$IPA_ROOT/Payload" release-assets
+          ditto "$APP_PATH" "$IPA_ROOT/Payload/ArchiveTune.app"
+          (
+            cd "$IPA_ROOT"
+            /usr/bin/zip -qry "$GITHUB_WORKSPACE/release-assets/natune-ios-${VERSION_NAME_OVERRIDE}.ipa" Payload
+          )
+
+      - name: Upload unsigned iOS IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-${{ inputs.channel }}
+          path: release-assets/natune-ios-${{ inputs.version_name }}.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    name: Publish ${{ inputs.channel }} release
+    needs:
+      - android
+      - desktop
+      - ios
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: natune-release-${{ inputs.tag_name }}
+      cancel-in-progress: false
+    outputs:
+      did_publish: ${{ steps.publish.outputs.did_publish }}
+    steps:
+      - name: Check out release history
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: downloaded-artifacts
+
+      - name: Create release and update-feed manifest
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          ANDROID_SIGNING_STATUS: ${{ needs.android.outputs.signing_status }}
+        run: |
+          set -euo pipefail
+
+          TARGET_BRANCH=main
+          APK_SUFFIX=release
+          if [[ "$CHANNEL" == nightly ]]; then
+            TARGET_BRANCH=dev
+            APK_SUFFIX=nightly
+          fi
+
+          CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_BRANCH" --jq '.sha')"
+          if [[ "$CURRENT_SHA" != "$COMMIT_SHA" ]]; then
+            echo "The $TARGET_BRANCH branch advanced during the build; not publishing stale commit $COMMIT_SHA."
+            echo "did_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mapfile -d '' RELEASE_FILES < <(find downloaded-artifacts -type f -print0 | sort -z)
+          mapfile -d '' APK_FILES < <(find downloaded-artifacts -type f -name "app-*-${APK_SUFFIX}.apk" -print0 | sort -z)
+          if [[ "${#RELEASE_FILES[@]}" -ne 17 || "${#APK_FILES[@]}" -ne 7 ]]; then
+            echo "::error::Expected 17 release assets including 7 $APK_SUFFIX APKs; found ${#RELEASE_FILES[@]} files and ${#APK_FILES[@]} APKs."
+            find downloaded-artifacts -type f -print || true
+            exit 1
+          fi
+
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          {
+            if [[ "$CHANNEL" == stable ]]; then
+              echo "# Natune $VERSION_NAME"
+              echo
+              echo "Automated stable release."
+            else
+              echo "# Nightly build"
+              echo
+              echo "Automated nightly build from the dev branch. Not intended for production use."
+            fi
+            echo
+            echo "<!-- at-build:$VERSION_CODE -->"
+            echo
+            echo "## Commits"
+          } > "$NOTES_FILE"
+
+          if [[ "$CHANNEL" == stable ]]; then
+            LAST_TAG="$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+            if [[ -n "${LAST_TAG:-}" ]]; then
+              git log --no-merges --pretty=format:'- %s (%h)' -n 500 "$LAST_TAG..$COMMIT_SHA" >> "$NOTES_FILE" || true
+            else
+              git log --no-merges --pretty=format:'- %s (%h)' -n 100 "$COMMIT_SHA" >> "$NOTES_FILE" || true
+            fi
+          else
+            git log --no-merges --pretty=format:'- %s (%h)' -n 100 "$COMMIT_SHA" >> "$NOTES_FILE" || true
+          fi
+          printf '\n' >> "$NOTES_FILE"
+
+          if [[ "$ANDROID_SIGNING_STATUS" == unsigned ]]; then
+            printf '\n> Android APKs are unsigned because one or more Android signing secrets are missing.\n' >> "$NOTES_FILE"
+          fi
+
+          if [[ "$CHANNEL" == stable ]]; then
+            if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+               gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" >/dev/null 2>&1; then
+              echo "Tag $TAG_NAME already exists; skipping this stable release."
+              echo "did_publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" >/dev/null 2>&1; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG_NAME" >/dev/null
+            fi
+            git tag -d "$TAG_NAME" >/dev/null 2>&1 || true
+          fi
+
+          RELEASE_ARGS=(
+            "$TAG_NAME"
+            --repo "$GITHUB_REPOSITORY"
+            --target "$COMMIT_SHA"
+            --title "$VERSION_NAME"
+            --notes-file "$NOTES_FILE"
+          )
+          if [[ "$CHANNEL" == nightly ]]; then
+            RELEASE_ARGS+=(--prerelease --latest=false)
+          fi
+          gh release create "${RELEASE_ARGS[@]}" "${RELEASE_FILES[@]}"
+
+          CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_BRANCH" --jq '.sha')"
+          if [[ "$CURRENT_SHA" != "$COMMIT_SHA" ]]; then
+            echo "The $TARGET_BRANCH branch advanced while publishing; removing stale release $TAG_NAME."
+            gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            echo "did_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PUBLISHED_AT="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq '.publishedAt')"
+          MANIFEST_NAME="${CHANNEL}.json"
+          python3 .github/scripts/update_manifest.py \
+            --channel "$CHANNEL" \
+            --tag "$TAG_NAME" \
+            --version-name "$VERSION_NAME" \
+            --version-code "$VERSION_CODE" \
+            --commit "$COMMIT_SHA" \
+            --published-at "$PUBLISHED_AT" \
+            --release-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG_NAME" \
+            --download-url-base "https://github.com/$GITHUB_REPOSITORY/releases/download" \
+            --notes-file "$NOTES_FILE" \
+            --output "$MANIFEST_NAME" \
+            "${APK_FILES[@]}"
+          echo "did_publish=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload update-feed manifest for the next job
+        if: steps.publish.outputs.did_publish == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-feed-${{ inputs.channel }}
+          path: ${{ inputs.channel }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-update-feed:
+    name: Publish ${{ inputs.channel }} update-feed manifest
+    needs: publish-release
+    if: needs.publish-release.outputs.did_publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: natune-update-feed
+      cancel-in-progress: false
+    steps:
+      - name: Download update-feed manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: update-feed-${{ inputs.channel }}
+          path: feed-artifact
+
+      - name: Publish current manifest to the fixed update-feed release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+
+          TARGET_BRANCH=main
+          if [[ "$CHANNEL" == nightly ]]; then
+            TARGET_BRANCH=dev
+          fi
+          CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_BRANCH" --jq '.sha')"
+          if [[ "$CURRENT_SHA" != "$COMMIT_SHA" ]]; then
+            echo "The $TARGET_BRANCH branch advanced before update-feed publishing; leaving the prior manifest intact."
+            exit 0
+          fi
+
+          RELEASE_DATA="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json body,targetCommitish)"
+          RELEASE_SHA="$(jq -r '.targetCommitish' <<< "$RELEASE_DATA")"
+          RELEASE_BODY="$(jq -r '.body' <<< "$RELEASE_DATA")"
+          if [[ "$RELEASE_SHA" != "$COMMIT_SHA" || "$RELEASE_BODY" != *"at-build:$VERSION_CODE"* ]]; then
+            echo "Release $TAG_NAME no longer describes build $VERSION_CODE; leaving the prior manifest intact."
+            exit 0
+          fi
+
+          if [[ "$CHANNEL" == stable ]]; then
+            LATEST_STABLE="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+              --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort_by(.createdAt) | last | .tagName')"
+            if [[ "$LATEST_STABLE" != "$TAG_NAME" ]]; then
+              echo "A newer stable release exists; not replacing stable.json with $TAG_NAME."
+              exit 0
+            fi
+          fi
+
+          if ! gh release view update-feed --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create update-feed \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title 'Update feed (do not delete)' \
+              --notes 'Holds the nightly.json and stable.json manifests used by the in-app updater.'
+          fi
+          gh release upload update-feed "feed-artifact/${CHANNEL}.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
