@@ -188,6 +188,7 @@ class Media3PlaybackPort(
             PlaybackCommand.Stop -> player?.stop()
             is PlaybackCommand.SeekTo -> player?.seekTo(command.positionMs)
             is PlaybackCommand.SetSpeed -> player?.setPlaybackSpeed(command.speed)
+            is PlaybackCommand.SetPitch -> player?.let { it.playbackParameters = it.playbackParameters.withPitch(command.pitch) }
         }
     }
 
