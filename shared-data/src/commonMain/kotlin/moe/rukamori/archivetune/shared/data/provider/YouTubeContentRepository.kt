@@ -29,6 +29,20 @@ sealed interface YouTubeBrowse {
     data class Album(val browseId: String) : YouTubeBrowse
 
     data class Search(val query: String, val filter: ContentSearchFilter) : YouTubeBrowse
+
+    /**
+     * A watch-next queue page: radio, mixes and song-seeded watch queues, the InnerTube `next` endpoint of
+     * `YouTubeQueue`. A song seed follows the automix preview; an RD/mix playlist seed does not.
+     */
+    data class WatchNext(
+        val videoId: String? = null,
+        val playlistId: String? = null,
+        val playlistSetVideoId: String? = null,
+        val params: String? = null,
+        val followAutomixPreview: Boolean = false,
+    ) : YouTubeBrowse {
+        init { require(videoId != null || playlistId != null) { "Watch-next needs a seed" } }
+    }
 }
 
 /** One provider entry reduced to common fields. [setVideoId] is the playlist entry id when the provider has one. */
@@ -45,6 +59,8 @@ data class YouTubeEntry(
     /** The artist credits and album id the provider gave. They stay empty when the provider omitted them. */
     val artists: List<ContentCredit> = emptyList(),
     val albumId: String? = null,
+    /** The endpoint's own music-video marker (OMV/UGC); Android stores it as `ExtraIsMusicVideo`. */
+    val isVideo: Boolean = false,
 )
 
 /** One provider page. [continuation] is the provider's raw token; the repository wraps it before it leaves. */
@@ -133,7 +149,7 @@ class YouTubeAccountBinding(
  * finite completion bounds. A token that repeats, or a page that ends with neither entries nor a continuation, is an
  * incomplete listing and never a complete one.
  *
- * Surfaces outside finite playlists, albums, search and the account (radio, home, artist sections, item lookup) fail
+ * Surfaces outside finite playlists, albums, search, radio and the account (home, artist sections, item lookup) fail
  * with [UnsupportedContentOperation] until their transports are published.
  */
 class YouTubeContentRepository(
@@ -282,6 +298,17 @@ private fun ContentRequest.toBrowse(): YouTubeBrowse {
             val query = text?.trim()?.takeIf(String::isNotEmpty) ?: throw IllegalArgumentException("Blank search")
             YouTubeBrowse.Search(query, filter)
         }
+        ContentSurface.RADIO -> {
+            val seed = parent ?: throw UnsupportedContentOperation()
+            YouTubeBrowse.WatchNext(
+                videoId = seed.id.takeIf { seed.kind == ContentKind.SONG },
+                playlistId = seed.id.takeIf { seed.kind == ContentKind.PLAYLIST },
+                playlistSetVideoId = section?.id?.takeIf { it != seed.id },
+                params = section?.params,
+                // A song seed follows the automix preview; a playlist/mix endpoint does not, as on Android.
+                followAutomixPreview = seed.kind == ContentKind.SONG,
+            )
+        }
         else -> throw UnsupportedContentOperation()
     }
 }
@@ -301,6 +328,8 @@ private fun YouTubeBrowse.requestKey(): String =
         is YouTubeBrowse.Playlist -> "playlist:$playlistId"
         is YouTubeBrowse.Album -> "album:$browseId"
         is YouTubeBrowse.Search -> "search:${filter.name}:$query"
+        is YouTubeBrowse.WatchNext ->
+            "radio:${videoId.orEmpty()}:${playlistId.orEmpty()}:${playlistSetVideoId.orEmpty()}:${params.orEmpty()}"
     }
 
 private fun YouTubeBrowse.collectionKey(): String =
@@ -324,6 +353,7 @@ private fun YouTubeEntry.occurrence(collection: String, ordinal: Int): ContentOc
                 album = album,
                 artists = artists,
                 albumId = albumId?.takeIf(String::isNotBlank),
+                isVideo = isVideo,
             ),
         setVideoId = setId,
     )

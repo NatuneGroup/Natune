@@ -14,7 +14,7 @@ enum class ContentProvider(val id: String) {
 /** Stable vocabulary, NOT a claim that every provider supports every surface/filter. */
 enum class ContentSurface(val id: String) {
     HOME("home"), EXPLORE("explore"), DISCOVERY("discovery"), SEARCH("search"),
-    ALBUM("album"), ARTIST("artist"), PLAYLIST("playlist"), PODCAST("podcast"),
+    ALBUM("album"), ARTIST("artist"), PLAYLIST("playlist"), PODCAST("podcast"), RADIO("radio"),
     LIBRARY_SONGS("library_songs"), LIBRARY_LIKED("library_liked"), LIBRARY_ALBUMS("library_albums"),
     LIBRARY_ARTISTS("library_artists"), LIBRARY_PLAYLISTS("library_playlists"),
     LIBRARY_PLAYLIST_ITEMS("library_playlist_items"), LIBRARY_PODCASTS("library_podcasts"),
