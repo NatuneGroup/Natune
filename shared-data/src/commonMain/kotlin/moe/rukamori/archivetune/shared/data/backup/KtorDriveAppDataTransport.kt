@@ -1,7 +1,7 @@
 package moe.rukamori.archivetune.shared.data.backup
 
 import io.ktor.client.HttpClient
-import io.ktor.client.config
+import io.ktor.client.engine.config
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
