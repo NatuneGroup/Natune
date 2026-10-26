@@ -32,6 +32,7 @@ import kotlinx.coroutines.CancellationException
 import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.saveable.rememberSaveable
 

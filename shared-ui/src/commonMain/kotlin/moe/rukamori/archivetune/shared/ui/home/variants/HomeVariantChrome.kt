@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -102,6 +103,7 @@ internal fun HomeVariantChipRow(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal fun HomeVariantStatePane(
     contentPadding: PaddingValues,
     showLoading: Boolean,
@@ -169,6 +171,7 @@ internal fun HomeVariantLeadingIcon(icon: DrawableResource) {
 /** The spinner appended while the owner loads the next page. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal fun HomeVariantLoadingMore(modifier: Modifier = Modifier) {
     Box(
         contentAlignment = Alignment.Center,
