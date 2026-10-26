@@ -105,6 +105,11 @@ class IosYouTubeBrowseTransport(
             is YouTubeBrowse.Playlist -> shelfPage(browseId = "VL${browse.playlistId}", continuation = continuation)
             is YouTubeBrowse.Album -> shelfPage(browseId = browse.browseId, continuation = continuation)
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
+            // The iOS InnerTube client carries no next/section endpoints yet; these requests are desktop-catalogue only.
+            is YouTubeBrowse.WatchNext -> throw UnsupportedContentOperation()
+            is YouTubeBrowse.Section -> throw UnsupportedContentOperation()
+            is YouTubeBrowse.ArtistItems -> throw UnsupportedContentOperation()
+            is YouTubeBrowse.Watch -> throw UnsupportedContentOperation()
         }
 
     private suspend fun shelfPage(browseId: String, continuation: String?): YouTubeEntryPage {

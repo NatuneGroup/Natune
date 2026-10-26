@@ -32,6 +32,9 @@ class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTranspor
             is YouTubeBrowse.Album -> albumPage(browse.browseId, continuation)
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
             is YouTubeBrowse.WatchNext -> watchNextPage(browse, continuation)
+            is YouTubeBrowse.Section -> catalogueSectionPage(browse)
+            is YouTubeBrowse.ArtistItems -> catalogueArtistItemsPage(browse, continuation)
+            is YouTubeBrowse.Watch -> catalogueWatchPage(browse, continuation)
         }
 
     private suspend fun playlistPage(playlistId: String, continuation: String?): YouTubeEntryPage =
