@@ -17,4 +17,5 @@
     <string name="m6_additional_downloads_spatialflow_font">SpatialFlow typeface</string>
     <string name="m6_additional_downloads_spatialflow_font_description">Google Sans Flex for the SpatialFlow player · about 4 MB. The system font is used until it is installed</string>
     <string name="m6_additional_downloads_unavailable">Not available in this build</string>
+    <string name="m6_language_pack_japanese_failed">The Japanese dictionary could not be updated</string>
 </resources>

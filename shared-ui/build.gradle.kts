@@ -88,3 +88,13 @@ tasks.named<Test>("desktopTest") {
     outputs.upToDateWhen { false }
     outputs.cacheIf { false }
 }
+// The CMP resource wiring only reaches leaf compilations on this toolchain, so the intermediate
+// source sets must declare their composeResources dirs explicitly.
+compose.resources.customDirectory(
+    sourceSetName = "commonMain",
+    directoryProvider = layout.projectDirectory.dir("src/commonMain/composeResources").let { providers.provider { it } },
+)
+compose.resources.customDirectory(
+    sourceSetName = "iosMain",
+    directoryProvider = layout.projectDirectory.dir("src/iosMain/composeResources").let { providers.provider { it } },
+)
