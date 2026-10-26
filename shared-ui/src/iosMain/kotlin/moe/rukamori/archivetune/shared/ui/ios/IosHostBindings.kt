@@ -49,8 +49,6 @@ import moe.rukamori.archivetune.shared.ui.host.hostLibraryPage
 import moe.rukamori.archivetune.shared.ui.host.hostPlayOccurrence
 import moe.rukamori.archivetune.shared.ui.host.hostPlaylistPage
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
-import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationPresentation
-import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationState
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
@@ -79,7 +77,7 @@ internal val IosOpticalCapabilities = OpticalCapabilities(blur = true, refractio
  * external links are real. A surface whose owner is not connected on this host takes the explicit unbound boundary, so
  * no route shows an empty list, a fake page or a success that never happened.
  */
-internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTuneHostBindings {
+internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph, recognition: IosRecognitionMount): ArchiveTuneHostBindings {
     val controls = IosPlayerControls(graph)
     val settingsOwners = IosSettingsOwners(graph)
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
@@ -91,7 +89,7 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
         // This host accepts no deep links yet, and the system back gesture is handled by the shell itself.
         routes = ownRoutes.receiveAsFlow(),
         backRequests = emptyFlow(),
-        page = { route -> iosGraphPage(graph, route) { target -> ownRoutes.trySend(target) } },
+        page = { route -> iosGraphPage(graph, recognition, route) { target -> ownRoutes.trySend(target) } },
         artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         formatNewsDate = ::iosDiagnosticTime,
@@ -121,9 +119,16 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
  * key keeps each route's own page state apart.
  */
 @Composable
-private fun iosGraphPage(graph: IosSessionGraph, route: ArchiveRoute, openRoute: (String) -> Unit): ArchiveGraphPage =
+private fun iosGraphPage(
+    graph: IosSessionGraph,
+    recognition: IosRecognitionMount,
+    route: ArchiveRoute,
+    openRoute: (String) -> Unit,
+): ArchiveGraphPage =
     key(route.value) {
         when (route.destination) {
+            ArchiveDestination.MUSIC_RECOGNITION -> iosRecognitionPage(recognition, route)
+            ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> iosRecognitionDetailsPage(recognition, route)
             ArchiveDestination.LIBRARY ->
                 hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
             ArchiveDestination.PLAYLIST ->
@@ -141,16 +146,16 @@ private fun iosGraphPage(graph: IosSessionGraph, route: ArchiveRoute, openRoute:
 
 /**
  * The player's media slots. Lyrics come from the graph's lyrics owner and render through the shared renderers on the
- * player's own snapshot, so a tap seeks the one player. Romanization is off on this host until the Japanese pack is
- * connected to the lyrics surface.
+ * player's own snapshot, so a tap seeks the one player. Readings come from the graph's lyrics surface runtime, which
+ * publishes the built-in/provider/AI presentation for the document on screen.
  */
 @Composable
 private fun iosPlayerSlots(graph: IosSessionGraph, expanded: Boolean, active: Boolean): PlayerSlots {
     val document by graph.lyrics.current.collectAsState()
     val saved by graph.settings.snapshots.collectAsState()
     val preferences = saved ?: PreferenceSnapshot.EMPTY
-    val sessionKey = document?.occurrenceId ?: NO_LYRICS_SESSION
-    val romanization = remember(sessionKey) { LyricsRomanizationState(LyricsRomanizationPresentation.off(sessionKey)) }
+    val sessionKey = graph.lyricsSurface.sessionKey(document)
+    val romanization = graph.lyricsSurface.romanization
     val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
     val lyrics = playerLyricsSlots(
@@ -175,8 +180,6 @@ private fun iosPlayerSlots(graph: IosSessionGraph, expanded: Boolean, active: Bo
         queue = { modifier -> IosQueuePanel(graph, modifier) },
     )
 }
-
-private const val NO_LYRICS_SESSION = "ios-no-lyrics"
 
 /** Routes this host opens itself. The bound keeps a burst of taps from growing memory, and the root drains them promptly. */
 private const val OWN_ROUTE_CAPACITY = 4

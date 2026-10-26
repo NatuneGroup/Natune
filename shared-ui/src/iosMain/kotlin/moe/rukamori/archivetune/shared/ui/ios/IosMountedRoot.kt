@@ -8,10 +8,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,7 +44,11 @@ internal fun IosMountedRoot(host: IosHost) {
         IosSessionState.SettingsUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_settings_unavailable)) }
         IosSessionState.GraphUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_host_graph_unavailable)) }
         is IosSessionState.Ready -> {
-            val bindings = remember(state.graph) { iosHostBindings(host, state.graph) }
+            // Recognition runs on the composition's UI scope and gives the microphone back when it leaves.
+            val uiScope = rememberCoroutineScope()
+            val recognition = remember(state.graph, uiScope) { IosRecognitionMount(state.graph, uiScope) }
+            DisposableEffect(recognition) { onDispose { recognition.close() } }
+            val bindings = remember(state.graph, recognition) { iosHostBindings(host, state.graph, recognition) }
             ArchiveTuneRoot(
                 host = bindings,
                 visible = active,
