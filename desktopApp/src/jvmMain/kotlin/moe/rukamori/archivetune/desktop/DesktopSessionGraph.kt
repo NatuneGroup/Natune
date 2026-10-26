@@ -672,7 +672,6 @@ class DesktopSessionGraph private constructor(
                 queue = queue,
                 // A host's volume is applied to the engine only, so the user's own saved level is not overwritten.
                 setVolume = { level -> if (level.isFinite()) playback.setVolume(level.coerceIn(0f, 1f)) },
-                content = contentRouter,
                 report = ::desktopDiagnostic,
             )
             val listenerPresence = DesktopListenerPresence(

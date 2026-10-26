@@ -12,6 +12,7 @@ import java.util.Date
 import java.util.TimeZone
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
 import moe.rukamori.archivetune.shared.domain.library.LibraryDefaults
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.library.librarySortState
@@ -48,7 +49,9 @@ internal fun desktopGraphPage(
     creation: DesktopPlaylistCreation,
     recognition: DesktopRecognitionMount,
     playlistMenus: DesktopPlaylistMenuState,
+    spotify: DesktopSpotifyAccounts,
     route: ArchiveRoute,
+    back: () -> Unit,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage = key(route.value) {
     when (route.destination) {
@@ -63,8 +66,10 @@ internal fun desktopGraphPage(
         ArchiveDestination.MUSIC_RECOGNITION -> desktopRecognitionPage(recognition, route)
         ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> desktopRecognitionDetailsPage(recognition, route)
         ArchiveDestination.LISTEN_TOGETHER -> desktopListenTogetherPage(graph, openRoute)
-        ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopCommentTogetherPage(graph)
-        ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu)
+        ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopCommentTogetherPage(graph, back)
+        ArchiveDestination.TELEGRAM_BROWSE -> desktopTelegramBrowsePage(graph, back)
+        ArchiveDestination.TELEGRAM_BOTS -> desktopTelegramBotsPage(graph, back, openRoute)
+        ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu, spotify)
         ArchiveDestination.ACCOUNT -> desktopAccountPage(graph)
         ArchiveDestination.NEWS -> desktopNewsPage()
         ArchiveDestination.ARTICLE -> desktopArticlePage(route.arguments.getValue("newsId"))
@@ -87,15 +92,25 @@ private fun desktopLibraryPage(graph: DesktopSessionGraph, openRoute: (String) -
 
 /** The local listening history, on the user's calendar days and clock. */
 @Composable
-private fun desktopHistoryPage(graph: DesktopSessionGraph, menu: DesktopItemMenuState): ArchiveGraphPage {
+private fun desktopHistoryPage(
+    graph: DesktopSessionGraph,
+    menu: DesktopItemMenuState,
+    spotify: DesktopSpotifyAccounts,
+): ArchiveGraphPage {
     // DateFormat is not thread-safe. It formats only while the page composes, on the window's UI thread.
     val format = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
+    val snapshot by graph.settings.snapshots.collectAsState()
+    val remote = buildList {
+        if (snapshot.youTubeSignIn() != null) add(DesktopYouTubeHistoryPager(graph))
+        if (spotify.historyAvailable()) add(DesktopSpotifyHistoryPager(graph, spotify))
+    }
     return hostHistoryPage(
         owners = graph.pageOwners,
         offsetMsAt = { epochMs -> TimeZone.getDefault().getOffset(epochMs).toLong() },
         nowMs = System::currentTimeMillis,
         formatTime = { epochMs -> format.format(Date(epochMs)) },
         more = { occurrence -> menu.open(occurrence) },
+        remote = remote,
     )
 }
 
@@ -162,12 +177,7 @@ private fun desktopPlaylistPage(graph: DesktopSessionGraph, menu: DesktopItemMen
     hostCatalogDetailPage(graph.catalogPages, route) { occurrence -> menu.open(occurrence) }
         ?: hostPlaylistPage(graph.pageOwners, route) { occurrence ->
             // Only an editable local playlist offers the row's remove-from-playlist action.
-            menu.open(
-                occurrence,
-                playlistId = route.arguments["playlistId"].takeIf {
-                    route.arguments["playlistType"] == "local_playlist"
-                },
-            )
+            menu.open(occurrence)
         }
 
 /** Plays [start] inside the complete list [collection] names, in the order the owner shows it. */

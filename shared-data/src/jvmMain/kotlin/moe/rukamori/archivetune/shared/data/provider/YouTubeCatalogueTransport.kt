@@ -223,39 +223,6 @@ class JvmYouTubeCatalogueTransport {
         }
 }
 
-/**
- * The section-paged half of the catalogue: the parts of [JvmYouTubeBrowseTransport.page] that are not the
- * whole-page surfaces. They live as extensions so the two browse mappings stay side by side.
- */
-internal suspend fun JvmYouTubeBrowseTransport.catalogueSectionPage(browse: YouTubeBrowse.Section): YouTubeEntryPage {
-    val page = YouTube.browse(browse.browseId, browse.params).getOrThrow()
-    return YouTubeEntryPage(page.items.flatMap { it.items }.map { it.toCatalogueEntry() })
-}
-
-internal suspend fun JvmYouTubeBrowseTransport.catalogueArtistItemsPage(
-    browse: YouTubeBrowse.ArtistItems,
-    continuation: String?,
-): YouTubeEntryPage =
-    if (continuation == null) {
-        val page = YouTube.artistItems(BrowseEndpoint(browseId = browse.browseId, params = browse.params)).getOrThrow()
-        YouTubeEntryPage(page.items.map { it.toCatalogueEntry() }, page.continuation)
-    } else {
-        val page = YouTube.artistItemsContinuation(continuation).getOrThrow()
-        YouTubeEntryPage(page.items.map { it.toCatalogueEntry() }, page.continuation)
-    }
-
-internal suspend fun JvmYouTubeBrowseTransport.catalogueWatchPage(
-    browse: YouTubeBrowse.Watch,
-    continuation: String?,
-): YouTubeEntryPage {
-    val page =
-        YouTube.next(
-            WatchEndpoint(videoId = browse.videoId, playlistId = browse.playlistId, params = browse.params),
-            continuation = continuation,
-        ).getOrThrow()
-    return YouTubeEntryPage(page.items.map { it.toSongCatalogueEntry() }, page.continuation)
-}
-
 private fun WatchEndpoint.toWatchTarget(): YouTubeWatchTarget? {
     if (videoId == null && playlistId == null) return null
     return YouTubeWatchTarget(videoId, playlistId, params)
