@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.provider
 
 import io.ktor.client.HttpClient
+import kotlin.concurrent.Volatile
 import kotlin.math.abs
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException

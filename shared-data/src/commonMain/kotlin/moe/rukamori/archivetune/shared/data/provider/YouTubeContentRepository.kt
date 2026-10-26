@@ -31,20 +31,6 @@ sealed interface YouTubeBrowse {
     data class Search(val query: String, val filter: ContentSearchFilter) : YouTubeBrowse
 
     /**
-     * A watch-next queue page: radio, mixes and song-seeded watch queues, the InnerTube `next` endpoint of
-     * `YouTubeQueue`. A song seed follows the automix preview; an RD/mix playlist seed does not.
-     */
-    data class WatchNext(
-        val videoId: String? = null,
-        val playlistId: String? = null,
-        val playlistSetVideoId: String? = null,
-        val params: String? = null,
-        val followAutomixPreview: Boolean = false,
-    ) : YouTubeBrowse {
-        init { require(videoId != null || playlistId != null) { "Watch-next needs a seed" } }
-    }
-
-    /**
      * A generic provider browse section: home shelf "see all", charts, a mood or genre page, a browse link
      * carrying a browse id. The provider answers whole sections with no continuation, so a token is refused
      * inside the transport rather than ignored.
@@ -60,6 +46,20 @@ sealed interface YouTubeBrowse {
      * RADIO collection because the provider owns its continuation.
      */
     data class Watch(val videoId: String?, val playlistId: String?, val params: String?) : YouTubeBrowse
+
+    /**
+     * A watch-next queue page: radio, mixes and song-seeded watch queues, the InnerTube `next` endpoint of
+     * `YouTubeQueue`. A song seed follows the automix preview; an RD/mix playlist seed does not.
+     */
+    data class WatchNext(
+        val videoId: String? = null,
+        val playlistId: String? = null,
+        val playlistSetVideoId: String? = null,
+        val params: String? = null,
+        val followAutomixPreview: Boolean = false,
+    ) : YouTubeBrowse {
+        init { require(videoId != null || playlistId != null) { "Watch-next needs a seed" } }
+    }
 }
 
 /** One provider entry reduced to common fields. [setVideoId] is the playlist entry id when the provider has one. */
@@ -345,6 +345,9 @@ private fun YouTubeBrowse.requestKey(): String =
         is YouTubeBrowse.Playlist -> "playlist:$playlistId"
         is YouTubeBrowse.Album -> "album:$browseId"
         is YouTubeBrowse.Search -> "search:${filter.name}:$query"
+        is YouTubeBrowse.Section -> "section:$browseId:$params"
+        is YouTubeBrowse.ArtistItems -> "artist-items:$browseId:$params"
+        is YouTubeBrowse.Watch -> "watch:$videoId:$playlistId:$params"
         is YouTubeBrowse.WatchNext ->
             "radio:${videoId.orEmpty()}:${playlistId.orEmpty()}:${playlistSetVideoId.orEmpty()}:${params.orEmpty()}"
         is YouTubeBrowse.Section -> "section:$browseId:$params"
