@@ -89,6 +89,15 @@ internal object DesktopDiagnosticLog : DiagnosticLogStore {
         log?.append(level, HOST_TAG, message)
     }
 
+    /**
+     * One YouTube resolver line on the `PlaybackDiagnostics` tag at INFO, the shape the Android playback
+     * diagnostics contract writes to logcat (`YouTube tier=… resolved=… elapsedMs=… reason=…`). Routine
+     * resolution noise stays out of stderr; it only lands in the persistent log the viewer and exports read.
+     */
+    fun playbackTier(message: String) {
+        log?.append(DiagnosticLevel.INFO, PLAYBACK_DIAGNOSTICS_TAG, message)
+    }
+
     override fun append(level: DiagnosticLevel, tag: String, message: String, error: Throwable?) {
         log?.append(level, tag, message, error)
     }
@@ -102,6 +111,7 @@ internal object DesktopDiagnosticLog : DiagnosticLogStore {
     }
 
     private const val HOST_TAG = "Natune"
+    private const val PLAYBACK_DIAGNOSTICS_TAG = "PlaybackDiagnostics"
     private const val LINE_LIMIT = 8 * 1024
 
     /** Passes every byte through and logs each completed line. A line longer than the limit is logged in pieces. */
