@@ -62,6 +62,11 @@ import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginScreen
 import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
+import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
+import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
+import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
+import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
+import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
@@ -76,7 +81,7 @@ import org.jetbrains.compose.resources.stringResource
  * TIDAL account endpoints. This build carries no TIDAL device client, so the device sign-in row reports itself
  * unavailable, and a pasted refresh token is verified with TIDAL instead.
  */
-internal class IosSettingsOwners(private val graph: IosSessionGraph) {
+internal class IosSettingsOwners(internal val graph: IosSessionGraph) {
     val controller = SettingsController(
         graph.settings,
         graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY,
@@ -85,6 +90,12 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     )
     val accounts = graph.accountLifecycle
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
+
+    /**
+     * The AI-integration action owner over the real shared service. When the user has not configured a provider the
+     * page reads "not configured" and a test run reports the missing setup, never a faked success.
+     */
+    val aiActions by lazy { AiSettingsActions(graph.scope, controller, KtorAiTextService(graph.http)) }
 
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
@@ -205,9 +216,11 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
 /** The settings routes this host mounts. Every other settings route keeps the unbound boundary. */
 internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.substringBefore('?') in IOS_SETTINGS_ROUTES
 
-private val IOS_SETTINGS_ROUTES = setOf(
+private val IOS_SETTINGS_ROUTES = IOS_GENERAL_SETTINGS_ROUTES + setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
     "settings/qobuz", QobuzLoginRoute,
+    "settings/lyrics/providers", "settings/misc", "settings/integration", "settings/language_packs",
+    "settings/ai_integration", "settings/about",
 )
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
@@ -228,8 +241,10 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
         host.report("a settings change could not be completed")
         show(changeFailed)
     }
+    val unavailable: () -> Unit = { show(featureUnavailable) }
+    val path = route.value.substringBefore('?')
     Box(Modifier.fillMaxSize().padding(LocalShellContentPadding.current)) {
-        when (route.value.substringBefore('?')) {
+        when (path) {
             "settings" -> SettingsHomePage(
                 controller = owners.controller,
                 navigate = navigate,
@@ -302,6 +317,27 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 else IosTelegramSettingsPage(telegram, owners.controller, navigate, onFailure, scrollTo)
             }
             "settings/privacy" -> IosPrivacySettingsPage(host, owners.controller, onFailure, scrollTo)
+            in IOS_GENERAL_SETTINGS_ROUTES ->
+                IosGeneralSettingsPage(path, host, owners.controller, navigate, onFailure, unavailable, scrollTo)
+            "settings/lyrics/providers" -> LyricsProviderSettings(
+                controller = owners.controller,
+                readStats = { preferences -> PaxsenixDiagnostics(owners.graph.http, paxsenixSettingsOf(preferences)).getStats().getOrThrow() },
+                checkEndpoints = { preferences -> PaxsenixDiagnostics(owners.graph.http, paxsenixSettingsOf(preferences)).checkProviderPaths() },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/misc" -> IosDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
+            "settings/integration" ->
+                IosIntegrationSettingsPage(owners.controller, navigate, unavailable, onFailure, scrollTo)
+            "settings/language_packs" ->
+                IosLanguagePackSettingsPage(host, owners.graph, owners.controller, onFailure)
+            "settings/ai_integration" -> IosAiIntegrationSettingsPage(
+                owners = owners,
+                onFailure = onFailure,
+                openExternal = { uri -> openIosUri(uri, host::report) },
+                scrollTo = scrollTo,
+            )
+            "settings/about" -> IosAboutPage(owners.graph, owners.controller, navigation)
             "settings/logcat" -> {
                 val store = host.diagnostics
                 if (store == null) {

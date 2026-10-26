@@ -82,6 +82,8 @@ internal val IosOpticalCapabilities = OpticalCapabilities(blur = true, refractio
 internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTuneHostBindings {
     val controls = IosPlayerControls(graph)
     val settingsOwners = IosSettingsOwners(graph)
+    // The one row menu of this host: a row's overflow opens it, the overlay draws it.
+    val itemMenu = IosItemMenuState()
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     return ArchiveTuneHostBindings(
@@ -91,7 +93,7 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
         // This host accepts no deep links yet, and the system back gesture is handled by the shell itself.
         routes = ownRoutes.receiveAsFlow(),
         backRequests = emptyFlow(),
-        page = { route -> iosGraphPage(graph, route) { target -> ownRoutes.trySend(target) } },
+        page = { route -> iosGraphPage(graph, itemMenu, route) { target -> ownRoutes.trySend(target) } },
         artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         formatNewsDate = ::iosDiagnosticTime,
@@ -103,11 +105,12 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
                 IosUnboundSurface(Modifier.fillMaxSize())
             }
         },
-        overlays = { },
+        overlays = { route -> IosItemMenuDialog(itemMenu, graph, route.value) },
         playerSlots = { expanded, active, _ -> iosPlayerSlots(graph, expanded, active) },
         playerControls = controls,
-        // The row menu needs the playlist and download owners this host does not connect yet.
-        more = { graph.report("the row menu is not connected on the iOS host") },
+        // The row menu offers the queue commands the queue owner answers; library, download, share and artist rows
+        // need owners this host does not connect yet and are left out rather than appearing as no-ops.
+        more = { occurrence -> itemMenu.open(occurrence) },
         playOccurrence = { collection, start -> hostPlayOccurrence(graph.pageOwners, collection, start) },
         openExternal = { uri -> openIosUri(uri, graph::report) },
         onFailure = { graph.report("a host request could not be completed") },
@@ -121,19 +124,24 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
  * key keeps each route's own page state apart.
  */
 @Composable
-private fun iosGraphPage(graph: IosSessionGraph, route: ArchiveRoute, openRoute: (String) -> Unit): ArchiveGraphPage =
+private fun iosGraphPage(
+    graph: IosSessionGraph,
+    itemMenu: IosItemMenuState,
+    route: ArchiveRoute,
+    openRoute: (String) -> Unit,
+): ArchiveGraphPage =
     key(route.value) {
         when (route.destination) {
             ArchiveDestination.LIBRARY ->
                 hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
             ArchiveDestination.PLAYLIST ->
-                hostPlaylistPage(graph.pageOwners, route) { graph.report("the row menu is not connected on the iOS host") }
+                hostPlaylistPage(graph.pageOwners, route) { occurrence -> itemMenu.open(occurrence) }
             ArchiveDestination.HISTORY -> hostHistoryPage(
                 owners = graph.pageOwners,
                 offsetMsAt = ::iosOffsetMsAt,
                 nowMs = ::iosNowMillis,
                 formatTime = ::iosDiagnosticTime,
-                more = { graph.report("the row menu is not connected on the iOS host") },
+                more = { occurrence -> itemMenu.open(occurrence) },
             )
             else -> ArchiveGraphPage.Host
         }
