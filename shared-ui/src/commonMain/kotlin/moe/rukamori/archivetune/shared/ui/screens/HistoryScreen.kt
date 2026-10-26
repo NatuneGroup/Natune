@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -13,6 +14,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 enum class HistorySource { LOCAL, REMOTE, SPOTIFY }
@@ -31,6 +33,8 @@ class HistoryActions(
     val play: (HistoryEventUi, sectionKey: String) -> Unit, val more: (ContentOccurrence) -> Unit,
     val toggleSelection: (Long) -> Unit, val selectAllVisible: (Set<Long>) -> Unit, val clearSelection: () -> Unit,
     val removeEvents: (Set<Long>) -> Unit, val retry: () -> Unit, val loadMore: () -> Unit,
+    /** The baseline's shuffle-all over the visible rows. Null where the source's rows cannot be queued. */
+    val shuffleAll: (() -> Unit)? = null,
 )
 
 @Composable
@@ -64,11 +68,19 @@ fun HistoryScreen(
                 })) })
             }
         }
-        Text(stringResource(when (state.source) {
-            HistorySource.LOCAL -> Res.string.m4_local_history_summary
-            HistorySource.REMOTE -> Res.string.m4_remote_history_summary
-            HistorySource.SPOTIFY -> Res.string.m4_spotify_history_summary
-        }), Modifier.padding(16.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(when (state.source) {
+                HistorySource.LOCAL -> Res.string.m4_local_history_summary
+                HistorySource.REMOTE -> Res.string.m4_remote_history_summary
+                HistorySource.SPOTIFY -> Res.string.m4_spotify_history_summary
+            }), Modifier.weight(1f))
+            val shuffleAll = actions.shuffleAll
+            if (shuffleAll != null) {
+                TextButton(shuffleAll, modifier = Modifier.testTag("history-shuffle")) {
+                    Text(stringResource(Res.string.m4_shuffle))
+                }
+            }
+        }
         OutlinedTextField(state.query, actions.query, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             label = { Text(stringResource(Res.string.m4_search_query)) }, singleLine = true)
         if (selected.isNotEmpty()) Row {
