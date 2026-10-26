@@ -56,7 +56,7 @@ internal fun IosMountedRoot(host: IosHost) {
 
 /**
  * The crash report an earlier launch stored, shown once at the next launch as the Android crash screen. Delete removes
- * it; Close keeps it, so it is offered again. iOS has no share sheet bound here, so Share Logs copies the report.
+ * it; Close keeps it, so it is offered again. Share Logs opens the system share sheet with the report.
  */
 @Composable
 private fun IosCrashOverlay(host: IosHost) {
@@ -68,7 +68,7 @@ private fun IosCrashOverlay(host: IosHost) {
             appName = "Natune",
             actions = CrashReportActions(
                 copyToClipboard = ::copyToIosClipboard,
-                shareLogs = ::copyToIosClipboard,
+                shareLogs = { iosShareText(host, it) },
                 report = null,
                 delete = { if (host.clearCrash()) report = null },
                 close = { report = null },

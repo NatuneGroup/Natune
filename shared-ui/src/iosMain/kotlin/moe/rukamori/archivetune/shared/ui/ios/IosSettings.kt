@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -51,9 +52,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.presence.ListenerPresenceSection
 import moe.rukamori.archivetune.shared.ui.resources.*
-import moe.rukamori.archivetune.shared.ui.resources.ios_logs_copied
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_change_failed
-import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
@@ -218,8 +217,6 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
     val scrollTo = route.arguments["scrollTo"]
     val navigate: (String) -> Unit = { target -> navigation.open(target) }
     val changeFailed = stringResource(Res.string.ios_settings_change_failed)
-    val featureUnavailable = stringResource(Res.string.ios_settings_feature_unavailable)
-    val logsCopied = stringResource(Res.string.ios_logs_copied)
     fun show(message: String) {
         scope.launch { snackbar.showSnackbar(message) }
     }
@@ -314,16 +311,16 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                         actions = DiagnosticLogActions(
                             back = { navigation.back() },
                             copyToClipboard = ::copyToIosClipboard,
-                            // No share sheet is connected yet, so Share copies the visible lines and says so.
-                            share = { text ->
-                                copyToIosClipboard(text)
-                                show(logsCopied)
-                            },
-                            // A file export needs the document picker, which is not connected. The page is told nothing
-                            // was written, and the user is told why.
+                            // The system share sheet carries the visible lines, the Android Share equivalent.
+                            share = { text -> iosShareText(host, text) },
+                            // Export writes the full redacted report to a file and hands it to the share sheet,
+                            // where Save to Files and AirDrop receive a real document.
                             export = {
-                                show(featureUnavailable)
-                                null
+                                iosExportTextFile(
+                                    host,
+                                    "natune-log-${Clock.System.now().toEpochMilliseconds()}.txt",
+                                    iosDiagnosticReport(host),
+                                )
                             },
                         ),
                     )
