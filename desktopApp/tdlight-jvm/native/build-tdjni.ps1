@@ -156,11 +156,12 @@ if (Test-Path -LiteralPath (Join-Path $Source '.gitmodules') -PathType Leaf) {
     Invoke-Checked 'git' @('-C', $Source, 'submodule', 'update', '--init', '--depth', '1', '--recursive', '--quiet')
 }
 
-# The Boost text is copied, never typed in, so the staged notice is the upstream file byte for byte. Depth 2 matches the
-# find -maxdepth 3 of the Linux and macOS recipe.
-$licenseHits = @(Get-ChildItem -LiteralPath $Source -Recurse -File -Depth 2 -Filter 'LICENSE_1_0.txt')
+# The Boost text is copied, never typed in, so the staged notice is the upstream file byte for byte.
+# The pinned tree also ships example copies (e.g. example/uwp/LICENSE_1_0.txt); the package notice
+# is always the root file.
+$licenseHits = @(Get-ChildItem -LiteralPath $Source -File -Filter 'LICENSE_1_0.txt')
 if ($licenseHits.Count -ne 1) {
-    Stop-Recipe "expected exactly one LICENSE_1_0.txt within three levels of $Source"
+    Stop-Recipe "expected exactly one LICENSE_1_0.txt at the root of $Source"
 }
 $licenseFile = $licenseHits[0].FullName
 $titleLine = Get-Content -LiteralPath $licenseFile -TotalCount 1 -Encoding UTF8

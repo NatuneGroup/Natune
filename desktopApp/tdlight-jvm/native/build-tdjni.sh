@@ -82,9 +82,11 @@ if [ -f "$SRC/.gitmodules" ]; then
 fi
 
 # The Boost text is copied, never typed in, so the staged notice is the upstream file byte for byte.
-LICENSE_FILES="$(find "$SRC" -maxdepth 3 -name LICENSE_1_0.txt -type f)"
+# The pinned tree also ships example copies (e.g. example/uwp/LICENSE_1_0.txt); the package notice
+# is always the root file.
+LICENSE_FILES="$(find "$SRC" -maxdepth 1 -name LICENSE_1_0.txt -type f)"
 [ "$(printf '%s\n' "$LICENSE_FILES" | grep -c .)" = "1" ] \
-    || die "expected exactly one LICENSE_1_0.txt within three levels of $SRC"
+    || die "expected exactly one LICENSE_1_0.txt at the root of $SRC"
 LICENSE_FILE="$LICENSE_FILES"
 case "$(head -n 1 "$LICENSE_FILE")" in
     "$BOOST_LICENSE_TITLE"*) ;;
