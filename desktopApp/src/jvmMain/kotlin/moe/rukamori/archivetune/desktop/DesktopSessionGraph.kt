@@ -127,6 +127,8 @@ class DesktopSessionGraph private constructor(
     val accounts: VaultProviderAccountStore,
     /** The one personal sign-in lifecycle over [accounts]. Settings sign-ins and the TIDAL refresh commit through it. */
     internal val accountLifecycle: ProviderAccountLifecycle,
+    /** The locked instance directory this graph opened; update staging and the like resolve under it. */
+    internal val instanceDirectory: Path,
     /** The TIDAL account endpoints, with the device and PKCE clients this build or launch supplies. */
     internal val tidalAuth: TidalAccountAuth,
     /**
@@ -781,6 +783,7 @@ class DesktopSessionGraph private constructor(
             val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
             val graph = DesktopSessionGraph(
                 youtubeResolver = youtubeResolver,
+                instanceDirectory = directory,
                 scope = scope,
                 settings = vault,
                 accounts = accounts,

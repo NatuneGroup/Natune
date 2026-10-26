@@ -124,6 +124,15 @@ val desktopDisplayVersion =
         ?: System.getenv("VERSION_NAME_OVERRIDE")?.trim()?.takeIf { it.isNotEmpty() }
         ?: desktopPackageVersion
 
+// The monotonic build number the updater compares against a channel manifest's versionCode. CI
+// stamps it from the release workflow (dev builds allocate from the nightly epoch floor, main from
+// the stable floor); a plain `runDistributable` build keeps 0 and the updater stays honestly
+// unavailable instead of offering a downgrade.
+val desktopVersionCode =
+    providers.gradleProperty("desktopVersionCode").orNull?.trim()?.toIntOrNull()
+        ?: System.getenv("VERSION_CODE_OVERRIDE")?.trim()?.toIntOrNull()
+        ?: 0
+
 // The build identity a feedback report names, read from git the way the Android build reads it. Nothing secret here.
 val desktopForkRevision = runCatching {
     providers.exec {
@@ -149,11 +158,13 @@ val generateDesktopBuildIdentity = tasks.register("generateBuildIdentity") {
     val branch = desktopForkBranch
     val dirty = desktopForkDirty
     val version = desktopDisplayVersion
+    val code = desktopVersionCode
     val output = desktopBuildIdentityDirectory
     inputs.property("revision", revision)
     inputs.property("branch", branch)
     inputs.property("dirty", dirty)
     inputs.property("version", version)
+    inputs.property("versionCode", code)
     outputs.dir(output)
     doLast {
         val directory = output.get().asFile.resolve("moe/rukamori/archivetune/desktop")
@@ -164,6 +175,7 @@ val generateDesktopBuildIdentity = tasks.register("generateBuildIdentity") {
             |
             |internal object DesktopBuildIdentity {
             |    const val VERSION_NAME = "$version"
+            |    const val VERSION_CODE = $code
             |    const val FORK_REVISION = "$revision"
             |    const val FORK_BRANCH = "$branch"
             |    const val FORK_DIRTY = $dirty
