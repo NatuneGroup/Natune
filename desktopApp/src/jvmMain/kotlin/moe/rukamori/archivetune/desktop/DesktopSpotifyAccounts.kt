@@ -46,7 +46,9 @@ import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileArtis
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileCacheTsKey
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileRecentItemsKey
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileTopTracksKey
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceEditor
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.ShowSpotifyPlaylistsKey
@@ -219,6 +221,23 @@ internal class DesktopSpotifyAccounts(
             prefs[SpotifyHistorySyncEnabledKey] == true
     }
 
+    /** The catalog account itself, independent of the playlist/history switches. Android offers Spotify Home from this. */
+    fun catalogConnected(): Boolean = snapshot()[SpotifySpDcKey].orEmpty().isNotBlank()
+
+    /** Restores or mints the catalog token once before a page issues its endpoint calls. */
+    suspend fun restoreCatalogSession(): Boolean =
+        try {
+            refreshToken(rejected = null)
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+
+    /** One authenticated catalog request with Android's rejected-token retry semantics. */
+    suspend fun <T> catalogCall(block: suspend () -> T): T = withTokenRetry(block)
+
     /** The Spotify playlist source is offered only when the catalog account and the Android Spotify toggle are on. */
     fun libraryAvailable(): Boolean {
         val prefs = snapshot()
@@ -278,6 +297,12 @@ internal class DesktopSpotifyAccounts(
                 withTokenRetry { Spotify.likedSongs(limit = PLAYLIST_PAGE_SIZE, offset = offset).getOrThrow() }
             }.playableLikedTracks()
     }
+
+    /** Maps a queue row resolved from Spotify back to its catalog row, for Spotify Home's active-track marker. */
+    fun spotifyRefForResolved(ref: ContentRef): ContentRef? = playback.spotifyRefForResolved(ref)
+
+    /** Resolves one tapped catalog track before its queue starts, matching Android's preload call. */
+    suspend fun resolveTrack(track: SpotifyTrack): ContentItem? = playback.resolveTrack(track)
 
     /** Resolves every selected track with Android's four-at-a-time bounded resolver, then queues the matches. */
     suspend fun playTrackList(
