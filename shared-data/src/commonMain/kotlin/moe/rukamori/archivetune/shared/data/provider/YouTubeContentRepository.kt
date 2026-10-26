@@ -31,21 +31,18 @@ sealed interface YouTubeBrowse {
     data class Search(val query: String, val filter: ContentSearchFilter) : YouTubeBrowse
 
     /**
-     * A generic provider browse section: home shelf "see all", charts, a mood or genre page, a browse link
-     * carrying a browse id. The provider answers whole sections with no continuation, so a token is refused
-     * inside the transport rather than ignored.
+     * A watch-next queue page: radio, mixes and song-seeded watch queues, the InnerTube `next` endpoint of
+     * `YouTubeQueue`. A song seed follows the automix preview; an RD/mix playlist seed does not.
      */
-    data class Section(val browseId: String, val params: String?) : YouTubeBrowse
-
-    /** An artist page section opened through its "see all" endpoint; it pages through the artist-items endpoint. */
-    data class ArtistItems(val browseId: String, val params: String?) : YouTubeBrowse
-
-    /**
-     * A watch-next collection (the play, shuffle or radio endpoint on an artist page). [videoId] is the song
-     * the endpoint names and [playlistId] the radio id when it gave one; the queue keeps paging it as a
-     * RADIO collection because the provider owns its continuation.
-     */
-    data class Watch(val videoId: String?, val playlistId: String?, val params: String?) : YouTubeBrowse
+    data class WatchNext(
+        val videoId: String? = null,
+        val playlistId: String? = null,
+        val playlistSetVideoId: String? = null,
+        val params: String? = null,
+        val followAutomixPreview: Boolean = false,
+    ) : YouTubeBrowse {
+        init { require(videoId != null || playlistId != null) { "Watch-next needs a seed" } }
+    }
 }
 
 /** One provider entry reduced to common fields. [setVideoId] is the playlist entry id when the provider has one. */
@@ -62,6 +59,8 @@ data class YouTubeEntry(
     /** The artist credits and album id the provider gave. They stay empty when the provider omitted them. */
     val artists: List<ContentCredit> = emptyList(),
     val albumId: String? = null,
+    /** The endpoint's own music-video marker (OMV/UGC); Android stores it as `ExtraIsMusicVideo`. */
+    val isVideo: Boolean = false,
 )
 
 /** One provider page. [continuation] is the provider's raw token; the repository wraps it before it leaves. */
@@ -150,7 +149,7 @@ class YouTubeAccountBinding(
  * finite completion bounds. A token that repeats, or a page that ends with neither entries nor a continuation, is an
  * incomplete listing and never a complete one.
  *
- * Surfaces outside finite playlists, albums, search and the account (radio, home, artist sections, item lookup) fail
+ * Surfaces outside finite playlists, albums, search, radio and the account (home, artist sections, item lookup) fail
  * with [UnsupportedContentOperation] until their transports are published.
  */
 class YouTubeContentRepository(
@@ -282,30 +281,7 @@ internal data class YouTubeContinuation(val requestKey: String, val offset: Int,
 private fun String.escapeField(): String = replace("%", "%25").replace("|", "%7C")
 
 private fun ContentRequest.toBrowse(): YouTubeBrowse {
-    val browseSection = section
-    if (browseSection != null) {
-        val playlistId = browseSection.id.takeIf(String::isNotBlank)
-        // Radio and mix ids are endless watch queues; the video id comes from the request text when the
-        // endpoint named a song, else it is encoded in the RDAMVM playlist id.
-        if (browseSection.id.startsWith("RDAMVM")) {
-            return YouTubeBrowse.Watch(browseSection.id.removePrefix("RDAMVM"), playlistId, browseSection.params)
-        }
-        if (surface == ContentSurface.ARTIST) {
-            return if (text != null || playlistId?.startsWith("RD") == true) {
-                YouTubeBrowse.Watch(text, playlistId, browseSection.params)
-            } else {
-                YouTubeBrowse.ArtistItems(browseSection.id, browseSection.params)
-            }
-        }
-        if (playlistId?.startsWith("RD") == true) {
-            return YouTubeBrowse.Watch(null, playlistId, browseSection.params)
-        }
-        return YouTubeBrowse.Section(browseSection.id, browseSection.params)
-    }
-    if (surface == ContentSurface.ARTIST && text != null) {
-        // A video-id-only watch endpoint, e.g. playing one provider song without a radio id.
-        return YouTubeBrowse.Watch(text, null, null)
-    }
+    if (section != null) throw UnsupportedContentOperation()
     return when (surface) {
         ContentSurface.PLAYLIST -> {
             val playlist = parent?.takeIf { it.kind == ContentKind.PLAYLIST } ?: throw UnsupportedContentOperation()
@@ -321,6 +297,17 @@ private fun ContentRequest.toBrowse(): YouTubeBrowse {
         ContentSurface.SEARCH -> {
             val query = text?.trim()?.takeIf(String::isNotEmpty) ?: throw IllegalArgumentException("Blank search")
             YouTubeBrowse.Search(query, filter)
+        }
+        ContentSurface.RADIO -> {
+            val seed = parent ?: throw UnsupportedContentOperation()
+            YouTubeBrowse.WatchNext(
+                videoId = seed.id.takeIf { seed.kind == ContentKind.SONG },
+                playlistId = seed.id.takeIf { seed.kind == ContentKind.PLAYLIST },
+                playlistSetVideoId = section?.id?.takeIf { it != seed.id },
+                params = section?.params,
+                // A song seed follows the automix preview; a playlist/mix endpoint does not, as on Android.
+                followAutomixPreview = seed.kind == ContentKind.SONG,
+            )
         }
         else -> throw UnsupportedContentOperation()
     }
@@ -341,9 +328,8 @@ private fun YouTubeBrowse.requestKey(): String =
         is YouTubeBrowse.Playlist -> "playlist:$playlistId"
         is YouTubeBrowse.Album -> "album:$browseId"
         is YouTubeBrowse.Search -> "search:${filter.name}:$query"
-        is YouTubeBrowse.Section -> "section:$browseId:$params"
-        is YouTubeBrowse.ArtistItems -> "artist-items:$browseId:$params"
-        is YouTubeBrowse.Watch -> "watch:$videoId:$playlistId:$params"
+        is YouTubeBrowse.WatchNext ->
+            "radio:${videoId.orEmpty()}:${playlistId.orEmpty()}:${playlistSetVideoId.orEmpty()}:${params.orEmpty()}"
     }
 
 private fun YouTubeBrowse.collectionKey(): String =
@@ -367,6 +353,7 @@ private fun YouTubeEntry.occurrence(collection: String, ordinal: Int): ContentOc
                 album = album,
                 artists = artists,
                 albumId = albumId?.takeIf(String::isNotBlank),
+                isVideo = isVideo,
             ),
         setVideoId = setId,
     )

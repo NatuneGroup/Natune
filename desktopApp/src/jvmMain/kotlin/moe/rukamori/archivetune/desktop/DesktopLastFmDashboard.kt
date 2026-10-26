@@ -78,14 +78,20 @@ internal class DesktopLastFmDashboardHost(
     override fun isPlayerAvailable(): Boolean = true
 
     /**
-     * The desktop YouTube catalogue has no watch-next radio, so the matched song plays on its own and no mix follows it.
-     * The missing tail is logged rather than filled with unrelated songs.
+     * A YouTube match becomes its own radio queue: the song loads alone, then `startRadioSeamlessly` appends the
+     * watch-next tail behind it, the same pair of calls `PlayerConnection.startRadio` makes. A non-YouTube ref
+     * cannot seed radio and reports unavailable, never a silent solo play.
      */
     override fun startRadio(song: ContentOccurrence) {
+        val ref = song.item.ref
+        if (ref.provider != ContentProvider.YOUTUBE.id || ref.kind != ContentKind.SONG) {
+            unavailable()
+            return
+        }
         val entry = song.queuedCopy()
-        queueCommand("the song was not played") {
+        queueCommand("the radio could not be started") {
             graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
-            graph.report("Last.fm dashboard: the song plays without a radio mix, which this host cannot load")
+            graph.queue.startRadioSeamlessly()
         }
     }
 
