@@ -84,7 +84,7 @@ internal fun desktopGraphPage(
         ArchiveDestination.MUSIC_RECOGNITION -> desktopRecognitionPage(recognition, route)
         ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> desktopRecognitionDetailsPage(recognition, route)
         ArchiveDestination.LISTEN_TOGETHER -> desktopListenTogetherPage(graph, openRoute)
-        ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopCommentTogetherPage(graph, back)
+        ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopCommentTogetherPage(graph)
         ArchiveDestination.TELEGRAM_BROWSE -> desktopTelegramBrowsePage(graph, back)
         ArchiveDestination.TELEGRAM_BOTS -> desktopTelegramBotsPage(graph, back, openRoute)
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu, spotify)
