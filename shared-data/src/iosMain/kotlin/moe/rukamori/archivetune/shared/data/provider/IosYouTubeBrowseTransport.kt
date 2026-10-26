@@ -7,6 +7,7 @@ import com.metrolist.innertubex.models.Runs
 import com.metrolist.innertubex.models.Thumbnails
 import com.metrolist.innertubex.models.YouTubeClient
 import com.metrolist.innertubex.models.response.BrowseResponse
+import com.metrolist.innertubex.models.response.NextResponse
 import com.metrolist.innertubex.models.response.SearchResponse
 import com.metrolist.innertubex.models.splitBySeparator
 import io.ktor.client.HttpClient
@@ -17,8 +18,13 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
@@ -105,12 +111,151 @@ class IosYouTubeBrowseTransport(
             is YouTubeBrowse.Playlist -> shelfPage(browseId = "VL${browse.playlistId}", continuation = continuation)
             is YouTubeBrowse.Album -> shelfPage(browseId = browse.browseId, continuation = continuation)
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
-            // The iOS InnerTube client carries no next/section endpoints yet; these requests are desktop-catalogue only.
-            is YouTubeBrowse.WatchNext -> throw UnsupportedContentOperation()
-            is YouTubeBrowse.Section -> throw UnsupportedContentOperation()
-            is YouTubeBrowse.ArtistItems -> throw UnsupportedContentOperation()
-            is YouTubeBrowse.Watch -> throw UnsupportedContentOperation()
+            is YouTubeBrowse.Section -> sectionPage(browse)
+            is YouTubeBrowse.ArtistItems -> artistItemsPage(browse, continuation)
+            is YouTubeBrowse.Watch -> watchPage(browse, continuation)
+            is YouTubeBrowse.WatchNext -> watchNextPage(browse, continuation)
         }
+
+    /**
+     * The watch-next queue page of `YouTubeQueue.getInitialStatus`/`nextPage`: the InnerTube `next` endpoint with
+     * the seed fields the queue was opened with. The Up-next tab carries the `playlistPanelRenderer` the core
+     * client's queue parse reads; each page re-calls `next` with the continuation, exactly like Android.
+     */
+    private suspend fun watchNextPage(browse: YouTubeBrowse.WatchNext, continuation: String?): YouTubeEntryPage =
+        nextPanelPage(
+            videoId = browse.videoId,
+            playlistId = browse.playlistId,
+            playlistSetVideoId = browse.playlistSetVideoId,
+            params = browse.params,
+            continuation = continuation,
+        )
+
+    private suspend fun watchPage(browse: YouTubeBrowse.Watch, continuation: String?): YouTubeEntryPage =
+        nextPanelPage(
+            videoId = browse.videoId,
+            playlistId = browse.playlistId,
+            playlistSetVideoId = null,
+            params = browse.params,
+            continuation = continuation,
+        )
+
+    /**
+     * A provider section's whole page: `YouTube.browse(browseId, params)` on Android, answered in one response
+     * the way the desktop transport returns it — a section carries no continuation of its own.
+     */
+    private suspend fun sectionPage(browse: YouTubeBrowse.Section): YouTubeEntryPage {
+        val response = innerTube.browse(BROWSE_CLIENT, browseId = browse.browseId, params = browse.params).body<BrowseResponse>()
+        val section = sectionListOf(response.contents) ?: return YouTubeEntryPage(emptyList())
+        return sectionPage(section, includeContinuation = false)
+    }
+
+    /**
+     * An artist "see all" page: the same `browse` call `YouTube.artistItems`/`artistItemsContinuation` makes, the
+     * grid or shelf parse reduced to entries like the desktop catalogue transport does.
+     */
+    private suspend fun artistItemsPage(browse: YouTubeBrowse.ArtistItems, continuation: String?): YouTubeEntryPage {
+        val response =
+            if (continuation == null) {
+                innerTube.browse(BROWSE_CLIENT, browseId = browse.browseId, params = browse.params)
+            } else {
+                innerTube.browse(BROWSE_CLIENT, continuation = continuation)
+            }.body<BrowseResponse>()
+        if (continuation != null) return continuationPage(response.continuationContents)
+        val section = sectionListOf(response.contents) ?: return YouTubeEntryPage(emptyList())
+        return sectionPage(section)
+    }
+
+    /** The section list under whichever results renderer the response carries. */
+    private fun sectionListOf(contents: BrowseResponse.Contents?): SectionListRenderer? {
+        contents ?: return null
+        contents.sectionListRenderer?.let { return json.decodeFromJsonElement(it) }
+        val single =
+            (contents.singleColumnBrowseResultsRenderer?.get("tabs") as? JsonArray)
+                ?.firstOrNull()?.jsonObject?.get("tabRenderer")?.jsonObject?.get("content")
+                ?.jsonObject?.get("sectionListRenderer")
+        single?.let { return json.decodeFromJsonElement(it) }
+        return contents.twoColumnBrowseResultsRenderer?.let { json.decodeFromJsonElement<TwoColumn>(it) }
+            ?.secondaryContents?.sectionListRenderer?.let { json.decodeFromJsonElement(it) }
+    }
+
+    private suspend fun nextPanelPage(
+        videoId: String?,
+        playlistId: String?,
+        playlistSetVideoId: String?,
+        params: String?,
+        continuation: String?,
+    ): YouTubeEntryPage {
+        val response =
+            innerTube.next(
+                BROWSE_CLIENT,
+                videoId = videoId,
+                playlistId = playlistId,
+                playlistSetVideoId = playlistSetVideoId,
+                params = params,
+                continuation = continuation,
+            ).body<NextResponse>()
+        val panel =
+            if (continuation == null) {
+                firstPanel(response.contents?.singleColumnMusicWatchNextResultsRenderer)
+            } else {
+                response.continuationContents?.playlistPanelContinuation
+            }
+        val entries = mutableListOf<YouTubeEntry>()
+        var cellToken: String? = null
+        panel?.get("contents")?.jsonArray?.forEach { cell ->
+            cell.jsonObject.playlistPanelVideo()?.let(entries::add)
+            cell.jsonObject.continuationCommandToken()?.let { cellToken = it }
+        }
+        return YouTubeEntryPage(entries, nextRadioToken(panel) ?: cellToken)
+    }
+
+    /** The Up-next tab's `playlistPanelRenderer`: the first tab is the queue, matching the core parse. */
+    private fun firstPanel(singleColumn: JsonObject?): JsonObject? {
+        val tabs =
+            (singleColumn?.get("tabbedRenderer")?.jsonObject?.get("watchNextTabbedResultsRenderer")
+                ?.jsonObject?.get("tabs") as? JsonArray)
+        val sectionList =
+            tabs?.firstOrNull()?.jsonObject?.get("tabRenderer")?.jsonObject?.get("content")
+                ?.jsonObject?.get("sectionListRenderer")?.jsonObject
+        val sections = sectionList?.get("contents") as? JsonArray
+        return sections?.firstOrNull()?.jsonObject?.get("playlistPanelRenderer")?.jsonObject
+    }
+
+    /** The panel-level `nextRadioContinuationData` token, the next `next` page's handle. */
+    private fun nextRadioToken(panel: JsonObject?): String? {
+        val continuations = panel?.get("continuations") as? JsonArray ?: return null
+        return continuations.firstNotNullOfOrNull { next ->
+            ((((next as? JsonObject)?.get("nextRadioContinuationData") as? JsonObject)
+                ?.get("continuation") as? JsonPrimitive)?.contentOrNull)
+        }
+    }
+
+    private fun JsonObject.playlistPanelVideo(): YouTubeEntry? {
+        val wrapped =
+            (this["playlistPanelVideoRenderer"] as? JsonObject)
+                ?: ((this["playlistPanelVideoWrapperRenderer"] as? JsonObject)
+                    ?.get("primaryRenderer")?.jsonObject?.get("playlistPanelVideoRenderer") as? JsonObject)
+                ?: return null
+        val item = json.decodeFromJsonElement<PanelVideo>(wrapped)
+        val videoId = item.videoId ?: return null
+        val title = item.title?.runs?.text().takeUnless { it.isNullOrBlank() } ?: return null
+        return YouTubeEntry(
+            kind = ContentKind.SONG,
+            id = videoId,
+            title = title,
+            subtitle = item.longBylineText?.runs?.text().orEmpty(),
+            artworkUri = item.thumbnail?.thumbnails?.lastOrNull()?.url,
+            durationSeconds = item.lengthText?.runs?.text()?.toSeconds(),
+            setVideoId = item.playlistEntryId,
+        )
+    }
+
+    /** A `continuationItemRenderer` cell's continuation token, the same page handle as on Android. */
+    private fun JsonObject.continuationCommandToken(): String? =
+        ((((this["continuationItemRenderer"] as? JsonObject)
+            ?.get("continuationEndpoint")?.jsonObject?.get("continuationCommand") as? JsonObject)
+            ?.get("token") as? JsonPrimitive)?.contentOrNull)
 
     private suspend fun shelfPage(browseId: String, continuation: String?): YouTubeEntryPage {
         val response =
@@ -123,30 +268,24 @@ class IosYouTubeBrowseTransport(
             return continuationPage(response.continuationContents)
         }
         val contents = response.contents ?: return YouTubeEntryPage(emptyList())
-        contents.sectionListRenderer?.let { section -> return sectionPage(json.decodeFromJsonElement(section)) }
-        val twoColumn =
-            contents.twoColumnBrowseResultsRenderer?.let { json.decodeFromJsonElement<TwoColumn>(it) }
-        twoColumn?.secondaryContents?.sectionListRenderer?.let { section ->
-            return sectionPage(json.decodeFromJsonElement(section))
-        }
-        return YouTubeEntryPage(emptyList())
+        return sectionListOf(contents)?.let { sectionPage(it) } ?: YouTubeEntryPage(emptyList())
     }
 
-    private fun sectionPage(section: SectionListRenderer): YouTubeEntryPage {
+    private fun sectionPage(section: SectionListRenderer, includeContinuation: Boolean = true): YouTubeEntryPage {
         val entries = mutableListOf<YouTubeEntry>()
         var continuation: String? = null
         section.contents.orEmpty().forEach { item ->
             item.musicShelfRenderer?.let { shelf -> entries += shelfEntries(shelf) }
             item.musicPlaylistShelfRenderer?.let { shelf -> entries += shelfEntries(shelf) }
-            item.gridRenderer?.items.orEmpty().forEach { cell ->
-                cell.musicResponsiveListItemRenderer?.toEntry()?.let(entries::add)
-            }
+            item.gridRenderer?.items.orEmpty().forEach { cell -> cell.toEntry()?.let(entries::add) }
             item.musicResponsiveListItemRenderer?.toEntry()?.let(entries::add)
-            item.continuationItemRenderer?.let { renderer -> continuation = renderer.token() }
-            // Continuations also live at the shelf level for playlist, search and library pages.
-            item.musicShelfRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
-            item.musicPlaylistShelfRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
-            item.gridRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
+            if (includeContinuation) {
+                item.continuationItemRenderer?.let { renderer -> continuation = renderer.token() }
+                // Continuations also live at the shelf level for playlist, search and library pages.
+                item.musicShelfRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
+                item.musicPlaylistShelfRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
+                item.gridRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
+            }
         }
         return YouTubeEntryPage(entries, continuation)
     }
@@ -162,18 +301,18 @@ class IosYouTubeBrowseTransport(
             return YouTubeEntryPage(shelfEntries(shelf), shelf.continuations.firstToken())
         }
         contents.sectionListContinuation?.let { section ->
-            return sectionPage(json.decodeFromJsonElement(section))
+            return sectionPage(json.decodeFromJsonElement<SectionListRenderer>(section))
         }
         contents.gridContinuation?.let { raw ->
             val grid = json.decodeFromJsonElement<Grid>(raw)
-            val entries = grid.items.orEmpty().mapNotNull { cell -> cell.musicResponsiveListItemRenderer?.toEntry() }
+            val entries = grid.items.orEmpty().mapNotNull { cell -> cell.toEntry() }
             return YouTubeEntryPage(entries, grid.continuations.firstToken())
         }
         return YouTubeEntryPage(emptyList())
     }
 
     private fun shelfEntries(shelf: Shelf): List<YouTubeEntry> =
-        shelf.contents.orEmpty().mapNotNull { cell -> cell.musicResponsiveListItemRenderer?.toEntry() }
+        shelf.contents.orEmpty().mapNotNull { cell -> cell.toEntry() }
 
     private suspend fun searchPage(browse: YouTubeBrowse.Search, continuation: String?): YouTubeEntryPage {
         val params = browse.filter.innerTubeParam() ?: throw UnsupportedContentOperation()
@@ -378,6 +517,20 @@ private fun Run.albumId(): Pair<String, String>? {
     return text.takeIf(String::isNotBlank)?.let { browseId to it }
 }
 
+/** The two-row tile of artist-items grids and home sections: its endpoint names the entry the way a list cell does. */
+private fun TwoRowItem.toEntry(): YouTubeEntry? {
+    val kind = navigationEndpoint.endpointKind() ?: return null
+    val id = navigationEndpoint.endpointId() ?: return null
+    val name = title?.runs?.text().takeUnless { it.isNullOrBlank() } ?: return null
+    return YouTubeEntry(
+        kind = kind,
+        id = id,
+        title = name,
+        subtitle = subtitle?.runs?.text().orEmpty(),
+        artworkUri = thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull()?.url,
+    )
+}
+
 private fun List<Run>.text(): String = joinToString("") { it.text }.trim()
 
 private fun String.toSeconds(): Int? {
@@ -453,7 +606,25 @@ private data class Shelf(
 )
 
 @Serializable
-private data class ShelfCell(val musicResponsiveListItemRenderer: ResponsiveItem? = null)
+private data class ShelfCell(
+    val musicResponsiveListItemRenderer: ResponsiveItem? = null,
+    val musicTwoRowItemRenderer: TwoRowItem? = null,
+) {
+    /** The shelf or grid cell reduced to an entry: the compact list row, then the two-row tile. */
+    fun toEntry(): YouTubeEntry? =
+        musicResponsiveListItemRenderer?.toEntry() ?: musicTwoRowItemRenderer?.toEntry()
+}
+
+@Serializable
+private data class TwoRowItem(
+    val title: Runs? = null,
+    val subtitle: Runs? = null,
+    val navigationEndpoint: NavigationEndpoint? = null,
+    val thumbnailRenderer: TwoRowThumbnail? = null,
+) {
+    @Serializable
+    data class TwoRowThumbnail(val musicThumbnailRenderer: ResponsiveItem.ThumbnailHolder? = null)
+}
 
 @Serializable
 private data class Grid(
@@ -501,6 +672,19 @@ private data class ResponsiveItem(
 
     @Serializable
     data class PlaylistItemData(val videoId: String? = null, val playlistSetVideoId: String? = null)
+}
+
+@Serializable
+private data class PanelVideo(
+    val videoId: String? = null,
+    val title: Runs? = null,
+    val longBylineText: Runs? = null,
+    val lengthText: Runs? = null,
+    val thumbnail: Thumbnails? = null,
+    val playlistSetVideoId: String? = null,
+    val setVideoId: String? = null,
+) {
+    val playlistEntryId: String? get() = playlistSetVideoId ?: setVideoId
 }
 
 @Serializable
