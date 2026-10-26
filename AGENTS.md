@@ -34,8 +34,11 @@ must preserve the invariants below.
 - Fork contract tests (`app/src/test/`): `./gradlew :app:testGmsMobileUniversalDebugUnitTest`. Keep `Build Pull Request` / `build` separate from `Unit tests` / `Compile and run unit tests`, running concurrently on the exact integrated head. Do not substitute APK assembly for test compilation. In constrained continuations, no local Gradle/JVM/LSP or per-feature CI: focused tests follow integration.
 - Preserve GitHub-hosted PR runners, PR read-only caches and trusted cache producers. Use plain streaming diagnostics and local profiles/reports, not external build scans; do not change heap/KSP/configuration-cache policies without evidence.
 - For this constrained readiness mission, run full app builds, lint, coverage, repeated tests and compiler-backed analysis on GitHub-hosted runners. Keep the authorized VPS to lighter checks; do not retry full CI builds there.
-- Keep the GPL header banner on new `.kt` files and preserve inherited copyright.
-  Header automation validates changes; it must never rewrite existing attribution.
+- New `.kt` files carry no license header and start with the package line. The KMP
+  modules (`shared`, `shared-domain`, `shared-data`, `shared-ui`, `desktopApp`,
+  `iosApp`) carry no banners; their lineage and credits are in `docs/CREDITS.md`.
+  Outside them, existing banners stay unchanged, and header automation must never
+  rewrite existing attribution. Third-party notices a licence requires stay in place.
 
 ## Lightweight quality and maintained documentation
 
@@ -131,7 +134,7 @@ fork invariants remain unchanged.
     library, downloads, podcasts, Telegram, DSP, USB, bit-perfect, transitions, social
     features, Listen Together, scrobbling, backup and Android system integrations. The
     full foundation text stays in commit `c047a20`.
-  - No source deletion. New Kotlin keeps its GPL banner. User-visible strings belong in
+  - No source deletion. New Kotlin starts with the package line, without a banner. User-visible strings belong in
     Compose resource XML.
 - **Planned after legitimate gate resolution:** `main` (Stable/default) and `dev`
   (integration). Remote `main` and `dev` already exist at the foundation commit, not at
@@ -189,7 +192,8 @@ fork invariants remain unchanged.
   catalog/streaming accounts, source gates, database/schema/legacy readers, storage
   formats, all settings and menus, all 17 saved player-style meanings/order/selections,
   V4 player default, Material 3 Expressive interface default and liquid glass.
-  All inherited GPL/copyright banners, licenses and third-party credits remain intact.
+  Licenses and third-party credits remain intact; KMP-module banners are replaced by
+  the lineage in `docs/CREDITS.md`, and banners outside the KMP modules stay.
 - The approved full feature-preserving shared domain/data/UI and native-adapter
   port retains the Android host, adds Metrolist as another style and improves
   Enhanced lyrics. These are future deliverables, not completed setup outcomes.

@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop
 
 import androidx.compose.foundation.layout.Box
@@ -15,6 +8,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -90,7 +84,11 @@ internal fun DesktopMountedRoot(window: Window, graph: DesktopSessionGraph, clos
         focus.addKeyEventDispatcher(dispatcher)
         onDispose { focus.removeKeyEventDispatcher(dispatcher) }
     }
-    val host = remember(graph, backRequests) { desktopHostBindings(graph, backRequests) }
+    // Recognition runs on this window's UI scope and gives the microphone back when the window's composition leaves.
+    val uiScope = rememberCoroutineScope()
+    val recognition = remember(graph, uiScope) { DesktopRecognitionMount(graph, uiScope) }
+    DisposableEffect(recognition) { onDispose { recognition.close() } }
+    val host = remember(graph, backRequests, recognition) { desktopHostBindings(graph, backRequests, recognition) }
     val activity by services.windowActivity.activity.collectAsState()
     ArchiveTuneRoot(
         host = host,

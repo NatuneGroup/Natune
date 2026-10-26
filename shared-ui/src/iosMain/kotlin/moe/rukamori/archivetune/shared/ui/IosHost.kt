@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 
 package moe.rukamori.archivetune.shared.ui
@@ -55,6 +48,13 @@ class IosHost {
     private var settings: IosVaultSettings? = null
     private var foregroundRequested = false
     private var nowPlaying: IosNowPlaying? = null
+    private val telegramSession = MutableStateFlow<IosTelegramClient?>(null)
+
+    /**
+     * The one TDLib session of this host, created once the account store exists, because its admission is that store's
+     * native Telegram account. Null until settings are ready.
+     */
+    val telegram: StateFlow<IosTelegramClient?> = telegramSession.asStateFlow()
     private var closed = false
 
     init {
@@ -112,6 +112,8 @@ class IosHost {
         closed = true
         nowPlaying?.close()
         nowPlaying = null
+        val session = telegramSession.value
+        telegramSession.value = null
         browser.close()
         embeddedBrowser.close()
         files.close()
@@ -123,9 +125,39 @@ class IosHost {
         scope.cancel()
         // Teardown outlives the cancelled host scope: the pack joins its worker, then the settings owner is released.
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            session?.close()
             pack?.close()
             opened?.close()
         }
+    }
+
+    /**
+     * Builds the Telegram session over [accounts] and hands it to playback. A TDLib database left by an earlier sign-in
+     * restores its session at once, so Telegram tracks in a restored queue can play before settings are opened. Without
+     * a build identity the session stays not configured, and a failure here leaves Telegram absent, never the host.
+     */
+    private fun openTelegram(accounts: VaultProviderAccountStore) {
+        val session = try {
+            val storageRoot = iosTelegramStorageRoot()
+            IosTelegramClient(
+                credentials = iosTelegramApiCredentials(),
+                storageRoot = storageRoot,
+                applicationVersion = iosApplicationVersion(),
+                cancelRetainedDownloads = { cancelIosTelegramTransfers() },
+                nativeAccount = IosTelegramNativeAccountPort(
+                    beginAttempt = accounts::beginNativeTelegramAttempt,
+                    acceptSession = accounts::acceptNativeTelegramSession,
+                    revokeSession = accounts::revokeNativeTelegramSession,
+                ),
+                log = { message -> println("ArchiveTune iOS: $message") },
+            ).also { if (iosTelegramHasSession(storageRoot)) it.start() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return
+        playback.attachTelegram(session)
+        telegramSession.value = session
     }
 
     private suspend fun openSettingsAndPack() {
@@ -147,6 +179,7 @@ class IosHost {
         // through it. It is both the account reader and the cookie source, as on the desktop host.
         val accounts = VaultProviderAccountStore(opened.vault)
         attachAccounts(accounts, accounts)
+        openTelegram(accounts)
         val pack = try {
             iosJapaneseLanguagePackManager(
                 scope = scope,

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Wrap the inherited Android launcher icon, preserving app identity and attribution."""
+"""Generate the desktop and iOS icon formats from the Natune Play listing icon."""
 import pathlib
 import struct
 import zlib
 
 root = pathlib.Path(__file__).resolve().parents[2]
-source = root / "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
+source = root / "assets/ic_launcher-playstore.png"
 target = root / "desktopApp/packaging"
 png = source.read_bytes()
 width, height, depth, color, compression, filtering, interlace = struct.unpack(">IIBBBBB", png[16:29])
@@ -51,3 +51,18 @@ resized += chunk(b"IDAT", zlib.compress(pixels, 9)) + chunk(b"IEND", b"")
     struct.pack("<HHHBBBBHHII", 0, 1, 1, 0, 0, 0, 0, 1, 32, len(resized), 22) + resized)
 block = b"ic08" + struct.pack(">I", len(resized) + 8) + resized
 (target / "archivetune.icns").write_bytes(b"icns" + struct.pack(">I", len(block) + 8) + block)
+
+# App Store icons must be opaque, so the iOS marketing icon drops the alpha channel.
+ios_size = 1024
+opaque = bytearray()
+for y in range(ios_size):
+    opaque.append(0)
+    source_row = rows[y * height // ios_size]
+    for x in range(ios_size):
+        start = (x * width // ios_size) * 4
+        opaque += source_row[start:start + 3]
+ios_icon = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", ios_size, ios_size, 8, 2, 0, 0, 0))
+ios_icon += chunk(b"IDAT", zlib.compress(opaque, 9)) + chunk(b"IEND", b"")
+ios_set = root / "iosApp/ArchiveTune/Assets.xcassets/AppIcon.appiconset"
+ios_set.mkdir(parents=True, exist_ok=True)
+(ios_set / "AppIcon-1024.png").write_bytes(ios_icon)

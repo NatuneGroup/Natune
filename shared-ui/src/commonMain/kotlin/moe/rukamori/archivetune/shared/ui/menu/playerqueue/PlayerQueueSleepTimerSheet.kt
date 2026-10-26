@@ -1,11 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
-
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 
 package moe.rukamori.archivetune.shared.ui.menu.playerqueue
@@ -36,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -59,6 +52,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.m4lf_icon_skip_next
+import moe.rukamori.archivetune.shared.ui.resources.m6_icon_close
+import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_timer
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -69,6 +66,42 @@ private const val SLEEP_TIMER_POLL_MS = 500L
 /** The presets the baseline offered as chips, in minutes. */
 private val SLEEP_TIMER_PRESET_MINUTES: List<Int> = listOf(5, 10, 15, 20, 30, 45, 60, 90)
 
+/** The three sleep timer commands. The player and queue menu passes its [PlayerQueueMenuActions]; a host may pass its own owner. */
+interface PlayerSleepTimerCommands {
+    fun startSleepTimer(minutes: Int)
+    fun startSleepTimerEndOfSong()
+    fun clearSleepTimer()
+}
+
+/**
+ * The sleep timer sheet on its own, for a player button that opens the timer without the full menu. It draws its three
+ * marks from this module's icons, so the host binds no icon slot.
+ */
+@Composable
+fun PlayerSleepTimerSheet(
+    state: PlayerSleepTimerState,
+    clock: PlayerQueueClock,
+    commands: PlayerSleepTimerCommands,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PlayerQueueSleepTimerSheet(
+        state = state,
+        clock = clock,
+        actions = commands,
+        icon = { key, tint, iconModifier ->
+            val drawable = when (key) {
+                PlayerQueueMenuIcon.SKIP_NEXT -> Res.drawable.m4lf_icon_skip_next
+                PlayerQueueMenuIcon.CLOSE -> Res.drawable.m6_icon_close
+                else -> Res.drawable.m9_media_info_timer
+            }
+            Icon(painterResource(drawable), contentDescription = null, modifier = iconModifier, tint = tint)
+        },
+        onDismiss = onDismiss,
+        modifier = modifier,
+    )
+}
+
 /**
  * The sleep timer body the menu shows in place of its grid, as the baseline's Apple Music sleep sheet did. Preset,
  * end-of-song and slider commits start the timer and then call [onDismiss], which closes the menu. Turning the timer off
@@ -78,7 +111,7 @@ private val SLEEP_TIMER_PRESET_MINUTES: List<Int> = listOf(5, 10, 15, 20, 30, 45
 internal fun PlayerQueueSleepTimerSheet(
     state: PlayerSleepTimerState,
     clock: PlayerQueueClock,
-    actions: PlayerQueueMenuActions,
+    actions: PlayerSleepTimerCommands,
     icon: PlayerQueueMenuIconSlot,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,

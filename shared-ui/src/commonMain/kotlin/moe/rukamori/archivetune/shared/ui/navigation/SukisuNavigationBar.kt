@@ -1,10 +1,4 @@
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- *
  * Shared port of the SukiSU liquid glass navigation bar, after the baseline SukisuLiquidNavBar.kt. That file follows
  * SukiSU-Ultra's FloatingBottomBar, which adapts compose-miuix-ui's IosLiquidGlassNavigationBar (Apache 2.0). The
  * port keeps the baseline geometry (64 dp bar, 56 dp pill, 4 dp item padding), the rubber band, the drag-to-slide

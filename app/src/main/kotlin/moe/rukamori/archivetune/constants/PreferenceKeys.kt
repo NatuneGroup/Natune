@@ -309,6 +309,11 @@ val PaxsenixApiKeyKey = stringPreferencesKey("paxsenixApiKey")
 // endpoint is used. When set, all Paxsenix API requests go to this URL.
 val PaxsenixEndpointKey = stringPreferencesKey("paxsenixEndpoint")
 val EnableUnisonLyricsKey = booleanPreferencesKey("enableUnisonLyrics")
+// The user's self-hosted Lyprio server (Metrolist's lyrics service). Off until the user enables it and enters the
+// server URL and its base64 32-byte signing key; nothing is bundled.
+val EnableLyprioLyricsKey = booleanPreferencesKey("enableLyprioLyrics")
+val LyprioEndpointKey = stringPreferencesKey("lyprioEndpoint")
+val LyprioSigningKeyKey = stringPreferencesKey("lyprioSigningKey")
 val EnableTidalLyricsKey = booleanPreferencesKey("enableTidalLyrics")
 val EnableDeezerLyricsKey = booleanPreferencesKey("enableDeezerLyrics")
 // When ON, lyrics lookup first queries the four word-sync-capable providers
@@ -1084,6 +1089,7 @@ enum class QuickPicks {
 }
 
 enum class PreferredLyricsProvider {
+    LYPRIO,
     BETTER_LYRICS,
     BETTER_LYRICS_PORTATO,
     YOULY_PLUS,
@@ -1105,6 +1111,7 @@ enum class PreferredLyricsProvider {
 
 val DefaultLyricsProviderOrder =
     listOf(
+        PreferredLyricsProvider.LYPRIO,
         PreferredLyricsProvider.BETTER_LYRICS,
         PreferredLyricsProvider.BETTER_LYRICS_PORTATO,
         PreferredLyricsProvider.YOULY_PLUS,

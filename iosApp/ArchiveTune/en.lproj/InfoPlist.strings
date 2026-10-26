@@ -1,3 +1,3 @@
 /* Localized system strings: the display name and the microphone prompt. Shared UI text stays in Compose resources. */
-"CFBundleDisplayName" = "ArchiveTune";
-"NSMicrophoneUsageDescription" = "ArchiveTune listens to one short sample (about 8 seconds) of nearby music to identify it. The raw audio is not saved.";
+"CFBundleDisplayName" = "Natune";
+"NSMicrophoneUsageDescription" = "Natune listens to one short sample (about 8 seconds) of nearby music to identify it. The raw audio is not saved.";

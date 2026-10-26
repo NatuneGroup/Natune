@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop.telegram
 
 import kotlinx.coroutines.CancellationException
@@ -24,6 +17,7 @@ import moe.rukamori.archivetune.desktop.playback.TdlightFileOperations
 import moe.rukamori.archivetune.desktop.playback.TdlightNativeLibrary
 import moe.rukamori.archivetune.desktop.playback.TdlightRequestException
 import moe.rukamori.archivetune.desktop.playback.requestOk
+import moe.rukamori.archivetune.shared.domain.settings.TelegramAccountFacts
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramApiCredentials
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramAuthState
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramClientSession
@@ -194,6 +188,22 @@ internal class TdlightClientSession(
         } else {
             TdlightFileOperations(running)
         }
+    }
+
+    /** True when the build or launch supplies an api_id and api_hash, so [start] can create a client. */
+    val configured: Boolean get() = credentials != null
+
+    /**
+     * The admitted account's display name and phone digits for the settings row, read with GetMe. Null while the account
+     * is not admitted, so an unverified session never names an account.
+     */
+    suspend fun accountFacts(): TelegramAccountFacts? {
+        val running = synchronized(lock) {
+            client.takeIf { admissionFlow.value is TelegramNativeAdmission.Admitted && !closeRequested.get() }
+        } ?: return null
+        val user = running.requestOk("GetMe", TdApi.GetMe(), AUTH_REQUEST_TIMEOUT_MS) as? TdApi.User ?: return null
+        val name = listOf(user.firstName, user.lastName).filter { !it.isNullOrBlank() }.joinToString(" ")
+        return TelegramAccountFacts(name.ifBlank { null }, user.phoneNumber?.takeIf { it.isNotBlank() })
     }
 
     private fun onUpdate(update: TdApi.Object) {

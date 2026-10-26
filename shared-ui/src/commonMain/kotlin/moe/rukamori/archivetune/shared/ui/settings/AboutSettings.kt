@@ -1,12 +1,6 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.ui.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -64,6 +58,22 @@ data class AboutLicenseEntry(val name: String, val version: String?, val license
 
 /** The open full-screen list. The host owns it because the host starts the loader that fills the list. */
 enum class AboutDialog { NONE, TRANSLATION_CONTRIBUTORS, DEPENDENCY_LICENSES }
+
+/** The Natune mark for the [AboutSettings] logo slot, for hosts that keep no copy of the artwork themselves. */
+@Composable
+fun NatuneAboutLogo(modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(Res.drawable.natune_logo),
+        contentDescription = null,
+        modifier = modifier.size(96.dp).clip(RoundedCornerShape(24.dp)),
+    )
+}
+
+/** Failure texts a host can hand to the About list states without reaching into this module's resources. */
+object AboutFailureMessages {
+    val requestFailed: StringResource get() = Res.string.m6_about_unknown_error
+    val unavailableOnHost: StringResource get() = Res.string.m6_about_host_unavailable
+}
 
 private const val ContributorsReadMoreUrl = "https://github.com/rukamori/ArchiveTune/graphs/contributors"
 

@@ -1,22 +1,15 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
-
 package moe.rukamori.archivetune.shared.data.lyrics
 
 /**
  * The provider order of the Android `LyricsHelper.baseProviders` list, restricted to the providers
- * ported into this module. The app-only providers (LRC.red, Bini, Megalobiz, Apple Music account,
+ * ported into this module, with the user's self-hosted Lyprio server first as in Metrolist's default order. The app-only providers (LRC.red, Bini, Megalobiz, Apple Music account,
  * Tidal, Deezer, YouTube, Musixmatch experimental, Genius) keep their Android positions in the app.
  * Relative order is what matters: a host that merges app providers keeps this subsequence intact.
  */
 object LyricsProviderOrder {
     val CANONICAL_NAMES: List<String> =
         listOf(
+            "Lyprio",
             "BetterLyrics",
             "BetterLyrics Portato",
             "YouLyPlus",

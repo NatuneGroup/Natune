@@ -59,6 +59,9 @@ import moe.rukamori.archivetune.constants.EnableLrcRedKey
 import moe.rukamori.archivetune.constants.EnableBetterLyricsPortatoKey
 import moe.rukamori.archivetune.constants.EnableKugouKey
 import moe.rukamori.archivetune.constants.EnableLrcLibKey
+import moe.rukamori.archivetune.constants.EnableLyprioLyricsKey
+import moe.rukamori.archivetune.constants.LyprioEndpointKey
+import moe.rukamori.archivetune.constants.LyprioSigningKeyKey
 import moe.rukamori.archivetune.constants.EnableMegalobizLyricsKey
 import moe.rukamori.archivetune.constants.EnableMusixmatchExperimentalKey
 import moe.rukamori.archivetune.constants.EnablePaxsenixAppleMusicLyricsKey
@@ -78,6 +81,7 @@ import moe.rukamori.archivetune.constants.LyricsProviderOrderKey
 import moe.rukamori.archivetune.constants.PrioritizeWordSyncedLyricsKey
 import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
 import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
+import moe.rukamori.archivetune.shared.ui.settings.validLyprioSigningKey
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
@@ -135,6 +139,12 @@ fun LyricsProvidersSettings(
         prefs.state(key = PaxsenixEndpointKey, defaultValue = "")
     val (enableUnisonLyrics, onEnableUnisonLyricsChange) =
         prefs.state(key = EnableUnisonLyricsKey, defaultValue = true)
+    val (enableLyprioLyrics, onEnableLyprioLyricsChange) =
+        prefs.state(key = EnableLyprioLyricsKey, defaultValue = false)
+    val (lyprioEndpoint, onLyprioEndpointChange) =
+        prefs.state(key = LyprioEndpointKey, defaultValue = "")
+    val (lyprioSigningKey, onLyprioSigningKeyChange) =
+        prefs.state(key = LyprioSigningKeyKey, defaultValue = "")
     val (enableTidalLyrics, onEnableTidalLyricsChange) =
         prefs.state(key = EnableTidalLyricsKey, defaultValue = true)
     val (enableDeezerLyrics, onEnableDeezerLyricsChange) =
@@ -254,6 +264,72 @@ fun LyricsProvidersSettings(
                 // user can still see their state and understand what will resume
                 // when the override is turned back off.
                 val providerTogglesEnabled = !prioritizeWordSynced
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("enable_lyprio_lyrics", "lyprio_lyrics"),
+                        title = { Text(stringResource(R.string.enable_lyprio_lyrics)) },
+                        description = stringResource(R.string.enable_lyprio_lyrics_desc),
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        checked = enableLyprioLyrics,
+                        onCheckedChange = onEnableLyprioLyricsChange,
+                        isEnabled = providerTogglesEnabled,
+                    )
+                }
+
+                item(visible = enableLyprioLyrics) {
+                    var showEndpointDialog by remember { mutableStateOf(false) }
+                    PreferenceEntry(
+                        modifier = positions.modifierFor("lyprio_endpoint"),
+                        title = { Text(stringResource(R.string.lyprio_endpoint)) },
+                        description = lyprioEndpoint.ifBlank { stringResource(R.string.lyprio_not_configured) },
+                        icon = { Icon(painterResource(R.drawable.solar_server_linear), null) },
+                        onClick = { showEndpointDialog = true },
+                        isEnabled = providerTogglesEnabled,
+                    )
+                    if (showEndpointDialog) {
+                        TextFieldDialog(
+                            onDismiss = { showEndpointDialog = false },
+                            title = { Text(stringResource(R.string.lyprio_endpoint)) },
+                            placeholder = { Text(stringResource(R.string.lyprio_endpoint_hint)) },
+                            textFieldValue = lyprioEndpoint,
+                            onTextFieldValueChange = onLyprioEndpointChange,
+                            singleLine = true,
+                            isInputValid = {
+                                it.isBlank() ||
+                                    (it.startsWith("http://") || it.startsWith("https://")) && it.none(Char::isWhitespace)
+                            },
+                        )
+                    }
+                }
+
+                item(visible = enableLyprioLyrics) {
+                    var showKeyDialog by remember { mutableStateOf(false) }
+                    PreferenceEntry(
+                        modifier = positions.modifierFor("lyprio_signing_key"),
+                        title = { Text(stringResource(R.string.lyprio_signing_key)) },
+                        description = if (lyprioSigningKey.isNotBlank()) {
+                            stringResource(R.string.lyprio_signing_key_set)
+                        } else {
+                            stringResource(R.string.lyprio_not_configured)
+                        },
+                        icon = { Icon(painterResource(R.drawable.token), null) },
+                        onClick = { showKeyDialog = true },
+                        isEnabled = providerTogglesEnabled,
+                    )
+                    if (showKeyDialog) {
+                        TextFieldDialog(
+                            onDismiss = { showKeyDialog = false },
+                            title = { Text(stringResource(R.string.lyprio_signing_key)) },
+                            placeholder = { Text(stringResource(R.string.lyprio_signing_key_hint)) },
+                            textFieldValue = lyprioSigningKey,
+                            onTextFieldValueChange = onLyprioSigningKeyChange,
+                            singleLine = true,
+                            masked = true,
+                            isInputValid = ::validLyprioSigningKey,
+                        )
+                    }
+                }
 
                 item {
                     SwitchPreference(

@@ -1,11 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
-
 package moe.rukamori.archivetune.shared.domain.settings
 
 /**
@@ -172,6 +164,9 @@ val EnablePaxsenixYouTubeLyricsKey = BooleanPreferenceKey("enablePaxsenixYouTube
 val PaxsenixApiKeyKey = StringPreferenceKey("paxsenixApiKey")
 val PaxsenixEndpointKey = StringPreferenceKey("paxsenixEndpoint")
 val EnableUnisonLyricsKey = BooleanPreferenceKey("enableUnisonLyrics")
+val EnableLyprioLyricsKey = BooleanPreferenceKey("enableLyprioLyrics")
+val LyprioEndpointKey = StringPreferenceKey("lyprioEndpoint")
+val LyprioSigningKeyKey = StringPreferenceKey("lyprioSigningKey")
 val EnableTidalLyricsKey = BooleanPreferenceKey("enableTidalLyrics")
 val EnableDeezerLyricsKey = BooleanPreferenceKey("enableDeezerLyrics")
 val PrioritizeWordSyncedLyricsKey = BooleanPreferenceKey("prioritizeWordSyncedLyrics")

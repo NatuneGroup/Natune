@@ -7,6 +7,12 @@
  */
 #import "ATNativeTelegram.h"
 
+/*
+ * Without the TDLib header the app still links: every entry point reports the client as absent, so the session shows
+ * Telegram as unsupported in this build rather than failing to link or pretending to connect.
+ */
+#if __has_include(<td/telegram/td_json_client.h>)
+
 #include <td/telegram/td_json_client.h>
 
 #include <new>
@@ -65,3 +71,33 @@ void at_telegram_client_destroy(at_telegram_client *client) {
     }
     delete client;
 }
+
+#else
+
+at_telegram_client *at_telegram_client_create(void) {
+    return nullptr;
+}
+
+int at_telegram_client_send(at_telegram_client *client, const char *request) {
+    (void)client;
+    (void)request;
+    return -1;
+}
+
+const char *at_telegram_client_receive(at_telegram_client *client, double timeout_seconds) {
+    (void)client;
+    (void)timeout_seconds;
+    return nullptr;
+}
+
+const char *at_telegram_client_execute(at_telegram_client *client, const char *request) {
+    (void)client;
+    (void)request;
+    return nullptr;
+}
+
+void at_telegram_client_destroy(at_telegram_client *client) {
+    (void)client;
+}
+
+#endif

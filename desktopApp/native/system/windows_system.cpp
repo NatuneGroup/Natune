@@ -237,7 +237,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
             if (GetModuleFileNameW(nullptr, launcher, MAX_PATH))
                 s->ownsIcon = ExtractIconExW(launcher, 0, nullptr, &s->icon.hIcon, 1) > 0;
             if (!s->ownsIcon) s->icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-            wcscpy_s(s->icon.szTip, L"ArchiveTune");
+            wcscpy_s(s->icon.szTip, L"Natune");
             s->tray = Shell_NotifyIconW(NIM_ADD, &s->icon) != FALSE;
             SetTimer(s->messages, 1, 500, nullptr);
             ready.set_value(true);

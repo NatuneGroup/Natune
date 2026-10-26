@@ -40,12 +40,17 @@ name is blank, so existing local setups keep working.
 | `ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID` | TIDAL PKCE sign-in flow (`TidalAccountManager`, `TidalLoginScreen`). | The PKCE flow is skipped and the login screen uses the web-player capture fallback. |
 | `ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET` | Client secret for the TIDAL PKCE flow. | As above. |
 | `ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN` | TIDAL Canvas lookups (`:canvas`, `TidalCanvasProvider`, via `ProviderBuildCredentials`). | Canvas lookups return nothing and the provider reports not configured. |
-| `ARCHIVETUNE_TIDAL_WEB_TOKEN` | Desktop only: the TIDAL public web token used for catalog reads over the user's HiFi instances (`DesktopTidalSource`). | The HiFi instances are not configured on desktop; a signed-in TIDAL account still plays. |
 | `ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID` | Desktop only: the TIDAL device-flow client for "Link this device" and its token refresh (`TidalAccountAuth`). Falls back to `ARCHIVETUNE_TIDAL_CLIENT_ID`. | With neither set, "Link this device" shows unavailable and refresh is skipped; pasting a refresh token still needs a client. |
 | `ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET` | Client secret for the same device flow. Falls back to `ARCHIVETUNE_TIDAL_CLIENT_SECRET`. | As above. |
 | `ARCHIVETUNE_JIOSAAVN_DES_KEY` | Desktop only: the JioSaavn media URL decoder key (`desktopJioSaavnSource`). The `archivetune.jiosaavn.key` system property overrides it. | The JioSaavn source is not composed on desktop. |
 | `ARCHIVETUNE_LISTENER_PRESENCE_URL` | Opt-in listener presence heartbeat origin (`:app` `BuildConfig.ARCHIVETUNE_LISTENER_PRESENCE_URL`, desktop `DesktopCredentials`). Must be the https:// origin of `services/listener-presence`. | No heartbeat is sent and the feature stays silent. |
-
+| `ARCHIVETUNE_TELEGRAM_API_ID` (legacy `TELEGRAM_API_ID`) | Desktop only: the Telegram api_id of the TDLight session (`DesktopCredentials.telegramApi`). The Android app keeps its own `TELEGRAM_API_ID` build value. | The desktop Telegram session is not configured: no TDLight client starts and the sign-in page says so. |
+| `ARCHIVETUNE_TELEGRAM_API_HASH` (legacy `TELEGRAM_API_HASH`) | Desktop only: the api_hash paired with the api_id above. | As above. Both values are required. |
+| `ARCHIVETUNE_SOURCE_PROVIDER_URL` (legacy `SOURCE_PROVIDER_URL`) | Desktop: the ArchivePool deployment the Playback Pool reads (`DesktopPlaybackPool`). Android keeps its own `SOURCE_PROVIDER_URL` build value. | The desktop uses the same public default as Android, `https://archivepool.vercel.app`. Set `-DARCHIVETUNE_SOURCE_PROVIDER_URL=off` to turn the feed off for a launch. |
+| `ARCHIVETUNE_SOURCE_PROVIDER_KEY` (legacy `SOURCE_PROVIDER_KEY`) | Desktop: the per-app read key sent as a bearer token to the pool feed, discovery and report calls; the v2 feed derives its decryption key from it. | The feed is read without a key, which works while the pool does not enforce one. Encrypted fields that need the key are dropped. |
+| `ARCHIVETUNE_POOL_CLIENT_KEY` (legacy `POOL_CLIENT_KEY`) | Desktop: the legacy base64 AES-256 key for pool deployments older than the v2 feed. | Only v2 decryption is tried. |
+| `ARCHIVETUNE_FEEDBACK_API_URL` (legacy `FEEDBACK_API_URL`) | Desktop: the opt-in hosted feedback service that receives a report the user reviewed and chose to send. | The feedback action stays unavailable and nothing is sent. |
+| `ARCHIVETUNE_FEEDBACK_INGEST_KEY` (legacy `FEEDBACK_INGEST_KEY`) | Desktop: the write-only ingest key for the same service. It ships with the app, so the server must treat it as write-only access. | Reports are sent without the key; a service that requires it refuses them. |
 ## How each module receives the values
 
 - **`:app`** declares each variable with `buildConfigField` in `app/build.gradle.kts`, so the value is
@@ -60,12 +65,14 @@ name is blank, so existing local setups keep working.
   SHA-256 fingerprints of the values, so a changed value regenerates the source without the value
   entering Gradle's task history.
 - **`:desktopApp`** has its own `generateProviderCredentials` task that writes
-  `moe.rukamori.archivetune.desktop.DesktopBuildCredentials` (TIDAL web token and clients, the JioSaavn key,
-  Last.fm and listener presence). `DesktopCredentials` reads each value from an environment variable of the
+  `moe.rukamori.archivetune.desktop.DesktopBuildCredentials` (TIDAL OAuth clients, the JioSaavn key,
+  Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed and the feedback service). `DesktopCredentials` reads each value from an environment variable of the
   same name, then a JVM system property of the same name (`-D<NAME>=<value>`), then the build-time value, so a
   packaged desktop build can be configured at launch without rebuilding.
-- The iOS host does not read these values yet. It must wire the same variables through its own build
-  configuration before the dependent features work there.
+- The iOS host reads only the Telegram pair so far. Xcode takes `ARCHIVETUNE_TELEGRAM_API_ID` and
+  `ARCHIVETUNE_TELEGRAM_API_HASH` from the untracked `iosApp/Configuration/Credentials.xcconfig` (included by
+  `Native.xcconfig`) or from build settings, and writes them into `Info.plist`. The other variables must be
+  wired through the same build configuration before the dependent features work there.
 
 ## GitHub Actions
 
@@ -87,14 +94,15 @@ env:
   ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID }}
   ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET }}
   ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN: ${{ secrets.ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN }}
-  ARCHIVETUNE_TIDAL_WEB_TOKEN: ${{ secrets.ARCHIVETUNE_TIDAL_WEB_TOKEN }}
   ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID }}
   ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET }}
   ARCHIVETUNE_JIOSAAVN_DES_KEY: ${{ secrets.ARCHIVETUNE_JIOSAAVN_DES_KEY }}
   ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
+  ARCHIVETUNE_TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+  ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
 ```
 
-The repository owner creates these secrets. A secret that does not exist resolves to an empty string,
+The two Telegram variables reuse the existing `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` secrets of the Android build. The repository owner creates these secrets. A secret that does not exist resolves to an empty string,
 so the build still succeeds and the matching feature reports not configured. The workflow files in this
 repository are not changed by this document; the workflow owner applies the mapping.
 
@@ -132,8 +140,10 @@ remain literals in source:
   (`app/build.gradle.kts`).
 - Start.io app ID, Discord application ID and the Source Pool URL defaults (`app/build.gradle.kts`).
 - Spotify public web and desktop client IDs (`SpotifyWebStreamer`, `SpotifyDesktopAuth`), QQ Music and
-  Musixmatch app IDs, and the TIDAL public web token in the Android `TidalAudioProvider`. The desktop host
-  reads the same token from `ARCHIVETUNE_TIDAL_WEB_TOKEN` instead.
+  Musixmatch app IDs.
+- No TIDAL catalog token is shipped or injected. TIDAL catalog reads use the signed-in account's bearer or a
+  Playback Pool account from the ArchivePool feed; without either, those lookups are skipped and the HiFi
+  instance search (which needs no token) stands alone.
 - Libre.fm and custom-endpoint compatibility identifiers (`lastfm/LastFM.kt`, `LastFmSettingsPolicy.kt`).
   They are used only when the user has not entered a key of their own for that service. Last.fm itself
   never uses them.

@@ -1,14 +1,9 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.domain.settings
 
 /** Persisted order ids and provider names are wire identities, never translated picker captions. */
 enum class LyricsProviderPreference(val providerName: String, val key: BooleanPreferenceKey?, val defaultEnabled: Boolean = true) {
+    /** A server the user hosts; off until enabled with its URL and signing key. First, as in Metrolist's default order. */
+    LYPRIO("Lyprio", EnableLyprioLyricsKey, false),
     BETTER_LYRICS("BetterLyrics", EnableBetterLyricsKey),
     BETTER_LYRICS_PORTATO("BetterLyrics Portato", EnableBetterLyricsPortatoKey),
     YOULY_PLUS("YouLyPlus", EnableYouLyPlusLyricsKey),

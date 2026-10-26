@@ -1,11 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
-
 package moe.rukamori.archivetune.shared.ui.menu.playerqueue
 
 import androidx.compose.runtime.Composable
@@ -238,7 +230,7 @@ fun interface PlayerQueueClock {
  * [removeDownload]. The source chooser closes only its own dialog, and the sleep timer closes the menu once a duration
  * or end-of-song choice is committed.
  */
-interface PlayerQueueMenuActions {
+interface PlayerQueueMenuActions : PlayerSleepTimerCommands {
     fun startRadio(track: PlayerQueueTrack)
     fun playNextFromQueue(occurrenceId: String)
     fun removeFromQueue(occurrenceId: String)
@@ -253,9 +245,6 @@ interface PlayerQueueMenuActions {
     fun openAcousticQuality(track: PlayerQueueTrack)
     /** Owner runs the Cast permission check and route picker. */
     fun cast(track: PlayerQueueTrack)
-    fun startSleepTimer(minutes: Int)
-    fun startSleepTimerEndOfSong()
-    fun clearSleepTimer()
     fun refreshSongSources(track: PlayerQueueTrack)
     /**
      * Runs one search across the providers that [sourceFilter] selects, with Amazon included only when [includeAmazon]

@@ -1,10 +1,4 @@
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- *
  * Inner-shadow modifier for the Liquid Glass navigation pill, ported from the baseline InnerShadow.kt. That file
  * adapts Kyant0/AndroidLiquidGlass (Apache 2.0) through SukiSU-Ultra. It is self-contained so it does not depend on
  * a particular kyant innerShadow signature.

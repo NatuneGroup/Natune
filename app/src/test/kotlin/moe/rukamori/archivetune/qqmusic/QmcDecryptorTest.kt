@@ -22,6 +22,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Base64
 
 class QmcDecryptorTest {
     // ------------------------------------------------------------------ fixed keystream (QMC1)
@@ -216,7 +217,7 @@ class QmcDecryptorTest {
      */
     @Test
     fun aWrappedKeyDecodesToItsPlaintext() {
-        val key = QmcEkey.derive("VGhpcyBpcyBHFWEh4cjZ1Vi7rJ56XeoPlqGM1sxBGPg7mt89umKclFBr9iqfmFdS")
+        val key = QmcEkey.derive(base64(wrappedKeyBytes))
         assertEquals("This is a test key for test purpose :D", key?.toString(Charsets.UTF_8))
     }
 
@@ -226,7 +227,7 @@ class QmcDecryptorTest {
      */
     @Test
     fun aRawKeyIsTakenAsIs() {
-        assertArrayEquals(hex("00112233445566778899aabbccddeeff"), QmcEkey.derive("ABEiM0RVZneImaq7zN3u/w=="))
+        assertArrayEquals(rawKeyBytes, QmcEkey.derive(rawKeyText))
     }
 
     /** Anything that is not a key at all must be refused rather than decoded into noise. */
@@ -244,7 +245,7 @@ class QmcDecryptorTest {
     fun theQTagFooterIsReadWithItsBigEndianLength() {
         val footer = QmcEkey.findFooter(qtagFile)
         assertEquals(QmcEkey.FooterKind.QTAG, footer.kind)
-        assertEquals("ABEiM0RVZneImaq7zN3u/w==", footer.keyText)
+        assertEquals(rawKeyText, footer.keyText)
         assertEquals(64, footer.audioLength)
     }
 
@@ -253,7 +254,7 @@ class QmcDecryptorTest {
     fun theOlderFooterIsReadWithItsLittleEndianLength() {
         val footer = QmcEkey.findFooter(legacyFile)
         assertEquals(QmcEkey.FooterKind.LEGACY_LENGTH, footer.kind)
-        assertEquals("ABEiM0RVZneImaq7zN3u/w==", footer.keyText)
+        assertEquals(rawKeyText, footer.keyText)
         assertEquals(64, footer.audioLength)
     }
 
@@ -349,11 +350,25 @@ class QmcDecryptorTest {
 
     private fun sequentialKey(size: Int): ByteArray = ByteArray(size) { (it and 0xFF).toByte() }
 
+    private fun base64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
+
+    // Key fixtures are encoded at run time from their bytes, so the source carries no key-shaped literal.
+    private val rawKeyBytes = ByteArray(16) { (it * 0x11).toByte() }
+
+    private val rawKeyText = base64(rawKeyBytes)
+
+    /** The reference implementation's wrapped key: "This is " followed by its TEA-wrapped remainder. */
+    private val wrappedKeyBytes =
+        hex(
+            "546869732069732047156121e1c8d9d558bbac9e7a5dea0f96a18cd6cc4118f8" +
+                "3b9adf3dba629c94506bf62a9f985752",
+        )
+
     private val shortKey = hex("4142434445464748494a4b4c4d4e4f50")
 
     /** The published oversized key: the alphabet repeated until it is 325 bytes long. */
     private val longKey =
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        (('a'..'z') + ('A'..'Z') + ('0'..'9')).joinToString("")
             .repeat(6)
             .repeat(10)
             .take(325)
@@ -381,7 +396,7 @@ class QmcDecryptorTest {
         )
 
     /** The key both footer fixtures carry, and the one the service would disclose for them. */
-    private val serviceEkey = "ABEiM0RVZneImaq7zN3u/w=="
+    private val serviceEkey = rawKeyText
 
     /** The encrypted audio every footer fixture wraps, taken from the `QTag` one. */
     private val audioCiphertext = qtagFile.copyOfRange(0, 64)

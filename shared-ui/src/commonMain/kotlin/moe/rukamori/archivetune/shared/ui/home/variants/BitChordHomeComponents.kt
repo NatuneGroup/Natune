@@ -1,10 +1,4 @@
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- *
  * BitChord-style presentation (SF Pro Display typography, 16dp page gutter, playing-bars indicator, recents shelf with a
  * list/grid toggle) is adapted from BitChord (https://github.com/kushagrasinghx/BitChord, GPL-3.0) as an original
  * re-implementation over ArchiveTune's data model.

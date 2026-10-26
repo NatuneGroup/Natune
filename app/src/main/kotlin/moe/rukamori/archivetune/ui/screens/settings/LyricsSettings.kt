@@ -501,6 +501,7 @@ internal fun PreferredLyricsProvider.displayName(): String =
         PreferredLyricsProvider.PAXSENIX_MUSIXMATCH -> "Paxsenix: Musixmatch"
         PreferredLyricsProvider.PAXSENIX_YOUTUBE -> "Paxsenix: YouTube"
         PreferredLyricsProvider.UNISON -> "Unison"
+        PreferredLyricsProvider.LYPRIO -> "Lyprio"
         PreferredLyricsProvider.TIDAL -> "Tidal"
         PreferredLyricsProvider.DEEZER -> "Deezer"
         PreferredLyricsProvider.MUSIXMATCH_EXPERIMENTAL -> "Musixmatch (experimental)"

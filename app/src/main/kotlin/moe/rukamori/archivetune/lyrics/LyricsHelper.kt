@@ -46,6 +46,7 @@ class LyricsHelper
     ) {
         private val baseProviders =
             listOf(
+                LyprioLyricsProvider,
                 LrcRedLyricsProvider,
                 BiniLyricsProvider,
                 BetterLyricsProvider,
@@ -477,6 +478,7 @@ class LyricsHelper
                     PreferredLyricsProvider.TIDAL to TidalLyricsProvider,
                     PreferredLyricsProvider.DEEZER to DeezerLyricsProvider,
                     PreferredLyricsProvider.UNISON to UnisonLyricsProvider,
+                    PreferredLyricsProvider.LYPRIO to LyprioLyricsProvider,
                     PreferredLyricsProvider.MUSIXMATCH_EXPERIMENTAL to MusixmatchExperimentalLyricsProvider,
                 )
             val userOrdered = orderedEnums.mapNotNull { providerMap[it] }

@@ -1,11 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
-
 package moe.rukamori.archivetune.shared.data.lyrics
 
 import io.ktor.client.HttpClient
@@ -23,8 +15,10 @@ class LyricsProviderOrderTest {
         // Android LyricsHelper.baseProviders, restricted to the providers ported here:
         // BetterLyrics, BetterLyrics Portato, YouLyPlus, LrcLib, Kugou, SimpMusic, Unison,
         // Paxsenix Apple Music, Paxsenix NetEase, Paxsenix Spotify, Paxsenix Musixmatch, Paxsenix YouTube.
+        // The self-hosted Lyprio server leads, as in Metrolist's default order.
         assertEquals(
             listOf(
+                "Lyprio",
                 "BetterLyrics",
                 "BetterLyrics Portato",
                 "YouLyPlus",
@@ -45,8 +39,10 @@ class LyricsProviderOrderTest {
     @Test
     fun theShippedProviderClassesCarryTheCanonicalNames() {
         val client = client()
+        val selfHosted = checkNotNull(LyprioEndpoint.parse("https://lyrics.example.invalid", "A".repeat(43) + "="))
         val providers =
             listOf(
+                LyprioLyricsProvider(client, selfHosted),
                 BetterLyricsProvider(client),
                 BetterLyricsProvider.portato(client),
                 YouLyPlusLyricsProvider(client),

@@ -1,14 +1,8 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import java.io.File
 import java.nio.file.Path
 import java.text.Collator
 import java.util.Locale
@@ -35,7 +29,15 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
+import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
+import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
+import moe.rukamori.archivetune.desktop.provider.DesktopTidalSessionRefresh
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
+import moe.rukamori.archivetune.desktop.telegram.TdlightClientSession
+import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAccountPort
+import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
+import moe.rukamori.archivetune.shared.data.customartwork.JvmCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -44,6 +46,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
+import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
 import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
@@ -51,12 +54,14 @@ import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.repository.YouTubeSettlingLibrary
+import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
+import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
@@ -65,6 +70,7 @@ import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
+import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
@@ -85,6 +91,15 @@ class DesktopSessionGraph private constructor(
     val settings: VaultSettingsStore,
     /** The one provider account owner, over [settings]. Provider consumers reach accounts only through it. */
     val accounts: VaultProviderAccountStore,
+    /** The one personal sign-in lifecycle over [accounts]. Settings sign-ins and the TIDAL refresh commit through it. */
+    internal val accountLifecycle: ProviderAccountLifecycle,
+    /** The TIDAL account endpoints, with the device and PKCE clients this build or launch supplies. */
+    internal val tidalAuth: TidalAccountAuth,
+    /**
+     * The one TDLight session of this process. Its admitted account is the store's native Telegram account, and playback
+     * reads Telegram files only through it.
+     */
+    internal val telegram: TdlightClientSession,
     val library: RoomLibraryRepository,
     val artistBlocks: RoomArtistBlockRepository,
     val history: RoomListeningHistory,
@@ -104,13 +119,32 @@ class DesktopSessionGraph private constructor(
     private val ordinarySettings: DesktopSettingsStore,
     private val database: PortableStateDatabase,
     private val listenDriver: DesktopListenDriver,
+    /** The one scrobbling owner: the signed Last.fm-compatible service, its pending queue and the playback driver. */
+    internal val lastFm: DesktopLastFm,
+    /** The one lyrics owner: the shared provider runtime following the player's current occurrence. */
+    internal val lyrics: DesktopLyrics,
+    /** The one listener-presence owner: the opt-in document and the playback-driven heartbeat loop. */
+    internal val listenerPresence: DesktopListenerPresence,
     private val locators: DesktopQueueLocatorResolver,
-    /** The one HTTP client the source providers share. It is closed after the queue stops asking for sources. */
-    private val http: HttpClient,
+    /** The one YouTube catalogue the queue router reads. Host searches go through it, over the same transport and account. */
+    internal val youtubeContent: YouTubeContentRepository,
+    /** The user's custom covers and canvases, in the override folders of the instance directory. */
+    internal val customArtwork: CustomArtworkRepository,
+    private val customArtworkFiles: CustomArtworkFiles,
+    /**
+     * The one HTTP client the source providers and the settings sign-ins share. It is closed after the queue stops
+     * asking for sources.
+     */
+    internal val http: HttpClient,
+    /** The one Playback Pool client: the ArchivePool account feed, its vault cache and the community instance list. */
+    internal val playbackPool: DesktopPlaybackPool,
     private val drivers: List<Job>,
 ) {
     /** The one artwork loader of the window slots. It fetches over the same client as the sources and holds no other resource. */
-    internal val artworkLoader = DesktopArtworkLoader(http)
+    internal val artworkLoader = DesktopArtworkLoader(http, customArtwork, customArtworkFiles)
+
+    /** The one sleep timer of this process. It only pauses [player], so every window shares it. */
+    internal val sleepTimer = DesktopSleepTimer(this)
 
     /**
      * Sets the output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player does, so the
@@ -165,10 +199,14 @@ class DesktopSessionGraph private constructor(
      */
     suspend fun close() = withContext(NonCancellable) {
         listenDriver.close()
+        lastFm.close()
+        lyrics.close()
+        listenerPresence.close()
         drivers.forEach { it.cancel() }
         checkpointNow(queue)
         owner.close()
         locators.close()
+        telegram.close()
         http.close()
         player.close()
         settings.close()
@@ -180,6 +218,7 @@ class DesktopSessionGraph private constructor(
     companion object {
         private const val SETTINGS_FILE = "settings.preferences"
         private const val DATABASE_FILE = "portable-state.db"
+        private const val TELEGRAM_DIRECTORY = "telegram"
         /** The position past which a previous skip restarts the current occurrence instead of stepping back. */
         internal const val RESTART_THRESHOLD_MS = 3_000L
         private const val POSITION_CHECKPOINT_INTERVAL_MS = 10_000L
@@ -229,7 +268,7 @@ class DesktopSessionGraph private constructor(
             // The engine starts lazily, so building the client opens no connection. Every failure path below closes it.
             val http = HttpClient(CIO)
             return try {
-                assemble(scope, ordinary, vault, database, http)
+                assemble(scope, directory, ordinary, vault, database, http)
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
                     http.close()
@@ -248,12 +287,21 @@ class DesktopSessionGraph private constructor(
          */
         private suspend fun assemble(
             scope: CoroutineScope,
+            directory: Path,
             ordinary: DesktopSettingsStore,
             vault: VaultSettingsStore,
             database: PortableStateDatabase,
             http: HttpClient,
         ): DesktopSessionGraph {
             val accounts = VaultProviderAccountStore(vault)
+            val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
+            val tidalAuth = TidalAccountAuth(
+                http,
+                device = DesktopCredentials.tidalDeviceClient,
+                pkce = DesktopCredentials.tidalPkceClient,
+                nowMs = System::currentTimeMillis,
+            )
+            val tidalSessionRefresh = DesktopTidalSessionRefresh(tidalAuth, accountLifecycle, vault) { vault.snapshots.value }
             val textOrder = deviceTextOrder()
             val library = RoomLibraryRepository(database.library(), listens = database.listens())
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = { System.currentTimeMillis() })
@@ -265,6 +313,24 @@ class DesktopSessionGraph private constructor(
             val playback = DesktopPlaybackPort(accounts = accounts, cookies = accounts)
             vault.snapshots.value?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.let { playback.setVolume(it.coerceIn(0f, 1f)) }
             val player = MusicPlayerController(playback, scope)
+            val telegramRoot = directory.resolve(TELEGRAM_DIRECTORY).toFile()
+            val telegram = TdlightClientSession(
+                credentials = DesktopCredentials.telegramApi,
+                storageRoot = telegramRoot,
+                applicationVersion = DesktopSessionGraph::class.java.`package`?.implementationVersion ?: "1.0.0",
+                cancelRetainedDownloads = { NativeStreamLease.cancelTelegramTransfers() },
+                nativeAccount = TelegramNativeAccountPort(
+                    beginAttempt = accounts::beginNativeTelegramAttempt,
+                    acceptSession = accounts::acceptNativeTelegramSession,
+                    revokeSession = accounts::revokeNativeTelegramSession,
+                ),
+                log = ::desktopDiagnostic,
+            )
+            playback.bindTelegramFiles {
+                telegram.fileOperations()?.let { operations ->
+                    TelegramFileBinding(operations, accounts, CredentialScope.PERSONAL.name)
+                }
+            }
             // One YouTube transport and one account binding serve the browse, account and like paths. A remote change acts
             // for the personal sign-in only. Sync off, or no sign-in, keeps every change local.
             val youtubeTransport = JvmYouTubeBrowseTransport()
@@ -274,20 +340,27 @@ class DesktopSessionGraph private constructor(
                 personalScope = { providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL) },
                 syncEnabled = { vault.snapshots.value?.get(YtmSyncKey) ?: true },
             )
+            // The pool cache has its own vault entry, so pooled accounts never overwrite a personal sign-in.
+            val playbackPool = DesktopPlaybackPool(
+                http = http,
+                vault = DesktopSecureCredentialStore(),
+                preferences = { vault.snapshots.value },
+                scope = scope,
+                log = ::desktopDiagnostic,
+            )
             val locators = DesktopQueueLocatorResolver(
                 audio = OrderedAudioResolver(
-                    providers = desktopAudioProviders(http, accounts) { vault.snapshots.value },
+                    providers = desktopAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
                     youtube = DesktopYouTubeResolver(http, preferences = { vault.snapshots.value }, search = youtubeTransport),
                 ),
                 port = playback,
                 preferences = { vault.snapshots.value },
             )
+            val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
-                content = ContentRepositoryRouter(
-                    listOf(TypedRoomLibraryRepository(library), YouTubeContentRepository(youtubeTransport, youtubeAccount)),
-                ),
+                content = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library), youtubeContent)),
                 locators = locators,
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { repeatModeOf(vault.snapshots.value) },
@@ -311,6 +384,31 @@ class DesktopSessionGraph private constructor(
                 history = history,
                 preferences = vault.snapshots,
                 report = ::desktopDiagnostic,
+            )
+            val lastFm = DesktopLastFm(
+                scope = scope,
+                http = http,
+                settings = vault,
+                player = player,
+                queue = queue.state,
+                instanceDirectory = directory,
+                report = ::desktopDiagnostic,
+            )
+            // The JVM publishes no network events; a lookup offline simply misses, and a cached answer still shows.
+            val lyrics = DesktopLyrics(
+                scope = scope,
+                http = http,
+                settings = vault,
+                player = player,
+                queue = queue.state,
+                networkAvailable = { true },
+                report = ::desktopDiagnostic,
+            )
+            val listenerPresence = DesktopListenerPresence(
+                parentScope = scope,
+                http = http,
+                player = player,
+                instanceDirectory = directory,
             )
             val drivers = listOf(
                 scope.launch {
@@ -338,11 +436,26 @@ class DesktopSessionGraph private constructor(
                 statistics = history,
                 blocked = artistBlocks.observeBlockedArtists(),
                 textOrder = textOrder,
+                onLikeWritten = { ref, liked ->
+                    try {
+                        lastFm.mirrorLove(library.item(ref), liked)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        desktopDiagnostic("Last.fm love skipped: ${failure.javaClass.simpleName}")
+                    }
+                },
             )
-            return DesktopSessionGraph(
+            // The override folders sit directly in the instance directory, as Android keeps them in its files directory.
+            val customArtworkFiles = JvmCustomArtworkFiles(directory)
+            val customArtwork = FileCustomArtworkRepository(customArtworkFiles)
+            val graph = DesktopSessionGraph(
                 scope = scope,
                 settings = vault,
                 accounts = accounts,
+                accountLifecycle = accountLifecycle,
+                tidalAuth = tidalAuth,
+                telegram = telegram,
                 library = library,
                 artistBlocks = artistBlocks,
                 history = history,
@@ -356,10 +469,36 @@ class DesktopSessionGraph private constructor(
                 ordinarySettings = ordinary,
                 database = database,
                 listenDriver = listenDriver,
+                lastFm = lastFm,
+                lyrics = lyrics,
+                listenerPresence = listenerPresence,
                 locators = locators,
+                youtubeContent = youtubeContent,
+                customArtwork = customArtwork,
+                customArtworkFiles = customArtworkFiles,
                 http = http,
+                playbackPool = playbackPool,
                 drivers = drivers,
             )
+            // A TDLib database left by an earlier sign-in restores its session, so Telegram tracks in a restored queue
+            // can play without opening the settings page first. A fresh install starts no client until sign-in. The
+            // client starts only once the graph exists, so a failed assembly never leaves one running.
+            if (File(telegramRoot, "db").isDirectory) telegram.start()
+            // One scan before the first slot asks, so a custom cover shows on the first frame that has it.
+            scope.launch {
+                try {
+                    customArtwork.ensureLoaded()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    desktopDiagnostic("custom artwork was not scanned: ${failure.javaClass.simpleName}")
+                }
+            }
+            lastFm.start()
+            lyrics.start()
+            listenerPresence.start()
+            playbackPool.start()
+            return graph
         }
     }
 }

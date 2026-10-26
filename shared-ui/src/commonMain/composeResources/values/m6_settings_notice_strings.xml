@@ -1,0 +1,4 @@
+<resources>
+    <string name="m6_settings_notice_deezer_signed_in">Signed in as %1$s</string>
+    <string name="m6_settings_notice_deezer_signed_out">Signed out of Deezer</string>
+</resources>

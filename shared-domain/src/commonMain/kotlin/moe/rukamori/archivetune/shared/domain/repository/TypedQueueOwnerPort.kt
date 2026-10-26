@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.domain.repository
 
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
@@ -31,6 +24,9 @@ interface TypedQueueOwnerPort : QueueController {
     suspend fun loadCollection(request: QueueLoadRequest)
     suspend fun capture(): QueueCheckpoint
     suspend fun restore(checkpoint: QueueCheckpoint)
+
+    /** Turns shuffle on or off over the current timeline. False when this queue cannot be shuffled. */
+    suspend fun setShuffle(enabled: Boolean): Boolean
 
     /**
      * Raises the queue revision to at least [floor] and leaves the queue itself unchanged. A process that

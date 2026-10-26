@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parent.parent
 POLICY = "quality/repository-policy.json"
 VENDORED = ("third_party/", "native/", "audio/", "app/src/main/java/org/drinkless/")
 HEADER_MARKER = "GPL-3.0 License | Contributors: see git history"
+# The KMP modules carry no per-file license banner; their lineage and credits live in docs/CREDITS.md.
+KMP_MODULES = ("shared/", "shared-domain/", "shared-data/", "shared-ui/", "desktopApp/", "iosApp/")
 
 
 def git(*args: str) -> bytes:
@@ -183,9 +185,13 @@ def copyright_lines(text: str) -> set[str]:
 def header_problems(path: str, current: str, previous: str, new: bool) -> list[str]:
     if not path.endswith(".kt") or path.startswith(VENDORED):
         return []
+    if path.startswith(KMP_MODULES):
+        if HEADER_MARKER in current[:16000]:
+            return ["KMP Kotlin sources carry no license banner; credits live in docs/CREDITS.md"]
+        return []
     problems = []
-    if new and not re.search(r"GPL-3\.0|SPDX-License-Identifier:\s*GPL-3\.0", current[:16000]):
-        problems.append("new Kotlin source requires its GPL banner and provenance")
+    if new and HEADER_MARKER in current[:16000]:
+        problems.append("new Kotlin sources start with the package line, without a license banner")
     if current.count(HEADER_MARKER) > max(1, previous.count(HEADER_MARKER)):
         problems.append("duplicate ArchiveTune license banners")
     if copyright_lines(previous) - copyright_lines(current):

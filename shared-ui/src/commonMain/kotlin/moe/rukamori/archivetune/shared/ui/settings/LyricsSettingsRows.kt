@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.ui.settings
 
 import moe.rukamori.archivetune.shared.domain.settings.*
@@ -37,6 +30,10 @@ fun lyricsProviderSettingsRows(
     add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, false))
     LyricsProviderPreference.entries.filter { !it.name.startsWith("PAXSENIX_") }.forEach { provider ->
         provider.key?.let { add(SettingsRow.Toggle(provider.anchor(), provider.label(), it, provider.defaultEnabled, enabled = enabled)) }
+        if (provider == LyricsProviderPreference.LYPRIO && preferences[EnableLyprioLyricsKey, false]) {
+            add(SettingsRow.Text("lyprio_endpoint", Res.string.m6_lyprio_endpoint, LyprioEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
+            add(SettingsRow.Text("lyprio_signing_key", Res.string.m6_lyprio_signing_key, LyprioSigningKeyKey, masked = true, valid = ::validLyprioSigningKey, enabled = enabled))
+        }
     }
     add(SettingsRow.Toggle("enable_bini_lyrics", Res.string.m6_bini, EnableBiniLyricsKey, true, enabled = enabled))
     add(SettingsRow.Toggle("enable_lrcred_lyrics", Res.string.m6_lrc_red, EnableLrcRedKey, true, enabled = enabled))
@@ -68,7 +65,16 @@ fun validLyricsEndpoint(value: String): Boolean =
     value.isBlank() || (value.startsWith("https://") || value.startsWith("http://")) &&
         value.substringAfter("://").substringBefore('/').isNotBlank() && value.none(Char::isWhitespace)
 
+/** Blank (not configured yet) or base64 of exactly 32 bytes, the key length a Lyprio server signs with. */
+fun validLyprioSigningKey(value: String): Boolean {
+    val trimmed = value.trim()
+    if (trimmed.isEmpty()) return true
+    if (trimmed.length != 44 || !trimmed.endsWith("=") || trimmed.endsWith("==")) return false
+    return trimmed.dropLast(1).all { it.isLetterOrDigit() && it.code < 128 || it == '+' || it == '/' }
+}
+
 internal fun LyricsProviderPreference.label() = when (this) {
+    LyricsProviderPreference.LYPRIO -> Res.string.m6_lyprio
     LyricsProviderPreference.BETTER_LYRICS -> Res.string.m6_betterlyrics
     LyricsProviderPreference.BETTER_LYRICS_PORTATO -> Res.string.m6_portato
     LyricsProviderPreference.YOULY_PLUS -> Res.string.m6_youlyplus
@@ -89,6 +95,7 @@ internal fun LyricsProviderPreference.label() = when (this) {
 }
 
 private fun LyricsProviderPreference.anchor() = when (this) {
+    LyricsProviderPreference.LYPRIO -> "enable_lyprio_lyrics"
     LyricsProviderPreference.BETTER_LYRICS -> "enable_betterlyrics"
     LyricsProviderPreference.BETTER_LYRICS_PORTATO -> "enable_betterlyrics_portato"
     LyricsProviderPreference.YOULY_PLUS -> "enable_youlyplus_lyrics"

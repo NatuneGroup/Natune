@@ -1,17 +1,12 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop
 
 import io.ktor.client.HttpClient
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
 import moe.rukamori.archivetune.desktop.playback.requiresAdmittedRoute
 import moe.rukamori.archivetune.desktop.provider.DesktopDeezerSource
+import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
 import moe.rukamori.archivetune.desktop.provider.DesktopQqMusicSource
+import moe.rukamori.archivetune.desktop.provider.DesktopTidalSessionRefresh
 import moe.rukamori.archivetune.desktop.provider.DesktopTidalSource
 import moe.rukamori.archivetune.desktop.provider.desktopJioSaavnSource
 import moe.rukamori.archivetune.shared.data.provider.AudioAttempt
@@ -156,7 +151,8 @@ internal fun desktopSourceSnapshot(preferences: PreferenceSnapshot?): PlaybackSo
 /**
  * The audio providers this host connects, each over the one HTTP client of the graph, in no particular order: the
  * stored source order decides which one answers first. TIDAL, Deezer and QQ read the personal account leases of
- * [accounts] on every resolution, so a sign-out or a replaced account stops them at once. JioSaavn is composed only when
+ * [accounts] on every resolution, so a sign-out or a replaced account stops them at once. TIDAL and Deezer also read the
+ * Playback Pool accounts of [pool] while its switch is on. JioSaavn is composed only when
  * its decoder key is supplied. Qobuz, Apple and Amazon stay out of this list until their account, digest or instance
  * owners publish them on this host; a missing source answers as an unavailable attempt, never as a guessed URL. YouTube
  * is the terminal tier and is passed to the resolver separately.
@@ -165,10 +161,12 @@ internal fun desktopAudioProviders(
     http: HttpClient,
     accounts: VaultProviderAccountStore,
     preferences: () -> PreferenceSnapshot?,
+    tidalSessionRefresh: DesktopTidalSessionRefresh? = null,
+    pool: DesktopPlaybackPool? = null,
 ): List<AudioProviderRepository> = listOfNotNull(
-    DesktopTidalSource(http, accounts, preferences),
+    DesktopTidalSource(http, accounts, preferences, tidalSessionRefresh, pool),
     KtorQobuzBackupRepository(http),
-    DesktopDeezerSource(http, accounts),
+    DesktopDeezerSource(http, accounts, pool),
     desktopJioSaavnSource(http),
     DesktopQqMusicSource(http, accounts),
 )

@@ -43,7 +43,6 @@ kotlin {
 // docs/build-credentials.md). The generated DesktopBuildCredentials object is read through DesktopCredentials,
 // which lets an environment variable or system property of the same name override it at run time.
 val desktopCredentialNames = listOf(
-    "ARCHIVETUNE_TIDAL_WEB_TOKEN",
     "ARCHIVETUNE_TIDAL_CLIENT_ID",
     "ARCHIVETUNE_TIDAL_CLIENT_SECRET",
     "ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID",
@@ -54,10 +53,24 @@ val desktopCredentialNames = listOf(
     "ARCHIVETUNE_LASTFM_API_KEY",
     "ARCHIVETUNE_LASTFM_API_SECRET",
     "ARCHIVETUNE_LISTENER_PRESENCE_URL",
+    "ARCHIVETUNE_TELEGRAM_API_ID",
+    "ARCHIVETUNE_TELEGRAM_API_HASH",
+    "ARCHIVETUNE_SOURCE_PROVIDER_URL",
+    "ARCHIVETUNE_SOURCE_PROVIDER_KEY",
+    "ARCHIVETUNE_POOL_CLIENT_KEY",
+    "ARCHIVETUNE_FEEDBACK_API_URL",
+    "ARCHIVETUNE_FEEDBACK_INGEST_KEY",
 )
 val desktopLegacyCredentialNames = mapOf(
     "ARCHIVETUNE_LASTFM_API_KEY" to arrayOf("LASTFM_API_KEY"),
     "ARCHIVETUNE_LASTFM_API_SECRET" to arrayOf("LASTFM_SECRET"),
+    "ARCHIVETUNE_TELEGRAM_API_ID" to arrayOf("TELEGRAM_API_ID"),
+    "ARCHIVETUNE_TELEGRAM_API_HASH" to arrayOf("TELEGRAM_API_HASH"),
+    "ARCHIVETUNE_SOURCE_PROVIDER_URL" to arrayOf("SOURCE_PROVIDER_URL"),
+    "ARCHIVETUNE_SOURCE_PROVIDER_KEY" to arrayOf("SOURCE_PROVIDER_KEY"),
+    "ARCHIVETUNE_POOL_CLIENT_KEY" to arrayOf("POOL_CLIENT_KEY"),
+    "ARCHIVETUNE_FEEDBACK_API_URL" to arrayOf("FEEDBACK_API_URL"),
+    "ARCHIVETUNE_FEEDBACK_INGEST_KEY" to arrayOf("FEEDBACK_INGEST_KEY"),
 )
 val desktopProviderCredentials = desktopCredentialNames.associateWith { name ->
     ProviderCredentials.resolve(project, name, *desktopLegacyCredentialNames[name].orEmpty())
@@ -84,7 +97,7 @@ kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopProviderCredentialsDir
 tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(generateDesktopProviderCredentials) }
 
 // The package identity is named once because the RPM rebuild below must reproduce exactly what Compose packages.
-val desktopPackageName = "ArchiveTune"
+val desktopPackageName = "Natune"
 val desktopPackageVersion = "1.0.0"
 
 compose.desktop {
@@ -96,8 +109,8 @@ compose.desktop {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Msi, TargetFormat.Dmg)
             packageName = desktopPackageName
             packageVersion = desktopPackageVersion
-            description = "ArchiveTune music player"
-            vendor = "ArchiveTune contributors"
+            description = "Natune music player"
+            vendor = "Natune contributors"
             copyright = "GPL-3.0; contributors: see git history"
             licenseFile.set(rootProject.file("LICENSE"))
             modules("java.sql", "java.net.http", "jdk.unsupported", "jdk.crypto.ec")
@@ -106,7 +119,7 @@ compose.desktop {
                 iconFile.set(project.file("packaging/archivetune.png"))
                 shortcut = true
                 appCategory = "AudioVideo"
-                debMaintainer = "ArchiveTune contributors"
+                debMaintainer = "Natune contributors"
                 menuGroup = "AudioVideo"
             }
             windows {
@@ -339,8 +352,8 @@ val addLinuxBrowserRpmRequires = tasks.register("addLinuxBrowserRpmRequires") {
             "--dest", work.absolutePath,
             "--name", desktopPackageName,
             "--app-version", desktopPackageVersion,
-            "--description", "ArchiveTune music player",
-            "--vendor", "ArchiveTune contributors",
+            "--description", "Natune music player",
+            "--vendor", "Natune contributors",
             "--copyright", "GPL-3.0; contributors: see git history",
             "--license-file", rootProject.file("LICENSE").absolutePath,
             "--icon", project.file("packaging/archivetune.png").absolutePath,

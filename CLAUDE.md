@@ -92,8 +92,12 @@ uninitialized/unchanged here and never publish another Canary.
 - Comments explain *why*, not *what*. Most code needs none.
 - Player styles are self-contained (`bitchord/`, `simpmusic/`, `tiktok/`). The one
   exception is the swept lyric renderer — see [docs/lyrics.md](docs/lyrics.md).
-- New `.kt` files keep the GPL header banner. Never rewrite an existing file's
-  copyright banner to credit a different project. Match the file around you.
+- New `.kt` files carry no license header: they start with the package line. The
+  KMP modules (`shared`, `shared-domain`, `shared-data`, `shared-ui`, `desktopApp`,
+  `iosApp`) carry no banners at all; lineage and credits live in
+  [docs/CREDITS.md](docs/CREDITS.md). Existing banners in the Android host and library
+  modules stay as they are, and a third-party notice a licence requires (for example
+  Kuromoji's Apache-2.0 notice) stays in its file.
 - Lightweight quality checks and naming rules live in
   [docs/engineering/quality.md](docs/engineering/quality.md). Reusable workflows
   live in `.factory/skills/` (`.claude/skills` links there; shared Claude Code

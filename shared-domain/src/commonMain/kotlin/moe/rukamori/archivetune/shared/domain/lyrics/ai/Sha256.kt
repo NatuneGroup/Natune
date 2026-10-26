@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.domain.lyrics.ai
 
 /**
@@ -50,7 +43,23 @@ internal object Sha256 {
         return hexDigest(message)
     }
 
-    fun hexDigest(message: ByteArray): String {
+    fun hexDigest(message: ByteArray): String =
+        state(message).joinToString(separator = "") { (it.toLong() and 0xffffffffL).toString(16).padStart(8, '0') }
+
+    /** The 32-byte digest, big-endian. */
+    fun digest(message: ByteArray): ByteArray {
+        val state = state(message)
+        val out = ByteArray(32)
+        for (i in 0 until 8) {
+            out[4 * i] = (state[i] ushr 24).toByte()
+            out[4 * i + 1] = (state[i] ushr 16).toByte()
+            out[4 * i + 2] = (state[i] ushr 8).toByte()
+            out[4 * i + 3] = state[i].toByte()
+        }
+        return out
+    }
+
+    private fun state(message: ByteArray): IntArray {
         val padded = pad(message)
         val state = INITIAL_STATE.copyOf()
         var offset = 0
@@ -58,7 +67,7 @@ internal object Sha256 {
             compress(state, padded, offset)
             offset += 64
         }
-        return state.joinToString(separator = "") { (it.toLong() and 0xffffffffL).toString(16).padStart(8, '0') }
+        return state
     }
 
     private fun pad(message: ByteArray): ByteArray {

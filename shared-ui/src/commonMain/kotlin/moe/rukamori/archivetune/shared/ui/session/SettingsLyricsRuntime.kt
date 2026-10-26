@@ -1,10 +1,3 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.shared.ui.session
 
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +26,7 @@ class SettingsLyricsRuntime(
     private data class Config(
         val order: List<String>, val enabled: Map<String, Boolean>, val wordSync: Boolean,
         val preloadCount: Int, val credential: String, val endpoint: String, val available: Set<String>, val providerRevision: Long,
+        val selfHostedEndpoint: String = "", val selfHostedKey: String = "",
     ) {
         override fun toString(): String = "LyricsConfig(<redacted>)"
     }
@@ -52,6 +46,7 @@ class SettingsLyricsRuntime(
                     prefs[PrioritizeWordSyncedLyricsKey, false],
                     prefs[QueueLyricsPreloadCountKey, 3].coerceIn(0, 10),
                     prefs[PaxsenixApiKeyKey].orEmpty(), prefs[PaxsenixEndpointKey].orEmpty(), available.toSet(), revision,
+                    prefs[LyprioEndpointKey].orEmpty(), prefs[LyprioSigningKeyKey].orEmpty(),
                 )
             }.distinctUntilChangedBy { it.second }.collectLatest { (prefs, config) ->
                 coroutineScope {
@@ -91,7 +86,7 @@ class SettingsLyricsRuntime(
         currentRuntime.filterNotNull().first().helper.getLyricsWithProvider(request, forceRefresh = forceRefresh)
 }
 
-/** Extra providers keep their established slots; the persisted picker only orders its 17 members. */
+/** Extra providers keep their established slots; the persisted picker only orders its 18 members. */
 internal fun orderLyricsProviders(providers: List<LyricsProvider>, order: List<String>): List<LyricsProvider> {
     val members = providers.filter { it.name in order }.sortedBy { order.indexOf(it.name) }.iterator()
     return providers.map { if (it.name in order) members.next() else it }

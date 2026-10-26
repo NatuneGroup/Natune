@@ -1,0 +1,340 @@
+package moe.rukamori.archivetune.desktop
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
+import io.ktor.http.isSuccess
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAdmission
+import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
+import moe.rukamori.archivetune.shared.data.provider.TidalRefreshResult
+import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
+import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
+import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.TidalAuthFlowDevice
+import moe.rukamori.archivetune.shared.domain.settings.TidalDeviceLink
+import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceHealth
+import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
+import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
+import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
+import moe.rukamori.archivetune.shared.domain.settings.youTubeLoginBlock
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
+import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
+import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
+import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
+import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
+import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
+import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
+import moe.rukamori.archivetune.shared.ui.settings.QqLoginFailure
+import moe.rukamori.archivetune.shared.ui.settings.QqLoginUiState
+import moe.rukamori.archivetune.shared.ui.settings.QqMusicSettings
+import moe.rukamori.archivetune.shared.ui.settings.SettingsController
+import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
+import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
+import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
+import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
+import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
+import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
+import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
+import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
+
+/**
+ * The settings owners of the desktop host: one controller over the graph's settings, and the graph's sign-in lifecycle
+ * and TIDAL account endpoints. The TIDAL device and PKCE clients come from [DesktopCredentials]; without a device client
+ * the device sign-in row reports itself unavailable.
+ */
+internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
+    val controller = SettingsController(
+        graph.settings,
+        graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY,
+        // The desktop engine has no bit-perfect output path, so its restart reasons are never offered.
+        bitPerfectSupported = false,
+    )
+    val accounts: ProviderAccountLifecycle = graph.accountLifecycle
+    private val tidalAuth = graph.tidalAuth
+    val tidalDeviceLink: TidalDeviceLink? = if (tidalAuth.deviceSignInAvailable) TidalAccountDeviceLink(tidalAuth) else null
+    val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
+    val youTube = DesktopYouTubeAccountOwner(graph, controller)
+
+    /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
+    suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
+        when (val result = tidalAuth.refresh(refreshToken, TidalAuthFlowDevice)) {
+            is TidalRefreshResult.Refreshed ->
+                tidalAuth.verifiedSession(result.grant, TidalAuthFlowDevice, refreshFallback = refreshToken)
+            else -> null
+        }
+
+    suspend fun verifyDeezer(arl: String): DeezerArlAccount? =
+        verifyDeezerArl(graph.http, arl)?.let { DeezerArlAccount(it.name, it.lossless, it.userId) }
+
+    /**
+     * Probes every configured instance at once with one bounded search. A search proves reachability only, so a
+     * preview-only instance is not told apart here; the resolver still skips the previews it receives.
+     */
+    suspend fun checkTidalInstances() {
+        val instances = graph.settings.snapshots.value?.tidalInstanceList().orEmpty()
+        val results = coroutineScope {
+            instances.map { base -> async { base to probeTidalInstance(base) } }.awaitAll()
+        }
+        tidalInstanceHealth.update { it + results }
+    }
+
+    fun forgetTidalInstanceHealth(instances: Set<String>) {
+        tidalInstanceHealth.update { it - instances }
+    }
+
+    private suspend fun probeTidalInstance(base: String): TidalInstanceHealth {
+        val started = System.nanoTime()
+        val reachable = try {
+            withTimeoutOrNull(PROBE_TIMEOUT_MS) {
+                graph.http.get("${base.trimEnd('/')}/search/") {
+                    parameter("s", PROBE_QUERY)
+                    parameter("limit", "1")
+                }.status.isSuccess()
+            } ?: false
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+        if (!reachable) return TidalInstanceHealth(TidalInstanceStatus.UNREACHABLE)
+        return TidalInstanceHealth(TidalInstanceStatus.HEALTHY, latencyMs = (System.nanoTime() - started) / 1_000_000L)
+    }
+
+    private companion object {
+        const val PROBE_TIMEOUT_MS = 8_000L
+        const val PROBE_QUERY = "love"
+    }
+}
+
+/** The settings routes this host mounts. Every other settings route keeps the unbound boundary. */
+internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
+    route.value.substringBefore('?').let { it in DESKTOP_SETTINGS_ROUTES || it in DESKTOP_GENERAL_SETTINGS_ROUTES }
+
+private val DESKTOP_SETTINGS_ROUTES = setOf(
+    "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
+    "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
+)
+
+/**
+ * One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and
+ * announced. The QQ Music QR sign-in is not ported to this host, so its card reports the sign-in as unavailable.
+ */
+@Composable
+internal fun DesktopSettingsScreen(
+    owners: DesktopSettingsOwners,
+    graph: DesktopSessionGraph,
+    route: ArchiveRoute,
+    navigation: ShellNavigation,
+) {
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val scrollTo = route.arguments["scrollTo"]
+    val navigate: (String) -> Unit = { target -> navigation.open(target) }
+    fun show(message: String) {
+        scope.launch { snackbar.showSnackbar(message) }
+    }
+    val onNotice: (SettingsNotice) -> Unit = { notice -> scope.launch { snackbar.showSnackbar(settingsNoticeText(notice)) } }
+    val onFailure: () -> Unit = {
+        graph.report("a settings change could not be completed")
+        show(DesktopStrings["settings_change_failed"])
+    }
+    val unavailable: () -> Unit = { show(DesktopStrings["settings_feature_unavailable"]) }
+    Box(Modifier.fillMaxSize().padding(LocalShellContentPadding.current)) {
+        when (val path = route.value.substringBefore('?')) {
+            in DESKTOP_GENERAL_SETTINGS_ROUTES -> DesktopGeneralSettingsPage(
+                path = path,
+                controller = owners.controller,
+                navigate = navigate,
+                onFailure = onFailure,
+                unavailable = unavailable,
+                scrollTo = scrollTo,
+            )
+            "settings" -> SettingsHomePage(
+                controller = owners.controller,
+                navigate = navigate,
+                onFailure = onFailure,
+                hideToTrayKey = DesktopHideToTrayKey,
+                scrollTo = scrollTo,
+            )
+            "settings/account" -> {
+                val snapshot by graph.settings.snapshots.collectAsState()
+                val channels by owners.youTube.channels.collectAsState()
+                val sessionKey = snapshot?.let { "${it[InnerTubeCookieKey, ""].hashCode()}|${it[DataSyncIdKey, ""]}" }
+                LaunchedEffect(sessionKey) { owners.youTube.refreshChannels() }
+                AccountSettings(
+                    controller = owners.controller,
+                    channels = channels,
+                    verifyAccount = owners.youTube::verify,
+                    logOut = owners.youTube::logOut,
+                    revokeCodeSession = owners.youTube::revokeCodeSession,
+                    onAuthCommitted = { scope.launch { owners.youTube.refreshChannels() } },
+                    // This host has no YouTube library sync, so a switch has nothing to force.
+                    onForceSyncAfterSwitch = { },
+                    navigate = navigate,
+                    onNotice = onNotice,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                    avatar = { url, _, modifier -> DesktopRemoteArtwork(url, graph.artworkLoader, modifier) },
+                    revealCredentialBlock = { graph.settings.snapshots.value?.youTubeLoginBlock() },
+                    copyToClipboard = ::copyToDesktopClipboard,
+                )
+            }
+            "login" -> DesktopYouTubeLoginPage(owners.youTube, navigation)
+            "settings/integration" -> IntegrationSettings(
+                controller = owners.controller,
+                poolConfigured = graph.playbackPool.configured,
+                spotifyAccount = SpotifyCatalogAccountState(),
+                spotifyError = null,
+                navigate = navigate,
+                onConnectSpotify = unavailable,
+                onReloadSpotifyPlaylists = { unavailable() },
+                onLogoutSpotify = { },
+                onDismissSpotifyError = { },
+                onPoolAccountsChanged = graph.playbackPool::onEnabledChanged,
+                onOpenCrossServiceImport = unavailable,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/tidal" -> {
+                val health by owners.tidalInstanceHealth.collectAsState()
+                TidalSettings(
+                    controller = owners.controller,
+                    accounts = owners.accounts,
+                    deviceLink = owners.tidalDeviceLink,
+                    openExternal = { uri -> openDesktopUri(uri, graph::report) },
+                    instanceHealth = health,
+                    checkInstances = owners::checkTidalInstances,
+                    forgetInstanceHealth = owners::forgetTidalInstanceHealth,
+                    verifyRefreshToken = owners::verifyTidalRefreshToken,
+                    // TIDAL repositories are built per resolve from the account lease, so no token is held in memory.
+                    onSignOut = { },
+                    copyToClipboard = ::copyToDesktopClipboard,
+                    navigate = navigate,
+                    onNotice = onNotice,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            "settings/deezer" -> DeezerSettings(
+                controller = owners.controller,
+                accounts = owners.accounts,
+                poolConfigured = graph.playbackPool.configured,
+                verifyArl = owners::verifyDeezer,
+                // The Deezer source keys its session to the lease generation, which a sign-out retires.
+                onSignOut = { },
+                navigate = navigate,
+                onFailure = onFailure,
+                onNotice = onNotice,
+                scrollTo = scrollTo,
+            )
+            "settings/qqmusic" -> QqMusicSettings(
+                controller = owners.controller,
+                accounts = owners.accounts,
+                loginState = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE),
+                onStartSignIn = { },
+                onCancelSignIn = { },
+                onSignOut = { },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/telegram" -> {
+                val admission by graph.telegram.admission.collectAsState()
+                TelegramSettings(
+                    controller = owners.controller,
+                    // Signed in means a verified account, so the row never names an account that GetMe has not confirmed.
+                    ready = admission is TelegramNativeAdmission.Admitted,
+                    ensureStarted = { graph.telegram.start() },
+                    loadAccount = graph.telegram::accountFacts,
+                    logOut = graph.telegram::logOut,
+                    navigate = navigate,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            TelegramLoginRoute -> DesktopTelegramLoginPage(graph.telegram, navigation)
+            "settings/lastfm" -> DesktopLastFmSettingsPage(
+                lastFm = graph.lastFm,
+                controller = owners.controller,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+                report = graph::report,
+                openDashboard = { navigation.open(DesktopLastFmDashboardRoute) },
+            )
+            DesktopLastFmDashboardRoute -> DesktopLastFmDashboardPage(graph, navigation, unavailable)
+            "settings/privacy" -> DesktopPrivacySettingsPage(graph, owners.controller, onFailure, scrollTo)
+            "settings/about" -> DesktopAboutPage(graph, owners.controller, navigation)
+        }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+/**
+ * Settings > Privacy on this host: the inline privacy rows and the listener-presence opt-in. The history controls of
+ * the Android page need a history editor this host does not have yet.
+ */
+@Composable
+private fun DesktopPrivacySettingsPage(
+    graph: DesktopSessionGraph,
+    controller: SettingsController,
+    onFailure: () -> Unit,
+    scrollTo: String?,
+) {
+    val snapshot by controller.store.snapshots.collectAsState()
+    val preferences = snapshot
+    if (preferences == null) {
+        CircularProgressIndicator()
+        return
+    }
+    SettingsPage(
+        rows = privacyInlineSettingsRows(),
+        preferences = preferences,
+        controller = controller,
+        scrollTo = scrollTo,
+        onFailure = onFailure,
+        extraItems = {
+            item(key = "listener_presence") {
+                DesktopListenerPresenceSection(
+                    store = graph.listenerPresence.store,
+                    report = graph::report,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        },
+    )
+}
+
+internal fun copyToDesktopClipboard(text: String) {
+    try {
+        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+    } catch (failure: Exception) {
+        desktopDiagnostic("clipboard unavailable: ${failure.javaClass.simpleName}")
+    }
+}

@@ -8,7 +8,7 @@
     <string name="m4lf_start_mix">Start Mix with this Song</string>
     <string name="m4lf_genre">Genre</string>
     <string name="m4lf_unknown_genre">Unknown</string>
-    <string name="m4lf_play_in_natune">Play in ArchiveTune</string>
+    <string name="m4lf_play_in_natune">Play in Natune</string>
     <string name="m4lf_play_next">Play next</string>
     <string name="m4lf_add_to_queue">Add to queue</string>
     <string name="m4lf_add_to_playlist">Add to playlist</string>

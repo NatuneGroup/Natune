@@ -1,12 +1,6 @@
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- * Portions © vossgraves — github.com/vossgraves
- */
 package moe.rukamori.archivetune.desktop.playback
 
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
@@ -159,6 +153,15 @@ internal class NativeStreamLease private constructor(
          */
         private val telegramRetireScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+        // A logout must stop every transfer before TDLib wipes its database, including one whose lease the engine has
+        // not closed yet, so each Telegram port is tracked from its open until its retirement finishes.
+        private val openTelegramPorts: MutableSet<TdlibPartialFilePort> = ConcurrentHashMap.newKeySet()
+
+        /** Stops the transfer of every Telegram stream that is open or still retiring. Failures are ignored per port. */
+        suspend fun cancelTelegramTransfers() {
+            for (port in openTelegramPorts.toList()) port.cancelDownload()
+        }
+
         /**
          * The lease for a header-bearing HTTP(S) resource. Returns null when the locator is not one, such as a URL with
          * userinfo, which is refused so that credentials never ride in a URL. The lease permits only the primary origin,
@@ -237,6 +240,7 @@ internal class NativeStreamLease private constructor(
             binding: TelegramFileBinding,
         ): NativeStreamLease {
             val port = TdlibPartialFilePort(track, binding.operations)
+            openTelegramPorts.add(port)
             // Set by the open. A read cannot arrive before a successful open, so an empty holder fails the read closed.
             val admittedSource = AtomicReference<TelegramRandomAccessSource?>(null)
             // One job covers the probe and every read, so an interrupt ends a TDLib request that is still waiting.
@@ -262,7 +266,13 @@ internal class NativeStreamLease private constructor(
                 interruptSource = { lifetime.cancel() },
                 closeSource = {
                     lifetime.cancel()
-                    telegramRetireScope.launch { port.cancelDownload() }
+                    telegramRetireScope.launch {
+                        try {
+                            port.cancelDownload()
+                        } finally {
+                            openTelegramPorts.remove(port)
+                        }
+                    }
                 },
                 lifetime = lifetime,
             )

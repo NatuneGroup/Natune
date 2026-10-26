@@ -90,7 +90,7 @@
     <string name="m6_pause_mute">Pause on device mute</string>
     <string name="m6_mute_recovery">Device-mute recovery volume</string>
     <string name="m6_bluetooth_start">Start on Bluetooth connection</string>
-    <string name="m6_canvas_settings">ArchiveTune Canvas settings</string>
+    <string name="m6_canvas_settings">Natune Canvas settings</string>
     <string name="m6_spotify_canvas">Spotify Canvas</string>
     <string name="m6_canvas_resolvers">Canvas resolver URLs (one per line)</string>
     <string name="m6_tidal_artwork">Tidal artwork fallback</string>
