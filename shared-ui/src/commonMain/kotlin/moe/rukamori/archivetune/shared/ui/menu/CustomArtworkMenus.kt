@@ -41,3 +41,7 @@ fun customArtworkOverflowActions(
         host.removeCanvas(songId)
     })
 }
+
+/** Opens the host's custom-artwork editor — the row-menu entry hosts mount beside [customArtworkOverflowActions]. */
+fun customArtworkEntryAction(openEditor: suspend () -> Unit): OverflowAction =
+    OverflowAction("custom_artwork", Res.string.m4_custom_artwork_title, run = openEditor)

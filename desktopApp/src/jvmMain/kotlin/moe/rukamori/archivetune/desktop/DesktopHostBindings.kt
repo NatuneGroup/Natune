@@ -100,7 +100,7 @@ internal fun desktopHostBindings(
             }
         },
         overlays = { route ->
-            DesktopItemMenuDialog(menu, graph, route.value) { target -> ownRoutes.trySend(target) }
+            DesktopItemMenuDialog(menu, graph, route.value, sleepSheet) { target -> ownRoutes.trySend(target) }
             DesktopCreatePlaylistOverlay(createPlaylist, route)
             DesktopPlaylistMenuOverlay(playlistMenus, graph, route.value)
             DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph)

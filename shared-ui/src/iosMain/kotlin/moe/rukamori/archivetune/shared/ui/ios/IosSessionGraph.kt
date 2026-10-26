@@ -15,12 +15,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -37,7 +35,6 @@ import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
-import moe.rukamori.archivetune.shared.domain.lyrics.romanization.IosLyricsTransliterator
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
@@ -53,7 +50,6 @@ import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
-import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
@@ -76,12 +72,11 @@ internal class IosSessionGraph private constructor(
     val http: HttpClient,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
-    val history: RoomListeningHistory,
+    /** The one library store of the session: the same instance [libraryContent] and [pageOwners] read and write. */
+    internal val library: RoomLibraryRepository,
     val libraryContent: LibraryContentOwner,
     val pageOwners: LibraryPageOwners,
     val lyrics: HostLyrics,
-    /** The one owner of the AI lyric sessions and of every lyric surface's phonetic readings. */
-    val lyricsSurface: LyricsSurfaceRuntime,
     val artworkLoader: IosArtworkLoader,
     private val owner: PortableQueueOwner,
     private val database: PortableStateDatabase,
@@ -150,7 +145,6 @@ internal class IosSessionGraph private constructor(
      */
     suspend fun close() = withContext(NonCancellable) {
         listenDriver.close()
-        lyricsSurface.close()
         lyrics.close()
         drivers.forEach { it.cancel() }
         checkpointNow(queue, reportLine)
@@ -262,16 +256,6 @@ internal class IosSessionGraph private constructor(
                 networkAvailable = { iosNetworkAvailable() },
                 report = report,
             )
-            val lyricsSurface = LyricsSurfaceRuntime(
-                scope = scope,
-                store = vault,
-                service = KtorAiTextService(http),
-                lyrics = lyrics.current,
-                packTokenizer = host.japaneseLanguagePack.value?.tokenizer ?: flowOf(null),
-                transliterator = IosLyricsTransliterator(),
-                identitySalt = "ios",
-                report = report,
-            )
             val libraryContent = LibraryContentOwner(
                 settings = vault,
                 library = library,
@@ -326,11 +310,10 @@ internal class IosSessionGraph private constructor(
                 http = http,
                 player = player,
                 queue = queue,
-                history = history,
+                library = library,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
                 lyrics = lyrics,
-                lyricsSurface = lyricsSurface,
                 artworkLoader = IosArtworkLoader(http),
                 owner = owner,
                 database = database,
@@ -339,7 +322,6 @@ internal class IosSessionGraph private constructor(
                 reportLine = report,
             )
             lyrics.start()
-            lyricsSurface.start()
             return graph
         }
     }
@@ -356,7 +338,7 @@ internal fun iosOffsetMsAt(epochMs: Long): Long =
  * The text order the portable library sorts with: the user's locale, case-insensitive, so one artist never splits into
  * two groups by case.
  */
-private val iosTextOrder: Comparator<String> = Comparator { first, second ->
+internal val iosTextOrder: Comparator<String> = Comparator { first, second ->
     NSString.create(string = first).localizedCaseInsensitiveCompare(second).toInt()
 }
 
