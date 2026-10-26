@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.isSuccess
-import kotlin.time.Clock
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -52,20 +51,22 @@ import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.presence.ListenerPresenceSection
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.resources.ios_logs_copied
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_change_failed
+import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
-import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
-import moe.rukamori.archivetune.shared.ui.settings.JapaneseLanguagePackUiState
-import moe.rukamori.archivetune.shared.ui.settings.LanguagePackSettings
-import moe.rukamori.archivetune.shared.ui.settings.LyricsRomanisationSettings
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginScreen
 import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
-import moe.rukamori.archivetune.shared.ui.settings.japanesePackUiState
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
+import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
+import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
+import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
+import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
+import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
@@ -74,14 +75,13 @@ import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import org.jetbrains.compose.resources.stringResource
-import platform.Foundation.NSByteCountFormatter
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
  * TIDAL account endpoints. This build carries no TIDAL device client, so the device sign-in row reports itself
  * unavailable, and a pasted refresh token is verified with TIDAL instead.
  */
-internal class IosSettingsOwners(private val graph: IosSessionGraph) {
+internal class IosSettingsOwners(internal val graph: IosSessionGraph) {
     val controller = SettingsController(
         graph.settings,
         graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY,
@@ -90,6 +90,12 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     )
     val accounts = graph.accountLifecycle
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
+
+    /**
+     * The AI-integration action owner over the real shared service. When the user has not configured a provider the
+     * page reads "not configured" and a test run reports the missing setup, never a faked success.
+     */
+    val aiActions by lazy { AiSettingsActions(graph.scope, controller, KtorAiTextService(graph.http)) }
 
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
@@ -210,10 +216,11 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
 /** The settings routes this host mounts. Every other settings route keeps the unbound boundary. */
 internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.substringBefore('?') in IOS_SETTINGS_ROUTES
 
-private val IOS_SETTINGS_ROUTES = setOf(
+private val IOS_SETTINGS_ROUTES = IOS_GENERAL_SETTINGS_ROUTES + setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
     "settings/qobuz", QobuzLoginRoute,
-    "settings/lyrics/romanisation", "settings/language_packs",
+    "settings/lyrics/providers", "settings/misc", "settings/integration", "settings/language_packs",
+    "settings/ai_integration", "settings/about",
 )
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
@@ -224,6 +231,8 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
     val scrollTo = route.arguments["scrollTo"]
     val navigate: (String) -> Unit = { target -> navigation.open(target) }
     val changeFailed = stringResource(Res.string.ios_settings_change_failed)
+    val featureUnavailable = stringResource(Res.string.ios_settings_feature_unavailable)
+    val logsCopied = stringResource(Res.string.ios_logs_copied)
     fun show(message: String) {
         scope.launch { snackbar.showSnackbar(message) }
     }
@@ -232,8 +241,10 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
         host.report("a settings change could not be completed")
         show(changeFailed)
     }
+    val unavailable: () -> Unit = { show(featureUnavailable) }
+    val path = route.value.substringBefore('?')
     Box(Modifier.fillMaxSize().padding(LocalShellContentPadding.current)) {
-        when (route.value.substringBefore('?')) {
+        when (path) {
             "settings" -> SettingsHomePage(
                 controller = owners.controller,
                 navigate = navigate,
@@ -306,35 +317,27 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 else IosTelegramSettingsPage(telegram, owners.controller, navigate, onFailure, scrollTo)
             }
             "settings/privacy" -> IosPrivacySettingsPage(host, owners.controller, onFailure, scrollTo)
-            "settings/lyrics/romanisation" -> {
-                val pack by host.japaneseLanguagePack.collectAsState()
-                LyricsRomanisationSettings(
-                    controller = owners.controller,
-                    japanesePack = pack?.state,
-                    onFailure = onFailure,
-                    scrollTo = scrollTo,
-                )
-            }
-            "settings/language_packs" -> {
-                val pack by host.japaneseLanguagePack.collectAsState()
-                val packState = pack?.state?.collectAsState()?.value
-                LanguagePackSettings(
-                    controller = owners.controller,
-                    // No pack manager means the session could not build its pack IO; install reports the failure.
-                    japanese = packState?.let { japanesePackUiState(it) } ?: JapaneseLanguagePackUiState.NotInstalled,
-                    spatialFlowFont = AddonDownloadUiState.Unavailable,
-                    formatSize = ::iosByteCountSize,
-                    onInstallJapanese = {
-                        val pack = host.japaneseLanguagePack.value
-                        if (pack == null) onFailure() else scope.launch { pack.install() }
-                    },
-                    onCancelJapanese = { scope.launch { host.japaneseLanguagePack.value?.cancel() } },
-                    onRemoveJapanese = { scope.launch { host.japaneseLanguagePack.value?.remove() } },
-                    onInstallSpatialFlowFont = { },
-                    onRemoveSpatialFlowFont = { },
-                    onFailure = onFailure,
-                )
-            }
+            in IOS_GENERAL_SETTINGS_ROUTES ->
+                IosGeneralSettingsPage(path, host, owners.controller, navigate, onFailure, unavailable, scrollTo)
+            "settings/lyrics/providers" -> LyricsProviderSettings(
+                controller = owners.controller,
+                readStats = { preferences -> PaxsenixDiagnostics(owners.graph.http, paxsenixSettingsOf(preferences)).getStats().getOrThrow() },
+                checkEndpoints = { preferences -> PaxsenixDiagnostics(owners.graph.http, paxsenixSettingsOf(preferences)).checkProviderPaths() },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/misc" -> IosDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
+            "settings/integration" ->
+                IosIntegrationSettingsPage(owners.controller, navigate, unavailable, onFailure, scrollTo)
+            "settings/language_packs" ->
+                IosLanguagePackSettingsPage(host, owners.graph, owners.controller, onFailure)
+            "settings/ai_integration" -> IosAiIntegrationSettingsPage(
+                owners = owners,
+                onFailure = onFailure,
+                openExternal = { uri -> openIosUri(uri, host::report) },
+                scrollTo = scrollTo,
+            )
+            "settings/about" -> IosAboutPage(owners.graph, owners.controller, navigation)
             "settings/logcat" -> {
                 val store = host.diagnostics
                 if (store == null) {
@@ -347,16 +350,16 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                         actions = DiagnosticLogActions(
                             back = { navigation.back() },
                             copyToClipboard = ::copyToIosClipboard,
-                            // The system share sheet carries the visible lines, the Android Share equivalent.
-                            share = { text -> iosShareText(host, text) },
-                            // Export writes the full redacted report to a file and hands it to the share sheet,
-                            // where Save to Files and AirDrop receive a real document.
+                            // No share sheet is connected yet, so Share copies the visible lines and says so.
+                            share = { text ->
+                                copyToIosClipboard(text)
+                                show(logsCopied)
+                            },
+                            // A file export needs the document picker, which is not connected. The page is told nothing
+                            // was written, and the user is told why.
                             export = {
-                                iosExportTextFile(
-                                    host,
-                                    "natune-log-${Clock.System.now().toEpochMilliseconds()}.txt",
-                                    iosDiagnosticReport(host),
-                                )
+                                show(featureUnavailable)
+                                null
                             },
                         ),
                     )
@@ -444,6 +447,3 @@ private fun IosListenerPresenceSection(store: ListenerPresenceStore, report: (St
         onResetId = { change { store.resetId() } },
     )
 }
-
-/** The installed-size text of the language packs page, formatted by the platform's byte counter. */
-private fun iosByteCountSize(bytes: Long): String = NSByteCountFormatter.stringFromByteCount(bytes)

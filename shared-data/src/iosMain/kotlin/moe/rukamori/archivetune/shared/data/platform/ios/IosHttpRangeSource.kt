@@ -92,14 +92,16 @@ private class RangeTransfer : NSObject(), NSURLSessionDataDelegateProtocol {
         get() = lock.locked { broken }
 
     /** Starts [request] on a fresh session. The session invalidates itself once its one task completes. */
-    fun start(request: NSURLRequest) {
+    fun start(request: NSURLRequest, timeoutMs: Long) {
         val configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration
         configuration.allowsCellularAccess = true
+        configuration.timeoutIntervalForRequest = timeoutMs.toDouble() / 1000.0
         configuration.waitsForConnectivity = false
         // Cookies come only from the lease policy, never from a platform jar that could replay them across origins.
         configuration.URLCache = null
         configuration.HTTPCookieStorage = null
         configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicy.NSHTTPCookieAcceptPolicyNever
+        // The SDK request timeout setter is gone, so the timeout moves to this session, which serves one request.
         val queue = NSOperationQueue().apply { maxConcurrentOperationCount = 1 }
         val session = NSURLSession.sessionWithConfiguration(configuration, this, queue)
         val created = session.dataTaskWithRequest(request)
@@ -455,7 +457,7 @@ internal class IosHttpRangeSource(
                 val stored = cookiesForHop(origin, credentialed)
                 // A cancel that arrived during the account read stops the request before it leaves the device.
                 ticket.throwIfCancelled()
-                hop.start(buildRequest(current, origin, position, credentialed, stored, probing))
+                hop.start(buildRequest(current, origin, position, credentialed, stored, probing), if (probing) PROBE_TIMEOUT_MS else BODY_TIMEOUT_MS)
                 val head = hop.awaitHead(ticket, if (probing) PROBE_TIMEOUT_MS + HEAD_SLACK_MS else BODY_TIMEOUT_MS + HEAD_SLACK_MS)
                 val code = head.statusCode
                 when {
@@ -522,7 +524,6 @@ internal class IosHttpRangeSource(
         val nsUrl = NSURL.URLWithString(target) ?: throw ByteSourceException("the source is not an HTTP(S) URL")
         val request = NSMutableURLRequest(nsUrl)
         request.HTTPMethod = "GET"
-        request.setTimeoutInterval((if (probing) PROBE_TIMEOUT_MS else BODY_TIMEOUT_MS).toDouble() / 1000.0)
         request.HTTPShouldHandleCookies = false
         if (credentialed) {
             headers.reveal().forEach { (name, value) -> request.setValue(value, forHTTPHeaderField = name) }

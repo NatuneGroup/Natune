@@ -63,7 +63,6 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_host_surface_unbound
 import moe.rukamori.archivetune.shared.ui.resources.ios_library_top_mixes_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.ios_queue_empty
 import moe.rukamori.archivetune.shared.ui.resources.ios_queue_remove
-import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSURL
 import platform.UIKit.UIApplication
@@ -83,8 +82,8 @@ internal val IosOpticalCapabilities = OpticalCapabilities(blur = true, refractio
 internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTuneHostBindings {
     val controls = IosPlayerControls(graph)
     val settingsOwners = IosSettingsOwners(graph)
-    // One row menu per host: a row's overflow opens it, and the overlay of the page the row is on shows it.
-    val menu = IosSongMenuState()
+    // The one row menu of this host: a row's overflow opens it, the overlay draws it.
+    val itemMenu = IosItemMenuState()
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     return ArchiveTuneHostBindings(
@@ -94,7 +93,7 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
         // This host accepts no deep links yet, and the system back gesture is handled by the shell itself.
         routes = ownRoutes.receiveAsFlow(),
         backRequests = emptyFlow(),
-        page = { route -> iosGraphPage(graph, menu, route) { target -> ownRoutes.trySend(target) } },
+        page = { route -> iosGraphPage(graph, itemMenu, route) { target -> ownRoutes.trySend(target) } },
         artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         formatNewsDate = ::iosDiagnosticTime,
@@ -106,11 +105,12 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
                 IosUnboundSurface(Modifier.fillMaxSize())
             }
         },
-        overlays = { route -> IosSongMenuOverlay(menu, graph, route.value) },
+        overlays = { route -> IosItemMenuDialog(itemMenu, graph, route.value) },
         playerSlots = { expanded, active, _ -> iosPlayerSlots(graph, expanded, active) },
         playerControls = controls,
-        // The shared song menu runs against the queue, library, history and clipboard owners of this host.
-        more = { occurrence -> menu.open(occurrence) },
+        // The row menu offers the queue commands the queue owner answers; library, download, share and artist rows
+        // need owners this host does not connect yet and are left out rather than appearing as no-ops.
+        more = { occurrence -> itemMenu.open(occurrence) },
         playOccurrence = { collection, start -> hostPlayOccurrence(graph.pageOwners, collection, start) },
         openExternal = { uri -> openIosUri(uri, graph::report) },
         onFailure = { graph.report("a host request could not be completed") },
@@ -126,7 +126,7 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
 @Composable
 private fun iosGraphPage(
     graph: IosSessionGraph,
-    menu: IosSongMenuState,
+    itemMenu: IosItemMenuState,
     route: ArchiveRoute,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage =
@@ -135,21 +135,13 @@ private fun iosGraphPage(
             ArchiveDestination.LIBRARY ->
                 hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
             ArchiveDestination.PLAYLIST ->
-                hostPlaylistPage(graph.pageOwners, route) { occurrence ->
-                    // Only an editable local playlist offers the row's remove-from-playlist action.
-                    menu.open(
-                        occurrence,
-                        playlistId = route.arguments["playlistId"].takeIf {
-                            route.arguments["playlistType"] == "local_playlist"
-                        },
-                    )
-                }
+                hostPlaylistPage(graph.pageOwners, route) { occurrence -> itemMenu.open(occurrence) }
             ArchiveDestination.HISTORY -> hostHistoryPage(
                 owners = graph.pageOwners,
                 offsetMsAt = ::iosOffsetMsAt,
                 nowMs = ::iosNowMillis,
                 formatTime = ::iosDiagnosticTime,
-                more = { occurrence -> menu.open(occurrence) },
+                more = { occurrence -> itemMenu.open(occurrence) },
             )
             else -> ArchiveGraphPage.Host
         }
