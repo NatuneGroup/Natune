@@ -31,4 +31,10 @@
     <string name="m4_recap_card_count">Card %1$d of %2$d</string>
     <string name="m4_recap_share">Share current card</string>
     <string name="m4_recap_share_failed">Could not prepare or share this card. Try again.</string>
+    <string name="m4_stat_one_week">1 week</string>
+    <string name="m4_stat_one_month">1 month</string>
+    <string name="m4_stat_three_months">3 months</string>
+    <string name="m4_stat_six_months">6 months</string>
+    <string name="m4_stat_one_year">1 year</string>
+    <string name="m4_stat_all">All</string>
 </resources>

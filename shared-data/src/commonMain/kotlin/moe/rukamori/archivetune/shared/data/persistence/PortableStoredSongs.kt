@@ -4,6 +4,8 @@ import androidx.room.*
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
@@ -274,6 +276,10 @@ class RoomStoredSongIndex(private val dao: PortableStoredSongDao) : StoredSongIn
         }
     }
 }
+
+/** The occurrence a stored row keeps, without its artwork address, as the index contract wrote it. */
+fun PortableStoredSongRow.storedOccurrence(): ContentOccurrence =
+    ContentJson.decode(Json.parseToJsonElement(json).jsonObject)
 
 /** The listed form of [row], or null when the row names no known source or no quality, so it names no file. */
 private fun toListed(row: PortableStoredSongRow): ListedDownload? {

@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -546,7 +547,7 @@ internal fun CommentTypingRow(
         Spacer(Modifier.width(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             repeat(3) { index ->
-                val lift = sin((phase + index * 0.2f) * 2f * PI.toFloat()).coerceAtLeast(0f)
+                val lift = sin(((phase + index * 0.2f) * 2f * PI.toFloat()).toDouble()).toFloat().coerceAtLeast(0f)
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 2.dp)

@@ -48,6 +48,11 @@ internal class DesktopQueueLocatorResolver(
     private val audio: OrderedAudioResolver,
     private val port: DesktopPlaybackPort,
     private val preferences: () -> PreferenceSnapshot?,
+    /**
+     * The committed download file of a song, when one exists. It answers before the source chain so a
+     * downloaded song keeps playing offline, the way Android's DownloadUtil serves a stored file first.
+     */
+    private val storedFile: suspend (provider: String, mediaId: String) -> java.nio.file.Path? = { _, _ -> null },
 ) : QueueLocatorResolver {
     /** Guards [issued] and [closed] together, so a view prepared during shutdown is released instead of leaked. */
     private val lock = Any()
@@ -57,7 +62,13 @@ internal class DesktopQueueLocatorResolver(
     override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator {
         check(synchronized(lock) { !closed }) { "the desktop source resolver is closed" }
         if (occurrence.item.ref.provider == LOCAL_PROVIDER) {
-            throw IllegalStateException("local files are not connected on this desktop host")
+            // A local ref's id is its absolute path. A missing file fails instead of naming another song.
+            val file = java.io.File(occurrence.item.ref.id)
+            if (file.isFile) return PlaybackLocator.LocalFile(file.absolutePath)
+            throw IllegalStateException("the local file is missing: ${occurrence.item.ref.id}")
+        }
+        storedFile(occurrence.item.ref.provider, occurrence.item.ref.id)?.let { path ->
+            return PlaybackLocator.LocalFile(path.toFile().absolutePath)
         }
         val request = occurrence.toResolveRequest(preferences())
         var refused = emptySet<AudioSourceType>()
