@@ -1,4 +1,6 @@
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 package moe.rukamori.archivetune.shared.ui.home.variants
+
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +34,8 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 
 /** True when the player is on this track or on its album, which is what marks a card as active. */
 internal fun HomeVariantNowPlaying.isActive(ref: ContentRef): Boolean = ref == trackRef || ref == albumRef

@@ -11,6 +11,8 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * Last.fm, Libre.fm and custom-endpoint scrobbling. Sign-in and queue delivery are host work: the page routes to

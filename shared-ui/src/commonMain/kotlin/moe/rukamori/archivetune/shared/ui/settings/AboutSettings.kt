@@ -24,6 +24,7 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
 
 /** Host answer for the remote contributor list. The page renders it and never fetches it. */
 sealed interface AboutContributorsState {

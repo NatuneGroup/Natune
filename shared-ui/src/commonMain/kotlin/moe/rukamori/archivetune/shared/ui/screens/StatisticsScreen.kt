@@ -12,6 +12,7 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 enum class StatisticsSource { LOCAL, YOUTUBE, SPOTIFY }
 enum class StatisticsPeriod { CONTINUOUS, WEEKS, MONTHS, YEARS }

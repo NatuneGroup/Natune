@@ -29,6 +29,8 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentNews
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 typealias NewsImage = @Composable (uri: String, modifier: Modifier) -> Unit
 data class NewsUi(

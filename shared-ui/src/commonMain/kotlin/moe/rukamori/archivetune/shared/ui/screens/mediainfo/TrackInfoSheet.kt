@@ -30,7 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m9_track_info_album
 import moe.rukamori.archivetune.shared.ui.resources.m9_track_info_android_output
 import moe.rukamori.archivetune.shared.ui.resources.m9_track_info_android_output_note

@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Stable
 internal class PlayerArtworkPagerState(val pager: PagerState) {

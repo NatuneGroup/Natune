@@ -60,7 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_close
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_copy
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_please_wait

@@ -17,6 +17,7 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
 
 /** Metadata is already policy-filtered by its repository; IDs/params are never derived from titles. */
 data class MoodGenreUi(val key: String, val title: String, val stripeArgb: Long, val request: ContentRequest)

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.setValue
 
 /** Saveable scroll/draft state is per ENTRY, not route name or tab position. Popped entries are pruned. */
 @Composable

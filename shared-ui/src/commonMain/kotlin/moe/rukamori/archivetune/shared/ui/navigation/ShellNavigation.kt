@@ -4,6 +4,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import moe.rukamori.archivetune.shared.domain.settings.*
+import androidx.compose.runtime.setValue
 
 enum class ShellTab(val route: String) { Home("home"), Search("search"), Library("library") }
 data class ShellEntry(val id: Long, val route: String)

@@ -14,6 +14,8 @@ import moe.rukamori.archivetune.shared.domain.source.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** Presentation outcomes only: the real pool owner retains its persisted throttle and error state. */
 enum class SourcePoolRefreshOutcome { REFRESHED, UP_TO_DATE, FAILED }

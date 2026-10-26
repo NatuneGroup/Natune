@@ -14,6 +14,8 @@ import moe.rukamori.archivetune.shared.domain.queue.*
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** A partial remote page must not be substituted for the confirmed whole album/artist/playlist. */
 fun collectionQueueActions(

@@ -11,6 +11,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 enum class RoomConnectionUi { NOT_CONFIGURED, DISCONNECTED, CONNECTING, CONNECTED, ERROR }
 data class RoomMemberUi(val id: String, val name: String, val host: Boolean, val self: Boolean, val connected: Boolean)

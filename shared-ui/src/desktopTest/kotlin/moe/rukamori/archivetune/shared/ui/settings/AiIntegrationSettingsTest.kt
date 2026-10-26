@@ -10,6 +10,7 @@ import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiServiceSettings
 import moe.rukamori.archivetune.shared.domain.repository.AiTextService
 import moe.rukamori.archivetune.shared.domain.settings.*
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalTestApi::class)
 class AiIntegrationSettingsTest {
