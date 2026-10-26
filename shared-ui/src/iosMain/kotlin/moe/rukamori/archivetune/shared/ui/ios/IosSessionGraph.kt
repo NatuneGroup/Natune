@@ -72,6 +72,8 @@ internal class IosSessionGraph private constructor(
     val http: HttpClient,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
+    /** The one library store of the session: the same instance [libraryContent] and [pageOwners] read and write. */
+    internal val library: RoomLibraryRepository,
     val libraryContent: LibraryContentOwner,
     val pageOwners: LibraryPageOwners,
     val lyrics: HostLyrics,
@@ -308,6 +310,7 @@ internal class IosSessionGraph private constructor(
                 http = http,
                 player = player,
                 queue = queue,
+                library = library,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
                 lyrics = lyrics,
