@@ -97,9 +97,65 @@ private suspend fun DesktopSessionGraph.readAccountSurface(surface: ContentSurfa
 }
 
 /**
- * The room chat page is the desktop owner's own mount in DesktopListenTogetherChat.kt. Keeping the route wrapper here
- * preserves the graph's page naming while the owner supplies the live binding.
+ * The chat screen over the desktop Listen Together owner: the shared binding on the owner's thread, the same avatar
+ * tile the room list uses, remote artwork for shared covers, and the shell's own navigation for leaving the chat.
  */
 @Composable
-internal fun desktopCommentTogetherPage(graph: DesktopSessionGraph, back: () -> Unit): ArchiveGraphPage =
-    desktopListenTogetherChatPage(graph, back)
+internal fun desktopCommentTogetherPage(graph: DesktopSessionGraph): ArchiveGraphPage {
+    val navigation = LocalShellNavigation.current
+    val chatClock = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val binding = remember(graph.listenTogether) {
+        graph.listenTogether.commentTogether(
+            object : CommentTogetherNativePorts {
+                override val localCurrentTrack: StateFlow<TrackInfo?> =
+                    combine(graph.queue.state, graph.player.snapshot) { state, snapshot: PlaybackSnapshot? ->
+                        state.entries.firstOrNull { it.occurrenceId == snapshot?.occurrenceId }?.item?.toChatTrack()
+                    }.stateIn(graph.scope, SharingStarted.Eagerly, null)
+
+                // A desktop window is never backgrounded for the chat; the notification gate stays open.
+                override val appForeground: StateFlow<Boolean> = MutableStateFlow(true)
+
+                override fun formatTime(timestampMs: Long): String = synchronized(chatClock) {
+                    chatClock.format(Date(timestampMs))
+                }
+
+                override fun copyText(text: String): Boolean {
+                    copyToDesktopClipboard(text)
+                    return true
+                }
+
+                override fun playShared(track: TrackInfo): Boolean {
+                    graph.scope.launch {
+                        val occurrence = track.toOccurrence()
+                        graph.queue.insert(listOf(occurrence), UserQueuedKind.PLAY_NEXT)
+                        graph.queue.select(occurrence.occurrenceId)
+                    }
+                    return true
+                }
+
+                override fun openLink(url: String) {
+                    openDesktopUri(url, graph::report)
+                }
+
+                override fun back() {
+                    navigation?.back()
+                }
+            },
+        )
+    }
+    DisposableEffect(binding) { onDispose { binding.close() } }
+    return ArchiveGraphPage.CommentTogether(
+        owner = binding,
+        avatar = { author, modifier -> DesktopListenTogetherAvatar(author.username, modifier) },
+        thumbnail = { url, modifier -> DesktopRemoteArtwork(url, graph.artworkLoader, modifier) },
+    )
+}
+
+private fun ContentItem.toChatTrack() = TrackInfo(
+    id = ref.id,
+    title = title,
+    artist = artists.joinToString(", ") { it.name }.ifEmpty { subtitle },
+    album = album,
+    duration = durationMs ?: 0L,
+    thumbnail = artworkUri,
+)
