@@ -73,6 +73,7 @@ internal fun desktopGraphPage(
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage = key(route.value) {
     when (route.destination) {
+        ArchiveDestination.HOME -> desktopHomePage(graph, spotify, openRoute)
         ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, openRoute)
         ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
             hostSearchPage(graph.catalogPages, route) { openRoute(ArchiveRoutes.musicRecognition()) }

@@ -37,6 +37,10 @@ internal class DesktopSpotifyPlayback(
     private val graph: DesktopSessionGraph,
 ) {
     private val historyTracks = ConcurrentHashMap<String, SpotifyTrack>()
+    private val resolvedSources = object : LinkedHashMap<ContentRef, ContentRef>(SPOTIFY_RESOLUTION_CACHE_MAX, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ContentRef, ContentRef>?): Boolean =
+            size > SPOTIFY_RESOLUTION_CACHE_MAX
+    }
     private val mapperLock = Mutex()
     private val resolutionCache = object : LinkedHashMap<String, ContentItem>(SPOTIFY_RESOLUTION_CACHE_MAX, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ContentItem>?): Boolean =
@@ -82,7 +86,7 @@ internal class DesktopSpotifyPlayback(
         val queueTracks = if (shuffled) tracks.shuffled() else tracks
         val boundedStart = startIndex.coerceIn(queueTracks.indices)
         // Android resolves the tapped track before the queue starts, then drains the rest in bounded chunks.
-        val preload = resolveSpotifyTrack(queueTracks[boundedStart])
+        val preload = resolveTrack(queueTracks[boundedStart])
             ?: throw IllegalStateException(DesktopStrings["spotify_track_unavailable"])
         val resolved = resolveSpotifyQueueEntries(
             queueTracks,
@@ -129,10 +133,20 @@ internal class DesktopSpotifyPlayback(
                 }
             }
 
+    /** The catalog row that produced a resolved YouTube row, used by the Spotify home's active-track marker. */
+    fun spotifyRefForResolved(ref: ContentRef): ContentRef? = synchronized(resolvedSources) { resolvedSources[ref] }
+
+    /** Resolves one track before a queue starts, matching Android's tapped-track preload. */
+    suspend fun resolveTrack(track: SpotifyTrack): ContentItem? = resolveSpotifyTrack(track)
+
     private suspend fun resolveSpotifyTrack(track: SpotifyTrack): ContentItem? =
         withContext(Dispatchers.IO) {
+            val sourceRef = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.SONG, track.id)
             val key = "${track.id}:${snapshot()[DefaultMetadataSourceKey] ?: "YOUTUBE"}"
-            synchronized(resolutionCache) { resolutionCache[key] }?.let { return@withContext it }
+            synchronized(resolutionCache) { resolutionCache[key] }?.let {
+                synchronized(resolvedSources) { resolvedSources[it.ref] = sourceRef }
+                return@withContext it
+            }
             val query = SpotifyMapper.buildSearchQuery(track)
             if (query.isBlank()) return@withContext null
             val anonymousResult = YouTube.search(query, YouTube.SearchFilter.FILTER_SONG, useAccountContext = false)
@@ -188,6 +202,7 @@ internal class DesktopSpotifyPlayback(
                     ?.takeIf { it.isNotBlank() },
             )
             synchronized(resolutionCache) { resolutionCache[key] = item }
+            synchronized(resolvedSources) { resolvedSources[item.ref] = sourceRef }
             item
         }
 

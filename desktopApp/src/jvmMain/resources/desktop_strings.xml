@@ -25,6 +25,8 @@
     <string name="spotify_not_connected">Spotify is not connected</string>
     <string name="spotify_streaming_desktop_note">Spotify audio does not play on the desktop app yet. Signing in here checks and stores the streaming account only.</string>
     <string name="spotify_track_unavailable">No playable match was found for this Spotify track.</string>
+    <string name="spotify_item_unavailable">No matching item was found for this Spotify tile.</string>
+    <string name="spotify_dj_unsupported">Spotify DJ playlists can only be played in the Spotify app.</string>
     <string name="youtube_login_window_hint">Sign in to YouTube Music in the window that opened, then press Finish sign-in.</string>
     <string name="challenge_unavailable">The provider challenge could not complete within its safety limits.</string>
     <string name="host_surface_unbound">This screen is not connected on the desktop host yet.</string>
