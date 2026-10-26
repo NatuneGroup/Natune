@@ -53,7 +53,7 @@ class DesktopStorageConsumers(
                 val files = mutableListOf<Path>()
                 Files.walkFileTree(dir, object : SimpleFileVisitor<Path>() {
                     override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                        files += file; return FileVisitResult.CONTINUE
+                        files.add(file); return FileVisitResult.CONTINUE
                     }
                 })
                 var total = files.sumOf { Files.size(it) }
