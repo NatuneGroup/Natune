@@ -13,7 +13,7 @@ class RoomQueueCheckpointTest {
         val song = ContentItem(ContentRef("youtube", ContentKind.SONG, "duplicate"), "日本語 🎵", durationMs = 30_000)
         return QueueCheckpoint(QueueState(revision,
             listOf(ContentOccurrence("a", song, "set-a"), ContentOccurrence("b", song, "set-b")),
-            "b", listOf("b", "a"), FinitePlaylistPhase.PAGEABLE), 1234)
+            "b", listOf("b", "a"), FinitePlaylistPhase.PAGEABLE, shuffleEnabled = true), 1234)
     }
     @Test fun duplicateOccurrenceAndPositionSurviveRealDatabaseReopen() = runTest {
         val dir = Files.createTempDirectory("archivetune-queue-test")
