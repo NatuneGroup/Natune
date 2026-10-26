@@ -17,7 +17,7 @@ jobs:
   prepare:
     name: Select stable release version
     if: github.repository == 'NatuneGroup/ArchiveTune-KMP' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read
     outputs:
@@ -51,7 +51,7 @@ jobs:
 
           VERSION="$(python3 .github/scripts/next-version.py "$BASE_VERSION")"
           TAG_NAME="v${VERSION}"
-          VERSION_CODE=$((FLOOR + $(date -u +%s) / 60))
+          VERSION_CODE=$((FLOOR + $(date -u +%s)))
           if (( VERSION_CODE <= FLOOR || VERSION_CODE > 2147483647 )); then
             echo "::error::Allocated version code $VERSION_CODE is outside Android's supported positive Int range."
             exit 1

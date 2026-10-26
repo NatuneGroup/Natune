@@ -39,6 +39,7 @@ Release shrinking/signing or device behavior.
 - `:shared-data`
 - `:shared-ui`
 - `:desktopApp`
+- `:desktopApp:tdlight-jvm`
 - `:core`
 - `:lyrics:kugou`
 - `:lyrics:lrclib`

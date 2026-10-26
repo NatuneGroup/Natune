@@ -156,11 +156,12 @@ if (Test-Path -LiteralPath (Join-Path $Source '.gitmodules') -PathType Leaf) {
     Invoke-Checked 'git' @('-C', $Source, 'submodule', 'update', '--init', '--depth', '1', '--recursive', '--quiet')
 }
 
-# The Boost text is copied, never typed in, so the staged notice is the upstream file byte for byte. Depth 2 matches the
-# find -maxdepth 3 of the Linux and macOS recipe.
-$licenseHits = @(Get-ChildItem -LiteralPath $Source -Recurse -File -Depth 2 -Filter 'LICENSE_1_0.txt')
+# The Boost text is copied, never typed in, so the staged notice is the upstream file byte for byte.
+# The pinned tree also ships example copies (e.g. example/uwp/LICENSE_1_0.txt); the package notice
+# is always the root file.
+$licenseHits = @(Get-ChildItem -LiteralPath $Source -File -Filter 'LICENSE_1_0.txt')
 if ($licenseHits.Count -ne 1) {
-    Stop-Recipe "expected exactly one LICENSE_1_0.txt within three levels of $Source"
+    Stop-Recipe "expected exactly one LICENSE_1_0.txt at the root of $Source"
 }
 $licenseFile = $licenseHits[0].FullName
 $titleLine = Get-Content -LiteralPath $licenseFile -TotalCount 1 -Encoding UTF8
@@ -187,12 +188,45 @@ $cmakeArguments = @(
     ('-DZLIB_INCLUDE_DIR=' + (Join-Path $ZlibPrefix 'include')),
     ('-DZLIB_LIBRARY_RELEASE=' + $ZlibLibrary)
 )
+$cmakeArguments += ('-DCMAKE_INSTALL_PREFIX=' + (Join-Path $BuildRoot 'prefix'))
 Invoke-Checked 'cmake' $cmakeArguments
-Invoke-Checked 'cmake' @('--build', $CmakeBuild, '--config', 'Release', '--target', $TdlightJniTarget, '--parallel', [string]$Jobs)
+Invoke-Checked 'cmake' @('--build', $CmakeBuild, '--config', 'Release', '--target', 'install', '--parallel', [string]$Jobs)
 
-$libraryHits = @(Get-ChildItem -LiteralPath $CmakeBuild -Recurse -File -Filter $LibraryName)
+# The pinned tree defines tdjni only in the example/java project, which find_package(Td)s the installed TDLib — so the
+# second stage configures that project against the prefix and compiles the JNI shim.
+$CmakeBuildJava = Join-Path $BuildRoot 'cmake-java'
+# The Java example locates its codegen binary and API scheme at <src>/td/bin — the layout the stage-one install
+# produces. Configure a copy of the project with td junctioned to the prefix so the fetched tree stays pristine.
+$JniSource = Join-Path $BuildRoot 'java-src'
+if (Test-Path $JniSource) { Remove-Item -Recurse -Force $JniSource }
+if (Test-Path $CmakeBuildJava) { Remove-Item -Recurse -Force $CmakeBuildJava }
+Copy-Item -Recurse (Join-Path $Source 'example/java') $JniSource
+New-Item -ItemType Junction -Path (Join-Path $JniSource 'td') -Target (Join-Path $BuildRoot 'prefix') | Out-Null
+# td_jni.cpp calls the td_api JSON helpers, which live in tdjson_private — behind Td::TdJsonStatic — so the
+# object-API build must link it alongside Td::TdStatic or the to_json_string symbols stay unresolved.
+$JniLists = Join-Path $JniSource 'CMakeLists.txt'
+$linkLine = (Get-Content -Raw $JniLists)
+if (-not $linkLine.Contains('target_link_libraries(tdjni PRIVATE Td::TdStatic)')) {
+    Stop-Recipe "$JniLists no longer links Td::TdStatic; review the pinned tdlight revision"
+}
+$linkLine = $linkLine -replace 'target_link_libraries\(tdjni PRIVATE Td::TdStatic\)', 'target_link_libraries(tdjni PRIVATE Td::TdStatic Td::TdJsonStatic)'
+Set-Content -Path $JniLists -Value $linkLine -NoNewline
+# Windows needs the jvm import library; leave the example's JAVA_JVM_LIBRARY link untouched here.
+$jniArguments = @(
+    '-S', $JniSource,
+    '-B', $CmakeBuildJava,
+    '-G', 'Visual Studio 17 2022',
+    '-A', 'x64',
+    ('-DTd_DIR=' + (Join-Path $BuildRoot 'prefix/lib/cmake/Td')),
+    ('-DCMAKE_PREFIX_PATH=' + (Join-Path $BuildRoot 'prefix')),
+    ('-DCMAKE_INSTALL_PREFIX=' + (Join-Path $BuildRoot 'java-output'))
+)
+Invoke-Checked 'cmake' $jniArguments
+Invoke-Checked 'cmake' @('--build', $CmakeBuildJava, '--config', 'Release', '--target', $TdlightJniTarget, '--parallel', [string]$Jobs)
+
+$libraryHits = @(Get-ChildItem -LiteralPath $CmakeBuildJava -Recurse -File -Filter $LibraryName)
 if ($libraryHits.Count -ne 1) {
-    Stop-Recipe "expected exactly one $LibraryName under $CmakeBuild"
+    Stop-Recipe "expected exactly one $LibraryName under $CmakeBuildJava"
 }
 $library = $libraryHits[0].FullName
 

@@ -306,30 +306,42 @@ val installNativeBrowser = tasks.register<Exec>("installNativeBrowser") {
     group = "distribution"
     description = "Installs archivetune_browser into the host native resources that the desktop package copies."
     dependsOn(buildNativeBrowser)
-    mustRunAfter("stageLinuxNativeResources")
+    // The host scripts also write this directory, so the install runs after them, never beside them.
+    mustRunAfter("stageLinuxNativeResources", "stageMacosNativeResources", "stageWindowsNativeResources")
     inputs.dir(nativeBrowserBuildDir)
     outputs.dir(hostNativeDirectory)
     commandLine("cmake", "--install", nativeBrowserBuildDir.get().asFile.absolutePath, "--config", "Release",
         "--prefix", hostNativeDirectory.get().asFile.absolutePath)
 }
+val hostIsWindows = System.getProperty("os.name").startsWith("Windows")
+val hostIsMacos = !hostIsLinux && !hostIsWindows
+val desktopNativeDirectoryOverride = providers.gradleProperty("desktopNativeDirectory")
 val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") {
     group = "distribution"
     description = "Stages actual host-native libraries and required notices; refuses incomplete packages."
     dependsOn(buildNativeSystem, installNativeBrowser)
     if (hostIsLinux) dependsOn("stageLinuxNativeResources")
+    // The in-repo recipes stage the closure from build/native; -PdesktopNativeDirectory keeps the
+    // override for a foreign media closure that was not produced by them.
+    if (hostIsMacos && !desktopNativeDirectoryOverride.isPresent) dependsOn("stageMacosNativeResources")
+    if (hostIsWindows && !desktopNativeDirectoryOverride.isPresent) dependsOn("stageWindowsNativeResources")
     // Recheck the closure on every package; a stale resource directory is not a native build.
     doLast {
-        if (!hostIsLinux) {
-            val input = providers.gradleProperty("desktopNativeDirectory").orNull?.let { file(it) }
-                ?: error("Provide -PdesktopNativeDirectory=/host-built-media-closure; Linux output is not portable.")
+        if (!hostIsLinux && desktopNativeDirectoryOverride.isPresent) {
+            val input = file(desktopNativeDirectoryOverride.get())
             check(input.resolve(System.mapLibraryName("archivetune_engine")).isFile) { "Host playback engine missing" }
             val systemName = System.mapLibraryName("archivetune_system")
             val system = nativeSystemBuildDir.get().asFile.walkTopDown().firstOrNull { it.name == systemName && it.isFile }
                 ?: error("Host native OS adapter missing")
-            val host = if (System.getProperty("os.name").startsWith("Windows")) "windows" else "macos"
+            val host = if (hostIsWindows) "windows" else "macos"
             val arch = if (System.getProperty("os.arch") in listOf("aarch64", "arm64")) "arm64" else "x64"
             copy { from(input); from(system); into(layout.buildDirectory.dir("distribution-resources/$host-$arch/native")) }
             copy { from(rootProject.file("LICENSE")); into(layout.buildDirectory.dir("distribution-resources/common/notices")) }
+        } else if (!hostIsLinux) {
+            val systemName = System.mapLibraryName("archivetune_system")
+            val system = nativeSystemBuildDir.get().asFile.walkTopDown().firstOrNull { it.name == systemName && it.isFile }
+                ?: error("Host native OS adapter missing")
+            copy { from(system); into(hostNativeDirectory) }
         }
         copy { from("packaging/notices"); into(layout.buildDirectory.dir("distribution-resources/common/notices")) }
         // TDLight is desktop-only. Its native library comes from the pinned source through the host's recipe, and its notice
@@ -360,6 +372,17 @@ tasks.register<Exec>("stageLinuxNativeResources") {
     dependsOn("buildNativeEngine")
     onlyIf { hostIsLinux }
     commandLine("python3", file("native/scripts/stage-linux-package.py").absolutePath)
+}
+tasks.register<Exec>("stageMacosNativeResources") {
+    dependsOn("buildNativeEngine")
+    onlyIf { hostIsMacos }
+    commandLine("python3", file("native/scripts/stage-macos-package.py").absolutePath)
+}
+tasks.register<Exec>("stageWindowsNativeResources") {
+    dependsOn("buildNativeEngine")
+    onlyIf { hostIsWindows }
+    commandLine("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+        file("native/scripts/stage-windows-package.ps1").absolutePath)
 }
 tasks.matching { it.name in setOf("prepareAppResources", "createDistributable", "packageDeb", "packageRpm", "packageMsi", "packageDmg") }.configureEach {
     dependsOn(stageDesktopNativeResources)
@@ -487,7 +510,7 @@ val buildNativeEngine = tasks.register<Exec>("buildNativeEngine") {
     onlyIf { nativePrefix.get().asFile.resolve("lib").isDirectory }
     inputs.dir(file("native"))
     outputs.file(nativeEngineLibrary)
-    commandLine("cmake", "--build", nativeEngineBuildDir.get().asFile.absolutePath, "--parallel", "2")
+    commandLine("cmake", "--build", nativeEngineBuildDir.get().asFile.absolutePath, "--config", "Release", "--parallel", "2")
 }
 
 // The playback tests load the engine from its build directory. A change to the engine rebuilds it,
