@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.download
 
 import io.ktor.client.HttpClient
+import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.readAvailable
@@ -17,6 +18,7 @@ import java.util.UUID
 import moe.rukamori.archivetune.shared.data.persistence.ListedDownload
 import moe.rukamori.archivetune.shared.data.persistence.StoredSongIndex
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
@@ -174,6 +176,135 @@ class JvmDownloadRepository(
             }
         }
     }
+
+    /**
+     * The resumable form of [download] that the queue owner drives. Staging belongs to [taskId], never to the
+     * request, so a paused or failed transfer keeps its bytes and the next call for the same task continues from
+     * them. With [resumeFromBytes] above zero the request asks for an HTTP range continuation: a 206 appends to the
+     * staged file, a 200 means the source ignored the range and the file restarts, and a 416 means the staged bytes
+     * already hold the whole body and commit without another read. Cancellation or a failure leaves the staging
+     * directory in place; only a commit or [discardStaging] removes it. [stream]'s headers travel on every request,
+     * because an authenticated provider stream is never fetched bare.
+     */
+    suspend fun transfer(
+        key: DownloadKey,
+        taskId: String,
+        stream: DirectStream,
+        song: ContentItem? = null,
+        resumeFromBytes: Long = 0L,
+        progress: suspend (bytesDone: Long, totalBytes: Long?) -> Unit = { _, _ -> },
+    ): Long {
+        val provider = requireNotNull(key.provider ?: song?.ref?.provider) { "A download names its provider" }
+        require(song == null || song.ref.provider == provider) { "Download provider does not match its song" }
+        val owned = key.copy(provider = provider)
+        val token = UUID.randomUUID().toString()
+        val requestDirectory = stagingDirectory(taskId)
+        val staging = requestDirectory.resolve(STAGING_FILE)
+        val destination = path(provider, owned)
+        var committedBytes = 0L
+        mutex.withLock { owners[owned] = token }
+        try {
+            withContext(Dispatchers.IO) {
+                Files.createDirectories(requestDirectory)
+                Files.createDirectories(destination.parent)
+                val resumed = resumeFromBytes > 0 && Files.isRegularFile(staging)
+                val staged = if (resumed) Files.size(staging) else 0L
+                val offset = if (resumed) minOf(staged, resumeFromBytes) else 0L
+                var append = offset > 0
+                client.prepareGet(stream.uri) {
+                    stream.headers.reveal().forEach { (name, value) -> header(name, value) }
+                    if (append) header(io.ktor.http.HttpHeaders.Range, "bytes=$offset-")
+                }.execute { response ->
+                    val status = response.status.value
+                    val channel = response.bodyAsChannel()
+                    val declared = response.headers[io.ktor.http.HttpHeaders.ContentLength]?.toLongOrNull()
+                    when {
+                        append && status == 206 -> Unit
+                        append && status == 416 -> {
+                            committedBytes = offset
+                            return@execute
+                        }
+                        status in 200..299 -> {
+                            append = false
+                            Files.deleteIfExists(staging)
+                        }
+                        else -> error("Download HTTP $status")
+                    }
+                    val options = if (append) {
+                        arrayOf(StandardOpenOption.WRITE, StandardOpenOption.APPEND)
+                    } else {
+                        arrayOf(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)
+                    }
+                    Files.newOutputStream(staging, *options).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var total = offset
+                        progress(total, declared?.let { it + offset })
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = channel.readAvailable(buffer)
+                            if (count < 0) break
+                            if (count == 0) { yield(); continue }
+                            total += count
+                            require(total <= maxBytes) { "Download exceeds size limit" }
+                            output.write(buffer, 0, count)
+                            progress(total, declared?.let { it + offset })
+                        }
+                        committedBytes = total
+                    }
+                }
+                require(committedBytes > 0) { "Empty download" }
+                FileChannel.open(staging, StandardOpenOption.WRITE).use { it.force(true) }
+                currentCoroutineContext().ensureActive()
+                mutex.withLock {
+                    if (owners[owned] != token) throw CancellationException("Download request superseded")
+                    val placeFile: suspend () -> Unit = {
+                        currentCoroutineContext().ensureActive()
+                        Files.move(
+                            staging,
+                            destination,
+                            StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING,
+                        )
+                    }
+                    val displaced = if (index != null && song != null) {
+                        index.commitDownload(
+                            song,
+                            key.source,
+                            key.quality,
+                            committedBytes,
+                            System.currentTimeMillis(),
+                            placeFile,
+                        )
+                    } else {
+                        placeFile()
+                        null
+                    }
+                    owners.remove(owned)
+                    if (displaced != null) {
+                        val earlier = DownloadKey(key.mediaId, displaced.source, displaced.quality, provider)
+                        try {
+                            Files.deleteIfExists(path(provider, earlier))
+                        } catch (leftover: IOException) {
+                            // The committed download stands. Its orphaned earlier file is only wasted space.
+                        }
+                    }
+                }
+            }
+            deleteRequestDirectory(requestDirectory)
+            return committedBytes
+        } finally {
+            mutex.withLock { if (owners[owned] == token) owners.remove(owned) }
+        }
+    }
+
+    /** Drops one task's staged bytes; only removal calls it, never a pause or a failed transfer. */
+    suspend fun discardStaging(taskId: String) = withContext(Dispatchers.IO) {
+        deleteRequestDirectory(stagingDirectory(taskId))
+    }
+
+    /** The directory one task stages in, named so a resumed transfer finds the bytes it left. */
+    private fun stagingDirectory(taskId: String): Path =
+        root.resolve("staging").resolve("task_${taskId.replace(Regex("[^A-Za-z0-9._-]"), "_")}")
 
     /**
      * The file of [key] when it is a download. A key without its provider names none. With an index, the row

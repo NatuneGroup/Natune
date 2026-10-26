@@ -15,14 +15,16 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
  * library songs, by [PortableStateMigrations.V4_TO_V5]. Version 6 adds the index of stored songs, the downloads and
  * the streamed cache entries that the downloaded and cache lists read, by [PortableStateMigrations.V5_TO_V6].
  * Version 7 adds each download's byte count and the complete album track lists, by
- * [PortableStateMigrations.V6_TO_V7].
+ * [PortableStateMigrations.V6_TO_V7]. Version 8 adds the persisted download queue, the rows a restarted owner
+ * resumes or marks stopped exactly like the retained download index, by [PortableStateMigrations.V7_TO_V8].
  */
 @Database(
     entities = [QueueCheckpointRow::class, LibraryItemRow::class, PortablePlaylistRow::class,
         PortablePlaylistEntry::class, PortableTagRow::class, PortablePlaylistTagRow::class,
         PortableListenEventRow::class, PortableListenEntityRow::class, PortableArtistBlockRow::class,
-        PortableStoredSongRow::class, PortableAlbumCompleteRow::class, PortableAlbumTrackRow::class],
-    version = 7,
+        PortableStoredSongRow::class, PortableAlbumCompleteRow::class, PortableAlbumTrackRow::class,
+        PortableDownloadTaskRow::class, PortableLocalTrackRow::class],
+    version = 8,
     exportSchema = true,
 )
 @ConstructedBy(PortableStateDatabaseConstructor::class)
@@ -33,6 +35,8 @@ abstract class PortableStateDatabase : RoomDatabase() {
     abstract fun artistBlocks(): ArtistBlockDao
     abstract fun storedSongs(): PortableStoredSongDao
     abstract fun albumTracks(): PortableAlbumTrackDao
+    abstract fun downloadTasks(): PortableDownloadTaskDao
+    abstract fun localTracks(): PortableLocalTrackDao
 }
 
 expect object PortableStateDatabaseConstructor : RoomDatabaseConstructor<PortableStateDatabase> {
@@ -47,6 +51,7 @@ fun RoomDatabase.Builder<PortableStateDatabase>.buildPortableStateDatabase(): Po
         PortableStateMigrations.V4_TO_V5,
         PortableStateMigrations.V5_TO_V6,
         PortableStateMigrations.V6_TO_V7,
+        PortableStateMigrations.V7_TO_V8,
     )
         .setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
 
