@@ -9,6 +9,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.flow.*
 import moe.rukamori.archivetune.nativeaudio.*
+import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
