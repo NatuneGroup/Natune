@@ -48,7 +48,6 @@ internal fun desktopGraphPage(
     creation: DesktopPlaylistCreation,
     recognition: DesktopRecognitionMount,
     playlistMenus: DesktopPlaylistMenuState,
-    spotify: DesktopSpotifyAccounts,
     route: ArchiveRoute,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage = key(route.value) {
@@ -64,7 +63,9 @@ internal fun desktopGraphPage(
         ArchiveDestination.MUSIC_RECOGNITION -> desktopRecognitionPage(recognition, route)
         ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> desktopRecognitionDetailsPage(recognition, route)
         ArchiveDestination.LISTEN_TOGETHER -> desktopListenTogetherPage(graph, openRoute)
-        ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu, spotify)
+        ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopCommentTogetherPage(graph)
+        ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu)
+        ArchiveDestination.ACCOUNT -> desktopAccountPage(graph)
         ArchiveDestination.NEWS -> desktopNewsPage()
         ArchiveDestination.ARTICLE -> desktopArticlePage(route.arguments.getValue("newsId"))
         ArchiveDestination.PODCASTS -> desktopPodcastsPage()
@@ -75,16 +76,6 @@ internal fun desktopGraphPage(
         ArchiveDestination.RECAP -> desktopRecapPage(graph, menu)
         ArchiveDestination.TRACK_INFO -> desktopTrackInfoPage(graph, route.arguments.getValue("trackId"))
         ArchiveDestination.MEDIA_INFO -> desktopMediaInfoPage(graph, route.arguments.getValue("mediaId"))
-        ArchiveDestination.HOME -> desktopHomePage(graph, openRoute)
-        ArchiveDestination.DISCOVERY -> desktopDiscoveryPage(graph, openRoute)
-        ArchiveDestination.CHARTS -> desktopChartsPage(graph)
-        ArchiveDestination.MOODS -> desktopMoodsPage(graph)
-        ArchiveDestination.RELEASES -> desktopReleasesPage(graph)
-        ArchiveDestination.BROWSE, ArchiveDestination.YOUTUBE_BROWSE -> desktopBrowsePage(graph, route)
-        ArchiveDestination.ARTIST -> desktopArtistPage(graph, route, menu)
-        ArchiveDestination.ARTIST_SONGS -> desktopArtistSongsPage(graph, route, menu)
-        ArchiveDestination.ARTIST_ALBUMS -> desktopArtistAlbumsPage(graph, route, menu)
-        ArchiveDestination.ARTIST_ITEMS -> desktopArtistItemsPage(graph, route, menu)
         else -> ArchiveGraphPage.Host
     }
 }
@@ -96,21 +87,15 @@ private fun desktopLibraryPage(graph: DesktopSessionGraph, openRoute: (String) -
 
 /** The local listening history, on the user's calendar days and clock. */
 @Composable
-private fun desktopHistoryPage(
-    graph: DesktopSessionGraph,
-    menu: DesktopItemMenuState,
-    spotify: DesktopSpotifyAccounts,
-): ArchiveGraphPage {
+private fun desktopHistoryPage(graph: DesktopSessionGraph, menu: DesktopItemMenuState): ArchiveGraphPage {
     // DateFormat is not thread-safe. It formats only while the page composes, on the window's UI thread.
     val format = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
-    val remote = remember(graph, spotify) { listOf(DesktopYouTubeHistoryPager(graph), DesktopSpotifyHistoryPager(graph, spotify)) }
     return hostHistoryPage(
         owners = graph.pageOwners,
         offsetMsAt = { epochMs -> TimeZone.getDefault().getOffset(epochMs).toLong() },
         nowMs = System::currentTimeMillis,
         formatTime = { epochMs -> format.format(Date(epochMs)) },
         more = { occurrence -> menu.open(occurrence) },
-        remote = remote,
     )
 }
 
@@ -179,7 +164,6 @@ private fun desktopPlaylistPage(graph: DesktopSessionGraph, menu: DesktopItemMen
 
 /** Plays [start] inside the complete list [collection] names, in the order the owner shows it. */
 internal fun desktopPlayOccurrence(graph: DesktopSessionGraph, collection: ContentRequest?, start: QueueStart) {
-    if (collection != null && graph.catalogueOwners.playOccurrence(collection, start)) return
     if (collection != null && hostPlayCatalogOccurrence(graph.catalogPages, collection, start)) return
     hostPlayOccurrence(graph.pageOwners, collection, start)
 }
