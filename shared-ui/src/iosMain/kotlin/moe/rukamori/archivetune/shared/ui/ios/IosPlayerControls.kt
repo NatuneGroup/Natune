@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
+import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.SeekExtraSeconds
@@ -38,8 +39,8 @@ private const val STATE_STOP_TIMEOUT_MS = 5_000L
 /**
  * The iOS native controls over the one session graph. Skip and repeat go through the queue owner and the settings
  * store, seek goes through the one player, like goes through the library owner, and shuffle goes through the queue
- * owner. The system owns the output volume on iOS, so the volume row stays hidden. Song actions without an owner on
- * this host are reported and never shown as done.
+ * owner. The app-level volume goes through the graph onto the engine's mixer, like the Android player. Song actions
+ * without an owner on this host are reported and never shown as done.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class IosPlayerControls(private val graph: IosSessionGraph) : PlayerNativeControls {
@@ -99,7 +100,7 @@ internal class IosPlayerControls(private val graph: IosSessionGraph) : PlayerNat
     }
 
     override fun setVolume(volume: Float) {
-        graph.report("the output volume is owned by the system on iOS")
+        graph.setVolume(volume)
     }
 
     override fun seekStep(forward: Boolean) {
@@ -163,7 +164,7 @@ private fun iosNativeState(
         shuffle = queue.shuffleEnabled,
         repeat = mode.toPlayerRepeat(),
         liked = liked,
-        volume = null,
+        volume = preferences?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f,
         canvasAvailable = false,
         palette = emptyList(),
     )

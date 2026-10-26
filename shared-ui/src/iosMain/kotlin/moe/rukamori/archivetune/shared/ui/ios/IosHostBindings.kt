@@ -33,8 +33,11 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.data.platform.ios.IosDeepLink
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
@@ -49,6 +52,7 @@ import moe.rukamori.archivetune.shared.ui.host.hostLibraryPage
 import moe.rukamori.archivetune.shared.ui.host.hostPlayOccurrence
 import moe.rukamori.archivetune.shared.ui.host.hostPlaylistPage
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationPresentation
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationState
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
@@ -90,8 +94,8 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
         queue = graph.queue,
         settings = graph.settings,
         actionScope = graph.scope,
-        // This host accepts no deep links yet, and the system back gesture is handled by the shell itself.
-        routes = ownRoutes.receiveAsFlow(),
+        // Deep links arrive from the app's URL intake; the system back gesture is handled by the shell itself.
+        routes = merge(ownRoutes.receiveAsFlow(), iosLaunchRoutes(host, graph)),
         backRequests = emptyFlow(),
         page = { route -> iosGraphPage(graph, itemMenu, route) { target -> ownRoutes.trySend(target) } },
         artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
@@ -188,6 +192,45 @@ private const val NO_LYRICS_SESSION = "ios-no-lyrics"
 
 /** Routes this host opens itself. The bound keeps a burst of taps from growing memory, and the root drains them promptly. */
 private const val OWN_ROUTE_CAPACITY = 4
+
+/**
+ * The route strings the shared root opens from deep links. A link that opens no page is reported as one line and
+ * dropped here, so the root never receives an unresolved route or an action link as a route — the same contract the
+ * desktop intake applies.
+ */
+private fun iosLaunchRoutes(host: IosHost, graph: IosSessionGraph): kotlinx.coroutines.flow.Flow<String> =
+    host.incomingLinks.mapNotNull { link ->
+        val route = when (link) {
+            is IosDeepLink.AppRoute -> iosLaunchRoute(link.route)
+            // A link starts no action: the sign-in page and an invite's room join are refused here, as on desktop.
+            is IosDeepLink.Login -> null
+            is IosDeepLink.ListenTogetherInvite -> iosLaunchRoute("listen_together?code=${iosLinkArgEncode(link.code)}")
+        }
+        if (route == null) {
+            graph.report("link not opened: it names no page that a link may open")
+        }
+        route
+    }
+
+/**
+ * The route a link opens, or null when it opens none. [ArchiveRoutes] decides the destination; the sign-in page and
+ * a recognition auto-start request are refused, so another program cannot start a sign-in or open the microphone —
+ * the same refusal the desktop intake makes.
+ */
+internal fun iosLaunchRoute(route: String): String? {
+    val resolved = ArchiveRoutes.resolve(route) ?: return null
+    val opensAction = resolved.destination == ArchiveDestination.LOGIN || resolved.arguments.containsKey("autoStart")
+    return route.takeUnless { opensAction }
+}
+
+/** One link argument encoded for a route query: the unreserved set only, so a room code can never split the route. */
+private fun iosLinkArgEncode(value: String): String = buildString {
+    val safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    for (byte in value.encodeToByteArray()) {
+        val char = byte.toInt().toChar()
+        if (char in safe) append(char) else append('%').append(byte.toUByte().toString(16).uppercase().padStart(2, '0'))
+    }
+}
 
 /**
  * The player's queue panel: the one queue in play order, the current song marked. A row plays its song, the current

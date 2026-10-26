@@ -193,3 +193,19 @@ fun iosCrashDeviceInfo(): List<Pair<String, String>> {
         "Device" to machine.ifBlank { "-" },
     )
 }
+
+/**
+ * The full diagnostic report the log page exports, in the same v2 shape the desktop writes: identity and device rows,
+ * then the rotating process log. The caller redacts it before it leaves the app.
+ */
+suspend fun iosDiagnosticReport(store: moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLogStore): String =
+    buildString {
+        appendLine("Natune diagnostic report v2")
+        appendLine("Version: ${iosApplicationVersion()}")
+        appendLine("Variant: ios")
+        iosCrashDeviceInfo().forEach { (key, value) -> appendLine("$key: $value") }
+        appendLine("Captured: ${iosDiagnosticTime(iosNowMillis())}")
+        appendLine()
+        appendLine("Process log (host diagnostics; earlier sessions first, newest last):")
+        append(store.readForExport())
+    }

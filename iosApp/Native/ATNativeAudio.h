@@ -22,6 +22,10 @@ int at_audio_play(at_audio_output *output);
 void at_audio_pause(at_audio_output *output);
 void at_audio_seek(at_audio_output *output, uint64_t position_us);
 void at_audio_speed(at_audio_output *output, float speed);
+/* The app's output level, 0 to 1, applied by the engine's mixer node on top of decoder output. It scales what the
+ * listener hears, like the desktop port's volume, while the hardware buttons keep owning the session route volume.
+ * A level that arrives before the first load still applies to every later load. Values outside 0..1 are clamped. */
+void at_audio_volume(at_audio_output *output, float volume);
 void at_audio_stop(at_audio_output *output);
 void at_audio_snapshot(at_audio_output *output, ae_snapshot *snapshot);
 size_t at_audio_last_error(at_audio_output *output, char *buffer, size_t length);

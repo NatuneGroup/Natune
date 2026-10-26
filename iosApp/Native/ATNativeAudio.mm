@@ -346,6 +346,12 @@ void at_audio_pause(at_audio_output *p) {
 }
 void at_audio_seek(at_audio_output *p, uint64_t position) { require_main(); ae_engine_seek(p->core, position); }
 void at_audio_speed(at_audio_output *p, float speed) { require_main(); ae_engine_set_speed(p->core, speed); }
+void at_audio_volume(at_audio_output *p, float volume) {
+    require_main();
+    if (!(volume >= 0.0f)) volume = 0.0f;
+    if (volume > 1.0f) volume = 1.0f;
+    p->graph.mainMixerNode.outputVolume = volume;
+}
 void at_audio_stop(at_audio_output *p) {
     at_audio_pause(p);
     ae_engine_stop(p->core);

@@ -13,6 +13,12 @@
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
     <key>ArchiveTuneTelegramApiId</key><string>$(ARCHIVETUNE_TELEGRAM_API_ID)</string>
     <key>ArchiveTuneTelegramApiHash</key><string>$(ARCHIVETUNE_TELEGRAM_API_HASH)</string>
+    <key>ArchiveTuneTidalClientId</key><string>$(ARCHIVETUNE_TIDAL_CLIENT_ID)</string>
+    <key>ArchiveTuneTidalClientSecret</key><string>$(ARCHIVETUNE_TIDAL_CLIENT_SECRET)</string>
+    <key>ArchiveTuneTidalDeviceClientId</key><string>$(ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID)</string>
+    <key>ArchiveTuneTidalDeviceClientSecret</key><string>$(ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET)</string>
+    <key>ArchiveTuneTidalPkceClientId</key><string>$(ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID)</string>
+    <key>ArchiveTuneTidalPkceClientSecret</key><string>$(ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET)</string>
     <key>ArchiveTuneListenerPresenceUrl</key><string>$(ARCHIVETUNE_LISTENER_PRESENCE_URL)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
