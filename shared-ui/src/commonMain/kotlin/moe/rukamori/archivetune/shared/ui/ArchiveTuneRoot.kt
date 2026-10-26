@@ -126,7 +126,8 @@ fun ArchiveTuneRoot(
                             },
                         ) {
                             ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
-                                host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays)
+                                host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
+                                preferences = preferences)
                         }
                         // Keep the interaction owner above style dispatch; a saved style edit cannot reset
                         // seek ownership, queue/lyrics panels or the fullscreen scroll owner.
