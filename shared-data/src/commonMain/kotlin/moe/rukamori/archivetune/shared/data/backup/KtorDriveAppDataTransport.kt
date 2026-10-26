@@ -52,7 +52,8 @@ class KtorDriveAppDataTransport(
         require(fileName.isNotEmpty() && fileName.all { it.isLetterOrDigit() || it in "._-" }) { "Unsafe backup file name" }
     }
 
-    private val http = client.config {
+    // A second client view over the same engine, so the file's redirects stay explicit and failures stay readable.
+    private val http = HttpClient(client.engine) {
         followRedirects = false
         expectSuccess = false
     }
