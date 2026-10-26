@@ -693,10 +693,10 @@ fun BackupAndRestoreSettings(
         )
     }
 
-    val driveFrequency = driveSnapshot?.frequency
-    if (driveHost != null && driveFrequency != null && driveFrequencyOpen) {
+    val driveAppDataFrequency = driveSnapshot?.frequency
+    if (driveHost != null && driveAppDataFrequency != null && driveFrequencyOpen) {
         DriveAppDataFrequencyDialog(
-            selected = driveFrequency,
+            selected = driveAppDataFrequency,
             onSelect = { frequency ->
                 // The choice closes the dialog first, so the host write runs under the page's single-flight guard.
                 driveFrequencyOpen = false

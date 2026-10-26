@@ -13,6 +13,7 @@ import moe.rukamori.archivetune.shared.domain.queue.*
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalTestApi::class)
 class CollectionOverflowMenusTest {

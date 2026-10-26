@@ -14,6 +14,8 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.session.LyricsSessions
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 class OverflowAction(
     val id: String, val label: StringResource, val enabled: Boolean = true,

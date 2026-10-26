@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.ui.lyrics.*
+import androidx.compose.runtime.getValue
 
 class PlayerLyricsSlots internal constructor(
     val full: @Composable (Modifier) -> Unit,

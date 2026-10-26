@@ -11,6 +11,7 @@ import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.settings.*
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 /** Component observation/dispatch tests, NOT disk restart or real-engine/Enhanced end-to-end evidence. */
 @OptIn(ExperimentalTestApi::class)

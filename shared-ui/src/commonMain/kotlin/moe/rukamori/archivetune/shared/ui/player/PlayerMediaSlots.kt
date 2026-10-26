@@ -7,6 +7,7 @@ import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.lyrics.*
+import androidx.compose.runtime.getValue
 
 /** Required real media/content owners. Artwork also supplies M4's isolated Haze source. */
 class PlayerMediaSlots(

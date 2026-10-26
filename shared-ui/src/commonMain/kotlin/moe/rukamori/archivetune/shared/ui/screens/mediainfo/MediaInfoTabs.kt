@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_copy
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_credits_written_by
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_description

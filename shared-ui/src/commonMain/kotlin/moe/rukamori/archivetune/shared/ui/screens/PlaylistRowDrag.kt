@@ -38,7 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m4_drag_handle
 import moe.rukamori.archivetune.shared.ui.resources.m4_drag_to_reorder
 import org.jetbrains.compose.resources.painterResource

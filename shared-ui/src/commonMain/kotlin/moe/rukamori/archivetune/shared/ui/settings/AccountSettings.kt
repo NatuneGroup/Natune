@@ -1,4 +1,6 @@
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 package moe.rukamori.archivetune.shared.ui.settings
+
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,6 +58,8 @@ import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 
 /** The account home destination. The summary's signed-in primary action opens it, as the baseline did. */
 const val YouTubeAccountRoute = "account"

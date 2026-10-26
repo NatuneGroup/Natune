@@ -102,6 +102,8 @@ class LyricsSessionsTest {
         override suspend fun romanizeLines(config: AiServiceSettings, lines: List<String>, formatName: String): List<String> = error("Not used")
         override suspend fun listModels(config: AiServiceSettings): List<String> = error("Not used")
         override suspend fun test(config: AiServiceSettings) = error("Not used")
+        override suspend fun fetchModels(config: AiServiceSettings): List<AiModelOption> = error("Not used")
+        override suspend fun complete(config: AiServiceSettings, budget: AiRequestBudget, systemPrompt: String, userPrompt: String, temperature: Double, maxTokens: Int): String = error("Not used")
     }
     private class Store : SettingsStore {
         override val snapshots = MutableStateFlow(PreferenceSnapshot.of(AiProviderKey to "CHATGPT", AiApiKeyKey to "fixture"))

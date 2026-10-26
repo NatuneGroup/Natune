@@ -9,6 +9,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.*
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalTestApi::class)
 class PlayerStyleBitChordTikTokSimpTest {

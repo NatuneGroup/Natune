@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.ui.player
 import androidx.compose.runtime.*
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import kotlin.math.roundToLong
+import androidx.compose.runtime.setValue
 
 enum class PlayerPanel { ARTWORK, LYRICS, QUEUE }
 

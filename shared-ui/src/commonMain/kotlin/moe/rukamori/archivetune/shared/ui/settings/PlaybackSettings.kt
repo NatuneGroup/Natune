@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import kotlin.math.roundToInt
+import androidx.compose.runtime.getValue
 
 /** Capabilities are measured by the native owner, not inferred from stored enable switches. */
 @Composable

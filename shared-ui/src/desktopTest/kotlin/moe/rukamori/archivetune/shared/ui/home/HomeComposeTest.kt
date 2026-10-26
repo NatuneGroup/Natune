@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.navigation.writeM4Screenshot
 import moe.rukamori.archivetune.shared.ui.screens.*
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalTestApi::class)
 class HomeComposeTest {

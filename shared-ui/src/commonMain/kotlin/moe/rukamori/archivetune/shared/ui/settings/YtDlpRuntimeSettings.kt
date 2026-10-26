@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 data class YtDlpRuntimeStatus(val pythonAvailable: Boolean, val scriptAvailable: Boolean)
 

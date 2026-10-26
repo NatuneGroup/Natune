@@ -155,6 +155,7 @@ compose-reorderable = { module = "sh.calvin.reorderable:reorderable", version.re
 # Compose Multiplatform artifacts for the private shared-ui module. Pinned here rather than through the
 # plugin's compose.* accessors, which Compose Multiplatform 1.12 deprecates.
 compose-multiplatform-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
+compose-multiplatform-runtime-saveable = { module = "org.jetbrains.compose.runtime:runtime-saveable", version.ref = "composeMultiplatform" }
 compose-multiplatform-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
 compose-multiplatform-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "composeMultiplatformMaterial3" }
 compose-multiplatform-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
