@@ -70,6 +70,8 @@ internal fun desktopArtistPage(
     graph: DesktopSessionGraph,
     route: ArchiveRoute,
     menu: DesktopItemMenuState,
+    openRoute: (String) -> Unit,
+    back: () -> Unit,
 ): ArchiveGraphPage {
     val artist = artistRef(route) ?: return ArchiveGraphPage.Host
     val owner = remember(artist) { graph.catalogueOwners.artist(artist) }
@@ -106,7 +108,7 @@ internal fun desktopArtistPage(
             else -> ArtistBlockUiState.Known(blockState == true)
         },
         nowPlaying = nowPlaying,
-        host = DesktopArtistAlbumHost(graph, artist, menu),
+        host = DesktopArtistAlbumHost(graph, artist, menu, openRoute, back),
     )
 }
 
@@ -179,6 +181,8 @@ internal fun desktopArtistSongsPage(
     graph: DesktopSessionGraph,
     route: ArchiveRoute,
     menu: DesktopItemMenuState,
+    openRoute: (String) -> Unit,
+    back: () -> Unit,
 ): ArchiveGraphPage {
     val artist = artistRef(route) ?: return ArchiveGraphPage.Host
     val snapshot by graph.settings.snapshots.collectAsState()
@@ -198,7 +202,7 @@ internal fun desktopArtistSongsPage(
         songs = songs.orEmpty(),
         sort = sort,
         nowPlaying = ArtistAlbumNowPlaying(playing?.mediaId, null, playing?.playWhenReady == true),
-        host = DesktopArtistAlbumHost(graph, artist, menu),
+        host = DesktopArtistAlbumHost(graph, artist, menu, openRoute, back),
     )
 }
 
@@ -207,6 +211,8 @@ internal fun desktopArtistAlbumsPage(
     graph: DesktopSessionGraph,
     route: ArchiveRoute,
     menu: DesktopItemMenuState,
+    openRoute: (String) -> Unit,
+    back: () -> Unit,
 ): ArchiveGraphPage {
     val artist = artistRef(route) ?: return ArchiveGraphPage.Host
     val owner = remember(artist) { graph.catalogueOwners.artist(artist) }
@@ -216,7 +222,7 @@ internal fun desktopArtistAlbumsPage(
         title = owner.page?.artist?.title.orEmpty(),
         albums = owner.page?.releases?.map { it.toReleaseUi() }.orEmpty(),
         nowPlaying = ArtistAlbumNowPlaying(playing?.mediaId, null, playing?.playWhenReady == true),
-        host = DesktopArtistAlbumHost(graph, artist, menu),
+        host = DesktopArtistAlbumHost(graph, artist, menu, openRoute, back),
     )
 }
 
@@ -225,6 +231,8 @@ internal fun desktopArtistItemsPage(
     graph: DesktopSessionGraph,
     route: ArchiveRoute,
     menu: DesktopItemMenuState,
+    openRoute: (String) -> Unit,
+    back: () -> Unit,
 ): ArchiveGraphPage {
     val request = route.contentRequest()
     val presenter = moe.rukamori.archivetune.shared.ui.screens.rememberPagedContent(graph.youtubeContent, request)
@@ -241,7 +249,7 @@ internal fun desktopArtistItemsPage(
         layout = route.artistItemsLayout,
         repository = graph.youtubeContent,
         nowPlaying = ArtistAlbumNowPlaying(playing?.mediaId, null, playing?.playWhenReady == true),
-        host = DesktopArtistAlbumHost(graph, artist, menu),
+        host = DesktopArtistAlbumHost(graph, artist, menu, openRoute, back),
     )
 }
 
@@ -264,14 +272,17 @@ internal class DesktopArtistAlbumHost(
     private val graph: DesktopSessionGraph,
     private val artist: ContentRef,
     private val menu: DesktopItemMenuState,
+    private val openRoute: (String) -> Unit,
+    private val backRequest: () -> Unit,
 ) : ArtistAlbumHost {
-    override fun back() {}
-    override fun backToMain() {}
-    override fun openContent(ref: ContentRef) {}
-    override fun openArtistSongs(artist: ContentRef) {}
-    override fun openArtistAlbums(artist: ContentRef) {}
-    override fun openArtistSection(request: ContentRequest, title: String, layout: ArtistShelfLayout) {}
-    override fun openDownloads() {}
+    override fun back() = backRequest()
+    override fun backToMain() = openRoute("home")
+    override fun openContent(ref: ContentRef) = openRoute(ArchiveRoutes.content(ref))
+    override fun openArtistSongs(artist: ContentRef) = openRoute(ArchiveRoutes.artistSongs(artist))
+    override fun openArtistAlbums(artist: ContentRef) = openRoute(ArchiveRoutes.artistAlbums(artist))
+    override fun openArtistSection(request: ContentRequest, title: String, layout: ArtistShelfLayout) =
+        openRoute(ArchiveRoutes.artistItems(request, title, layout))
+    override fun openDownloads() = openRoute("auto_playlist/downloaded")
 
     override fun loadArtistPage(artist: ContentRef) {
         graph.catalogueOwners.artist(artist).load()

@@ -196,6 +196,26 @@ internal fun desktopMoodsPage(graph: DesktopSessionGraph): ArchiveGraphPage {
 @Composable
 internal fun desktopBrowsePage(graph: DesktopSessionGraph, route: ArchiveRoute): ArchiveGraphPage {
     val request = route.contentRequest()
+    if (request.section != null) {
+        // Category pages (moods, genres, "see all"): one flat read, like the Android browse screen.
+        val feed = graph.catalogueOwners.browseSection(request)
+        androidx.compose.runtime.LaunchedEffect(feed) { feed.reload() }
+        val rows = feed.entries.mapIndexed { index, entry -> catalogueOccurrence(request, entry, index) }
+        SideEffect { graph.catalogueOwners.recordList(request, rows) }
+        return ArchiveGraphPage.Browse(
+            title = feed.title ?: route.arguments["title"].orEmpty(),
+            collection = request,
+            page = PagedContentState(
+                request = request,
+                items = rows,
+                loading = feed.loading,
+                initialized = feed.initialized,
+                failed = feed.failed,
+            ),
+            loadMore = {},
+            retry = feed::reload,
+        )
+    }
     val presenter = rememberPagedContent(graph.youtubeContent, request)
     val page by presenter.state.collectAsState()
     SideEffect {

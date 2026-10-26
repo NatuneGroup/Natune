@@ -79,10 +79,10 @@ internal fun desktopGraphPage(
         ArchiveDestination.MOODS -> desktopMoodsPage(graph)
         ArchiveDestination.BROWSE, ArchiveDestination.YOUTUBE_BROWSE -> desktopBrowsePage(graph, route)
         ArchiveDestination.RELEASES -> desktopReleasesPage(graph)
-        ArchiveDestination.ARTIST -> desktopArtistPage(graph, route, menu)
-        ArchiveDestination.ARTIST_SONGS -> desktopArtistSongsPage(graph, route, menu)
-        ArchiveDestination.ARTIST_ALBUMS -> desktopArtistAlbumsPage(graph, route, menu)
-        ArchiveDestination.ARTIST_ITEMS -> desktopArtistItemsPage(graph, route, menu)
+        ArchiveDestination.ARTIST -> desktopArtistPage(graph, route, menu, openRoute, back)
+        ArchiveDestination.ARTIST_SONGS -> desktopArtistSongsPage(graph, route, menu, openRoute, back)
+        ArchiveDestination.ARTIST_ALBUMS -> desktopArtistAlbumsPage(graph, route, menu, openRoute, back)
+        ArchiveDestination.ARTIST_ITEMS -> desktopArtistItemsPage(graph, route, menu, openRoute, back)
         ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, openRoute)
         ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
             hostSearchPage(graph.catalogPages, route) { openRoute(ArchiveRoutes.musicRecognition()) }

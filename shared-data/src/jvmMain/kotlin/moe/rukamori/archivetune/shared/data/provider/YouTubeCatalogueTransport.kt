@@ -50,6 +50,8 @@ data class YouTubeShelfPage(
     val shelves: List<YouTubeShelf>,
     val continuation: String? = null,
     val chips: List<YouTubeFeedChip> = emptyList(),
+    /** The provider's own page title, when it sends one (browse/category pages). */
+    val title: String? = null,
 )
 
 /** A home feed chip: [params] selects it, [deselectParams] un-selects it when the provider gave one. */
@@ -168,6 +170,7 @@ class JvmYouTubeCatalogueTransport {
     suspend fun browseSection(browseId: String, params: String?): YouTubeShelfPage {
         val result = YouTube.browse(browseId, params).getOrThrow()
         return YouTubeShelfPage(
+            title = result.title,
             shelves =
                 result.items.mapIndexed { index, section ->
                     YouTubeShelf(
