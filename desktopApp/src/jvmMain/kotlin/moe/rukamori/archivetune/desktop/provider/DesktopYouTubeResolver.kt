@@ -68,6 +68,11 @@ internal class DesktopYouTubeResolver(
             size > SEARCHED_ID_CACHE_SIZE
     }
 
+    /** Drops the searched video id of [mediaId] so the next resolution searches again, as the source refresh does. */
+    fun invalidateSearch(mediaId: String) {
+        synchronized(searchedIds) { searchedIds.remove(mediaId) }
+    }
+
     private class Target(val videoId: String, val trusted: Boolean)
 
     override suspend fun primary(request: AudioResolveRequest): PreparedAudio? {
