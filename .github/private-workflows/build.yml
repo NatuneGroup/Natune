@@ -1,0 +1,294 @@
+# Staged private adaptation of the inherited Build APKs workflow. Inert here: GitHub runs only files directly in
+# .github/workflows/, and this copy moves there only after the import-gate disposition and the final CI
+# authorization. Manual only: nothing runs on push, pull request or schedule. Dispatch with the full
+# 40-character private dev commit. The versionCode is an allocated ARCHIVETUNE_VERSION_CODE above the
+# trusted floor 6833, never a commit count. Results are not verification until the final candidate run.
+name: Build APKs
+
+on:
+  # Manual only: never on push. The dispatched commit must equal candidate_sha.
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full 40-character private dev commit to build (must equal the checked-out head)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-apks-${{ inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Release APKs (${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }})
+    # Dependabot/Renovate pushes skip the matrix: this manual workflow builds only the
+    # dispatched candidate; the repository guard is in the `if:` below.
+    if: >-
+      github.repository == 'NatuneGroup/ArchiveTune-KMP' &&
+      github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]' &&
+      (github.event_name == 'workflow_dispatch' ||
+       contains(github.event.head_commit.message, '[mirror]') == false)
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 45
+    env:
+      VERSION_CODE_OVERRIDE: ${{ vars.ARCHIVETUNE_VERSION_CODE }}
+
+    strategy:
+      matrix:
+        include:
+          # 64-bit mobile build — the only mobile APK shipped now.
+          # Removed flavors: gms-mobile-armeabi, gms-mobile-x86,
+          # gms-mobile-x86_64, gms-mobile-universal, foss-mobile-universal.
+          # 32-bit ABIs were dropped because Google Play requires 64-bit
+          # and the universal APK was redundant with the per-ABI build.
+          # FOSS universal was removed because the fork ships GMS-only.
+          - device: mobile
+            distribution: gms
+            distributionName: Gms
+            deviceName: Mobile
+            abi: arm64
+          # Android TV build — kept universal because TV devices are
+          # heterogeneous and a single universal APK covers them all
+          # without inflating the matrix.
+          - device: tv
+            distribution: gms
+            distributionName: Gms
+            deviceName: Tv
+            abi: universal
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          submodules: true
+
+      - name: Verify exact candidate head
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "candidate_sha must be a full 40-character commit SHA" >&2; exit 1; }
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Resolve variant names
+        id: variant
+        shell: bash
+        run: |
+          set -euo pipefail
+          DISTRIBUTION="${{ matrix.distribution }}"
+          DISTRIBUTION_CAP="${{ matrix.distributionName }}"
+          DEVICE="${{ matrix.device }}"
+          ABI="${{ matrix.abi }}"
+          DEVICE_CAP="${{ matrix.deviceName }}"
+          ABI_CAP="$(tr '[:lower:]' '[:upper:]' <<< "${ABI:0:1}")${ABI:1}"
+          echo "distribution=$DISTRIBUTION" >> "$GITHUB_OUTPUT"
+          echo "distribution_cap=$DISTRIBUTION_CAP" >> "$GITHUB_OUTPUT"
+          echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
+          echo "abi=$ABI" >> "$GITHUB_OUTPUT"
+          echo "device_cap=$DEVICE_CAP" >> "$GITHUB_OUTPUT"
+          echo "abi_cap=$ABI_CAP" >> "$GITHUB_OUTPUT"
+          echo "gradle_task=assemble${DISTRIBUTION_CAP}${DEVICE_CAP}${ABI_CAP}Release" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}-release" >> "$GITHUB_OUTPUT"
+          echo "apk_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}-release.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve build hash
+        id: build_hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" = "refs/heads/dev" ]; then
+            echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Release APK
+        shell: bash
+        # Simplified: the previous armeabi/x86 branch (which piped gradle
+        # output through a python filter to suppress the CXX5202 32-bit
+        # warning) is dead code now that those ABIs are no longer in the
+        # matrix. Both remaining variants (arm64, tv-universal) are 64-bit
+        # and never trigger that warning.
+        run: |
+          set -euo pipefail
+          GRADLE_TASK="${{ steps.variant.outputs.gradle_task }}"
+          ./gradlew "$GRADLE_TASK"
+        env:
+          PULL_REQUEST: 'false'
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+          NIGHTLY_BUILD_HASH: ${{ steps.build_hash.outputs.value }}
+          START_IO_APP_ID: ${{ secrets.START_IO_APP_ID }}
+          # Public ArchivePool base URL. This is non-sensitive and belongs in Actions variables,
+          # but we also fall back to the secret of the same name for forks that stored it as a
+          # secret before Actions variables existed. The gradle default
+          # (https://archivepool.vercel.app) applies when neither is set.
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          # Per-app read key created by ArchivePool's admin page.
+          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+          # POOL_CLIENT_KEY is intentionally NOT passed anymore: builds speak the v2 feed
+          # protocol (X-Pool-Client: v2), where the credential encryption key is derived from
+          # the read key itself. The server keeps its POOL_CLIENT_KEY env var solely so
+          # already-installed legacy builds can still decrypt their feeds.
+          # Telegram (TDLib) credentials from https://my.telegram.org/apps. Optional: when unset the
+          # build falls back to Telegram Desktop's public api_id, which violates Telegram's ToS and
+          # risks user account bans — set these secrets to ship this fork's own registered app.
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+
+      - name: Resolve release output directory
+        id: release_dir
+        shell: bash
+        run: |
+          set -euo pipefail
+          DISTRIBUTION="${{ steps.variant.outputs.distribution }}"
+          DEVICE="${{ steps.variant.outputs.device }}"
+          ABI="${{ steps.variant.outputs.abi }}"
+          DEVICE_CAP="${{ steps.variant.outputs.device_cap }}"
+          ABI_CAP="${{ steps.variant.outputs.abi_cap }}"
+          CANDIDATES=(
+            "app/build/outputs/apk/${DISTRIBUTION}${DEVICE_CAP}${ABI_CAP}/release"
+            "app/build/outputs/apk/${DISTRIBUTION}${DEVICE}${ABI_CAP}/release"
+            "app/build/outputs/apk/${DISTRIBUTION}/${DEVICE}/${ABI}/release"
+            "app/build/outputs/apk/${DISTRIBUTION}${DEVICE}${ABI_CAP}/release"
+            "app/build/outputs/apk/${DISTRIBUTION}${DEVICE_CAP}${ABI_CAP}/release"
+            "app/build/outputs/apk/gms${DEVICE_CAP}${ABI_CAP}/release"
+            "app/build/outputs/apk/gms${DEVICE}${ABI_CAP}/release"
+            "app/build/outputs/apk/gms/${DEVICE}/${ABI}/release"
+            "app/build/outputs/apk/gms/${DEVICE}${ABI_CAP}/release"
+            "app/build/outputs/apk/gms/${DEVICE_CAP}${ABI_CAP}/release"
+            "app/build/outputs/apk/${DEVICE}/${ABI}/release"
+            "app/build/outputs/apk/${DEVICE}${ABI_CAP}/release"
+            "app/build/outputs/apk/${DEVICE_CAP}${ABI_CAP}/release"
+            "app/build/outputs/apk/${ABI}/${DEVICE}/release"
+          )
+          for d in "${CANDIDATES[@]}"; do
+            if [ -d "$d" ]; then
+              echo "release_dir=$d" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          FOUND_METADATA="$(
+            find app/build/outputs/apk -type f -name "output-metadata.json" \
+              \( \
+                -path "*/${DISTRIBUTION}/${DEVICE}/${ABI}/release/output-metadata.json" -o \
+                -path "*/${DISTRIBUTION}${DEVICE}${ABI_CAP}/release/output-metadata.json" -o \
+                -path "*/${DISTRIBUTION}${DEVICE_CAP}${ABI_CAP}/release/output-metadata.json" -o \
+                -path "*/${DISTRIBUTION}/${DEVICE}/${ABI}/*/release/output-metadata.json" -o \
+                -path "*/${DISTRIBUTION}${DEVICE}${ABI_CAP}/*/release/output-metadata.json" -o \
+                -path "*/${DISTRIBUTION}${DEVICE_CAP}${ABI_CAP}/*/release/output-metadata.json" -o \
+                -path "*/${DEVICE}/${ABI}/release/output-metadata.json" -o \
+                -path "*/${DEVICE}${ABI_CAP}/release/output-metadata.json" -o \
+                -path "*/${DEVICE_CAP}${ABI_CAP}/release/output-metadata.json" -o \
+                -path "*/${ABI}/${DEVICE}/release/output-metadata.json" \
+              \) \
+              | head -n 1 || true
+          )"
+          if [ -n "${FOUND_METADATA:-}" ]; then
+            echo "release_dir=$(dirname "$FOUND_METADATA")" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Could not resolve APK release output directory for DISTRIBUTION=$DISTRIBUTION DEVICE=$DEVICE ABI=$ABI"
+          find app/build/outputs/apk -maxdepth 8 -type d -print || true
+          exit 1
+
+      - name: Verify release signing secrets
+        shell: bash
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for var in KEYSTORE KEY_ALIAS KEYSTORE_PASSWORD KEY_PASSWORD; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Missing required secret $var for release signing. Configure KEYSTORE, KEY_ALIAS, KEYSTORE_PASSWORD, and KEY_PASSWORD as GitHub Actions secrets. The committed debug keystore fallback was removed."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Release signing secrets present."
+
+      - name: Sign APK (release keystore)
+        shell: bash
+        env:
+          RELEASE_DIR: ${{ steps.release_dir.outputs.release_dir }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          if [ ! -x "$BUILD_TOOLS/apksigner" ]; then
+            BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          fi
+          KEYSTORE_FILE="$(mktemp)"
+          trap 'rm -f "$KEYSTORE_FILE"' EXIT
+          echo "$KEYSTORE" | base64 -d > "$KEYSTORE_FILE"
+          mapfile -t APKS < <(
+            find "$RELEASE_DIR" -maxdepth 1 -type f -name "*.apk" ! -name "*-signed.apk"
+          )
+          if [ "${#APKS[@]}" -ne 1 ]; then
+            echo "Expected exactly one unsigned APK in $RELEASE_DIR, found ${#APKS[@]}"
+            find "$RELEASE_DIR" -maxdepth 1 -type f -print || true
+            exit 1
+          fi
+          APK="${APKS[0]}"
+          SIGNED="${APK%.apk}-signed.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$APK" "$SIGNED"
+          # v1 (JAR) signing is dead weight at minSdk 26: the MANIFEST.MF/.SF/.RSA block is never
+          # used to verify and costs ~215 KB per APK. v2/v3 stay on, same keystore as before.
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_FILE" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --v1-signing-enabled false \
+            "$SIGNED"
+
+      - name: Move APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_DIR="${{ steps.release_dir.outputs.release_dir }}"
+          mkdir -p "$RELEASE_DIR/out"
+          SIGNED_APK=$(find "$RELEASE_DIR" -type f \( -name "*-signed.apk" -o -name "*-unsigned-signed.apk" \) | head -n 1)
+          if [ -z "${SIGNED_APK:-}" ]; then
+            echo "No signed APK found in $RELEASE_DIR"
+            find "$RELEASE_DIR" -type f -name "*.apk" || true
+            exit 1
+          fi
+          mv "$SIGNED_APK" "$RELEASE_DIR/out/${{ steps.variant.outputs.apk_name }}"
+
+      - name: Upload Signed APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.variant.outputs.artifact_name }}
+          path: ${{ steps.release_dir.outputs.release_dir }}/out/${{ steps.variant.outputs.apk_name }}
+          retention-days: 14

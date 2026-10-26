@@ -1,0 +1,6 @@
+<resources>
+    <string name="m6_changelog_empty">No release notes for this channel.</string>
+    <string name="m6_changelog_subtitle_stable">Stable releases and release notes</string>
+    <string name="m6_changelog_subtitle_nightly">Nightly releases from the dev branch</string>
+    <string name="m6_retry">Retry</string>
+</resources>

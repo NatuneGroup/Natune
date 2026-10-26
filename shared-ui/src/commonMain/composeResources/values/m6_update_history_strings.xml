@@ -1,0 +1,6 @@
+<resources>
+    <string name="m6_update_commits_title">Recent Commits</string>
+    <string name="m6_update_commits_loading">Loading recent commits</string>
+    <string name="m6_update_commits_count">%1$d recent commits</string>
+    <string name="m6_update_commits_empty">No recent commits found</string>
+</resources>

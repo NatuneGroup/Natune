@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ArchiveTune (2026) - GPL-3.0
+     Original skip-to-next glyph (triangle and bar) for the Last.fm track sheet. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M4.6,6.2 C3.9,5.8 3,6.3 3,7.1 L3,16.9 C3,17.7 3.9,18.2 4.6,17.8 L12.6,13 C13.2,12.6 13.2,11.4 12.6,11 Z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M16,5.5 L18,5.5 C18.6,5.5 19,5.9 19,6.5 L19,17.5 C19,18.1 18.6,18.5 18,18.5 L16,18.5 C15.4,18.5 15,18.1 15,17.5 L15,6.5 C15,5.9 15.4,5.5 16,5.5 Z" />
+</vector>

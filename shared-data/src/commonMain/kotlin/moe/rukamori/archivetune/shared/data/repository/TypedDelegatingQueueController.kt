@@ -1,0 +1,66 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+package moe.rukamori.archivetune.shared.data.repository
+
+import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
+import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
+import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
+import moe.rukamori.archivetune.shared.domain.repository.TypedQueueOwnerPort
+
+/**
+ * Host facade over [TypedQueueOwnerPort] that persists the typed [QueueCheckpointStore] (Room on desktop).
+ * It holds no list, metadata, revision or player of its own: every call runs inside the owner's lock.
+ *
+ * Checkpoint writes follow the store's compare-and-swap rule. A structural change writes a new revision; a
+ * position-only tick at an unchanged revision uses [QueueCheckpointStore.updatePosition], because a strictly
+ * increasing write would be refused for an equal revision.
+ */
+class TypedDelegatingQueueController(
+    private val owner: TypedQueueOwnerPort,
+    private val checkpoints: QueueCheckpointStore,
+) : ContinuationQueueController {
+    override val player get() = owner.player
+    override val state get() = owner.state
+
+    override suspend fun load(request: QueueLoadRequest) = owner.withQueueAccess { owner.loadCollection(request) }
+    override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) =
+        owner.withQueueAccess { owner.replace(entries, startOccurrenceId, playWhenReady) }
+    override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind) =
+        owner.withQueueAccess { owner.insert(entries, kind) }
+    override suspend fun remove(occurrenceIds: Set<String>) = owner.withQueueAccess { owner.remove(occurrenceIds) }
+    override suspend fun move(occurrenceId: String, beforeOccurrenceId: String?) =
+        owner.withQueueAccess { owner.move(occurrenceId, beforeOccurrenceId) }
+    override suspend fun select(occurrenceId: String, positionMs: Long) =
+        owner.withQueueAccess { owner.select(occurrenceId, positionMs) }
+
+    override suspend fun checkpoint(): Boolean = owner.withQueueAccess {
+        val savedRevision = checkpoints.read()?.queue?.revision
+        if (savedRevision != null) {
+            val ownerRevision = owner.state.value.revision
+            // Nothing was loaded or resumed in this process, so its empty state must not replace the saved queue.
+            if (ownerRevision == 0L) return@withQueueAccess false
+            // A fresh lineage writes above the saved revision, or the store refuses it as stale.
+            if (ownerRevision < savedRevision) owner.raiseRevisionTo(savedRevision + 1)
+        }
+        val captured = owner.capture()
+        if (savedRevision != null && captured.queue.revision == savedRevision) {
+            val current = captured.queue.currentOccurrenceId ?: return@withQueueAccess false
+            checkpoints.updatePosition(savedRevision, current, captured.positionMs)
+        } else {
+            checkpoints.write(captured, savedRevision)
+        }
+    }
+
+    override suspend fun resume(): Boolean = owner.withQueueAccess {
+        val saved = checkpoints.read() ?: return@withQueueAccess false
+        owner.restore(saved)
+        true
+    }
+}

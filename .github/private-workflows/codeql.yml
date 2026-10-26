@@ -1,0 +1,65 @@
+# Staged private adaptation of the inherited CodeQL security analysis workflow. Inert here: GitHub runs only files directly in
+# .github/workflows/, and this copy moves there only after the import-gate disposition and the final CI
+# authorization. Manual or reusable-call only: no push, pull request, schedule or issue trigger. Results are
+# not verification until the final candidate run completes.
+name: CodeQL security analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Optional full commit to check out (defaults to the dispatched or calling head)
+        type: string
+        required: false
+        default: ''
+  workflow_call:
+    inputs:
+      candidate_sha:
+        description: Optional full commit to check out (defaults to the dispatched or calling head)
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    name: Kotlin and Java security analysis
+    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+      - name: Compile the documented debug variant without signing secrets
+        run: ./gradlew --console=plain --stacktrace assembleGmsMobileUniversalDebug
+      - name: Release compiler memory before security queries
+        run: ./gradlew --stop
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:java-kotlin
+          ram: 6144
+          threads: 2

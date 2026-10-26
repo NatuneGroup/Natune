@@ -1,0 +1,22 @@
+<resources>
+    <string name="m6_ai_request_failed">The request failed. Check the configuration and try again.</string>
+    <string name="m6_ai_test_success">API test succeeded</string>
+    <string name="m6_ai_test_failed">API test failed</string>
+    <string name="m6_ai_test_unknown">API not tested with these settings</string>
+    <string name="m6_refresh_models">Refresh models</string>
+    <string name="m6_deepl_formality">DeepL formality</string>
+    <string name="m6_default">Default</string>
+    <string name="m6_formal">More formal</string>
+    <string name="m6_informal">Less formal</string>
+    <string name="m6_provider_language">Provider translation language</string>
+    <string name="m6_translate_mode">Translation mode</string>
+    <string name="m6_translate_only">Translate</string>
+    <string name="m6_romanize_only">Romanise</string>
+    <string name="m6_hide_ai_mix">Hide AI Mix</string>
+    <string name="m6_ai_api_testing">Testing the API connection</string>
+    <string name="m6_ai_hint_authentication">The provider rejected this API key. Check the key for the selected provider.</string>
+    <string name="m6_ai_hint_rate_limited">The provider is limiting requests for this key. Wait a while and try again.</string>
+    <string name="m6_ai_hint_unreachable">The provider could not be reached. Check the network connection or the custom endpoint.</string>
+    <string name="m6_ai_hint_model_unavailable">The selected model is not available for this key. Choose another model.</string>
+    <string name="m6_ai_hint_unexpected_response">The provider replied in a format the app cannot read.</string>
+</resources>

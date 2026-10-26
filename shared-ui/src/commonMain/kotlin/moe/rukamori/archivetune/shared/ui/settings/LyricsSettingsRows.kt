@@ -1,0 +1,109 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+package moe.rukamori.archivetune.shared.ui.settings
+
+import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.resources.*
+
+fun lyricsSettingsRows(navigate: (String) -> Unit): List<SettingsRow> = listOf(
+    SettingsRow.Action("language_packs", Res.string.m6_language_packs, { navigate("settings/language_packs") }),
+    SettingsRow.Action("providers", Res.string.m6_providers, { navigate("settings/lyrics/providers") }),
+    SettingsRow.Action("romanization", Res.string.m6_romanization, { navigate("settings/lyrics/romanisation") }),
+    SettingsRow.Choice("lyrics_mode", Res.string.m6_lyrics_mode, LyricsModeKey, "ENHANCED", listOf(
+        SettingsRow.Option("V2", Res.string.m6_mode_v2),
+        SettingsRow.Option("ENHANCED", Res.string.m6_mode_enhanced),
+        SettingsRow.Option("SPOTIFY", Res.string.m6_mode_spotify),
+        SettingsRow.Option("SIMPMUSIC", Res.string.m6_mode_simpmusic),
+    )),
+    SettingsRow.Toggle("lyrics_click", Res.string.m6_lyrics_click, LyricsClickKey, true),
+    SettingsRow.Toggle("lyrics_scroll", Res.string.m6_lyrics_scroll, LyricsScrollKey, true),
+    SettingsRow.Number("preload_queue_lyrics", Res.string.m6_lyrics_preload, QueueLyricsPreloadCountKey, 3, 0..10),
+)
+
+/** Actual page gating: word-sync override disables toggles without clearing stored choices. */
+fun lyricsProviderSettingsRows(
+    preferences: PreferenceSnapshot,
+    showOrder: () -> Unit,
+    showStats: () -> Unit,
+    checkEndpoints: () -> Unit,
+): List<SettingsRow> = buildList {
+    val enabled = !preferences[PrioritizeWordSyncedLyricsKey, false]
+    add(SettingsRow.Action("lyrics_provider_order", Res.string.m6_provider_order, showOrder, enabled))
+    add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, false))
+    LyricsProviderPreference.entries.filter { !it.name.startsWith("PAXSENIX_") }.forEach { provider ->
+        provider.key?.let { add(SettingsRow.Toggle(provider.anchor(), provider.label(), it, provider.defaultEnabled, enabled = enabled)) }
+    }
+    add(SettingsRow.Toggle("enable_bini_lyrics", Res.string.m6_bini, EnableBiniLyricsKey, true, enabled = enabled))
+    add(SettingsRow.Toggle("enable_lrcred_lyrics", Res.string.m6_lrc_red, EnableLrcRedKey, true, enabled = enabled))
+    add(SettingsRow.Toggle("enable_genius_lyrics", Res.string.m6_genius, EnableGeniusLyricsKey, false, enabled = enabled))
+    add(SettingsRow.Toggle("enable_paxsenix_lyrics", Res.string.m6_paxsenix, EnablePaxsenixLyricsKey, true, enabled = enabled))
+    if (preferences[EnablePaxsenixLyricsKey, true]) {
+        add(SettingsRow.Text("paxsenix_api_key", Res.string.m6_api_key, PaxsenixApiKeyKey, masked = true, enabled = enabled))
+        add(SettingsRow.Text("paxsenix_endpoint", Res.string.m6_endpoint, PaxsenixEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
+        add(SettingsRow.Action("paxsenix_stats", Res.string.m6_provider_stats, showStats, enabled))
+        add(SettingsRow.Action("paxsenix_check_endpoints", Res.string.m6_check_endpoints, checkEndpoints, enabled))
+        LyricsProviderPreference.entries.filter { it.name.startsWith("PAXSENIX_") }.forEach { provider ->
+            add(SettingsRow.Toggle(provider.anchor(), provider.label(), checkNotNull(provider.key), provider.defaultEnabled, enabled = enabled))
+        }
+    }
+}
+
+fun romanizationSettingsRows(
+    aiHandled: Boolean, japanesePackReady: Boolean, preferences: PreferenceSnapshot,
+): List<SettingsRow> = listOf(
+    SettingsRow.Toggle("lyrics_romanize_japanese", Res.string.m6_japanese, LyricsRomanizeJapaneseKey, false,
+        enabled = !aiHandled && (japanesePackReady || preferences[LyricsRomanizeJapaneseKey, false])),
+    SettingsRow.Toggle("lyrics_romanize_korean", Res.string.m6_korean, LyricsRomanizeKoreanKey, true, enabled = !aiHandled),
+    SettingsRow.Toggle("lyrics_romanize_chinese", Res.string.m6_chinese, LyricsRomanizeChineseKey, true, enabled = !aiHandled),
+    SettingsRow.Toggle("lyrics_romanize_hindi", Res.string.m6_hindi, LyricsRomanizeHindiKey, true, enabled = !aiHandled),
+    SettingsRow.Toggle("lyrics_romanize_other", Res.string.m6_other_languages, LyricsRomanizeOtherLanguagesKey, true, enabled = !aiHandled),
+)
+
+fun validLyricsEndpoint(value: String): Boolean =
+    value.isBlank() || (value.startsWith("https://") || value.startsWith("http://")) &&
+        value.substringAfter("://").substringBefore('/').isNotBlank() && value.none(Char::isWhitespace)
+
+internal fun LyricsProviderPreference.label() = when (this) {
+    LyricsProviderPreference.BETTER_LYRICS -> Res.string.m6_betterlyrics
+    LyricsProviderPreference.BETTER_LYRICS_PORTATO -> Res.string.m6_portato
+    LyricsProviderPreference.YOULY_PLUS -> Res.string.m6_youlyplus
+    LyricsProviderPreference.LRCLIB -> Res.string.m6_lrclib
+    LyricsProviderPreference.KUGOU -> Res.string.m6_kugou
+    LyricsProviderPreference.MEGALOBIZ -> Res.string.m6_megalobiz
+    LyricsProviderPreference.SIMPMUSIC -> Res.string.m6_simpmusic
+    LyricsProviderPreference.UNISON -> Res.string.m6_unison
+    LyricsProviderPreference.APPLE_MUSIC -> Res.string.m6_apple_music
+    LyricsProviderPreference.PAXSENIX_APPLE_MUSIC -> Res.string.m6_pax_apple
+    LyricsProviderPreference.PAXSENIX_NETEASE -> Res.string.m6_pax_netease
+    LyricsProviderPreference.PAXSENIX_SPOTIFY -> Res.string.m6_pax_spotify
+    LyricsProviderPreference.PAXSENIX_MUSIXMATCH -> Res.string.m6_pax_musixmatch
+    LyricsProviderPreference.PAXSENIX_YOUTUBE -> Res.string.m6_pax_youtube
+    LyricsProviderPreference.TIDAL -> Res.string.m6_tidal
+    LyricsProviderPreference.DEEZER -> Res.string.m6_deezer
+    LyricsProviderPreference.MUSIXMATCH_EXPERIMENTAL -> Res.string.m6_musixmatch_experimental
+}
+
+private fun LyricsProviderPreference.anchor() = when (this) {
+    LyricsProviderPreference.BETTER_LYRICS -> "enable_betterlyrics"
+    LyricsProviderPreference.BETTER_LYRICS_PORTATO -> "enable_betterlyrics_portato"
+    LyricsProviderPreference.YOULY_PLUS -> "enable_youlyplus_lyrics"
+    LyricsProviderPreference.LRCLIB -> "enable_lrclib"
+    LyricsProviderPreference.KUGOU -> "enable_kugou"
+    LyricsProviderPreference.MEGALOBIZ -> "enable_megalobiz_lyrics"
+    LyricsProviderPreference.SIMPMUSIC -> "enable_simpmusic_lyrics"
+    LyricsProviderPreference.UNISON -> "enable_unison_lyrics"
+    LyricsProviderPreference.APPLE_MUSIC -> "apple_music_lyrics"
+    LyricsProviderPreference.PAXSENIX_APPLE_MUSIC -> "enable_paxsenix_apple_music_lyrics"
+    LyricsProviderPreference.PAXSENIX_NETEASE -> "enable_paxsenix_netease_lyrics"
+    LyricsProviderPreference.PAXSENIX_SPOTIFY -> "enable_paxsenix_spotify_lyrics"
+    LyricsProviderPreference.PAXSENIX_MUSIXMATCH -> "enable_paxsenix_musixmatch_lyrics"
+    LyricsProviderPreference.PAXSENIX_YOUTUBE -> "enable_paxsenix_youtube_lyrics"
+    LyricsProviderPreference.TIDAL -> "enable_tidal_lyrics"
+    LyricsProviderPreference.DEEZER -> "enable_deezer_lyrics"
+    LyricsProviderPreference.MUSIXMATCH_EXPERIMENTAL -> "enable_musixmatch_experimental"
+}

@@ -1,0 +1,23 @@
+<resources>
+    <string name="m6_update_channel">Update Channel</string>
+    <string name="m6_update_channel_stable">Stable</string>
+    <string name="m6_update_channel_nightly">Nightly</string>
+    <string name="m6_update_channel_help">Either channel can be selected. Updates are offered only when that channel has a verified newer build.</string>
+    <string name="m6_update_choose_channel">Choose channel</string>
+    <string name="m6_update_nightly_confirmation">Switch to the Nightly channel to receive development releases.\n\nNightly releases are published automatically from the dev branch.\nNote: downloading directly from GitHub bypasses any additional screening performed by the store you might have originally installed the app from.</string>
+    <string name="m6_update_notification">Enable Update Notification</string>
+    <string name="m6_update_notification_desc">Get notified when a new release is available on the selected channel</string>
+    <string name="m6_update_persistent">Keep reminding me</string>
+    <string name="m6_update_persistent_desc">Show the update sheet on every launch while an update is available, instead of once per release</string>
+    <string name="m6_update_check">Check for Update</string>
+    <string name="m6_update_status_title">Update status</string>
+    <string name="m6_update_status_disabled">Updates are not available in this build.</string>
+    <string name="m6_update_status_idle">Check the selected channel for a verified newer build.</string>
+    <string name="m6_update_status_checking">Checking the selected channel...</string>
+    <string name="m6_update_status_available">Version %1$s is available on the selected channel.</string>
+    <string name="m6_update_status_up_to_date">No newer build is offered on the selected channel.</string>
+    <string name="m6_update_status_no_installable">No newer installable build</string>
+    <string name="m6_update_status_unavailable">Unable to check this channel. Try again.</string>
+    <string name="m6_update_changelog">Changelog</string>
+    <string name="m6_update_changelog_desc">Release notes for the selected channel</string>
+</resources>

@@ -1,0 +1,16 @@
+<resources>
+    <string name="m6_add_to_library">Add to library</string>
+    <string name="m6_remove_from_library">Remove from library</string>
+    <string name="m6_remove_from_history">Remove from history</string>
+    <string name="m6_remove_from_cache">Remove from cache</string>
+    <string name="m6_export_download">Export</string>
+    <string name="m6_open_with_downloader">Open with Downloader</string>
+    <string name="m6_view_album">View album</string>
+    <string name="m6_sleep_timer">Sleep timer</string>
+    <string name="m6_dont_recommend_song">Don’t recommend this song again</string>
+    <string name="m6_undo_dont_recommend_song">Allow recommendations for this song again</string>
+    <string name="m6_download_cover">Download cover</string>
+    <string name="m6_refetch">Refetch</string>
+    <string name="m6_track_info">Track info &amp; specs</string>
+    <string name="m6_remove_selected_downloads_confirm">Remove the selected songs from the Downloaded Songs storage?</string>
+</resources>

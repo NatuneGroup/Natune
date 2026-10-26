@@ -1,0 +1,544 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
+package moe.rukamori.archivetune.ui.screens.settings
+
+import moe.rukamori.archivetune.ui.component.SettingsDescriptionText
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.contentColorFor
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.ui.theme.LocalYumaColors
+import moe.rukamori.archivetune.ui.theme.yumaClickable
+import moe.rukamori.archivetune.ui.theme.yumaGlassCard
+import moe.rukamori.archivetune.ui.theme.yumaSegmentPosition
+import moe.rukamori.archivetune.ui.component.RestartToApplyNotice
+import moe.rukamori.archivetune.constants.DisableBlurKey
+import moe.rukamori.archivetune.utils.StartupSettings
+import moe.rukamori.archivetune.utils.PreferenceSnapshot
+import androidx.compose.runtime.staticCompositionLocalOf
+
+val LocalSettingsPreferenceSnapshot = staticCompositionLocalOf<PreferenceSnapshot> {
+    error("SettingsScreen must provide its single preference snapshot")
+}
+
+@Composable
+fun SettingsPermissionBanner(
+    onRequestPermission: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(SettingsDimensions.BannerCardCornerRadius),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(SettingsDimensions.BannerIconSize)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.security),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(SettingsDimensions.BannerIconInnerSize),
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.permissions_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.permissions_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Button(
+                onClick = onRequestPermission,
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                shapes = ButtonDefaults.shapes(),
+            ) {
+                Text(
+                    text = stringResource(R.string.allow),
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsUpdateBanner(
+    latestVersion: String,
+    onClick: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) SettingsAnimations.PressScale else 1f,
+        animationSpec = SettingsAnimations.pressSpring(),
+        label = "updateScale",
+    )
+
+    Card(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .scale(scale)
+                .focusable()
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                ),
+        shape = RoundedCornerShape(SettingsDimensions.BannerCardCornerRadius),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(SettingsDimensions.BannerIconSize)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.update),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(SettingsDimensions.BannerIconInnerSize),
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.new_version_available),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    text = "v$latestVersion",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+
+            androidx.compose.material3.IconButton(onClick = onDismiss) {
+                Icon(
+                    painter = painterResource(R.drawable.close),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsSectionLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        letterSpacing = MaterialTheme.typography.labelSmall.letterSpacing * 1.2f,
+        modifier =
+            modifier.padding(
+                horizontal = SettingsDimensions.SectionHeaderHorizontalPadding,
+                vertical = SettingsDimensions.SectionHeaderBottomPadding,
+            ),
+    )
+}
+
+@Composable
+fun SettingsSegmentedItem(
+    item: SettingsItem,
+    index: Int,
+    count: Int,
+    modifier: Modifier = Modifier,
+) {
+    val effectiveAccent =
+        if (item.accentColor.isSpecified) {
+            item.accentColor
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
+    val iconContentCandidate = contentColorFor(effectiveAccent)
+    val iconContentColor =
+        if (iconContentCandidate.isSpecified) {
+            iconContentCandidate
+        } else {
+            MaterialTheme.colorScheme.surface
+        }
+    SettingsGlassSegment(
+        index = index,
+        count = count,
+        modifier = modifier,
+        onClick = item.onClick,
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = SettingsDimensions.SegmentedItemMinHeight)
+                    .padding(
+                        horizontal = SettingsDimensions.SegmentedItemPaddingHorizontal,
+                        vertical = SettingsDimensions.SegmentedItemPaddingVertical,
+                    ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(SettingsDimensions.SegmentedIconBoxSize)
+                        .clip(CircleShape)
+                        .background(effectiveAccent),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (item.showUpdateIndicator) {
+                    BadgedBox(
+                        badge = {
+                            Badge(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(9.dp),
+                            )
+                        },
+                    ) {
+                        Icon(
+                            painter = painterResource(item.icon),
+                            contentDescription = null,
+                            tint = iconContentColor,
+                            modifier = Modifier.size(SettingsDimensions.SegmentedIconSize),
+                        )
+                    }
+                } else {
+                    Icon(
+                        painter = painterResource(item.icon),
+                        contentDescription = null,
+                        tint = iconContentColor,
+                        modifier = Modifier.size(SettingsDimensions.SegmentedIconSize),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(SettingsDimensions.SegmentedIconSpacing))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                item.subtitle?.let { subtitle ->
+                    Spacer(modifier = Modifier.height(SettingsDimensions.RowTextSpacing))
+                    SettingsDescriptionText(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            item.badge?.let { badge ->
+                Spacer(modifier = Modifier.width(SettingsDimensions.SegmentedBadgeSpacing))
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ) {
+                    Text(
+                        text = badge,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier =
+                            Modifier.padding(
+                                horizontal = SettingsDimensions.SegmentedBadgePaddingH,
+                                vertical = SettingsDimensions.SegmentedBadgePaddingV,
+                            ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The glass pane behind one row of a stacked settings group. [index] and [count] pick the corner
+ * radii and the stroke gradient, so a stack of segments reads as one pane lit from above rather
+ * than as separate cards.
+ *
+ * Pass [onClick] for the Yuma press spring. Leave it null when the content handles its own clicks
+ * — a Material list item, say — and only the pane is wanted.
+ */
+@Composable
+fun SettingsGlassSegment(
+    index: Int,
+    count: Int,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val shape = remember(index, count) { segmentedSettingsItemShape(index, count) }
+    val yuma = LocalYumaColors.current
+    val glass =
+        modifier
+            .fillMaxWidth()
+            .yumaGlassCard(
+                shape = shape,
+                backgroundColor = yuma.glassBackground,
+                borderColor = yuma.glassBorder,
+                position = yumaSegmentPosition(index, count),
+            )
+    if (onClick == null) {
+        Box(modifier = glass, content = content)
+    } else {
+        Box(
+            modifier = glass.focusable().yumaClickable(onClick = onClick),
+            content = content,
+        )
+    }
+}
+
+internal fun segmentedSettingsItemShape(
+    index: Int,
+    count: Int,
+): Shape {
+    val large = SettingsDimensions.SegmentedCornerLarge
+    val small = SettingsDimensions.SegmentedCornerSmall
+    return when {
+        count <= 1 -> {
+            RoundedCornerShape(large)
+        }
+
+        index == 0 -> {
+            RoundedCornerShape(
+                topStart = large,
+                topEnd = large,
+                bottomEnd = small,
+                bottomStart = small,
+            )
+        }
+
+        index == count - 1 -> {
+            RoundedCornerShape(
+                topStart = small,
+                topEnd = small,
+                bottomEnd = large,
+                bottomStart = large,
+            )
+        }
+
+        else -> {
+            RoundedCornerShape(small)
+        }
+    }
+}
+
+@Composable
+fun SettingsSearchResultItem(
+    result: SearchResultItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val effectiveAccent =
+        if (result.parentAccentColor.isSpecified) {
+            result.parentAccentColor
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
+
+    val resultYuma = LocalYumaColors.current
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .yumaGlassCard(
+                    shape = RoundedCornerShape(16.dp),
+                    backgroundColor = resultYuma.glassBackground,
+                    borderColor = resultYuma.glassBorder,
+                ).yumaClickable(onClick = onClick),
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(effectiveAccent.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(result.parentIcon),
+                        contentDescription = null,
+                        tint = effectiveAccent,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = result.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (result.parentTitle.isNotBlank()) {
+                        SettingsDescriptionText(
+                            text = result.parentTitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                result.switchControl?.let { switchControl ->
+                    Spacer(Modifier.width(12.dp))
+                    switchControl()
+                }
+            }
+            result.restartPending?.let { restartPending ->
+                val prefs = LocalSettingsPreferenceSnapshot.current
+                RestartToApplyNotice(visible = restartPending(StartupSettings.pending(prefs.current)))
+            }
+            if (result.blurOverridden) {
+                val blurDisabled = LocalSettingsPreferenceSnapshot.current[DisableBlurKey, false]
+                if (blurDisabled) {
+                    Text(
+                        text = stringResource(R.string.blur_setting_overridden),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 56.dp, top = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}

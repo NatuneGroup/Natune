@@ -1,0 +1,29 @@
+<resources>
+    <string name="m5_previous">Previous track</string>
+    <string name="m5_next">Next track</string>
+    <string name="m5_play">Play</string>
+    <string name="m5_pause">Pause</string>
+    <string name="m5_replay">Replay</string>
+    <string name="m5_loading">Loading</string>
+    <string name="m5_shuffle">Shuffle</string>
+    <string name="m5_repeat">Repeat</string>
+    <string name="m5_like">Favorite</string>
+    <string name="m5_share">Share</string>
+    <string name="m5_more">More</string>
+    <string name="m5_sleep">Sleep timer</string>
+    <string name="m5_collapse">Collapse player</string>
+    <string name="m5_lyrics">Lyrics</string>
+    <string name="m5_queue">Queue</string>
+    <string name="m5_album">Album</string>
+    <string name="m5_fullscreen">Fullscreen lyrics</string>
+    <string name="m5_back">Back to player</string>
+    <string name="m5_volume">Volume</string>
+    <string name="m5_seek">Playback position</string>
+    <string name="m5_no_track">Nothing playing</string>
+    <string name="m5_modern">Modern</string>
+    <string name="m5_vintage">Vintage</string>
+    <string name="m5_metrolist">Metrolist KMP</string>
+    <string name="m5_on">On</string>
+    <string name="m5_off">Off</string>
+    <string name="m5_repeat_one">Repeat one</string>
+</resources>

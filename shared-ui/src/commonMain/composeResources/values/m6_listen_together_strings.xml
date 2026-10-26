@@ -1,0 +1,37 @@
+<resources>
+    <string name="m6_listen_group_settings">Settings</string>
+    <string name="m6_listen_not_set">Not set</string>
+    <string name="m6_listen_username">Username</string>
+    <string name="m6_listen_server_url">Server URL</string>
+    <string name="m6_listen_custom_avatar">Custom profile picture</string>
+    <string name="m6_listen_custom_avatar_desc">Pick any photo from your gallery as your Listen Together avatar; everyone in the room sees it</string>
+    <string name="m6_listen_choose_avatar">Choose avatar</string>
+    <string name="m6_listen_blocked_users">Blocked Users</string>
+    <string name="m6_listen_blocked_users_count">%1$d user(s) blocked</string>
+    <string name="m6_listen_no_blocked_users">No blocked users</string>
+    <string name="m6_listen_unblock">Unblock</string>
+    <string name="m6_listen_auto_approval">Auto-approve join requests</string>
+    <string name="m6_listen_auto_approval_desc">Automatically approve join requests instead of reviewing them manually</string>
+    <string name="m6_listen_suggestion_auto_approve">Auto-approve song suggestions</string>
+    <string name="m6_listen_suggestion_auto_approve_desc">Guest song changes and suggestions play for everyone immediately; turn off to review each one</string>
+    <string name="m6_listen_chat_notifications">Chat message notifications</string>
+    <string name="m6_listen_chat_notifications_desc">Show a notification with a direct reply action whenever someone chats in the room</string>
+    <string name="m6_listen_sync_volume">Sync host volume</string>
+    <string name="m6_listen_sync_volume_desc">Guests follow the host volume level</string>
+    <string name="m6_listen_smart_resync">Smart Network Resync</string>
+    <string name="m6_listen_smart_resync_desc">Automatically catch up with the host after a connection drop</string>
+    <string name="m6_listen_view_logs">View logs</string>
+    <string name="m6_listen_view_logs_desc">Debug connection and messages</string>
+    <string name="m6_listen_logs">Connection logs</string>
+    <string name="m6_listen_no_logs">No logs yet</string>
+    <string name="m6_listen_copy">Copy</string>
+    <string name="m6_listen_clear">Clear</string>
+    <string name="m6_listen_copied">Copied to clipboard</string>
+    <string name="m6_listen_description">Listen to music with your friends in real-time. Create a room to be the host or join an existing room with a code.</string>
+    <string name="m6_listen_cannot_edit_in_room">Cannot edit username while in a room</string>
+    <string name="m6_listen_choose_server">Choose server</string>
+    <string name="m6_listen_custom_server">Custom server</string>
+    <string name="m6_listen_use_custom_server">Use custom server</string>
+    <string name="m6_listen_reset">Reset</string>
+    <string name="m6_listen_ok">OK</string>
+</resources>

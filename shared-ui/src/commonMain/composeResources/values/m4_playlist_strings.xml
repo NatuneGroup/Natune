@@ -1,0 +1,34 @@
+<resources>
+    <string name="m4_create_playlist">Create playlist</string>
+    <string name="m4_sync_playlist">Sync with YouTube Music</string>
+    <string name="m4_sync_sign_in">Sign in to YouTube Music to create a synced playlist.</string>
+    <string name="m4_sync_disabled">Enable playlist synchronization to create a synced playlist.</string>
+    <string name="m4_sync_description">Create this playlist in your signed-in YouTube Music account.</string>
+    <string name="m4_saving">Saving…</string>
+    <string name="m4_playlist_write_failed">Could not save changes. Your draft is still available.</string>
+    <string name="m4_assign_tags">Assign tags</string>
+    <string name="m4_manage_tags">Manage playlist tags</string>
+    <string name="m4_no_tags">No tags yet. Create one in Manage playlist tags.</string>
+    <string name="m4_choose_playlists">Choose playlists</string>
+    <string name="m4_song_count">%1$d songs</string>
+    <string name="m4_save">Save</string>
+    <string name="m4_new_tag">New tag</string>
+    <string name="m4_edit_tag">Edit tag</string>
+    <string name="m4_delete_tag">Delete tag?</string>
+    <string name="m4_export_csv">Export playlist as CSV</string>
+    <string name="m4_export_csv_description">Choose a nonempty playlist. Export includes Title, Artist, Album and Media ID.</string>
+    <string name="m4_export_failed">Export failed. Choose the playlist again to retry.</string>
+    <string name="m4_list_view">List view</string>
+    <string name="m4_grid_view">Grid view</string>
+    <string name="m4_hide_hidden">Hide hidden playlists</string>
+    <string name="m4_show_hidden">Show hidden playlists</string>
+    <string name="m4_unlock_order">Unlock order</string>
+    <string name="m4_lock_order">Lock order</string>
+    <string name="m4_custom_order">Custom order</string>
+    <string name="m4_recently_added">Recently added</string>
+    <string name="m4_recently_updated">Recently updated</string>
+    <string name="m4_track_count">Track count</string>
+    <string name="m4_move_up">Move up</string>
+    <string name="m4_move_down">Move down</string>
+    <string name="m4_tag_color">Tag color #%1$s</string>
+</resources>

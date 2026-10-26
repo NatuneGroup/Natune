@@ -1,0 +1,20 @@
+<resources>
+    <string name="m6_deezer_account">Account</string>
+    <string name="m6_deezer_login">Sign in to Deezer</string>
+    <string name="m6_deezer_login_description">Use your own Deezer account instead of the shared pool</string>
+    <string name="m6_deezer_arl_login">Sign in with ARL</string>
+    <string name="m6_deezer_arl_login_description">Paste the arl cookie from a signed-in deezer.com browser session</string>
+    <string name="m6_deezer_arl_placeholder">arl cookie value</string>
+    <string name="m6_deezer_arl_verifying">Checking this ARL with Deezer…</string>
+    <string name="m6_deezer_arl_invalid">Deezer did not accept that ARL. It may be expired, or it belongs to a signed-out session.</string>
+    <string name="m6_deezer_sign_out">Sign out of Deezer</string>
+    <string name="m6_deezer_api_group">Deezer API</string>
+    <string name="m6_deezer_api_instances">API instances</string>
+    <string name="m6_deezer_api_instances_none">None added. Add a self-hosted Deezer instance URL, one per line</string>
+    <string name="m6_deezer_api_instances_one">%1$d instance, tried after accounts</string>
+    <string name="m6_deezer_api_instances_other">%1$d instances, tried after accounts</string>
+    <string name="m6_deezer_api_instances_hint">One base URL per line. An instance answers GET /health and streams from /stream/?isrc=… or /stream/{track id}. Your own ARL is never sent to it.</string>
+    <string name="m6_deezer_api_pool">Source Pool instances</string>
+    <string name="m6_deezer_api_pool_on">On · verified instances from the Source Pool are added after yours</string>
+    <string name="m6_deezer_api_pool_off">Off · turn on "Use pool accounts" to add the Source Pool's instances</string>
+</resources>

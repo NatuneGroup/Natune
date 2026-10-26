@@ -1,5 +1,11 @@
 # Foundation readiness
 
+> Historical record for the independent foundation `c047a2002a7c35eb9ed30b6a8eec72951f7f2f48`.
+> The merged private `dev` keeps its `:shared` module inactive under `shared/` (its build
+> script is `shared/build.gradle.kts.reference`) and does not run its workflow. Statements
+> below about imported history, single-module scope and CI describe that foundation only.
+> Current port readiness status is in [kmp-baseline.md](kmp-baseline.md).
+
 ## Actual stack and commands
 Kotlin/KMP/serialization/Compose compiler 2.4.21; CMP 1.12.2; Android-KMP
 library plugin 9.2.1; checksum-pinned Gradle 9.6.1; Temurin 21.0.13+9.

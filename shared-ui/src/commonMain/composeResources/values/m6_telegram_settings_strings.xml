@@ -1,0 +1,18 @@
+<resources>
+    <string name="m6_telegram_account_group">Account</string>
+    <string name="m6_telegram_signed_in">Signed in as</string>
+    <string name="m6_telegram_account_with_phone">%1$s (%2$s)</string>
+    <string name="m6_telegram_login">Sign in with Telegram</string>
+    <string name="m6_telegram_login_summary">Enter your phone number — a login code is sent to your Telegram</string>
+    <string name="m6_telegram_logout">Sign out</string>
+    <string name="m6_telegram_logout_confirm">Sign out of Telegram? The on-device session and file cache will be removed.</string>
+    <string name="m6_telegram_browse_group">Browse channels</string>
+    <string name="m6_telegram_browse_channels">Browse channels</string>
+    <string name="m6_telegram_browse_channels_description">Search Telegram channels and stream their audio files</string>
+    <string name="m6_telegram_login_required">Sign in with your Telegram account first</string>
+    <string name="m6_telegram_lossless_only">Lossless files only</string>
+    <string name="m6_telegram_lossless_only_description">Only list FLAC, WAV, AIFF and other lossless files when browsing channels</string>
+    <string name="m6_telegram_bots_group">Telegram bots</string>
+    <string name="m6_telegram_bots_title">Telegram bots</string>
+    <string name="m6_telegram_bots_summary">Paste a bot once, then send it song links to fetch lossless files.</string>
+</resources>

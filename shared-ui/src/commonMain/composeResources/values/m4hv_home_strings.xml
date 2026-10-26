@@ -1,0 +1,26 @@
+<resources>
+    <string name="m4hv_no_results">No results found</string>
+    <string name="m4hv_home_failed">Home could not be loaded</string>
+    <string name="m4hv_retry">Retry</string>
+    <string name="m4hv_loading">Loading</string>
+    <string name="m4hv_quick_picks">Quick picks</string>
+    <string name="m4hv_keep_listening">Keep listening</string>
+    <string name="m4hv_forgotten_favorites">Forgotten favorites</string>
+    <string name="m4hv_speed_dial">Speed dial</string>
+    <string name="m4hv_account">Account</string>
+    <string name="m4hv_your_youtube_playlists">Your YouTube playlists</string>
+    <string name="m4hv_similar_to">Similar to</string>
+    <string name="m4hv_recently_played">Recently played</string>
+    <string name="m4hv_frequently_listened">Frequently listened</string>
+    <string name="m4hv_spotify_not_connected">Spotify is not connected</string>
+    <string name="m4hv_open_youtube_music">Open YouTube Music</string>
+    <string name="m4hv_spotify_because_you_like">Because you like %1$s</string>
+    <string name="m4hv_spotify_top_tracks">Top Tracks</string>
+    <string name="m4hv_spotify_top_artists">Top Artists</string>
+    <string name="m4hv_spotify_made_for_you">Made For You</string>
+    <string name="m4hv_spotify_discover">Discover</string>
+    <string name="m4hv_spotify_your_playlists">Your Playlists</string>
+    <string name="m4hv_spotify_new_releases">New Releases</string>
+    <string name="m4hv_bitchord_recently_played">Recently Played</string>
+    <string name="m4hv_jump_back_in">Jump back in</string>
+</resources>

@@ -1,0 +1,14 @@
+<resources>
+    <string name="m6_manage_tags">Manage Tags</string>
+    <string name="m6_change_playlist_cover">Change playlist cover</string>
+    <string name="m6_remove_playlist_cover">Remove custom cover</string>
+    <string name="m6_telegram_add_songs">Add songs</string>
+    <string name="m6_refresh_telegram_playlist">Refresh from Telegram</string>
+    <string name="m6_sync_playlist">Sync playlist</string>
+    <string name="m6_hide_playlist">Hide playlist</string>
+    <string name="m6_unhide_playlist">Unhide playlist</string>
+    <string name="m6_hide_playlist_confirm">Hide \"%1$s\" from library?</string>
+    <string name="m6_delete">Delete</string>
+    <string name="m6_delete_playlist_confirm">Do you really want to delete the playlist \"%1$s\"?</string>
+    <string name="m6_remove_playlist_downloads_confirm">Do you really want to remove all \"%1$s\" playlist songs from the Downloaded Songs storage?</string>
+</resources>

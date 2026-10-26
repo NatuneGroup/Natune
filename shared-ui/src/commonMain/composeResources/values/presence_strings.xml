@@ -1,0 +1,8 @@
+<resources>
+    <string name="presence_title">Share listener presence</string>
+    <string name="presence_summary">Show an anonymous count of people listening on the public live map while music plays. Off by default, and you can turn it off at any time.</string>
+    <string name="presence_show_details">What is sent</string>
+    <string name="presence_hide_details">Hide details</string>
+    <string name="presence_details">While this is on and music is playing, the app sends a random listener ID, the platform, the app version and a playing state about once a minute. It never sends tracks, playlists, searches, account details or any other personal data. The service works out an approximate city and country from the connection, keeps each entry for 150 seconds and keeps no history. Its servers do not store your IP address, although the hosting provider may keep standard request logs under its own policy. Cities appear on the public map only when at least three listeners are there. Turning this off stops sending at once and deletes the local listener ID.</string>
+    <string name="presence_reset_id">Reset listener ID</string>
+</resources>

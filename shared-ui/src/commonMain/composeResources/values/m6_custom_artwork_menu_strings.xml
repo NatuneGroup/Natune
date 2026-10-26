@@ -1,0 +1,6 @@
+<resources>
+    <string name="m6_custom_artwork_set_cover">Set custom cover</string>
+    <string name="m6_custom_artwork_set_canvas">Set custom canvas</string>
+    <string name="m6_custom_artwork_remove_cover">Remove custom cover</string>
+    <string name="m6_custom_artwork_remove_canvas">Remove custom canvas</string>
+</resources>

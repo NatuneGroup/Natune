@@ -1,0 +1,17 @@
+<resources>
+    <string name="m6_po_token_web_client">Web Client PO Token</string>
+    <string name="m6_po_token_web_client_desc">Enable PO token generation for web-based player clients</string>
+    <string name="m6_po_token_generated_tokens">Generated Tokens</string>
+    <string name="m6_po_token_gvs">PO Token (GVS)</string>
+    <string name="m6_po_token_player">PO Token (Player)</string>
+    <string name="m6_po_token_visitor_data">Visitor Data</string>
+    <string name="m6_po_token_copy">Copy</string>
+    <string name="m6_po_token_copied">Token copied to clipboard</string>
+    <string name="m6_po_token_regenerate">Re-generate</string>
+    <string name="m6_po_token_regenerate_token">Regenerate Token</string>
+    <string name="m6_po_token_source_url">Source URL</string>
+    <string name="m6_po_token_source_url_placeholder">https://youtube.com/account</string>
+    <string name="m6_po_token_generated">Tokens generated successfully</string>
+    <string name="m6_po_token_failed">Token generation failed</string>
+    <string name="m6_po_token_empty_value">—</string>
+</resources>

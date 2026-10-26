@@ -1,0 +1,34 @@
+<resources>
+    <string name="m4_all">All</string>
+    <string name="m4_close">Close</string>
+    <string name="m4_discover">Discover</string>
+    <string name="m4_explore">Explore</string>
+    <string name="m4_suggestions">Suggestions</string>
+    <string name="m4_moods_genres">Moods and genres</string>
+    <string name="m4_charts">Charts</string>
+    <string name="m4_new_releases">New releases</string>
+    <string name="m4_refresh">Refresh</string>
+    <string name="m4_see_all">See all</string>
+    <string name="m4_singles">Singles</string>
+    <string name="m4_eps">EPs</string>
+    <string name="m4_release_count">%1$s (%2$d)</string>
+    <string name="m4_news">News</string>
+    <string name="m4_news_unavailable">The news feed is unavailable. No approved live feed is configured.</string>
+    <string name="m4_important">Important</string>
+    <string name="m4_read_article">Read article</string>
+    <string name="m4_previous_image">Previous image</string>
+    <string name="m4_next_image">Next image</string>
+    <string name="m4_image_count">Image %1$d of %2$d</string>
+    <string name="m4_podcasts">Podcasts</string>
+    <string name="m4_episodes">Episodes</string>
+    <string name="m4_subscriptions">Subscriptions</string>
+    <string name="m4_subscribe">Subscribe</string>
+    <string name="m4_unsubscribe">Unsubscribe</string>
+    <string name="m4_subscription_failed">Subscription could not be updated. Try again.</string>
+    <string name="m4_statistics">Statistics</string>
+    <string name="m4_year_in_music">Year in Music</string>
+    <string name="m4_listen_together">Listen Together</string>
+    <string name="m4_telegram">Telegram</string>
+    <string name="m4_account">Account</string>
+    <string name="m4_settings">Settings</string>
+</resources>

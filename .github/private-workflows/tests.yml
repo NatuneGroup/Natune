@@ -1,0 +1,187 @@
+# Staged private adaptation of the inherited tests.yml. Inert here: GitHub runs only files directly in
+# .github/workflows/, and this copy moves there only after the import-gate disposition and the final
+# CI authorization. Manual only: dispatch with the full 40-character private dev commit. It never runs
+# on push, pull request or schedule. The shared-module and app contract tests are separate jobs on the
+# same exact commit, serialized to protect the free Blacksmith allowance. Results are not verification
+# until the final-candidate run completes.
+name: Unit tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full 40-character private dev commit to test (must equal the checked-out head)
+        type: string
+        required: true
+      extended_checks:
+        description: Also run dependency/semantic analysis, CodeQL and three full test repetitions
+        type: boolean
+        required: false
+        default: false
+      semantic_base:
+        description: Integration revision the dependency/semantic analysis compares with the candidate (used only by extended_checks)
+        type: string
+        required: false
+        default: origin/dev
+
+permissions:
+  contents: read
+
+concurrency:
+  # One candidate test run per commit. A second dispatch waits instead of cancelling the first.
+  group: tests-${{ inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  unit-tests:
+    name: Compile and run app unit tests
+    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 45
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          submodules: true
+          persist-credentials: false
+
+      - name: Verify exact candidate head
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "candidate_sha must be a full 40-character commit SHA" >&2; exit 1; }
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+          cache-read-only: false
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run app unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fail if this documented contract variant disappears; never test a different flavor.
+          ./gradlew --console=plain --stacktrace --profile \
+            -I quality/unit-tests.init.gradle \
+            :app:testGmsMobileUniversalDebugUnitTest --rerun :app:criticalPolicyCoverage --max-workers=1 --no-daemon
+        env:
+          PULL_REQUEST: 'false'
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+          START_IO_APP_ID: ${{ secrets.START_IO_APP_ID }}
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+
+      - name: Upload local test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/reports/profile/
+            app/build/reports/tests/
+            app/build/test-results/
+            app/build/reports/jacoco/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload compact machine-readable test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-machine-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            app/build/reports/jacoco/*.xml
+            app/build/test-results/**/TEST-*.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  shared-tests:
+    name: Shared KMP module tests (JVM and desktop)
+    # Serialized after the app run so one candidate never holds two high-vCPU runners at once.
+    needs: unit-tests
+    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 60
+    env:
+      # The shared graph is checked without the Android SDK; empty paths keep Android targets out of it.
+      ANDROID_HOME: ""
+      ANDROID_SDK_ROOT: ""
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          submodules: true
+          persist-credentials: false
+
+      - name: Verify exact candidate head
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "candidate_sha must be a full 40-character commit SHA" >&2; exit 1; }
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+          cache-read-only: false
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run shared module tests
+        run: ./gradlew :shared-domain:allTests :shared-data:jvmTest :shared-ui:desktopTest --max-workers=1 --no-daemon
+
+      - name: Upload shared test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: shared-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            shared-domain/build/reports/tests/
+            shared-data/build/reports/tests/
+            shared-ui/build/reports/tests/
+          if-no-files-found: warn
+          retention-days: 7
+
+  dependency-health:
+    if: ${{ inputs.extended_checks }}
+    uses: ./.github/workflows/dependency_health.yml
+    with:
+      semantic_base: ${{ inputs.semantic_base }}
+
+  stability:
+    if: ${{ inputs.extended_checks }}
+    uses: ./.github/workflows/test_stability.yml
+    with:
+      test_filter: '*'
+
+  security:
+    if: ${{ inputs.extended_checks }}
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/codeql.yml

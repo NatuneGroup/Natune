@@ -1,0 +1,5 @@
+<resources>
+    <string name="m6_like_all">Like all</string>
+    <string name="m6_dislike_all">Dislike all</string>
+    <string name="m6_remove_from_queue">Remove from queue</string>
+</resources>

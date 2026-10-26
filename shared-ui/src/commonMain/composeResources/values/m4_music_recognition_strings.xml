@@ -1,0 +1,32 @@
+<resources>
+    <string name="m4_recognition_title">Music Recognition</string>
+    <string name="m4_recognition_history">Recognition history</string>
+    <string name="m4_recognition_settings">Music recognition settings</string>
+    <string name="m4_recognition_listening">Listening…</string>
+    <string name="m4_recognition_processing">Processing…</string>
+    <string name="m4_recognition_tap_to_listen">Tap to listen</string>
+    <string name="m4_recognition_listen_again">Listen again</string>
+    <string name="m4_recognition_no_match">No match found</string>
+    <string name="m4_recognition_signature_failed">Couldn’t generate a signature</string>
+    <string name="m4_recognition_recognition_failed">Recognition failed</string>
+    <string name="m4_recognition_error">Something went wrong</string>
+    <string name="m4_recognition_permission_title">Microphone permission</string>
+    <string name="m4_recognition_permission_desc">Allow microphone access to recognize nearby music.</string>
+    <string name="m4_recognition_permission_action">Allow</string>
+    <string name="m4_recognition_open_shazam">Open Shazam</string>
+    <string name="m4_recognition_lyrics_preview">Lyrics preview</string>
+    <string name="m4_recognition_background_title">Recognition in background</string>
+    <string name="m4_recognition_background_description">When enabled, the Quick Settings tile recognizes audio playing on this device without opening Natune.</string>
+    <string name="m4_recognition_background_foss_description">Background recognition is unavailable in the FOSS variant. The Quick Settings tile opens the recognition screen instead.</string>
+    <string name="m4_recognition_history_search">Search recognized songs</string>
+    <string name="m4_recognition_history_empty_title">No recognized songs yet</string>
+    <string name="m4_recognition_history_empty_body">Matched songs will appear here after recognition succeeds.</string>
+    <string name="m4_recognition_history_no_results_title">No history matches</string>
+    <string name="m4_recognition_history_no_results_body">Try another song, artist, album, or code.</string>
+    <string name="m4_recognition_history_recognized_at">Recognized %1$s</string>
+    <string name="m4_recognition_details_unavailable">This recognition result is no longer available.</string>
+    <string name="m4_recognition_clear">Clear</string>
+    <string name="m4_recognition_history_unavailable_title">History unavailable</string>
+    <string name="m4_recognition_history_unavailable_body">Saved recognitions couldn’t be read or updated on this device.</string>
+    <string name="m4_recognition_background_save_failed">Couldn’t save this setting. The previous value was restored.</string>
+</resources>

@@ -1,0 +1,20 @@
+<resources>
+    <string name="m6_qq_enabled">Enable QQ Music</string>
+    <string name="m6_qq_enabled_desc">Try QQ Music for a track before falling through to the sources below it.</string>
+    <string name="m6_qq_quality">Preferred audio quality</string>
+    <string name="m6_qq_quality_lossless">Lossless (FLAC)</string>
+    <string name="m6_qq_quality_high">High (320 kbps)</string>
+    <string name="m6_qq_quality_standard">Standard (128 kbps)</string>
+    <string name="m6_qq_signed_in">Signed in as %1$s</string>
+    <string name="m6_qq_signed_in_description">Playback uses this account, at the quality you picked. A tier the account does not hold is left to the next source.</string>
+    <string name="m6_qq_sign_out">Sign out of QQ Music</string>
+    <string name="m6_qq_login_requesting">Requesting a sign-in code</string>
+    <string name="m6_qq_login_scan">Scan this code with the QQ app</string>
+    <string name="m6_qq_login_scanned">Scanned — confirm the sign-in on your phone</string>
+    <string name="m6_qq_login_declined">The sign-in was declined on your phone.</string>
+    <string name="m6_qq_login_unavailable">The sign-in code could not be fetched. Check the connection and try again.</string>
+    <string name="m6_qq_login_timed_out">The code expired before it was scanned.</string>
+    <string name="m6_qq_login_incomplete">The scan was confirmed but the session could not be completed.</string>
+    <string name="m6_qq_login_retry">Show a new code</string>
+    <string name="m6_qq_login_limits">Only the signed-in account is used: no tier is unlocked, no advert, limit or purchase prompt is evaded, and a protected container is decrypted on device and never re-shared.</string>
+</resources>

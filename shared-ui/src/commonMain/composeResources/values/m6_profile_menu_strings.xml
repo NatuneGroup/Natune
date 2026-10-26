@@ -1,0 +1,11 @@
+<resources>
+    <string name="m6_profile_history">History</string>
+    <string name="m6_profile_news">News</string>
+    <string name="m6_profile_new_release_albums">New Releases</string>
+    <string name="m6_profile_lastfm_dashboard">Last.fm Dashboard</string>
+    <string name="m6_profile_music_recognition">Music Recognition</string>
+    <string name="m6_profile_listen_together">Listen Together</string>
+    <string name="m6_profile_settings">Settings</string>
+    <string name="m6_profile_account">Account</string>
+    <string name="m6_profile_close">Close</string>
+</resources>

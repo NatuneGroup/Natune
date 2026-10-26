@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ArchiveTune (2026) - GPL-3.0
+     Original "add to playlist" glyph (a ring with a plus) for the Last.fm track sheet. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.8"
+        android:pathData="M12,3 A9,9 0 1,1 12,21 A9,9 0 1,1 12,3 Z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M11,8 H13 V11 H16 V13 H13 V16 H11 V13 H8 V11 H11 Z" />
+</vector>

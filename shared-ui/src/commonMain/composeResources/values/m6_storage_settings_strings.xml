@@ -1,0 +1,30 @@
+<resources>
+    <string name="m6_confirm">Confirm</string>
+    <string name="m6_confirm_stored_action">This action changes stored data. Continue?</string>
+    <string name="m6_clear_downloads">Clear all downloads</string>
+    <string name="m6_export_downloads">Export downloaded songs</string>
+    <string name="m6_download_like">Download liked songs automatically</string>
+    <string name="m6_download_sources">Download source priority</string>
+    <string name="m6_download_requires_pool">Requires a configured Playback Pool</string>
+    <string name="m6_external_downloader_package">External downloader package</string>
+    <string name="m6_storage_folder">Choose storage folder</string>
+    <string name="m6_song_cache_limit">Maximum song cache size</string>
+    <string name="m6_image_cache_limit">Maximum image cache size</string>
+    <string name="m6_canvas_cache_limit">Maximum Canvas cache size</string>
+    <string name="m6_clear_song_cache">Clear song cache</string>
+    <string name="m6_clear_image_cache">Clear image cache</string>
+    <string name="m6_clear_canvas_cache">Clear Canvas cache</string>
+    <string name="m6_clear_lyrics_cache">Clear lyrics cache</string>
+    <string name="m6_smart_trimmer">Smart cache trimmer</string>
+    <string name="m6_cache_bytes">%1$d bytes used</string>
+    <string name="m6_cache_disabled">Disabled</string>
+    <string name="m6_cache_64">64 MB</string>
+    <string name="m6_cache_128">128 MB</string>
+    <string name="m6_cache_256">256 MB</string>
+    <string name="m6_cache_512">512 MB</string>
+    <string name="m6_cache_1024">1 GB</string>
+    <string name="m6_cache_2048">2 GB</string>
+    <string name="m6_cache_4096">4 GB</string>
+    <string name="m6_cache_8192">8 GB</string>
+    <string name="m6_cache_unlimited">Unlimited</string>
+</resources>

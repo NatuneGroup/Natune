@@ -1,0 +1,4 @@
+<resources>
+    <string name="m6_sort_ascending">Ascending</string>
+    <string name="m6_sort_descending">Descending</string>
+</resources>

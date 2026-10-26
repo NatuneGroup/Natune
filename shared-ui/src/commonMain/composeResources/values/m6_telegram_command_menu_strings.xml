@@ -1,0 +1,13 @@
+<resources>
+    <string name="m6_telegram_cmd_start">Initialize or restart the bot</string>
+    <string name="m6_telegram_cmd_help">Show the bot help and usage guide</string>
+    <string name="m6_telegram_cmd_search">Search for a song by name or artist</string>
+    <string name="m6_telegram_cmd_download">Download a song from a link or search query</string>
+    <string name="m6_telegram_cmd_song">Search for a song by name</string>
+    <string name="m6_telegram_cmd_music">Search for music by query</string>
+    <string name="m6_telegram_cmd_lyrics">Fetch lyrics for a song</string>
+    <string name="m6_telegram_cmd_flac">Request FLAC (lossless) quality</string>
+    <string name="m6_telegram_cmd_alac">Request ALAC (Apple Lossless) quality</string>
+    <string name="m6_telegram_cmd_mp3">Request MP3 (lossy) quality</string>
+    <string name="m6_telegram_cmd_cancel">Cancel the current operation</string>
+</resources>

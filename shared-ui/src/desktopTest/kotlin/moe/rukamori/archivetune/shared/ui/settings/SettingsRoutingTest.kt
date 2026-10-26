@@ -1,0 +1,39 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ */
+package moe.rukamori.archivetune.shared.ui.settings
+
+import moe.rukamori.archivetune.shared.domain.settings.*
+import kotlin.test.*
+
+class SettingsRoutingTest {
+    @Test fun ytdlpResultOwnsARealRuntimePageNotExternalDownloaderControls() {
+        assertEquals("settings/player/ytdlp", settingsSearchRoute("playback", "ytdlp"))
+        assertEquals("settings/player/ytdlp", SettingsRoutes.YTDLP)
+        assertEquals("settings/downloads?scrollTo=external_downloader", settingsSearchRoute("downloads", "external_downloader"))
+        assertEquals("settings/misc?scrollTo=acoustic_quality", settingsSearchRoute("developer_options", "acoustic_quality"))
+        assertEquals("settings/about", settingsSearchRoute("about", "version"))
+        assertNull(settingsSearchRoute("unknown", null))
+    }
+
+    @Test fun japaneseCanBeDisabledAfterPackRemovalAndAiOverridesAllBuiltins() {
+        fun japanese(stored: Boolean, ai: Boolean = false) = romanizationSettingsRows(
+            ai, japanesePackReady = false, PreferenceSnapshot.of(LyricsRomanizeJapaneseKey to stored),
+        ).first()
+        assertFalse(japanese(false).enabled)
+        assertTrue(japanese(true).enabled)
+        assertFalse(japanese(true, true).enabled)
+    }
+
+    @Test fun wordSyncDisablesProviderControlsWithoutChangingPreferences() {
+        val prefs = PreferenceSnapshot.of(PrioritizeWordSyncedLyricsKey to true, EnableLrcLibKey to false)
+        val rows = lyricsProviderSettingsRows(prefs, {}, {}, {})
+        assertTrue(rows.single { it.anchor == "prioritize_word_synced_lyrics" }.enabled)
+        assertTrue(rows.filterNot { it.anchor == "prioritize_word_synced_lyrics" }.none { it.enabled })
+        assertFalse(prefs[EnableLrcLibKey, true])
+    }
+}

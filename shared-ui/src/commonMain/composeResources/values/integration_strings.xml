@@ -1,0 +1,5 @@
+<resources>
+    <string name="integration_host_pending">Host integration is incomplete. Playback and account services are not connected.</string>
+    <string name="integration_play">Play</string>
+    <string name="integration_pause">Pause</string>
+</resources>

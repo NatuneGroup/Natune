@@ -1,0 +1,4 @@
+language = C
+headers = ATNativeTelegram.h
+headerFilter = ATNativeTelegram.h
+package = moe.rukamori.archivetune.nativetelegram

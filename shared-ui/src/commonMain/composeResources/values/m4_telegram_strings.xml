@@ -1,0 +1,24 @@
+<resources>
+    <string name="m4_telegram_bots_title">Telegram bots</string>
+    <string name="m4_telegram_bots_hint">@username or t.me/…</string>
+    <string name="m4_telegram_bots_add">Add</string>
+    <string name="m4_telegram_bots_empty">No bots added yet — paste a bot link like @SongBot or t.me/SongBot.</string>
+    <string name="m4_telegram_bots_invalid">That doesn’t look like a Telegram bot. Paste a @username or a t.me/&lt;bot&gt; link.</string>
+    <string name="m4_telegram_bots_resolve_failed">Couldn’t find that bot. Make sure the username is correct and the bot hasn’t been blocked.</string>
+    <string name="m4_telegram_bots_already_added">You’ve already added @%1$s.</string>
+    <string name="m4_telegram_bots_remove">Remove bot</string>
+    <string name="m4_telegram_bots_remove_confirm">Remove @%1$s from your bots?</string>
+    <string name="m4_telegram_login_required">Sign in with your Telegram account first</string>
+    <string name="m4_telegram_forward_title">Auto-forward to my channel</string>
+    <string name="m4_telegram_forward_summary">Also forward the original message when adding to a channel playlist.</string>
+    <string name="m4_telegram_ok">OK</string>
+    <string name="m4_telegram_dismiss">Dismiss</string>
+    <string name="m4_telegram_browse_title">Browse channels</string>
+    <string name="m4_telegram_search_hint">Channel name, @username or t.me link</string>
+    <string name="m4_telegram_no_results">No channels found</string>
+    <string name="m4_telegram_error">Telegram error: %1$s</string>
+    <string name="m4_telegram_open_failed">Couldn’t open this Telegram channel</string>
+    <string name="m4_telegram_channel">Channel</string>
+    <string name="m4_telegram_group">Group</string>
+    <string name="m4_telegram_members">%1$s members</string>
+</resources>

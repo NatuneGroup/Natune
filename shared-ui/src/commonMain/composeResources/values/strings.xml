@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The brand name stays untranslated; it is shared with the window title and the Android host. -->
+    <string name="app_name">ArchiveTune</string>
+    <string name="foundation_status">Kotlin Multiplatform foundation</string>
+    <string name="lyrics_selected_count">%1$d selected</string>
+    <string name="lyrics_share">Share</string>
+    <string name="lyrics_clear_selection">Clear</string>
+</resources>
