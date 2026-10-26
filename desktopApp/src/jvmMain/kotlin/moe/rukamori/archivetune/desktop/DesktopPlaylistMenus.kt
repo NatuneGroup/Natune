@@ -54,6 +54,7 @@ import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
 import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
 import moe.rukamori.archivetune.shared.domain.settings.serializeSpeedDialPins
 import moe.rukamori.archivetune.shared.domain.settings.toggleSpeedDialPin
+import moe.rukamori.archivetune.shared.ui.host.queuedEntry
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
 import moe.rukamori.archivetune.shared.ui.menu.MenuShareHandler
 import moe.rukamori.archivetune.shared.ui.menu.MenuSharing

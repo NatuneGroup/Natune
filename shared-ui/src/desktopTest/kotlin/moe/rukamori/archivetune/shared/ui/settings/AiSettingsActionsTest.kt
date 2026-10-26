@@ -3,7 +3,6 @@ package moe.rukamori.archivetune.shared.ui.settings
 import java.nio.file.Files
 import kotlinx.coroutines.*
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.*
-import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiRequestBudget
 import moe.rukamori.archivetune.shared.domain.repository.AiTextService
 import moe.rukamori.archivetune.shared.domain.settings.*
 import kotlin.test.*
@@ -122,7 +121,5 @@ class AiSettingsActionsTest {
         override suspend fun test(config: AiServiceSettings) { last = config; testing() }
         override suspend fun translateLines(config: AiServiceSettings, targetLanguage: String, lines: List<String>, formatName: String): List<String> = error("Not a lyrics request")
         override suspend fun romanizeLines(config: AiServiceSettings, lines: List<String>, formatName: String): List<String> = error("Not a lyrics request")
-        override suspend fun fetchModels(config: AiServiceSettings): List<AiModelOption> = error("Not a picker request")
-        override suspend fun complete(config: AiServiceSettings, budget: AiRequestBudget, systemPrompt: String, userPrompt: String, temperature: Double, maxTokens: Int): String = error("Not a chat request")
     }
 }
