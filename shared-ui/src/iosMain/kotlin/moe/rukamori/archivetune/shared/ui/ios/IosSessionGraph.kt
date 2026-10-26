@@ -42,8 +42,12 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
+import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
+import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
+import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalPkceClient
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
@@ -71,6 +75,7 @@ internal class IosSessionGraph private constructor(
     val tidalAuth: TidalAccountAuth,
     val http: HttpClient,
     val player: MusicPlayerController,
+    private val playbackPort: IosPlaybackPort,
     val queue: TypedDelegatingQueueController,
     /** The one library store of the session: the same instance [libraryContent] and [pageOwners] read and write. */
     internal val library: RoomLibraryRepository,
@@ -88,6 +93,25 @@ internal class IosSessionGraph private constructor(
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 
     fun report(message: String) = reportLine(message)
+
+    /**
+     * Sets the app-level output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player
+     * does, so the same slider the Android app offers drives the output on this host too.
+     */
+    fun setVolume(volume: Float) {
+        if (!volume.isFinite()) return
+        val level = volume.coerceIn(0f, 1f)
+        playbackPort.setVolume(level)
+        scope.launch {
+            try {
+                settings.edit { set(PlayerVolumeKey, level) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report("volume was not saved: ${failure::class.simpleName}")
+            }
+        }
+    }
 
     /**
      * The playback error dialog's Retry: loads the failed occurrence again at the position the player kept for it. An
@@ -205,7 +229,12 @@ internal class IosSessionGraph private constructor(
             val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
             // This build carries no TIDAL client identity, so the device and browser sign-ins report themselves
             // unavailable. A pasted refresh token is still verified with TIDAL.
-            val tidalAuth = TidalAccountAuth(http, device = null, pkce = null, nowMs = ::iosNowMillis)
+            val tidalAuth = TidalAccountAuth(
+                http,
+                device = iosTidalDeviceClient(),
+                pkce = iosTidalPkceClient(),
+                nowMs = ::iosNowMillis,
+            )
             val tidalSessionRefresh = TidalSessionRefresh(
                 tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value }, nowMs = ::iosNowMillis,
             )
@@ -301,6 +330,9 @@ internal class IosSessionGraph private constructor(
                     }
                 },
             )
+            // The stored app-level volume survives a restart exactly as the Android player keeps it.
+            vault.snapshots.value?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }
+                ?.let { host.playbackPort.setVolume(it.coerceIn(0f, 1f)) }
             val graph = IosSessionGraph(
                 scope = scope,
                 settings = vault,
@@ -309,6 +341,7 @@ internal class IosSessionGraph private constructor(
                 tidalAuth = tidalAuth,
                 http = http,
                 player = player,
+                playbackPort = host.playbackPort,
                 queue = queue,
                 library = library,
                 libraryContent = libraryContent,
