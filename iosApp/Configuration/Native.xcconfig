@@ -3,9 +3,11 @@
 // Never point an iOS linker at desktop binaries or recovered reference libraries.
 ARCHIVETUNE_NATIVE_ROOT = $(SRCROOT)/../shared-data/build/ios-native/$(PLATFORM_NAME)
 FRAMEWORK_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../shared-ui/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
-HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/Native" "$(SRCROOT)/../desktopApp/native/include"
+HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/Native" "$(SRCROOT)/../desktopApp/native/include" "$(ARCHIVETUNE_NATIVE_ROOT)/include"
+// The TDLib closure archive is static, so its export header must not expect a shared tdjson.
+GCC_PREPROCESSOR_DEFINITIONS = $(inherited) TDJSON_STATIC_DEFINE=1
 LIBRARY_SEARCH_PATHS = $(inherited) "$(ARCHIVETUNE_NATIVE_ROOT)/lib"
-OTHER_LDFLAGS = $(inherited) -framework ArchiveTuneShared -larchivetune_engine -lavfilter -lavformat -lavcodec -lswscale -lswresample -lavutil -lssl -lcrypto -lxml2 -lz -liconv -lc++ -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework QuartzCore -framework MediaPlayer -framework Security -framework AuthenticationServices -framework WebKit -framework SystemConfiguration
+OTHER_LDFLAGS = $(inherited) -framework ArchiveTuneShared -larchivetune_engine -larchivetune_telegram -lavfilter -lavformat -lavcodec -lswscale -lswresample -lavutil -lssl -lcrypto -lxml2 -lz -liconv -lc++ -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework QuartzCore -framework MediaPlayer -framework Security -framework AuthenticationServices -framework WebKit -framework SystemConfiguration
 CLANG_ENABLE_MODULES = YES
 CLANG_ENABLE_OBJC_ARC = YES
 CLANG_CXX_LANGUAGE_STANDARD = c++17
@@ -20,12 +22,18 @@ PRODUCT_NAME = ArchiveTune
 INFOPLIST_FILE = ArchiveTune/Info.plist
 GENERATE_INFOPLIST_FILE = NO
 ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
-CURRENT_PROJECT_VERSION = 1
-MARKETING_VERSION = 0.1.0
+// Release workflows override both values on the xcodebuild command line.
+ARCHIVETUNE_VERSION_NAME = 0.1.0
+ARCHIVETUNE_VERSION_CODE = 1
+CURRENT_PROJECT_VERSION = $(ARCHIVETUNE_VERSION_CODE)
+MARKETING_VERSION = $(ARCHIVETUNE_VERSION_NAME)
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
 
 // The Telegram api_id and api_hash reach the app through Info.plist. Leave them blank here; set them in the untracked
 // Configuration/Credentials.xcconfig or as Xcode build settings. Blank values keep Telegram not configured.
 ARCHIVETUNE_TELEGRAM_API_ID =
 ARCHIVETUNE_TELEGRAM_API_HASH =
+// The opt-in listener presence origin reaches the app through Info.plist the same way. A blank value sends nothing.
+// xcconfig treats // as a comment, so write the scheme as https:/$()/host when setting it in an xcconfig file.
+ARCHIVETUNE_LISTENER_PRESENCE_URL =
 #include? "Credentials.xcconfig"

@@ -15,6 +15,7 @@ object IosCapabilities {
         "embedded-auth" to "isolated-wkWebView",
         "files" to "document-picker-security-scoped-bookmarks",
         "japanese-tokenizer" to "common-kuromoji-pack-lifecycle-requires-host-settings",
+        "listener-presence" to "backup-excluded-opt-in-file-ephemeral-nsurlsession-switch-requires-host-settings",
     )
     val unavailable: Set<String> = setOf(
         "carplay-entitlement",

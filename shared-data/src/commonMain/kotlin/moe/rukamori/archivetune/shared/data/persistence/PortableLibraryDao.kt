@@ -125,6 +125,18 @@ abstract class PortableLibraryDao {
     abstract fun observePlaylists(text: String): Flow<List<PortablePlaylistRow>>
     @Query("UPDATE portable_playlist SET title = :title WHERE id = :id")
     abstract suspend fun rename(id: String, title: String): Int
+    @Query("DELETE FROM portable_playlist WHERE id = :id")
+    abstract suspend fun deletePlaylistRow(id: String): Int
+    /**
+     * Removes one local playlist with its entries and tag assignments. The child rows go first and explicitly, so the
+     * result does not depend on whether the connection enforces the foreign-key cascade.
+     */
+    @Transaction
+    open suspend fun deletePlaylist(id: String) {
+        clearPlaylistTags(id)
+        clearEntries(id)
+        require(deletePlaylistRow(id) == 1) { "Unknown local playlist" }
+    }
     @Query("SELECT p.id AS id, p.title AS title, (SELECT COUNT(*) FROM portable_playlist_entry e WHERE e.playlistId = p.id) AS songCount FROM portable_playlist p ORDER BY p.createdSeq DESC, p.id DESC")
     abstract fun observeTaggablePlaylists(): Flow<List<TaggablePlaylistRow>>
     @Query("SELECT * FROM portable_tag ORDER BY name, id")

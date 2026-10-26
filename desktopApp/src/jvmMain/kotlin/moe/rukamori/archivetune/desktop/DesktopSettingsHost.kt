@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAdmission
+import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
 import moe.rukamori.archivetune.shared.data.provider.TidalRefreshResult
 import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
@@ -43,6 +44,7 @@ import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.youTubeLoginBlock
+import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
@@ -50,15 +52,14 @@ import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
 import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
+import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
-import moe.rukamori.archivetune.shared.ui.settings.QqLoginFailure
-import moe.rukamori.archivetune.shared.ui.settings.QqLoginUiState
 import moe.rukamori.archivetune.shared.ui.settings.QqMusicSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
-import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
+import moe.rukamori.archivetune.shared.ui.settings.SpotifyStreamingSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
 import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
@@ -82,6 +83,8 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     val tidalDeviceLink: TidalDeviceLink? = if (tidalAuth.deviceSignInAvailable) TidalAccountDeviceLink(tidalAuth) else null
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
     val youTube = DesktopYouTubeAccountOwner(graph, controller)
+    val qqMusic = DesktopQqMusicLoginOwner(graph.scope, graph.accountLifecycle, graph::report)
+    val spotify = DesktopSpotifyAccounts(graph, controller)
 
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
@@ -140,12 +143,14 @@ internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
 
 private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
-    "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
+    "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
+    DesktopListenTogetherSettingsRoute, "settings/misc", "settings/logcat", "settings/backup_restore",
+    "settings/lyrics/providers",
 )
 
 /**
  * One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and
- * announced. The QQ Music QR sign-in is not ported to this host, so its card reports the sign-in as unavailable.
+ * announced.
  */
 @Composable
 internal fun DesktopSettingsScreen(
@@ -196,8 +201,9 @@ internal fun DesktopSettingsScreen(
                     logOut = owners.youTube::logOut,
                     revokeCodeSession = owners.youTube::revokeCodeSession,
                     onAuthCommitted = { scope.launch { owners.youTube.refreshChannels() } },
-                    // This host has no YouTube library sync, so a switch has nothing to force.
-                    onForceSyncAfterSwitch = { },
+                    onForceSyncAfterSwitch = {
+                        graph.scope.launch { graph.youtubeLibrarySync.performFullSync(authoritative = true) }
+                    },
                     navigate = navigate,
                     onNotice = onNotice,
                     onFailure = onFailure,
@@ -208,21 +214,45 @@ internal fun DesktopSettingsScreen(
                 )
             }
             "login" -> DesktopYouTubeLoginPage(owners.youTube, navigation)
-            "settings/integration" -> IntegrationSettings(
-                controller = owners.controller,
-                poolConfigured = graph.playbackPool.configured,
-                spotifyAccount = SpotifyCatalogAccountState(),
-                spotifyError = null,
-                navigate = navigate,
-                onConnectSpotify = unavailable,
-                onReloadSpotifyPlaylists = { unavailable() },
-                onLogoutSpotify = { },
-                onDismissSpotifyError = { },
-                onPoolAccountsChanged = graph.playbackPool::onEnabledChanged,
-                onOpenCrossServiceImport = unavailable,
-                onFailure = onFailure,
-                scrollTo = scrollTo,
-            )
+            "settings/integration" -> {
+                val spotifyAccount by owners.spotify.catalog.collectAsState()
+                val spotifyError by owners.spotify.catalogError.collectAsState()
+                LaunchedEffect(Unit) { owners.spotify.restore() }
+                IntegrationSettings(
+                    controller = owners.controller,
+                    poolConfigured = graph.playbackPool.configured,
+                    spotifyAccount = spotifyAccount,
+                    spotifyError = spotifyError,
+                    navigate = navigate,
+                    onConnectSpotify = {
+                        owners.spotify.connectCatalog()
+                        show(DesktopStrings["spotify_login_window_hint"])
+                    },
+                    onReloadSpotifyPlaylists = owners.spotify::reloadPlaylists,
+                    onLogoutSpotify = owners.spotify::logOutCatalog,
+                    onDismissSpotifyError = owners.spotify::dismissCatalogError,
+                    onPoolAccountsChanged = graph.playbackPool::onEnabledChanged,
+                    onOpenCrossServiceImport = unavailable,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            "settings/spotify_streaming" -> {
+                val signingIn by owners.spotify.streamingSignInInProgress.collectAsState()
+                val refusal by owners.spotify.streamingRefusal.collectAsState()
+                SpotifyStreamingSettings(
+                    controller = owners.controller,
+                    signInInProgress = signingIn,
+                    signInRefusal = refusal,
+                    onSignIn = { owners.spotify.signInStreaming(::show) },
+                    onDismissSignInRefusal = owners.spotify::dismissStreamingRefusal,
+                    onSignOut = owners.spotify::signOutStreaming,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                    onCancelSignIn = owners.spotify::cancelStreamingSignIn,
+                    hostNote = DesktopStrings["spotify_streaming_desktop_note"],
+                )
+            }
             "settings/tidal" -> {
                 val health by owners.tidalInstanceHealth.collectAsState()
                 TidalSettings(
@@ -255,16 +285,20 @@ internal fun DesktopSettingsScreen(
                 onNotice = onNotice,
                 scrollTo = scrollTo,
             )
-            "settings/qqmusic" -> QqMusicSettings(
-                controller = owners.controller,
-                accounts = owners.accounts,
-                loginState = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE),
-                onStartSignIn = { },
-                onCancelSignIn = { },
-                onSignOut = { },
-                onFailure = onFailure,
-                scrollTo = scrollTo,
-            )
+            "settings/qqmusic" -> {
+                val loginState by owners.qqMusic.loginState.collectAsState()
+                QqMusicSettings(
+                    controller = owners.controller,
+                    accounts = owners.accounts,
+                    loginState = loginState,
+                    onStartSignIn = owners.qqMusic::start,
+                    onCancelSignIn = owners.qqMusic::cancel,
+                    // The host holds no QQ session beyond the attempt, so only the attempt stops; the lifecycle signs out.
+                    onSignOut = { owners.qqMusic.cancel() },
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
             "settings/telegram" -> {
                 val admission by graph.telegram.admission.collectAsState()
                 TelegramSettings(
@@ -291,6 +325,18 @@ internal fun DesktopSettingsScreen(
             DesktopLastFmDashboardRoute -> DesktopLastFmDashboardPage(graph, navigation, unavailable)
             "settings/privacy" -> DesktopPrivacySettingsPage(graph, owners.controller, onFailure, scrollTo)
             "settings/about" -> DesktopAboutPage(graph, owners.controller, navigation)
+            DesktopListenTogetherSettingsRoute ->
+                DesktopListenTogetherSettingsPage(graph, owners.controller, onNotice, onFailure, unavailable, scrollTo)
+            "settings/misc" -> DesktopDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
+            "settings/logcat" -> DesktopDiagnosticLogPage(graph.settings, navigation, ::show)
+            "settings/backup_restore" -> DesktopBackupRestorePage(graph, owners.controller, onNotice, onFailure, scrollTo)
+            "settings/lyrics/providers" -> LyricsProviderSettings(
+                controller = owners.controller,
+                readStats = { preferences -> PaxsenixDiagnostics(graph.http, paxsenixSettingsOf(preferences)).getStats().getOrThrow() },
+                checkEndpoints = { preferences -> PaxsenixDiagnostics(graph.http, paxsenixSettingsOf(preferences)).checkProviderPaths() },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }

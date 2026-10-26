@@ -24,6 +24,14 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.cio)
             implementation(libs.quickjs.kt)
+            // The YouTube fallback tiers. InnerTubeX expects JSON content negotiation on its client. :core and the
+            // NewPipe extractor already reach the package through shared-data; they are declared here so the NewPipe
+            // tier can drive the extractor directly, which adds nothing to the package.
+            implementation(libs.innertubex.desktop)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.json)
+            implementation(project(":core"))
+            implementation(libs.metrolist.extractor)
             implementation(compose.desktop.currentOs)
             // Pinned here for the isolated native lane; centralize in the catalog at integration.
             implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
@@ -32,6 +40,8 @@ kotlin {
             // The TDLight binding behind the Telegram file adapter. Integration registers this project in the root
             // settings; its native library and notices are staged by stageDesktopNativeResources.
             implementation(project(":desktopApp:tdlight-jvm"))
+            // The Spotify catalog client (GraphQL with REST fallback, web-player token). It brings its own OkHttp engine.
+            implementation(project(":spotifycore"))
         }
         jvmTest.dependencies {
             implementation(kotlin("test"))
@@ -60,6 +70,8 @@ val desktopCredentialNames = listOf(
     "ARCHIVETUNE_POOL_CLIENT_KEY",
     "ARCHIVETUNE_FEEDBACK_API_URL",
     "ARCHIVETUNE_FEEDBACK_INGEST_KEY",
+    "ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID",
+    "ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET",
 )
 val desktopLegacyCredentialNames = mapOf(
     "ARCHIVETUNE_LASTFM_API_KEY" to arrayOf("LASTFM_API_KEY"),
@@ -98,7 +110,66 @@ tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(gener
 
 // The package identity is named once because the RPM rebuild below must reproduce exactly what Compose packages.
 val desktopPackageName = "Natune"
-val desktopPackageVersion = "1.0.0"
+val desktopPackageVersion =
+    providers.gradleProperty("desktopPackageVersion").orNull?.trim()?.takeIf { it.isNotEmpty() } ?: "1.0.0"
+require(Regex("""\d+\.\d+\.\d+""").matches(desktopPackageVersion)) {
+    "desktopPackageVersion must be a numeric X.Y.Z package version."
+}
+val desktopDisplayVersion =
+    providers.gradleProperty("desktopDisplayVersion").orNull?.trim()?.takeIf { it.isNotEmpty() }
+        ?: System.getenv("VERSION_NAME_OVERRIDE")?.trim()?.takeIf { it.isNotEmpty() }
+        ?: desktopPackageVersion
+
+// The build identity a feedback report names, read from git the way the Android build reads it. Nothing secret here.
+val desktopForkRevision = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "rev-parse", "--short=12", "HEAD")
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("unknown").filter { it.isLetterOrDigit() }.ifEmpty { "unknown" }
+val desktopForkBranch = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "branch", "--show-current")
+    }.standardOutput.asText.get().trim().ifEmpty { "detached" }
+}.getOrDefault("unknown").filter { it.isLetterOrDigit() || it in "/._-" }
+val desktopForkDirty = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "status", "--porcelain", "--untracked-files=no")
+    }.standardOutput.asText.get().isNotBlank()
+}.getOrDefault(false)
+val desktopBuildIdentityDirectory = layout.buildDirectory.dir("generated/buildIdentity")
+val generateDesktopBuildIdentity = tasks.register("generateBuildIdentity") {
+    val revision = desktopForkRevision
+    val branch = desktopForkBranch
+    val dirty = desktopForkDirty
+    val version = desktopDisplayVersion
+    val output = desktopBuildIdentityDirectory
+    inputs.property("revision", revision)
+    inputs.property("branch", branch)
+    inputs.property("dirty", dirty)
+    inputs.property("version", version)
+    outputs.dir(output)
+    doLast {
+        val directory = output.get().asFile.resolve("moe/rukamori/archivetune/desktop")
+        directory.mkdirs()
+        directory.resolve("DesktopBuildIdentity.kt").writeText(
+            """
+            |package moe.rukamori.archivetune.desktop
+            |
+            |internal object DesktopBuildIdentity {
+            |    const val VERSION_NAME = "$version"
+            |    const val FORK_REVISION = "$revision"
+            |    const val FORK_BRANCH = "$branch"
+            |    const val FORK_DIRTY = $dirty
+            |}
+            |""".trimMargin(),
+        )
+    }
+}
+kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopBuildIdentityDirectory) }
+tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(generateDesktopBuildIdentity) }
 
 compose.desktop {
     application {
@@ -194,7 +265,7 @@ val buildNativeSystem = tasks.register<Exec>("buildNativeSystem") {
 val nativeBrowserBuildDir = nativeRoot.map { it.dir("browser-build") }
 val hostArch = if (System.getProperty("os.arch") in listOf("aarch64", "arm64")) "arm64" else "x64"
 val hostNativeName = when {
-    hostIsLinux -> "linux-x64"
+    hostIsLinux -> "linux-$hostArch"
     System.getProperty("os.name").startsWith("Windows") -> "windows-$hostArch"
     else -> "macos-$hostArch"
 }
@@ -270,7 +341,7 @@ val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") 
             // Windows recipe exists, so that host is named as uncovered rather than sent to a recipe that refuses it.
             when (hostNativeName) {
                 "windows-x64" -> "Missing $tdlightLibrary; run powershell -ExecutionPolicy Bypass -File desktopApp/tdlight-jvm/native/build-tdjni.ps1 first."
-                "linux-x64", "macos-arm64", "macos-x64" -> "Missing $tdlightLibrary; run bash desktopApp/tdlight-jvm/native/build-tdjni.sh first."
+                "linux-x64", "linux-arm64", "macos-arm64", "macos-x64" -> "Missing $tdlightLibrary; run bash desktopApp/tdlight-jvm/native/build-tdjni.sh first."
                 else -> "Missing $tdlightLibrary; no TDLight recipe covers $hostNativeName."
             }
         }

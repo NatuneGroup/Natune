@@ -48,7 +48,7 @@ object FeedbackReport {
             appendLine("Revision: ${app.forkRevision} (${app.forkBranch})" + if (forkDirty) " (modified)" else "")
             appendLine("Version: ${app.versionName} (${app.versionCode})")
             appendLine("Variant: ${app.variant}")
-            appendLine("Android: ${device.osRelease} (API ${device.sdkInt})")
+            appendLine("${device.platform}: ${device.osRelease}" + if (device.sdkInt > 0) " (API ${device.sdkInt})" else "")
             append("Device: ${device.manufacturer} ${device.model}")
         }
 
@@ -233,5 +233,7 @@ object FeedbackReport {
         val model: String,
         val osRelease: String,
         val sdkInt: Int,
+        /** The header's label for [osRelease]. Hosts other than Android name their platform and pass 0 for [sdkInt]. */
+        val platform: String = "Android",
     )
 }

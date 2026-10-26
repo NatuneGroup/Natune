@@ -1,9 +1,8 @@
 package moe.rukamori.archivetune.desktop
 
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
@@ -14,10 +13,16 @@ import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 
 fun main(args: Array<String>) {
+    // A restart after a staged restore starts this process while the old one is still leaving the instance lock.
+    DesktopRelaunch.awaitPrevious(args)
     val uri = args.firstOrNull { Regex("^[A-Za-z][A-Za-z0-9+.\\-]*:.*").matches(it) }
     val instanceDirectory = System.getProperty("archivetune.instance.directory")?.let(Path::of)
         ?: Path.of(System.getProperty("user.home"), ".archivetune", "desktop")
     val instance = DesktopSingleInstance.acquire(instanceDirectory, uri, DesktopLaunchIntake::receive) ?: return
+    // Installed once this process owns the instance directory, so a second launch never rotates the log files or
+    // overwrites the stored report.
+    DesktopDiagnosticLog.install(instanceDirectory)
+    DesktopCrashCapture.install(instanceDirectory)
     // Order is load-bearing: the window-class override builds the AWT toolkit, and the renderer
     // properties must exist before application { } composes the first window.
     DesktopRuntime.forceLinuxWindowClass()
@@ -30,13 +35,22 @@ fun main(args: Array<String>) {
     }
     // The session graph opens only after this process holds the instance lock, so a second launch never touches the data.
     val graph = openDesktopSession(instanceDirectory)
+    DesktopMemoryHygiene.capRendererCaches()
     // A window close hides to the tray only when the mounted window allows it; any other close takes the explicit exit.
     val closeRequests = DesktopCloseRequests()
+    val savedWindow = DesktopWindowBounds.load(instanceDirectory)
+    var windowState: WindowState? = null
     try { application {
+        val state = rememberWindowState(
+            placement = savedWindow.placement,
+            position = savedWindow.position,
+            size = savedWindow.size,
+        )
+        windowState = state
         Window(
             onCloseRequest = { closeRequests.request { exitApplication() } },
             title = DesktopStrings["app_name"],
-            state = rememberWindowState(size = DpSize(1024.dp, 720.dp)),
+            state = state,
         ) {
             DisposableEffect(window) {
                 DesktopLaunchIntake.attachWindow(window)
@@ -50,6 +64,7 @@ fun main(args: Array<String>) {
             }
         }
     } } finally {
+        windowState?.let { DesktopWindowBounds.save(instanceDirectory, it) }
         // Window services leave with the window composition; the graph closes after the window has stopped asking for work.
         graph?.let { runBlocking { it.close() } }
         instance.close()

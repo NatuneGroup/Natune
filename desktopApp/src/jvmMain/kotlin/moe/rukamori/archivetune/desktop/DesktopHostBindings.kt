@@ -56,6 +56,8 @@ internal fun desktopHostBindings(
     graph: DesktopSessionGraph,
     backRequests: Flow<Unit>,
     recognition: DesktopRecognitionMount,
+    feedback: DesktopFeedbackMount,
+    quit: () -> Unit,
 ): ArchiveTuneHostBindings {
     val dates = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     // One row menu per host: a row's overflow opens it, and the overlay of the page the row is on shows it.
@@ -64,6 +66,8 @@ internal fun desktopHostBindings(
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     // The create dialog saves through the one library owner, and a saved playlist opens through the root.
     val createPlaylist = DesktopPlaylistCreation(graph.scope, graph.libraryContent) { route -> ownRoutes.trySend(route) }
+    // The playlist overflow menu, tag dialogs and CSV export of the Playlists and Manage tags pages.
+    val playlistMenus = DesktopPlaylistMenuState(graph) { route -> ownRoutes.trySend(route) }
     // The native controls observe the same queue, player and settings owners that the library rows use.
     val sleepSheet = DesktopSleepTimerSheetState()
     val playerMenu = DesktopPlayerMenuState()
@@ -77,9 +81,11 @@ internal fun desktopHostBindings(
         // Deep links from the desktop intake open their page through the root. Back arrives from the window.
         routes = merge(desktopLaunchRoutes(graph), ownRoutes.receiveAsFlow()),
         backRequests = backRequests,
-        // Library, playlists, the local or liked playlist routes and music recognition read their owners. Every other
-        // destination keeps the boundary.
-        page = { route -> desktopGraphPage(graph, menu, createPlaylist, recognition, route) },
+        // Library, playlists, the local or liked playlist routes, search, YouTube albums and finite playlists, music
+        // recognition and Listen Together read their owners. Every other destination keeps the boundary.
+        page = { route ->
+            desktopGraphPage(graph, menu, createPlaylist, recognition, playlistMenus, route) { target -> ownRoutes.trySend(target) }
+        },
         // Item and news images load over the graph's one client, public http or https only; a failed image keeps its frame.
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
@@ -95,8 +101,11 @@ internal fun desktopHostBindings(
         overlays = { route ->
             DesktopItemMenuDialog(menu, graph, route.value)
             DesktopCreatePlaylistOverlay(createPlaylist, route)
+            DesktopPlaylistMenuOverlay(playlistMenus, graph, route.value)
             DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph)
             DesktopSleepTimerOverlay(sleepSheet, graph.sleepTimer)
+            DesktopFeedbackOverlay(feedback, graph)
+            DesktopBackupRestartDialog(graph, quit)
         },
         playerSlots = { expanded, active, _ -> desktopPlayerSlots(graph, expanded, active) },
         // The engine exposes no volume, so the native state keeps volume null and the volume row stays hidden.
@@ -159,9 +168,9 @@ internal fun desktopLaunchRoute(link: String): String? {
 
 /**
  * Only web links leave the app. Every other scheme, a missing browser and a failed launch are reported as one line and
- * never handed to the operating system.
+ * never handed to the operating system. Returns false when the link was not opened.
  */
-internal fun openDesktopUri(uri: String, report: (String) -> Unit) {
+internal fun openDesktopUri(uri: String, report: (String) -> Unit): Boolean =
     try {
         val target = URI(uri)
         val scheme = target.scheme?.lowercase()
@@ -170,10 +179,11 @@ internal fun openDesktopUri(uri: String, report: (String) -> Unit) {
             "no browser is registered"
         }
         Desktop.getDesktop().browse(target)
+        true
     } catch (failure: Exception) {
         report("link not opened: ${failure.javaClass.simpleName}")
+        false
     }
-}
 
 /**
  * The player's media slots. Lyrics come from the graph's lyrics owner and render through the shared renderers on the
@@ -202,7 +212,7 @@ private fun desktopPlayerSlots(graph: DesktopSessionGraph, expanded: Boolean, ac
         resumed = active,
     )
     return PlayerSlots(
-        artwork = { occurrenceId, modifier -> DesktopQueueArtwork(occurrenceId, graph, modifier) },
+        artwork = { occurrenceId, modifier -> DesktopPlayerArtwork(occurrenceId, graph, expanded && active, modifier) },
         // No canvas loop source is connected. The artwork slot keeps the cover, as it does for a song without a canvas.
         canvas = { _, _, _ -> },
         customBackground = { _, modifier -> DesktopArtworkPlaceholder(modifier) },

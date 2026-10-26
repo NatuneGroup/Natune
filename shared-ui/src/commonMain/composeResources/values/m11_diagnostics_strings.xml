@@ -1,0 +1,32 @@
+<resources>
+    <string name="m11_debug_logs">Debug Logs</string>
+    <string name="m11_filter_all_logs">All</string>
+    <string name="m11_resume_logs">Resume logs</string>
+    <string name="m11_pause">Pause</string>
+    <string name="m11_options">Options</string>
+    <string name="m11_share">Share</string>
+    <string name="m11_export_logs">Export</string>
+    <string name="m11_clear">Clear</string>
+    <string name="m11_search">Search</string>
+    <string name="m11_log_level_verbose">Verbose</string>
+    <string name="m11_log_level_debug">Debug</string>
+    <string name="m11_log_level_info">Info</string>
+    <string name="m11_log_level_warning">Warning</string>
+    <string name="m11_log_level_error">Error</string>
+    <string name="m11_jump_to_latest_log">Jump to latest log</string>
+    <string name="m11_copy_log_entry">Copy log entry</string>
+    <string name="m11_copied_to_clipboard">Copied log to clipboard</string>
+    <string name="m11_no_logs">No Logs</string>
+    <string name="m11_logs_empty_message">Logs will appear here when available</string>
+    <string name="m11_retry">Retry</string>
+    <string name="m11_error_unknown">Unknown error</string>
+    <string name="m11_export_logs_failed">Unable to export logs</string>
+    <string name="m11_crash_title">Crash Report</string>
+    <string name="m11_crash_application_crashed">Application crashed</string>
+    <string name="m11_crash_device_info">Device info</string>
+    <string name="m11_crash_stack_trace">Stack trace</string>
+    <string name="m11_crash_share_logs">Share Logs</string>
+    <string name="m11_crash_close">Close</string>
+    <string name="m11_crash_report">Report crash</string>
+    <string name="m11_crash_delete">Delete report</string>
+</resources>

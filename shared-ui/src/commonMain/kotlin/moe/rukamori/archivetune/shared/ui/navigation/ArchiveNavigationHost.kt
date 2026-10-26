@@ -114,7 +114,7 @@ fun ArchiveNavigationHost(
                 require(route.destination == ArchiveDestination.LIBRARY)
                 LibraryScreen(binding.filter, binding.order, binding.filterChange, binding.page,
                     content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
-                    librarySourceSelector, { ArchiveEntryLinks(navigation, binding.myTopSize) })
+                    librarySourceSelector, { ArchiveEntryLinks(navigation, binding.myTopSize) }, mixHeader = binding.mixHeader)
             }
             is ArchiveGraphPage.Discovery -> {
                 require(route.destination == ArchiveDestination.DISCOVERY)

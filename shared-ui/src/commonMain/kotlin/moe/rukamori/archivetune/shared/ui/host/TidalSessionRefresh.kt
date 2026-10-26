@@ -1,5 +1,6 @@
-package moe.rukamori.archivetune.desktop.provider
+package moe.rukamori.archivetune.shared.ui.host
 
+import kotlin.time.Clock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
@@ -19,12 +20,12 @@ import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInOutcome
  * only when TIDAL names the same account. A refused token or a retired client marks the account for a new sign-in and
  * keeps the stored session; a missing client or a network failure changes nothing.
  */
-internal class DesktopTidalSessionRefresh(
+class TidalSessionRefresh(
     private val auth: TidalAccountAuth,
     private val lifecycle: ProviderAccountLifecycle,
     private val settings: SettingsStore,
     private val preferences: () -> PreferenceSnapshot?,
-    private val nowMs: () -> Long = System::currentTimeMillis,
+    private val nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val lock = Mutex()
 

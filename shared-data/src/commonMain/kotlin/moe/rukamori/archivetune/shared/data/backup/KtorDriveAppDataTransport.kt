@@ -42,8 +42,17 @@ import kotlin.coroutines.cancellation.CancellationException
  * Google Drive appData transport over Ktor, following the GMS baseline protocol. The caller supplies a bearer
  * token for every call and this class never caches credentials. Redirects are not followed, and a resumable
  * session URL is accepted only from the Google upload host over HTTPS. Requests share the engine of [client].
+ * [fileName] is the one backup file this host reads and replaces in the app data folder.
  */
-class KtorDriveAppDataTransport(client: HttpClient) : DriveAppDataTransport {
+class KtorDriveAppDataTransport(
+    client: HttpClient,
+    private val fileName: String = DriveAppDataLimits.FILE_NAME,
+) : DriveAppDataTransport {
+    init {
+        // The name is placed into a Drive query and a JSON body unescaped, so only plain file-name characters pass.
+        require(fileName.isNotEmpty() && fileName.all { it.isLetterOrDigit() || it in "._-" }) { "Unsafe backup file name" }
+    }
+
     private val http = client.config {
         followRedirects = false
         expectSuccess = false
@@ -54,7 +63,7 @@ class KtorDriveAppDataTransport(client: HttpClient) : DriveAppDataTransport {
             method = HttpMethod.Get
             bearer(token)
             parameter("spaces", APP_DATA_FOLDER)
-            parameter("q", "name = '${DriveAppDataLimits.FILE_NAME}' and trashed = false")
+            parameter("q", "name = '$fileName' and trashed = false")
             parameter("orderBy", "modifiedTime desc")
             parameter("pageSize", "1")
             parameter("fields", "files($METADATA_FIELDS)")
@@ -121,7 +130,11 @@ class KtorDriveAppDataTransport(client: HttpClient) : DriveAppDataTransport {
         size: Int,
     ): String {
         val target = if (existing == null) UPLOAD_URL else "$UPLOAD_URL/${safeFileId(existing.id)}"
-        val metadata = if (existing == null) NEW_FILE_METADATA else UPDATE_FILE_METADATA
+        val metadata = if (existing == null) {
+            """{"name":"$fileName","mimeType":"$ZIP_MIME","parents":["$APP_DATA_FOLDER"]}"""
+        } else {
+            """{"name":"$fileName","mimeType":"$ZIP_MIME"}"""
+        }
         val response = http.request(target) {
             method = if (existing == null) HttpMethod.Post else HttpMethod.Patch
             bearer(token)
@@ -283,10 +296,6 @@ class KtorDriveAppDataTransport(client: HttpClient) : DriveAppDataTransport {
         const val UPLOAD_CONTENT_LENGTH_HEADER = "X-Upload-Content-Length"
         const val COPY_BUFFER_BYTES = 64 * 1024
         const val MAX_FILE_ID_LENGTH = 128
-        const val NEW_FILE_METADATA =
-            """{"name":"${DriveAppDataLimits.FILE_NAME}","mimeType":"$ZIP_MIME","parents":["$APP_DATA_FOLDER"]}"""
-        const val UPDATE_FILE_METADATA =
-            """{"name":"${DriveAppDataLimits.FILE_NAME}","mimeType":"$ZIP_MIME"}"""
     }
 }
 

@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
+import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
@@ -37,7 +38,7 @@ internal fun randomDesktopPlaylistId(random: Random = Random.Default): String =
  */
 internal class DesktopPlaylistCreation(
     private val scope: CoroutineScope,
-    private val content: DesktopLibraryContent,
+    private val content: LibraryContentOwner,
     private val openRoute: (String) -> Unit,
 ) {
     var visible by mutableStateOf(false)

@@ -135,6 +135,9 @@ their approaches were followed.
   no licence).
 - [NewPipe / InnerTube](https://github.com/TeamNewPipe/NewPipeExtractor): the InnerTube
   request lineage behind `core`.
+- [MetrolistGroup/innertubex](https://github.com/MetrolistGroup/innertubex) and
+  [MetrolistGroup/quackjs](https://github.com/MetrolistGroup/quackjs) (GPL-3.0): used
+  unmodified as libraries by the InnerTubeX extractor tier on Android and desktop.
 - The Shazam discovery wire shapes in `shared-data` (`recognition/`) are ported from the
   baseline `shazamkit` module.
 

@@ -21,7 +21,8 @@ import org.jetbrains.compose.resources.stringResource
  * the isolated sign-in, decides it with [SpotifyStreamingPolicy] and reports a refusal through [signInRefusal]; nothing
  * is stored for a refused sign-in. [onSignOut] clears the host's in-memory session first, and the page then commits the
  * stored streaming session away in one edit. [onCancelSignIn] drops an in-progress sign-in; the host discards any result
- * that lands after it. Without it the in-progress row stays a disabled status.
+ * that lands after it. Without it the in-progress row stays a disabled status. [hostNote] is a host limit shown under
+ * the warning, such as a host that signs the account in but cannot play its audio.
  */
 @Composable
 fun SpotifyStreamingSettings(
@@ -37,6 +38,7 @@ fun SpotifyStreamingSettings(
     motionEnabled: Boolean = true,
     modifier: Modifier = Modifier,
     onCancelSignIn: (() -> Unit)? = null,
+    hostNote: String? = null,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -58,6 +60,9 @@ fun SpotifyStreamingSettings(
             "spotify_stream_warning", Res.string.m6_spotify_stream_warning_title,
             stringResource(Res.string.m6_spotify_stream_warning_body), fullText = true,
         ))
+        if (hostNote != null) {
+            add(SettingsRow.Status("spotify_stream_host_note", Res.string.m6_integration_spotify_streaming, hostNote, fullText = true))
+        }
         add(SettingsRow.Header("spotify_stream_account", Res.string.m6_spotify_stream_account))
         if (signedIn) {
             add(SettingsRow.Status("spotify_stream_signed_in", Res.string.m6_spotify_stream_signed_in_label, accountLabel))

@@ -25,6 +25,30 @@ DOWNLOADS="$BUILD/downloads"
 SRC="$BUILD/src"
 PREFIX="$BUILD/prefix"
 LOGS="$BUILD/logs"
+# TDLight links OpenSSL statically, so the recipe also leaves a static-only prefix beside the shared closure.
+STATIC_OPENSSL_PREFIX="$BUILD/openssl-static"
+
+case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) OPENSSL_TARGET=linux-x86_64 ;;
+    Linux-aarch64 | Linux-arm64) OPENSSL_TARGET=linux-aarch64 ;;
+    Darwin-arm64) OPENSSL_TARGET=darwin64-arm64-cc ;;
+    Darwin-x86_64) OPENSSL_TARGET=darwin64-x86_64-cc ;;
+    *) printf '[native-deps] unsupported host %s-%s; Windows needs its own MSVC closure\n' "$(uname -s)" "$(uname -m)" >&2; exit 1 ;;
+esac
+# Apple's linker has no -rpath-link; the install names already point inside the prefix there.
+if [ "$(uname -s)" = Darwin ]; then
+    FFMPEG_EXTRA_LDFLAGS="-L$PREFIX/lib"
+else
+    FFMPEG_EXTRA_LDFLAGS="-L$PREFIX/lib -Wl,-rpath-link,$PREFIX/lib"
+fi
+
+sha256_check() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s  %s\n' "$1" "$2" | sha256sum -c --status
+    else
+        printf '%s  %s\n' "$1" "$2" | shasum -a 256 -c --status
+    fi
+}
 
 ZLIB_VERSION=1.3.2
 ZLIB_SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
@@ -53,7 +77,7 @@ fetch() {
         curl -fsSL -o "$dest.part" "$url"
         mv "$dest.part" "$dest"
     fi
-    if ! printf '%s  %s\n' "$sha" "$dest" | sha256sum -c --status; then
+    if ! sha256_check "$sha" "$dest"; then
         rm -f "$dest"
         log "checksum mismatch for $(basename "$dest"); removed the download"
         exit 1
@@ -102,9 +126,21 @@ build_openssl() {
     stamp_done openssl && return 0
     log "building OpenSSL $OPENSSL_VERSION"
     unpack "$DOWNLOADS/openssl-$OPENSSL_VERSION.tar.gz" "openssl-$OPENSSL_VERSION"
-    (cd "$SRC/openssl-$OPENSSL_VERSION" && ./Configure linux-x86_64 --prefix="$PREFIX" --libdir=lib \
+    (cd "$SRC/openssl-$OPENSSL_VERSION" && ./Configure "$OPENSSL_TARGET" --prefix="$PREFIX" --libdir=lib \
         shared no-tests no-docs && make -j"$JOBS" && make install_sw) >"$LOGS/openssl.log" 2>&1
     stamp_set openssl
+}
+
+build_static_openssl() {
+    stamp_done openssl-static && return 0
+    log "building static OpenSSL $OPENSSL_VERSION for TDLight"
+    local tree="$BUILD/openssl-static-src"
+    rm -rf "$tree"
+    mkdir -p "$tree"
+    tar -xf "$DOWNLOADS/openssl-$OPENSSL_VERSION.tar.gz" -C "$tree"
+    (cd "$tree/openssl-$OPENSSL_VERSION" && ./Configure "$OPENSSL_TARGET" --prefix="$STATIC_OPENSSL_PREFIX" \
+        --libdir=lib no-shared no-tests no-docs && make -j"$JOBS" && make install_sw) >"$LOGS/openssl-static.log" 2>&1
+    stamp_set openssl-static
 }
 
 build_libxml2() {
@@ -126,7 +162,7 @@ build_ffmpeg() {
         --prefix="$PREFIX" --enable-shared --disable-static --disable-programs --disable-doc \
         --disable-debug --disable-autodetect --enable-version3 --enable-pthreads \
         --enable-libxml2 --enable-openssl --enable-zlib --disable-x86asm \
-        --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib -Wl,-rpath-link,$PREFIX/lib" \
+        --extra-cflags="-I$PREFIX/include" --extra-ldflags="$FFMPEG_EXTRA_LDFLAGS" \
         && make -j"$JOBS" && make install) >"$LOGS/ffmpeg.log" 2>&1
     stamp_set ffmpeg
 }
@@ -160,11 +196,13 @@ main() {
 
     build_zlib
     build_openssl
+    build_static_openssl
     build_libxml2
     build_ffmpeg
 
     log "FFmpeg avformat $(PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" pkg-config --modversion libavformat)"
     log "prefix: $PREFIX"
+    log "static OpenSSL for TDLight: $STATIC_OPENSSL_PREFIX"
     log "miniaudio: $SRC/miniaudio-$MINIAUDIO_VERSION/miniaudio.h"
 }
 

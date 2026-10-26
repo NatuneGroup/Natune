@@ -4,8 +4,8 @@
 # Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
 # Portions © vossgraves — github.com/vossgraves
 
-# Builds libarchivetune_engine, the in-process desktop playback engine and two-deck output mixer with
-# their JNI bindings.
+# Builds libarchivetune_engine, the in-process desktop playback engine, the two-deck output mixer and the
+# video artwork reader with their JNI bindings.
 # The FFmpeg, OpenSSL, libxml2 and zlib shared libraries come from the prefix that
 # scripts/build-native-deps.sh produces; the build never downloads anything.
 cmake_minimum_required(VERSION 3.20)
@@ -31,7 +31,7 @@ set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
-foreach(component avformat avcodec avfilter avutil)
+foreach(component avformat avcodec avfilter avutil swscale)
     find_library(AE_${component}_LIBRARY NAMES ${component} PATHS "${AE_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
 endforeach()
 
@@ -43,6 +43,8 @@ add_library(archivetune_engine SHARED
     src/archivetune_mixer_jni.c
     src/archivetune_probe.c
     src/archivetune_probe_jni.c
+    src/archivetune_video.c
+    src/archivetune_video_jni.c
 )
 
 target_include_directories(archivetune_engine
@@ -62,6 +64,7 @@ target_link_libraries(archivetune_engine
         ${AE_avcodec_LIBRARY}
         ${AE_avfilter_LIBRARY}
         ${AE_avutil_LIBRARY}
+        ${AE_swscale_LIBRARY}
         Threads::Threads
         ${CMAKE_DL_LIBS}
         m

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
@@ -21,6 +22,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.SeekExtraSeconds
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
+import moe.rukamori.archivetune.shared.ui.player.PlayerHandoff
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeControls
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeState
 import moe.rukamori.archivetune.shared.ui.player.PlayerRepeat
@@ -61,7 +63,10 @@ internal class DesktopPlayerControls(
         graph.player.snapshot,
         graph.settings.snapshots,
         liked,
-    ) { queue, playback, preferences, isLiked -> desktopNativeState(queue, playback, preferences, isLiked) }.stateIn(
+        graph.handoff,
+    ) { queue, playback, preferences, isLiked, handoff ->
+        desktopNativeState(queue, playback, preferences, isLiked, handoff)
+    }.stateIn(
         graph.scope,
         SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS),
         desktopNativeState(graph.queue.state.value, graph.player.snapshot.value, graph.settings.snapshots.value),
@@ -164,6 +169,7 @@ internal fun desktopNativeState(
     playback: PlaybackSnapshot?,
     preferences: PreferenceSnapshot?,
     liked: Boolean = false,
+    handoff: QueueHandoffState? = null,
 ): PlayerNativeState {
     val mode = repeatModeOf(preferences)
     val current = queue.currentOccurrenceId
@@ -183,6 +189,9 @@ internal fun desktopNativeState(
         canvasAvailable = false,
         palette = emptyList(),
         spatialFont = null,
+        handoff = handoff?.takeIf { it.fromOccurrenceId == playback?.occurrenceId }?.let {
+            PlayerHandoff(it.fromOccurrenceId, it.toOccurrenceId, it.fadeStartPositionMs, it.overlapMs)
+        },
     )
 }
 

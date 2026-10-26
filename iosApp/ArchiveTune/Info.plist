@@ -13,6 +13,7 @@
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
     <key>ArchiveTuneTelegramApiId</key><string>$(ARCHIVETUNE_TELEGRAM_API_ID)</string>
     <key>ArchiveTuneTelegramApiHash</key><string>$(ARCHIVETUNE_TELEGRAM_API_HASH)</string>
+    <key>ArchiveTuneListenerPresenceUrl</key><string>$(ARCHIVETUNE_LISTENER_PRESENCE_URL)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>

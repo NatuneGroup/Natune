@@ -25,6 +25,7 @@ import moe.rukamori.archivetune.shared.domain.settings.TidalAccountFirstKey
 import moe.rukamori.archivetune.shared.domain.settings.tidalCountryCode
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
 
@@ -41,7 +42,7 @@ internal class DesktopTidalSource(
     private val http: HttpClient,
     private val accounts: VaultProviderAccountStore,
     private val preferences: () -> PreferenceSnapshot?,
-    private val sessionRefresh: DesktopTidalSessionRefresh? = null,
+    private val sessionRefresh: TidalSessionRefresh? = null,
     private val pool: DesktopPlaybackPool? = null,
 ) : AudioProviderRepository {
     override val source = AudioSourceType.TIDAL

@@ -17,6 +17,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -26,14 +27,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.desktop.backup.DesktopBackup
+import moe.rukamori.archivetune.desktop.backup.DesktopPendingRestore
 import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
 import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
-import moe.rukamori.archivetune.desktop.provider.DesktopTidalSessionRefresh
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
+import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
 import moe.rukamori.archivetune.desktop.telegram.TdlightClientSession
 import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAccountPort
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
@@ -42,8 +45,13 @@ import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
+import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
+import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
+import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
+import moe.rukamori.archivetune.shared.data.persistence.openNow
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
+import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
@@ -51,12 +59,14 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
 import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
+import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.repository.YouTubeSettlingLibrary
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -64,11 +74,21 @@ import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueContro
 import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
+import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
+import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
+import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
+import moe.rukamori.archivetune.shared.ui.host.CatalogPageOwners
+import moe.rukamori.archivetune.shared.ui.host.HostLyrics
+import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
+import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
+import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
+import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
@@ -112,17 +132,17 @@ class DesktopSessionGraph private constructor(
     /** The one device collator every sorted list of this host uses, so one artist never splits into two groups. */
     val textOrder: Comparator<String>,
     /** The one owner of the Library sections and playlist orders, read through [settings] and [library]. */
-    internal val libraryContent: DesktopLibraryContent,
+    internal val libraryContent: LibraryContentOwner,
     private val owner: PortableQueueOwner,
     /** The engine behind [player], reached directly only for the output volume, which is not a queue command. */
     private val playback: DesktopPlaybackPort,
     private val ordinarySettings: DesktopSettingsStore,
     private val database: PortableStateDatabase,
-    private val listenDriver: DesktopListenDriver,
+    private val listenDriver: ListenHistoryDriver,
     /** The one scrobbling owner: the signed Last.fm-compatible service, its pending queue and the playback driver. */
     internal val lastFm: DesktopLastFm,
     /** The one lyrics owner: the shared provider runtime following the player's current occurrence. */
-    internal val lyrics: DesktopLyrics,
+    internal val lyrics: HostLyrics,
     /** The one listener-presence owner: the opt-in document and the playback-driven heartbeat loop. */
     internal val listenerPresence: DesktopListenerPresence,
     private val locators: DesktopQueueLocatorResolver,
@@ -138,13 +158,46 @@ class DesktopSessionGraph private constructor(
     internal val http: HttpClient,
     /** The one Playback Pool client: the ArchivePool account feed, its vault cache and the community instance list. */
     internal val playbackPool: DesktopPlaybackPool,
+    /** Pulls the signed-in YouTube Music library into [library]; the account settings force it after a switch. */
+    internal val youtubeLibrarySync: DesktopYouTubeLibrarySync,
+    /** The one Listen Together owner: the room client and the driver that keeps [player] in step with the room. */
+    internal val listenTogether: DesktopListenTogether,
+    /** The opt-in feedback service, the stored crash report and the playback failure the player last stopped on. */
+    internal val feedback: DesktopFeedback,
+    /** The music video behind the player cover, through the same YouTube resolver the queue plays from. */
+    internal val videoArtwork: DesktopVideoArtwork,
+    /** Manual and Google Drive backups, and the restore staged for the next start. */
+    internal val backup: DesktopBackup,
     private val drivers: List<Job>,
 ) {
+    /** The playlist tag catalog and assignments, in the same portable file as the playlists. */
+    internal val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
+
+    /** The playlist file exports, read from the same portable file. */
+    internal val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
+
+    /** The owners the shared Library and playlist pages read and write: the same library, queue and history as above. */
+    internal val pageOwners = LibraryPageOwners(
+        content = libraryContent,
+        settings = settings,
+        queue = queue,
+        history = history,
+        blocked = artistBlocks.observeBlockedArtists(),
+        scope = scope,
+        report = { message -> desktopDiagnostic(message) },
+    )
+
+    /** Search, albums and finite playlists over the same YouTube catalogue the queue router reads. */
+    internal val catalogPages = CatalogPageOwners(youtubeContent, pageOwners)
+
     /** The one artwork loader of the window slots. It fetches over the same client as the sources and holds no other resource. */
     internal val artworkLoader = DesktopArtworkLoader(http, customArtwork, customArtworkFiles)
 
     /** The one sleep timer of this process. It only pauses [player], so every window shares it. */
     internal val sleepTimer = DesktopSleepTimer(this)
+
+    /** The crossfade or automix blend armed into the next song, which the player artwork follows. */
+    internal val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 
     /**
      * Sets the output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player does, so the
@@ -166,6 +219,25 @@ class DesktopSessionGraph private constructor(
 
     /** Writes one sanitized diagnostic line to the local log. Host diagnostics are not telemetry. */
     fun report(message: String) = desktopDiagnostic(message)
+
+    /**
+     * The playback error dialog's Retry: loads the failed occurrence again at the position the player kept for it, as
+     * the Android dialog prepares the player again. An occurrence that has left the queue is logged and not retried.
+     */
+    fun retryAfterFailure(occurrenceId: String) {
+        scope.launch {
+            try {
+                val position = player.positionMs()
+                    ?.takeIf { player.snapshot.value?.occurrenceId == occurrenceId }
+                    ?.coerceAtLeast(0L) ?: 0L
+                queue.select(occurrenceId, position)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                desktopDiagnostic("playback retry failed: ${failure.javaClass.simpleName}")
+            }
+        }
+    }
 
     /** Advances to the successor under the same repeat policy as an automatic end. False when the queue has none. */
     suspend fun skipNext(): Boolean = owner.withQueueAccess {
@@ -198,6 +270,7 @@ class DesktopSessionGraph private constructor(
      * is kept, then the queue is checkpointed while the owner can still write, and only then are the stores released.
      */
     suspend fun close() = withContext(NonCancellable) {
+        listenTogether.close()
         listenDriver.close()
         lastFm.close()
         lyrics.close()
@@ -238,6 +311,8 @@ class DesktopSessionGraph private constructor(
                     desktopDiagnostic("background command failed: ${failure.javaClass.simpleName}")
                 },
             )
+            // A restore staged by the previous process goes in before any owner opens the files it replaces.
+            val pending = stagedRestore(directory)
             val ordinary = try {
                 DesktopSettingsStore.open(directory.resolve(SETTINGS_FILE))
             } catch (failure: Throwable) {
@@ -255,8 +330,17 @@ class DesktopSessionGraph private constructor(
                 scope.cancel()
                 throw failure
             }
+            if (pending != null) {
+                try {
+                    pending.applySettings(vault)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    desktopDiagnostic("restored settings not applied: ${failure.javaClass.simpleName}")
+                }
+            }
             val database = try {
-                openPortableStateDatabase(directory.resolve(DATABASE_FILE).toString())
+                openDatabase(directory, pending)
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
                     vault.close()
@@ -268,7 +352,15 @@ class DesktopSessionGraph private constructor(
             // The engine starts lazily, so building the client opens no connection. Every failure path below closes it.
             val http = HttpClient(CIO)
             return try {
-                assemble(scope, directory, ordinary, vault, database, http)
+                assemble(scope, directory, ordinary, vault, database, http).also {
+                    if (pending != null) {
+                        try {
+                            withContext(Dispatchers.IO) { pending.finish() }
+                        } catch (failure: Exception) {
+                            desktopDiagnostic("restore staging not removed: ${failure.javaClass.simpleName}")
+                        }
+                    }
+                }
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
                     http.close()
@@ -278,6 +370,49 @@ class DesktopSessionGraph private constructor(
                 }
                 scope.cancel()
                 throw failure
+            }
+        }
+
+        /** The staged restore with its library file already in place, or null. A failed swap is undone and logged. */
+        private fun stagedRestore(directory: Path): DesktopPendingRestore? {
+            val pending = try {
+                DesktopPendingRestore.read(directory)
+            } catch (failure: Exception) {
+                desktopDiagnostic("staged restore unreadable: ${failure.javaClass.simpleName}")
+                return null
+            } ?: return null
+            try {
+                pending.swapDatabase(directory, DATABASE_FILE)
+            } catch (failure: Exception) {
+                desktopDiagnostic("restored library not applied: ${failure.javaClass.simpleName}")
+                try {
+                    pending.rollbackDatabase(directory, DATABASE_FILE)
+                } catch (rollback: Exception) {
+                    desktopDiagnostic("library rollback failed: ${rollback.javaClass.simpleName}")
+                }
+            }
+            return pending
+        }
+
+        /**
+         * Opens the portable database. A restored file is opened at once, so a schema Room refuses puts the previous
+         * file back instead of leaving the session unavailable.
+         */
+        private suspend fun openDatabase(directory: Path, pending: DesktopPendingRestore?): PortableStateDatabase {
+            val path = directory.resolve(DATABASE_FILE).toString()
+            val database = openPortableStateDatabase(path)
+            if (pending?.databaseSwapped != true) return database
+            try {
+                database.openNow()
+                return database
+            } catch (cancelled: CancellationException) {
+                database.close()
+                throw cancelled
+            } catch (failure: Exception) {
+                desktopDiagnostic("restored library could not be opened: ${failure.javaClass.simpleName}")
+                database.close()
+                withContext(Dispatchers.IO) { pending.rollbackDatabase(directory, DATABASE_FILE) }
+                return openPortableStateDatabase(path)
             }
         }
 
@@ -301,7 +436,7 @@ class DesktopSessionGraph private constructor(
                 pkce = DesktopCredentials.tidalPkceClient,
                 nowMs = System::currentTimeMillis,
             )
-            val tidalSessionRefresh = DesktopTidalSessionRefresh(tidalAuth, accountLifecycle, vault) { vault.snapshots.value }
+            val tidalSessionRefresh = TidalSessionRefresh(tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value })
             val textOrder = deviceTextOrder()
             val library = RoomLibraryRepository(database.library(), listens = database.listens())
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = { System.currentTimeMillis() })
@@ -334,6 +469,7 @@ class DesktopSessionGraph private constructor(
             // One YouTube transport and one account binding serve the browse, account and like paths. A remote change acts
             // for the personal sign-in only. Sync off, or no sign-in, keeps every change local.
             val youtubeTransport = JvmYouTubeBrowseTransport()
+            youtubeTransport.applyPersistedSession(vault.snapshots.value)
             val youtubeAccount = YouTubeAccountBinding(
                 transport = youtubeTransport,
                 accounts = accounts,
@@ -348,15 +484,30 @@ class DesktopSessionGraph private constructor(
                 scope = scope,
                 log = ::desktopDiagnostic,
             )
+            val youtubeResolver = DesktopYouTubeResolver(
+                http,
+                preferences = { vault.snapshots.value },
+                search = youtubeTransport,
+                signIn = { vault.snapshots.value.youTubeSignIn() },
+            )
             val locators = DesktopQueueLocatorResolver(
                 audio = OrderedAudioResolver(
                     providers = desktopAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
-                    youtube = DesktopYouTubeResolver(http, preferences = { vault.snapshots.value }, search = youtubeTransport),
+                    youtube = youtubeResolver,
                 ),
                 port = playback,
                 preferences = { vault.snapshots.value },
             )
             val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
+            val youtubeLibrarySync = DesktopYouTubeLibrarySync(
+                content = youtubeContent,
+                account = youtubeAccount,
+                library = library,
+                beforeSync = { youtubeTransport.applyPersistedSession(vault.snapshots.value) },
+                report = ::desktopDiagnostic,
+            )
+            // Set once Listen Together and the sleep timer exist; until then nothing holds the transitions back.
+            val handoffHold = MutableStateFlow(false)
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
@@ -365,6 +516,7 @@ class DesktopSessionGraph private constructor(
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { repeatModeOf(vault.snapshots.value) },
                 autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+                handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
             try {
@@ -377,7 +529,7 @@ class DesktopSessionGraph private constructor(
             val metadata = combine(queue.state, player.snapshot) { state, snapshot ->
                 state.metadataFor(snapshot?.occurrenceId, repeatModeOf(vault.snapshots.value))
             }.stateIn(scope, SharingStarted.Eagerly, null)
-            val listenDriver = DesktopListenDriver(
+            val listenDriver = ListenHistoryDriver(
                 scope = scope,
                 player = player,
                 queue = queue.state,
@@ -395,7 +547,7 @@ class DesktopSessionGraph private constructor(
                 report = ::desktopDiagnostic,
             )
             // The JVM publishes no network events; a lookup offline simply misses, and a cached answer still shows.
-            val lyrics = DesktopLyrics(
+            val lyrics = HostLyrics(
                 scope = scope,
                 http = http,
                 settings = vault,
@@ -404,19 +556,53 @@ class DesktopSessionGraph private constructor(
                 networkAvailable = { true },
                 report = ::desktopDiagnostic,
             )
+            // Built after the settings owner is open, so the restored room session and blocked list read real values.
+            val listenTogether = DesktopListenTogether(
+                parentScope = scope,
+                settings = vault,
+                player = player,
+                queue = queue,
+                // A host's volume is applied to the engine only, so the user's own saved level is not overwritten.
+                setVolume = { level -> if (level.isFinite()) playback.setVolume(level.coerceIn(0f, 1f)) },
+                report = ::desktopDiagnostic,
+            )
             val listenerPresence = DesktopListenerPresence(
                 parentScope = scope,
                 http = http,
                 player = player,
                 instanceDirectory = directory,
             )
+            val feedback = DesktopFeedback(http, directory)
             val drivers = listOf(
+                scope.launch {
+                    // The core client follows every change to the sign-in. A new sign-in, including one restored at
+                    // start, pulls the account library once with sync on, as the baseline home screen does.
+                    var wasSignedIn = false
+                    vault.snapshots.map { it.youTubeSessionFields() }.distinctUntilChanged().collect {
+                        val snapshot = vault.snapshots.value
+                        youtubeTransport.applyPersistedSession(snapshot)
+                        val signedIn = snapshot.youTubeSignIn() != null
+                        if (signedIn && !wasSignedIn && (snapshot?.get(YtmSyncKey) ?: true)) {
+                            launch { youtubeLibrarySync.performFullSync() }
+                        }
+                        wasSignedIn = signedIn
+                    }
+                },
                 scope.launch {
                     owner.automaticAdvanceFailures.collect { desktopDiagnostic("automatic advance failed: ${it.javaClass.simpleName}") }
                 },
                 scope.launch {
-                    player.failures.collect { desktopDiagnostic("playback failed for ${it.occurrenceId}: ${it.reason}") }
+                    // The owner's failures include songs no source resolved, which never reach the engine.
+                    owner.failures.collect { failure ->
+                        desktopDiagnostic("playback failed for ${failure.occurrenceId}: ${failure.reason}")
+                        // With auto-skip on the queue moves on, as on Android, so no stopped song needs the error dialog.
+                        if (vault.snapshots.value?.get(AutoSkipNextOnErrorKey) != true) {
+                            val item = queue.state.value.entries.firstOrNull { it.occurrenceId == failure.occurrenceId }?.item
+                            feedback.showPlaybackFailure(DesktopPlaybackFailureNotice(failure, item?.title, item?.ref?.provider))
+                        }
+                    }
                 },
+                scope.launch { DesktopMemoryHygiene.trimAfterSongChanges(owner.state.map { it.currentOccurrenceId }) },
                 scope.launch {
                     queue.state.map { it.revision }.distinctUntilChanged().collect { revision ->
                         if (revision > 0L) checkpointNow(queue)
@@ -429,13 +615,16 @@ class DesktopSessionGraph private constructor(
                     }
                 },
             )
-            val libraryContent = DesktopLibraryContent(
+            val libraryContent = LibraryContentOwner(
                 settings = vault,
                 library = library,
                 writes = YouTubeSettlingLibrary(local = library, account = youtubeAccount),
                 statistics = history,
                 blocked = artistBlocks.observeBlockedArtists(),
                 textOrder = textOrder,
+                nowMs = System::currentTimeMillis,
+                offsetMsAt = { epochMs -> TimeZone.getDefault().getOffset(epochMs).toLong() },
+                report = ::desktopDiagnostic,
                 onLikeWritten = { ref, liked ->
                     try {
                         lastFm.mirrorLove(library.item(ref), liked)
@@ -478,12 +667,34 @@ class DesktopSessionGraph private constructor(
                 customArtworkFiles = customArtworkFiles,
                 http = http,
                 playbackPool = playbackPool,
+                youtubeLibrarySync = youtubeLibrarySync,
+                listenTogether = listenTogether,
+                feedback = feedback,
+                videoArtwork = DesktopVideoArtwork(scope, player, youtubeResolver, ::desktopDiagnostic),
+                backup = DesktopBackup(
+                    scope = scope,
+                    http = http,
+                    settings = vault,
+                    snapshotDatabase = { target -> database.snapshotTo(target) },
+                    instanceDirectory = directory,
+                    googleClient = { DesktopCredentials.googleDesktopClient },
+                    vault = DesktopSecureCredentialStore(),
+                    openBrowser = { url -> openDesktopUri(url, ::desktopDiagnostic) },
+                    report = ::desktopDiagnostic,
+                ),
                 drivers = drivers,
             )
             // A TDLib database left by an earlier sign-in restores its session, so Telegram tracks in a restored queue
             // can play without opening the settings page first. A fresh install starts no client until sign-in. The
             // client starts only once the graph exists, so a failed assembly never leaves one running.
             if (File(telegramRoot, "db").isDirectory) telegram.start()
+            // A room guest needs deterministic track starts and the end-of-song timer needs the song's own end, so
+            // either holds crossfade and automix back, as Android gates them on the room state.
+            scope.launch {
+                combine(listenTogether.client.roomState, graph.sleepTimer.state) { room, sleep ->
+                    room != null || sleep.pauseWhenSongEnd
+                }.distinctUntilChanged().collect { handoffHold.value = it }
+            }
             // One scan before the first slot asks, so a custom cover shows on the first frame that has it.
             scope.launch {
                 try {
@@ -498,6 +709,8 @@ class DesktopSessionGraph private constructor(
             lyrics.start()
             listenerPresence.start()
             playbackPool.start()
+            listenTogether.start()
+            graph.backup.start()
             return graph
         }
     }
@@ -505,6 +718,20 @@ class DesktopSessionGraph private constructor(
 
 /** Opaque vault references must match [A-Za-z0-9_-]{1,128}; a dashless UUID is 32 hexadecimal characters. */
 private fun newCredentialReference(): String = UUID.randomUUID().toString().replace("-", "")
+
+/** The persisted values the core YouTube client reads; any change re-applies the session. */
+private fun PreferenceSnapshot?.youTubeSessionFields(): List<Any?> =
+    listOf(this?.get(InnerTubeCookieKey), this?.get(VisitorDataKey), this?.get(DataSyncIdKey), this?.get(UseLoginForBrowse))
+
+private fun JvmYouTubeBrowseTransport.applyPersistedSession(snapshot: PreferenceSnapshot?) {
+    val signIn = snapshot.youTubeSignIn()
+    applySession(
+        cookie = signIn?.cookie,
+        visitorData = snapshot?.get(VisitorDataKey),
+        dataSyncId = signIn?.dataSyncId,
+        useLoginForBrowse = snapshot?.get(UseLoginForBrowse) != false,
+    )
+}
 
 internal fun repeatModeOf(preferences: PreferenceSnapshot?): QueueRepeatMode =
     preferences?.get(RepeatModeKey)?.let { QueueRepeatMode.fromStoredValue(it) } ?: QueueRepeatMode.OFF
@@ -535,9 +762,9 @@ private suspend fun checkpointNow(queue: ContinuationQueueController) {
     }
 }
 
-/** Process diagnostics go to the local error stream only. They never carry credentials or payloads. */
+/** Process diagnostics go to the local error stream and the local log only. They never carry credentials or payloads. */
 internal fun desktopDiagnostic(message: String) {
-    System.err.println("ArchiveTune desktop: $message")
+    DesktopDiagnosticLog.host(message)
 }
 
 /**

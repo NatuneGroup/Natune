@@ -45,6 +45,11 @@ kotlin {
             api(libs.liquid.glass)
             api(libs.haze)
             api(libs.kotlinx.coroutines.core)
+            // The host owners take the host's HttpClient; each host supplies its own engine.
+            implementation(libs.ktor.client.core)
+        }
+        getByName("iosMain").dependencies {
+            implementation(libs.ktor.client.darwin)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

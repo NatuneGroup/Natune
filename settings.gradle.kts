@@ -94,6 +94,8 @@ dependencyResolutionManagement {
                 // per-target modules (innertubex-android, innertubex-desktop) live in this group
                 // too, so the one entry covers the root artifact and the variant Gradle selects.
                 includeGroup("com.github.MetrolistGroup.innertubex")
+                // QuackJS — the pure-Kotlin player cipher InnerTubeX v0.11 depends on, published under its own group.
+                includeGroup("com.github.MetrolistGroup.quackjs")
             }
         }
     }

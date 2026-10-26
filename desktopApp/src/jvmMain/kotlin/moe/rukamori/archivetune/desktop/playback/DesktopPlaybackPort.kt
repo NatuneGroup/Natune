@@ -130,12 +130,19 @@ class DesktopPlaybackPort(
     override val snapshots: StateFlow<PlaybackSnapshot?> = publishedSnapshot.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = publishedFailures.asSharedFlow()
 
-    private val poller: ScheduledFuture<*> = executor.scheduleWithFixedDelay(
-        ::pollEngine,
-        pollIntervalMs,
-        pollIntervalMs,
-        TimeUnit.MILLISECONDS,
-    )
+    private val activePollIntervalMs = pollIntervalMs
+    private val idlePollIntervalMs = maxOf(pollIntervalMs, IDLE_POLL_INTERVAL_MS)
+
+    /*
+     * The next engine read. It is rescheduled after every read rather than fixed-rate, so a paused or idle port reads
+     * a few times a second instead of fifty and the process can stay asleep between reads.
+     */
+    @Volatile
+    private var nextPoll: ScheduledFuture<*>? = null
+
+    init {
+        schedulePoll(pollIntervalMs)
+    }
 
     override fun submit(command: PlaybackCommand) {
         submitTask { applyCommand(command) }
@@ -288,7 +295,7 @@ class DesktopPlaybackPort(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        poller.cancel(false)
+        nextPoll?.cancel(false)
         val teardown = executor.submit(Runnable {
             mixer?.close()
             mixer = null
@@ -315,11 +322,11 @@ class DesktopPlaybackPort(
             is PlaybackCommand.Load -> load(command)
             PlaybackCommand.Play -> activeEngine()?.play()
             PlaybackCommand.Pause -> {
-                promoteArmed()
+                settleArmed()
                 activeEngine()?.pause()
             }
             is PlaybackCommand.SeekTo -> {
-                promoteArmed()
+                settleArmed()
                 activeEngine()?.seek(command.positionMs * MICROS_PER_MILLI)
             }
             is PlaybackCommand.SetSpeed -> {
@@ -329,7 +336,7 @@ class DesktopPlaybackPort(
             PlaybackCommand.Stop -> {
                 // The shared scheduler promotes the incoming deck on stop, so the stopped occurrence is the one
                 // the listener now hears, not the fade's outgoing deck.
-                promoteArmed()
+                settleArmed()
                 stopSession()
             }
         }
@@ -428,10 +435,29 @@ class DesktopPlaybackPort(
         return true
     }
 
-    /** A seek, pause or stop during a fade makes the incoming deck active at once, as the shared scheduler does. */
-    private fun promoteArmed() {
+    /**
+     * Drops an armed handoff, so the playing occurrence keeps the output. Nothing happens when none is armed. A fade
+     * that already started returns the output to the outgoing deck.
+     */
+    fun cancelNext() {
+        submitTask {
+            syncHandoff()
+            mixer?.let(::cancelArmed)
+        }
+    }
+
+    /**
+     * A seek, pause or stop during a fade makes the incoming deck active at once, as the shared scheduler does. Before
+     * the fade starts nothing of the incoming deck is audible yet, so the handoff is dropped instead: a pause or a
+     * seek back must not skip the song the listener is hearing. The queue arms it again for the new position.
+     */
+    private fun settleArmed() {
         val mix = mixer ?: return
-        if (scheduler.armedIncomingDeck == null) return
+        val plan = scheduler.armedPlan ?: return
+        if (mix.snapshot().timelineFrames < plan.startFrame) {
+            cancelArmed(mix)
+            return
+        }
         mix.promote()
         syncHandoff()
     }
@@ -542,7 +568,11 @@ class DesktopPlaybackPort(
     private fun submitTask(task: () -> Unit) {
         if (closed.get()) return
         try {
-            executor.execute { task() }
+            executor.execute {
+                task()
+                // A command can start playback, so read at once and return to the fast rate without waiting out an idle delay.
+                pollTick()
+            }
         } catch (_: RejectedExecutionException) {
             // close() won the race, so the task arrived after the port stopped.
         }
@@ -551,7 +581,7 @@ class DesktopPlaybackPort(
     private fun <T> runOnPlaybackThread(fallback: T, block: () -> T): T {
         if (closed.get()) return fallback
         return try {
-            executor.submit(Callable<T> { block() }).get()
+            executor.submit(Callable<T> { block().also { pollTick() } }).get()
         } catch (_: RejectedExecutionException) {
             fallback
         } catch (error: ExecutionException) {
@@ -563,23 +593,47 @@ class DesktopPlaybackPort(
         }
     }
 
+    /** Runs on [executor]. Replaces any pending read, so a command-driven read and the timed one never pile up. */
+    private fun schedulePoll(delayMs: Long) {
+        if (closed.get()) return
+        nextPoll?.cancel(false)
+        nextPoll = try {
+            executor.schedule(::pollTick, delayMs, TimeUnit.MILLISECONDS)
+        } catch (_: RejectedExecutionException) {
+            null
+        }
+    }
+
+    private fun pollTick() {
+        val busy = pollEngine()
+        schedulePoll(if (busy) activePollIntervalMs else idlePollIntervalMs)
+    }
+
     /**
-     * Runs on the scheduler. A throw here would cancel the periodic read, so errors are logged and skipped.
-     * Every deck's failure is checked, because a preloaded occurrence must report its own failure.
+     * Runs on [executor]. A throw here would stop the reads, so errors are logged and skipped. Every deck's failure is
+     * checked, because a preloaded occurrence must report its own failure.
+     *
+     * Returns true while a deck is playing or buffering, the states whose position, handoff and failure reads must stay
+     * prompt. A failed read counts as busy, so an error never slows the next attempt.
      */
-    private fun pollEngine() {
-        val mix = mixer ?: return
-        try {
+    private fun pollEngine(): Boolean {
+        val mix = mixer ?: return false
+        return try {
             syncHandoff()
             val now = clock.nowNanos()
             mapper.observe(mix.deck(activeIndex()).snapshot(), now)?.let { publishedSnapshot.value = it }
+            var busy = false
             for (index in 0 until DECK_COUNT) {
                 val engine = mix.deck(index)
-                failureMappers[index].failure(engine.snapshot()) { engine.lastError() }
+                val state = engine.snapshot()
+                failureMappers[index].failure(state) { engine.lastError() }
                     ?.let { publishedFailures.tryEmit(it) }
+                if (state.hasSource && (state.isBuffering || (state.playWhenReady && !state.isEnded))) busy = true
             }
+            busy
         } catch (error: RuntimeException) {
             System.err.println("playback poll skipped: ${error.message}")
+            true
         }
     }
 
@@ -601,6 +655,9 @@ class DesktopPlaybackPort(
 
     private companion object {
         const val DEFAULT_POLL_INTERVAL_MS = 20L
+
+        /* Paused or idle: a few reads a second still catch a preload failure or an external stop promptly. */
+        const val IDLE_POLL_INTERVAL_MS = 250L
         const val FAILURE_BUFFER = 16
         const val DECK_COUNT = 2
         const val MICROS_PER_MILLI = 1_000L

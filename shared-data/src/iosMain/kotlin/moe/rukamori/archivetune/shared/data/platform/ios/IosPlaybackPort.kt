@@ -51,6 +51,13 @@ class IosPlaybackPort : PlaybackPort {
     private var accounts: AcceptedAccountReader? = null
     private var telegram: IosTelegramClient? = null
 
+    // Main-queue only. Audio the queue prepared ahead of its Load, by occurrence, until that Load claims it. Insertion
+    // order is the age order, so the oldest views are released first when the bound is reached.
+    private val queuedViews = LinkedHashMap<String, QueuedView>()
+
+    // Wakes the periodic read after a command, so a resume returns to the fast rate without waiting out the idle delay.
+    private val pollWake = Channel<Unit>(Channel.CONFLATED)
+
     override val snapshots: StateFlow<PlaybackSnapshot?> = state.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = errors.asSharedFlow()
 
@@ -64,12 +71,14 @@ class IosPlaybackPort : PlaybackPort {
                     is Inbound.TelegramResolved -> applyTelegram(item)
                 }
                 observe()
+                pollWake.trySend(Unit)
             }
         }
         scope.launch {
             while (isActive) {
-                observe()
-                delay(50)
+                val busy = observe()
+                // Paused or idle reads drop to four a second, so the main thread is not woken twenty times a second for nothing.
+                withTimeoutOrNull(if (busy) ACTIVE_POLL_MS else IDLE_POLL_MS) { pollWake.receive() }
             }
         }
     }
@@ -128,6 +137,40 @@ class IosPlaybackPort : PlaybackPort {
     }
 
     /**
+     * Prepares native, TIDAL or personal progressive audio for one queue occurrence ahead of its Load, under the same
+     * account admission as [submitPrepared]. The answer is the locator the queue then loads for that occurrence. Only a
+     * Load that names the same occurrence and the same locator claims the prepared view, so a stale or foreign locator is
+     * refused exactly as before. A view that no Load claims is released when a newer one replaces it, when the bound is
+     * reached, or when the port closes.
+     */
+    suspend fun prepareForQueue(occurrenceId: String, prepared: PreparedAudio): QueuedPreparation {
+        val access = withContext(Dispatchers.Main) { route?.takeUnless { closed } }
+            ?: return QueuedPreparation.Refused(ACCOUNTS_NOT_ATTACHED)
+        val outcome = access.prepare(prepared)
+        val locator = when (outcome) {
+            is IosNativeAudioRoute.Outcome.Ready -> PlaybackLocator.PreparedPlaintext(outcome.handle)
+            is IosNativeAudioRoute.Outcome.Streamed -> outcome.remote.locator
+            is IosNativeAudioRoute.Outcome.Refused -> return QueuedPreparation.Refused(outcome.reason)
+            is IosNativeAudioRoute.Outcome.Failed -> return QueuedPreparation.Refused(outcome.reason)
+        }
+        val accepted = withContext(Dispatchers.Main + NonCancellable) {
+            if (closed) return@withContext false
+            queuedViews.remove(occurrenceId)?.outcome?.release()
+            queuedViews[occurrenceId] = QueuedView(locator, prepared, outcome)
+            while (queuedViews.size > MAX_QUEUED_VIEWS) {
+                val eldest = queuedViews.keys.first()
+                queuedViews.remove(eldest)?.outcome?.release()
+            }
+            true
+        }
+        if (!accepted) {
+            outcome.release()
+            return QueuedPreparation.Refused("iOS playback is closed")
+        }
+        return QueuedPreparation.Ready(locator)
+    }
+
+    /**
      * Supplies the account reader and the scoped cookie source that personal progressive, native and TIDAL audio are
      * admitted against. It is single-shot: the root calls it once, when the vault is ready, with the one store that owns
      * the session. Until then that audio is refused, while the anonymous progressive and Deezer paths are unaffected.
@@ -160,6 +203,8 @@ class IosPlaybackPort : PlaybackPort {
         scope.launch {
             if (closed) return@launch
             closed = true
+            queuedViews.values.forEach { it.outcome.release() }
+            queuedViews.clear()
             supersede()
             stop()
             output?.let { at_audio_destroy(it) }
@@ -315,6 +360,13 @@ class IosPlaybackPort : PlaybackPort {
     private fun load(command: PlaybackCommand.Load) {
         supersede()
         val locator = command.request.locator
+        queuedViews.remove(command.request.occurrenceId)?.let { view ->
+            if (view.locator == locator) {
+                loadQueued(command, view)
+                return
+            }
+            view.outcome.release()
+        }
         if (locator is PlaybackLocator.TelegramFile) {
             beginTelegram(command, locator)
             return
@@ -355,6 +407,20 @@ class IosPlaybackPort : PlaybackPort {
             return
         }
         mapper.beginRequest(command.request, generation.toLong())
+    }
+
+    /** Plays a view the queue prepared for this occurrence, through the same lease paths as [submitPrepared]. */
+    private fun loadQueued(command: PlaybackCommand.Load, view: QueuedView) {
+        val request = command.request
+        stop()
+        val source = Inbound.Prepare(request.occurrenceId, request.mediaId, view.prepared, command.startPositionMs, command.playWhenReady)
+        when (val outcome = view.outcome) {
+            is IosNativeAudioRoute.Outcome.Ready -> loadPrepared(source, outcome)
+            is IosNativeAudioRoute.Outcome.Streamed -> loadStreamed(source, outcome)
+            // Only Ready and Streamed outcomes are kept, so these cannot arrive here.
+            is IosNativeAudioRoute.Outcome.Refused, is IosNativeAudioRoute.Outcome.Failed ->
+                errors.tryEmit(PlaybackFailure(request.occurrenceId, PlaybackFailureReason.OPEN_FAILED, "the prepared audio is unavailable"))
+        }
     }
 
     /**
@@ -433,10 +499,11 @@ class IosPlaybackPort : PlaybackPort {
         }?.also { output = it }
     }
 
-    private fun observe() {
-        if (closed) return
-        val native = output ?: return
-        memScoped {
+    /** Returns true while the engine plays or buffers, the states whose position and failure reads must stay prompt. */
+    private fun observe(): Boolean {
+        if (closed) return false
+        val native = output ?: return false
+        return memScoped {
             val s = alloc<ae_snapshot>()
             at_audio_snapshot(native, s.ptr)
             val observation = EnginePlaybackState(s.flags.toInt(), s.error_code.toInt(),
@@ -445,6 +512,8 @@ class IosPlaybackPort : PlaybackPort {
             if (observation.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
             mapper.observe(observation, SystemMonotonicClock.nowNanos())?.let { state.value = it }
             mapper.failure(observation) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
+            observation.hasSource &&
+                (observation.isBuffering || (observation.playWhenReady && !observation.isEnded))
         }
     }
 
@@ -469,6 +538,23 @@ class IosPlaybackPort : PlaybackPort {
     }
 
     private fun micros(ms: Long): ULong = ms.coerceAtMost(Long.MAX_VALUE / 1_000).toULong() * 1_000uL
+
+    private class QueuedView(val locator: PlaybackLocator, val prepared: PreparedAudio, val outcome: IosNativeAudioRoute.Outcome)
+
+    /** The answer of [prepareForQueue]: the locator the queue loads, or the reason the audio cannot play here. */
+    sealed interface QueuedPreparation {
+        class Ready(val locator: PlaybackLocator) : QueuedPreparation
+
+        class Refused(val reason: String) : QueuedPreparation
+    }
+
+    private companion object {
+        /** Queue preparations not yet claimed. The queue prepares one occurrence at a time, so a few cover every race. */
+        const val MAX_QUEUED_VIEWS = 4
+
+        const val ACTIVE_POLL_MS = 50L
+        const val IDLE_POLL_MS = 250L
+    }
 
     /** Work for the one command loop, which runs it in arrival order: a command, a preparation to start, or its result. */
     private sealed interface Inbound {

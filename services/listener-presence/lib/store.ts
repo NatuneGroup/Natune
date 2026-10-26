@@ -14,8 +14,9 @@ const RATE_PREFIX = "lp:rate:";
 const encoder = new TextEncoder();
 
 export function redisFromEnv(): Redis | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  // A Redis database added through the Vercel marketplace names its variables KV_REST_API_*.
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
   if (!url || !token) return null;
   // Raw strings in and out: stored records are our own JSON and must not be reinterpreted by the client.
   return new Redis({ url, token, automaticDeserialization: false });

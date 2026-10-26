@@ -25,6 +25,8 @@ fun LibraryScreen(
     headerActions: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = LocalShellContentPadding.current,
+    /** The mixed section's shortcut cards, recent rail and Top mixes, drawn above its rows. Null draws none. */
+    mixHeader: LibraryMixHeaderBinding? = null,
 ) {
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Text(stringResource(Res.string.m4_library), style = MaterialTheme.typography.headlineLarge,
@@ -44,6 +46,9 @@ fun LibraryScreen(
             }
         }
         headerActions()
-        LazyColumn(Modifier.weight(1f), contentPadding = contentPadding) { contentRows(state, actions, artwork) }
+        LazyColumn(Modifier.weight(1f), contentPadding = contentPadding) {
+            if (filter == LibraryFilter.LIBRARY) mixHeader?.let { libraryMixHeader(it.state, it.actions, artwork) }
+            contentRows(state, actions, artwork)
+        }
     }
 }

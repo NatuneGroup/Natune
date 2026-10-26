@@ -19,6 +19,12 @@ get_filename_component(ARCHIVETUNE_NATIVE_DIR
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Per-function sections let the linker drop code nothing reaches, which shrinks every
+# library in each per-ABI APK. Exported JNI entry points stay, because a shared
+# library's dynamic exports are always GC roots.
+add_compile_options(-ffunction-sections -fdata-sections)
+add_link_options("-Wl,--gc-sections")
+
 add_library(archivetune_analysis SHARED
     ${ARCHIVETUNE_NATIVE_DIR}/analyzer/audio_analysis.cpp
     ${ARCHIVETUNE_NATIVE_DIR}/analyzer/tempo_analysis.cpp

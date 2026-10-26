@@ -20,6 +20,7 @@ data class PlayerNativeState(
     val canvasAvailable: Boolean,
     val palette: List<Color>,
     val spatialFont: FontFamily? = null,
+    val handoff: PlayerHandoff? = null,
 )
 
 /**
@@ -55,6 +56,7 @@ fun PlayerState.withNativeState(native: PlayerNativeState, reducedMotion: Boolea
         palette = if (matching) native.palette else emptyList(),
         spatialFont = native.spatialFont,
         reducedMotion = reducedMotion,
+        handoff = native.handoff?.takeIf { matching && it.fromOccurrenceId == playback?.occurrenceId },
     )
 }
 

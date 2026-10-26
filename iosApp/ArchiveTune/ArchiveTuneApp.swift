@@ -35,11 +35,26 @@ final class ArchiveTuneSession {
     private var closed = false
 
     private init() {
+        // After the host exists, so the Kotlin capture already knows where the report goes. The handler is a C
+        // function pointer and captures nothing.
+        NSSetUncaughtExceptionHandler { exception in
+            IosCrashHooksKt.iosCaptureNSException(
+                name: exception.name.rawValue,
+                reason: exception.reason,
+                callStack: exception.callStackSymbols
+            )
+        }
         observers.append(NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [host] _ in
             // Real activation only; the Kotlin pack spends its one per-process consideration on it.
             host.foregrounded()
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [host] _ in
+            // Stops frames and blur while hidden; playback keeps running.
+            host.backgrounded()
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: UIApplication.willTerminateNotification, object: nil, queue: .main

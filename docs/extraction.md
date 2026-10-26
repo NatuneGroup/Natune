@@ -77,6 +77,25 @@ metadata, queue paging/order or Login WebView navigation/cookie capture; those a
 app-owned responsibilities. Upstream explicit/kids-client and SABR-video changes do not imply
 those features or benchmark gains are enabled in this direct-audio fallback.
 
+## Desktop host tiers
+
+The desktop host walks the same tier order through the shared `OrderedAudioResolver` and
+`YouTubeFailsafePolicy`: its own client walk (`DesktopYouTubeResolver.primary`), then
+`DesktopInnerTubeXTier`, then `DesktopNewPipeTier`, each bounded by the shared tier timeout and
+each writing one host diagnostic line with its outcome. Echo is Android-only, so the desktop
+Echo tier answers null.
+
+- The desktop InnerTubeX tier uses `innertubexDesktopVersion` (`v0.11.0`), the first release
+  whose `jvm("desktop")` target the desktop app resolves. Its cipher is the pure-Kotlin QuackJS
+  library, so the desktop package gains no native library. The Android pin stays at v0.9.2, so
+  the repository check reports the two versions as cross-module drift on purpose. The tier keeps
+  the Android adapter's anonymous client, disabled player-config repository, direct-audio hints
+  and prohibited-result guards.
+- The desktop NewPipe tier runs NewPipe's stream extractor first and then asks ANDROID_MUSIC, iOS
+  and WEB_REMIX as a visitor, deciphering `signatureCipher`/`cipher` formats and the n parameter
+  through NewPipe's JavaScript player. The primary desktop walk skips ciphered formats, so this
+  tier is also the desktop's only cipher path.
+
 ## The cipher seam
 
 `StreamUrlExtractor` (`playback/stream/`) is the app-side contract for the cipher step:

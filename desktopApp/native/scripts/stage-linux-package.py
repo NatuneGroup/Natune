@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Stage this worktree's exact media closure; never bundle libc, glib, GTK or system drivers."""
 import pathlib
+import platform
 import os
 import re
 import shutil
@@ -10,7 +11,9 @@ root = pathlib.Path(__file__).resolve().parents[2]
 build = root / "build"
 prefix = build / "native/prefix/lib"
 engine = build / "native/engine-build"
-destination = build / "distribution-resources/linux-x64/native"
+# Compose copies the resource directory named after the host's OS and architecture.
+arch = "arm64" if platform.machine() in ("aarch64", "arm64") else "x64"
+destination = build / f"distribution-resources/linux-{arch}/native"
 destination.mkdir(parents=True, exist_ok=True)
 subprocess.run(["cmake", "--install", str(engine), "--prefix", str(destination)], check=True)
 allowed = ("libavcodec.so.", "libavformat.so.", "libavfilter.so.", "libavutil.so.",

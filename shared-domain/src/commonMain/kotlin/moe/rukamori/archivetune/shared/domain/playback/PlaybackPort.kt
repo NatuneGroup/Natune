@@ -25,11 +25,17 @@ interface PlaybackPort {
     fun close()
 }
 
-/** A playback failure tied to the occurrence that was current when it happened. */
+/**
+ * A playback failure tied to the occurrence that was current when it happened. [httpStatus] is the status a source
+ * answered with when one did, and [causes] is the cause chain, outermost first, as `Name: message` lines; the error
+ * dialog copies both into its details.
+ */
 data class PlaybackFailure(
     val occurrenceId: String,
     val reason: PlaybackFailureReason,
     val message: String,
+    val httpStatus: Int? = null,
+    val causes: List<String> = emptyList(),
 )
 
 /** Why playback failed, in terms the app can act on without parsing [PlaybackFailure.message]. */
@@ -45,4 +51,7 @@ enum class PlaybackFailureReason {
 
     /** The platform audio output could not be opened or kept running. */
     OUTPUT_FAILED,
+
+    /** No connected source resolved the song to a stream, so nothing reached the engine. */
+    SOURCE_UNAVAILABLE,
 }

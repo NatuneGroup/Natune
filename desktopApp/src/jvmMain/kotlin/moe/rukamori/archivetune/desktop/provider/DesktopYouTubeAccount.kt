@@ -27,8 +27,8 @@ import moe.rukamori.archivetune.shared.domain.settings.YouTubeSessionCandidate
 /*
  * Signed-in account requests for the desktop host, mirroring the baseline core `YouTube.accountInfo`,
  * `accountChannels` and `accountDataSyncId`: account_menu on WEB_REMIX and accounts_list on a cookie-enabled WEB
- * client, both authenticated by the cookie and its SAPISIDHASH. These requests read the account only. The visitor-only
- * player layer in DesktopYouTubeClients never receives the cookie.
+ * client, both authenticated by the cookie and its SAPISIDHASH. These requests read the account only. The player layer
+ * in DesktopYouTubeClients signs its cookie-capable requests with the same SAPISIDHASH through [youTubeSapisidAuthorization].
  */
 
 private const val MAX_ACCOUNT_RESPONSE_CHARS = 2 * 1024 * 1024
@@ -140,7 +140,7 @@ private suspend fun postSignedIn(
             header("Referer", client.requestReferer())
             visitorData?.let { header("X-Goog-Visitor-Id", it) }
             header(HttpHeaders.Cookie, cookie)
-            header(HttpHeaders.Authorization, "SAPISIDHASH ${now}_${sha1Hex("$now $loginValue $origin")}")
+            header(HttpHeaders.Authorization, youTubeSapisidAuthorization(loginValue, origin, now))
             header("X-Goog-AuthUser", "0")
             setBody(body.toString())
         }
@@ -168,7 +168,7 @@ private fun parseAccountChannel(renderer: JsonObject): ParsedChannel? {
 }
 
 /** The baseline `delegatedSessionIdOrNull`: the delegated part of "delegated||gaia", or null for a primary account. */
-private fun String?.delegatedSessionIdOrNull(): String? {
+internal fun String?.delegatedSessionIdOrNull(): String? {
     val value = this?.trim()?.takeIf(String::isNotBlank) ?: return null
     val separator = value.indexOf("||")
     if (separator <= 0 || separator + 2 >= value.length) return null
@@ -233,6 +233,10 @@ private fun parseCookieFields(cookie: String): Map<String, String> =
         val split = part.indexOf('=')
         if (split == -1) null else part.substring(0, split).trim().takeIf { it.isNotEmpty() }?.let { it to part.substring(split + 1).trim() }
     }.toMap()
+
+/** The baseline SAPISIDHASH Authorization value for [origin], signed with the login cookie value at [nowSeconds]. */
+internal fun youTubeSapisidAuthorization(loginValue: String, origin: String, nowSeconds: Long): String =
+    "SAPISIDHASH ${nowSeconds}_${sha1Hex("$nowSeconds $loginValue $origin")}"
 
 private fun sha1Hex(value: String): String =
     MessageDigest.getInstance("SHA-1").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }

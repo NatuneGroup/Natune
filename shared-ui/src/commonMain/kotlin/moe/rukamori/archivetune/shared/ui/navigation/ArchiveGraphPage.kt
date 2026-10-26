@@ -79,6 +79,8 @@ sealed interface ArchiveGraphPage {
         val page: PagedContentState, val loadMore: () -> Unit, val retry: () -> Unit,
         /** The My top size the Library's More menu offers, or null while that entry is hidden or the preference is unread. */
         val myTopSize: Int? = null,
+        /** The mixed section's header. Null while the host has none to show. */
+        val mixHeader: LibraryMixHeaderBinding? = null,
     ) : ArchiveGraphPage
     data class Discovery(val state: DiscoveryUi, val tab: (DiscoveryTab) -> Unit, val refresh: () -> Unit, val retry: () -> Unit) : ArchiveGraphPage
     data class Charts(val sections: List<BrowseShelfUi>, val loading: Boolean, val failed: Boolean, val retry: () -> Unit) : ArchiveGraphPage

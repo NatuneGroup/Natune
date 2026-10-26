@@ -36,6 +36,8 @@ class RoomLibraryRepository(
 ) : PlaylistImportLibrary {
     init { require(pageSize in 1..1000) }
     suspend fun saveItems(items: List<ContentItem>) = dao.saveItems(items)
+    /** Deletes the local playlist [id], its songs list and its tags. An unknown id throws and changes nothing. */
+    suspend fun deletePlaylist(id: String) = dao.deletePlaylist(id)
     suspend fun createPlaylist(id: String, title: String) {
         require(id.isNotBlank() && title.isNotBlank())
         dao.createPlaylist(PortablePlaylistRow(id, title))

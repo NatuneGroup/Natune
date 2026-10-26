@@ -60,6 +60,20 @@ class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTranspor
 
     override fun signedIn(): Boolean = YouTube.hasLoginCookie()
 
+    /**
+     * Points the retained core client at the persisted YouTube sign-in, as the Android App does on every preference
+     * change, so library listings, likes and subscriptions act for that account. A null cookie leaves the client
+     * signed out. PO token fields the client already holds are kept.
+     */
+    fun applySession(cookie: String?, visitorData: String?, dataSyncId: String?, useLoginForBrowse: Boolean) {
+        YouTube.authState = YouTube.currentPlaybackAuthState().copy(
+            cookie = cookie?.takeIf(String::isNotBlank),
+            visitorData = visitorData?.takeIf(String::isNotBlank),
+            dataSyncId = dataSyncId?.takeIf(String::isNotBlank),
+        )
+        YouTube.useLoginForBrowse = useLoginForBrowse
+    }
+
     override suspend fun listing(listing: YouTubeListing, continuation: String?): YouTubeEntryPage {
         val browseId =
             when (listing) {

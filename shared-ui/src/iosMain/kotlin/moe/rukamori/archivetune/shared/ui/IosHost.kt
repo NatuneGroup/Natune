@@ -4,32 +4,70 @@ package moe.rukamori.archivetune.shared.ui
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
+import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
 import moe.rukamori.archivetune.shared.data.platform.ios.*
+import moe.rukamori.archivetune.shared.domain.diagnostics.CrashReport
+import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
+import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLogStore
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.platform.ChallengeEvaluator
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
+import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceController
+import moe.rukamori.archivetune.shared.domain.presence.ListenerPresencePlatform
+import moe.rukamori.archivetune.shared.domain.presence.ListenerPresencePolicy
+import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
+import moe.rukamori.archivetune.shared.ui.ios.IosMountedRoot
+import moe.rukamori.archivetune.shared.ui.ios.IosSessionGraph
 import moe.rukamori.archivetune.shared.ui.settings.IosSettingsOpenState
 import moe.rukamori.archivetune.shared.ui.settings.IosVaultSettings
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
+import platform.Foundation.NSBundle
+
+/** What the iOS root mounts: progress, an explicit unavailable boundary, or the opened session graph. */
+internal sealed interface IosSessionState {
+    data object Opening : IosSessionState
+    data object SettingsUnavailable : IosSessionState
+    data object GraphUnavailable : IosSessionState
+    data class Ready(val graph: IosSessionGraph) : IosSessionState
+}
 
 /**
  * One host per process, owned by the Swift app session (ArchiveTuneSession) and created at launch. Detaching or
  * recreating the SwiftUI controller and backgrounding never close it; [close] is the final shutdown and is idempotent.
  * Settings open on a worker after construction; the UI observes [settingsState] and never waits for it.
- * Root/repository integration must use these same instances; this host never owns a queue.
+ * Root/repository integration must use these same instances; the queue belongs to the session graph opened over them.
  */
 class IosHost {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val playback = IosPlaybackPort()
+    internal val playbackPort = IosPlaybackPort()
+    private val sessionState = MutableStateFlow<IosSessionState>(IosSessionState.Opening)
+
+    /** The session graph the root mounts once settings and the database are open. */
+    internal val session: StateFlow<IosSessionState> = sessionState.asStateFlow()
+    private val active = MutableStateFlow(true)
+
+    /** False while the app is in the background, so the root stops drawing frames; playback is unaffected. */
+    internal val appActive: StateFlow<Boolean> = active.asStateFlow()
+    private var graph: IosSessionGraph? = null
+
     /** The one controller the app session re-presents. Detaching it closes nothing; the services stay owned here. */
-    val viewController = MainViewController()
-    val player = MusicPlayerController(playback, scope)
+    val viewController = MainViewController(root = { IosMountedRoot(this) }) { IosPlaybackErrorOverlay(this) }
+    val player = MusicPlayerController(playbackPort, scope)
+    private val failure = MutableStateFlow<PlaybackFailure?>(null)
+
+    /** The failure the playback error dialog shows, or null while none is open. */
+    val playbackFailure: StateFlow<PlaybackFailure?> = failure.asStateFlow()
+    private var playbackRetry: ((occurrenceId: String) -> Unit)? = null
     val credentials = IosKeychainCredentialStore()
     val files = IosPlatformFiles()
     val browser = IosBrowserAuthPort { requireNotNull(viewController.view.window) }
@@ -57,9 +95,93 @@ class IosHost {
     val telegram: StateFlow<IosTelegramClient?> = telegramSession.asStateFlow()
     private var closed = false
 
-    init {
-        scope.launch { openSettingsAndPack() }
+    // Its own scope, so quitting can wait a bounded time for the one stopped payload before the session is released.
+    private val presenceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val presenceTransport = IosListenerPresenceTransport(iosListenerPresenceEndpoint())
+
+    /**
+     * The listener-presence opt-in a settings screen switches, or null when its directory could not be prepared.
+     * Heartbeats follow audible playback and go out only while the user has opted in and the build supplies an HTTPS
+     * endpoint (ARCHIVETUNE_LISTENER_PRESENCE_URL through Info.plist).
+     */
+    val listenerPresence: ListenerPresenceStore? = try {
+        IosListenerPresenceStore(iosListenerPresenceDirectory())
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
     }
+
+    private val diagnosticsRoot: String? = try {
+        iosDiagnosticsDirectory()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * The persistent, redacted log of this app's own process across launches, for a log viewer and a report, or null
+     * when its directory could not be prepared. Its writer runs only while something is logged.
+     */
+    val diagnostics: DiagnosticLogStore? = diagnosticsRoot?.let { root ->
+        val started = iosNowMillis()
+        RotatingDiagnosticLog(
+            files = IosDiagnosticLogFiles("$root/logs"),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            sessionStartMillis = started,
+            nowMillis = ::iosNowMillis,
+            formatTime = ::iosDiagnosticTime,
+            sessionHeader = "Natune session ${iosDiagnosticTime(started)} version=${iosApplicationVersion()}",
+        )
+    }
+
+    init {
+        // First, so a failure while the rest of the host starts is still captured for the next launch.
+        diagnosticsRoot?.let { root ->
+            IosCrashCapture.install(root, iosApplicationVersion(), NSBundle.mainBundle.bundleIdentifier.orEmpty())
+        }
+        scope.launch { openSettingsAndPack() }
+        scope.launch { player.failures.collect { failure.value = it } }
+        listenerPresence?.let { store ->
+            ListenerPresenceController(
+                scope = presenceScope,
+                store = store,
+                transport = presenceTransport,
+                playing = player.snapshot.map { it?.isAudioAdvancing == true }
+                    .stateIn(presenceScope, SharingStarted.Eagerly, false),
+                platform = ListenerPresencePlatform.IOS,
+                appVersion = ListenerPresencePolicy.sanitizedAppVersion(iosApplicationVersion()),
+            ).start()
+        }
+    }
+
+    fun closePlaybackFailure() {
+        failure.value = null
+    }
+
+    /**
+     * Called once by the queue composition, which alone can load an occurrence again. A queue that also reports songs
+     * no source resolved shows them through [showPlaybackFailure].
+     */
+    fun installPlaybackRetry(retry: (occurrenceId: String) -> Unit) {
+        check(!closed && playbackRetry == null)
+        playbackRetry = retry
+    }
+
+    fun showPlaybackFailure(value: PlaybackFailure) {
+        if (!closed) failure.value = value
+    }
+
+    internal fun retryPlayback(occurrenceId: String) {
+        playbackRetry?.invoke(occurrenceId)
+    }
+
+    /** The crash report an earlier launch stored, for the crash screen, or null when there is none. */
+    fun storedCrash(): CrashReport? = IosCrashCapture.stored()
+
+    /** Removes the stored crash report. False while it is still on disk, so it is offered again next launch. */
+    fun clearCrash(): Boolean = IosCrashCapture.clear()
 
     /** Prepared provider audio enters playback only through the iOS admission rules in [IosPlaybackPort]. */
     fun loadPrepared(
@@ -69,7 +191,7 @@ class IosHost {
         startPositionMs: Long = 0L,
         playWhenReady: Boolean = true,
     ) {
-        playback.submitPrepared(occurrenceId, mediaId, prepared, startPositionMs, playWhenReady)
+        playbackPort.submitPrepared(occurrenceId, mediaId, prepared, startPositionMs, playWhenReady)
     }
 
     /**
@@ -79,7 +201,7 @@ class IosHost {
      */
     fun attachAccounts(accounts: AcceptedAccountReader, cookies: ScopedCookieSource) {
         check(!closed)
-        playback.attachAccounts(accounts, cookies)
+        playbackPort.attachAccounts(accounts, cookies)
     }
 
     /**
@@ -88,9 +210,21 @@ class IosHost {
      */
     fun foregrounded() {
         if (closed) return
+        active.value = true
         foregroundRequested = true
         val pack = japanesePack.value ?: return
         scope.launch { pack.onForeground() }
+    }
+
+    /** Forwarded by the Swift app session when the app leaves the foreground. */
+    fun backgrounded() {
+        if (!closed) active.value = false
+    }
+
+    /** One line in the persistent diagnostics log and the console, for failures the UI only reports. */
+    fun report(message: String) {
+        println("Natune iOS: $message")
+        diagnostics?.append(DiagnosticLevel.INFO, "Host", message)
     }
 
     /**
@@ -120,11 +254,19 @@ class IosHost {
         player.close()
         val pack = japanesePack.value
         val opened = settings
+        val openedGraph = graph
         japanesePack.value = null
         settings = null
+        graph = null
         scope.cancel()
+        val presence = presenceScope.coroutineContext[Job]
         // Teardown outlives the cancelled host scope: the pack joins its worker, then the settings owner is released.
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            // A running heartbeat gets its one stopped payload; a slow endpoint never holds up the rest.
+            withTimeoutOrNull(PRESENCE_CLOSE_TIMEOUT_MS) { presence?.cancelAndJoin() }
+            presenceTransport.close()
+            // The graph finishes the open listen and checkpoints the queue while the settings it reads are still open.
+            openedGraph?.close()
             session?.close()
             pack?.close()
             opened?.close()
@@ -149,14 +291,17 @@ class IosHost {
                     acceptSession = accounts::acceptNativeTelegramSession,
                     revokeSession = accounts::revokeNativeTelegramSession,
                 ),
-                log = { message -> println("ArchiveTune iOS: $message") },
+                log = { message ->
+                    println("Natune iOS: $message")
+                    diagnostics?.append(DiagnosticLevel.INFO, "Telegram", message)
+                },
             ).also { if (iosTelegramHasSession(storageRoot)) it.start() }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             null
         } ?: return
-        playback.attachTelegram(session)
+        playbackPort.attachTelegram(session)
         telegramSession.value = session
     }
 
@@ -166,7 +311,10 @@ class IosHost {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            if (!closed) settingsOpen.value = IosSettingsOpenState.Unavailable
+            if (!closed) {
+                settingsOpen.value = IosSettingsOpenState.Unavailable
+                sessionState.value = IosSessionState.SettingsUnavailable
+            }
             return
         }
         // close() can run while the Keychain read is on a worker. Never publish into a closed host.
@@ -197,5 +345,34 @@ class IosHost {
         japanesePack.value = pack
         settingsOpen.value = IosSettingsOpenState.Ready(opened)
         if (foregroundRequested) pack?.onForeground()
+        openSessionGraph(opened, accounts)
+    }
+
+    private suspend fun openSessionGraph(opened: IosVaultSettings, accounts: VaultProviderAccountStore) {
+        val opening = try {
+            IosSessionGraph.open(this, opened.vault, accounts, ::report)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            report("session graph did not open: ${failure::class.simpleName}")
+            if (!closed) sessionState.value = IosSessionState.GraphUnavailable
+            return
+        }
+        if (closed) {
+            opening.close()
+            return
+        }
+        graph = opening
+        installPlaybackRetry(opening::retryAfterFailure)
+        installSystemControls(
+            metadata = opening::metadata,
+            next = { opening.scope.launch { opening.skipNext() } },
+            previous = { opening.scope.launch { opening.skipPrevious() } },
+        )
+        sessionState.value = IosSessionState.Ready(opening)
+    }
+
+    private companion object {
+        const val PRESENCE_CLOSE_TIMEOUT_MS = 2_000L
     }
 }
