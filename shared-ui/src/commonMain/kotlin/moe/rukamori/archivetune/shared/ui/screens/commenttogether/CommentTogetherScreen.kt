@@ -76,6 +76,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.*
 
 private const val CommentOlderDividerKey = "comment-older-messages-divider"
 private const val CommentJumpHighlightMillis = 1400L

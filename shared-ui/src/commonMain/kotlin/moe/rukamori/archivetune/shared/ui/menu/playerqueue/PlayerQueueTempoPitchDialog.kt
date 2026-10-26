@@ -39,6 +39,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.*
 
 private val PLAYER_QUEUE_MULTIPLIER_PRESETS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 private val PLAYER_QUEUE_SEMITONE_PRESETS = listOf(-12, -7, -5, 0, 5, 7, 12)
