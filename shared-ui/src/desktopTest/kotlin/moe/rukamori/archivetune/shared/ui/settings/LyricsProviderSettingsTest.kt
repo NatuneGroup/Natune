@@ -13,7 +13,9 @@ import kotlin.test.*
 class LyricsProviderSettingsTest {
     @Test fun actualEndpointDialogUsesCommittedConfigurationAndShowsPublishedStatuses() = runBlocking {
         val directory = Files.createTempDirectory("m6-pax-dialog-")
-        val store = DesktopSettingsStore.open(directory.resolve("settings.bin"))
+        // PaxsenixApiKeyKey is a routed credential: plain disk persistence rejects it, so the test
+        // owns a real vault adapter like the shipped host does.
+        val store = VaultTestOwner.open(directory.resolve("settings.bin"), TestSettingsVault())
         try {
             store.edit { this[PaxsenixEndpointKey] = "https://example.invalid/"; this[PaxsenixApiKeyKey] = "test-only-key" }
             val controller = SettingsController(store, store.snapshot(), false)

@@ -85,6 +85,10 @@ tasks.named<Test>("desktopTest") {
         "archivetune.screenshotDir",
         rootProject.layout.projectDirectory.dir("outputs/screenshots").asFile.absolutePath,
     )
+    // The coroutines-test debug-probes transformer emits an illegal "<anonymous>" method when it
+    // rewrites classes containing the Compose compiler's $$$$$NON_LOCAL_RETURN$$$$$ markers; stack
+    // decoration is off so host classes load. Probe-free tests still assert the same behaviour.
+    systemProperty("kotlinx.coroutines.debug", "off")
     outputs.upToDateWhen { false }
     outputs.cacheIf { false }
 }
