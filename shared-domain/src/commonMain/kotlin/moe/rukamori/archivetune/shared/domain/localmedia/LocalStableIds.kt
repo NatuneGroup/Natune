@@ -20,7 +20,7 @@ object LocalStableIds {
         val digest = md5(bytes)
         digest[6] = (digest[6].toInt() and 0x0F or 0x30).toByte()
         digest[8] = (digest[8].toInt() and 0x3F or 0x80).toByte()
-        val hex = digest.joinToString("") { "%02x".format(it) }
+        val hex = digest.joinToString("") { it.toUByte().toString(16).padStart(2, '0') }
         return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-" +
             "${hex.substring(16, 20)}-${hex.substring(20)}"
     }

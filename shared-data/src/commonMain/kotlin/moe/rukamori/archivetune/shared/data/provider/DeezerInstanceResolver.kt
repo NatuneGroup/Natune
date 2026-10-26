@@ -11,6 +11,7 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.Url
 import io.ktor.http.encodeURLParameter
 import io.ktor.utils.io.readRemaining
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex

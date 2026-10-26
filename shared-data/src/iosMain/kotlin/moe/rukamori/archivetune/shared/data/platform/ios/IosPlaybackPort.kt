@@ -10,7 +10,6 @@ import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.flow.*
 import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.nativeaudio.*
-import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
@@ -251,6 +250,8 @@ class IosPlaybackPort : PlaybackPort {
             PlaybackCommand.Pause -> output?.let { at_audio_pause(it) }
             is PlaybackCommand.SeekTo -> output?.let { at_audio_seek(it, micros(command.positionMs)) }
             is PlaybackCommand.SetSpeed -> output?.let { at_audio_speed(it, command.speed) }
+            // at_audio_* exposes no pitch control; the command is consumed but never applied, leaving 1.0 unshifted.
+            is PlaybackCommand.SetPitch -> Unit
             PlaybackCommand.Stop -> {
                 supersede()
                 stop()
