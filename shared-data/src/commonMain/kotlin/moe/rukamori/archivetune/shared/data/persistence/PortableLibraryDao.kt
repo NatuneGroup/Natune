@@ -35,7 +35,8 @@ internal fun libraryItemRow(item: ContentItem, liked: Boolean, addedSeq: Long, l
 data class PortablePlaylistRow(@PrimaryKey val id: String, val title: String, val tags: String = "[]",
     val createdSeq: Long? = null,
     @ColumnInfo(defaultValue = "'CUSTOM'") val songSortType: String = "CUSTOM",
-    @ColumnInfo(defaultValue = "1") val songSortDescending: Boolean = true)
+    @ColumnInfo(defaultValue = "1") val songSortDescending: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val isHidden: Boolean = false)
 
 @Entity(tableName = "portable_tag")
 data class PortableTagRow(@PrimaryKey val id: String, val name: String, val color: String)
