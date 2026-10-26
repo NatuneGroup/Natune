@@ -65,6 +65,7 @@ import moe.rukamori.archivetune.shared.ui.home.homeHeroCardWidth
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import moe.rukamori.archivetune.shared.ui.theme.LocalArchiveTuneFontFamily
+import androidx.compose.foundation.layout.fillMaxSize
 import org.jetbrains.compose.resources.painterResource
 
 /** The BitChord page gutter. The shared Rukamori feed uses a tighter 10dp gutter, so BitChord keeps its own 16dp. */

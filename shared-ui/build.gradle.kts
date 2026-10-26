@@ -67,6 +67,8 @@ compose.resources {
     packageOfResClass = "moe.rukamori.archivetune.shared.ui.resources"
     // The library default (auto) does not generate the Res accessors, so ArchiveTuneRoot would not compile.
     generateResClass = always
+    // desktopApp reads shared strings through the same Res object, so the accessors are public API.
+    publicResClass = true
 }
 
 // Keep complete upstream notices in every platform resource bundle, not just the source checkout.
@@ -76,12 +78,21 @@ val prepareRomanizationNotices = tasks.register<Copy>("prepareRomanizationNotice
     }
     into(layout.buildDirectory.dir("generated/romanization-notices/composeResources/files/notices"))
 }
+// A customDirectory replaces the source set's default composeResources directory, so the real
+// resources and the generated notices are staged into one directory the custom directory points at.
+val stageCommonComposeResources = tasks.register<Copy>("stageCommonComposeResources") {
+    into(layout.buildDirectory.dir("generated/common-compose-resources/composeResources"))
+    from("src/commonMain/composeResources")
+    from(layout.buildDirectory.dir("generated/romanization-notices/composeResources"))
+    dependsOn(prepareRomanizationNotices)
+}
 compose.resources.customDirectory(
     sourceSetName = "commonMain",
-    directoryProvider = layout.buildDirectory.dir("generated/romanization-notices/composeResources"),
+    directoryProvider = layout.buildDirectory.dir("generated/common-compose-resources/composeResources"),
 )
-tasks.matching { it.name.startsWith("generateResourceAccessors") || it.name.startsWith("prepareComposeResources") }
-    .configureEach { dependsOn(prepareRomanizationNotices) }
+tasks.matching { it.name.startsWith("generateResourceAccessors") || it.name.startsWith("prepareComposeResources") ||
+            it.name.startsWith("copyNonXmlValueResources") || it.name.startsWith("convertXmlValueResources") }
+    .configureEach { dependsOn(stageCommonComposeResources) }
 
 // The screenshot test writes into the ignored repository outputs/ directory. It must run on every
 // invocation, because a cached result would skip the capture that the evidence relies on.
