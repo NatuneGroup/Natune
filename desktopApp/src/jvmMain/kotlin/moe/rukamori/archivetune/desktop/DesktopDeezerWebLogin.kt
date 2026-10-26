@@ -77,7 +77,7 @@ internal class DesktopDeezerWebSignIn(private val graph: DesktopSessionGraph) {
             context.cookiesFor(DEEZER_ORIGIN)
                 .plus(context.cookiesFor(DEEZER_WWW_ORIGIN))
                 .firstOrNull { it.name == DEEZER_ARL_COOKIE }
-                ?.value
+                ?.value?.reveal()
         } finally {
             context.close()
         }
