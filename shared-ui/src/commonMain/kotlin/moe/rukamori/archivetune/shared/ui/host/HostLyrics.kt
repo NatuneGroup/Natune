@@ -12,8 +12,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.lyrics.BetterLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.BiniLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.GeniusLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.KuGouLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LrcLibLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.LrcRedLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.MegalobizLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider
@@ -148,11 +152,16 @@ fun sharedLyricsProviders(http: HttpClient, preferences: PreferenceSnapshot): Li
     val lyprio = LyprioEndpoint.parse(preferences[LyprioEndpointKey].orEmpty(), preferences[LyprioSigningKeyKey].orEmpty())
     return listOfNotNull(
         lyprio?.let { LyprioLyricsProvider(http, it) },
+        // Same relative order as the Android baseProviders list; account-bound providers
+        // (Apple Music, Tidal, Deezer, YouTube) stay host-owned and are not shared.
+        LrcRedLyricsProvider(http),
+        BiniLyricsProvider(http),
         BetterLyricsProvider(http),
         BetterLyricsProvider.portato(http),
         YouLyPlusLyricsProvider(http),
         LrcLibLyricsProvider(http),
         KuGouLyricsProvider(http),
+        MegalobizLyricsProvider(http),
         SimpMusicLyricsProvider(http),
         UnisonLyricsProvider(http),
         PaxsenixAppleMusicLyricsProvider(http, settings = paxsenix),
@@ -160,10 +169,13 @@ fun sharedLyricsProviders(http: HttpClient, preferences: PreferenceSnapshot): Li
         PaxsenixSpotifyLyricsProvider(http, paxsenix),
         PaxsenixMusixmatchLyricsProvider(http, paxsenix),
         PaxsenixYouTubeLyricsProvider(http, paxsenix),
+        GeniusLyricsProvider(http),
     )
 }
 
 private val SHARED_PROVIDER_NAMES = setOf(
-    "Lyprio", "BetterLyrics", "BetterLyrics Portato", "YouLyPlus", "LrcLib", "Kugou", "SimpMusic", "Unison",
+    "Lyprio", "lrc.red", "BiniLyrics", "BetterLyrics", "BetterLyrics Portato", "YouLyPlus", "LrcLib",
+    "Kugou", "Megalobiz", "SimpMusic", "Unison",
     "Paxsenix: Apple Music", "Paxsenix: NetEase", "Paxsenix: Spotify", "Paxsenix: Musixmatch", "Paxsenix: YouTube",
+    "Genius",
 )
