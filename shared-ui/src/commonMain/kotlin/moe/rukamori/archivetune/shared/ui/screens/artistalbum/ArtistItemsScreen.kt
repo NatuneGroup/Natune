@@ -36,7 +36,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.TypedContentRepository
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentActions
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import moe.rukamori.archivetune.shared.ui.screens.PageStatus

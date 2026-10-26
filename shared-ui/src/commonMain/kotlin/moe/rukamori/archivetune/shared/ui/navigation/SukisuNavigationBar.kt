@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -90,7 +91,7 @@ import moe.rukamori.archivetune.shared.ui.glass.layerBackdrop
 import moe.rukamori.archivetune.shared.ui.glass.liquidGlassMaterial
 import moe.rukamori.archivetune.shared.ui.glass.rememberGlassSpecularHighlight
 import moe.rukamori.archivetune.shared.ui.glass.scaleAwareSpring
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -42,7 +41,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,8 +64,9 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
 import moe.rukamori.archivetune.shared.ui.glass.BackdropScene
 import moe.rukamori.archivetune.shared.ui.glass.LocalOpticalPolicy
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
+import androidx.compose.runtime.saveable.rememberSaveable
 import org.jetbrains.compose.resources.stringResource
 
 private const val ArtistSongPreviewCount = 5

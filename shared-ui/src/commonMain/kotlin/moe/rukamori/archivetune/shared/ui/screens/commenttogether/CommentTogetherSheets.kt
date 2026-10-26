@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import moe.rukamori.archivetune.shared.data.listentogether.TrackInfo
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ChatEmojiCategory
 import moe.rukamori.archivetune.shared.ui.screens.EmojiCatalog
 import org.jetbrains.compose.resources.StringResource

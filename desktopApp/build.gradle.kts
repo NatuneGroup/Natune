@@ -20,6 +20,7 @@ kotlin {
             implementation(project(":shared-domain"))
             implementation(project(":shared-data"))
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.compose.multiplatform.components.resources)
             // The one HTTP client of the desktop graph. The CIO engine is pure JVM, so it adds no native library.
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.cio)

@@ -3,7 +3,6 @@ package moe.rukamori.archivetune.shared.ui.settings.lastfmdashboard
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -17,6 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmDashboardReader
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmDashboardService
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmDashboardSnapshot
+import kotlinx.coroutines.channels.BufferOverflow
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 
 /**
