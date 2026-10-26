@@ -48,4 +48,12 @@
     <string name="m6_integration_cross_service_entry_desc">Pull a playlist from YouTube Music, Spotify, Apple Music, Amazon Music, Tidal, Qobuz or Deezer</string>
     <string name="m6_integration_import_failed">Import failed</string>
     <string name="m6_integration_ok">OK</string>
+    <string name="m6_apple_music_dev_token">Apple Music developer token</string>
+    <string name="m6_apple_music_user_token">Apple Music media user token</string>
+    <string name="m6_apple_music_account_name">Apple Music account name</string>
+    <string name="m6_apple_music_experience">Apple Music experience</string>
+    <string name="m6_content_language">Content language</string>
+    <string name="m6_content_country">Content country</string>
+    <string name="m6_hide_explicit">Hide explicit content</string>
+    <string name="m6_system_default">System default</string>
 </resources>

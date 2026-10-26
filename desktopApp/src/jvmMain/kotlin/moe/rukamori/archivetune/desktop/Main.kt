@@ -16,8 +16,8 @@ fun main(args: Array<String>) {
     // A restart after a staged restore starts this process while the old one is still leaving the instance lock.
     DesktopRelaunch.awaitPrevious(args)
     val uri = args.firstOrNull { Regex("^[A-Za-z][A-Za-z0-9+.\\-]*:.*").matches(it) }
-    val instanceDirectory = System.getProperty("archivetune.instance.directory")?.let(Path::of)
-        ?: Path.of(System.getProperty("user.home"), ".archivetune", "desktop")
+    // A stored relocation pointer wins over the default so a settings-committed move survives restart.
+    val instanceDirectory = DesktopSettingsServices.currentInstanceDirectory()
     val instance = DesktopSingleInstance.acquire(instanceDirectory, uri, DesktopLaunchIntake::receive) ?: return
     // Installed once this process owns the instance directory, so a second launch never rotates the log files or
     // overwrites the stored report.
