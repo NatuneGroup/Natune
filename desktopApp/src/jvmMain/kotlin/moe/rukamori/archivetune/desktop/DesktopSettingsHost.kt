@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.desktop.backup.DesktopDriveFormatter
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAdmission
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
@@ -58,7 +59,12 @@ import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
 import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
+import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
+import moe.rukamori.archivetune.shared.ui.settings.JapaneseLanguagePackUiState
+import moe.rukamori.archivetune.shared.ui.settings.LanguagePackSettings
 import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
+import moe.rukamori.archivetune.shared.ui.settings.LyricsRomanisationSettings
+import moe.rukamori.archivetune.shared.ui.settings.japanesePackUiState
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.QqMusicSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
@@ -225,7 +231,7 @@ private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings/qobuz", QobuzLoginRoute, DeezerLoginRoute,
     "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
     DesktopListenTogetherSettingsRoute, "settings/misc", "settings/logcat", "settings/backup_restore",
-    "settings/lyrics/providers",
+    "settings/lyrics/providers", "settings/lyrics/romanisation", "settings/language_packs",
 )
 
 /**
@@ -444,6 +450,32 @@ internal fun DesktopSettingsScreen(
                 onFailure = onFailure,
                 scrollTo = scrollTo,
             )
+            "settings/lyrics/romanisation" -> LyricsRomanisationSettings(
+                controller = owners.controller,
+                japanesePack = graph.japaneseLanguagePack?.state,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/language_packs" -> {
+                val pack = graph.japaneseLanguagePack?.state?.collectAsState()?.value
+                LanguagePackSettings(
+                    controller = owners.controller,
+                    // A session that could not build its pack IO has no manager; the install action then reports
+                    // the failure instead of promising a download that cannot start.
+                    japanese = pack?.let { japanesePackUiState(it) } ?: JapaneseLanguagePackUiState.NotInstalled,
+                    spatialFlowFont = AddonDownloadUiState.Unavailable,
+                    formatSize = DesktopDriveFormatter::size,
+                    onInstallJapanese = {
+                        val pack = graph.japaneseLanguagePack
+                        if (pack == null) onFailure() else scope.launch { pack.install() }
+                    },
+                    onCancelJapanese = { scope.launch { graph.japaneseLanguagePack?.cancel() } },
+                    onRemoveJapanese = { scope.launch { graph.japaneseLanguagePack?.remove() } },
+                    onInstallSpatialFlowFont = { },
+                    onRemoveSpatialFlowFont = { },
+                    onFailure = onFailure,
+                )
+            }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }

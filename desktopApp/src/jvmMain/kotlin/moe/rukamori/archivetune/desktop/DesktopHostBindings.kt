@@ -32,8 +32,6 @@ import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
-import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationPresentation
-import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationState
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
@@ -187,16 +185,16 @@ internal fun openDesktopUri(uri: String, report: (String) -> Unit): Boolean =
 
 /**
  * The player's media slots. Lyrics come from the graph's lyrics owner and render through the shared renderers on the
- * player's own snapshot, so a tap seeks the one player. Romanization is off on this host: no Japanese pack or AI
- * session is connected here.
+ * player's own snapshot, so a tap seeks the one player. Readings come from the graph's lyrics surface runtime, which
+ * publishes the built-in/provider/AI presentation for the document on screen.
  */
 @Composable
 private fun desktopPlayerSlots(graph: DesktopSessionGraph, expanded: Boolean, active: Boolean): PlayerSlots {
     val document by graph.lyrics.current.collectAsState()
     val saved by graph.settings.snapshots.collectAsState()
     val preferences = saved ?: PreferenceSnapshot.EMPTY
-    val sessionKey = document?.occurrenceId ?: NO_LYRICS_SESSION
-    val romanization = remember(sessionKey) { LyricsRomanizationState(LyricsRomanizationPresentation.off(sessionKey)) }
+    val sessionKey = graph.lyricsSurface.sessionKey(document)
+    val romanization = graph.lyricsSurface.romanization
     val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
     val lyrics = playerLyricsSlots(
@@ -221,8 +219,6 @@ private fun desktopPlayerSlots(graph: DesktopSessionGraph, expanded: Boolean, ac
         queue = { modifier -> DesktopQueuePanel(graph, modifier) },
     )
 }
-
-private const val NO_LYRICS_SESSION = "desktop-no-lyrics"
 
 /**
  * The frame a slot keeps while its image is absent, loading or unreadable. It draws no image it has not decoded. A

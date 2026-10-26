@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.shared.data.lyrics
 
 import io.ktor.client.HttpClient
 import io.ktor.http.encodeURLParameter
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray

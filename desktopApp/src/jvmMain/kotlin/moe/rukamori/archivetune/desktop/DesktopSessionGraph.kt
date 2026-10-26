@@ -42,9 +42,11 @@ import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
 import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
 import moe.rukamori.archivetune.desktop.telegram.TdlightClientSession
 import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAccountPort
+import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.customartwork.JvmCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
+import moe.rukamori.archivetune.shared.data.platform.desktop.jvmJapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
@@ -72,6 +74,8 @@ import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueContr
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.repository.YouTubeSettlingLibrary
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.IcuLyricsTransliterator
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
@@ -97,6 +101,7 @@ import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
+import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
@@ -151,6 +156,10 @@ class DesktopSessionGraph private constructor(
     internal val lastFm: DesktopLastFm,
     /** The one lyrics owner: the shared provider runtime following the player's current occurrence. */
     internal val lyrics: HostLyrics,
+    /** The optional offline Japanese dictionary owner; null only when it could not be constructed. */
+    internal val japaneseLanguagePack: JapaneseLanguagePackManager?,
+    /** The one owner of the AI lyric sessions and of every lyric surface's phonetic readings. */
+    internal val lyricsSurface: LyricsSurfaceRuntime,
     /** The one listener-presence owner: the opt-in document and the playback-driven heartbeat loop. */
     internal val listenerPresence: DesktopListenerPresence,
     private val locators: DesktopQueueLocatorResolver,
@@ -295,6 +304,8 @@ class DesktopSessionGraph private constructor(
         listenTogether.close()
         listenDriver.close()
         lastFm.close()
+        lyricsSurface.close()
+        japaneseLanguagePack?.close()
         lyrics.close()
         listenerPresence.close()
         drivers.forEach { it.cancel() }
@@ -612,6 +623,35 @@ class DesktopSessionGraph private constructor(
                 networkAvailable = { true },
                 report = ::desktopDiagnostic,
             )
+            val pack = try {
+                jvmJapaneseLanguagePackManager(
+                    scope = scope,
+                    workerDispatcher = Dispatchers.IO,
+                    snapshots = vault.snapshots,
+                    editSettings = { edit -> vault.edit(edit); Unit },
+                    networkAvailable = { true },
+                    instanceDirectory = directory,
+                    http = http,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // A pack that cannot be constructed leaves Japanese romanization absent; settings stay ready.
+                null
+            }
+            val lyricsSurface = LyricsSurfaceRuntime(
+                scope = scope,
+                store = vault,
+                service = KtorAiTextService(http),
+                lyrics = lyrics.current,
+                packTokenizer = pack?.tokenizer ?: kotlinx.coroutines.flow.flowOf(null),
+                transliterator = IcuLyricsTransliterator(),
+                identitySalt = "desktop",
+                report = ::desktopDiagnostic,
+            )
+            lyricsSurface.start()
+            // App start is the one foreground event a desktop host has; the pack consumes it once.
+            scope.launch { pack?.onForeground() }
             // Built after the settings owner is open, so the restored room session and blocked list read real values.
             val listenTogether = DesktopListenTogether(
                 parentScope = scope,
@@ -750,6 +790,8 @@ class DesktopSessionGraph private constructor(
                 listenDriver = listenDriver,
                 lastFm = lastFm,
                 lyrics = lyrics,
+                japaneseLanguagePack = pack,
+                lyricsSurface = lyricsSurface,
                 listenerPresence = listenerPresence,
                 locators = locators,
                 youtubeContent = youtubeContent,

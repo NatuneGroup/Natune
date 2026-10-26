@@ -56,11 +56,16 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_settings_change_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
+import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
+import moe.rukamori.archivetune.shared.ui.settings.JapaneseLanguagePackUiState
+import moe.rukamori.archivetune.shared.ui.settings.LanguagePackSettings
+import moe.rukamori.archivetune.shared.ui.settings.LyricsRomanisationSettings
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginScreen
 import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
+import moe.rukamori.archivetune.shared.ui.settings.japanesePackUiState
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
@@ -70,6 +75,7 @@ import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import org.jetbrains.compose.resources.stringResource
+import platform.Foundation.NSByteCountFormatter
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
@@ -208,6 +214,7 @@ internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.subst
 private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
     "settings/qobuz", QobuzLoginRoute,
+    "settings/lyrics/romanisation", "settings/language_packs",
 )
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
@@ -302,6 +309,35 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 else IosTelegramSettingsPage(telegram, owners.controller, navigate, onFailure, scrollTo)
             }
             "settings/privacy" -> IosPrivacySettingsPage(host, owners.controller, onFailure, scrollTo)
+            "settings/lyrics/romanisation" -> {
+                val pack by host.japaneseLanguagePack.collectAsState()
+                LyricsRomanisationSettings(
+                    controller = owners.controller,
+                    japanesePack = pack?.state,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            "settings/language_packs" -> {
+                val pack by host.japaneseLanguagePack.collectAsState()
+                val packState = pack?.state?.collectAsState()?.value
+                LanguagePackSettings(
+                    controller = owners.controller,
+                    // No pack manager means the session could not build its pack IO; install reports the failure.
+                    japanese = packState?.let { japanesePackUiState(it) } ?: JapaneseLanguagePackUiState.NotInstalled,
+                    spatialFlowFont = AddonDownloadUiState.Unavailable,
+                    formatSize = ::iosByteCountSize,
+                    onInstallJapanese = {
+                        val pack = host.japaneseLanguagePack.value
+                        if (pack == null) onFailure() else scope.launch { pack.install() }
+                    },
+                    onCancelJapanese = { scope.launch { host.japaneseLanguagePack.value?.cancel() } },
+                    onRemoveJapanese = { scope.launch { host.japaneseLanguagePack.value?.remove() } },
+                    onInstallSpatialFlowFont = { },
+                    onRemoveSpatialFlowFont = { },
+                    onFailure = onFailure,
+                )
+            }
             "settings/logcat" -> {
                 val store = host.diagnostics
                 if (store == null) {
@@ -411,3 +447,6 @@ private fun IosListenerPresenceSection(store: ListenerPresenceStore, report: (St
         onResetId = { change { store.resetId() } },
     )
 }
+
+/** The installed-size text of the language packs page, formatted by the platform's byte counter. */
+private fun iosByteCountSize(bytes: Long): String = NSByteCountFormatter.stringFromByteCount(bytes)
