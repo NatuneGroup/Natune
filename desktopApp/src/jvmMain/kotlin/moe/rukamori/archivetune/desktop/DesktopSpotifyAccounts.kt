@@ -19,6 +19,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -92,8 +93,11 @@ import moe.rukamori.archivetune.spotify.SpotifyMapper
 import moe.rukamori.archivetune.spotify.historyRetryWaitMillis
 import moe.rukamori.archivetune.spotify.mergePlayHistory
 import moe.rukamori.archivetune.spotify.models.SpotifyPlayHistory
+import moe.rukamori.archivetune.spotify.models.SpotifyPaging
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
+import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTrack
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTracksRef
+import moe.rukamori.archivetune.spotify.models.SpotifySavedTrack
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 import moe.rukamori.archivetune.spotify.needsFullHistoryRead
 import moe.rukamori.archivetune.spotify.newestPlayedAtMillis
@@ -109,6 +113,9 @@ private const val SPOTIFY_RESOLUTION_CACHE_MAX = 512
 
 /** In-flight parallel track-count fetches in [DesktopSpotifyAccounts.fetchAllPlaylists] — the Android cap. */
 private const val COUNT_FETCH_CONCURRENCY = 8
+private const val SPOTIFY_PAGE_CONCURRENCY = 8
+private const val SPOTIFY_RESOLVE_BATCH_SIZE = 4
+private const val SPOTIFY_TRACK_RESOLVE_TIMEOUT_MS = 15_000L
 private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
 private const val REST_ME_URL = "https://api.spotify.com/v1/me"
 private const val WEB_PLAYER_USER_AGENT =
@@ -233,10 +240,108 @@ internal class DesktopSpotifyAccounts(
             snapshot()[ShowSpotifyPlaylistsKey] == true &&
             snapshot()[SpotifyHistorySyncEnabledKey] == true
 
+    /** The Spotify playlist source is offered only when the catalog account and the Android Spotify toggle are on. */
+    fun libraryAvailable(): Boolean =
+        snapshot()[SpotifySpDcKey].orEmpty().isNotBlank() && snapshot()[ShowSpotifyPlaylistsKey] == true
+
+    /** The cached playlist list when the integration page last read it, without starting a network read. */
+    fun cachedPlaylists(): List<SpotifyPlaylist>? = playlists
+
+    /** The catalog track as the app displays it. Playback still resolves through [playTrackList]. */
+    fun spotifyTrackItem(track: SpotifyTrack): ContentItem = ContentItem(
+        ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.SONG, track.id),
+        title = track.name,
+        subtitle = track.artists.joinToString(", ") { it.name },
+        artworkUri = SpotifyMapper.getTrackThumbnail(track),
+        durationMs = track.durationMs.toLong(),
+        explicit = track.explicit,
+        album = track.album?.name,
+        artists = track.artists.mapNotNull { artist -> artist.id?.let { ContentCredit(artist.name, it) } },
+        albumId = track.album?.id?.takeIf(String::isNotBlank),
+    )
+
     /**
-     * Cached, delta-read and rate-limit-aware history, the same read policy as Android's
-     * `SpotifyLibraryRepository.recentlyPlayed`.
+     * The user's Spotify playlists, in the service's order. Cached rows answer repeat page opens; a refresh goes through
+     * the same paged `myPlaylists` + per-playlist count fill as Android's `fetchAllPlaylists`.
      */
+    suspend fun libraryPlaylists(force: Boolean = false): List<SpotifyPlaylist> {
+        val prefs = snapshot()
+        restoreCachedPlaylists(prefs)
+        val cached = playlists
+        if (!force && !cached.isNullOrEmpty()) return cached
+        refreshToken(rejected = null)
+        val loaded = fetchAllPlaylists()
+        playlists = loaded
+        controller.edit { this[SpotifyLibraryPlaylistsCacheKey] = cacheJson.encodeToString(playlistCacheSerializer, loaded) }
+        catalogState.update { it.copy(playlistCount = loaded.size) }
+        return loaded
+    }
+
+    /** One playlist's header fields and every playable track, matching Android's `playlistWithTracks` drain. */
+    suspend fun playlistWithTracks(playlistId: String): Pair<SpotifyPlaylist, List<SpotifyTrack>> {
+        refreshToken(rejected = null)
+        val detail = withTokenRetry {
+            Spotify.playlistDetail(playlistId = playlistId, limit = PLAYLIST_PAGE_SIZE, offset = 0).getOrThrow()
+        }
+        val tracks = ArrayList<SpotifyTrack>(detail.tracks.items.size)
+        tracks += detail.tracks.items.playablePlaylistTracks()
+        tracks += drainSpotifyPages(detail.tracks) { offset ->
+            withTokenRetry {
+                Spotify.playlistTracks(playlistId = playlistId, limit = PLAYLIST_PAGE_SIZE, offset = offset).getOrThrow()
+            }
+        }.playablePlaylistTracks()
+        return detail.playlist to tracks
+    }
+
+    /** Every playable liked song, matching Android's `likedSongs` drain. */
+    suspend fun likedSongs(): List<SpotifyTrack> {
+        refreshToken(rejected = null)
+        val first = withTokenRetry {
+            Spotify.likedSongs(limit = PLAYLIST_PAGE_SIZE, offset = 0).getOrThrow()
+        }
+        return first.items.playableLikedTracks() +
+            drainSpotifyPages(first) { offset ->
+                withTokenRetry { Spotify.likedSongs(limit = PLAYLIST_PAGE_SIZE, offset = offset).getOrThrow() }
+            }.playableLikedTracks()
+    }
+
+    /** Resolves every selected track with Android's four-at-a-time bounded resolver, then queues the matches. */
+    suspend fun playTrackList(title: String, tracks: List<SpotifyTrack>, startIndex: Int = 0, shuffled: Boolean = false) {
+        if (tracks.isEmpty()) return
+        val queueTracks = if (shuffled) tracks.shuffled() else tracks
+        val boundedStart = startIndex.coerceIn(queueTracks.indices)
+        // Android resolves the tapped track before the queue starts, then drains the rest in bounded chunks.
+        resolveSpotifyTrack(queueTracks[boundedStart])
+            ?: throw IllegalStateException(DesktopStrings["spotify_track_unavailable"])
+        val resolved = resolveSpotifyQueueEntries(queueTracks)
+        if (resolved.isEmpty()) throw IllegalStateException(DesktopStrings["spotify_track_unavailable"])
+        val entries = resolved.map { (originalIndex, item) ->
+            ContentOccurrence("spotify:playlist:resolved:${title}:$originalIndex:${queueTracks[originalIndex].id}", item)
+        }
+        val targetIndex = resolved.indexOfFirst { it.first >= boundedStart }.takeIf { it >= 0 } ?: resolved.lastIndex
+        graph.queue.replace(entries, entries[targetIndex].occurrenceId, playWhenReady = true)
+    }
+
+    /**
+     * The Android queue's whole-list preload: bounded chunks, one timeout per track, unresolved matches dropped.
+     * Indexes stay in the submitted list so the starting target is the first resolved row at or after the tap.
+     */
+    private suspend fun resolveSpotifyQueueEntries(tracks: List<SpotifyTrack>): List<Pair<Int, ContentItem>> =
+        tracks.mapIndexedNotNull { index, track -> index to track }
+            .chunked(SPOTIFY_RESOLVE_BATCH_SIZE)
+            .flatMap { chunk ->
+                coroutineScope {
+                    chunk.map { (index, track) ->
+                        async(Dispatchers.IO) {
+                            withTimeoutOrNull(SPOTIFY_TRACK_RESOLVE_TIMEOUT_MS) {
+                                resolveSpotifyTrack(track)?.let { index to it }
+                            }
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+            }
+
+    /** Converts one fetched play into the row the shared history host shows. */
     suspend fun recentlyPlayed(force: Boolean = false): List<SpotifyPlayHistory> =
         historyLock.withLock {
             if (recentlyPlayedCache == null) restoreCachedRecentlyPlayed()
@@ -745,6 +850,53 @@ internal class DesktopSpotifyAccounts(
         val spDc = prefs[SpotifySpDcKey].orEmpty().ifBlank { return null }
         return SpotifyAuth.fetchAccessToken(spDc, prefs[SpotifySpKeyKey].orEmpty()).getOrNull()
             ?.takeUnless { it.isAnonymous }?.accessToken
+    }
+}
+
+/** The playlist tracks of a page that Spotify can actually play — local files have no YouTube match. */
+private fun List<SpotifyPlaylistTrack>.playablePlaylistTracks(): List<SpotifyTrack> =
+    mapNotNull { item -> item.track?.takeUnless(SpotifyTrack::isLocal) }
+
+/** The liked songs of a page that Spotify can actually play. */
+private fun List<SpotifySavedTrack>.playableLikedTracks(): List<SpotifyTrack> =
+    mapNotNull { item -> item.track.takeUnless(SpotifyTrack::isLocal) }
+
+/** Android's bounded playlist-page drain: overlap known offsets, then stop where the serial reader would stop. */
+private suspend fun <T> drainSpotifyPages(
+    firstPage: SpotifyPaging<T>,
+    fetchPage: suspend (offset: Int) -> SpotifyPaging<T>,
+): List<T> {
+    val step = firstPage.nextOffset ?: return emptyList()
+    if (firstPage.total <= 0 || step != firstPage.limit) return drainSpotifyPagesSerially(step, fetchPage)
+    val offsets = buildList {
+        var offset = step
+        while (offset < firstPage.total) {
+            add(offset)
+            offset += step
+        }
+    }
+    val pages = coroutineScope {
+        val permits = Semaphore(SPOTIFY_PAGE_CONCURRENCY)
+        offsets.map { offset -> async(Dispatchers.IO) { permits.withPermit { fetchPage(offset) } } }.awaitAll()
+    }
+    val items = ArrayList<T>()
+    for (page in pages) {
+        items += page.items
+        if (page.nextOffset == null) break
+    }
+    return items
+}
+
+private suspend fun <T> drainSpotifyPagesSerially(
+    from: Int,
+    fetchPage: suspend (offset: Int) -> SpotifyPaging<T>,
+): List<T> {
+    val items = ArrayList<T>()
+    var offset = from
+    while (true) {
+        val page = fetchPage(offset)
+        items += page.items
+        offset = page.nextOffset ?: return items
     }
 }
 
