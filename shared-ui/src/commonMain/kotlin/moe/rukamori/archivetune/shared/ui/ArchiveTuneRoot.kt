@@ -64,8 +64,21 @@ fun ArchiveTuneRoot(
         val preferences = saved
         if (preferences == null) {
             ArchiveTuneTheme { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-            return@key
+        } else {
+            ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television)
         }
+    }
+}
+
+@Composable
+private fun ArchiveTuneLoadedRoot(
+    host: ArchiveTuneHostBindings,
+    preferences: PreferenceSnapshot,
+    visible: Boolean,
+    resumed: Boolean,
+    opticalCapabilities: OpticalCapabilities,
+    television: Boolean,
+) {
         val navigation = rememberShellNavigation(preferences)
         val interaction = remember { PlayerInteractionState() }
         var expanded by remember { mutableStateOf(false) }
@@ -149,7 +162,6 @@ fun ArchiveTuneRoot(
                 }
             }
         }
-    }
 }
 
 /**
