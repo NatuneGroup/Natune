@@ -181,6 +181,32 @@ static uint32_t min_u32(uint32_t a, uint32_t b) { return a < b ? a : b; }
 static void deadline_after(struct timespec *deadline, int64_t nanoseconds);
 
 /*
+ * Darwin lacks pthread_condattr_setclock; the cond there waits on the realtime clock. The monotonic
+ * deadline is therefore converted to a relative interval, which the nonportable relative wait
+ * applies on a monotonic base.
+ */
+static int wait_changed_locked(ae_engine *e, const struct timespec *deadline) {
+#if defined(__APPLE__)
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    struct timespec delta;
+    delta.tv_sec = deadline->tv_sec - now.tv_sec;
+    delta.tv_nsec = deadline->tv_nsec - now.tv_nsec;
+    if (delta.tv_nsec < 0) {
+        delta.tv_sec -= 1;
+        delta.tv_nsec += 1000000000L;
+    }
+    if (delta.tv_sec < 0) {
+        delta.tv_sec = 0;
+        delta.tv_nsec = 0;
+    }
+    return pthread_cond_timedwait_relative_np(&e->changed, &e->mutex, &delta);
+#else
+    return pthread_cond_timedwait(&e->changed, &e->mutex, deadline);
+#endif
+}
+
+/*
  * The realtime consumer never enters pthread_cond_* (which may acquire an internal lock).
  * Only an active manual producer waiting for output space polls; paused/idle producers still sleep.
  * Blocking/manual and device consumers retain their existing immediate condition notification.
@@ -189,7 +215,7 @@ static void wait_for_output_space_locked(ae_engine *e) {
     if (e->manual && e->play_intent) {
         struct timespec deadline;
         deadline_after(&deadline, AE_OUTPUT_SPACE_POLL_NS);
-        pthread_cond_timedwait(&e->changed, &e->mutex, &deadline);
+        wait_changed_locked(e, &deadline);
     } else {
         pthread_cond_wait(&e->changed, &e->mutex);
     }
@@ -1230,8 +1256,8 @@ static void device_pull(void *user, float *out, uint32_t frames) {
 }
 
 static void deadline_after(struct timespec *deadline, int64_t nanoseconds) {
-    /* macOS pthread_cond_timedwait waits against CLOCK_REALTIME and has no condattr_setclock;
-     * Linux waits against CLOCK_MONOTONIC as configured at init below. */
+    /* Apple has no pthread_condattr_setclock: its cond_timedwait is realtime-bound, so the deadline
+       is realtime there. Everywhere else the condition is monotonic-bound, matching this clock. */
 #if defined(__APPLE__)
     clock_gettime(CLOCK_REALTIME, deadline);
 #else
@@ -1306,6 +1332,8 @@ ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_l
     pthread_condattr_t attributes;
     pthread_condattr_init(&attributes);
 #if !defined(__APPLE__)
+    /* Darwin has no pthread_condattr_setclock; its waits go through the relative _np variant above. */
+||||||| parent of 6c005b1 (fix(desktopApp): guard Apple-only native code for macOS builds)
     pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
 #endif
     pthread_mutex_init(&e->mutex, NULL);
@@ -1648,7 +1676,7 @@ uint32_t ae_engine_render(ae_engine *e, float *out, uint32_t frames) {
     while (total < frames) {
         uint32_t need = min_u32(frames - total, chunk);
         while (!e->shutdown && manual_wait_needed_locked(e, need)) {
-            if (pthread_cond_timedwait(&e->changed, &e->mutex, &deadline) != 0) {
+            if (wait_changed_locked(e, &deadline) != 0) {
                 break;
             }
         }

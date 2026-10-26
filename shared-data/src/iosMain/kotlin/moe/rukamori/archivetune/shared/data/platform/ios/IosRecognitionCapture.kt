@@ -4,7 +4,6 @@ package moe.rukamori.archivetune.shared.data.platform.ios
 
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
-import kotlinx.cinterop.get
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -16,6 +15,7 @@ import moe.rukamori.archivetune.nativeaudio.at_audio_session_end_recording
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionCapturePort
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionCaptureSpec
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionPermissionPort
+import kotlinx.cinterop.*
 import platform.AVFAudio.AVAudioEngine
 import platform.AVFAudio.AVAudioEngineConfigurationChangeNotification
 import platform.AVFAudio.AVAudioPCMBuffer
@@ -24,7 +24,6 @@ import platform.AVFAudio.AVAudioSessionInterruptionNotification
 import platform.AVFAudio.AVAudioSessionMediaServicesWereResetNotification
 import platform.AVFAudio.AVAudioSessionRecordPermissionDenied
 import platform.AVFAudio.AVAudioSessionRecordPermissionGranted
-import platform.AVFAudio.inputIsAvailable
 import platform.Foundation.NSLock
 import platform.Foundation.NSNotificationCenter
 
@@ -138,14 +137,14 @@ class IosRecognitionCapture : RecognitionPermissionPort, RecognitionCapturePort 
         // The native policy switches the shared session for this window and keeps playback's category intent. The claim
         // is released exactly once by teardown, whichever way the window ends.
         capture.claimRecordingSession()
-        check(session.inputIsAvailable) { "no microphone input is available" }
-
+        // The iOS 26 SDK no longer exposes an input-availability probe on AVAudioSession; the input node's
+        // format check below is the live guard (a device without mic input reports zero channels).
         val engine = AVAudioEngine()
         capture.attach(engine)
         val input = engine.inputNode
         // The tap uses the hardware format; CaptureRun converts it, since a tap in another format may be rejected.
         val format = input.outputFormatForBus(0uL)
-        check(format.sampleRate > 0.0 && format.channelCount > 0u) { "microphone input format is unusable" }
+        check(format.sampleRate > 0.0 && format.channelCount > 0u) { "no usable microphone input is available" }
         capture.configure(format.sampleRate)
         input.installTapOnBus(0uL, 4_096u, format) { buffer, _ ->
             if (buffer != null) capture.ingest(buffer)
@@ -228,8 +227,8 @@ private class CaptureRun {
         val frames = buffer.frameLength.toInt()
         val channels = buffer.format.channelCount.toInt()
         if (frames <= 0 || channels <= 0) return
-        val floatChannels = buffer.floatChannelData
-        val pcmChannels = buffer.int16ChannelData
+        val floatChannels: CPointer<CPointerVar<FloatVar>>? = buffer.floatChannelData
+        val pcmChannels: CPointer<CPointerVar<ShortVar>>? = buffer.int16ChannelData
         if (floatChannels == null && pcmChannels == null) {
             fail(IllegalStateException("microphone buffer layout is unsupported"))
             return
@@ -240,7 +239,7 @@ private class CaptureRun {
                 var mono = 0.0
                 for (channel in 0 until channels) {
                     mono += if (floatChannels != null) {
-                        floatChannels[channel]!![frame].toDouble()
+                        floatChannels!![channel]!![frame].toDouble()
                     } else {
                         pcmChannels!![channel]!![frame] / INT16_FULL_SCALE
                     }

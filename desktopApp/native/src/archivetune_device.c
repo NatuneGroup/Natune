@@ -11,12 +11,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Decoding and encoding are unused here, and the resource manager and engine stay out of the build. */
+/* Decoding and encoding are unused here, and the resource manager and engine stay out of the build.
+   Only the null backend is ever opened, and Core Audio is Apple's only backend: disabling it keeps
+   AVFoundation's Objective-C headers out of this C translation unit on iOS and macOS. */
 #define MA_NO_DECODING
 #define MA_NO_ENCODING
 #define MA_NO_GENERATION
 #define MA_NO_RESOURCE_MANAGER
 #define MA_NO_ENGINE
+#define MA_NO_COREAUDIO
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 

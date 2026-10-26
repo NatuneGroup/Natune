@@ -1,4 +1,4 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, ExperimentalCoroutinesApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 
 package moe.rukamori.archivetune.shared.ui.ios
 
@@ -13,28 +13,12 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherClient
-import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherMessageCodec
-import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherGzip
-import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherPreferences
-import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherSocketFactory
-import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherStore
-import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramBotDirectory
-import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramBotStore
-import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramChannelLibrary
-import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramChannelSearch
-import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
-import moe.rukamori.archivetune.shared.data.telegram.TelegramBotsOwner
-import moe.rukamori.archivetune.shared.data.telegram.TelegramBrowseOwner
-import moe.rukamori.archivetune.shared.domain.settings.TelegramLosslessOnlyKey
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -42,19 +26,22 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
-import moe.rukamori.archivetune.shared.data.platform.ios.IosKeychainCredentialStore
-import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
-import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
+import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
+import moe.rukamori.archivetune.shared.data.provider.IosYouTubeResolver
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
+import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
+import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
+import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
@@ -63,6 +50,7 @@ import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
+import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
@@ -71,6 +59,7 @@ import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
+import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 import platform.Foundation.*
 
@@ -88,11 +77,6 @@ internal class IosSessionGraph private constructor(
     val accounts: VaultProviderAccountStore,
     val accountLifecycle: ProviderAccountLifecycle,
     val tidalAuth: TidalAccountAuth,
-    val playbackPool: IosPlaybackPool,
-    /** The shared Listen Together client: both sanctioned servers, NSURLSessionWebSocketTask transport, zlib gzip. */
-    val listenTogether: ListenTogetherClient,
-    /** The signed-in TDLib session, or none; the browse and bot owners below bind to it. */
-    val telegram: StateFlow<IosTelegramClient?>,
     val http: HttpClient,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
@@ -176,29 +160,6 @@ internal class IosSessionGraph private constructor(
         scope.cancel()
     }
 
-    /**
-     * A channel-browse owner bound to a running TDLib session. Channel search is live; opening a channel reports the
-     * honest failure until an `LPtg` playlist/sync engine exists on this host.
-     */
-    fun telegramBrowse(client: IosTelegramClient): TelegramBrowseOwner =
-        TelegramBrowseOwner(
-            channelSearch = IosTelegramChannelSearch(client),
-            channelLibrary = IosTelegramChannelLibrary(),
-            losslessOnly = { settings.snapshots.value?.get(TelegramLosslessOnlyKey) == true },
-            scope = scope,
-        )
-
-    /** A bot-management owner bound to a running TDLib session and the vault-backed bot list. */
-    fun telegramBots(client: IosTelegramClient, ready: StateFlow<Boolean>): TelegramBotsOwner =
-        TelegramBotsOwner(
-            store = IosTelegramBotStore(settings),
-            directory = IosTelegramBotDirectory(client),
-            ready = ready,
-            scope = scope,
-            nowMs = ::iosNowMillis,
-            newId = { NSUUID().UUIDString() },
-        )
-
     companion object {
         /** The position past which a previous skip restarts the current occurrence instead of stepping back. */
         const val RESTART_THRESHOLD_MS = 3_000L
@@ -248,41 +209,37 @@ internal class IosSessionGraph private constructor(
             report: (String) -> Unit,
         ): IosSessionGraph {
             val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
-            // A TIDAL client identity comes from the ARCHIVETUNE_TIDAL_* build settings; without one the device and
-            // browser sign-ins report themselves unavailable, and a pasted refresh token is still verified with TIDAL.
-            val tidalAuth = TidalAccountAuth(
-                http,
-                device = IosProviderCredentials.tidalDeviceClient,
-                pkce = IosProviderCredentials.tidalPkceClient,
-                nowMs = ::iosNowMillis,
-            )
+            // This build carries no TIDAL client identity, so the device and browser sign-ins report themselves
+            // unavailable. A pasted refresh token is still verified with TIDAL.
+            val tidalAuth = TidalAccountAuth(http, device = null, pkce = null, nowMs = ::iosNowMillis)
             val tidalSessionRefresh = TidalSessionRefresh(
                 tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value }, nowMs = ::iosNowMillis,
-            )
-            val playbackPool = IosPlaybackPool(http, IosKeychainCredentialStore(), { vault.snapshots.value }, scope, report)
-            // The shared client on its own serial thread, over the NSURLSessionWebSocketTask transport. iOS publishes
-            // no network-change events to it; a dropped socket still reaches the client's retry rules.
-            val listenTogether = ListenTogetherClient(
-                scope = CoroutineScope(
-                    scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]) + Dispatchers.Default.limitedParallelism(1),
-                ),
-                sockets = IosListenTogetherSocketFactory(
-                    NSURLSession.sessionWithConfiguration(NSURLSessionConfiguration.ephemeralSessionConfiguration),
-                ),
-                codec = ListenTogetherMessageCodec(gzip = IosListenTogetherGzip()),
-                preferences = IosListenTogetherPreferences(vault),
-                store = IosListenTogetherStore(vault, report),
-                network = MutableStateFlow(iosNetworkAvailable()),
-                nowMs = ::iosNowMillis,
             )
             val library = RoomLibraryRepository(database.library(), listens = database.listens())
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
             val history = RoomListeningHistory(database.listens(), offsetMsAt = ::iosOffsetMsAt)
             val player = host.player
+            // One InnerTubeX transport serves the catalogue and account paths; the resolver walks the shipped
+            // player clients first and keeps InnerTubeX as the bounded extractor tier, like the desktop host.
+            val youtubeTransport = IosYouTubeBrowseTransport(http)
+            youtubeTransport.refreshSession(vault.snapshots.value)
+            val youtubeAccount = YouTubeAccountBinding(
+                transport = youtubeTransport,
+                accounts = accounts,
+                personalScope = { providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL) },
+                syncEnabled = { vault.snapshots.value?.get(YtmSyncKey) ?: true },
+            )
             val locators = IosQueueLocatorResolver(
                 audio = OrderedAudioResolver(
-                    providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
-                    youtube = IosYouTubeUnavailable,
+                    providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh),
+                    youtube = IosYouTubeResolver(
+                        http = http,
+                        transport = youtubeTransport,
+                        preferences = { vault.snapshots.value },
+                        personalScope = {
+                            providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
+                        },
+                    ),
                 ),
                 port = host.playbackPort,
                 preferences = { vault.snapshots.value },
@@ -290,7 +247,9 @@ internal class IosSessionGraph private constructor(
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
-                content = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library))),
+                content = ContentRepositoryRouter(
+                    listOf(TypedRoomLibraryRepository(library), YouTubeContentRepository(youtubeTransport, youtubeAccount))
+                ),
                 locators = locators,
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { iosRepeatMode(vault.snapshots.value) },
@@ -380,9 +339,6 @@ internal class IosSessionGraph private constructor(
                 pageOwners = pageOwners,
                 lyrics = lyrics,
                 artworkLoader = IosArtworkLoader(http),
-                playbackPool = playbackPool,
-                listenTogether = listenTogether,
-                telegram = host.telegram,
                 owner = owner,
                 database = database,
                 listenDriver = listenDriver,
@@ -390,7 +346,6 @@ internal class IosSessionGraph private constructor(
                 reportLine = report,
             )
             lyrics.start()
-            playbackPool.start()
             return graph
         }
     }
