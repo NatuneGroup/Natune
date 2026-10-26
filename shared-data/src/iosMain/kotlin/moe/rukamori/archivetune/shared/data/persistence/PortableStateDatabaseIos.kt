@@ -1,11 +1,15 @@
 package moe.rukamori.archivetune.shared.data.persistence
 
 import androidx.room.Room
+import androidx.sqlite.SQLiteDriver
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
+
+actual fun portableStateDriver(): SQLiteDriver = BundledSQLiteDriver()
 
 /** Opens the portable state file at [absolutePath]. The Android schema-36 `song.db` is never opened here. */
 fun openPortableStateDatabase(absolutePath: String): PortableStateDatabase {
