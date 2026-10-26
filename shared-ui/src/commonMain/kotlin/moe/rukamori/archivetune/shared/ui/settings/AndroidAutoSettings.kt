@@ -12,7 +12,6 @@ import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import androidx.compose.runtime.getValue
 
 /** Host projection of the car connection; the host maps its platform signal (projection, native car or none). */
 enum class AndroidAutoConnection { DISCONNECTED, PROJECTION, NATIVE }
