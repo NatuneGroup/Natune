@@ -38,11 +38,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.Constraints
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.TransformOrigin
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,6 +59,7 @@ import moe.rukamori.archivetune.shared.ui.player.ActionButton
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerArtworkPager
 import moe.rukamori.archivetune.shared.ui.player.PlayerBackgroundStyle
+import moe.rukamori.archivetune.shared.ui.player.capabilities
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
 import moe.rukamori.archivetune.shared.ui.player.PlayerPanel
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
@@ -542,8 +544,8 @@ private fun LittlePlayerContent(c: PlayerRenderContext) {
         val scale = minOf(maxWidth / 420.dp, maxHeight / 260.dp).coerceIn(.78f, 1.15f)
         val titleSize = 56f * scale
         val timeSize = 44f * scale
-        val iconSize = 26f * scale
-        val collapseIconSize = 28f * scale
+        val iconSize = 26.dp * scale
+        val collapseIconSize = 28.dp * scale
         val position = (c.interaction.previewMs ?: c.state.positionMs).coerceAtLeast(0)
         val duration = c.state.playback?.durationMs
         val timeText = if (duration == null || duration <= 0) playerTime(position)
