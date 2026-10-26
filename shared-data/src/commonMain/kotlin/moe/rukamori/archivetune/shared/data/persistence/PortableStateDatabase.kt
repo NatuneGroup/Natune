@@ -1,7 +1,7 @@
 package moe.rukamori.archivetune.shared.data.persistence
 
 import androidx.room.*
-import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.SQLiteDriver
 import kotlinx.coroutines.Dispatchers
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskDao
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskRow
@@ -49,6 +49,11 @@ expect object PortableStateDatabaseConstructor : RoomDatabaseConstructor<Portabl
     override fun initialize(): PortableStateDatabase
 }
 
+// Bundled SQLite adds ~0.6 MB of native code per packaged ABI, so each host declares its own driver and only the
+// hosts that open the portable database (desktop, iOS) pull androidx.sqlite:sqlite-bundled. Android keeps the
+// framework SQLite it already uses for InternalDatabase; the portable store is unopened there today.
+expect fun portableStateDriver(): SQLiteDriver
+
 fun RoomDatabase.Builder<PortableStateDatabase>.buildPortableStateDatabase(): PortableStateDatabase =
     addMigrations(
         PortableStateMigrations.V1_TO_V2,
@@ -59,7 +64,7 @@ fun RoomDatabase.Builder<PortableStateDatabase>.buildPortableStateDatabase(): Po
         PortableStateMigrations.V6_TO_V7,
         PortableStateMigrations.V7_TO_V8,
     )
-        .setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
+        .setDriver(portableStateDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
 
 @Entity(tableName = "queue_checkpoint")
 data class QueueCheckpointRow(@PrimaryKey val id: Int = 0, val revision: Long, val json: String)
