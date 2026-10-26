@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
+import moe.rukamori.archivetune.shared.ui.player.capabilities
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.m5_close
 import moe.rukamori.archivetune.shared.ui.resources.m5_lyrics
@@ -89,8 +90,9 @@ internal fun AppleMusicPlayer(c: PlayerRenderContext) {
                     .seamFade(),
             )
             if (c.state.canvasAvailable) {
+                // Same contract as the artwork pager: a hidden ordinary sleeve suspends the canvas.
                 c.slots.canvas(
-                    id, true,
+                    id, c.surfaces.artwork && !(c.preferences.style.capabilities.ordinarySleeve && c.preferences.hideSleeve),
                     Modifier.fillMaxSize()
                         .graphicsLayer { alpha = .55f; scaleX = 1.15f; scaleY = 1.15f }
                         .blur(32.dp)

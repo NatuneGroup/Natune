@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.sin
+import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
@@ -112,9 +113,13 @@ internal fun MarqueeText(
     maxLines: Int = 1,
     fade: Boolean = true,
 ) {
+    // Overflowing text only sweeps while motion is allowed (original marquee gated on it);
+    // a static clip stays behind when motion is off.
     Text(
         text = text,
-        modifier = modifier.basicMarquee().then(if (fade) Modifier.edgeFade() else Modifier),
+        modifier = modifier
+            .then(if (motionAllowed()) Modifier.basicMarquee() else Modifier)
+            .then(if (fade) Modifier.edgeFade() else Modifier),
         color = color,
         style = style,
         fontWeight = fontWeight,
