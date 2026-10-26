@@ -8,6 +8,10 @@
     <string name="quit">Quit</string>
     <string name="open_file">Open audio files</string>
     <string name="open_folder">Choose folder</string>
+    <string name="scheduled_backup_folder_pick">Choose the folder for scheduled backups</string>
+    <string name="drive_sync_folder_pick">Choose the folder to sync with Google Drive</string>
+    <string name="scheduled_backup_day_pick">Choose the backup day</string>
+    <string name="playlist_import_pick">Choose a playlist file</string>
     <string name="select">Select</string>
     <string name="cancel">Cancel</string>
     <string name="integration_unavailable">Desktop system integration is unavailable</string>
