@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import moe.rukamori.archivetune.shared.domain.repository.*
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.home.HomeClassicAtmosphereBackground
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomePageHeader
@@ -45,6 +46,7 @@ fun ArchiveNavigationHost(
     hostScreen: @Composable (ArchiveRoute, ShellNavigation) -> Unit,
     overlays: @Composable (ArchiveRoute) -> Unit,
     modifier: Modifier = Modifier,
+    preferences: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
 ) {
     NavigationEntryContent(navigation, modifier) {
         val route = requireNotNull(ArchiveRoutes.resolve(navigation.route)) { "Unregistered ArchiveTune route: ${navigation.route}" }
@@ -109,7 +111,8 @@ fun ArchiveNavigationHost(
                     { if (binding.query.isNotBlank()) navigation.open(ArchiveRoutes.search(binding.query,
                         if (binding.scope == SearchScope.Local) ContentProvider.LOCAL else binding.provider, binding.filter)) },
                     binding.voice, binding.recognition, binding.page,
-                    content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork)
+                    content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
+                    preferences = preferences)
             }
             is ArchiveGraphPage.Library -> {
                 require(route.destination == ArchiveDestination.LIBRARY)
