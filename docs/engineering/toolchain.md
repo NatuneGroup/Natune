@@ -25,9 +25,9 @@ python3 scripts/update_toolchain_docs.py
 
 | Command | Workflow |
 |---|---|
-| `./gradlew assembleGmsMobileUniversalDebug` | [build_pull_request.yml](../../.github/workflows/build_pull_request.yml) |
-| `./gradlew :app:lintGmsMobileUniversalDebug` | [build_pull_request.yml](../../.github/workflows/build_pull_request.yml) |
-| `./gradlew :app:testGmsMobileUniversalDebugUnitTest` | [tests.yml](../../.github/workflows/tests.yml) |
+| `./gradlew assembleGmsMobileUniversalDebug` | [build_pull_request.yml](../../.github/inherited-workflows/build_pull_request.yml) |
+| `./gradlew :app:lintGmsMobileUniversalDebug` | [build_pull_request.yml](../../.github/inherited-workflows/build_pull_request.yml) |
+| `./gradlew :app:testGmsMobileUniversalDebugUnitTest` | [tests.yml](../../.github/inherited-workflows/tests.yml) |
 
 APK assembly does not compile unit tests. Debug success does not establish
 Release shrinking/signing or device behavior.
@@ -39,6 +39,7 @@ Release shrinking/signing or device behavior.
 - `:shared-data`
 - `:shared-ui`
 - `:desktopApp`
+- `:desktopApp:tdlight-jvm`
 - `:core`
 - `:lyrics:kugou`
 - `:lyrics:lrclib`
