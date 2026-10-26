@@ -3,11 +3,14 @@
 package moe.rukamori.archivetune.shared.ui
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
@@ -40,6 +43,9 @@ internal sealed interface IosSessionState {
     data object GraphUnavailable : IosSessionState
     data class Ready(val graph: IosSessionGraph) : IosSessionState
 }
+
+/** Deep links waiting for the root, bounded like the desktop intake so a link flood cannot grow memory. */
+private const val DEEP_LINK_CAPACITY = 16
 
 /**
  * One host per process, owned by the Swift app session (ArchiveTuneSession) and created at launch. Detaching or
@@ -221,6 +227,29 @@ class IosHost {
         if (!closed) active.value = false
     }
 
+    /**
+     * Deep links accepted but not yet collected by the root. Bounded so a burst of links cannot grow memory; a link
+     * that arrives before the root collects is still delivered afterwards.
+     */
+    private val deepLinks = Channel<IosDeepLink>(capacity = DEEP_LINK_CAPACITY)
+
+    /** Accepted deep links the root collects along its own routes. */
+    internal val incomingLinks: Flow<IosDeepLink> = deepLinks.receiveAsFlow()
+
+    /**
+     * The app's onOpenURL entry. A link this app does not accept is reported, never silently dropped; a link past the
+     * bound is reported too, so a link flood never appears to have opened.
+     */
+    fun acceptUrl(url: String) {
+        if (closed) return
+        val link = IosDeepLinks.classify(url)
+        if (link == null) {
+            report("link not opened: it is not a link this app accepts")
+        } else if (deepLinks.trySend(link).isFailure) {
+            report("link not opened: too many links are waiting to be opened")
+        }
+    }
+
     /** One line in the persistent diagnostics log and the console, for failures the UI only reports. */
     fun report(message: String) {
         println("Natune iOS: $message")
@@ -244,6 +273,7 @@ class IosHost {
     fun close() {
         if (closed) return
         closed = true
+        deepLinks.close()
         nowPlaying?.close()
         nowPlaying = null
         val session = telegramSession.value

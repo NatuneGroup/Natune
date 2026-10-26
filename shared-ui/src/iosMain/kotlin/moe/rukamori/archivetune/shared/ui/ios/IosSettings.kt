@@ -26,14 +26,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.shared.data.platform.ios.IosShareSheet
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramNativeAdmission
+import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticReport
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
+import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
+import moe.rukamori.archivetune.shared.data.platform.ios.iosShareFileUrl
+import moe.rukamori.archivetune.shared.data.platform.ios.iosWriteShareFile
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccountVerifier
 import moe.rukamori.archivetune.shared.data.provider.QobuzBundleScrape
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceProbe
+import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
 import moe.rukamori.archivetune.shared.data.provider.TidalRefreshResult
 import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
+import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceState
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -51,9 +58,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.presence.ListenerPresenceSection
 import moe.rukamori.archivetune.shared.ui.resources.*
-import moe.rukamori.archivetune.shared.ui.resources.ios_logs_copied
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_change_failed
-import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
@@ -73,8 +78,8 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
- * TIDAL account endpoints. This build carries no TIDAL device client, so the device sign-in row reports itself
- * unavailable, and a pasted refresh token is verified with TIDAL instead.
+ * TIDAL account endpoints. The device sign-in row is live only when this build carries a TIDAL device client (the
+ * Info.plist credentials); a pasted refresh token is verified with TIDAL either way.
  */
 internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     val controller = SettingsController(
@@ -85,6 +90,7 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     )
     val accounts = graph.accountLifecycle
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
+    val deviceLink = if (graph.tidalAuth.deviceSignInAvailable) TidalAccountDeviceLink(graph.tidalAuth) else null
 
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
@@ -218,8 +224,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
     val scrollTo = route.arguments["scrollTo"]
     val navigate: (String) -> Unit = { target -> navigation.open(target) }
     val changeFailed = stringResource(Res.string.ios_settings_change_failed)
-    val featureUnavailable = stringResource(Res.string.ios_settings_feature_unavailable)
-    val logsCopied = stringResource(Res.string.ios_logs_copied)
+    val iosShareSheet = remember { IosShareSheet() }
     fun show(message: String) {
         scope.launch { snackbar.showSnackbar(message) }
     }
@@ -241,7 +246,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 TidalSettings(
                     controller = owners.controller,
                     accounts = owners.accounts,
-                    deviceLink = null,
+                    deviceLink = owners.deviceLink,
                     openExternal = { uri -> openIosUri(uri, host::report) },
                     instanceHealth = health,
                     checkInstances = owners::checkTidalInstances,
@@ -314,16 +319,26 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                         actions = DiagnosticLogActions(
                             back = { navigation.back() },
                             copyToClipboard = ::copyToIosClipboard,
-                            // No share sheet is connected yet, so Share copies the visible lines and says so.
                             share = { text ->
-                                copyToIosClipboard(text)
-                                show(logsCopied)
+                                scope.launch { iosShareSheet.share(host.viewController, listOf(text)) }
                             },
-                            // A file export needs the document picker, which is not connected. The page is told nothing
-                            // was written, and the user is told why.
+                            // The share sheet's Save to Files is the iOS export: the redacted report is written to a
+                            // temporary file and the user picks its destination. True when a destination finished,
+                            // null when they dismissed the sheet, false when the file could not be written.
                             export = {
-                                show(featureUnavailable)
-                                null
+                                val path = try {
+                                    iosWriteShareFile(
+                                        "natune-log-${iosNowMillis()}.txt",
+                                        DiagnosticRedaction.redact(iosDiagnosticReport(store)),
+                                    )
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (failure: Exception) {
+                                    host.report("log export could not be written: ${failure::class.simpleName}")
+                                    null
+                                }
+                                if (path == null) false
+                                else iosShareSheet.share(host.viewController, listOf(iosShareFileUrl(path)))
                             },
                         ),
                     )
