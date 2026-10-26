@@ -4,6 +4,7 @@ package moe.rukamori.archivetune.shared.data.platform.ios
 
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.cinterop.*
+import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.nativeaudio.*
 import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceAccount

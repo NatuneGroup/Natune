@@ -6,6 +6,7 @@
     <string name="ios_host_graph_unavailable">Natune could not open its library on this device. Playback, the library and settings are unavailable until the app is restarted.</string>
     <string name="ios_settings_unavailable">Secure settings storage is unavailable on this device, so Natune cannot open.</string>
     <string name="ios_settings_feature_unavailable">This is not available on the iOS app yet.</string>
+    <string name="ios_about_distribution">iOS</string>
     <string name="ios_settings_change_failed">The change could not be saved.</string>
     <string name="ios_library_top_mixes_unavailable">AI integration is required before Natune can build personal top mixes. AI mixes are not connected on iOS yet.</string>
     <string name="ios_queue_empty">The queue is empty</string>

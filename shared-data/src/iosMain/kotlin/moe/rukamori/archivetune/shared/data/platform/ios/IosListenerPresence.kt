@@ -183,7 +183,6 @@ class IosListenerPresenceTransport(apiUrl: String) : ListenerPresenceTransport {
         val request = NSMutableURLRequest(url)
         request.HTTPMethod = "POST"
         request.HTTPShouldHandleCookies = false
-        request.setTimeoutInterval(REQUEST_TIMEOUT_MS / 1000.0)
         request.setValue("application/json", forHTTPHeaderField = "Content-Type")
         request.HTTPBody = body
         return suspendCancellableCoroutine<Result<Unit>> { continuation ->
