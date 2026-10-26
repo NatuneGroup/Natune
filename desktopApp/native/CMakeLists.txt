@@ -67,56 +67,20 @@ target_link_libraries(archivetune_engine
         ${AE_swscale_LIBRARY}
         Threads::Threads
         ${CMAKE_DL_LIBS}
+        m
 )
-if(UNIX)
-    # libm exists only on the Unix hosts; MSVC's CRT covers the same calls.
-    target_link_libraries(archivetune_engine PRIVATE m)
-endif()
-if(APPLE)
-    # miniaudio's CoreAudio backend and the mixer need these; nothing else on Apple resolves them.
-    target_link_libraries(archivetune_engine PRIVATE
-        "-framework AudioToolbox" "-framework AudioUnit" "-framework CoreAudio" "-framework CoreFoundation")
-endif()
 
-# The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
-# the same search path at link time as the loader uses at run time.
-if(UNIX AND NOT APPLE)
-    target_link_options(archivetune_engine PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
-endif()
 if(UNIX AND NOT APPLE)
     # The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
-    # the same search path at link time as the loader uses at run time. ld64 has no -rpath-link.
+    # the same search path at link time as the loader uses at run time. Apple ld has no -rpath-link;
+    # the install names already point inside the prefix there (same guard as build-native-deps.sh).
     target_link_options(archivetune_engine PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
     # DT_RPATH is inherited by the FFmpeg/TLS/XML closure; DT_RUNPATH is not.
     target_link_options(archivetune_engine PRIVATE "LINKER:--disable-new-dtags")
-    set_property(TARGET archivetune_engine PROPERTY INSTALL_RPATH "$ORIGIN")
-endif()
-if(APPLE)
-    # Stage script gives every dylib an @rpath identity; @loader_path resolves them beside the library.
-    set_property(TARGET archivetune_engine PROPERTY INSTALL_RPATH "@loader_path")
-endif()
-if(MINGW)
-    # Static link libgcc/winpthreads so the package's only DLL dependencies are the staged ones and
-    # Windows system libraries. Windows DLL resolution already covers the install directory.
-    target_link_options(archivetune_engine PRIVATE -static)
-    # System.mapLibraryName gives archivetune_engine.dll; MinGW's lib prefix would break that lookup.
-    set_property(TARGET archivetune_engine PROPERTY PREFIX "")
-endif()
-if(APPLE)
-    # Miniaudio's notarization-safe path links the audio frameworks instead of dlopening them.
-    target_compile_definitions(archivetune_engine PRIVATE MA_NO_RUNTIME_LINKING)
-    target_link_libraries(archivetune_engine PRIVATE
-        "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
-endif()
-if(APPLE)
-    # The packaged layout puts every media dylib beside the engine; @loader_path resolves them.
-    set(AE_INSTALL_RPATH "@loader_path")
-else()
-    set(AE_INSTALL_RPATH "$ORIGIN")
 endif()
 set_target_properties(archivetune_engine PROPERTIES
     BUILD_RPATH "${AE_PREFIX}/lib"
-    INSTALL_RPATH "${AE_INSTALL_RPATH}"
+    INSTALL_RPATH "$ORIGIN"
     BUILD_WITH_INSTALL_RPATH OFF
 )
 install(TARGETS archivetune_engine LIBRARY DESTINATION . RUNTIME DESTINATION .)
@@ -128,22 +92,12 @@ if(BUILD_TESTING)
     target_compile_options(archivetune_realtime_test PRIVATE -Wall -Wextra)
     target_link_libraries(archivetune_realtime_test PRIVATE
         ${AE_avformat_LIBRARY} ${AE_avcodec_LIBRARY} ${AE_avfilter_LIBRARY} ${AE_avutil_LIBRARY}
-        Threads::Threads ${CMAKE_DL_LIBS})
-    if(UNIX)
-        target_link_libraries(archivetune_realtime_test PRIVATE m)
-    endif()
+        Threads::Threads ${CMAKE_DL_LIBS} m)
     if(UNIX AND NOT APPLE)
         target_link_options(archivetune_realtime_test PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
-    endif()
-    if(UNIX AND NOT APPLE)
         target_link_options(archivetune_realtime_test PRIVATE "LINKER:--disable-new-dtags")
     endif()
     set_target_properties(archivetune_realtime_test PROPERTIES BUILD_RPATH "${AE_PREFIX}/lib")
-    if(APPLE)
-        target_compile_definitions(archivetune_realtime_test PRIVATE MA_NO_RUNTIME_LINKING)
-        target_link_libraries(archivetune_realtime_test PRIVATE
-            "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
-    endif()
     add_test(NAME realtime-render COMMAND archivetune_realtime_test
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/jvmTest/resources/playback/ramp-48k.wav")
     set_tests_properties(realtime-render PROPERTIES TIMEOUT 15)
