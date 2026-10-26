@@ -149,8 +149,9 @@ private fun desktopPlaylistsPage(
     var attempt by remember { mutableStateOf(0) }
     var spotifyRows by remember { mutableStateOf<List<SpotifyPlaylist>?>(null) }
     val rows by remember(attempt) { graph.taggedPlaylistRows() }.collectAsState(null)
-    LaunchedEffect(spotify.libraryAvailable(), attempt) {
-        spotifyRows = if (!spotify.libraryAvailable()) {
+    val spotifyAvailable = spotify.libraryAvailable()
+    LaunchedEffect(spotifyAvailable, attempt) {
+        spotifyRows = if (!spotifyAvailable) {
             emptyList()
         } else {
             try {
@@ -196,7 +197,7 @@ private fun desktopPlaylistsPage(
         showHidden = showHidden,
         locked = locked,
         grid = grid,
-        loading = rows == null || snapshot == null,
+        loading = rows == null || snapshot == null || (spotifyAvailable && spotifyRows == null),
     )
     val actions = PlaylistCollectionActions(
         // The host supplies back, the tags route and the playlist route for this page, so these are not used here.
@@ -241,7 +242,12 @@ private fun desktopPlaylistPage(
         hostCatalogDetailPage(graph.catalogPages, route) { occurrence -> menu.open(occurrence) }
             ?: hostPlaylistPage(graph.pageOwners, route) { occurrence ->
                 // Only an editable local playlist offers the row's remove-from-playlist action.
-                menu.open(occurrence)
+                menu.open(
+                    occurrence,
+                    playlistId = route.arguments["playlistId"].takeIf {
+                        route.arguments["playlistType"] == "local_playlist"
+                    },
+                )
             }
     }
 
@@ -254,9 +260,11 @@ private fun desktopSpotifyPlaylistPage(
 ): ArchiveGraphPage {
     var attempt by remember { mutableStateOf(0) }
     var state by remember { mutableStateOf(SpotifyPlaylistPageState(loading = true)) }
-    LaunchedEffect(playlistId, attempt, spotify.libraryAvailable()) {
+    val settingsSnapshot by graph.settings.snapshots.collectAsState()
+    val spotifyAvailable = settingsSnapshot.let { spotify.libraryAvailable() }
+    LaunchedEffect(playlistId, attempt, spotifyAvailable) {
         state = SpotifyPlaylistPageState(loading = true)
-        val loaded = if (playlistId.isBlank() || playlistId == SPOTIFY_DJ_PLAYLIST_ID || !spotify.libraryAvailable()) {
+        val loaded = if (playlistId.isBlank() || playlistId == SPOTIFY_DJ_PLAYLIST_ID || !spotifyAvailable) {
             null
         } else {
             try {
@@ -302,7 +310,7 @@ private fun desktopSpotifyPlaylistPage(
     val play: (Int, Boolean) -> Unit = { start, shuffled ->
         graph.scope.launch {
             try {
-                spotify.playTrackList(playlist?.name.orEmpty(), tracks, start, shuffled)
+                spotify.playTrackList(playlistId, tracks, start, shuffled)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

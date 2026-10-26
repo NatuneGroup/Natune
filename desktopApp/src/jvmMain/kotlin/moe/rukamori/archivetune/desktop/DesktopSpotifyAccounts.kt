@@ -19,7 +19,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,18 +46,7 @@ import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileArtis
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileCacheTsKey
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileRecentItemsKey
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileTopTracksKey
-import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
-import moe.rukamori.archivetune.shared.domain.repository.ContentItem
-import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
-import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
-import moe.rukamori.archivetune.shared.domain.repository.ContentRef
-import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
-import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
-import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
-import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
-import moe.rukamori.archivetune.shared.domain.repository.QueueStart
-import moe.rukamori.archivetune.shared.domain.settings.DefaultMetadataSourceKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceEditor
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.ShowSpotifyPlaylistsKey
@@ -83,13 +71,10 @@ import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
-import moe.rukamori.archivetune.innertube.YouTube
-import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.spotify.SPOTIFY_HISTORY_ARCHIVE_LIMIT
 import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyAuth
 import moe.rukamori.archivetune.spotify.SpotifyHashProvider
-import moe.rukamori.archivetune.spotify.SpotifyMapper
 import moe.rukamori.archivetune.spotify.historyRetryWaitMillis
 import moe.rukamori.archivetune.spotify.mergePlayHistory
 import moe.rukamori.archivetune.spotify.models.SpotifyPlayHistory
@@ -108,14 +93,10 @@ private const val SPOTIFY_PROVIDER = "spotify"
 private const val TOKEN_EXPIRY_GRACE_MS = 60_000L
 private const val PLAYLIST_PAGE_SIZE = 50
 private const val RECENTLY_PLAYED_CACHE_TTL_MS = 5 * 60 * 1000L
-private const val SPOTIFY_MATCH_THRESHOLD = 0.6
-private const val SPOTIFY_RESOLUTION_CACHE_MAX = 512
 
 /** In-flight parallel track-count fetches in [DesktopSpotifyAccounts.fetchAllPlaylists] — the Android cap. */
 private const val COUNT_FETCH_CONCURRENCY = 8
 private const val SPOTIFY_PAGE_CONCURRENCY = 8
-private const val SPOTIFY_RESOLVE_BATCH_SIZE = 4
-private const val SPOTIFY_TRACK_RESOLVE_TIMEOUT_MS = 15_000L
 private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
 private const val REST_ME_URL = "https://api.spotify.com/v1/me"
 private const val WEB_PLAYER_USER_AGENT =
@@ -179,14 +160,10 @@ internal class DesktopSpotifyAccounts(
     private var catalogAttempt: Job? = null
     private var streamingAttempt: Job? = null
     private val historyLock = Mutex()
+    private val playback = DesktopSpotifyPlayback(graph)
     private var recentlyPlayedCache: CachedRecentlyPlayed? = null
     private var recentlyPlayedBlockedUntilMs = 0L
     private var recentlyPlayedFullReadAtMs = 0L
-    private val historyTracks = HashMap<String, SpotifyTrack>()
-    private val resolutionCache = object : LinkedHashMap<String, ContentItem>(SPOTIFY_RESOLUTION_CACHE_MAX, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ContentItem>?): Boolean =
-            size > SPOTIFY_RESOLUTION_CACHE_MAX
-    }
 
     private val catalogState = MutableStateFlow(SpotifyCatalogAccountState())
     val catalog: StateFlow<SpotifyCatalogAccountState> = catalogState.asStateFlow()
@@ -235,30 +212,24 @@ internal class DesktopSpotifyAccounts(
     }
 
     /** Spotify history is offered only when the catalog account and Android's Spotify-content/history toggles are on. */
-    fun historyAvailable(): Boolean =
-        snapshot()[SpotifySpDcKey].orEmpty().isNotBlank() &&
-            snapshot()[ShowSpotifyPlaylistsKey] == true &&
-            snapshot()[SpotifyHistorySyncEnabledKey] == true
+    fun historyAvailable(): Boolean {
+        val prefs = snapshot()
+        return prefs[SpotifySpDcKey].orEmpty().isNotBlank() &&
+            prefs[ShowSpotifyPlaylistsKey] == true &&
+            prefs[SpotifyHistorySyncEnabledKey] == true
+    }
 
     /** The Spotify playlist source is offered only when the catalog account and the Android Spotify toggle are on. */
-    fun libraryAvailable(): Boolean =
-        snapshot()[SpotifySpDcKey].orEmpty().isNotBlank() && snapshot()[ShowSpotifyPlaylistsKey] == true
+    fun libraryAvailable(): Boolean {
+        val prefs = snapshot()
+        return prefs[SpotifySpDcKey].orEmpty().isNotBlank() && prefs[ShowSpotifyPlaylistsKey] == true
+    }
 
     /** The cached playlist list when the integration page last read it, without starting a network read. */
     fun cachedPlaylists(): List<SpotifyPlaylist>? = playlists
 
     /** The catalog track as the app displays it. Playback still resolves through [playTrackList]. */
-    fun spotifyTrackItem(track: SpotifyTrack): ContentItem = ContentItem(
-        ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.SONG, track.id),
-        title = track.name,
-        subtitle = track.artists.joinToString(", ") { it.name },
-        artworkUri = SpotifyMapper.getTrackThumbnail(track),
-        durationMs = track.durationMs.toLong(),
-        explicit = track.explicit,
-        album = track.album?.name,
-        artists = track.artists.mapNotNull { artist -> artist.id?.let { ContentCredit(artist.name, it) } },
-        albumId = track.album?.id?.takeIf(String::isNotBlank),
-    )
+    fun spotifyTrackItem(track: SpotifyTrack) = playback.spotifyTrackItem(track)
 
     /**
      * The user's Spotify playlists, in the service's order. Cached rows answer repeat page opens; a refresh goes through
@@ -270,10 +241,13 @@ internal class DesktopSpotifyAccounts(
         val cached = playlists
         if (!force && !cached.isNullOrEmpty()) return cached
         refreshToken(rejected = null)
+        refreshProfile()
         val loaded = fetchAllPlaylists()
         playlists = loaded
         controller.edit { this[SpotifyLibraryPlaylistsCacheKey] = cacheJson.encodeToString(playlistCacheSerializer, loaded) }
-        catalogState.update { it.copy(playlistCount = loaded.size) }
+        catalogState.update {
+            it.copy(playlistCount = loaded.size, accountName = snapshot()[SpotifyAccountNameKey].orEmpty())
+        }
         return loaded
     }
 
@@ -306,40 +280,12 @@ internal class DesktopSpotifyAccounts(
     }
 
     /** Resolves every selected track with Android's four-at-a-time bounded resolver, then queues the matches. */
-    suspend fun playTrackList(title: String, tracks: List<SpotifyTrack>, startIndex: Int = 0, shuffled: Boolean = false) {
-        if (tracks.isEmpty()) return
-        val queueTracks = if (shuffled) tracks.shuffled() else tracks
-        val boundedStart = startIndex.coerceIn(queueTracks.indices)
-        // Android resolves the tapped track before the queue starts, then drains the rest in bounded chunks.
-        resolveSpotifyTrack(queueTracks[boundedStart])
-            ?: throw IllegalStateException(DesktopStrings["spotify_track_unavailable"])
-        val resolved = resolveSpotifyQueueEntries(queueTracks)
-        if (resolved.isEmpty()) throw IllegalStateException(DesktopStrings["spotify_track_unavailable"])
-        val entries = resolved.map { (originalIndex, item) ->
-            ContentOccurrence("spotify:playlist:resolved:${title}:$originalIndex:${queueTracks[originalIndex].id}", item)
-        }
-        val targetIndex = resolved.indexOfFirst { it.first >= boundedStart }.takeIf { it >= 0 } ?: resolved.lastIndex
-        graph.queue.replace(entries, entries[targetIndex].occurrenceId, playWhenReady = true)
-    }
-
-    /**
-     * The Android queue's whole-list preload: bounded chunks, one timeout per track, unresolved matches dropped.
-     * Indexes stay in the submitted list so the starting target is the first resolved row at or after the tap.
-     */
-    private suspend fun resolveSpotifyQueueEntries(tracks: List<SpotifyTrack>): List<Pair<Int, ContentItem>> =
-        tracks.mapIndexedNotNull { index, track -> index to track }
-            .chunked(SPOTIFY_RESOLVE_BATCH_SIZE)
-            .flatMap { chunk ->
-                coroutineScope {
-                    chunk.map { (index, track) ->
-                        async(Dispatchers.IO) {
-                            withTimeoutOrNull(SPOTIFY_TRACK_RESOLVE_TIMEOUT_MS) {
-                                resolveSpotifyTrack(track)?.let { index to it }
-                            }
-                        }
-                    }.awaitAll().filterNotNull()
-                }
-            }
+    suspend fun playTrackList(
+        playlistId: String,
+        tracks: List<SpotifyTrack>,
+        startIndex: Int = 0,
+        shuffled: Boolean = false,
+    ) = playback.playTrackList(playlistId, tracks, startIndex, shuffled)
 
     /** Converts one fetched play into the row the shared history host shows. */
     suspend fun recentlyPlayed(force: Boolean = false): List<SpotifyPlayHistory> =
@@ -599,85 +545,11 @@ internal class DesktopSpotifyAccounts(
     }
 
     /** Converts one fetched play into the row the shared history host shows. */
-    fun historyTrackRow(track: SpotifyTrack, playedAtMs: Long): ContentOccurrence {
-        val occurrenceId = "spotify:history:${track.id}:$playedAtMs"
-        historyTracks[occurrenceId] = track
-        return ContentOccurrence(
-            occurrenceId = occurrenceId,
-            item = ContentItem(
-                ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.SONG, track.id),
-                title = track.name,
-                subtitle = track.artists.joinToString(", ") { it.name },
-                artworkUri = SpotifyMapper.getTrackThumbnail(track),
-                durationMs = track.durationMs.toLong(),
-                explicit = track.explicit,
-                album = track.album?.name,
-                artists = track.artists.mapNotNull { artist -> artist.id?.let { ContentCredit(artist.name, it) } },
-                albumId = track.album?.id?.takeIf(String::isNotBlank),
-            ),
-        )
-    }
+    fun historyTrackRow(track: SpotifyTrack, playedAtMs: Long): ContentOccurrence =
+        playback.historyTrackRow(track, playedAtMs)
 
     /** Resolves the selected Spotify play through the Android anonymous-then-account YouTube search/score path. */
-    suspend fun playHistoryTrack(start: ContentOccurrence) {
-        val track = historyTracks[start.occurrenceId] ?: throw IllegalStateException("Spotify history row is no longer loaded")
-        val resolved = resolveSpotifyTrack(track) ?: throw IllegalStateException(DesktopStrings["spotify_track_unavailable"])
-        graph.queue.load(
-            QueueLoadRequest(
-                collection = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.RADIO, parent = resolved.ref),
-                kind = QueueCollectionKind.RADIO,
-                start = QueueStart(resolved.ref),
-                playWhenReady = true,
-            ),
-        )
-    }
-
-    private suspend fun resolveSpotifyTrack(track: SpotifyTrack): ContentItem? {
-        val key = "${track.id}:${snapshot()[DefaultMetadataSourceKey] ?: "YOUTUBE"}"
-        synchronized(resolutionCache) { resolutionCache[key] }?.let { return it }
-        val query = SpotifyMapper.buildSearchQuery(track)
-        if (query.isBlank()) return null
-        val anonymous = runCatching {
-            YouTube.search(query, YouTube.SearchFilter.FILTER_SONG, useAccountContext = false).getOrThrow()
-        }.getOrNull()?.items.orEmpty()
-        val candidates = if (anonymous.isNotEmpty()) anonymous else {
-            runCatching { YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrThrow() }
-                .getOrNull()?.items.orEmpty()
-        }
-        val songs = candidates.filterIsInstance<SongItem>().distinctBy { it.id }
-        val precomputed = SpotifyMapper.precompute(track.name, track.artists.joinToString(" ") { it.name }, track.durationMs)
-        val best = songs.map { song ->
-            song to SpotifyMapper.matchScorePrecomputed(
-                precomputed,
-                song.title,
-                song.artists.joinToString(" ") { it.name },
-                song.duration,
-            )
-        }.maxByOrNull { it.second }?.takeIf { it.second >= SPOTIFY_MATCH_THRESHOLD }?.first ?: return null
-        val useSpotifyMetadata = snapshot()[DefaultMetadataSourceKey] == "SPOTIFY"
-        val item = ContentItem(
-            ref = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, best.id),
-            title = if (useSpotifyMetadata) track.name.ifBlank { best.title } else best.title,
-            subtitle = if (useSpotifyMetadata) {
-                track.artists.joinToString(", ") { it.name }.ifBlank { best.artists.joinToString(", ") { it.name } }
-            } else {
-                best.artists.joinToString(", ") { it.name }
-            },
-            artworkUri = if (useSpotifyMetadata) SpotifyMapper.getTrackThumbnail(track) ?: best.thumbnail else best.thumbnail,
-            durationMs = if (useSpotifyMetadata && track.durationMs > 0) track.durationMs.toLong() else best.duration?.let { it * 1000L },
-            explicit = track.explicit || best.explicit,
-            album = if (useSpotifyMetadata) track.album?.name ?: best.album?.name else best.album?.name,
-            artists = if (useSpotifyMetadata) {
-                track.artists.mapNotNull { artist -> artist.id?.let { ContentCredit(artist.name, it) } }
-                    .ifEmpty { best.artists.map { ContentCredit(it.name, it.id) } }
-            } else {
-                best.artists.map { ContentCredit(it.name, it.id) }
-            },
-            albumId = if (useSpotifyMetadata) track.album?.id ?: best.album?.id else best.album?.id,
-        )
-        synchronized(resolutionCache) { resolutionCache[key] = item }
-        return item
-    }
+    suspend fun playHistoryTrack(start: ContentOccurrence) = playback.playHistoryTrack(start)
 
     private fun restoreCachedRecentlyPlayed() {
         val prefs = snapshot()
@@ -729,7 +601,7 @@ internal class DesktopSpotifyAccounts(
         recentlyPlayedCache = null
         recentlyPlayedBlockedUntilMs = 0L
         recentlyPlayedFullReadAtMs = 0L
-        historyTracks.clear()
+        playback.clearHistoryTracks()
     }
 
     private suspend fun playlistTrackCount(playlistId: String): Int? =

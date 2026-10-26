@@ -144,9 +144,9 @@ internal class DesktopYouTubeHistoryPager(
 }
 
 /**
- * The Spotify catalog account's recent plays. Rows are Spotify tracks: the desktop has no Spotify playback or
- * track-identification path yet, so the feed is read-only and its rows and shuffle stay refused — never a silent
- * no-op. A tap reports that honestly.
+ * The Spotify catalog account's recent plays. Rows are Spotify tracks that resolve to their YouTube match through
+ * the same anonymous-then-account identification path as Android. The source has no list shuffle, so the page
+ * keeps that action hidden while a tap plays the resolved radio.
  */
 internal class DesktopSpotifyHistoryPager(
     private val graph: DesktopSessionGraph,
@@ -266,11 +266,10 @@ internal class DesktopSpotifyHistoryPager(
         }
     }
 
-    // Android's Spotify history offers no row shuffle; the source stays non-playable for that purpose.
+    // Android's Spotify history offers no row shuffle, even though a row can resolve and play.
     override fun shuffle(query: String) {}
 
     private companion object {
-        const val SPOTIFY_PROVIDER = "spotify"
         val MONTH_LABEL: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/MM")
     }
 }
