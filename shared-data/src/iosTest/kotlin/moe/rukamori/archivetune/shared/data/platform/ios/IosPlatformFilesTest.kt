@@ -7,7 +7,7 @@ import moe.rukamori.archivetune.shared.domain.platform.FileHandle
 
 class IosPlatformFilesTest {
     @Test
-    fun arbitraryPathsAndUnboundedReadsAreNotDocumentGrants() = runBlocking {
+    fun arbitraryPathsAndUnboundedReadsAreNotDocumentGrants(): Unit = runBlocking {
         val files = IosPlatformFiles()
         assertFailsWith<IllegalArgumentException> { files.read(FileHandle("/etc/passwd"), 32) }
         assertFailsWith<IllegalArgumentException> { files.read(FileHandle("ios-bookmark:invalid"), -1) }
