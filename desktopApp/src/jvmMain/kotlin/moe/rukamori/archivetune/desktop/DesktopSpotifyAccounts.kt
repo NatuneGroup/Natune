@@ -70,6 +70,7 @@ import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
 import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyAuth
 import moe.rukamori.archivetune.spotify.SpotifyHashProvider
+import moe.rukamori.archivetune.spotify.models.SpotifyPlayHistory
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTracksRef
 
@@ -181,6 +182,16 @@ internal class DesktopSpotifyAccounts(
             accountName = snapshot()[SpotifyAccountNameKey].orEmpty(),
             playlistCount = playlists?.size ?: 0,
         )
+    }
+
+    /**
+     * The catalog account's recent plays, most recent first, as `Spotify.recentlyPlayed` answers them — the same
+     * web-player context read the Android history feed uses, with the catalog token retried once on 401. Throws
+     * when the catalog account is not connected or the read fails, so the history feed shows its failed state.
+     */
+    suspend fun recentlyPlayed(afterMillis: Long? = null): List<SpotifyPlayHistory> {
+        refreshToken(rejected = null)
+        return withTokenRetry { Spotify.recentlyPlayed(afterMillis = afterMillis).getOrThrow() }.items
     }
 
     /** Opens the catalog sign-in window. The connect row is disabled while this runs. */

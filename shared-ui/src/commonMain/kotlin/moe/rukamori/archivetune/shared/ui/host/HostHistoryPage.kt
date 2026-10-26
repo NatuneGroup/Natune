@@ -30,7 +30,9 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The local listening history, grouped as the baseline groups it: Today, Yesterday, This week, Last week, then one
- * section per month. Only the local origin is offered, because no account history source is connected to this page.
+ * section per month. The account history sources the host connected arrive as [remote] pagers and sit beside the
+ * local origin exactly as the baseline's source chips order them.
+ *
  * [offsetMsAt] is the device zone's offset at an instant, so a listen lands on the user's calendar day. [formatTime]
  * writes the time line of a row. [more] opens the host's row menu.
  */
@@ -41,10 +43,15 @@ fun hostHistoryPage(
     nowMs: () -> Long,
     formatTime: (epochMs: Long) -> String,
     more: (ContentOccurrence) -> Unit,
+    remote: List<RemoteHistoryPager> = emptyList(),
 ): ArchiveGraphPage {
     val scope = rememberCoroutineScope()
     val pager = remember(owners) { LocalHistoryPager(owners, scope, offsetMsAt) }
+    var source by remember { mutableStateOf(HistorySource.LOCAL) }
     LaunchedEffect(pager) { pager.reload() }
+    val activeRemote = remote.firstOrNull { it.source == source }
+    // A remote source loads when it is first selected, like the baseline's on-demand fetch, and re-reads on retry.
+    LaunchedEffect(activeRemote) { activeRemote?.loadOnce() }
     val now = nowMs()
     val today = localDay(now, offsetMsAt)
     pager.today = today
@@ -54,7 +61,7 @@ fun hostHistoryPage(
         THIS_WEEK to stringResource(Res.string.m4_this_week),
         LAST_WEEK to stringResource(Res.string.m4_last_week),
     )
-    val sections = pager.events.groupConsecutiveBy { pager.keyOf(it, today) }.map { (key, events) ->
+    val localSections = pager.events.groupConsecutiveBy { pager.keyOf(it, today) }.map { (key, events) ->
         HistorySectionUi(
             key = key,
             dateLabel = labels[key] ?: key.removePrefix(MONTH_PREFIX).replace('-', '/'),
@@ -64,32 +71,70 @@ fun hostHistoryPage(
             },
         )
     }
+    val local = activeRemote == null
+    val query = if (local) pager.query else activeRemote?.query.orEmpty()
     val state = HistoryUi(
-        source = HistorySource.LOCAL,
-        availableSources = setOf(HistorySource.LOCAL),
-        sections = sections,
-        query = pager.query,
+        source = source,
+        availableSources = setOf(HistorySource.LOCAL) + remote.map { it.source },
+        sections = if (local) localSections else activeRemote?.sections.orEmpty().map { section ->
+            section.copy(dateLabel = labels[section.key] ?: section.dateLabel.ifBlank { section.key.removePrefix(MONTH_PREFIX).replace('-', '/') })
+        },
+        query = query,
         selectedEventIds = pager.selected,
-        loading = pager.loading,
-        failed = pager.failed,
-        canLoadMore = pager.continuation != null,
-        busy = pager.busy,
+        loading = if (local) pager.loading else activeRemote?.loading ?: false,
+        failed = if (local) pager.failed else activeRemote?.failed ?: false,
+        canLoadMore = if (local) pager.continuation != null else activeRemote?.canLoadMore ?: false,
+        busy = if (local) pager.busy else activeRemote?.busy ?: false,
     )
     val actions = HistoryActions(
-        source = {},
-        query = { pager.query = it },
+        source = { source = it },
+        query = { if (local) pager.query = it else activeRemote?.query = it },
         // The host supplies back for this page.
         back = {},
-        play = { event, sectionKey -> pager.play(event, sectionKey) },
+        play = { event, sectionKey ->
+            if (local) pager.play(event, sectionKey) else activeRemote?.activate(event, sectionKey)
+        },
         more = more,
         toggleSelection = { id -> pager.selected = if (id in pager.selected) pager.selected - id else pager.selected + id },
         selectAllVisible = { ids -> pager.selected = pager.selected + ids },
         clearSelection = { pager.selected = emptySet() },
         removeEvents = pager::remove,
-        retry = pager::reload,
-        loadMore = pager::loadMore,
+        retry = { if (local) pager.reload() else activeRemote?.reload() },
+        loadMore = { if (local) pager.loadMore() else activeRemote?.loadMore() },
+        shuffleAll = when {
+            local -> {
+                { pager.shuffle() }
+            }
+            activeRemote?.playable == true -> {
+                { activeRemote.shuffle(activeRemote.query) }
+            }
+            else -> null
+        },
     )
     return ArchiveGraphPage.History(state, actions)
+}
+
+/**
+ * An account history source the host connected: the YouTube account's history sections, or another provider's
+ * recent plays. The page only reads its state and calls its methods; [loadOnce] is the lazy first read,
+ * [activate] is the row tap (a playable source queues its section from the row; a read-only source navigates
+ * its row) and [shuffle] plays the query-filtered rows shuffled. [playable] names whether the source's rows
+ * can be queued; a read-only source hides shuffle and navigates instead of playing.
+ */
+interface RemoteHistoryPager {
+    val source: HistorySource
+    val playable: Boolean
+    var sections: List<HistorySectionUi>
+    var query: String
+    var loading: Boolean
+    var failed: Boolean
+    var canLoadMore: Boolean
+    var busy: Boolean
+    fun loadOnce()
+    fun reload()
+    fun loadMore()
+    fun activate(event: HistoryEventUi, sectionKey: String)
+    fun shuffle(query: String)
 }
 
 /**
@@ -148,6 +193,41 @@ private class LocalHistoryPager(
         val gen = generation
         loading = true
         scope.launch { lock.withLock { read(gen) { fetchNext(gen) } } }
+    }
+
+    /**
+     * The baseline's shuffle-all: every event the current filter leaves visible, in a shuffled order. The remaining
+     * pages are read first, so the queue is never a loaded prefix; history longer than the read bound is refused
+     * with one line rather than silently cut.
+     */
+    fun shuffle() {
+        val gen = generation
+        val filter = query.trim()
+        scope.launch {
+            val entries = lock.withLock {
+                try {
+                    var pages = 0
+                    while (continuation != null && pages < MAX_SECTION_PAGES) {
+                        if (!fetchNext(gen)) break
+                        pages++
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    owners.report("history not read: ${failure::class.simpleName}")
+                    return@withLock null
+                }
+                if (gen != generation) return@withLock null
+                if (continuation != null) {
+                    owners.report("history is too long to shuffle completely")
+                    return@withLock null
+                }
+                events.filter { it.matches(filter) }.map { it.item.queuedEntry() }
+            } ?: return@launch
+            if (entries.isEmpty()) return@launch
+            val shuffled = entries.shuffled()
+            owners.queue.replace(shuffled, shuffled.first().occurrenceId, playWhenReady = true)
+        }
     }
 
     /**
