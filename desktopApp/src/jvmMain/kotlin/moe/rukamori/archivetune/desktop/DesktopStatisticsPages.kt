@@ -26,13 +26,6 @@ import moe.rukamori.archivetune.shared.domain.repository.ListeningRank
 import moe.rukamori.archivetune.shared.domain.repository.ListeningStatistics
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
-import moe.rukamori.archivetune.shared.ui.resources.Res
-import moe.rukamori.archivetune.shared.ui.resources.m4_stat_all
-import moe.rukamori.archivetune.shared.ui.resources.m4_stat_one_month
-import moe.rukamori.archivetune.shared.ui.resources.m4_stat_one_week
-import moe.rukamori.archivetune.shared.ui.resources.m4_stat_one_year
-import moe.rukamori.archivetune.shared.ui.resources.m4_stat_six_months
-import moe.rukamori.archivetune.shared.ui.resources.m4_stat_three_months
 import moe.rukamori.archivetune.shared.ui.screens.StatisticsActions
 import moe.rukamori.archivetune.shared.ui.screens.StatisticsCoverage
 import moe.rukamori.archivetune.shared.ui.screens.StatisticsSource
@@ -41,6 +34,12 @@ import moe.rukamori.archivetune.shared.ui.screens.YearInMusicActions
 import moe.rukamori.archivetune.shared.ui.screens.YearInMusicUi
 import moe.rukamori.archivetune.shared.ui.screens.YearRecapShare
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.m4StatAllRes
+import moe.rukamori.archivetune.shared.ui.resources.m4StatOneMonthRes
+import moe.rukamori.archivetune.shared.ui.resources.m4StatOneWeekRes
+import moe.rukamori.archivetune.shared.ui.resources.m4StatOneYearRes
+import moe.rukamori.archivetune.shared.ui.resources.m4StatSixMonthsRes
+import moe.rukamori.archivetune.shared.ui.resources.m4StatThreeMonthsRes
 
 /**
  * `stats` and `year_in_music` on this host. The owner holds the Android-parity range math; these
@@ -55,12 +54,12 @@ internal fun desktopStatisticsPage(
     val owner = graph.statistics
     LaunchedEffect(owner) { owner.ensureFirstPlay() }
     owner.continuousLabels = listOf(
-        stringResource(Res.string.m4_stat_one_week),
-        stringResource(Res.string.m4_stat_one_month),
-        stringResource(Res.string.m4_stat_three_months),
-        stringResource(Res.string.m4_stat_six_months),
-        stringResource(Res.string.m4_stat_one_year),
-        stringResource(Res.string.m4_stat_all),
+        stringResource(m4StatOneWeekRes),
+        stringResource(m4StatOneMonthRes),
+        stringResource(m4StatThreeMonthsRes),
+        stringResource(m4StatSixMonthsRes),
+        stringResource(m4StatOneYearRes),
+        stringResource(m4StatAllRes),
     )
     // Every owner write bumps this counter, so the page recomposes on each completed load.
     var version by remember { mutableIntStateOf(0) }
