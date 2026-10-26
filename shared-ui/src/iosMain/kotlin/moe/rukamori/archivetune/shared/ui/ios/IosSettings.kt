@@ -86,6 +86,12 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     val accounts = graph.accountLifecycle
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
 
+    /** Whether this build names a pool deployment, so the pool rows report their real availability. */
+    val poolConfigured: Boolean get() = graph.playbackPool.configured
+
+    /** Mirrors the Playback Pool switch into the feed, as on the other hosts. */
+    suspend fun onPoolAccountsChanged(enabled: Boolean) = graph.playbackPool.onEnabledChanged(enabled)
+
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
         when (val result = graph.tidalAuth.refresh(refreshToken, TidalAuthFlowDevice)) {
@@ -259,8 +265,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
             "settings/deezer" -> DeezerSettings(
                 controller = owners.controller,
                 accounts = owners.accounts,
-                // The Playback Pool is not connected on this host.
-                poolConfigured = false,
+                poolConfigured = owners.poolConfigured,
                 verifyArl = owners::verifyDeezer,
                 // The Deezer source keys its session to the lease generation, which a sign-out retires.
                 onSignOut = { },
