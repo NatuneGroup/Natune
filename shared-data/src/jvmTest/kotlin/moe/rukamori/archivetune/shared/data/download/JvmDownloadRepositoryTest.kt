@@ -6,7 +6,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import kotlin.test.*
-import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 
 class JvmDownloadRepositoryTest {
@@ -15,8 +14,8 @@ class JvmDownloadRepositoryTest {
         val client = HttpClient(MockEngine { respond("fixture-media") })
         try {
             val repository = JvmDownloadRepository(dir, client)
-            val tidal = DownloadKey("same", AudioSourceType.TIDAL, "lossless", provider = ContentProvider.TIDAL.id)
-            val deezer = tidal.copy(source = AudioSourceType.DEEZER, provider = ContentProvider.DEEZER.id)
+            val tidal = DownloadKey("same", AudioSourceType.TIDAL, "lossless", "fixture-provider")
+            val deezer = tidal.copy(source = AudioSourceType.DEEZER)
             val first = repository.download(tidal, "https://audio.example/t")
             val second = repository.download(deezer, "https://audio.example/d")
             assertNotEquals(first, second)
@@ -34,7 +33,7 @@ class JvmDownloadRepositoryTest {
         })
         try {
             val repository = JvmDownloadRepository(dir, client)
-            val key = DownloadKey("same", AudioSourceType.TIDAL, "lossless", provider = ContentProvider.TIDAL.id)
+            val key = DownloadKey("same", AudioSourceType.TIDAL, "lossless", "fixture-provider")
             val old = launch { repository.download(key, "https://audio.example/old") }
             began.await()
             val result = repository.download(key, "https://audio.example/new")
@@ -52,7 +51,7 @@ class JvmDownloadRepositoryTest {
             assertFailsWith<IllegalArgumentException> {
                 repository.download(DownloadKey("id", AudioSourceType.SPOTIFY, "x"), "https://audio.example")
             }
-            val key = DownloadKey("id", AudioSourceType.QOBUZ, "x")
+            val key = DownloadKey("id", AudioSourceType.QOBUZ, "x", "fixture-provider")
             assertFailsWith<IllegalArgumentException> { repository.download(key, "https://audio.example") }
             assertNull(repository.find(key))
         } finally { client.close(); dir.toFile().deleteRecursively() }

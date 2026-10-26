@@ -1,5 +1,4 @@
 package moe.rukamori.archivetune.shared.ui.settings.lastfmdashboard
-
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -18,6 +17,8 @@ import moe.rukamori.archivetune.shared.domain.lastfm.LastFmDashboardReader
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmDashboardService
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmDashboardSnapshot
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.ui.resources.*
+
 
 /**
  * What the dashboard needs from its host. The host owns the YouTube search, the player, the clipboard and the
