@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -74,6 +75,9 @@ import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sign
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.NavigationBarStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -90,13 +94,11 @@ import moe.rukamori.archivetune.shared.ui.glass.layerBackdrop
 import moe.rukamori.archivetune.shared.ui.glass.liquidGlassMaterial
 import moe.rukamori.archivetune.shared.ui.glass.rememberGlassSpecularHighlight
 import moe.rukamori.archivetune.shared.ui.glass.scaleAwareSpring
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import kotlin.math.abs
-import kotlin.math.roundToInt
-import kotlin.math.sign
 
 /** The bar's fixed height (SukiSU's 64 dp). The shell reserves exactly this much chrome for the bar, plus its inset. */
 val SukisuNavigationBarHeight = 64.dp
