@@ -33,14 +33,20 @@ case "$(uname -s)-$(uname -m)" in
     Linux-aarch64 | Linux-arm64) OPENSSL_TARGET=linux-aarch64 ;;
     Darwin-arm64) OPENSSL_TARGET=darwin64-arm64-cc ;;
     Darwin-x86_64) OPENSSL_TARGET=darwin64-x86_64-cc ;;
-    *) printf '[native-deps] unsupported host %s-%s; Windows needs its own MSVC closure\n' "$(uname -s)" "$(uname -m)" >&2; exit 1 ;;
+    MINGW64*-x86_64 | MSYS*-x86_64) OPENSSL_TARGET=mingw64 ;;
+    *) printf '[native-deps] unsupported host %s-%s\n' "$(uname -s)" "$(uname -m)" >&2; exit 1 ;;
 esac
 # Apple's linker has no -rpath-link; the install names already point inside the prefix there.
-if [ "$(uname -s)" = Darwin ]; then
-    FFMPEG_EXTRA_LDFLAGS="-L$PREFIX/lib"
-else
+# Windows DLL resolution needs no rpath at all: the staged closure sits beside the engine.
+if [ "$(uname -s)" = "Linux" ]; then
     FFMPEG_EXTRA_LDFLAGS="-L$PREFIX/lib -Wl,-rpath-link,$PREFIX/lib"
+else
+    FFMPEG_EXTRA_LDFLAGS="-L$PREFIX/lib"
 fi
+# MinGW's w32threads needs no winpthread DLL in the closure; the engine still uses POSIX threads
+# through winpthreads, which its own link line pulls in statically.
+FFMPEG_THREADS="--enable-pthreads"
+case "$(uname -s)" in MINGW64* | MSYS*) FFMPEG_THREADS="--enable-w32threads" ;; esac
 
 sha256_check() {
     if command -v sha256sum >/dev/null 2>&1; then
@@ -160,7 +166,7 @@ build_ffmpeg() {
     unpack "$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz" "ffmpeg-$FFMPEG_VERSION"
     (cd "$SRC/ffmpeg-$FFMPEG_VERSION" && PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" ./configure \
         --prefix="$PREFIX" --enable-shared --disable-static --disable-programs --disable-doc \
-        --disable-debug --disable-autodetect --enable-version3 --enable-pthreads \
+        --disable-debug --disable-autodetect --enable-version3 $FFMPEG_THREADS \
         --enable-libxml2 --enable-openssl --enable-zlib --disable-x86asm \
         --extra-cflags="-I$PREFIX/include" --extra-ldflags="$FFMPEG_EXTRA_LDFLAGS" \
         && make -j"$JOBS" && make install) >"$LOGS/ffmpeg.log" 2>&1

@@ -4,6 +4,8 @@ find_package(JNI REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
+    # Static CRT: the package must not depend on vcruntime/msvcp DLLs an end user may not have.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     add_library(archivetune_system SHARED windows_system.cpp credential_windows.cpp)
     target_link_libraries(archivetune_system PRIVATE windowsapp shell32 ole32 user32 gdi32 dwmapi advapi32 crypt32)
     target_compile_definitions(archivetune_system PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)

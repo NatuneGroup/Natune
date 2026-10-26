@@ -11,6 +11,7 @@ import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportDesti
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportException
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportNaming
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportSource
+import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportTrack
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistTrackLocations
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 
@@ -57,12 +58,13 @@ class PlaylistExportOwner(private val source: PlaylistExportSource) {
      */
     suspend fun exportM3u(ref: ContentRef, destination: PlaylistExportDestination, locations: PlaylistTrackLocations) {
         val tracks = nonEmptyTracks(ref)
-        val entries = tracks.map { track ->
+        val entries = ArrayList<PlaylistExchangeTrack>(tracks.size)
+        for (track in tracks) {
             val location = locations.locate(track)
             if (location == null || !isUsableM3uLocation(location)) {
                 throw PlaylistExportException("No playable location for ${track.title}")
             }
-            track.toExchangeTrack(uri = location)
+            entries += track.toExchangeTrack(uri = location)
         }
         destination.write(PlaylistExchange.m3u(entries).encodeToByteArray())
     }
