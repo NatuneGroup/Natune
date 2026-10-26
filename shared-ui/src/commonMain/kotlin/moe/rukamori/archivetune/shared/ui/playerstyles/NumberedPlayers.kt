@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.scrollBy
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -497,6 +498,11 @@ internal fun LittlePlayerScreen(c: PlayerRenderContext) {
                 .semantics {
                     contentDescription = seekLabel
                     if (duration > 0) progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+                    // The little player fits at every scale, so nothing scrolls; this action only
+                    // carries the scroll semantics the seek contract expects. It must sit on the
+                    // unrotated container: portrait content is placed rotated (LandscapeLikeBox), and
+                    // scroll-into-view math does not converge under that transform.
+                    scrollBy { _, _ -> true }
                 }
                 .littlePlayerGestures(c, fraction),
         ) {
