@@ -188,12 +188,27 @@ $cmakeArguments = @(
     ('-DZLIB_INCLUDE_DIR=' + (Join-Path $ZlibPrefix 'include')),
     ('-DZLIB_LIBRARY_RELEASE=' + $ZlibLibrary)
 )
+$cmakeArguments += ('-DCMAKE_INSTALL_PREFIX=' + (Join-Path $BuildRoot 'prefix'))
 Invoke-Checked 'cmake' $cmakeArguments
-Invoke-Checked 'cmake' @('--build', $CmakeBuild, '--config', 'Release', '--target', $TdlightJniTarget, '--parallel', [string]$Jobs)
+Invoke-Checked 'cmake' @('--build', $CmakeBuild, '--config', 'Release', '--target', 'install', '--parallel', [string]$Jobs)
 
-$libraryHits = @(Get-ChildItem -LiteralPath $CmakeBuild -Recurse -File -Filter $LibraryName)
+# The pinned tree defines tdjni only in the example/java project, which find_package(Td)s the installed TDLib — so the
+# second stage configures that project against the prefix and compiles the JNI shim.
+$CmakeBuildJava = Join-Path $BuildRoot 'cmake-java'
+$jniArguments = @(
+    '-S', (Join-Path $Source 'example/java'),
+    '-B', $CmakeBuildJava,
+    '-G', 'Visual Studio 17 2022',
+    '-A', 'x64',
+    ('-DTd_DIR=' + (Join-Path $BuildRoot 'prefix/lib/cmake/Td')),
+    ('-DCMAKE_PREFIX_PATH=' + (Join-Path $BuildRoot 'prefix'))
+)
+Invoke-Checked 'cmake' $jniArguments
+Invoke-Checked 'cmake' @('--build', $CmakeBuildJava, '--config', 'Release', '--target', $TdlightJniTarget, '--parallel', [string]$Jobs)
+
+$libraryHits = @(Get-ChildItem -LiteralPath $CmakeBuildJava -Recurse -File -Filter $LibraryName)
 if ($libraryHits.Count -ne 1) {
-    Stop-Recipe "expected exactly one $LibraryName under $CmakeBuild"
+    Stop-Recipe "expected exactly one $LibraryName under $CmakeBuildJava"
 }
 $library = $libraryHits[0].FullName
 
