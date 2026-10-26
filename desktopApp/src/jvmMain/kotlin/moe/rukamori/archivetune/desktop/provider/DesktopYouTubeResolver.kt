@@ -3,9 +3,12 @@ package moe.rukamori.archivetune.desktop.provider
 import io.ktor.client.HttpClient
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import moe.rukamori.archivetune.desktop.desktopDiagnostic
+import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.desktop.DesktopDiagnosticLog
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowse
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeResolutionPort
@@ -49,7 +52,7 @@ internal class DesktopYouTubeResolver(
     private val signIn: () -> DesktopYouTubeSignIn? = { null },
     private val innerTubeX: DesktopInnerTubeXTier = DesktopInnerTubeXTier(http),
     private val newPipe: DesktopNewPipeTier = DesktopNewPipeTier(http, locale),
-    private val log: (String) -> Unit = ::desktopDiagnostic,
+    private val log: (String) -> Unit = { DesktopDiagnosticLog.playbackTier(it) },
 ) : YouTubeResolutionPort {
     private val visitorLock = Mutex()
     private var visitorData: String? = null
@@ -68,31 +71,65 @@ internal class DesktopYouTubeResolver(
     private class Target(val videoId: String, val trusted: Boolean)
 
     override suspend fun primary(request: AudioResolveRequest): PreparedAudio? {
+        val started = System.nanoTime()
         val target = targetFor(request) ?: return null
-        return resolveVideo(target.videoId, target.trusted)
+        return try {
+            resolveVideo(target.videoId, target.trusted)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            // Android logs the shipped tier only when it failed; a resolved primary writes nothing.
+            logTier("shipped", false, started, failure.javaClass.simpleName)
+            throw failure
+        }
     }
 
     override suspend fun fallback(tier: YouTubeFallbackTier, request: AudioResolveRequest): PreparedAudio? {
         if (tier == YouTubeFallbackTier.ECHO) return null
+        val name = androidTierName(tier)
         val target = targetFor(request) ?: return null
         val quality = DesktopYouTubeAudioQuality.fromRequestValue(preferences()?.get(AudioQualityKey))
         val started = System.nanoTime()
-        return try {
-            when (tier) {
-                YouTubeFallbackTier.INNERTUBE_X -> innerTubeX.resolve(target.videoId, quality, target.trusted)
-                YouTubeFallbackTier.NEWPIPE -> newPipe.resolve(target.videoId, quality, target.trusted, visitor())
-                YouTubeFallbackTier.ECHO -> null
-            }.also { audio ->
-                log("YouTube ${tier.name} tier ${if (audio != null) "resolved" else "found no stream"} in ${elapsedMs(started)} ms")
+        // The tier bounds itself the way ResolveAudioStreamUseCase does on Android, so its own timeout comes back
+        // as a null outcome and still earns its one diagnostic line; only the caller's cancellation stops the walk.
+        val audio = try {
+            withTimeoutOrNull(tier.timeoutMs) {
+                when (tier) {
+                    YouTubeFallbackTier.INNERTUBE_X -> innerTubeX.resolve(target.videoId, quality, target.trusted)
+                    YouTubeFallbackTier.NEWPIPE -> newPipe.resolve(target.videoId, quality, target.trusted, visitor())
+                    YouTubeFallbackTier.ECHO -> null
+                }
             }
         } catch (cancelled: CancellationException) {
-            log("YouTube ${tier.name} tier stopped after ${elapsedMs(started)} ms")
-            throw cancelled
-        } catch (failure: Exception) {
-            log("YouTube ${tier.name} tier failed in ${elapsedMs(started)} ms: ${failure.javaClass.simpleName}")
-            throw failure
+            currentCoroutineContext().ensureActive()
+            logTier(name, false, started, cancelled.javaClass.simpleName)
+            return null
+        } catch (auth: TerminalPlaybackAuthentication) {
+            logTier(name, false, started, auth.javaClass.simpleName)
+            throw auth
+        } catch (failure: Throwable) {
+            logTier(name, false, started, failure.javaClass.simpleName)
+            return null
         }
+        logTier(name, audio != null, started, if (audio == null) "timeout" else null)
+        return audio
     }
+
+    /** The `PlaybackDiagnostics` line Android writes once per tier: `YouTube tier=%s resolved=%s elapsedMs=%d reason=%s`. */
+    private fun logTier(name: String, resolved: Boolean, startedNanos: Long, reason: String?) {
+        log(
+            "YouTube tier=$name resolved=$resolved elapsedMs=${elapsedMs(startedNanos)}" +
+                (reason?.let { " reason=$it" } ?: ""),
+        )
+    }
+
+    /** The tier names Android's `shippedFallbackTiers` list writes, so the diagnostic lines read identically. */
+    private fun androidTierName(tier: YouTubeFallbackTier): String =
+        when (tier) {
+            YouTubeFallbackTier.INNERTUBE_X -> "innertubex"
+            YouTubeFallbackTier.NEWPIPE -> "newpipe"
+            YouTubeFallbackTier.ECHO -> "echo"
+        }
 
     /**
      * The video artwork stream of [videoId] within [maxHeight] lines, through the NewPipe tier with this resolver's
