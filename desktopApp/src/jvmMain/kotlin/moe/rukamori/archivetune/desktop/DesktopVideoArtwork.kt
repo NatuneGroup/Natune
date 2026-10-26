@@ -1,14 +1,35 @@
 package moe.rukamori.archivetune.desktop
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
@@ -62,9 +83,22 @@ internal class DesktopVideoArtwork(
     private val report: (String) -> Unit,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
+    /** What the stats-for-nerds overlay shows for a running feed: decode shape, presented pace and recovery count. */
+    data class VideoFeedStats(
+        val width: Int = 0,
+        val height: Int = 0,
+        val streamHeight: Int = 0,
+        val state: VideoArtworkState? = null,
+        val presentedFrames: Long = 0,
+        val presentedFps: Float = 0f,
+        val recoveries: Int = 0,
+        val lastError: String = "",
+    )
+
     /** One reader and its newest frame, shared by every surface that shows [videoId]. */
     class Feed(val videoId: String) {
         val frame = mutableStateOf<SkiaImage?>(null)
+        val stats = mutableStateOf(VideoFeedStats())
         internal var users = 0
         internal var job: Job? = null
     }
@@ -118,6 +152,10 @@ internal class DesktopVideoArtwork(
         var recoveries = 0
         try {
             reader.setActive(true)
+            var presented = 0L
+            var windowStartMs = nowMs()
+            var windowFrames = 0
+            var fps = 0f
             while (currentCoroutineContext().isActive) {
                 val current = player.snapshot.value
                 val advancing = current != null && PlaybackClock.isInterpolating(current)
@@ -131,7 +169,9 @@ internal class DesktopVideoArtwork(
                 }
                 val (info, copied) = reader.copyFrame(sequence, pixels?.addr ?: 0L, capacity) ?: break
                 if (info.state == VideoArtworkState.FAILED) {
-                    report("video artwork stopped: ${reader.lastError().take(MAX_ERROR_CHARS)}")
+                    val lastError = reader.lastError().take(MAX_ERROR_CHARS)
+                    report("video artwork stopped: $lastError")
+                    feed.stats.value = feed.stats.value.copy(state = VideoArtworkState.FAILED, lastError = lastError)
                     reader.close()
                     if (recoveries >= MAX_RECOVERIES) break
                     recoveries++
@@ -159,6 +199,23 @@ internal class DesktopVideoArtwork(
                     val previous = feed.frame.value
                     feed.frame.value = SkiaImage.makeFromBitmap(written)
                     previous?.close()
+                    presented++
+                    windowFrames++
+                    val elapsed = nowMs() - windowStartMs
+                    if (elapsed >= 1000L) {
+                        fps = windowFrames * 1000f / elapsed
+                        windowFrames = 0
+                        windowStartMs = nowMs()
+                    }
+                    feed.stats.value = feed.stats.value.copy(
+                        width = info.width,
+                        height = info.height,
+                        streamHeight = streamHeight(feed.videoId),
+                        state = info.state,
+                        presentedFrames = presented,
+                        presentedFps = fps,
+                        recoveries = recoveries,
+                    )
                 }
             }
         } finally {
@@ -191,6 +248,10 @@ internal class DesktopVideoArtwork(
             }
         }
     }
+
+    /** The stream height the reader opened for [videoId], for the stats overlay, or 0 before resolution. */
+    private fun streamHeight(videoId: String): Int =
+        ((answers[videoId] as? Answer.Found)?.stream?.height) ?: 0
 
     private suspend fun stream(videoId: String, refresh: Boolean): DesktopVideoArtworkResult.Stream? {
         val now = nowMs()
@@ -254,10 +315,100 @@ internal fun DesktopPlayerArtwork(occurrenceId: String?, graph: DesktopSessionGr
     }?.id
     val showVideo = visible && saved?.get(EnableVideoPlaybackKey) == true && videoId != null &&
         target != null && snapshot?.occurrenceId == target
+    var fullscreen by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(false) }
     Box(modifier) {
         DesktopQueueArtwork(occurrenceId, graph, Modifier.fillMaxSize())
         if (showVideo && videoId != null) {
             DesktopVideoSurface(videoId, graph, VideoFit.of(saved?.get(VideoAspectRatioKey)), Modifier.matchParentSize())
+            Row(Modifier.align(Alignment.TopEnd)) {
+                IconButton(onClick = { showStats = !showStats }) {
+                    Icon(
+                        Icons.Filled.Info,
+                        contentDescription = DesktopStrings["video_stats_toggle"],
+                        tint = if (showStats) Color.White else Color.White.copy(alpha = 0.6f),
+                    )
+                }
+                IconButton(onClick = { fullscreen = true }) {
+                    Icon(
+                        Icons.Filled.Fullscreen,
+                        contentDescription = DesktopStrings["video_fullscreen"],
+                        tint = Color.White,
+                    )
+                }
+            }
+            if (showStats) {
+                val feed = remember(videoId) { graph.videoArtwork.acquire(videoId) }
+                DisposableEffect(feed) { onDispose { graph.videoArtwork.release(feed) } }
+                DesktopVideoStatsPanel(feed, Modifier.align(Alignment.BottomStart).padding(8.dp))
+            }
+        }
+    }
+    if (fullscreen && videoId != null) {
+        DesktopVideoFullscreen(videoId, graph, VideoFit.of(saved?.get(VideoAspectRatioKey))) { fullscreen = false }
+    }
+}
+
+/**
+ * The desktop stats-for-nerds: the decode shape and presented pace of [feed], as the Metrolist desktop overlay shows
+ * them. Every number is read from the running reader, so a stalled stream shows up as state and a stopped fps, not
+ * frozen values.
+ */
+@Composable
+private fun DesktopVideoStatsPanel(feed: DesktopVideoArtwork.Feed, modifier: Modifier = Modifier) {
+    val stats = feed.stats.value
+    Column(
+        modifier
+            .widthIn(max = 340.dp)
+            .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(8.dp))
+            .padding(10.dp),
+    ) {
+        statRow(DesktopStrings["video_stats_id"], feed.videoId)
+        if (stats.width > 0) statRow(DesktopStrings["video_stats_resolution"], "${stats.width}x${stats.height}")
+        if (stats.streamHeight > 0) statRow(DesktopStrings["video_stats_stream"], "${stats.streamHeight}p")
+        statRow(DesktopStrings["video_stats_decoder"], stats.state?.name ?: DesktopStrings["video_stats_opening"])
+        statRow(DesktopStrings["video_stats_fps"], "%.1f".format(stats.presentedFps))
+        statRow(DesktopStrings["video_stats_frames"], stats.presentedFrames.toString())
+        if (stats.recoveries > 0) statRow(DesktopStrings["video_stats_recoveries"], stats.recoveries.toString())
+        if (stats.lastError.isNotBlank()) statRow(DesktopStrings["video_stats_error"], stats.lastError)
+    }
+}
+
+@Composable
+private fun statRow(label: String, value: String) {
+    Row {
+        Text("$label: ", color = Color.White.copy(alpha = 0.66f), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+        Text(value, color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+    }
+}
+
+/**
+ * Full-window video: the same shared feed drawn on a black field, with the stats toggle and a close button. It is a
+ * second surface on the feed, so it never starts another reader for the same video.
+ */
+@Composable
+private fun DesktopVideoFullscreen(videoId: String, graph: DesktopSessionGraph, fit: VideoFit, onClose: () -> Unit) {
+    var showStats by remember { mutableStateOf(false) }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            DesktopVideoSurface(videoId, graph, fit, Modifier.fillMaxSize())
+            Row(Modifier.align(Alignment.TopEnd)) {
+                IconButton(onClick = { showStats = !showStats }) {
+                    Icon(
+                        Icons.Filled.Info,
+                        contentDescription = DesktopStrings["video_stats_toggle"],
+                        tint = if (showStats) Color.White else Color.White.copy(alpha = 0.6f),
+                    )
+                }
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Filled.Close, contentDescription = DesktopStrings["video_close"], tint = Color.White)
+                }
+            }
+            if (showStats) {
+                val feed = remember(videoId) { graph.videoArtwork.acquire(videoId) }
+                DisposableEffect(feed) { onDispose { graph.videoArtwork.release(feed) } }
+                DesktopVideoStatsPanel(feed, Modifier.align(Alignment.TopStart).padding(16.dp))
+            }
         }
     }
 }
