@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Stage the host-built macOS media closure.
+"""Stage this worktree's exact media closure for macOS.
 
-Every staged dylib is self-contained beside the app image: its install name becomes
-@rpath/<soname>, every dependency that pointed inside the native dependency prefix is
-rewritten to @rpath/<soname>, and each library carries an @loader_path rpath entry so
-the chain resolves next to the loading binary. A package that still references a
-build-tree path or a missing library is refused, never shipped.
+Every staged dylib gets an @rpath install name and every non-system dependency is rewritten to
+@rpath/<name>, so the package loads its own closure from the resource directory and never resolves
+against the build prefix. Anything the audit cannot account for fails the stage instead of shipping.
 """
 import pathlib
 import platform
@@ -16,7 +14,7 @@ import sys
 
 root = pathlib.Path(__file__).resolve().parents[2]
 build = root / "build"
-prefix_lib = build / "native/prefix/lib"
+prefix = build / "native/prefix/lib"
 engine = build / "native/engine-build"
 # Compose copies the resource directory named after the host's OS and architecture.
 arch = "arm64" if platform.machine() in ("aarch64", "arm64") else "x64"
@@ -24,63 +22,85 @@ destination = build / f"distribution-resources/macos-{arch}/native"
 destination.mkdir(parents=True, exist_ok=True)
 subprocess.run(["cmake", "--install", str(engine), "--prefix", str(destination)], check=True)
 
-
-def run(*command):
-    subprocess.run(list(command), check=True)
-
-
-def otool_lines(binary):
-    out = subprocess.run(["otool", "-L", str(binary)], check=True, text=True,
-                         capture_output=True).stdout
-    # The first line is the file path; each later line is '<path> (compatibility ...)'.
-    return [line.strip().split(" ", 1)[0] for line in out.splitlines()[1:] if line.strip()]
+SYSTEM_PREFIXES = ("/System/", "/usr/lib/system/", "/usr/lib/libSystem", "/usr/lib/libc++",
+                   "/usr/lib/libobjc", "/usr/lib/libresolv")
 
 
-def install_name(binary):
-    return subprocess.run(["otool", "-D", str(binary)], check=True, text=True,
-                          capture_output=True).stdout.splitlines()[-1].strip()
+def otool(arguments):
+    return subprocess.run(["otool"] + arguments, check=True, text=True, capture_output=True).stdout
 
 
-# Stage the versioned media dylibs under the SONAME their dependents record, skipping
-# development symlinks and static archives.
-sonames = {}
-for library in sorted(prefix_lib.iterdir()):
-    if library.is_symlink() or not library.is_file() or not library.name.endswith(".dylib"):
+def install_name(library):
+    lines = otool(["-D", str(library)]).splitlines()
+    if len(lines) < 2 or not lines[1].strip():
+        raise RuntimeError(f"Missing install name: {library.name}")
+    return lines[1].strip()
+
+
+def dependencies(library):
+    lines = otool(["-L", str(library)]).splitlines()
+    return [line.strip().split(" ", 1)[0] for line in lines[2:] if line.strip()]
+
+
+# The closure name is the install-name basename, so a dependent's recorded path resolves to it.
+allowed = ("libavcodec.", "libavformat.", "libavfilter.", "libavutil.", "libavdevice.",
+           "libswresample.", "libswscale.", "libssl.", "libcrypto.", "libxml2.", "libz.")
+staged = set()
+for library in sorted(prefix.iterdir()):
+    if not library.name.endswith(".dylib") or not library.name.startswith(allowed) or library.is_symlink():
         continue
-    soname = pathlib.PurePosixPath(install_name(library)).name
-    if soname in sonames:
-        continue
-    shutil.copyfile(library, destination / soname)
-    sonames[soname] = destination / soname
-if not any(name.startswith("libavformat.") for name in sonames):
-    sys.exit("Missing FFmpeg closure; run build-native-deps.sh first")
+    name = install_name(library).rsplit("/", 1)[-1]
+    if name not in staged:
+        shutil.copyfile(library, destination / name)
+        staged.add(name)
+if not any(name.startswith("libavformat.") for name in staged):
+    raise RuntimeError("Missing FFmpeg closure; build native dependencies first")
 
-binaries = [path for path in sorted(destination.iterdir()) if path.is_file()]
-for path in binaries:
-    run("install_name_tool", "-id", f"@rpath/{path.name}", str(path))
-    for dep in otool_lines(path):
-        if dep == str(path) or dep.startswith("@"):
-            continue
-        soname = pathlib.PurePosixPath(dep).name
-        if dep.startswith("/usr/lib/") or dep.startswith("/System/Library/"):
-            continue
-        if soname in sonames or soname in {p.name for p in binaries}:
-            run("install_name_tool", "-change", dep, f"@rpath/{soname}", str(path))
+for library in sorted(destination.iterdir()):
+    if not library.name.endswith(".dylib") or library.is_symlink():
+        continue
+    rewrites = ["-id", f"@rpath/{library.name}"]
+    for dep in dependencies(library):
+        name = dep.rsplit("/", 1)[-1]
+        if dep.startswith(("@rpath/", "@loader_path/", "@executable_path/")):
+            if name != library.name:
+                rewrites += ["-change", dep, f"@rpath/{name}"]
+        elif dep.startswith("/"):
+            if dep.startswith(SYSTEM_PREFIXES) or dep.startswith("/usr/lib/"):
+                continue
+            if name in staged or name == library.name:
+                rewrites += ["-change", dep, f"@rpath/{name}"]
+            else:
+                raise RuntimeError(f"Unstaged dependency {dep} in {library.name}")
         else:
-            sys.exit(f"{path.name} depends on {dep}, which is not staged")
-    rpath_lines = subprocess.run(["otool", "-l", str(path)], check=True, text=True,
-                                 capture_output=True).stdout
-    if "@loader_path" not in rpath_lines:
-        run("install_name_tool", "-add_rpath", "@loader_path", str(path))
+            raise RuntimeError(f"Unexpected dependency {dep} in {library.name}")
+    subprocess.run(["install_name_tool"] + rewrites + [str(library)], check=True)
+    rpaths = re.findall(r"LC_RPATH\s*\n\s*cmdsize \d+\s*\n\s*path (\S+)", otool(["-l", str(library)]))
+    for rpath in rpaths:
+        if rpath != "@loader_path":
+            subprocess.run(["install_name_tool", "-delete_rpath", rpath, str(library)], check=True)
+    if "@loader_path" not in rpaths:
+        subprocess.run(["install_name_tool", "-add_rpath", "@loader_path", str(library)], check=True)
 
-# Re-read every load command: nothing may keep a path inside this worktree.
-for path in binaries:
-    for dep in otool_lines(path):
-        if str(root) in dep or str(build) in dep:
-            sys.exit(f"{path.name} keeps a build-tree dependency: {dep}")
-        if dep.startswith("/") and not dep.startswith(("/usr/lib/", "/System/Library/")):
-            sys.exit(f"{path.name} keeps a non-system dependency: {dep}")
-    print(f"Staged native: {path.name}")
+# Audit: every dependency must be a system path or an @rpath name that the staged set provides.
+for library in sorted(destination.iterdir()):
+    if not library.name.endswith(".dylib") or library.is_symlink():
+        continue
+    for dep in dependencies(library):
+        name = dep.rsplit("/", 1)[-1]
+        if dep.startswith("/"):
+            if not (dep.startswith(SYSTEM_PREFIXES) or dep.startswith("/usr/lib/")):
+                raise RuntimeError(f"Unresolved dependency {dep} in {library.name}")
+        elif dep.startswith(("@rpath/", "@loader_path/")):
+            if name != library.name and name not in staged:
+                raise RuntimeError(f"Unresolved @rpath dependency {dep} in {library.name}")
+        else:
+            raise RuntimeError(f"Unresolved dependency {dep} in {library.name}")
+    # otool's first output line is the inspected file's own path; load commands follow it.
+    dynamic = otool(["-l", str(library)]).split("\n", 1)[-1]
+    if str(root) in dynamic or str(build) in dynamic:
+        raise RuntimeError(f"Non-relocatable path in {library.name}")
+    print(f"Staged native: {library.name}", file=sys.stderr)
 
 notices = build / "distribution-resources/common/notices"
 notices.mkdir(parents=True, exist_ok=True)
@@ -92,5 +112,5 @@ for source, name in (
     (build / "native/src/miniaudio-0.11.25/LICENSE", "miniaudio.txt"),
 ):
     if not source.is_file():
-        sys.exit(f"Required license missing: {source}")
+        raise RuntimeError(f"Required license missing: {source}")
     shutil.copyfile(source, notices / name)
