@@ -554,10 +554,12 @@ class DesktopSessionGraph private constructor(
             )
             // Set once Listen Together and the sleep timer exist; until then nothing holds the transitions back.
             val handoffHold = MutableStateFlow(false)
+            // One router feeds the queue and the chat song picker, so a pick resolves exactly what playback resolves.
+            val contentRouter = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library), youtubeContent))
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
-                content = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library), youtubeContent)),
+                content = contentRouter,
                 locators = locators,
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { repeatModeOf(vault.snapshots.value) },
@@ -620,6 +622,7 @@ class DesktopSessionGraph private constructor(
                 queue = queue,
                 // A host's volume is applied to the engine only, so the user's own saved level is not overwritten.
                 setVolume = { level -> if (level.isFinite()) playback.setVolume(level.coerceIn(0f, 1f)) },
+                content = contentRouter,
                 report = ::desktopDiagnostic,
             )
             val listenerPresence = DesktopListenerPresence(
