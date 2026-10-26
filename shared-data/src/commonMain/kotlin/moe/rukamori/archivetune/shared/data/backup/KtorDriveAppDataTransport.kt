@@ -52,7 +52,8 @@ class KtorDriveAppDataTransport(
         require(fileName.isNotEmpty() && fileName.all { it.isLetterOrDigit() || it in "._-" }) { "Unsafe backup file name" }
     }
 
-    private val http = client.config {
+    // Ktor 3 dropped `client.config`; a second client on the same engine keeps the sharing the doc promises.
+    private val http = HttpClient(client.engine) {
         followRedirects = false
         expectSuccess = false
     }

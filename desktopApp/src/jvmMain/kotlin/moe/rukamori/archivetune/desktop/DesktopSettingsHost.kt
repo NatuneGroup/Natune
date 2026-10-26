@@ -75,6 +75,37 @@ import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
 import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.setValue
+import moe.rukamori.archivetune.shared.domain.settings.CanvasConnectivity
+import moe.rukamori.archivetune.shared.domain.settings.EnableTranslatorKey
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackState
+import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
+import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
+import moe.rukamori.archivetune.shared.domain.settings.defaultUpdateChannel
+import moe.rukamori.archivetune.shared.domain.settings.setUpdateChannel
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamingSignedIn
+import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings
+import moe.rukamori.archivetune.shared.ui.settings.AmazonSettings
+import moe.rukamori.archivetune.shared.ui.settings.AppleMusicSettings
+import moe.rukamori.archivetune.shared.ui.settings.CanvasSettings
+import moe.rukamori.archivetune.shared.ui.settings.ChangelogSettings
+import moe.rukamori.archivetune.shared.ui.settings.ContentSettings
+import moe.rukamori.archivetune.shared.ui.settings.ChangelogState
+import moe.rukamori.archivetune.shared.ui.settings.DiscordSettings
+import moe.rukamori.archivetune.shared.ui.settings.DownloadsSettings
+import moe.rukamori.archivetune.shared.ui.settings.JioSaavnSettings
+import moe.rukamori.archivetune.shared.ui.settings.InternetSettings
+import moe.rukamori.archivetune.shared.ui.settings.LanguagePackSettings
+import moe.rukamori.archivetune.shared.ui.settings.PoTokenSettings
+import moe.rukamori.archivetune.shared.ui.settings.SettingsCacheKind
+import moe.rukamori.archivetune.shared.ui.settings.SourceSettings
+import moe.rukamori.archivetune.shared.ui.settings.StorageSettings
+import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
+import moe.rukamori.archivetune.shared.ui.settings.YtDlpRuntimeSettings
+import moe.rukamori.archivetune.shared.ui.settings.romanizationSettingsRows
+import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
 
 /**
  * The settings owners of the desktop host: one controller over the graph's settings, and the graph's sign-in lifecycle
@@ -154,6 +185,9 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
         qobuzInstanceHealth.update { it - instances }
     }
 
+    val services = DesktopSettingsServices(graph, controller, DesktopSettingsServices.currentInstanceDirectory())
+    val discord = DesktopDiscordPresence(graph, DesktopLaunchIntake.links, controller, graph::report)
+
     suspend fun qobuzSecretCandidates(): List<String> = qobuzScrape.candidates().orEmpty()
 
     suspend fun verifyQobuzToken(entry: QobuzTokenEntry): SourceHealthStatus =
@@ -226,6 +260,10 @@ private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
     DesktopListenTogetherSettingsRoute, "settings/misc", "settings/logcat", "settings/backup_restore",
     "settings/lyrics/providers",
+    "settings/ai_integration", "settings/amazon", "settings/applemusic", "settings/canvas", "settings/changelog",
+    "settings/content", "settings/discord", "settings/downloads", "settings/internet", "settings/jiosaavn",
+    "settings/language_packs", "settings/lyrics/romanisation", "settings/player/ytdlp", "settings/po_token",
+    "settings/sources", "settings/storage", "settings/update",
 )
 
 /**
@@ -441,6 +479,190 @@ internal fun DesktopSettingsScreen(
                 controller = owners.controller,
                 readStats = { preferences -> PaxsenixDiagnostics(graph.http, paxsenixSettingsOf(preferences)).getStats().getOrThrow() },
                 checkEndpoints = { preferences -> PaxsenixDiagnostics(graph.http, paxsenixSettingsOf(preferences)).checkProviderPaths() },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/ai_integration" -> AiIntegrationSettings(
+                controller = owners.controller,
+                actions = owners.services.aiActions,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+                onOpenApiKeyPortal = { url -> openDesktopUri(url, graph::report) },
+            )
+            "settings/amazon" -> {
+                val snapshot by graph.settings.snapshots.collectAsState()
+                AmazonSettings(
+                    controller = owners.controller,
+                    poolInstanceCount = snapshot?.amazonInstanceList()?.size ?: 0,
+                    currentTimeMillis = System::currentTimeMillis,
+                    formatExpiry = owners.services::formatExpiry,
+                    onAuthorize = unavailable,
+                    onFailure = onFailure,
+                    onNotice = onNotice,
+                    scrollTo = scrollTo,
+                )
+            }
+            "settings/applemusic" -> AppleMusicSettings(owners.controller, onFailure, scrollTo)
+            "settings/canvas" -> {
+                val connectivity by produceState<CanvasConnectivity?>(null) {
+                    value = owners.services.canvasConnectivity()
+                }
+                val probes by owners.services.canvasProbes.collectAsState()
+                val canvasBytes by produceState<Long?>(null) { value = owners.services.canvasCacheBytes() }
+                CanvasSettings(
+                    controller = owners.controller,
+                    connectivity = connectivity,
+                    providerProbes = probes,
+                    refreshHealth = owners.services::refreshCanvasHealth,
+                    cacheBytes = canvasBytes,
+                    applyCacheLimit = owners.services::applyCanvasCacheLimit,
+                    clearCache = owners.services::clearCanvasCache,
+                    onFailure = onFailure,
+                )
+            }
+            "settings/changelog" -> {
+                val isNightly = DesktopBuildIdentity.FORK_BRANCH != "main"
+                val channel = UpdateChannel.fromStoredName(route.arguments["channel"], defaultUpdateChannel(isNightly))
+                var attempt by remember { mutableStateOf(0) }
+                val state by produceState<ChangelogState>(ChangelogState.Loading, channel, attempt) {
+                    value = owners.services.fetchChangelog(channel)
+                        ?.let(ChangelogState::Loaded) ?: ChangelogState.Failed
+                }
+                ChangelogSettings(
+                    channel = channel,
+                    state = state,
+                    onRetry = { attempt += 1 },
+                    onOpenUrl = { url -> openDesktopUri(url, graph::report) },
+                )
+            }
+            "settings/content" -> ContentSettings(owners.controller, onFailure, scrollTo)
+            "settings/discord" -> {
+                LaunchedEffect(Unit) { owners.discord.startPresenceDriver() }
+                DiscordSettings(
+                    controller = owners.controller,
+                    presenceSupported = true,
+                    currentTimeMillis = System::currentTimeMillis,
+                    authorize = owners.discord::authorize,
+                    verifyAccount = owners.discord::verifyAccount,
+                    refreshPresence = owners.discord::refreshPresence,
+                    signOut = owners.discord::signOut,
+                    navigate = navigate,
+                    onNotice = onNotice,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                    avatar = { url, _, modifier -> DesktopRemoteArtwork(url, graph.artworkLoader, modifier) },
+                )
+            }
+            "settings/downloads" -> DownloadsSettings(
+                controller = owners.controller,
+                poolConfigured = graph.playbackPool.configured,
+                clearDownloads = owners.services::clearDownloads,
+                navigate = navigate,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/internet" -> InternetSettings(
+                controller = owners.controller,
+                activeRotationCount = owners.services.activeRotationCount(),
+                applyNetworkSettings = owners.services::applyNetworkSettings,
+                applyIpRotation = owners.services::applyIpRotation,
+                testProxy = owners.services::testProxy,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/jiosaavn" -> JioSaavnSettings(owners.controller, onFailure, scrollTo)
+            "settings/language_packs" -> {
+                val japaneseState by owners.services.japanesePackManager.state.collectAsState()
+                val spatialFlow by owners.services.spatialFlowFont.collectAsState()
+                LanguagePackSettings(
+                    controller = owners.controller,
+                    japanese = owners.services.mapJapaneseState(japaneseState),
+                    spatialFlowFont = spatialFlow,
+                    formatSize = { bytes -> "%.1f MB".format(bytes / 1_000_000.0) },
+                    onInstallJapanese = { scope.launch { owners.services.installJapanese() } },
+                    onCancelJapanese = { scope.launch { owners.services.cancelJapanese() } },
+                    onRemoveJapanese = { scope.launch { owners.services.removeJapanese() } },
+                    onInstallSpatialFlowFont = { unavailable() },
+                    onRemoveSpatialFlowFont = { unavailable() },
+                    onFailure = onFailure,
+                )
+            }
+            "settings/lyrics/romanisation" -> {
+                val snapshot by graph.settings.snapshots.collectAsState()
+                val preferences = snapshot
+                if (preferences == null) {
+                    CircularProgressIndicator()
+                } else {
+                    val japaneseState by owners.services.japanesePackManager.state.collectAsState()
+                    SettingsPage(
+                        rows = romanizationSettingsRows(
+                            aiHandled = preferences[EnableTranslatorKey, false],
+                            japanesePackReady = japaneseState is JapaneseLanguagePackState.Installed,
+                            preferences = preferences,
+                        ),
+                        preferences = preferences,
+                        controller = owners.controller,
+                        scrollTo = scrollTo,
+                        onFailure = onFailure,
+                    )
+                }
+            }
+            "settings/player/ytdlp" -> YtDlpRuntimeSettings(readRuntime = owners.services::readYtDlpRuntime)
+            "settings/po_token" -> PoTokenSettings(
+                controller = owners.controller,
+                generateTokens = owners.services::generatePoTokens,
+                copyToClipboard = ::copyToDesktopClipboard,
+                onFailure = onFailure,
+            )
+            "settings/sources" -> {
+                val snapshot by graph.settings.snapshots.collectAsState()
+                val preferences = snapshot
+                if (preferences == null) {
+                    CircularProgressIndicator()
+                } else {
+                    SourceSettings(
+                        controller = owners.controller,
+                        spotifyStreamingReady = preferences.spotifyStreamingSignedIn(),
+                        poolConfigured = graph.playbackPool.configured,
+                        refreshPool = owners.services::refreshPool,
+                        checkSource = { type, prefs -> owners.services.checkSource(type, prefs) },
+                        navigate = navigate,
+                        onFailure = onFailure,
+                        scrollTo = scrollTo,
+                    )
+                }
+            }
+            "settings/storage" -> {
+                var busy by remember { mutableStateOf(false) }
+                val usedBytes by produceState<Map<SettingsCacheKind, Long>>(emptyMap(), busy) {
+                    value = owners.services.usedCacheBytes()
+                }
+                StorageSettings(
+                    controller = owners.controller,
+                    usedBytes = usedBytes,
+                    currentStorageLabel = owners.services.instanceDirectory.toString(),
+                    storageBusy = busy,
+                    pickAndCommitStorage = {
+                        busy = true
+                        try { owners.services.pickAndCommitStorage() } finally { busy = false }
+                    },
+                    clearCache = { kind -> busy = true; try { owners.services.clearCache(kind) } finally { busy = false } },
+                    applyCacheLimits = { prefs -> busy = true; try { owners.services.applyCacheLimits(prefs) } finally { busy = false } },
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            "settings/update" -> UpdateSettings(
+                controller = owners.controller,
+                isNightlyBuild = DesktopBuildIdentity.FORK_BRANCH != "main",
+                updaterAvailable = true,
+                checkFeed = owners.services::checkUpdateFeed,
+                onChannelChanged = { channel -> owners.controller.edit { setUpdateChannel(channel) } },
+                onNotificationChanged = { /* this host has no scheduler yet; the persisted choice stays real */ },
+                loadCommits = owners.services::loadUpdateCommits,
+                commitAvatar = { url, modifier -> DesktopRemoteArtwork(url, graph.artworkLoader, modifier) },
+                onOpenCommit = { url -> openDesktopUri(url, graph::report) },
+                navigate = navigate,
                 onFailure = onFailure,
                 scrollTo = scrollTo,
             )
