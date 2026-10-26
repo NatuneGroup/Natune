@@ -10,8 +10,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -54,7 +57,10 @@ import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
+import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
+import moe.rukamori.archivetune.shared.ui.settings.ChangelogSettings
+import moe.rukamori.archivetune.shared.ui.settings.ChangelogState
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
 import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
@@ -73,26 +79,20 @@ import moe.rukamori.archivetune.shared.ui.settings.SpotifyStreamingSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
 import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
+import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.setValue
 import moe.rukamori.archivetune.shared.domain.settings.CanvasConnectivity
 import moe.rukamori.archivetune.shared.domain.settings.EnableTranslatorKey
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackState
-import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
-import moe.rukamori.archivetune.shared.domain.settings.defaultUpdateChannel
-import moe.rukamori.archivetune.shared.domain.settings.setUpdateChannel
 import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamingSignedIn
 import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings
 import moe.rukamori.archivetune.shared.ui.settings.AmazonSettings
 import moe.rukamori.archivetune.shared.ui.settings.AppleMusicSettings
 import moe.rukamori.archivetune.shared.ui.settings.CanvasSettings
-import moe.rukamori.archivetune.shared.ui.settings.ChangelogSettings
 import moe.rukamori.archivetune.shared.ui.settings.ContentSettings
-import moe.rukamori.archivetune.shared.ui.settings.ChangelogState
 import moe.rukamori.archivetune.shared.ui.settings.DiscordSettings
 import moe.rukamori.archivetune.shared.ui.settings.DownloadsSettings
 import moe.rukamori.archivetune.shared.ui.settings.JioSaavnSettings
@@ -102,7 +102,6 @@ import moe.rukamori.archivetune.shared.ui.settings.PoTokenSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsCacheKind
 import moe.rukamori.archivetune.shared.ui.settings.SourceSettings
 import moe.rukamori.archivetune.shared.ui.settings.StorageSettings
-import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
 import moe.rukamori.archivetune.shared.ui.settings.YtDlpRuntimeSettings
 import moe.rukamori.archivetune.shared.ui.settings.romanizationSettingsRows
 import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
@@ -198,6 +197,9 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
         } catch (_: Exception) {
             SourceHealthStatus.UNREACHABLE
         }
+
+    // Stages under the locked instance directory, like every other owner.
+    val update = DesktopUpdateOwner(graph, graph.instanceDirectory)
 
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
@@ -521,17 +523,21 @@ internal fun DesktopSettingsScreen(
                 )
             }
             "settings/changelog" -> {
-                val isNightly = DesktopBuildIdentity.FORK_BRANCH != "main"
-                val channel = UpdateChannel.fromStoredName(route.arguments["channel"], defaultUpdateChannel(isNightly))
-                var attempt by remember { mutableStateOf(0) }
-                val state by produceState<ChangelogState>(ChangelogState.Loading, channel, attempt) {
-                    value = owners.services.fetchChangelog(channel)
-                        ?.let(ChangelogState::Loaded) ?: ChangelogState.Failed
+                val channel = UpdateChannel.entries.firstOrNull { it.name == route.arguments["channel"] }
+                    ?: owners.update.checker.selectedChannel()
+                var retryTick by remember { mutableIntStateOf(0) }
+                val state by produceState<ChangelogState>(ChangelogState.Loading, channel, retryTick) {
+                    value = ChangelogState.Loading
+                    value = owners.update.changelog(channel, forceRefresh = retryTick > 0)
+                        .fold(
+                            onSuccess = { ChangelogState.Loaded(it) },
+                            onFailure = { ChangelogState.Failed },
+                        )
                 }
                 ChangelogSettings(
                     channel = channel,
                     state = state,
-                    onRetry = { attempt += 1 },
+                    onRetry = { retryTick += 1 },
                     onOpenUrl = { url -> openDesktopUri(url, graph::report) },
                 )
             }
@@ -652,20 +658,31 @@ internal fun DesktopSettingsScreen(
                     scrollTo = scrollTo,
                 )
             }
-            "settings/update" -> UpdateSettings(
-                controller = owners.controller,
-                isNightlyBuild = DesktopBuildIdentity.FORK_BRANCH != "main",
-                updaterAvailable = true,
-                checkFeed = owners.services::checkUpdateFeed,
-                onChannelChanged = { channel -> owners.controller.edit { setUpdateChannel(channel) } },
-                onNotificationChanged = { /* this host has no scheduler yet; the persisted choice stays real */ },
-                loadCommits = owners.services::loadUpdateCommits,
-                commitAvatar = { url, modifier -> DesktopRemoteArtwork(url, graph.artworkLoader, modifier) },
-                onOpenCommit = { url -> openDesktopUri(url, graph::report) },
-                navigate = navigate,
-                onFailure = onFailure,
-                scrollTo = scrollTo,
-            )
+            "settings/update" -> {
+                val update = owners.update
+                val downloadState = update.installer.state
+                UpdateSettings(
+                    controller = owners.controller,
+                    isNightlyBuild = update.isNightlyBuild,
+                    updaterAvailable = update.updaterAvailable,
+                    installMode = update.installMode,
+                    checkFeed = { channel, force -> update.checkFeed(channel, force) },
+                    onChannelChanged = { channel -> update.checker.markSelectionChanged() },
+                    onNotificationChanged = { enabled -> update.onNotificationPreferenceChanged(enabled) },
+                    installOffer = update::install,
+                    downloadState = downloadState,
+                    cancelDownload = { update.installer.cancelDownload() },
+                    consumeDownload = { state -> scope.launch { update.consumeDownload(state) } },
+                    loadCommits = { channel -> update.loadCommits(channel) },
+                    commitAvatar = { url, modifier ->
+                        if (url != null) DesktopRemoteArtwork(url, graph.artworkLoader, modifier)
+                    },
+                    onOpenCommit = { url -> openDesktopUri(url, graph::report) },
+                    navigate = navigate,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }
