@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneRoot
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.IosSessionState
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.ios_host_graph_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.CrashReportActions

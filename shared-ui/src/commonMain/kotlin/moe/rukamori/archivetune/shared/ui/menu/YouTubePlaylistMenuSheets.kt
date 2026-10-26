@@ -20,6 +20,7 @@ import moe.rukamori.archivetune.shared.ui.menu.youtubeplaylist.YouTubePlaylistMe
 import moe.rukamori.archivetune.shared.ui.menu.youtubeplaylist.YouTubePlaylistMenuHost
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 /**
  * The shared add-to-playlist chooser for a remote YouTube playlist. It lists the host's editable local playlists,

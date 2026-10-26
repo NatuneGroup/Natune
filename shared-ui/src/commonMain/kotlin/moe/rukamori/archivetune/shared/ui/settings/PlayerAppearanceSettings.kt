@@ -5,6 +5,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
+import androidx.compose.runtime.getValue
 
 /** settings/appearance/player. Platform effects and the home-source editor remain real host actions. */
 @Composable

@@ -34,19 +34,22 @@ kotlin {
     }
 
     sourceSets {
-        commonMain.dependencies {
-            api(project(":shared-domain"))
-            api(project(":shared-data"))
-            implementation(libs.compose.multiplatform.runtime)
-            implementation(libs.compose.multiplatform.foundation)
-            api(libs.compose.multiplatform.material3)
-            implementation(libs.compose.multiplatform.ui)
-            implementation(libs.compose.multiplatform.components.resources)
-            api(libs.liquid.glass)
-            api(libs.haze)
-            api(libs.kotlinx.coroutines.core)
-            // The host owners take the host's HttpClient; each host supplies its own engine.
-            implementation(libs.ktor.client.core)
+        commonMain {
+            dependencies {
+                api(project(":shared-domain"))
+                api(project(":shared-data"))
+                implementation(libs.compose.multiplatform.runtime)
+                implementation(libs.compose.multiplatform.foundation)
+                api(libs.compose.multiplatform.material3)
+                implementation(libs.compose.multiplatform.ui)
+                implementation(libs.compose.multiplatform.components.resources)
+                implementation(compose.runtimeSaveable)
+                api(libs.liquid.glass)
+                api(libs.haze)
+                api(libs.kotlinx.coroutines.core)
+                // The host owners take the host's HttpClient; each host supplies its own engine.
+                implementation(libs.ktor.client.core)
+            }
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
@@ -70,18 +73,9 @@ compose.resources {
 }
 
 // Keep complete upstream notices in every platform resource bundle, not just the source checkout.
-val prepareRomanizationNotices = tasks.register<Copy>("prepareRomanizationNotices") {
-    from(rootProject.file("shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/lyrics/romanization")) {
-        include("kuromoji-LICENSE.txt", "kuromoji-CONTRIBUTORS.md", "kuromoji-IPADIC-NOTICE.md")
-    }
-    into(layout.buildDirectory.dir("generated/romanization-notices/composeResources/files/notices"))
-}
-compose.resources.customDirectory(
-    sourceSetName = "commonMain",
-    directoryProvider = layout.buildDirectory.dir("generated/romanization-notices/composeResources"),
-)
-tasks.matching { it.name.startsWith("generateResourceAccessors") || it.name.startsWith("prepareComposeResources") }
-    .configureEach { dependsOn(prepareRomanizationNotices) }
+// They are checked in under src/commonMain/composeResources/files/notices because
+// compose.resources.customDirectory replaces a source set's default composeResources dir
+// instead of adding to it, so a generated directory would shadow the real resources.
 
 // The screenshot test writes into the ignored repository outputs/ directory. It must run on every
 // invocation, because a cached result would skip the capture that the evidence relies on.

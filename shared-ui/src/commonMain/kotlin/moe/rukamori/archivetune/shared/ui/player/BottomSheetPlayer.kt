@@ -16,6 +16,7 @@ import moe.rukamori.archivetune.shared.ui.glass.opticalPolicy
 import moe.rukamori.archivetune.shared.ui.playerstyles.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
 
 internal class PlayerRenderContext(
     val state: PlayerState,

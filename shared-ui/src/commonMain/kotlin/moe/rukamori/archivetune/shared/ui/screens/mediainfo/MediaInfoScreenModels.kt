@@ -1,6 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.screens.mediainfo
 
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_solar_hertz
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_solar_info
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_solar_ruler

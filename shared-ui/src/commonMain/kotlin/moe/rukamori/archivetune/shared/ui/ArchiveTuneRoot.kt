@@ -20,6 +20,8 @@ import moe.rukamori.archivetune.shared.ui.screens.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * Required presentation bindings to one host graph. No queue, settings file, decoder or AI session

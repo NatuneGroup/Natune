@@ -21,7 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_clear_selection
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_selected_count
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_share

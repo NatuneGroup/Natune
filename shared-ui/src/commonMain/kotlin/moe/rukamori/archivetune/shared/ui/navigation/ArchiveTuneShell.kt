@@ -27,6 +27,8 @@ import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** Apply to scroll content, not its viewport: the last row clears chrome while earlier rows pass below it. */
 val LocalShellContentPadding = staticCompositionLocalOf<PaddingValues> { PaddingValues(0.dp) }

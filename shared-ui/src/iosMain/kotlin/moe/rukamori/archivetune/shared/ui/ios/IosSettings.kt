@@ -44,7 +44,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.presence.ListenerPresenceSection
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.ios_logs_copied
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_change_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable

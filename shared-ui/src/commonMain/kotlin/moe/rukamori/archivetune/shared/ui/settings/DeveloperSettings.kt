@@ -5,6 +5,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * Developer switches keep their persisted identities and render their diagnostics only while enabled.

@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 
 /** One published release as the host projects it. [notes] is the raw release body, rendered as Markdown. */
 data class ChangelogRelease(

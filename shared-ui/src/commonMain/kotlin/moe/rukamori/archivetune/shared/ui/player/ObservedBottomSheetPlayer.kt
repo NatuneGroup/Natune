@@ -8,6 +8,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
+import androidx.compose.runtime.getValue
 
 /** Projection of M7's sole queue facade; no copied queue state or second persistence owner. */
 fun queuePlayerState(queue: QueueState,playback: PlaybackSnapshot?,active: Boolean): PlayerState {
