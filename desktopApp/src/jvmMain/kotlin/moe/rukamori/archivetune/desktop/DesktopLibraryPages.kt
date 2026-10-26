@@ -65,6 +65,8 @@ internal fun desktopGraphPage(
         ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> desktopRecognitionDetailsPage(recognition, route)
         ArchiveDestination.LISTEN_TOGETHER -> desktopListenTogetherPage(graph, openRoute)
         ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopListenTogetherChatPage(graph, back)
+        ArchiveDestination.TELEGRAM_BROWSE -> desktopTelegramBrowsePage(graph, back)
+        ArchiveDestination.TELEGRAM_BOTS -> desktopTelegramBotsPage(graph, back, openRoute)
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu)
         ArchiveDestination.NEWS -> desktopNewsPage()
         ArchiveDestination.ARTICLE -> desktopArticlePage(route.arguments.getValue("newsId"))
