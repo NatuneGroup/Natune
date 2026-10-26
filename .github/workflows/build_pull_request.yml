@@ -38,8 +38,10 @@ jobs:
       - name: Install Android SDK packages
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-37" "build-tools;35.0.0" "ndk;30.0.16248370"
+          SDK_DIR="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f | sort -V | tail -n1)"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-37" "build-tools;35.0.0" "ndk;30.0.16248370"
 
       - name: Set Up Gradle
         uses: gradle/actions/setup-gradle@v6
