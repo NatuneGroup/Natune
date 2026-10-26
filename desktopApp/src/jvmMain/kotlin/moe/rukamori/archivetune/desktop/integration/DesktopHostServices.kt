@@ -3,6 +3,8 @@ package moe.rukamori.archivetune.desktop.integration
 import java.awt.EventQueue
 import java.awt.Frame
 import java.awt.Window
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +32,7 @@ class DesktopHostServices(
     private val controls = DesktopMediaControls({ controller.snapshot.value }, dispatchToOwner) {
         controller.consumeDesktopTransport(it, next, previous)
     }
-    private val integration: DesktopSystemIntegration?
+    @Volatile private var integration: DesktopSystemIntegration? = null
     private val visibility: AutoCloseable?
     private val collector: Job
     init {
@@ -38,16 +40,26 @@ class DesktopHostServices(
         val linux = System.getProperty("os.name").startsWith("Linux")
         val raise = { EventQueue.invokeLater { window.isVisible = true; if (window is Frame) window.extendedState = Frame.NORMAL; window.toFront() }; Unit }
         val exit = { EventQueue.invokeLater(quit); Unit }
-        integration = try {
-            if (linux) LinuxSystemIntegration(controls, raise, exit, openUri)
-            else NativeSystemIntegration(window, controls, raise, exit, windowActivity::nativeActivity)
-        } catch (error: Exception) {
-            reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}")
-            null
-        } catch (error: LinkageError) {
-            reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}")
-            null
+        val attach = {
+            try {
+                integration = if (linux) LinuxSystemIntegration(controls, raise, exit, openUri)
+                    else NativeSystemIntegration(window, controls, raise, exit, windowActivity::nativeActivity)
+            } catch (error: Exception) {
+                reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}")
+            } catch (error: LinkageError) {
+                reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}")
+            }
         }
+        // On macOS the native session binds NSApp's main window, which only exists once the AWT window is
+        // ordered on screen. Services attach during first composition, before that order-in, so the attach
+        // waits for windowOpened; an already-open window attaches at once.
+        if (linux || window.isVisible) attach()
+        else window.addWindowListener(object : WindowAdapter() {
+            override fun windowOpened(event: WindowEvent) {
+                window.removeWindowListener(this)
+                attach()
+            }
+        })
         visibility = if (linux) try {
             LinuxWindowVisibility(window, windowActivity::nativeActivity)
         } catch (error: Exception) {
