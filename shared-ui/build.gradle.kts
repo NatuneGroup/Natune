@@ -70,6 +70,8 @@ compose.resources {
     packageOfResClass = "moe.rukamori.archivetune.shared.ui.resources"
     // The library default (auto) does not generate the Res accessors, so ArchiveTuneRoot would not compile.
     generateResClass = always
+    // desktopApp renders shared strings through the same accessors, so they must be visible outside this module.
+    publicResClass = true
 }
 
 // Keep complete upstream notices in every platform resource bundle, not just the source checkout.
