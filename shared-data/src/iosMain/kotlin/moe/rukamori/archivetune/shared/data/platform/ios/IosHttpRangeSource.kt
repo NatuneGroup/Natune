@@ -99,7 +99,7 @@ private class RangeTransfer : NSObject(), NSURLSessionDataDelegateProtocol {
         // Cookies come only from the lease policy, never from a platform jar that could replay them across origins.
         configuration.URLCache = null
         configuration.HTTPCookieStorage = null
-        configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicyNever
+        configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicy.NSHTTPCookieAcceptPolicyNever
         val queue = NSOperationQueue().apply { maxConcurrentOperationCount = 1 }
         val session = NSURLSession.sessionWithConfiguration(configuration, this, queue)
         val created = session.dataTaskWithRequest(request)
@@ -522,7 +522,7 @@ internal class IosHttpRangeSource(
         val nsUrl = NSURL.URLWithString(target) ?: throw ByteSourceException("the source is not an HTTP(S) URL")
         val request = NSMutableURLRequest(nsUrl)
         request.HTTPMethod = "GET"
-        request.timeoutInterval = (if (probing) PROBE_TIMEOUT_MS else BODY_TIMEOUT_MS).toDouble() / 1000.0
+        request.setTimeoutInterval((if (probing) PROBE_TIMEOUT_MS else BODY_TIMEOUT_MS).toDouble() / 1000.0)
         request.HTTPShouldHandleCookies = false
         if (credentialed) {
             headers.reveal().forEach { (name, value) -> request.setValue(value, forHTTPHeaderField = name) }

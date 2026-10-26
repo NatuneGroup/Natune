@@ -1,0 +1,505 @@
+package moe.rukamori.archivetune.shared.data.provider
+
+import com.metrolist.innertubex.InnerTube
+import com.metrolist.innertubex.models.NavigationEndpoint
+import com.metrolist.innertubex.models.Run
+import com.metrolist.innertubex.models.Runs
+import com.metrolist.innertubex.models.Thumbnails
+import com.metrolist.innertubex.models.YouTubeClient
+import com.metrolist.innertubex.models.response.BrowseResponse
+import com.metrolist.innertubex.models.response.SearchResponse
+import com.metrolist.innertubex.models.splitBySeparator
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
+import moe.rukamori.archivetune.shared.domain.repository.ContentKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
+import moe.rukamori.archivetune.shared.domain.repository.UnsupportedContentOperation
+import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
+import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
+import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
+
+/** The YouTube Music client every catalogue and player request goes through, as the Android host does. */
+private val BROWSE_CLIENT = YouTubeClient.WEB_REMIX
+
+private val VIDEO_ID_REGEX = Regex("^[A-Za-z0-9_-]{11}\$")
+private val DURATION_REGEX = Regex("^\\d{1,2}:\\d{2}(?::\\d{2})?\$")
+
+/**
+ * The iOS InnerTube boundary. One InnerTubeX `InnerTube` session serves the anonymous and the signed-in catalogue:
+ * [applySession] points it at the persisted cookie, which is exactly what the Android app does on every preference
+ * change. The engine sees only the JSON the provider returned; renderer payloads are decoded into the shelf models
+ * below and reduced to [YouTubeEntry] the same way the Android catalogue does (watch endpoints are songs, browse
+ * endpoints are albums, artists or playlists by the id's shape).
+ *
+ * Filters with a verified InnerTube parameter are served; ALL, PLAYLISTS, PODCASTS and EPISODES keep the explicit
+ * refusal the desktop transport records rather than searching a different surface.
+ */
+class IosYouTubeBrowseTransport(
+    private val http: HttpClient,
+) : YouTubeBrowseTransport, YouTubeAccountTransport {
+
+    // A derived client shares the graph's engine and adds what InnerTubeX expects: status exceptions and JSON
+    // bodies. It is never closed on its own, because closing it would close the shared engine; the graph owns that.
+    private val client by lazy { createHttpClient() }
+    private val innerTube by lazy { InnerTube(httpClient = client) }
+
+    private val json: Json = Json { ignoreUnknownKeys = true }
+
+    /** Points the session at the persisted YouTube sign-in. A null cookie leaves the client signed out. */
+    fun applySession(cookie: String?, visitorData: String?, dataSyncId: String?, useLoginForBrowse: Boolean) {
+        innerTube.replaceSession(
+            cookie = cookie?.takeIf(String::isNotBlank),
+            visitorData = visitorData?.takeIf(String::isNotBlank),
+            dataSyncId = dataSyncId?.takeIf(String::isNotBlank),
+            authUser = "0",
+            useLoginForBrowse = useLoginForBrowse,
+        )
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun createHttpClient(): HttpClient =
+        http.config {
+            expectSuccess = true
+            install(ContentNegotiation) {
+                json(
+                    Json {
+                        ignoreUnknownKeys = true
+                        explicitNulls = false
+                        encodeDefaults = true
+                    },
+                )
+            }
+            install(HttpTimeout) {
+                requestTimeoutMillis = 30_000L
+                connectTimeoutMillis = 15_000L
+                socketTimeoutMillis = 30_000L
+            }
+        }
+
+    /** Re-reads the persisted session keys into the session, so a preference change needs no restart. */
+    fun refreshSession(preferences: PreferenceSnapshot?) {
+        applySession(
+            cookie = preferences?.get(InnerTubeCookieKey),
+            visitorData = preferences?.get(VisitorDataKey),
+            dataSyncId = preferences?.get(DataSyncIdKey),
+            useLoginForBrowse = preferences?.get(UseLoginForBrowse) != false,
+        )
+    }
+
+    /** The signed-in session the account binding reads; an anonymous session answers false. */
+    override fun signedIn(): Boolean = innerTube.sessionSnapshot().sapisid?.isNotBlank() == true
+
+    override suspend fun page(browse: YouTubeBrowse, continuation: String?): YouTubeEntryPage =
+        when (browse) {
+            is YouTubeBrowse.Playlist -> shelfPage(browseId = "VL${browse.playlistId}", continuation = continuation)
+            is YouTubeBrowse.Album -> shelfPage(browseId = browse.browseId, continuation = continuation)
+            is YouTubeBrowse.Search -> searchPage(browse, continuation)
+        }
+
+    private suspend fun shelfPage(browseId: String, continuation: String?): YouTubeEntryPage {
+        val response =
+            if (continuation == null) {
+                innerTube.browse(BROWSE_CLIENT, browseId = browseId).body<BrowseResponse>()
+            } else {
+                innerTube.browse(BROWSE_CLIENT, continuation = continuation).body<BrowseResponse>()
+            }
+        if (continuation != null) {
+            return continuationPage(response.continuationContents)
+        }
+        val contents = response.contents ?: return YouTubeEntryPage(emptyList())
+        contents.sectionListRenderer?.let { section -> return sectionPage(json.decodeFromJsonElement(section)) }
+        val twoColumn =
+            contents.twoColumnBrowseResultsRenderer?.let { json.decodeFromJsonElement<TwoColumn>(it) }
+        twoColumn?.secondaryContents?.sectionListRenderer?.let { section ->
+            return sectionPage(json.decodeFromJsonElement(section))
+        }
+        return YouTubeEntryPage(emptyList())
+    }
+
+    private fun sectionPage(section: SectionListRenderer): YouTubeEntryPage {
+        val entries = mutableListOf<YouTubeEntry>()
+        var continuation: String? = null
+        section.contents.orEmpty().forEach { item ->
+            item.musicShelfRenderer?.let { shelf -> entries += shelfEntries(shelf) }
+            item.musicPlaylistShelfRenderer?.let { shelf -> entries += shelfEntries(shelf) }
+            item.gridRenderer?.items.orEmpty().forEach { cell ->
+                cell.musicResponsiveListItemRenderer?.toEntry()?.let(entries::add)
+            }
+            item.musicResponsiveListItemRenderer?.toEntry()?.let(entries::add)
+            item.continuationItemRenderer?.let { renderer -> continuation = renderer.token() }
+            // Continuations also live at the shelf level for playlist, search and library pages.
+            item.musicShelfRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
+            item.musicPlaylistShelfRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
+            item.gridRenderer?.continuations.orEmpty().forEach { next -> next.token()?.let { continuation = it } }
+        }
+        return YouTubeEntryPage(entries, continuation)
+    }
+
+    private fun continuationPage(contents: BrowseResponse.ContinuationContents?): YouTubeEntryPage {
+        contents ?: return YouTubeEntryPage(emptyList())
+        contents.musicPlaylistShelfContinuation?.let { raw ->
+            val shelf = json.decodeFromJsonElement<Shelf>(raw)
+            return YouTubeEntryPage(shelfEntries(shelf), shelf.continuations.firstToken())
+        }
+        contents.musicShelfContinuation?.let { raw ->
+            val shelf = json.decodeFromJsonElement<Shelf>(raw)
+            return YouTubeEntryPage(shelfEntries(shelf), shelf.continuations.firstToken())
+        }
+        contents.sectionListContinuation?.let { section ->
+            return sectionPage(json.decodeFromJsonElement(section))
+        }
+        contents.gridContinuation?.let { raw ->
+            val grid = json.decodeFromJsonElement<Grid>(raw)
+            val entries = grid.items.orEmpty().mapNotNull { cell -> cell.musicResponsiveListItemRenderer?.toEntry() }
+            return YouTubeEntryPage(entries, grid.continuations.firstToken())
+        }
+        return YouTubeEntryPage(emptyList())
+    }
+
+    private fun shelfEntries(shelf: Shelf): List<YouTubeEntry> =
+        shelf.contents.orEmpty().mapNotNull { cell -> cell.musicResponsiveListItemRenderer?.toEntry() }
+
+    private suspend fun searchPage(browse: YouTubeBrowse.Search, continuation: String?): YouTubeEntryPage {
+        val params = browse.filter.innerTubeParam() ?: throw UnsupportedContentOperation()
+        val response =
+            if (continuation == null) {
+                innerTube.search(BROWSE_CLIENT, query = browse.query, params = params).body<SearchResponse>()
+            } else {
+                innerTube.search(BROWSE_CLIENT, continuation = continuation).body<SearchResponse>()
+            }
+        if (continuation != null) {
+            response.continuationContents?.musicShelfContinuation?.let { raw ->
+                val shelf = json.decodeFromJsonElement<Shelf>(raw)
+                return YouTubeEntryPage(shelfEntries(shelf), shelf.continuations.firstToken())
+            }
+            return YouTubeEntryPage(emptyList())
+        }
+        val section =
+            response.contents?.sectionListRenderer?.let { json.decodeFromJsonElement<SectionListRenderer>(it) }
+                ?: response.contents?.tabbedSearchResultsRenderer
+                    ?.let { json.decodeFromJsonElement<TabbedSearch>(it) }
+                    ?.tabs.orEmpty()
+                    .firstOrNull()
+                    ?.tabRenderer
+                    ?.content
+                    ?.sectionListRenderer
+                    ?.let { json.decodeFromJsonElement<SectionListRenderer>(it) }
+                ?: return YouTubeEntryPage(emptyList())
+        return sectionPage(section)
+    }
+
+    /** The first song hit for a playback search, or null when the provider answered none. */
+    internal suspend fun firstSongVideoId(query: String): String? =
+        searchPage(YouTubeBrowse.Search(query, ContentSearchFilter.SONGS), continuation = null)
+            .entries
+            .firstOrNull { it.kind == ContentKind.SONG }
+            ?.id
+            ?.takeIf { VIDEO_ID_REGEX.matches(it) }
+
+    override suspend fun listing(listing: YouTubeListing, continuation: String?): YouTubeEntryPage {
+        val browseId =
+            when (listing) {
+                YouTubeListing.LIKED_SONGS -> "FEmusic_liked_videos"
+                YouTubeListing.LIKED_ALBUMS -> "FEmusic_liked_albums"
+                YouTubeListing.SUBSCRIBED_ARTISTS -> "FEmusic_library_corpus_artists"
+                YouTubeListing.LIBRARY_PLAYLISTS -> "FEmusic_liked_playlists"
+            }
+        return shelfPage(browseId, continuation)
+    }
+
+    override suspend fun history(continuation: String?): YouTubeEntryPage {
+        // The history browse is one response with no further page, so a token for it is foreign and is refused.
+        if (continuation != null) throw UnsupportedContentOperation()
+        return shelfPage("FEmusic_history", continuation = null)
+    }
+
+    override suspend fun likeSong(videoId: String, liked: Boolean) {
+        if (liked) innerTube.likeVideo(BROWSE_CLIENT, videoId) else innerTube.unlikeVideo(BROWSE_CLIENT, videoId)
+    }
+
+    override suspend fun likeAlbum(browseId: String, liked: Boolean) {
+        // Only the album page carries the playlist id that the provider keys an album like on.
+        val playlistId = albumPlaylistId(browseId) ?: throw IllegalStateException("The album has no playlist to like")
+        if (liked) innerTube.likePlaylist(BROWSE_CLIENT, playlistId) else innerTube.unlikePlaylist(BROWSE_CLIENT, playlistId)
+    }
+
+    override suspend fun subscribeArtist(browseId: String, subscribed: Boolean) {
+        // An artist's browse id is its channel id; the subscribe endpoint takes the same value.
+        if (!browseId.startsWith("UC") && !browseId.startsWith("FEMC")) {
+            throw IllegalStateException("The artist has no channel to subscribe to")
+        }
+        if (subscribed) innerTube.subscribeChannel(BROWSE_CLIENT, browseId) else innerTube.unsubscribeChannel(BROWSE_CLIENT, browseId)
+    }
+
+    /** The playlist id the album's own header play endpoint carries, used by the album like. */
+    private suspend fun albumPlaylistId(browseId: String): String? {
+        val response = innerTube.browse(BROWSE_CLIENT, browseId = browseId).body<BrowseResponse>()
+        val header = response.header ?: return null
+        listOf(
+                header.musicResponsiveHeaderRenderer,
+                header.musicDetailHeaderRenderer,
+                header.musicImmersiveHeaderRenderer,
+                header.musicVisualHeaderRenderer,
+            ).forEach { candidate ->
+                candidate?.let { findFirstPlaylistId(it) }?.let { return it }
+            }
+        return null
+    }
+}
+
+/** The first `watchPlaylistEndpoint` playlist id anywhere in a header payload. */
+private fun findFirstPlaylistId(node: JsonObject): String? {
+    node["watchPlaylistEndpoint"]?.let { endpoint ->
+        (endpoint as? JsonObject)?.get("playlistId")
+            ?.let { element -> element.toString().trim('"').takeIf(String::isNotBlank) }
+            ?.let { return it }
+    }
+    node.values.forEach { element ->
+        (element as? JsonObject)?.let { findFirstPlaylistId(it) }?.let { return it }
+    }
+    return null
+}
+
+private fun NavigationEndpoint?.endpointKind(): ContentKind? {
+    this ?: return null
+    watchEndpoint?.let { return ContentKind.SONG }
+    watchPlaylistEndpoint?.let { return ContentKind.PLAYLIST }
+    browseEndpoint?.let { endpoint ->
+        return when {
+            endpoint.browseId.startsWith("MPRE") -> ContentKind.ALBUM
+            endpoint.browseId.startsWith("UC") || endpoint.browseId.startsWith("FEMC") -> ContentKind.ARTIST
+            endpoint.browseId.startsWith("VL") || endpoint.browseId.startsWith("PL") ||
+                endpoint.browseId.startsWith("FEmusic") -> ContentKind.PLAYLIST
+            else -> null
+        }
+    }
+    return null
+}
+
+private fun NavigationEndpoint?.endpointId(): String? {
+    this ?: return null
+    watchEndpoint?.videoId?.let { return it }
+    watchPlaylistEndpoint?.playlistId?.let { return it.removePrefix("VL") }
+    browseEndpoint?.browseId?.let { return it.removePrefix("VL") }
+    return null
+}
+
+private fun ResponsiveItem.toEntry(): YouTubeEntry? {
+    val titleRuns = flexColumns?.getOrNull(0)?.musicResponsiveListItemFlexColumnRenderer?.text?.runs
+        ?: return null
+    val title = titleRuns.joinToString("") { it.text }.takeIf(String::isNotBlank) ?: return null
+    val itemEndpoint = titleRuns.firstNotNullOfOrNull { it.navigationEndpoint } ?: navigationEndpoint
+    var kind = itemEndpoint.endpointKind()
+    val id = itemEndpoint.endpointId() ?: return null
+    // A watch item with no clearer signal is a song; a browse item must name its surface or it is dropped.
+    if (kind == null) {
+        kind = if (itemEndpoint?.watchEndpoint != null) ContentKind.SONG else return null
+    }
+    val groups = subtitleGroups()
+    // Search shelves label the result type in the first subtitle group ("Song", "Video", "Album", ...). The label is
+    // only a hint: when it names a different surface than the endpoint did, the endpoint stays authoritative.
+    val labeledKind = groups.firstOrNull()?.typeLabel()?.contentKind()
+    if (labeledKind != null && kind == ContentKind.SONG) kind = labeledKind
+    val artists = groups.artistCredits()
+    val album = groups.firstNotNullOfOrNull { group -> group.firstNotNullOfOrNull { run -> run.albumId() } }
+    val duration = groups.lastOrNull()?.joinToString("") { it.text }?.takeIf { DURATION_REGEX.matches(it) }
+    return YouTubeEntry(
+        kind = kind,
+        id = id,
+        title = title,
+        subtitle = artists.joinToString(", ") { it.name }.ifBlank { groups.firstOrNull()?.text().orEmpty() },
+        artworkUri = thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull()?.url,
+        durationSeconds = duration?.toSeconds(),
+        explicit = badges.orEmpty().any { it.musicInlineBadgeRenderer?.iconType == "MUSIC_EXPLICIT_BADGE" },
+        setVideoId = playlistItemData?.playlistSetVideoId,
+        album = album?.second,
+        artists = artists,
+        albumId = album?.first,
+    )
+}
+
+private fun ResponsiveItem.subtitleGroups(): List<List<Run>> {
+    val groups = mutableListOf<List<Run>>()
+    flexColumns.orEmpty().drop(1).forEach { column ->
+        column.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.splitBySeparator()?.let { groups += it }
+    }
+    return groups.filter { it.any { run -> run.text.isNotBlank() } }
+}
+
+private fun List<Run>.typeLabel(): String? {
+    val label = joinToString("") { it.text }.trim()
+    return label.takeIf { it.isNotEmpty() }
+}
+
+private fun String.contentKind(): ContentKind? =
+    when (this) {
+        "Song" -> ContentKind.SONG
+        // A music video is a playable song in the catalogue; the contract has no separate video kind.
+        "Video" -> ContentKind.SONG
+        "Album" -> ContentKind.ALBUM
+        "Artist" -> ContentKind.ARTIST
+        "Playlist" -> ContentKind.PLAYLIST
+        "Podcast" -> ContentKind.PODCAST
+        "Episode" -> ContentKind.EPISODE
+        else -> null
+    }
+
+private fun List<List<Run>>.artistCredits(): List<ContentCredit> =
+    firstOrNull()?.mapNotNull { run ->
+        val browseId = run.navigationEndpoint?.browseEndpoint?.browseId
+        val text = run.text.takeIf(String::isNotBlank)
+        when {
+            text == null -> null
+            browseId != null && (browseId.startsWith("UC") || browseId.startsWith("FEMC")) ->
+                ContentCredit(text, browseId)
+            else -> null
+        }
+    }.orEmpty()
+
+/** The (browseId, title) of the album credit, keyed on the album browse id's MPRE prefix. */
+private fun Run.albumId(): Pair<String, String>? {
+    val browseId = navigationEndpoint?.browseEndpoint?.browseId?.takeIf { it.startsWith("MPRE") } ?: return null
+    return text.takeIf(String::isNotBlank)?.let { browseId to it }
+}
+
+private fun List<Run>.text(): String = joinToString("") { it.text }.trim()
+
+private fun String.toSeconds(): Int? {
+    val parts = split(":").mapNotNull { it.toIntOrNull() }
+    return when (parts.size) {
+        2 -> parts[0] * 60 + parts[1]
+        3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
+        else -> null
+    }
+}
+
+private fun List<NextContinuation>?.firstToken(): String? = orEmpty().firstNotNullOfOrNull { it.token() }
+
+private fun NextContinuation.token(): String? =
+    nextContinuationData?.continuation
+        ?: continuationEndpoint?.continuationCommand?.token
+
+private fun ContinuationItemRenderer.token(): String? =
+    continuationEndpoint?.continuationCommand?.token
+
+/** Only filters with a verified InnerTube parameter cross this boundary, as on desktop. */
+private fun ContentSearchFilter.innerTubeParam(): String? =
+    when (this) {
+        ContentSearchFilter.SONGS -> "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
+        ContentSearchFilter.VIDEOS -> "EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D"
+        ContentSearchFilter.ALBUMS -> "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"
+        ContentSearchFilter.ARTISTS -> "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
+        ContentSearchFilter.FEATURED_PLAYLISTS -> "EgeKAQQoADgBagwQDhAKEAMQBRAJEAQ%3D"
+        ContentSearchFilter.COMMUNITY_PLAYLISTS -> "EgeKAQQoAEABagoQAxAEEAoQCRAF"
+        ContentSearchFilter.ALL,
+        ContentSearchFilter.PLAYLISTS,
+        ContentSearchFilter.PODCASTS,
+        ContentSearchFilter.EPISODES,
+        -> null
+    }
+
+// The browse and search payloads the InnerTubeX response types leave as raw objects. Each model covers the renderer
+// shapes YouTube Music returns for shelves, playlist shelves, grid cells and continuations; anything else is ignored
+// because `ignoreUnknownKeys` is set.
+
+@Serializable
+private data class TabbedSearch(val tabs: List<SearchTab>? = null)
+
+@Serializable
+private data class SearchTab(val tabRenderer: TabContent? = null)
+
+@Serializable
+private data class TabContent(val content: SectionContent? = null)
+
+@Serializable
+private data class SectionContent(val sectionListRenderer: JsonObject? = null)
+
+@Serializable
+private data class TwoColumn(val secondaryContents: SectionContent? = null)
+
+@Serializable
+private data class SectionListRenderer(val contents: List<SectionItem>? = null)
+
+@Serializable
+private data class SectionItem(
+    val musicShelfRenderer: Shelf? = null,
+    val musicPlaylistShelfRenderer: Shelf? = null,
+    val gridRenderer: Grid? = null,
+    val musicResponsiveListItemRenderer: ResponsiveItem? = null,
+    val continuationItemRenderer: ContinuationItemRenderer? = null,
+)
+
+@Serializable
+private data class Shelf(
+    val title: Runs? = null,
+    val contents: List<ShelfCell>? = null,
+    val continuations: List<NextContinuation>? = null,
+)
+
+@Serializable
+private data class ShelfCell(val musicResponsiveListItemRenderer: ResponsiveItem? = null)
+
+@Serializable
+private data class Grid(
+    val items: List<ShelfCell>? = null,
+    val continuations: List<NextContinuation>? = null,
+)
+
+@Serializable
+private data class NextContinuation(
+    val nextContinuationData: ContinuationData? = null,
+    val continuationEndpoint: ContinuationEndpoint? = null,
+)
+
+@Serializable
+private data class ContinuationData(val continuation: String? = null)
+
+@Serializable
+private data class ContinuationEndpoint(val continuationCommand: ContinuationCommand? = null)
+
+@Serializable
+private data class ContinuationCommand(val token: String? = null)
+
+@Serializable
+private data class ContinuationItemRenderer(val continuationEndpoint: ContinuationEndpoint? = null)
+
+@Serializable
+private data class ResponsiveItem(
+    val flexColumns: List<FlexColumn>? = null,
+    val thumbnail: ThumbnailWrap? = null,
+    val playlistItemData: PlaylistItemData? = null,
+    val navigationEndpoint: NavigationEndpoint? = null,
+    val badges: List<Badge>? = null,
+) {
+    @Serializable
+    data class FlexColumn(val musicResponsiveListItemFlexColumnRenderer: TextColumn? = null)
+
+    @Serializable
+    data class TextColumn(val text: Runs? = null)
+
+    @Serializable
+    data class ThumbnailWrap(val musicThumbnailRenderer: ThumbnailHolder? = null)
+
+    @Serializable
+    data class ThumbnailHolder(val thumbnail: Thumbnails? = null)
+
+    @Serializable
+    data class PlaylistItemData(val videoId: String? = null, val playlistSetVideoId: String? = null)
+}
+
+@Serializable
+private data class Badge(val musicInlineBadgeRenderer: InlineBadge? = null)
+
+@Serializable
+private data class InlineBadge(val iconType: String? = null)

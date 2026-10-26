@@ -66,6 +66,21 @@ kotlin {
         // Kotlin 2.4 creates intermediate source sets lazily: getByName fails here, the accessor works.
         iosMain.dependencies {
             implementation(libs.quickjs.kt)
+            // InnerTubeX expects the injected client to negotiate JSON bodies itself.
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.json)
+        }
+        // InnerTubeX (com.github.MetrolistGroup.innertubex v0.11.0, GPL-3.0) is consumed through its
+        // per-target artifacts so the Android-side innertubex v0.9.2 pin keeps its own version.
+        iosArm64Main.dependencies {
+            implementation(libs.innertubex.iosarm64)
+        }
+        iosSimulatorArm64Main.dependencies {
+            implementation(libs.innertubex.iossimulatorarm64)
+        }
+        iosTest.dependencies {
+            // The live YouTube smoke test drives the resolver over the Darwin engine the app injects.
+            implementation(libs.ktor.client.darwin)
         }
     }
 }
