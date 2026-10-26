@@ -144,6 +144,20 @@ object LegacySongDbImport {
                 }
             }
 
+            // The baseline resolves a song's album through song_album_map when its denormalized album columns are
+            // empty, so imported listens and items get the same album credit the baseline's statistics see.
+            val albumsBySong = HashMap<String, Pair<String, String>>()
+            if (connection.tableExists("song_album_map") && connection.tableExists("album")) {
+                connection.prepare(
+                    "SELECT m.songId, a.id, a.title FROM song_album_map m " +
+                        "JOIN album a ON a.id = m.albumId ORDER BY m.songId, m.`index`",
+                ).use { statement ->
+                    while (statement.step()) {
+                        albumsBySong.putIfAbsent(statement.getText(0), statement.getText(1) to statement.getText(2))
+                    }
+                }
+            }
+
             val songs = HashMap<String, ImportedSong>()
             connection.prepare(
                 "SELECT id, title, duration, thumbnailUrl, albumId, albumName, explicit, liked, likedDate, " +
@@ -159,7 +173,7 @@ object LegacySongDbImport {
                     }
                     val credits = artistsBySong[id].orEmpty()
                     val subtitle = credits.joinToString("; ") { it.name }
-                    val albumName = statement.textOrNull(5)
+                    val albumName = statement.textOrNull(5) ?: albumsBySong[id]?.second
                     val item = ContentItem(
                         ref = ContentRef(provider, ContentKind.SONG, id),
                         title = statement.getText(1),
@@ -169,7 +183,7 @@ object LegacySongDbImport {
                         explicit = statement.getLong(6) != 0L,
                         album = albumName,
                         artists = credits,
-                        albumId = statement.textOrNull(4),
+                        albumId = statement.textOrNull(4) ?: albumsBySong[id]?.first,
                     )
                     val liked = statement.getLong(7) != 0L
                     val inLibrary = statement.getLong(9).let { if (statement.isNull(9)) null else it }
@@ -272,9 +286,9 @@ object LegacySongDbImport {
                             artworkUri = statement.textOrNull(3),
                             durationMs = statement.getLong(2) * 1000L,
                             explicit = statement.getLong(6) != 0L,
-                            album = statement.textOrNull(5),
+                            album = statement.textOrNull(5) ?: albumsBySong[id]?.second,
                             artists = credits,
-                            albumId = statement.textOrNull(4),
+                            albumId = statement.textOrNull(4) ?: albumsBySong[id]?.first,
                         )
                     }
                 }
@@ -328,9 +342,9 @@ object LegacySongDbImport {
                             artworkUri = statement.textOrNull(3),
                             durationMs = statement.getLong(2) * 1000L,
                             explicit = statement.getLong(6) != 0L,
-                            album = statement.textOrNull(5),
+                            album = statement.textOrNull(5) ?: albumsBySong[id]?.second,
                             artists = credits,
-                            albumId = statement.textOrNull(4),
+                            albumId = statement.textOrNull(4) ?: albumsBySong[id]?.first,
                         )
                     }
                 }
