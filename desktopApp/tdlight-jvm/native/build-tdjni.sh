@@ -107,10 +107,36 @@ cmake -S "$SRC" -B "$CMAKE_BUILD" \
     -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX"
 cmake --build "$CMAKE_BUILD" --config Release --target install --parallel "$JOBS"
 
-cmake -S "$SRC/example/java" -B "$CMAKE_BUILD-java" \
+# The Java example locates its codegen binary and API scheme at $SRC/td/bin — that is the layout the stage-one install
+# produces, so a copy of the project with td symlinked to the prefix configures without touching the fetched tree.
+JNI_SRC="$BUILD/java-src"
+rm -rf "$JNI_SRC" "$CMAKE_BUILD-java"
+cp -R "$SRC/example/java" "$JNI_SRC"
+ln -s "$INSTALL_PREFIX" "$JNI_SRC/td"
+# td_jni.cpp calls the td_api JSON helpers, which live in tdjson_private — behind Td::TdJsonStatic — so the
+# object-API build must link it alongside Td::TdStatic or the to_json_string symbols stay unresolved.
+if ! grep -q 'target_link_libraries(tdjni PRIVATE Td::TdStatic)' "$JNI_SRC/CMakeLists.txt"; then
+    die "$JNI_SRC/CMakeLists.txt no longer links Td::TdStatic; review the pinned tdlight revision"
+fi
+sed -i.bak 's/target_link_libraries(tdjni PRIVATE Td::TdStatic)/target_link_libraries(tdjni PRIVATE Td::TdStatic Td::TdJsonStatic)/' \
+    "$JNI_SRC/CMakeLists.txt" && rm "$JNI_SRC/CMakeLists.txt.bak"
+# The packaged JVM supplies JNI symbols at load time; on Apple/Linux an absolute libjvm link (or a second JDK's copy
+# FindJNI may also emit) would break on machines without that exact JDK. Windows still needs the jvm import library.
+cat >> "$JNI_SRC/CMakeLists.txt" <<'CMAKE'
+if (NOT WIN32)
+  get_target_property(_tdjni_links tdjni LINK_LIBRARIES)
+  list(REMOVE_ITEM _tdjni_links ${JAVA_JVM_LIBRARY})
+  set_target_properties(tdjni PROPERTIES LINK_LIBRARIES "${_tdjni_links}")
+  if (APPLE)
+    target_link_options(tdjni PRIVATE "LINKER:-undefined,dynamic_lookup")
+  endif()
+endif()
+CMAKE
+cmake -S "$JNI_SRC" -B "$CMAKE_BUILD-java" \
     -DCMAKE_BUILD_TYPE=Release \
     -DTd_DIR="$INSTALL_PREFIX/lib/cmake/Td" \
-    -DCMAKE_PREFIX_PATH="$INSTALL_PREFIX"
+    -DCMAKE_PREFIX_PATH="$INSTALL_PREFIX" \
+    -DCMAKE_INSTALL_PREFIX="$BUILD/java-output"
 cmake --build "$CMAKE_BUILD-java" --config Release --target "$TDLIGHT_JNI_TARGET" --parallel "$JOBS"
 
 LIBRARY_HITS="$(find "$CMAKE_BUILD-java" -name "$LIBRARY_NAME" -type f)"
