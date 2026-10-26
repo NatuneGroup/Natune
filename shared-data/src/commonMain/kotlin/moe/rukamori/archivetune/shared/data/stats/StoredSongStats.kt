@@ -26,12 +26,12 @@ data class StoredSongCounts(
  */
 class StoredSongStats(private val dao: PortableStoredSongDao) {
     fun observe(): Flow<StoredSongCounts> =
-        combine(dao.observe(StoredSongOrigin.DOWNLOAD.name), dao.observe(StoredSongOrigin.CACHE.name)) { d, c ->
+        combine(dao.observe(StoredSongOrigin.DOWNLOAD), dao.observe(StoredSongOrigin.CACHE)) { d, c ->
             StoredSongCounts(countBySource(d), countBySource(c))
         }
 
     fun observeDownloads(): Flow<List<StoredSourceCount>> =
-        dao.observe(StoredSongOrigin.DOWNLOAD.name).map(::countBySource)
+        dao.observe(StoredSongOrigin.DOWNLOAD).map(::countBySource)
 
     private fun countBySource(rows: List<moe.rukamori.archivetune.shared.data.persistence.PortableStoredSongRow>) =
         rows.mapNotNull { row -> runCatching { AudioSourceType.valueOf(row.source) }.getOrNull()?.let { it to row } }
