@@ -19,6 +19,10 @@ struct ArchiveTuneApp: App {
     var body: some Scene {
         WindowGroup {
             ComposeRoot().ignoresSafeArea()
+                .onOpenURL { url in
+                    // Custom scheme and invite links; the host classifies, routes and reports what it cannot open.
+                    ArchiveTuneSession.shared.accept(url)
+                }
         }
     }
 }
@@ -78,6 +82,11 @@ final class ArchiveTuneSession {
     /// Releases only this representable's claim; a stale dismantle never clears a newer presenter.
     func dismiss(for token: AnyObject) {
         if presenter === token { presenter = nil }
+    }
+
+    /// The onOpenURL entry: a deep link is handed to the host, which keeps it until the root collects it.
+    func accept(_ url: URL) {
+        host.acceptUrl(url: url.absoluteString)
     }
 
     /// Final process shutdown. Idempotent, and never reached by controller detach or reattach.

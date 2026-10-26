@@ -374,11 +374,13 @@ build_core() {
     : >"$LOGS/core.log"
     log "[$PLATFORM] compiling the portable core from desktopApp/native/src (JNI and desktop system code excluded)"
     rm -f "$OBJ"/*.o
-    for unit in archivetune_engine archivetune_device; do
-        "$CC" -target "$TARGET_TRIPLE" -isysroot "$SDK_PATH" -O2 -std=gnu11 -fvisibility=hidden -Wall -Wextra \
-            "${include[@]}" -c "$SOURCE_ROOT/src/$unit.c" -o "$OBJ/$unit.o" >>"$LOGS/core.log" 2>&1 \
-            || die "portable core compile failed for $unit on $PLATFORM; see $LOGS/core.log"
-    done
+    "$CC" -target "$TARGET_TRIPLE" -isysroot "$SDK_PATH" -O2 -std=gnu11 -fvisibility=hidden -Wall -Wextra \
+        "${include[@]}" -c "$SOURCE_ROOT/src/archivetune_engine.c" -o "$OBJ/archivetune_engine.o" >>"$LOGS/core.log" 2>&1 \
+        || die "portable core compile failed for archivetune_engine on $PLATFORM; see $LOGS/core.log"
+    # miniaudio's Apple device backend is Objective-C; the device unit cannot compile as plain C on this SDK.
+    "$CC" -target "$TARGET_TRIPLE" -isysroot "$SDK_PATH" -O2 -x objective-c -fvisibility=hidden -Wall \
+        "${include[@]}" -c "$SOURCE_ROOT/src/archivetune_device.c" -o "$OBJ/archivetune_device.o" >>"$LOGS/core.log" 2>&1 \
+        || die "portable core compile failed for archivetune_device on $PLATFORM; see $LOGS/core.log"
     rm -f "$PWORK/libarchivetune_engine.a"
     "$AR" rcs "$PWORK/libarchivetune_engine.a" "$OBJ/archivetune_engine.o" "$OBJ/archivetune_device.o"
     "$RANLIB" "$PWORK/libarchivetune_engine.a"
