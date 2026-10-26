@@ -255,7 +255,6 @@ object MediaHeaderParser {
     private const val WAVE_FORMAT_IEEE_FLOAT = 3
     private const val WAVE_FORMAT_EXTENSIBLE = 0xFFFE
     private const val UNKNOWN_CHUNK_SIZE = 0xFFFF_FFFFL
-    private const val FRAME_HEADER_BYTES = 4
     private const val CRC_BYTES = 2
     private const val MP3_SCAN_BYTES = 8192
     private const val MPEG1_LAYER3_SAMPLES = 1152
@@ -298,6 +297,8 @@ private class Mp3Frame(
     val bitrateKbps: Int,
     val sampleRate: Int,
 )
+
+private const val FRAME_HEADER_BYTES = 4
 
 private val MPEG1_LAYER3_KBPS = intArrayOf(0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0)
 private val MPEG2_LAYER3_KBPS = intArrayOf(0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0)

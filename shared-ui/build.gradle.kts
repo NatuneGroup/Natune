@@ -48,7 +48,7 @@ kotlin {
             // The host owners take the host's HttpClient; each host supplies its own engine.
             implementation(libs.ktor.client.core)
         }
-        getByName("iosMain").dependencies {
+        iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }
         commonTest.dependencies {
