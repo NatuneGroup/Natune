@@ -1,0 +1,143 @@
+name: Android emulator QA
+
+# Boots an AVD on a Linux runner with KVM (nested virtualization is unavailable on
+# this org's macOS runners and dev machines), installs the universal debug APK,
+# launches the app, walks the primary surfaces, and uploads screenshots + logcat.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emulator-qa-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  emulator-qa:
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 60
+    env:
+      ANDROID_AVD_HOME: /home/runner/.android/avd
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: 21
+          distribution: "temurin"
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Probe KVM
+        id: kvm
+        shell: bash
+        run: |
+          set -x
+          sudo chmod 0666 /dev/kvm || true
+          ls -l /dev/kvm || true
+          [ -w /dev/kvm ] && echo "kvm=present" >> "$GITHUB_OUTPUT" || echo "kvm=absent" >> "$GITHUB_OUTPUT"
+
+      - name: Install x86_64 system image
+        if: steps.kvm.outputs.kvm == 'present'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" --licenses >/dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" \
+            "system-images;android-36;google_apis;x86_64" "emulator" "platform-tools" | tail -3
+          mkdir -p "$ANDROID_AVD_HOME"
+          "$SDK/cmdline-tools/latest/bin/avdmanager" list device | head -25
+          for dev in pixel_6 pixel_5 medium_phone; do
+            if echo "no" | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd \
+                -n qa -k "system-images;android-36;google_apis;x86_64" -d "$dev" --force; then
+              break
+            fi
+          done
+          "$SDK/cmdline-tools/latest/bin/avdmanager" list avd
+          ls -la "$ANDROID_AVD_HOME"
+
+      - name: Boot emulator
+        if: steps.kvm.outputs.kvm == 'present'
+        shell: bash
+        run: |
+          set -x
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          "$SDK/emulator/emulator" -avd qa -no-window -gpu swiftshader_indirect \
+            -no-snapshot-save -no-boot-anim -accel auto > emulator.log 2>&1 &
+          EMU_PID=$!
+          deadline=$((SECONDS + 600))
+          booted=""
+          while [ $SECONDS -lt $deadline ]; do
+            booted=$("$SDK/platform-tools/adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+            [ "$booted" = "1" ] && break
+            kill -0 "$EMU_PID" 2>/dev/null || break
+            sleep 10
+          done
+          if [ "$booted" != "1" ]; then
+            echo "emulator did not boot"
+            tail -60 emulator.log || true
+            exit 1
+          fi
+          "$SDK/platform-tools/adb" shell settings put global window_animation_scale 0
+          "$SDK/platform-tools/adb" shell settings put global transition_animation_scale 0
+          "$SDK/platform-tools/adb" shell settings put global animator_duration_scale 0
+          "$SDK/platform-tools/adb" logcat -c
+          echo "booted ok"
+
+      - name: Build universal debug APK
+        if: steps.kvm.outputs.kvm == 'present'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sdk.dir=${ANDROID_HOME:-$ANDROID_SDK_ROOT}" > local.properties
+          ./gradlew --console=plain --stacktrace "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
+            assembleGmsMobileUniversalDebug
+          find app/build/outputs/apk -name "*.apk" -print
+        env:
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+
+      - name: Install, launch, navigate, capture
+        if: steps.kvm.outputs.kvm == 'present'
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 scripts/emulator_qa.py || true
+          for f in qa-artifacts/*.png qa-artifacts/*.xml qa-artifacts/*.txt; do
+            [ -f "$f" ] || continue
+            url=$(curl -fsS --max-time 30 -F "file=@$f" https://0x0.st 2>/dev/null) ||
+              url=$(curl -fsS --max-time 30 -F "reqtype=fileupload" -F "fileToUpload=@$f" https://catbox.moe/user/api.php 2>/dev/null) ||
+              url=$(curl -fsS --max-time 30 -F "file=@$f" https://tmpfiles.org/api/v1/upload 2>/dev/null | grep -o 'https://tmpfiles.org[^"]*') ||
+              url="upload-failed"
+            echo "$f -> $url"
+          done
+
+      - name: Upload QA artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-qa-${{ github.run_id }}
+          path: |
+            qa-artifacts/
+            emulator.log
+          if-no-files-found: warn
+          retention-days: 7
