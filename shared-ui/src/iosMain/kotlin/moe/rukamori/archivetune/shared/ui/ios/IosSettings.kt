@@ -29,11 +29,17 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramNativeAdmission
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
+import moe.rukamori.archivetune.shared.data.provider.QobuzAccountVerifier
+import moe.rukamori.archivetune.shared.data.provider.QobuzBundleScrape
+import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceProbe
 import moe.rukamori.archivetune.shared.data.provider.TidalRefreshResult
 import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceState
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.QobuzTokenEntry
+import moe.rukamori.archivetune.shared.domain.settings.SourceHealth
+import moe.rukamori.archivetune.shared.domain.settings.SourceHealthStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalAuthFlowDevice
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceHealth
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
@@ -52,6 +58,9 @@ import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActio
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
+import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginScreen
+import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
@@ -87,6 +96,74 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
 
     suspend fun verifyDeezer(arl: String): DeezerArlAccount? =
         verifyDeezerArl(graph.http, arl)?.let { DeezerArlAccount(it.name, it.lossless, it.userId) }
+
+    private val qobuzVerifier = QobuzAccountVerifier(graph.http)
+    private val qobuzScrape = QobuzBundleScrape(graph.http)
+    private val qobuzProbe = QobuzInstanceProbe(graph.http)
+    val qobuzTokenHealth = MutableStateFlow<Map<String, SourceHealth>>(emptyMap())
+    val qobuzInstanceHealth = MutableStateFlow<Map<String, SourceHealth>>(emptyMap())
+
+    /** The settings page's token test: the same two-call API proof per entry, with latency for the row. */
+    suspend fun checkQobuzTokens(tokens: List<QobuzTokenEntry>, probeTrack: String, quality: String) {
+        coroutineScope {
+            tokens.map { entry ->
+                async {
+                    val started = TimeSource.Monotonic.markNow()
+                    val status = try {
+                        qobuzVerifier.verify(entry)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        SourceHealthStatus.UNREACHABLE
+                    }
+                    entry.id to SourceHealth(status, latencyMs = started.elapsedNow().inWholeMilliseconds)
+                }
+            }.awaitAll()
+        }.also { results -> qobuzTokenHealth.update { it + results } }
+    }
+
+    /** The settings page's instance test: the same search + download-music probe per configured base. */
+    suspend fun checkQobuzInstances(instances: List<String>, probeTrack: String, quality: String) {
+        val formatId = when (quality) {
+            "HI_RES" -> 7
+            "MAX" -> 27
+            else -> 6
+        }
+        coroutineScope {
+            instances.map { base ->
+                async {
+                    val started = TimeSource.Monotonic.markNow()
+                    val status = try {
+                        qobuzProbe.verify(base, probeTrack.ifBlank { null }, formatId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        SourceHealthStatus.UNREACHABLE
+                    }
+                    base to SourceHealth(status, latencyMs = started.elapsedNow().inWholeMilliseconds)
+                }
+            }.awaitAll()
+        }.also { results -> qobuzInstanceHealth.update { it + results } }
+    }
+
+    fun forgetQobuzTokenHealth(ids: Set<String>) {
+        qobuzTokenHealth.update { it - ids }
+    }
+
+    fun forgetQobuzInstanceHealth(instances: Set<String>) {
+        qobuzInstanceHealth.update { it - instances }
+    }
+
+    suspend fun qobuzSecretCandidates(): List<String> = qobuzScrape.candidates().orEmpty()
+
+    suspend fun verifyQobuzToken(entry: QobuzTokenEntry): SourceHealthStatus =
+        try {
+            qobuzVerifier.verify(entry)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            SourceHealthStatus.UNREACHABLE
+        }
 
     /** Probes every configured instance at once with one bounded search, which proves reachability only. */
     suspend fun checkTidalInstances() {
@@ -130,6 +207,7 @@ internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.subst
 
 private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
+    "settings/qobuz", QobuzLoginRoute,
 )
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
@@ -190,6 +268,32 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 onFailure = onFailure,
                 onNotice = onNotice,
                 scrollTo = scrollTo,
+            )
+            "settings/qobuz" -> {
+                val tokenHealth by owners.qobuzTokenHealth.collectAsState()
+                val instanceHealth by owners.qobuzInstanceHealth.collectAsState()
+                QobuzSettings(
+                    controller = owners.controller,
+                    tokenHealth = tokenHealth,
+                    instanceHealth = instanceHealth,
+                    checkTokens = owners::checkQobuzTokens,
+                    checkInstances = owners::checkQobuzInstances,
+                    forgetTokenHealth = owners::forgetQobuzTokenHealth,
+                    forgetInstanceHealth = owners::forgetQobuzInstanceHealth,
+                    copyToClipboard = ::copyToIosClipboard,
+                    navigate = navigate,
+                    onNotice = onNotice,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            QobuzLoginRoute -> QobuzLoginScreen(
+                controller = owners.controller,
+                scrapeCandidates = owners::qobuzSecretCandidates,
+                verify = owners::verifyQobuzToken,
+                openWebPlayer = { openIosUri("https://play.qobuz.com/", host::report) },
+                navigateUp = { navigation.back() },
+                onFailure = onFailure,
             )
             "settings/telegram" -> {
                 val session by host.telegram.collectAsState()
