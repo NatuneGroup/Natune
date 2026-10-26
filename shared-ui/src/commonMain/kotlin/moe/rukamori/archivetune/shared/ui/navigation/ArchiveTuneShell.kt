@@ -2,6 +2,9 @@ package moe.rukamori.archivetune.shared.ui.navigation
 
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -14,9 +17,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -46,18 +53,69 @@ fun ArchiveTuneShell(
     television: Boolean = false,
     scrolledDown: Boolean = false,
     searchActive: Boolean = false,
+    onSearchItemDoubleClick: (() -> Unit)? = null,
     contentModifier: Modifier = Modifier,
     miniPlayer: @Composable () -> Unit,
     content: @Composable (route: String) -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val layout = shellLayout(maxWidth.value, television, preferences, scrolledDown, searchActive,
+        // The scroll-driven compact/hide decisions match the baseline: adaptive bars compact, and
+        // "hide while scrolling" with the expanded bar slides it away for the full-width mini player.
+        val compactBehavior = preferences.navigationBarCompactBehavior()
+        val hideOnScroll = preferences[NavigationBarHideOnScrollKey, false]
+        val scrollDrivesBottomUi =
+            compactBehavior == NavigationBarCompactBehavior.ADAPTIVE ||
+                (hideOnScroll && compactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED)
+        var internalScrolledDown by remember { mutableStateOf(false) }
+        val effectiveScrolledDown = scrolledDown || internalScrolledDown
+        val navigationBarScrollThresholdPx = with(LocalDensity.current) { NavigationBarHideScrollThreshold.toPx() }
+        val navigationBarScrollConnection =
+            remember(navigationBarScrollThresholdPx) {
+                object : NestedScrollConnection {
+                    private var travelled = 0f
+
+                    override fun onPostScroll(
+                        consumed: Offset,
+                        available: Offset,
+                        source: NestedScrollSource,
+                    ): Offset {
+                        if (source != NestedScrollSource.UserInput || consumed.y == 0f) return Offset.Zero
+                        if (travelled != 0f && (travelled < 0f) != (consumed.y < 0f)) travelled = 0f
+                        travelled += consumed.y
+                        if (travelled <= -navigationBarScrollThresholdPx) {
+                            internalScrolledDown = true
+                            travelled = 0f
+                        } else if (travelled >= navigationBarScrollThresholdPx) {
+                            internalScrolledDown = false
+                            travelled = 0f
+                        }
+                        return Offset.Zero
+                    }
+                }
+            }
+        val layout = shellLayout(maxWidth.value, television, preferences, effectiveScrolledDown, searchActive,
             navigation.route == navigation.selectedTab.route)
+        val hiddenByScroll =
+            layout == ShellLayout.MiniPlayerOnly && effectiveScrolledDown && hideOnScroll &&
+                compactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED
+        val policy = LocalOpticalPolicy.current
+        val bottomUiCompactFraction by animateFloatAsState(
+            targetValue = if (layout == ShellLayout.CompactRow) 1f else 0f,
+            animationSpec =
+                if (preferences[DisableAnimationsKey, false] || !policy.motion) {
+                    snap()
+                } else {
+                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+                },
+            label = "bottomUiCompactFraction",
+        )
         // The page is recorded for frosted navigation only while a frosted bar, rail or compact row is composed on screen.
         val frostedGate = LocalFrostedNavigationGate.current
         val frostedOnScreen = frostedNavigationOnScreen(layout, preferences)
         SideEffect { frostedGate?.onScreen = frostedOnScreen }
         val apple = preferences.interfaceStyle() == InterfaceStyle.APPLE_MUSIC
+        val pill = rememberPillStyle(preferences)
+        val glowStrength = preferences.navigationBarGlowStrength()
         var chromeHeight by remember(layout) { mutableIntStateOf(0) }
         val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
         Row(Modifier.fillMaxSize()) {
@@ -77,48 +135,57 @@ fun ArchiveTuneShell(
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 CompositionLocalProvider(LocalShellContentPadding provides chromePadding) {
-                    Box(Modifier.fillMaxSize().then(contentModifier).testTag("shell-content")) { content(navigation.route) }
+                    Box(
+                        Modifier.fillMaxSize()
+                            .then(contentModifier)
+                            .then(if (scrollDrivesBottomUi) Modifier.nestedScroll(navigationBarScrollConnection) else Modifier)
+                            .testTag("shell-content"),
+                    ) { content(navigation.route) }
                 }
-                // This sibling is excluded from both recordings; only page pixels feed the chrome.
-                Column(Modifier.align(Alignment.BottomCenter).onSizeChanged { chromeHeight = it.height }) {
-                    when (layout) {
-                        ShellLayout.Hidden -> Unit
-                        ShellLayout.CompactRow -> Row(
-                            Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp)
-                                .navigationMaterial(preferences, RoundedCornerShape(32.dp)).testTag("shell-compact"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            val left = if (apple || compactLeftIsLibrary(navigation.route)) ShellTab.Library else ShellTab.Home
-                            CircleTab(left, navigation.selectedTab == left, preferences) { navigation.select(left, toRoot = true) }
-                            Box(Modifier.weight(1f).heightIn(min = 48.dp).testTag("shell-mini-player")) { miniPlayer() }
-                            if (apple || compactSearchVisible(navigation.route)) {
-                                CircleTab(ShellTab.Search, navigation.selectedTab == ShellTab.Search, preferences, onSearch)
+                CompositionLocalProvider(
+                    LocalNavigationBarHiddenByScroll provides hiddenByScroll,
+                    LocalBottomUiCompactFraction provides bottomUiCompactFraction,
+                ) {
+                    // This sibling is excluded from both recordings; only page pixels feed the chrome.
+                    Column(Modifier.align(Alignment.BottomCenter).onSizeChanged { chromeHeight = it.height }) {
+                        when (layout) {
+                            ShellLayout.Hidden -> Unit
+                            ShellLayout.CompactRow -> Row(
+                                Modifier.fillMaxWidth().heightIn(min = CompactControlSize + 8.dp)
+                                    .padding(horizontal = 12.dp)
+                                    .testTag("shell-compact"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(CompactControlGap),
+                            ) {
+                                val left = if (apple || compactLeftIsLibrary(navigation.route)) ShellTab.Library else ShellTab.Home
+                                CompactCircleTab(left, navigation.selectedTab == left, pill, glowStrength) { navigation.select(left, toRoot = true) }
+                                Box(Modifier.weight(1f).heightIn(min = 48.dp).testTag("shell-mini-player")) { miniPlayer() }
+                                if (apple || compactSearchVisible(navigation.route)) {
+                                    CompactCircleTab(ShellTab.Search, navigation.selectedTab == ShellTab.Search, pill, glowStrength, onSearch)
+                                }
                             }
-                        }
-                        else -> {
-                            Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("shell-mini-player")) { miniPlayer() }
-                            if (layout == ShellLayout.BottomBar && preferences.usesSukisuNavigationBar()) {
-                                // The SukiSU bar takes the same bottom slot and the same selection path as the default bar.
-                                SukisuNavigationBar(
-                                    items = ShellTab.entries,
-                                    selected = { tab -> navigation.selectedTab == tab },
-                                    onSelect = { tab -> navigation.select(tab, toRoot = false) },
-                                    modifier = Modifier.testTag("shell-bottom-bar"),
-                                    hideLabels = preferences[HideNavigationBarLabelsKey, false],
-                                )
-                            } else if (layout == ShellLayout.BottomBar) {
-                                NavigationBar(Modifier.testTag("shell-bottom-bar").navigationMaterial(preferences),
-                                    containerColor = Color.Transparent, windowInsets = WindowInsets(0, 0, 0, 0)) {
-                                    ShellTab.entries.forEach { tab ->
-                                        NavigationBarItem(
-                                            selected = navigation.selectedTab == tab,
-                                            onClick = { navigation.select(tab, toRoot = false) },
-                                            icon = { TabMark(tab) },
-                                            label = { Text(stringResource(tab.label)) },
-                                            modifier = Modifier.testTag("shell-tab-${tab.name}"),
-                                        )
-                                    }
+                            else -> {
+                                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("shell-mini-player")) { miniPlayer() }
+                                if (layout == ShellLayout.BottomBar && preferences.usesSukisuNavigationBar()) {
+                                    // The SukiSU bar takes the same bottom slot and the same selection path as the default bar.
+                                    SukisuNavigationBar(
+                                        items = ShellTab.entries,
+                                        selected = { tab -> navigation.selectedTab == tab },
+                                        onSelect = { tab -> navigation.select(tab, toRoot = false) },
+                                        modifier = Modifier.testTag("shell-bottom-bar"),
+                                        hideLabels = preferences[HideNavigationBarLabelsKey, false],
+                                    )
+                                } else if (layout == ShellLayout.BottomBar) {
+                                    FloatingNavigationToolbar(
+                                        items = ShellTab.entries,
+                                        preferences = preferences,
+                                        pureBlack = MaterialTheme.colorScheme.background == Color.Black,
+                                        modifier = Modifier.testTag("shell-bottom-bar"),
+                                        style = preferences.navigationPillStyle(),
+                                        isSelected = { tab -> navigation.selectedTab == tab },
+                                        onItemClick = { tab -> navigation.select(tab, toRoot = false) },
+                                        onSearchItemDoubleClick = onSearchItemDoubleClick,
+                                    )
                                 }
                             }
                         }
@@ -135,25 +202,47 @@ internal val ShellTab.label: StringResource get() = when (this) {
     ShellTab.Library -> Res.string.m4_library
 }
 
+/**
+ * One round chrome button of the compact one-row layout (Library circle, Search circle). With a liquid-glass
+ * backdrop it is glass with the press spotlight; otherwise a tonal surface with a small shadow, like the
+ * baseline CompactControlCircle.
+ */
 @Composable
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private fun CircleTab(tab: ShellTab, selected: Boolean, preferences: PreferenceSnapshot, onClick: () -> Unit) {
+private fun CompactCircleTab(tab: ShellTab, selected: Boolean, pill: PillStyle, glowStrength: Float, onClick: () -> Unit) {
     val interactions = remember { MutableInteractionSource() }
     val pressed by interactions.collectIsPressedAsState()
     val policy = LocalOpticalPolicy.current
-    val glass = preferences[LiquidGlassNavBarEnabledKey, false] && policy.recordLiquidGlass && LocalLiquidGlassBackdrop.current != null
+    val glass = pill.backdrop == PillBackdrop.LIQUID_GLASS && policy.recordLiquidGlass && LocalLiquidGlassBackdrop.current != null
     // This finite press response is disposed when inactive/occluded/reduced-motion. No gesture is consumed.
     val progress = if (selected && policy.motion && glass) {
         animateFloatAsState(if (pressed) 1f else .25f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "tab-lens")
     } else rememberUpdatedState(0f)
-    CompositionLocalProvider(LocalContentColor provides
-        if (selected && !glass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) {
-        Box(Modifier.size(56.dp).clip(CircleShape)
-            .navigationMaterial(preferences, CircleShape,
-                if (selected) LiquidGlassRole.SelectionLens else LiquidGlassRole.NavigationBar, progress = { progress.value })
-            .selectable(selected, interactionSource = interactions, indication = LocalIndication.current, role = Role.Tab, onClick = onClick)
-            .testTag("shell-tab-${tab.name}"), contentAlignment = Alignment.Center) {
-            TabMark(tab)
+    CompactControlCircle(
+        backdrop = if (glass) PillBackdrop.LIQUID_GLASS else PillBackdrop.NONE,
+        glowStrength = glowStrength,
+        tint = if (selected || tab == ShellTab.Library) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        interactionSource = interactions,
+        onClick = onClick,
+        modifier = Modifier.testTag("shell-tab-${tab.name}"),
+    ) {
+        CompositionLocalProvider(LocalContentColor provides
+            if (selected && !glass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) {
+            Box(
+                Modifier
+                    .then(
+                        if (glass && selected) {
+                            Modifier.liquidGlassMaterial(
+                                shape = CircleShape,
+                                role = LiquidGlassRole.SelectionLens,
+                                progress = { progress.value },
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) { TabMark(tab) }
         }
     }
 }
