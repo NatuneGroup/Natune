@@ -122,7 +122,5 @@ class AiSettingsActionsTest {
         override suspend fun test(config: AiServiceSettings) { last = config; testing() }
         override suspend fun translateLines(config: AiServiceSettings, targetLanguage: String, lines: List<String>, formatName: String): List<String> = error("Not a lyrics request")
         override suspend fun romanizeLines(config: AiServiceSettings, lines: List<String>, formatName: String): List<String> = error("Not a lyrics request")
-        override suspend fun fetchModels(config: AiServiceSettings): List<AiModelOption> = error("Not a picker request")
-        override suspend fun complete(config: AiServiceSettings, budget: AiRequestBudget, systemPrompt: String, userPrompt: String, temperature: Double, maxTokens: Int): String = error("Not a chat request")
     }
 }
