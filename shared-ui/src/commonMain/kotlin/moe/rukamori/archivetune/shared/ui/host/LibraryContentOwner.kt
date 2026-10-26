@@ -13,14 +13,17 @@ import kotlinx.coroutines.flow.map
 import moe.rukamori.archivetune.shared.data.persistence.LocalPlaylistSummary
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.domain.library.AlbumFilter
+import moe.rukamori.archivetune.shared.domain.library.AlbumSortType
 import moe.rukamori.archivetune.shared.domain.library.ArtistFilter
 import moe.rukamori.archivetune.shared.domain.library.AutoPlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.LibraryDefaults
+import moe.rukamori.archivetune.shared.domain.library.LibraryAlbumRow
 import moe.rukamori.archivetune.shared.domain.library.LibraryFilter
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.library.PlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.PlaylistSortType
 import moe.rukamori.archivetune.shared.domain.library.SongFilter
+import moe.rukamori.archivetune.shared.domain.library.SongSortType
 import moe.rukamori.archivetune.shared.domain.library.librarySortState
 import moe.rukamori.archivetune.shared.domain.library.writeTo
 import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportLibrary
@@ -223,6 +226,29 @@ class LibraryContentOwner(
     suspend fun setAutoSongSort(sort: LibrarySortState<AutoPlaylistSongSortType>) {
         settings.edit { sort.writeTo(this, AutoPlaylistSongSortTypeKey, AutoPlaylistSongSortDescendingKey) }
     }
+
+    /**
+     * The saved songs that credit [artist], in [sort]'s order, emitted again with the library, listens and blocklist.
+     * Only the credits the provider gave count — a name in the subtitle never stands in for an artist id, so a song
+     * cannot land under an artist it does not credit. Null means [sort] needs data the store does not hold.
+     */
+    fun artistSongs(artist: ContentRef, sort: LibrarySortState<SongSortType>): Flow<List<ContentOccurrence>?> =
+        library.observeLibrarySongs(sort, textOrder, blocked).map { page ->
+            page?.items?.filter { row ->
+                row.item.artists.any { credit -> credit.ref(row.item.ref.provider) == artist }
+            }
+        }
+
+    /**
+     * The saved-library albums that credit [artist], in [sort]'s order, as the artist page's Albums section lists
+     * them. Null means [sort] needs data the store does not hold, as in [artistSongs].
+     */
+    fun artistAlbums(artist: ContentRef, sort: LibrarySortState<AlbumSortType>): Flow<List<LibraryAlbumRow>?> =
+        library.observeLibraryAlbums(sort, textOrder, blocked).map { rows ->
+            rows?.filter { row ->
+                row.album.artists.any { credit -> credit.ref(row.album.ref.provider) == artist }
+            }
+        }
 
     /**
      * The songs of one My Top request, most played first and cut to its size. Null when the request names no My Top list

@@ -61,6 +61,7 @@ import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabas
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeBrowseTransport
+import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeCatalogueTransport
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
@@ -211,6 +212,11 @@ class DesktopSessionGraph private constructor(
 
     /** Search, albums and finite playlists over the same YouTube catalogue the queue router reads. */
     internal val catalogPages = CatalogPageOwners(youtubeContent, pageOwners)
+
+    // Shares the InnerTube client the browse transport signed in: home, discovery, charts, moods, browse and
+    // releases all read through it, and [catalogueOwners] holds the rows each page showed so a tap can queue them.
+    internal val catalogue = JvmYouTubeCatalogueTransport()
+    internal val catalogueOwners = DesktopCatalogueOwners(catalogue, youtubeContent, pageOwners)
 
     /** The one artwork loader of the window slots. It fetches over the same client as the sources and holds no other resource. */
     internal val artworkLoader = DesktopArtworkLoader(http, customArtwork, customArtworkFiles)
