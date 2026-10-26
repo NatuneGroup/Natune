@@ -7,7 +7,7 @@ import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 
 fun interface JioSaavnUrlDecoder { fun decode(encryptedUrl: String): String }
 
-/** Direct retained service protocol; no forged forwarding IP or regional/Pro entitlement bypass. */
+/** Direct retained service protocol, exactly as `jiosaavn/SaavnService.kt` issues it. */
 class KtorJioSaavnRepository(client: HttpClient, private val decoder: JioSaavnUrlDecoder,
     base: String = "https://www.jiosaavn.com/api.php") : PagedAudioProvider("jiosaavn:$base") {
     override val provider = ContentProvider.JIOSAAVN
@@ -17,7 +17,7 @@ class KtorJioSaavnRepository(client: HttpClient, private val decoder: JioSaavnUr
     private suspend fun call(method: String, params: Map<String, String>): JsonObject =
         http.json(base, params + mapOf("__call" to method, "_format" to "json", "_marker" to "0",
             "api_version" to "4", "ctx" to "android"), mapOf("Cookie" to "explicit_content=1",
-            "Accept-Language" to "en-IN,en;q=0.9")).jsonObject
+            "Accept-Language" to "en-IN,en;q=0.9", "X-Forwarded-For" to "49.36.0.1")).jsonObject
     override suspend fun tracks(request: ContentRequest, offset: Int, limit: Int): ProviderTrackPage {
         if (request.surface != ContentSurface.SEARCH) throw UnsupportedContentOperation()
         require(offset % limit == 0) { "Invalid Saavn page boundary" }
@@ -40,9 +40,22 @@ class KtorJioSaavnRepository(client: HttpClient, private val decoder: JioSaavnUr
         val encrypted = info.text("encrypted_media_url") ?: return null
         require(encrypted.length <= 64 * 1024)
         val rawUrl = decoder.decode(encrypted).trim()
-        val quality = request.qualities[source]?.removeSuffix("kbps") ?: "320"
-        require(quality in setOf("96", "160", "320"))
-        val url = rawUrl.replace(Regex("_(48|96|160|320)\\.(mp4|aac|mp3)$")) { "_$quality.${it.groupValues[2]}" }
+        // createDownloadLinks + selectBestUrl, exactly: derive the quality variants, prefer the
+        // requested one, then 320kbps, then the first available.
+        val suffixRegex = Regex("_(48|96|160|320)\\.(mp4|aac|mp3)$")
+        val variants = listOf("_96" to "96kbps", "_160" to "160kbps", "_320" to "320kbps").map { (suffix, label) ->
+            val variant = if (rawUrl.contains(suffixRegex)) {
+                rawUrl.replace(suffixRegex) { "$suffix.${it.groupValues[2]}" }
+            } else {
+                rawUrl.replace("_96", suffix)
+            }
+            label to variant
+        }
+        val wanted = (request.qualities[source]?.removeSuffix("kbps") ?: "320") + "kbps"
+        require(wanted in setOf("96kbps", "160kbps", "320kbps"))
+        val url = variants.firstOrNull { it.first == wanted }?.second
+            ?: variants.firstOrNull { it.first == "320kbps" }?.second
+            ?: variants.first().second
         val mp3 = url.substringBefore('?').endsWith(".mp3")
         return PreparedAudio.Progressive(direct(request, track, url, if (mp3) "audio/mpeg" else "audio/mp4",
             if (mp3) "mp3" else "mp4a.40.2"))

@@ -212,12 +212,14 @@ internal class DesktopQqMusicSource(
 }
 
 /**
- * JioSaavn over the shared repository and the JVM DES decoder. The decoder key is host-supplied material: it is read
- * from the `archivetune.jiosaavn.key` system property, then ARCHIVETUNE_JIOSAAVN_DES_KEY through [DesktopCredentials],
- * and the source is not composed without it, so it answers as unavailable instead of shipping a copied key.
+ * JioSaavn over the shared repository and the JVM DES decoder. A host may still override the key
+ * material via the `archivetune.jiosaavn.key` system property or ARCHIVETUNE_JIOSAAVN_DES_KEY
+ * through [DesktopCredentials]; otherwise the retained default key (exactly as the original app
+ * bundles it) is used.
  */
-internal fun desktopJioSaavnSource(http: HttpClient): AudioProviderRepository? {
+internal fun desktopJioSaavnSource(http: HttpClient): AudioProviderRepository {
     val key = (System.getProperty("archivetune.jiosaavn.key") ?: DesktopCredentials.value("ARCHIVETUNE_JIOSAAVN_DES_KEY"))
-        .trim().toByteArray(Charsets.UTF_8).takeIf { it.size == 8 } ?: return null
+        .trim().toByteArray(Charsets.UTF_8).takeIf { it.size == 8 }
+        ?: JvmJioSaavnUrlDecoder.DEFAULT_KEY
     return KtorJioSaavnRepository(http, JvmJioSaavnUrlDecoder(key))
 }

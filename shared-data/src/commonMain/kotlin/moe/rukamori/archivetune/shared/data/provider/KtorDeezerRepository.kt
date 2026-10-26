@@ -59,6 +59,8 @@ class KtorDeezerRepository(
     apiBase: String = "https://api.deezer.com",
     gateway: String = "https://www.deezer.com/ajax/gw-light.php",
     mediaEndpoint: String = "https://media.deezer.com/v1/get_url",
+    resolver: DeezerInstanceResolver? = null,
+    private val instances: () -> List<String> = { emptyList() },
 ) : PagedAudioProvider("deezer:${access?.scope ?: "public"}:$apiBase") {
     override val provider = ContentProvider.DEEZER
     override val source = AudioSourceType.DEEZER
@@ -66,9 +68,13 @@ class KtorDeezerRepository(
     private val api = endpoint(apiBase)
     private val gateway = endpoint(gateway)
     private val mediaEndpoint = endpoint(mediaEndpoint)
+    private val instanceResolver = resolver ?: DeezerInstanceResolver(client, nowMs)
     private class Session(val apiToken: String, val license: String, val lossless: Boolean, val expiresMs: Long)
+    private class CachedStream(val prepared: PreparedAudio, val expiresAtMs: Long)
     private val sessionMutex = Mutex()
     private var cachedSession: Session? = null
+    private val streamCache = mutableMapOf<String, CachedStream>()
+    private val failureCache = mutableMapOf<String, Long>()
     private fun cookie() = mapOf("Cookie" to "arl=${requireNotNull(access).arl}")
     private suspend fun gateway(method: String, apiToken: String, payload: JsonObject = buildJsonObject {}): JsonObject {
         val root = http.json(gateway, mapOf("method" to method, "input" to "3", "api_version" to "1.0",
@@ -109,6 +115,25 @@ class KtorDeezerRepository(
         return parse(result)
     }
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
+        val cacheKey = "${request.mediaId}:${request.qualities[source].orEmpty()}"
+        val now = nowMs()
+        streamCache[cacheKey]?.takeIf { it.expiresAtMs > now }?.let { return it.prepared }
+        failureCache[cacheKey]?.takeIf { it > now }?.let { return null }
+
+        resolveViaAccount(request)?.let { prepared ->
+            streamCache[cacheKey] = CachedStream(prepared, now + STREAM_CACHE_MS)
+            return prepared
+        }
+        resolveViaInstance(request)?.let { prepared ->
+            streamCache[cacheKey] = CachedStream(prepared, now + STREAM_CACHE_MS)
+            return prepared
+        }
+        failureCache[cacheKey] = now + FAILURE_CACHE_MS
+        return null
+    }
+
+    /** The signed-in account path: gateway session + media.deezer.com get_url -> BF_CBC_STRIPE. */
+    private suspend fun resolveViaAccount(request: AudioResolveRequest): PreparedAudio? {
         if (access == null) return null // public preview URLs never become full streams
         val session = session()
         val isrc = request.isrc?.takeIf { it.isNotBlank() }
@@ -150,6 +175,48 @@ class KtorDeezerRepository(
         return PreparedAudio.DeezerEncrypted(stream.copy(trustedDirectId = stream.trustedDirectId ||
             isrc != null && isrc.equals(track.isrc, true)), track.item.ref.id, access.scope)
     }
+
+    /**
+     * The instance path from the retained provider: Deezer API instances answer with already-
+     * decrypted audio on `$base/stream/?isrc=` / `$base/stream/{id}` (no local credentials needed).
+     * Recordings are identified through Deezer's public API first, exactly as the original.
+     */
+    private suspend fun resolveViaInstance(request: AudioResolveRequest): PreparedAudio? {
+        instanceResolver.setUserInstances(instances())
+        if (!instanceResolver.hasInstances()) return null
+        if (instanceResolver.instances().isEmpty()) return null
+        val isrc = request.isrc?.takeIf { it.isNotBlank() }
+        val match: ProviderTrack? =
+            if (request.directIds[source] == null && isrc != null) {
+                val exact = try {
+                    val root = http.json("$api/track/isrc:${pathId(isrc)}").jsonObject
+                    if (root.obj("error") == null) parse(root) else null
+                } catch (cancel: CancellationException) { throw cancel }
+                catch (failure: Exception) { null }
+                exact ?: match(request)
+            } else {
+                match(request)
+            }
+        if (match == null) return null
+        val stream = instanceResolver.resolve(isrc = isrc, trackId = match.item.ref.id) ?: return null
+        return PreparedAudio.Progressive(
+            moe.rukamori.archivetune.shared.domain.source.DirectStream(
+                uri = streamUrl(stream.url),
+                mimeType = if (stream.flac) "audio/flac" else "audio/mpeg",
+                codecs = if (stream.flac) "flac" else "mp3",
+                contentLength = stream.contentLength,
+                label = if (stream.flac) "Deezer FLAC (API)" else "Deezer MP3 (API)",
+                source = source,
+                matchedTitle = match.item.title,
+                matchedArtist = match.artists.joinToString(", ").takeIf { it.isNotBlank() },
+                matchedAlbum = match.album,
+                matchedDurationMs = match.item.durationMs,
+                trustedDirectId = request.directIds[source] == match.item.ref.id,
+                sampleRate = if (stream.flac) 44_100 else null,
+                bitDepth = if (stream.flac) 16 else null,
+            ),
+        )
+    }
     private fun parse(obj: JsonObject): ProviderTrack {
         val id = obj.text("id") ?: throw ProviderProtocolFailure()
         val artists = obj.array("contributors")?.mapNotNull { it.jsonObject.text("name") }?.takeIf { it.isNotEmpty() }
@@ -160,5 +227,9 @@ class KtorDeezerRepository(
             obj.long("duration")?.times(1000), obj.flag("explicit_lyrics")), artists, album?.text("title"),
             obj.text("isrc"), obj.toString())
     }
-    private companion object { val TIERS = listOf("FLAC", "MP3_320", "MP3_128") }
+    private companion object {
+        val TIERS = listOf("FLAC", "MP3_320", "MP3_128")
+        private const val STREAM_CACHE_MS = 30 * 60 * 1000L
+        private const val FAILURE_CACHE_MS = 10 * 60 * 1000L
+    }
 }
