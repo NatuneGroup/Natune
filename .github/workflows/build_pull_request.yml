@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew --console=plain --stacktrace --profile assembleGmsMobileUniversalDebug :app:lintGmsMobileUniversalDebug --warning-mode summary 2>&1 | python3 -u -c '
+          ./gradlew --console=plain --stacktrace --profile -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" -Pkotlin.daemon.jvmargs="-Xmx4g" assembleGmsMobileUniversalDebug :app:lintGmsMobileUniversalDebug --warning-mode summary 2>&1 | python3 -u -c '
           import re
           import sys
           warning = re.compile(r"^(WARNING: )?\[CXX5202\] This app only has 32-bit \[(armeabi-v7a|x86)\] native libraries\. Beginning August 1, 2019 Google Play store requires that all apps that include native libraries must provide 64-bit versions\. For more information, visit https://g\.co/64-bit-requirement$")
