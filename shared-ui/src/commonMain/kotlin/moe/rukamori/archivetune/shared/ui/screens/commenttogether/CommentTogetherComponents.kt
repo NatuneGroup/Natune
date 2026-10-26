@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -74,16 +75,17 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
-import moe.rukamori.archivetune.shared.data.listentogether.RepliedMessage
-import moe.rukamori.archivetune.shared.data.listentogether.TrackInfo
-import moe.rukamori.archivetune.shared.ui.resources.Res
-import org.jetbrains.compose.resources.painterResource
-import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.data.listentogether.RepliedMessage
+import moe.rukamori.archivetune.shared.data.listentogether.TrackInfo
+import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 
 private const val MaxTypingAvatars = 5
 private const val TypingCycleMillis = 900
@@ -545,7 +547,7 @@ internal fun CommentTypingRow(
         Spacer(Modifier.width(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             repeat(3) { index ->
-                val lift = sin((phase + index * 0.2f) * 2f * PI.toFloat()).coerceAtLeast(0f)
+                val lift = sin(((phase + index * 0.2f) * 2f * PI.toFloat()).toDouble()).toFloat().coerceAtLeast(0f)
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 2.dp)

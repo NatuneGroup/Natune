@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m4lf_icon_skip_next
 import moe.rukamori.archivetune.shared.ui.resources.m6_icon_close
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_timer
