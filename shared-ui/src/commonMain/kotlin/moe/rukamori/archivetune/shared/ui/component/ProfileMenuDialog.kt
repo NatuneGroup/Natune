@@ -39,7 +39,6 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import moe.rukamori.archivetune.shared.ui.resources.*
 
 /**
  * What the profile menu shows. The host decides each gate from its own settings and route; this model only carries the

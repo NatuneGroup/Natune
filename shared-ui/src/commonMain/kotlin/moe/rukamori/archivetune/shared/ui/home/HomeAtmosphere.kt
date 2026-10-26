@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
-import moe.rukamori.archivetune.shared.ui.resources.*
 
 private val HomeWelcomeGutter = 20.dp
 

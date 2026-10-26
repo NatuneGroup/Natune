@@ -45,7 +45,6 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import moe.rukamori.archivetune.shared.ui.resources.*
 
 /**
  * What the Cast menu needs from the host's Cast session. It mirrors the session state and carries no Cast SDK type, so

@@ -30,7 +30,6 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import moe.rukamori.archivetune.shared.ui.resources.*
 
 /**
  * The sort control of a Library list: a leading dropdown for the sort type and, where the sort has a direction, a

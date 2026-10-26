@@ -41,7 +41,6 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.session.LyricsSessions
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import moe.rukamori.archivetune.shared.ui.resources.*
 
 /**
  * Song-menu rows for the player and queue menu's song section. [facts] and [host] are the values the single-song menu
