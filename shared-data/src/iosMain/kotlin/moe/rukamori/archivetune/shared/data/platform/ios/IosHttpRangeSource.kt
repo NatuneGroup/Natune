@@ -520,9 +520,12 @@ internal class IosHttpRangeSource(
         probing: Boolean,
     ): NSURLRequest {
         val nsUrl = NSURL.URLWithString(target) ?: throw ByteSourceException("the source is not an HTTP(S) URL")
-        val request = NSMutableURLRequest(nsUrl)
+        val request = NSMutableURLRequest(
+            uRL = nsUrl,
+            cachePolicy = platform.Foundation.NSURLRequestUseProtocolCachePolicy,
+            timeoutInterval = (if (probing) PROBE_TIMEOUT_MS else BODY_TIMEOUT_MS).toDouble() / 1000.0,
+        )
         request.HTTPMethod = "GET"
-        request.setTimeoutInterval((if (probing) PROBE_TIMEOUT_MS else BODY_TIMEOUT_MS).toDouble() / 1000.0)
         request.HTTPShouldHandleCookies = false
         if (credentialed) {
             headers.reveal().forEach { (name, value) -> request.setValue(value, forHTTPHeaderField = name) }

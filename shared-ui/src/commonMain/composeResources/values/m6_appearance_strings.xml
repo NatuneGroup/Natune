@@ -61,10 +61,10 @@
     <string name="m6_aod_timer">Automatic timer (seconds; 0 is off)</string>
     <string name="m6_aod_dim">Start when the screen dims</string>
     <string name="m6_pure_black">Pure black</string>
-    <string name="m6_appearance_hub_theme">Theme</string>
-    <string name="m6_appearance_hub_theme_desc">Colors, dynamic theme, icons</string>
-    <string name="m6_appearance_hub_player">Player</string>
-    <string name="m6_appearance_hub_player_desc">Player design, controls and blur</string>
-    <string name="m6_appearance_hub_interface">Interface</string>
-    <string name="m6_appearance_hub_interface_desc">Sliders, gestures and navigation</string>
+    <string name="m6_appearance_theme">Theme &amp; colours</string>
+    <string name="m6_appearance_theme_desc">Colour palette, dark mode, fonts, Liquid Glass</string>
+    <string name="m6_appearance_player">Player</string>
+    <string name="m6_appearance_player_desc">Player style, backgrounds, artwork, controls</string>
+    <string name="m6_appearance_interface">Interface</string>
+    <string name="m6_appearance_interface_desc">Home, navigation bar, library layout, extras</string>
 </resources>
