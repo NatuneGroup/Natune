@@ -105,7 +105,7 @@ class IosStorageConsumers(
                 memScoped {
                     val info = alloc<stat>()
                     if (stat(path, info.ptr) != 0) return@memScoped
-                    if (S_ISDIR(info.st_mode)) collectFiles(path, out)
+                    if (info.st_mode.toUInt() and S_IFMT.toUInt() == S_IFDIR.toUInt()) collectFiles(path, out)
                     else out += path to info.st_mtimespec.tv_sec * 1000L
                 }
             }
@@ -126,7 +126,7 @@ class IosStorageConsumers(
                 memScoped {
                     val info = alloc<stat>()
                     if (stat(path, info.ptr) != 0) return@memScoped
-                    total += if (S_ISDIR(info.st_mode)) sizeOf(path) else info.st_size
+                    total += if (info.st_mode.toUInt() and S_IFMT.toUInt() == S_IFDIR.toUInt()) sizeOf(path) else info.st_size
                 }
             }
         } finally {

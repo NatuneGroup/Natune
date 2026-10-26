@@ -198,10 +198,10 @@ class TidalInstanceResolver(
                 ?.let { listOf("$it/api/discovery/tidal") }
                 ?: emptyList()
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     private var customEndpoints: List<TidalDownloadEndpoint> = emptyList()
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     private var poolDiscoveredInstanceUrls: Set<String> = emptySet()
 
     private val activeEndpoints: List<TidalDownloadEndpoint>
@@ -255,7 +255,7 @@ class TidalInstanceResolver(
         }.getOrNull()
     }
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     var lastResolvedTrackId: String? = null
         private set
 
@@ -442,7 +442,7 @@ class TidalInstanceResolver(
     private val streamCache = mutableMapOf<String, Resolved>()
     private val streamFailureCache = mutableMapOf<String, CachedFailure>()
 
-    @Volatile
+    @kotlin.concurrent.Volatile
     private var resolverRateLimitedUntilMs = 0L
 
     private val instanceCooldownUntilMs = mutableMapOf<String, Long>()

@@ -42,7 +42,7 @@ class IosLocalMediaSource(
                     val stat = alloc<stat>()
                     if (stat(path, stat.ptr) != 0) null else stat.st_mode to stat.st_mtimespec
                 } ?: continue
-                if (S_ISDIR(info.first)) {
+                if (info.first.toUInt() and S_IFMT.toUInt() == S_IFDIR.toUInt()) {
                     walk(path, found)
                 } else if (SupportedLocalAudio.isSupported(name, null)) {
                     found += LocalTrackCandidate(
@@ -66,7 +66,7 @@ class IosLocalMediaSource(
         withContext(Dispatchers.Default) {
             val head = readRange(candidate.path, 0L, HEAD_BYTES)
             val tail = if (candidate.sizeBytes > head.size) {
-                readRange(candidate.path, candidate.sizeBytes - minOf(TAIL_BYTES, candidate.sizeBytes - head.size),
+                readRange(candidate.path, candidate.sizeBytes - minOf(TAIL_BYTES.toLong(), candidate.sizeBytes - head.size),
                     TAIL_BYTES)
             } else ByteArray(0)
             head to tail
