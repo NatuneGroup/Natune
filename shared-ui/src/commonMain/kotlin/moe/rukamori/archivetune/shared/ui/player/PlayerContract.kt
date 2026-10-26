@@ -30,6 +30,15 @@ data class PlayerState(
     val active: Boolean = true,
     val reducedMotion: Boolean = false,
     val handoff: PlayerHandoff? = null,
+    /** Playing-from subtitle (queue title); falls back to [albumTitle] for the header line. */
+    val queueTitle: String? = null,
+    val albumTitle: String? = null,
+    val explicit: Boolean = false,
+    /** Stream-quality label for codec chips (e.g. "Lossless"); null hides the chip. */
+    val formatLabel: String? = null,
+    val formatLossless: Boolean = false,
+    /** Remaining sleep-timer milliseconds while armed; null means no countdown chip. */
+    val sleepTimerMs: Long? = null,
 )
 
 /**
@@ -47,7 +56,7 @@ data class PlayerHandoff(
 }
 
 enum class PlayerRepeat { OFF, ALL, ONE }
-enum class PlayerAction { PREVIOUS, NEXT, SHUFFLE, REPEAT, LIKE, SHARE, MORE, SLEEP, TITLE, ARTIST, COLLAPSE, SEEK_BACKWARD, SEEK_FORWARD }
+enum class PlayerAction { PREVIOUS, NEXT, SHUFFLE, REPEAT, LIKE, SHARE, MORE, SLEEP, TITLE, ARTIST, COLLAPSE, SEEK_BACKWARD, SEEK_FORWARD, OUTPUT }
 
 /** Required callbacks deliberately have no no-op defaults. Queue dispatch stays occurrence-based. */
 class PlayerActions(

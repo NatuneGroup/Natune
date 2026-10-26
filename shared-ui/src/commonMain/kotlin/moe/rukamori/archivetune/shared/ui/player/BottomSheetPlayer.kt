@@ -139,10 +139,10 @@ private fun PlayerStyleDispatch(c: PlayerRenderContext) {
     when(c.preferences.style) {
         PlayerDesignStyle.V1, PlayerDesignStyle.V2, PlayerDesignStyle.V3, PlayerDesignStyle.V4,
         PlayerDesignStyle.V5, PlayerDesignStyle.V6 -> NumberedPlayer(c)
-        PlayerDesignStyle.V7 -> ImmersivePlayer(c,extended=false)
-        PlayerDesignStyle.V8 -> ImmersivePlayer(c,extended=true)
-        PlayerDesignStyle.V9 -> MaterialExtendedPlayer(c)
-        PlayerDesignStyle.V10 -> EditorialPlayer(c)
+        PlayerDesignStyle.V7 -> ImmersivePlayer(c)
+        PlayerDesignStyle.V8 -> V8Player(c)
+        PlayerDesignStyle.V9 -> V9Player(c)
+        PlayerDesignStyle.V10 -> V10Player(c)
         PlayerDesignStyle.APPLE_MUSIC -> AppleMusicPlayer(c)
         PlayerDesignStyle.BITCHORD -> BitChordPlayer(c)
         PlayerDesignStyle.TIKTOK -> TikTokPlayer(c)
