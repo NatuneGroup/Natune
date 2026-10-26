@@ -160,10 +160,9 @@ private fun IosSongMenu(state: IosSongMenuState, graph: IosSessionGraph, occurre
     val ref = occurrence.item.ref
     val liked by produceState(false, ref) {
         try {
-            // Any stable order works here: only membership is read, not the row order.
             graph.library.observeLikedSongs(
                 LibrarySortState(AutoPlaylistSongSortType.CREATE_DATE, false),
-                naturalOrder(),
+                iosTextOrder,
                 graph.pageOwners.blocked,
             ).collect { page -> value = page?.items.orEmpty().any { it.item.ref == ref } }
         } catch (cancelled: CancellationException) {
