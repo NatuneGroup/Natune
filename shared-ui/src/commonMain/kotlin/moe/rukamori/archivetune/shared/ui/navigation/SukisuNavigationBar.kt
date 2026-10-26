@@ -90,13 +90,14 @@ import moe.rukamori.archivetune.shared.ui.glass.layerBackdrop
 import moe.rukamori.archivetune.shared.ui.glass.liquidGlassMaterial
 import moe.rukamori.archivetune.shared.ui.glass.rememberGlassSpecularHighlight
 import moe.rukamori.archivetune.shared.ui.glass.scaleAwareSpring
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
+import androidx.compose.foundation.layout.width
 
 /** The bar's fixed height (SukiSU's 64 dp). The shell reserves exactly this much chrome for the bar, plus its inset. */
 val SukisuNavigationBarHeight = 64.dp

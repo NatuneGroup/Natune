@@ -7,9 +7,12 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
 import kotlinx.coroutines.*
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiServiceSettings
+import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiModelOption
+import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiRequestBudget
 import moe.rukamori.archivetune.shared.domain.repository.AiTextService
 import moe.rukamori.archivetune.shared.domain.settings.*
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalTestApi::class)
 class AiIntegrationSettingsTest {
@@ -90,5 +93,7 @@ class AiIntegrationSettingsTest {
         override suspend fun test(config: AiServiceSettings) { tests++ }
         override suspend fun translateLines(config: AiServiceSettings, targetLanguage: String, lines: List<String>, formatName: String): List<String> = error("Not a lyrics test")
         override suspend fun romanizeLines(config: AiServiceSettings, lines: List<String>, formatName: String): List<String> = error("Not a lyrics test")
+        override suspend fun fetchModels(config: AiServiceSettings): List<AiModelOption> = error("Not used")
+        override suspend fun complete(config: AiServiceSettings, budget: AiRequestBudget, systemPrompt: String, userPrompt: String, temperature: Double, maxTokens: Int): String = error("Not used")
     }
 }

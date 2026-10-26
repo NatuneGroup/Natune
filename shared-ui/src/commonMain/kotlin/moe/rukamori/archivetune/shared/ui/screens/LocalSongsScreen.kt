@@ -16,6 +16,7 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
+import androidx.compose.runtime.setValue
 
 /** UI projections only; no replacement for native scan config, MIME policy or persisted sort keys. */
 enum class LocalSongSort { MODIFIED, NAME, ARTIST, ALBUM }

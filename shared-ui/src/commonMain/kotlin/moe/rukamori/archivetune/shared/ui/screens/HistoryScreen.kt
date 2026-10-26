@@ -13,6 +13,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 enum class HistorySource { LOCAL, REMOTE, SPOTIFY }
 /** Only local database events have a numeric ID; all rows retain the provider occurrence identity. */

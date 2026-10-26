@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 data class PlaylistTagEditorUi(val id: String?, val name: String, val color: Color, val palette: List<Color>, val canSave: Boolean)
 data class PlaylistTagsUi(

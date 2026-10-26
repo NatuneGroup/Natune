@@ -6,6 +6,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
 import moe.rukamori.archivetune.shared.ui.resources.*
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalTestApi::class)
 class OnboardingComposeTest {

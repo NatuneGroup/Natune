@@ -40,9 +40,10 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 
 /**
- * Settings > Backup and restore on this host: manual archives through the system file chooser and Google Drive app data
- * backup. The scheduled folder backup and Drive folder sync rows of Android need a document-tree owner this host does
- * not have, so the page shows them only where [BackupAndRestoreSettings] has a host for them, which is not here.
+ * Settings > Backup and restore on this host: manual archives through the system file chooser, Google Drive app data
+ * backup, scheduled folder backups and the Drive folder sync — folders are filesystem paths on this host, picked
+ * through a directory chooser and synced on the Android cadence rules by an in-process scheduler. Playlist file
+ * import/export runs through the shared owners.
  */
 @Composable
 internal fun DesktopBackupRestorePage(
@@ -62,6 +63,7 @@ internal fun DesktopBackupRestorePage(
         onNotice = onNotice,
         onFailure = onFailure,
         scrollTo = scrollTo,
+        backupSyncHost = backup.sync,
         driveAppDataHost = backup.drive,
     )
 }

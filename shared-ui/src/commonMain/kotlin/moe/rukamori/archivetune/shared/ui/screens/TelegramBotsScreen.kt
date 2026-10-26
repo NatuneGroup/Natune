@@ -17,6 +17,7 @@ import moe.rukamori.archivetune.shared.ui.glass.BusyCircularProgress
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 /** Outcome of the last add attempt, produced by the Telegram owner. Null means nothing is pending. */
 sealed interface TelegramBotNotice {

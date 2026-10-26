@@ -8,6 +8,8 @@ import kotlinx.coroutines.CancellationException
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** Sanitized UI projection; the transport must not supply raw responses, proxy URLs or credentials. */
 enum class ProxyConnectionResult { CONNECTED, INVALID_CONFIGURATION, AUTHENTICATION, TIMEOUT, DNS_FAILURE, UNREACHABLE, FAILED }

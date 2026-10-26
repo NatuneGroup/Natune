@@ -70,6 +70,9 @@ import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.SecureCredentialStore
 import moe.rukamori.archivetune.shared.ui.settings.DriveAppDataBackupHost
+import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
+import moe.rukamori.archivetune.shared.data.playlistimport.PlaylistImportOwner
+import moe.rukamori.archivetune.shared.ui.screens.PlaylistCollectionRow
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 import moe.rukamori.archivetune.shared.ui.settings.drivebackup.DriveAppDataAccountChooser
 import moe.rukamori.archivetune.shared.ui.settings.drivebackup.DriveAppDataBackupBinding
@@ -92,6 +95,9 @@ internal class DesktopBackup(
     googleClient: () -> GoogleDesktopClient?,
     vault: SecureCredentialStore,
     openBrowser: (String) -> Boolean,
+    playlistExport: PlaylistExportOwner,
+    playlistImport: PlaylistImportOwner,
+    playlistRows: suspend () -> List<PlaylistCollectionRow>,
     private val report: (String) -> Unit,
 ) {
     val archives = DesktopBackupArchiveGateway(settings, snapshotDatabase, instanceDirectory)
@@ -111,6 +117,9 @@ internal class DesktopBackup(
 
     /** True after a restore was staged; the window offers to restart until the user answers. */
     val restartRequested: StateFlow<Boolean> = restartState.asStateFlow()
+
+    /** The scheduled folder backup, Drive folder sync and playlist file transports the settings page mounts. */
+    val sync = DesktopBackupSync(scope, settings, archives, playlistExport, playlistImport, playlistRows, report)
 
     val binding = DriveAppDataBackupBinding(
         scope = scope,
@@ -134,8 +143,9 @@ internal class DesktopBackup(
         restartState.value = false
     }
 
-    /** Re-arms the saved schedule, which only lives as long as this process. */
+    /** Re-arms the saved schedules, which only live as long as this process. */
     fun start() {
+        sync.start()
         scheduler.bind(owner)
         scope.launch {
             try {

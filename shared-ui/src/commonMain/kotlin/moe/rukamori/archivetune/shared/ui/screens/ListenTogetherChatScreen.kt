@@ -29,6 +29,8 @@ import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 data class ChatPermissionsUi(
     val reply: Boolean, val edit: Boolean, val deleteSelf: Boolean, val deleteEveryone: Boolean,

@@ -25,6 +25,7 @@ import moe.rukamori.archivetune.shared.ui.screens.mediainfo.MediaInfoScreen
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.TrackInfoActions
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.TrackInfoAndSpecs
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 /**
  * Mount inside ArchiveTuneShell's page-only content slot. Root/player/menu/service owners stay outside.

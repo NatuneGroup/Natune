@@ -12,6 +12,7 @@ import moe.rukamori.archivetune.shared.domain.lyrics.SyncedLine
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.lyrics.*
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 /** Real M3 renderer composition, with static accepted-snapshot fixtures; not a native/disk flow. */
 @OptIn(ExperimentalTestApi::class)

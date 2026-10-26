@@ -13,6 +13,8 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * One canvas video the host found for a song. [key] is the host's own identity and comes back to [CanvasSaveMenuHost.save];

@@ -28,7 +28,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_solar_check_circle_linear
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_solar_copy
 import moe.rukamori.archivetune.shared.ui.resources.m9_media_info_solar_more_circle_linear

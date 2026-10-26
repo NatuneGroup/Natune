@@ -77,13 +77,14 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.listentogether.RepliedMessage
 import moe.rukamori.archivetune.shared.data.listentogether.TrackInfo
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import androidx.compose.animation.core.animateFloat
 
 private const val MaxTypingAvatars = 5
 private const val TypingCycleMillis = 900

@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 import moe.rukamori.archivetune.shared.ui.glass.ArtworkHaze
+import androidx.compose.runtime.setValue
 
 @Composable
 internal fun PlayerBackground(c: PlayerRenderContext) {

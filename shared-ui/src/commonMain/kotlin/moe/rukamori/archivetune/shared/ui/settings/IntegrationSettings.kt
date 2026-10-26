@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
 
 /**
  * The catalog account only. Streaming sign-in is a separate account with its own page, so its state

@@ -16,7 +16,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.HistoryOrigin
 import moe.rukamori.archivetune.shared.domain.repository.ListeningEvent
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m4_last_week
 import moe.rukamori.archivetune.shared.ui.resources.m4_this_week
 import moe.rukamori.archivetune.shared.ui.resources.m4_today

@@ -13,6 +13,7 @@ import moe.rukamori.archivetune.shared.domain.library.*
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.navigation.writeM4Screenshot
 import kotlin.test.*
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalTestApi::class)
 class DetailScreenTest {

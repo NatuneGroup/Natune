@@ -16,6 +16,8 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** Route of the Discord experimental page (translator and activity buttons). The integrator registers it here. */
 const val DiscordExperimentalRoute = "settings/discord/experimental"

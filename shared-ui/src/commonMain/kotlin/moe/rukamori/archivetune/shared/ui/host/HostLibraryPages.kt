@@ -42,7 +42,7 @@ import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
 import moe.rukamori.archivetune.shared.domain.settings.TopSize
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m4_my_top
 import moe.rukamori.archivetune.shared.ui.resources.m9_library_liked_songs
 import moe.rukamori.archivetune.shared.ui.screens.ContentActions

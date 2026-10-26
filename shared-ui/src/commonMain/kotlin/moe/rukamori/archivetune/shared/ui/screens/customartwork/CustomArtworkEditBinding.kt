@@ -26,6 +26,7 @@ import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkOverrid
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkResult
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkSource
 import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
+import androidx.compose.runtime.getValue
 
 /**
  * The host's system chooser for one [CustomArtworkKind]: images for a cover, images or video for a canvas. It suspends

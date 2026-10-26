@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CoroutineScope
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
+import androidx.compose.runtime.getValue
 
 /**
  * Production composition adapter: settings and accepted playback come from their sole owners,
