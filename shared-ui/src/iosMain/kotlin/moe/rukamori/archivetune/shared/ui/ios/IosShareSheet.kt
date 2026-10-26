@@ -9,13 +9,10 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.platform.ios.iosApplicationVersion
 import moe.rukamori.archivetune.shared.data.platform.ios.iosCrashDeviceInfo
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
+import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.ui.IosHost
-import platform.Foundation.NSString
-import platform.Foundation.NSTemporaryDirectory
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.NSURL
-import platform.Foundation.writeToFile
-import platform.UIKit.UIActivityViewController
+import platform.Foundation.*
+import platform.UIKit.*
 
 /**
  * Presents the system share sheet over the host's root controller. The popover source view is what iPad
@@ -64,7 +61,7 @@ internal suspend fun iosDiagnosticReport(host: IosHost): String =
         for ((label, value) in iosCrashDeviceInfo()) {
             appendLine("device.${label.lowercase().replace(' ', '_')}=$value")
         }
-        appendLine("captured: ${iosDiagnosticTime()}")
+        appendLine("captured: ${iosDiagnosticTime(iosNowMillis())}")
         appendLine()
         append(host.diagnostics?.readForExport().orEmpty())
     }
