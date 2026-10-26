@@ -23,10 +23,78 @@ on:
       commit_sha:
         required: true
         type: string
+      publish:
+        description: Publish the release and update feed; smoke runs set false
+        required: false
+        type: boolean
+        default: true
+      build_android:
+        required: false
+        type: boolean
+        default: true
+      build_desktop:
+        required: false
+        type: boolean
+        default: true
+      build_ios:
+        required: false
+        type: boolean
+        default: true
+  # Dispatch entry point for validating packaging legs on a branch without publishing.
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: stable or nightly
+        required: true
+        type: string
+        default: nightly
+      tag_name:
+        required: true
+        type: string
+        default: SMOKE-desktop
+      version_name:
+        required: true
+        type: string
+        default: smoke
+      package_version:
+        description: Numeric X.Y.Z version used by native installers
+        required: true
+        type: string
+        default: "0.0.0"
+      version_code:
+        required: true
+        type: string
+        default: "1"
+      commit_sha:
+        description: Commit to build; defaults to the dispatched ref
+        required: false
+        type: string
+        default: ""
+      publish:
+        description: Publish the release and update feed
+        required: false
+        type: boolean
+        default: false
+      build_android:
+        required: false
+        type: boolean
+        default: false
+      build_desktop:
+        required: false
+        type: boolean
+        default: true
+      build_ios:
+        required: false
+        type: boolean
+        default: false
+
+env:
+  EFFECTIVE_COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
 
 jobs:
   android:
     name: Android ${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
+    if: inputs.build_android
     runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read
@@ -75,7 +143,7 @@ jobs:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
       IS_NIGHTLY_BUILD: ${{ inputs.channel == 'nightly' && 'true' || 'false' }}
-      NIGHTLY_BUILD_HASH: ${{ inputs.channel == 'nightly' && inputs.commit_sha || '' }}
+      NIGHTLY_BUILD_HASH: ${{ inputs.channel == 'nightly' && (inputs.commit_sha || github.sha) || '' }}
       PULL_REQUEST: 'false'
       GITHUB_EVENT_NAME: ${{ github.event_name }}
       ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
@@ -106,7 +174,7 @@ jobs:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.commit_sha }}
+          ref: ${{ env.EFFECTIVE_COMMIT_SHA }}
           submodules: recursive
           persist-credentials: false
 
@@ -219,6 +287,7 @@ jobs:
 
   desktop:
     name: Desktop ${{ matrix.platform }}-${{ matrix.arch }}
+    if: inputs.build_desktop
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -281,7 +350,7 @@ jobs:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.commit_sha }}
+          ref: ${{ env.EFFECTIVE_COMMIT_SHA }}
           submodules: recursive
           persist-credentials: false
 
@@ -543,6 +612,7 @@ jobs:
 
   ios:
     name: Unsigned iOS IPA
+    if: inputs.build_ios
     runs-on: blacksmith-6vcpu-macos-latest
     permissions:
       contents: read
@@ -578,7 +648,7 @@ jobs:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.commit_sha }}
+          ref: ${{ env.EFFECTIVE_COMMIT_SHA }}
           submodules: recursive
           persist-credentials: false
 
@@ -649,6 +719,7 @@ jobs:
 
   publish-release:
     name: Publish ${{ inputs.channel }} release
+    if: inputs.publish
     needs:
       - android
       - desktop
@@ -665,7 +736,7 @@ jobs:
       - name: Check out release history
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.commit_sha }}
+          ref: ${{ env.EFFECTIVE_COMMIT_SHA }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -683,7 +754,7 @@ jobs:
           TAG_NAME: ${{ inputs.tag_name }}
           VERSION_NAME: ${{ inputs.version_name }}
           VERSION_CODE: ${{ inputs.version_code }}
-          COMMIT_SHA: ${{ inputs.commit_sha }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
           ANDROID_SIGNING_STATUS: ${{ needs.android.outputs.signing_status }}
         run: |
           set -euo pipefail
@@ -829,7 +900,7 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           TAG_NAME: ${{ inputs.tag_name }}
           VERSION_CODE: ${{ inputs.version_code }}
-          COMMIT_SHA: ${{ inputs.commit_sha }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
         run: |
           set -euo pipefail
 
