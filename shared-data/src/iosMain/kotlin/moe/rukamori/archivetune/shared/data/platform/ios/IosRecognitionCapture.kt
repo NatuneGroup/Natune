@@ -15,10 +15,12 @@ import moe.rukamori.archivetune.nativeaudio.at_audio_session_end_recording
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionCapturePort
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionCaptureSpec
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionPermissionPort
+import kotlinx.cinterop.*
 import platform.AVFAudio.AVAudioEngine
 import platform.AVFAudio.AVAudioEngineConfigurationChangeNotification
 import platform.AVFAudio.AVAudioPCMBuffer
 import platform.AVFAudio.AVAudioSession
+import platform.AVFAudio.inputIsAvailable
 import platform.AVFAudio.AVAudioSessionInterruptionNotification
 import platform.AVFAudio.AVAudioSessionMediaServicesWereResetNotification
 import platform.AVFAudio.AVAudioSessionRecordPermissionDenied
@@ -136,7 +138,7 @@ class IosRecognitionCapture : RecognitionPermissionPort, RecognitionCapturePort 
         // The native policy switches the shared session for this window and keeps playback's category intent. The claim
         // is released exactly once by teardown, whichever way the window ends.
         capture.claimRecordingSession()
-        check(session.inputAvailable) { "no microphone input is available" }
+        check(session.inputIsAvailable) { "no microphone input is available" }
 
         val engine = AVAudioEngine()
         capture.attach(engine)
@@ -226,8 +228,8 @@ private class CaptureRun {
         val frames = buffer.frameLength.toInt()
         val channels = buffer.format.channelCount.toInt()
         if (frames <= 0 || channels <= 0) return
-        val floatChannels = buffer.floatChannelData
-        val pcmChannels = buffer.int16ChannelData
+        val floatChannels: CPointer<CPointerVarOf<CPointer<FloatVar>>>? = buffer.floatChannelData
+        val pcmChannels: CPointer<CPointerVarOf<CPointer<ShortVar>>>? = buffer.int16ChannelData
         if (floatChannels == null && pcmChannels == null) {
             fail(IllegalStateException("microphone buffer layout is unsupported"))
             return
