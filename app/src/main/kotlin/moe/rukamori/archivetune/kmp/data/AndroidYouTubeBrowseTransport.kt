@@ -41,6 +41,10 @@ class AndroidYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTran
             is YouTubeBrowse.Album -> albumPage(browse.browseId, continuation)
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
             is YouTubeBrowse.WatchNext -> watchNextPage(browse, continuation)
+            // Desktop-catalogue shelves; the Android host pages them through its own adapter, not this transport.
+            is YouTubeBrowse.Section -> throw UnsupportedContentOperation()
+            is YouTubeBrowse.ArtistItems -> throw UnsupportedContentOperation()
+            is YouTubeBrowse.Watch -> throw UnsupportedContentOperation()
         }
 
     /**

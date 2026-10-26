@@ -43,6 +43,23 @@ sealed interface YouTubeBrowse {
     ) : YouTubeBrowse {
         init { require(videoId != null || playlistId != null) { "Watch-next needs a seed" } }
     }
+
+    /**
+     * A generic provider browse section: home shelf "see all", charts, a mood or genre page, a browse link
+     * carrying a browse id. The provider answers whole sections with no continuation, so a token is refused
+     * inside the transport rather than ignored.
+     */
+    data class Section(val browseId: String, val params: String?) : YouTubeBrowse
+
+    /** An artist page section opened through its "see all" endpoint; it pages through the artist-items endpoint. */
+    data class ArtistItems(val browseId: String, val params: String?) : YouTubeBrowse
+
+    /**
+     * A watch-next collection (the play, shuffle or radio endpoint on an artist page). [videoId] is the song
+     * the endpoint names and [playlistId] the radio id when it gave one; the queue keeps paging it as a
+     * RADIO collection because the provider owns its continuation.
+     */
+    data class Watch(val videoId: String?, val playlistId: String?, val params: String?) : YouTubeBrowse
 }
 
 /** One provider entry reduced to common fields. [setVideoId] is the playlist entry id when the provider has one. */
