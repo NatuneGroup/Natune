@@ -49,11 +49,14 @@ FFMPEG_THREADS="--enable-pthreads"
 case "$(uname -s)" in MINGW64* | MSYS*) FFMPEG_THREADS="--enable-w32threads" ;; esac
 
 sha256_check() {
-    if command -v sha256sum >/dev/null 2>&1; then
-        printf '%s  %s\n' "$1" "$2" | sha256sum -c --status
+    local actual
+    # GNU sha256sum and macOS's /sbin/sha256sum have different flags; hash and compare instead.
+    if command -v sha256sum >/dev/null 2>&1 && sha256sum --version 2>&1 | grep -q "GNU coreutils"; then
+        actual="$(sha256sum "$2" | cut -d' ' -f1)"
     else
-        printf '%s  %s\n' "$1" "$2" | shasum -a 256 -c --status
+        actual="$(shasum -a 256 "$2" | cut -d' ' -f1)"
     fi
+    [ "$actual" = "$1" ]
 }
 
 ZLIB_VERSION=1.3.2

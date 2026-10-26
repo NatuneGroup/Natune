@@ -348,8 +348,13 @@ jobs:
 
       - name: Build TDLight native library (Windows)
         if: matrix.platform == 'windows'
-        shell: pwsh
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File desktopApp/tdlight-jvm/native/build-tdjni.ps1
+        shell: msys2 {0}
+        # MinGW TDLib consumes the deps script's static OpenSSL prefix; the MSVC ps1 recipe is kept
+        # for hosts that produce a MSVC-built static prefix, which this workflow does not create.
+        run: |
+          set -euo pipefail
+          TDLIGHT_OPENSSL_PREFIX="$GITHUB_WORKSPACE/desktopApp/build/native/openssl-static" \
+            bash desktopApp/tdlight-jvm/native/build-tdjni.sh
 
       - name: Build TDLight native library (Linux and macOS)
         if: matrix.platform != 'windows'
