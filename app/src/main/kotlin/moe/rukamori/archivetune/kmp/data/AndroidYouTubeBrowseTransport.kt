@@ -15,6 +15,7 @@ import moe.rukamori.archivetune.innertube.models.EpisodeItem
 import moe.rukamori.archivetune.innertube.models.PlaylistItem
 import moe.rukamori.archivetune.innertube.models.PodcastItem
 import moe.rukamori.archivetune.innertube.models.SongItem
+import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowse
@@ -39,7 +40,28 @@ class AndroidYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTran
             is YouTubeBrowse.Playlist -> playlistPage(browse.playlistId, continuation)
             is YouTubeBrowse.Album -> albumPage(browse.browseId, continuation)
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
+            is YouTubeBrowse.WatchNext -> watchNextPage(browse, continuation)
         }
+
+    /**
+     * The watch-next queue page of `YouTubeQueue.getInitialStatus`/`nextPage`: the same endpoint and the same
+     * `next` request, page after page. The endpoint stays the seed the queue was opened with, as on Android.
+     */
+    private suspend fun watchNextPage(browse: YouTubeBrowse.WatchNext, continuation: String?): YouTubeEntryPage {
+        val page =
+            YouTube.next(
+                endpoint =
+                    WatchEndpoint(
+                        videoId = browse.videoId,
+                        playlistId = browse.playlistId,
+                        playlistSetVideoId = browse.playlistSetVideoId,
+                        params = browse.params,
+                    ),
+                continuation = continuation,
+                followAutomixPreview = browse.followAutomixPreview,
+            ).getOrThrow()
+        return YouTubeEntryPage(page.items.map { it.toSongEntry() }, page.continuation)
+    }
 
     private suspend fun playlistPage(playlistId: String, continuation: String?): YouTubeEntryPage =
         if (continuation == null) {
