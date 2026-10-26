@@ -54,7 +54,14 @@ class DesktopSingleInstance private constructor(
                 Thread.sleep(RETRY_PAUSE_MILLIS)
                 continue
             }
-            serve(peer)
+            try {
+                serve(peer)
+            } catch (error: Throwable) {
+                // A peer handler failure (IOException inside serve is already swallowed, so this catches
+                // unchecked failures) must never kill the loop: a dead thread bricks every later launch.
+                System.err.println("instance peer handling failed: ${error.javaClass.simpleName}")
+                runCatching { peer.close() }
+            }
         }
     }, "archivetune-instance").apply { isDaemon = true; start() }
 
