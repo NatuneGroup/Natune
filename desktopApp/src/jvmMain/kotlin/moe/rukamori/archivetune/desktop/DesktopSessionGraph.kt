@@ -50,7 +50,12 @@ import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.openNow
+import moe.rukamori.archivetune.shared.data.download.DownloadKey
+import moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository
+import moe.rukamori.archivetune.shared.data.localmedia.JvmLocalMediaScanner
+import moe.rukamori.archivetune.shared.data.persistence.RoomStoredSongIndex
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
+import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
@@ -168,6 +173,20 @@ class DesktopSessionGraph private constructor(
     internal val videoArtwork: DesktopVideoArtwork,
     /** Manual and Google Drive backups, and the restore staged for the next start. */
     internal val backup: DesktopBackup,
+    /** The index every stored song row reads through, kept so the download reconcile can be scheduled. */
+    internal val storedSongIndex: moe.rukamori.archivetune.shared.data.persistence.StoredSongIndex,
+    /** The on-disk download repository behind [downloads]: hashed files plus the stored-song index. */
+    internal val downloadStore: moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository,
+    /** The `downloads` owner: transfers over the same ordered resolver and the same store. */
+    internal val downloads: DesktopDownloadsOwner,
+    /** The `local_songs` owner: the folder scan and its persisted filter/sort settings. */
+    internal val localMedia: DesktopLocalMediaOwner,
+    /** The `stats` and `year_in_music` owner over [history]. */
+    internal val statistics: DesktopStatisticsOwner,
+    /** The `track_info` and `media_info` fact owner. */
+    internal val mediaInfo: DesktopMediaInfoOwner,
+    /** The `news` source, inactive exactly like the Android baseline's repository. */
+    internal val news: DesktopNewsRepository,
     private val drivers: List<Job>,
 ) {
     /** The playlist tag catalog and assignments, in the same portable file as the playlists. */
@@ -292,6 +311,9 @@ class DesktopSessionGraph private constructor(
         private const val SETTINGS_FILE = "settings.preferences"
         private const val DATABASE_FILE = "portable-state.db"
         private const val TELEGRAM_DIRECTORY = "telegram"
+        private const val DOWNLOAD_DIRECTORY = "downloads"
+        /** The origin of a committed download row — `StoredSongOrigin.DOWNLOAD` in shared-data. */
+        private const val STORED_DOWNLOAD_ORIGIN = "DOWNLOAD"
         /** The position past which a previous skip restarts the current occurrence instead of stepping back. */
         internal const val RESTART_THRESHOLD_MS = 3_000L
         private const val POSITION_CHECKPOINT_INTERVAL_MS = 10_000L
@@ -490,13 +512,34 @@ class DesktopSessionGraph private constructor(
                 search = youtubeTransport,
                 signIn = { vault.snapshots.value.youTubeSignIn() },
             )
+            // One resolver for playback and downloads alike, over the same providers and source chain.
+            val audioResolver = OrderedAudioResolver(
+                providers = desktopAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
+                youtube = youtubeResolver,
+            )
+            val storedIndex = RoomStoredSongIndex(database.storedSongs())
+            val downloadStore = JvmDownloadRepository(
+                root = directory.resolve(DOWNLOAD_DIRECTORY),
+                client = http,
+                index = storedIndex,
+            )
+            // A committed download answers before the network does, so a stored song keeps playing offline.
+            val storedFile: suspend (String, String) -> java.nio.file.Path? = { provider, mediaId ->
+                var found: java.nio.file.Path? = null
+                for (row in database.storedSongs().rows(STORED_DOWNLOAD_ORIGIN)) {
+                    if (row.provider != provider || row.mediaId != mediaId) continue
+                    val source = runCatching { AudioSourceType.valueOf(row.source) }.getOrNull() ?: continue
+                    val quality = row.quality ?: continue
+                    found = downloadStore.find(DownloadKey(mediaId, source, quality, provider))
+                    if (found != null) break
+                }
+                found
+            }
             val locators = DesktopQueueLocatorResolver(
-                audio = OrderedAudioResolver(
-                    providers = desktopAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
-                    youtube = youtubeResolver,
-                ),
+                audio = audioResolver,
                 port = playback,
                 preferences = { vault.snapshots.value },
+                storedFile = storedFile,
             )
             val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
             val youtubeLibrarySync = DesktopYouTubeLibrarySync(
@@ -525,6 +568,16 @@ class DesktopSessionGraph private constructor(
                 throw cancelled
             } catch (failure: Exception) {
                 desktopDiagnostic("saved queue was not restored: ${failure.javaClass.simpleName}")
+            }
+            // The startup reconcile drops listed rows whose files are gone, as the store's contract requires.
+            scope.launch {
+                try {
+                    downloadStore.reconcile()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    desktopDiagnostic("download reconciliation failed: ${failure.javaClass.simpleName}")
+                }
             }
             val metadata = combine(queue.state, player.snapshot) { state, snapshot ->
                 state.metadataFor(snapshot?.occurrenceId, repeatModeOf(vault.snapshots.value))
@@ -635,6 +688,38 @@ class DesktopSessionGraph private constructor(
                     }
                 },
             )
+            // The library feature owners sit on the same library, history, queue and download store as above.
+            val localMediaOwner = DesktopLocalMediaOwner(
+                scanner = JvmLocalMediaScanner(),
+                settings = vault,
+                queue = queue,
+                scope = scope,
+                report = ::desktopDiagnostic,
+            )
+            val downloadsOwner = DesktopDownloadsOwner(
+                downloads = downloadStore,
+                storedSongs = database.storedSongs(),
+                resolver = audioResolver,
+                library = library,
+                settings = vault,
+                queue = queue,
+                scope = scope,
+                report = ::desktopDiagnostic,
+            )
+            val statisticsOwner = DesktopStatisticsOwner(
+                statisticsRepository = history,
+                history = history,
+                scope = scope,
+            )
+            val mediaInfoOwner = DesktopMediaInfoOwner(
+                library = library,
+                downloads = downloadsOwner,
+                localMedia = localMediaOwner,
+                playingMediaId = {
+                    val state = owner.state.value
+                    state.entries.firstOrNull { it.occurrenceId == state.currentOccurrenceId }?.item?.ref?.id
+                },
+            )
             // The override folders sit directly in the instance directory, as Android keeps them in its files directory.
             val customArtworkFiles = JvmCustomArtworkFiles(directory)
             val customArtwork = FileCustomArtworkRepository(customArtworkFiles)
@@ -682,6 +767,13 @@ class DesktopSessionGraph private constructor(
                     openBrowser = { url -> openDesktopUri(url, ::desktopDiagnostic) },
                     report = ::desktopDiagnostic,
                 ),
+                storedSongIndex = storedIndex,
+                downloadStore = downloadStore,
+                downloads = downloadsOwner,
+                localMedia = localMediaOwner,
+                statistics = statisticsOwner,
+                mediaInfo = mediaInfoOwner,
+                news = DesktopNewsRepository(),
                 drivers = drivers,
             )
             // A TDLib database left by an earlier sign-in restores its session, so Telegram tracks in a restored queue

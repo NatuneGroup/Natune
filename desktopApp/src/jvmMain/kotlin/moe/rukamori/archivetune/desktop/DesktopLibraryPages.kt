@@ -64,6 +64,16 @@ internal fun desktopGraphPage(
         ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> desktopRecognitionDetailsPage(recognition, route)
         ArchiveDestination.LISTEN_TOGETHER -> desktopListenTogetherPage(graph, openRoute)
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu)
+        ArchiveDestination.NEWS -> desktopNewsPage()
+        ArchiveDestination.ARTICLE -> desktopArticlePage(route.arguments.getValue("newsId"))
+        ArchiveDestination.PODCASTS -> desktopPodcastsPage()
+        ArchiveDestination.PODCAST -> desktopPodcastPage(route.arguments.getValue("browseId"))
+        ArchiveDestination.LOCAL_SONGS -> desktopLocalSongsPage(graph, menu)
+        ArchiveDestination.DOWNLOADS -> desktopDownloadsPage(graph)
+        ArchiveDestination.STATISTICS -> desktopStatisticsPage(graph, menu, openRoute)
+        ArchiveDestination.RECAP -> desktopRecapPage(graph, menu)
+        ArchiveDestination.TRACK_INFO -> desktopTrackInfoPage(graph, route.arguments.getValue("trackId"))
+        ArchiveDestination.MEDIA_INFO -> desktopMediaInfoPage(graph, route.arguments.getValue("mediaId"))
         else -> ArchiveGraphPage.Host
     }
 }

@@ -19,7 +19,14 @@ import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_action_download
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_details
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_remove_download
+import moe.rukamori.archivetune.shared.ui.resources.m6_track_info
 import moe.rukamori.archivetune.shared.ui.screens.customartwork.BoundCustomArtworkEditDialog
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * The one row menu of the desktop host. A row's overflow opens it on that row's occurrence. It offers the queue
@@ -87,7 +94,12 @@ internal fun ContentOccurrence.queuedEntry(): ContentOccurrence =
  * another page.
  */
 @Composable
-internal fun DesktopItemMenuDialog(menu: DesktopItemMenuState, graph: DesktopSessionGraph, routeKey: String) {
+internal fun DesktopItemMenuDialog(
+    menu: DesktopItemMenuState,
+    graph: DesktopSessionGraph,
+    routeKey: String,
+    openRoute: (String) -> Unit = {},
+) {
     DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
     menu.artworkTarget?.let { item ->
         BoundCustomArtworkEditDialog(
@@ -119,6 +131,49 @@ internal fun DesktopItemMenuDialog(menu: DesktopItemMenuState, graph: DesktopSes
                     TextButton(onClick = menu::openCustomArtwork, modifier = Modifier.fillMaxWidth()) {
                         Text(DesktopStrings["custom_artwork"])
                     }
+                    // Download/remove reflect the stored-song rows, not a guessed flag.
+                    val mediaId = occurrence.item.ref.id
+                    val provider = occurrence.item.ref.provider
+                    val stored by androidx.compose.runtime.produceState<Boolean?>(null, mediaId, provider) {
+                        value = try {
+                            graph.downloads.listedRows().any { it.provider == provider && it.mediaId == mediaId }
+                        } catch (error: Exception) {
+                            null
+                        }
+                    }
+                    val downloaded = stored
+                    if (downloaded != null && provider != "local") {
+                        TextButton(
+                            onClick = {
+                                menu.dismiss()
+                                graph.scope.launch {
+                                    try {
+                                        if (downloaded) {
+                                            graph.downloads.remove("$provider:$mediaId")
+                                        } else {
+                                            graph.downloads.start(occurrence.item.ref, "")
+                                        }
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: Exception) {
+                                        graph.report("the download action failed: ${failure.javaClass.simpleName}")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(if (downloaded) Res.string.m5pq_remove_download
+                                else Res.string.m5pq_action_download))
+                        }
+                    }
+                    TextButton(
+                        onClick = { menu.dismiss(); openRoute(ArchiveRoutes.trackInfo(mediaId)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(Res.string.m6_track_info)) }
+                    TextButton(
+                        onClick = { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(mediaId)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(Res.string.m5pq_details)) }
                 }
             }
         },
