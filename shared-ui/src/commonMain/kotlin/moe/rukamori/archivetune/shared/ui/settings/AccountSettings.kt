@@ -26,6 +26,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -89,6 +90,7 @@ const val YouTubePoTokenRoute = "settings/po_token"
  * [revealCredentialBlock] must return the block in the layout that [parseYouTubeManualAuth] accepts, or null when the
  * active account has no usable session. [copyToClipboard] is the host clipboard; null hides the Copy action.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountSettings(
     controller: SettingsController,
