@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.menu
 
+import moe.rukamori.archivetune.shared.ui.resources.*
+
 interface MenuSharing {
     suspend fun shareLink(url: String)
     suspend fun shareLocalAudio(mediaId: String, mimeType: String?)
@@ -55,3 +57,7 @@ private fun encodeQueryPart(value: String): String = buildString {
         else { append('%'); append(digits[n ushr 4]); append(digits[n and 15]) }
     }
 }
+
+/** Share row for artist/playlist/album collections whose only share target is a link. */
+fun collectionShareAction(run: suspend () -> Unit): OverflowAction =
+    OverflowAction("share", Res.string.m6_share, run = run)

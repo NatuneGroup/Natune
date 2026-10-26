@@ -10,6 +10,8 @@
     <string name="ios_library_top_mixes_unavailable">AI integration is required before Natune can build personal top mixes. AI mixes are not connected on iOS yet.</string>
     <string name="ios_queue_empty">The queue is empty</string>
     <string name="ios_queue_remove">Remove from queue</string>
+    <string name="ios_menu_action_failed">The action could not be completed.</string>
+    <string name="ios_ok">OK</string>
     <string name="ios_logs_copied">Copied log to clipboard</string>
     <string name="stats_range_1w">1 week</string>
     <string name="stats_range_1m">1 month</string>

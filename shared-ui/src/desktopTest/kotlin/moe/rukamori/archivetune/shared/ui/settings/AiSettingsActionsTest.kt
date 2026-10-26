@@ -3,7 +3,6 @@ package moe.rukamori.archivetune.shared.ui.settings
 import java.nio.file.Files
 import kotlinx.coroutines.*
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.*
-import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiRequestBudget
 import moe.rukamori.archivetune.shared.domain.repository.AiTextService
 import moe.rukamori.archivetune.shared.domain.settings.*
 import kotlin.test.*

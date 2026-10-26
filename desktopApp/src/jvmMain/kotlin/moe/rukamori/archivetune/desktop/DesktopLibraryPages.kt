@@ -160,7 +160,15 @@ private fun desktopPlaylistsPage(
 @Composable
 private fun desktopPlaylistPage(graph: DesktopSessionGraph, menu: DesktopItemMenuState, route: ArchiveRoute): ArchiveGraphPage =
     hostCatalogDetailPage(graph.catalogPages, route) { occurrence -> menu.open(occurrence) }
-        ?: hostPlaylistPage(graph.pageOwners, route) { occurrence -> menu.open(occurrence) }
+        ?: hostPlaylistPage(graph.pageOwners, route) { occurrence ->
+            // Only an editable local playlist offers the row's remove-from-playlist action.
+            menu.open(
+                occurrence,
+                playlistId = route.arguments["playlistId"].takeIf {
+                    route.arguments["playlistType"] == "local_playlist"
+                },
+            )
+        }
 
 /** Plays [start] inside the complete list [collection] names, in the order the owner shows it. */
 internal fun desktopPlayOccurrence(graph: DesktopSessionGraph, collection: ContentRequest?, start: QueueStart) {

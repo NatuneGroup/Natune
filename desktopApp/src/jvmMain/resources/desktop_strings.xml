@@ -92,6 +92,8 @@
     <string name="listen_together_suggestion_sent">Suggestion sent to host!</string>
     <string name="ok">OK</string>
     <string name="playlist_action_failed">The playlist could not be changed.</string>
+    <string name="menu_action_failed">The action could not be completed.</string>
+    <string name="menu_cover_pick">Save cover art</string>
     <string name="playlist_exported">Playlist exported</string>
     <string name="playlist_export_pick">Export playlist as CSV</string>
     <string name="error_no_stream">No stream available</string>
