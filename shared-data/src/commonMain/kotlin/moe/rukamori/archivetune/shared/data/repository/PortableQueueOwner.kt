@@ -39,7 +39,9 @@ import moe.rukamori.archivetune.shared.domain.queue.ShuffleOrder
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuePlayOrder
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuePolicy
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
 import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
 import moe.rukamori.archivetune.shared.domain.repository.QueueLocatorResolver
@@ -47,6 +49,7 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueStart
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.shared.domain.repository.QueueTail
 import moe.rukamori.archivetune.shared.domain.repository.TypedQueueOwnerPort
+import moe.rukamori.archivetune.shared.domain.repository.radioQueueRequest
 
 /**
  * The one queue owner for the portable (desktop) host. It decides which occurrence is current, what the
@@ -76,6 +79,17 @@ class PortableQueueOwner(
     private val repeatMode: () -> QueueRepeatMode = { QueueRepeatMode.OFF },
     /** Mirrors the Android `AutoSkipNextOnErrorKey` setting. Off stops the queue at a failure, as before. */
     private val autoSkipNextOnError: () -> Boolean = { false },
+    /**
+     * Mirrors the Android `AutoLoadMoreKey` setting. On, an exhausted finite queue seeds a watch-next tail
+     * from the current song (`onInfiniteQueueEnabled`); off, its last song ends the queue.
+     */
+    private val autoLoadMoreEnabled: () -> Boolean = { true },
+    /** Mirrors `HideExplicitKey`: entries the provider marks explicit never reach the queue. */
+    private val hideExplicit: () -> Boolean = { false },
+    /** Mirrors `HideVideoKey`: entries the provider marks as music videos never reach the queue. */
+    private val hideVideo: () -> Boolean = { false },
+    /** The provider artist ids the user blocked; entries carrying one never reach the queue. */
+    private val blockedArtistIds: () -> Set<String> = { emptySet() },
     /** Records the complete track list of an album whose whole walk was loaded. Absent, nothing is recorded. */
     albumCompletion: AlbumCompletionIndex? = null,
     /** Blends songs into each other. Absent, every song ends before its successor loads, as before. */
@@ -104,6 +118,13 @@ class PortableQueueOwner(
 
     /** The occurrence and generation whose end was already acted on, so one end advances exactly once. */
     private var lastEnded: Pair<String, Long>? = null
+
+    /**
+     * Whether the queue's current tail lineage is a watch-next radio. A consumed radio tail re-seeds at the
+     * queue's end (the original `YouTubeQueue` is not a finite playlist, so `onInfiniteQueueEnabled` re-arms
+     * for it once it has no page left); a finite queue seeds only while EXHAUSTED.
+     */
+    private var radioTailSeeded = false
 
     /**
      * Android's consecutive-error score. It rises on every automatic skip after a failure and resets only when the
@@ -179,7 +200,7 @@ class PortableQueueOwner(
         requireInside()
         val collection = request.collection
         val finite = request.kind == QueueCollectionKind.FINITE
-        val loaded: List<ContentOccurrence>
+        var loaded: List<ContentOccurrence>
         val tail: QueueTail?
         if (finite) {
             loaded = withTimeoutOrNull(FinitePlaylistCompletion.TIMEOUT_MS) {
@@ -194,8 +215,11 @@ class PortableQueueOwner(
                 QueueTail(collection = collection, continuation = it, kind = QueueCollectionKind.RADIO)
             }
         }
+        // The hidden-content rules of `Queue.Status.filterPlaybackContent` apply to every queue load.
+        loaded = loaded.filterPlaybackContent()
         if (loaded.isEmpty()) throw IncompleteFinitePlaylistException("Collection returned no songs")
         requireUnique(loaded)
+        radioTailSeeded = false
 
         val startIndex = startIndexOf(loaded, request.start)
         val order: List<Int> = if (request.shuffle) {
@@ -223,6 +247,18 @@ class PortableQueueOwner(
             tail = tail,
         )
         startPrepared(playRequest, request.positionMs, request.playWhenReady)
+        radioTailSeeded = tail?.kind == QueueCollectionKind.RADIO
+        // Android seeds radio right after a confirmed-complete finite load (`shouldBootstrapInfiniteQueue`),
+        // so the tail pends behind the queue's own songs instead of appearing only at the end.
+        if (finite && autoLoadMoreEnabled() && repeatMode() == QueueRepeatMode.OFF) {
+            try {
+                seedRadioTail()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // A failed seed never fails the load: the queue keeps playing its own songs, as on Android.
+            }
+        }
     }
 
     override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) {
@@ -243,6 +279,7 @@ class PortableQueueOwner(
             tail = null,
         )
         startPrepared(playRequest, 0L, playWhenReady)
+        radioTailSeeded = false
     }
 
     /**
@@ -400,6 +437,54 @@ class PortableQueueOwner(
         }
         published.value = queue.copy(revision = queue.revision + 1, playOrder = playOrder, shuffleEnabled = enabled)
         revalidateHandoff()
+        return true
+    }
+
+    /**
+     * Android's `MusicService.startRadioSeamlessly`: a watch-next queue seeded by the current song replaces the
+     * songs after it. The seed itself is dropped from the radio page. Local and non-YouTube songs return false,
+     * as on Android, and the queue is left alone. When the seed page brings nothing new, the songs after the
+     * current one stay in place, also as on Android; the radio tail still attaches and keeps paging.
+     */
+    override suspend fun startRadioSeamlessly(): Boolean {
+        requireInside()
+        val queue = published.value
+        val currentId = queue.currentOccurrenceId ?: return false
+        val currentIndex =
+            queue.entries.indexOfFirst { it.occurrenceId == currentId }.takeIf { it >= 0 } ?: return false
+        val seed = queue.entries[currentIndex].item.ref
+        if (seed.provider != ContentProvider.YOUTUBE.id || seed.kind != ContentKind.SONG) return false
+        val collection = radioQueueRequest(seed)
+        val page = content.page(collection, null)
+        val radioItems = page.items.filterPlaybackContent().filter { it.item.ref.id != seed.id }
+        val tail =
+            page.continuation?.let { QueueTail(collection = collection, continuation = it, kind = QueueCollectionKind.RADIO) }
+        if (radioItems.isEmpty()) {
+            published.value = queue.copy(revision = queue.revision + 1, phase = FinitePlaylistPhase.UNKNOWN, tail = tail)
+            radioTailSeeded = true
+            return true
+        }
+        val kept = queue.entries.subList(0, currentIndex + 1)
+        val removedIds =
+            queue.entries.subList(currentIndex + 1, queue.entries.size).mapTo(HashSet()) { it.occurrenceId }
+        val order = queue.playOrder.filterNot { it in removedIds }.toMutableList()
+        val radioIds = radioItems.map { it.occurrenceId }
+        if (queue.shuffleEnabled) {
+            // Media3's shuffle order spreads appended items across the unplayed remainder, not straight after.
+            val floor = order.indexOf(currentId) + 1
+            for (id in radioIds) order.add(floor + random.nextInt(order.size - floor + 1), id)
+        } else {
+            order.addAll(order.indexOf(currentId) + 1, radioIds)
+        }
+        published.value = queue.copy(
+            revision = queue.revision + 1,
+            entries = kept + radioItems,
+            playOrder = order.toList(),
+            phase = FinitePlaylistPhase.UNKNOWN,
+            manualKinds = queue.manualKinds.filterKeys { it !in removedIds },
+            tail = tail,
+        )
+        radioTailSeeded = true
         return true
     }
 
@@ -645,16 +730,63 @@ class PortableQueueOwner(
 
     /**
      * The occurrence after [id] under the current repeat mode. With repeat off and a radio tail that has more pages,
-     * the next page is appended first. A finite queue with no tail has no successor at its last song.
+     * the next page is appended first. A finite queue whose whole list was confirmed and whose host still wants
+     * more music seeds a watch-next tail from the current song, as `onInfiniteQueueEnabled` does with AutoLoadMore
+     * on. A queue at any other phase has no successor at its last song: an unknown or failed tail never seeds
+     * radio.
      */
     private suspend fun nextAfter(queue: QueueState, id: String): String? {
         val mode = repeatMode()
         var next = QueueAdvancePolicy.successor(mode, queue.playOrder, id)
-        if (next == null && queue.tail != null && mode == QueueRepeatMode.OFF) {
-            extendTail()
+        if (next == null && mode == QueueRepeatMode.OFF) {
+            if (queue.tail != null) {
+                extendTail()
+            } else if (autoLoadMoreEnabled() &&
+                (queue.phase == FinitePlaylistPhase.EXHAUSTED || radioTailSeeded)
+            ) {
+                seedRadioTail()
+            }
             next = QueueAdvancePolicy.successor(mode, published.value.playOrder, id)
         }
         return next
+    }
+
+    /**
+     * Android's `onInfiniteQueueEnabled`: a confirmed-complete finite queue grows a watch-next tail seeded by the
+     * current song. Page items are deduplicated against every song id already queued, never occurrence ids, and the
+     * bootstrap keeps reading until a fresh song arrives, bounded by [INFINITE_QUEUE_MAX_BOOTSTRAP_PAGES]. A page
+     * that brings nothing new still leaves the radio tail attached, so the queue keeps paging lazily.
+     */
+    private suspend fun seedRadioTail() {
+        val queue = published.value
+        val current = queue.entries.firstOrNull { it.occurrenceId == queue.currentOccurrenceId } ?: return
+        val seed = current.item.ref
+        if (seed.provider != ContentProvider.YOUTUBE.id || seed.kind != ContentKind.SONG) return
+        val collection = radioQueueRequest(seed)
+        val knownIds = queue.entries.mapTo(HashSet()) { it.item.ref.id }
+        val consumed = mutableSetOf<String>()
+        var page = content.page(collection, null)
+        val fresh =
+            page.items.filterPlaybackContent().filterTo(mutableListOf()) { knownIds.add(it.item.ref.id) }
+        var continuation = page.continuation
+        var pages = 1
+        while (fresh.isEmpty() && continuation != null && pages < INFINITE_QUEUE_MAX_BOOTSTRAP_PAGES) {
+            pages += 1
+            consumed.add(continuation)
+            page = content.page(collection, continuation)
+            page.items.filterPlaybackContent().filterTo(fresh) { knownIds.add(it.item.ref.id) }
+            continuation = page.continuation
+        }
+        if (fresh.isEmpty() && continuation == null) return
+        published.value = queue.copy(
+            revision = queue.revision + 1,
+            entries = queue.entries + fresh,
+            playOrder = queue.playOrder + fresh.map { it.occurrenceId },
+            // The queue now runs on the radio queue, so it is no longer the confirmed finite list.
+            phase = FinitePlaylistPhase.UNKNOWN,
+            tail = continuation?.let { QueueTail(collection, it, consumed, QueueCollectionKind.RADIO) },
+        )
+        radioTailSeeded = true
     }
 
     /**
@@ -689,7 +821,10 @@ class PortableQueueOwner(
         }
     }
 
-    /** Appends the next radio page. Duplicate occurrences from the page are dropped, never repeated. */
+    /**
+     * Appends the next radio page. Hidden content is dropped before dedupe, and duplicate occurrences from the
+     * page are dropped, never repeated, exactly as `onAutoLoadMore` appends a `nextPage`.
+     */
     private suspend fun extendTail() {
         val queue = published.value
         val tail = queue.tail ?: return
@@ -700,7 +835,7 @@ class PortableQueueOwner(
         FinitePlaylistCompletion.validateNext(page.continuation, consumed, page.items.size)
         val known = queue.entries.mapTo(HashSet()) { it.occurrenceId }
         val fresh = mutableListOf<ContentOccurrence>()
-        for (item in page.items) {
+        for (item in page.items.filterPlaybackContent()) {
             if (known.add(item.occurrenceId)) fresh += item
         }
         published.value = queue.copy(
@@ -709,6 +844,7 @@ class PortableQueueOwner(
             playOrder = queue.playOrder + fresh.map { it.occurrenceId },
             tail = page.continuation?.let { QueueTail(tail.collection, it, consumed, tail.kind) },
         )
+        if (page.continuation == null) radioTailSeeded = tail.kind == QueueCollectionKind.RADIO
     }
 
     /**
@@ -775,6 +911,19 @@ class PortableQueueOwner(
         speed = playbackSpeed,
     )
 
+    /** The hidden-content rules of `Queue.Status.filterPlaybackContent`: explicit, video and blocked artists. */
+    private fun List<ContentOccurrence>.filterPlaybackContent(): List<ContentOccurrence> {
+        val explicit = hideExplicit()
+        val video = hideVideo()
+        val blocked = blockedArtistIds()
+        if (!explicit && !video && blocked.isEmpty()) return this
+        return filter { occurrence ->
+            (!explicit || !occurrence.item.explicit) &&
+                (!video || !occurrence.item.isVideo) &&
+                occurrence.item.artists.none { it.id != null && it.id in blocked }
+        }
+    }
+
     private companion object {
         /** Resolve and preload this far ahead of the blend, as Android prepares its second player. */
         const val HANDOFF_PREPARE_AHEAD_MS = 30_000L
@@ -787,6 +936,9 @@ class PortableQueueOwner(
 
         /** How long an end waits for the engine to report the commit of an armed handoff. */
         const val HANDOFF_COMMIT_GRACE_MS = 1_500L
+
+        /** Android's bound on the seeding bootstrap: it stops paging after this many empty pages. */
+        const val INFINITE_QUEUE_MAX_BOOTSTRAP_PAGES = 3
 
         const val MIN_SPEED = 0.1f
     }

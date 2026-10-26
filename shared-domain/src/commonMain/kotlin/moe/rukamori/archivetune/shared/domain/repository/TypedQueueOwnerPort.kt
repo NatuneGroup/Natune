@@ -29,6 +29,13 @@ interface TypedQueueOwnerPort : QueueController {
     suspend fun setShuffle(enabled: Boolean): Boolean
 
     /**
+     * Android's `MusicService.startRadioSeamlessly`: the songs after the current one are replaced by a
+     * watch-next queue seeded from it. False when the current song cannot seed radio (no YouTube song
+     * playing), as on Android. The queue keeps playing the current song.
+     */
+    suspend fun startRadioSeamlessly(): Boolean
+
+    /**
      * Raises the queue revision to at least [floor] and leaves the queue itself unchanged. A process that
      * starts from an older revision uses it so its next checkpoint is not refused as stale.
      */

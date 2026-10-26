@@ -75,6 +75,44 @@ class StreamDecryptDeezerTest {
         assertEquals(RandomAccessByteSource.END_OF_STREAM, source.readAt(total.toLong(), ByteArray(4), 0, 4))
     }
 
+    @Test
+    fun partialEncryptedChunkIsWithheldUntilWhole() = runTest {
+        val key = DeezerCrypto.deriveKey("3135556")
+        val plain = ByteArray(2048 * 2) { (it * 7 + 3).toByte() }
+        val cipher = plain.copyOf()
+        encryptChunkForTest(key, plain.copyOf(2048)).copyInto(cipher, 0)
+        val backing = cipher.copyOf()
+
+        // Chunk 0 arrives in short reads with a temporary stall: partial ciphertext is withheld (read 0),
+        // and once the whole chunk arrived it is decrypted. The upstream array is never mutated.
+        val source = DeezerChunkByteSource(TricklingSource(lease(4096), cipher, firstServe = 500), key)
+        assertEquals(0, source.readAt(0, ByteArray(4), 0, 4))
+        assertContentEquals(plain.copyOf(16), readFully(source, 0, 16))
+        assertContentEquals(backing, cipher)
+    }
+
+    /** An upstream that first serves only [firstServe] bytes of chunk 0, then reports nothing available, then serves all. */
+    private class TricklingSource(
+        override val lease: ByteSourceLease,
+        private val content: ByteArray,
+        private val firstServe: Long,
+    ) : RandomAccessByteSource {
+        private var calls = 0
+
+        override suspend fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int {
+            calls++
+            val available = when (calls) {
+                1 -> firstServe
+                2 -> 0L
+                else -> content.size.toLong()
+            }
+            if (position >= available) return if (position >= content.size) RandomAccessByteSource.END_OF_STREAM else 0
+            val count = minOf(length.toLong(), available - position).toInt()
+            content.copyInto(buffer, offset, position.toInt(), position.toInt() + count)
+            return count
+        }
+    }
+
     /** Blowfish-CBC encrypts a whole chunk with the Deezer IV, as the CDN does for encrypted chunks. */
     private fun encryptChunkForTest(
         key: ByteArray,
