@@ -90,7 +90,7 @@ class DownloadQueueOwner(
                 resumeBytes = current?.resumeBytes ?: 0L,
                 failReason = null, updateTimeMs = timeMs(),
             )
-            put(task); enqueue(task)
+            putLocked(task); enqueue(task)
         }
     }
 
@@ -99,14 +99,14 @@ class DownloadQueueOwner(
         queued.remove(id)
         workers.remove(id)?.cancel()
         val stopped = task.copy(phase = DownloadPhase.STOPPED, updateTimeMs = timeMs())
-        put(stopped)
+        putLocked(stopped)
     }
 
     override suspend fun resume(id: String) = queueGate.withLock {
         val task = snapshot[id] ?: return@withLock
         if (task.phase != DownloadPhase.STOPPED && task.phase != DownloadPhase.FAILED) return@withLock
         val next = task.copy(phase = DownloadPhase.QUEUED, failReason = null, updateTimeMs = timeMs())
-        put(next); enqueue(next)
+        putLocked(next); enqueue(next)
     }
 
     override suspend fun remove(id: String) = queueGate.withLock {
@@ -114,7 +114,7 @@ class DownloadQueueOwner(
         queued.remove(id)
         workers.remove(id)?.cancel()
         val removing = task.copy(phase = DownloadPhase.REMOVING, updateTimeMs = timeMs())
-        put(removing)
+        putLocked(removing)
         try {
             removeCommitted(removing)
         } finally {
@@ -178,9 +178,16 @@ class DownloadQueueOwner(
         }
     }
 
+    /** Persists [task] and updates the snapshot for callers that do not already hold [queueGate]. */
     private suspend fun put(task: DownloadTask) {
         store.put(task)
         queueGate.withLock { snapshot = snapshot + (task.id to task) }
+    }
+
+    /** The same write for callers serialized inside [queueGate]; the mutex is not reentrant. */
+    private suspend fun putLocked(task: DownloadTask) {
+        store.put(task)
+        snapshot = snapshot + (task.id to task)
     }
 
     private fun DownloadTask.toContentDownload() = ContentDownload(
