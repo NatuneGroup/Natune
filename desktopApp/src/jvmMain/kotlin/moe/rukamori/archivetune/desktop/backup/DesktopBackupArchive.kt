@@ -30,6 +30,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import moe.rukamori.archivetune.shared.data.backup.AndroidBackupArchive
 import moe.rukamori.archivetune.shared.data.persistence.BackupCategory
 import moe.rukamori.archivetune.shared.data.persistence.BackupPreferencePolicy
 import moe.rukamori.archivetune.shared.data.persistence.PORTABLE_STATE_SCHEMA_VERSION
@@ -270,6 +271,18 @@ internal class DesktopBackupArchiveGateway(
         if (archive.isEmpty() || archive.size > DriveAppDataLimits.MAX_ARCHIVE_BYTES) {
             throw BackupArchiveException(if (archive.isEmpty()) BackupArchiveProblem.NOT_A_BACKUP else BackupArchiveProblem.INSUFFICIENT_STORAGE)
         }
+        val names = try {
+            ZipInputStream(ByteArrayInputStream(archive)).use { zip ->
+                generateSequence { zip.nextEntry }.map { it.name }.toList()
+            }
+        } catch (_: ZipException) {
+            throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP)
+        }
+        if (DesktopBackupFormat.MANIFEST !in names) {
+            // An Android archive carries song.db and settings.xml instead of the desktop manifest; it restores
+            // through the retained codec and the schema-36 importer.
+            return@withContext parseAndroid(archive, names, scratch)
+        }
         var manifest: ByteArray? = null
         var database: Path? = null
         var settings: ByteArray? = null
@@ -328,6 +341,29 @@ internal class DesktopBackupArchiveGateway(
             decoded
         }
         ParsedDesktopArchive(database, preferences).also {
+            if (it.categories.isEmpty()) throw BackupArchiveException(BackupArchiveProblem.NO_RESTORABLE_DATA)
+        }
+    }
+
+    /**
+     * The Android `song.db` archive. The retained codec applies the baseline's bounds and validation, then
+     * [LegacySongDbImport] converts the schema-36 library into the portable state database the restore stages like
+     * a desktop archive. Custom fonts the Android archive carries are not restored, since the desktop keeps none.
+     */
+    private suspend fun parseAndroid(archive: ByteArray, names: List<String>, scratch: Path): ParsedDesktopArchive {
+        if (!AndroidBackupArchive.recognizes(archive)) {
+            throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP)
+        }
+        val converted = try {
+            AndroidBackupArchive.convert(archive, scratch)
+        } catch (typed: BackupArchiveException) {
+            throw typed
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            throw corrupted()
+        }
+        return ParsedDesktopArchive(converted.database, converted.settings.takeIf { it.keys.isNotEmpty() }).also {
             if (it.categories.isEmpty()) throw BackupArchiveException(BackupArchiveProblem.NO_RESTORABLE_DATA)
         }
     }
