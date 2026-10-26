@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.ui.settings
 import java.nio.file.Files
 import kotlinx.coroutines.*
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.*
+import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiRequestBudget
 import moe.rukamori.archivetune.shared.domain.repository.AiTextService
 import moe.rukamori.archivetune.shared.domain.settings.*
 import kotlin.test.*
@@ -109,6 +110,11 @@ class AiSettingsActionsTest {
     private class Service : AiTextService {
         var last: AiServiceSettings? = null
         var testing: suspend () -> Unit = {}
+        override suspend fun complete(
+            config: AiServiceSettings, budget: AiRequestBudget, systemPrompt: String,
+            userPrompt: String, temperature: Double, maxTokens: Int,
+        ): String = error("Not a completion test")
+        override suspend fun fetchModels(config: AiServiceSettings): List<AiModelOption> = listModels(config).map { AiModelOption(it, it) }
         override suspend fun listModels(config: AiServiceSettings): List<String> {
             last = config
             return listOf("router/model-a", "", "router/model-b", "router/model-a")
