@@ -85,7 +85,6 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
-import androidx.compose.animation.core.animateFloat
 
 private const val MaxTypingAvatars = 5
 private const val TypingCycleMillis = 900

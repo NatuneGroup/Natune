@@ -34,7 +34,6 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource
 import androidx.compose.runtime.saveable.rememberSaveable
 import org.jetbrains.compose.resources.stringResource
-import androidx.compose.runtime.saveable.rememberSaveable
 
 /**
  * One commit of an update channel's history as the host projects it. [dateLabel] is already formatted
