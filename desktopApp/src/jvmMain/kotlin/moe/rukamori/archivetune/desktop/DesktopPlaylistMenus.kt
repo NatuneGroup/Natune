@@ -120,11 +120,13 @@ internal class DesktopPlaylistMenuState(
             val endpoint = withContext(Dispatchers.IO) {
                 YouTube.playlist(playlist.id).getOrThrow().playlist.radioEndpoint
             }
+            val radioPlaylistId = endpoint?.playlistId
+            val radioVideoId = endpoint?.videoId
             val seed = when {
-                endpoint?.playlistId != null ->
-                    ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PLAYLIST, endpoint.playlistId)
-                endpoint?.videoId != null ->
-                    ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, endpoint.videoId)
+                radioPlaylistId != null ->
+                    ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PLAYLIST, radioPlaylistId)
+                radioVideoId != null ->
+                    ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, radioVideoId)
                 else -> {
                     graph.report("playlist radio: the provider page has no radio endpoint")
                     return
