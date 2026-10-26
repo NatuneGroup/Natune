@@ -76,6 +76,9 @@ for library in sorted(destination.iterdir()):
             raise RuntimeError(f"Unexpected dependency {dep} in {library.name}")
     subprocess.run(["install_name_tool"] + rewrites + [str(library)], check=True)
     rpaths = re.findall(r"LC_RPATH\s*\n\s*cmdsize \d+\s*\n\s*path (\S+)", otool(["-l", str(library)]))
+    for rpath in rpaths:
+        if rpath != "@loader_path":
+            subprocess.run(["install_name_tool", "-delete_rpath", rpath, str(library)], check=True)
     if "@loader_path" not in rpaths:
         subprocess.run(["install_name_tool", "-add_rpath", "@loader_path", str(library)], check=True)
 
@@ -93,7 +96,8 @@ for library in sorted(destination.iterdir()):
                 raise RuntimeError(f"Unresolved @rpath dependency {dep} in {library.name}")
         else:
             raise RuntimeError(f"Unresolved dependency {dep} in {library.name}")
-    dynamic = otool(["-l", str(library)])
+    # otool's first output line is the inspected file's own path; load commands follow it.
+    dynamic = otool(["-l", str(library)]).split("\n", 1)[-1]
     if str(root) in dynamic or str(build) in dynamic:
         raise RuntimeError(f"Non-relocatable path in {library.name}")
     print(f"Staged native: {library.name}", file=sys.stderr)

@@ -320,6 +320,8 @@ jobs:
             gnupg
             python
             binutils
+            pkgconf
+            diffutils
 
       - name: Install Rosetta 2 (macOS x64 leg)
         if: matrix.platform == 'macos' && matrix.arch == 'x64'
