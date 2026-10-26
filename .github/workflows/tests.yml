@@ -55,6 +55,7 @@ jobs:
           set -euo pipefail
           # Fail if this documented contract variant disappears; never test a different flavor.
           ./gradlew --console=plain --stacktrace --profile \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" -Pkotlin.daemon.jvmargs="-Xmx4g" \
             -I quality/unit-tests.init.gradle \
             :app:testGmsMobileUniversalDebugUnitTest --rerun :app:criticalPolicyCoverage
         env:

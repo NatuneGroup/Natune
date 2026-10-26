@@ -58,6 +58,7 @@ import moe.rukamori.archivetune.shared.ui.screens.EmojiCatalog
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.*
 
 /** Debounce window for the song search field, so a query is sent once the typing pauses. */
 private const val CommentSongSearchDebounceMillis = 400L

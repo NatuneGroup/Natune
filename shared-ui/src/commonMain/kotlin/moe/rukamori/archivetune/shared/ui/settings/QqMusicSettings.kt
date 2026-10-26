@@ -33,6 +33,8 @@ import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** What the host's QR sign-in is doing. The host runs the poll loop and reports only these states. */
 sealed interface QqLoginUiState {

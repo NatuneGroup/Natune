@@ -42,6 +42,8 @@ import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import moe.rukamori.archivetune.shared.ui.screens.PageStatus
 import moe.rukamori.archivetune.shared.ui.screens.rememberPagedContent
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
+import moe.rukamori.archivetune.shared.ui.resources.*
 
 private val ArtistGridCellMinSize = 168.dp
 private const val ArtistItemsLookahead = 4

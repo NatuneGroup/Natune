@@ -29,6 +29,7 @@ import moe.rukamori.archivetune.shared.ui.home.HomeTopFadeBlur
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.*
 
 /** Header bar height the scrim fades below; the status-bar inset sits above it. */
 val ScreenHeaderHazeBarZone = 64.dp

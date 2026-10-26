@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.*
 
 /** Test tag of the listener-presence switch, so UI tests and accessibility tooling can address it. */
 const val LISTENER_PRESENCE_SWITCH_TAG: String = "listener-presence-switch"

@@ -57,6 +57,7 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.*
 
 /** The message whose anchored popup is open. [bounds] is the bubble's position in the root, so the popup opens beside it. */
 internal data class CommentActionTarget(val message: CommentMessageUi, val bounds: Rect)

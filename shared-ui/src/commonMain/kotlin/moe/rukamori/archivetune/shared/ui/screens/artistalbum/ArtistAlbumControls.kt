@@ -64,6 +64,7 @@ import moe.rukamori.archivetune.shared.ui.glass.liquidGlassMaterial
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.stringResource
+import moe.rukamori.archivetune.shared.ui.resources.*
 
 /**
  * Persistent chrome over the hero. The pills are Liquid Glass when it is live; otherwise the same modifier chain
