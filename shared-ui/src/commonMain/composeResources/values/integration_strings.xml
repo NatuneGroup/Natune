@@ -11,4 +11,10 @@
     <string name="ios_queue_empty">The queue is empty</string>
     <string name="ios_queue_remove">Remove from queue</string>
     <string name="ios_logs_copied">Copied log to clipboard</string>
+    <string name="stats_range_1w">1 week</string>
+    <string name="stats_range_1m">1 month</string>
+    <string name="stats_range_3m">3 months</string>
+    <string name="stats_range_6m">6 months</string>
+    <string name="stats_range_1y">1 year</string>
+    <string name="stats_range_all">All</string>
 </resources>

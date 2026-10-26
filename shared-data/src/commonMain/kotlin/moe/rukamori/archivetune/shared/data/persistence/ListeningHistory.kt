@@ -274,6 +274,10 @@ class RoomListeningHistory(
         eventIds.chunked(DELETE_BATCH).forEach { dao.removeListens(it) }
     }
 
+    /** The timestamp of the oldest recorded listen, or null before the first listen. Range chips stop there. */
+    suspend fun earliestListenMs(): Long? =
+        dao.timesInWindow(0, Long.MAX_VALUE).minOfOrNull { it.timestampMs }
+
     override suspend fun load(window: ListeningWindow): ListeningStatistics {
         val hourPlays = LongArray(HOURS)
         val hourTimeMs = LongArray(HOURS)

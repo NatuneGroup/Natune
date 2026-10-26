@@ -126,6 +126,9 @@ class ShellNavigation(initialTab: ShellTab = ShellTab.Home) {
 /** Supplied by the navigation content; null where no shell owns the stack, so headers keep only the plain back action. */
 val LocalBackToMain = compositionLocalOf<(() -> Unit)?> { null }
 
+/** The live shell navigation, for a page whose own controls must move it (e.g. the chat leaving on close). */
+val LocalShellNavigation = compositionLocalOf<ShellNavigation?> { null }
+
 @Composable
 fun rememberShellNavigation(initialTab: ShellTab = ShellTab.Home): ShellNavigation =
     rememberSaveable(saver = ShellNavigation.Saver) { ShellNavigation(initialTab) }

@@ -23,7 +23,7 @@ fun NavigationEntryContent(
     }
     val backToMain = remember(navigation) { { navigation.backToMain() } }
     Box(modifier.fillMaxSize()) {
-        CompositionLocalProvider(LocalBackToMain provides backToMain) {
+        CompositionLocalProvider(LocalBackToMain provides backToMain, LocalShellNavigation provides navigation) {
             holder.SaveableStateProvider(navigation.entry.id) {
                 key(navigation.entry.id) { content() }
             }

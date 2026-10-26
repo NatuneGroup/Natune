@@ -23,8 +23,9 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 internal const val DesktopListenTogetherSettingsRoute = "settings/integrations/listen_together"
 
 /**
- * The Listen Together room page over the graph's one owner. The room chat, the song picker for suggestions and the
- * custom member picture are not connected on this host, so those actions say so on the page instead of opening nothing.
+ * The Listen Together room page over the graph's one owner. The chat opens the mounted chat route; the song picker
+ * for suggestions and the custom member picture are not connected on this host, so those actions say so on the page
+ * instead of opening nothing.
  */
 @Composable
 internal fun desktopListenTogetherPage(graph: DesktopSessionGraph, openRoute: (String) -> Unit): ArchiveGraphPage {

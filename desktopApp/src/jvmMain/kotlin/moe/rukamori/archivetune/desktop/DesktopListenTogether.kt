@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -24,9 +25,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopListenTogetherGzip
 import moe.rukamori.archivetune.desktop.integration.DesktopListenTogetherPreferences
 import moe.rukamori.archivetune.desktop.integration.DesktopListenTogetherSocketFactory
+import moe.rukamori.archivetune.desktop.integration.DesktopListenTogetherChatHistoryStore
 import moe.rukamori.archivetune.desktop.integration.DesktopListenTogetherStore
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.data.listentogether.ChatSongPickerOwner
 import moe.rukamori.archivetune.shared.data.listentogether.JoinRequestPayload
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherChatOwner
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherClient
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherConnectionState
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherEvent
@@ -35,6 +39,7 @@ import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherLogEntr
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherLogLevel
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherMessageCodec
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherNotice
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherProtocol
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherRole
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
 import moe.rukamori.archivetune.shared.data.listentogether.PlaybackActionPayload
@@ -60,9 +65,12 @@ import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsRol
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSyncVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
+import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
 import moe.rukamori.archivetune.shared.domain.settings.commitListenTogetherUsername
 import moe.rukamori.archivetune.shared.domain.settings.listenTogetherUsername
 import moe.rukamori.archivetune.shared.ui.screens.ListenRoomUi
+import moe.rukamori.archivetune.shared.ui.screens.commenttogether.CommentTogetherNativePorts
+import moe.rukamori.archivetune.shared.ui.screens.commenttogether.CommentTogetherOwnerBinding
 import moe.rukamori.archivetune.shared.ui.screens.ListenTogetherUi
 import moe.rukamori.archivetune.shared.ui.screens.RoomConnectionUi
 import moe.rukamori.archivetune.shared.ui.screens.RoomJoinRequestUi
@@ -89,6 +97,7 @@ internal class DesktopListenTogether(
     private val player: MusicPlayerController,
     private val queue: QueueController,
     private val setVolume: (Float) -> Unit,
+    private val content: ContentRepositoryRouter,
     private val report: (String) -> Unit,
 ) {
     private val job = SupervisorJob(parentScope.coroutineContext[Job])
@@ -107,6 +116,30 @@ internal class DesktopListenTogether(
         network = MutableStateFlow(true),
         nowMs = System::currentTimeMillis,
     )
+
+    /**
+     * The chat history, picker and binding all live on the client's single thread, built before any [connect], so the
+     * owner's event collection never misses an early frame. The desktop chooses no custom avatar, so its bytes stay
+     * absent rather than faked; the history document is the shared JSON the Android store writes.
+     */
+    val chat = ListenTogetherChatOwner(
+        client = client,
+        scope = scope,
+        history = DesktopListenTogetherChatHistoryStore(settings, report),
+        localAvatarBytes = { null },
+        nowMs = System::currentTimeMillis,
+        onDiagnostic = report,
+    )
+    val songPicker = ChatSongPickerOwner(content, scope, onShare = { track -> chat.shareTrack(track) })
+
+    /** Whether the selected server is documented to carry the chat relay; the live wire protocol is ANDed downstream. */
+    val serverChatSupported: StateFlow<Boolean> = settings.snapshots
+        .map { ListenTogetherServers.findByUrl(preferences.serverUrl())?.protocol != ListenTogetherProtocol.PROTOBUF }
+        .stateIn(scope, SharingStarted.Eagerly, ListenTogetherServers.findByUrl(preferences.serverUrl())?.protocol != ListenTogetherProtocol.PROTOBUF)
+
+    /** One chat-screen binding per mount. The host calls [CommentTogetherOwnerBinding.close] when the route leaves. */
+    fun commentTogether(native: CommentTogetherNativePorts): CommentTogetherOwnerBinding =
+        CommentTogetherOwnerBinding(scope, client, chat, songPicker, serverChatSupported, native)
 
     private data class Local(
         val usernameDraft: String? = null,
@@ -641,7 +674,7 @@ private fun ContentItem.toTrackInfo(fallbackDurationMs: Long?): TrackInfo? {
 }
 
 /** A room track as a fresh queue occurrence; the queue refuses an id it already holds, so each load gets its own. */
-private fun TrackInfo.toOccurrence(occurrenceId: String = "listen:${UUID.randomUUID()}"): ContentOccurrence =
+internal fun TrackInfo.toOccurrence(occurrenceId: String = "listen:${UUID.randomUUID()}"): ContentOccurrence =
     ContentOccurrence(
         occurrenceId,
         ContentItem(
