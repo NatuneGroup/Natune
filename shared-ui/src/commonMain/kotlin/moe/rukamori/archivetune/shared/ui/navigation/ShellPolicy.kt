@@ -18,13 +18,20 @@ fun shellLayout(
     if (preferences.interfaceStyle() == InterfaceStyle.APPLE_MUSIC) return ShellLayout.CompactRow
     if (television) return ShellLayout.TvRail
     if (widthDp >= 840f || preferences[TabletModeEnabledKey, false]) return ShellLayout.Rail
-    val compact = when (preferences[NavigationBarCompactBehaviorKey]) {
-        "ALWAYS_COMPACT" -> true
-        "ADAPTIVE" -> scrolledDown
-        else -> false
+    val behavior = preferences.navigationBarCompactBehavior()
+    val compact = when (behavior) {
+        NavigationBarCompactBehavior.ALWAYS_COMPACT -> true
+        NavigationBarCompactBehavior.ADAPTIVE -> scrolledDown
+        NavigationBarCompactBehavior.ALWAYS_EXPANDED -> false
     }
     if (compact) return ShellLayout.CompactRow
-    if (!topLevel || (scrolledDown && preferences[NavigationBarHideOnScrollKey, false])) return ShellLayout.MiniPlayerOnly
+    // "Hide while scrolling" with the one-row layout turned off keeps the older look: the bar
+    // slides away and the full-width mini player drops into its place.
+    val hiddenByScroll =
+        preferences[NavigationBarHideOnScrollKey, false] &&
+            behavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED &&
+            scrolledDown
+    if (!topLevel || hiddenByScroll) return ShellLayout.MiniPlayerOnly
     return ShellLayout.BottomBar
 }
 

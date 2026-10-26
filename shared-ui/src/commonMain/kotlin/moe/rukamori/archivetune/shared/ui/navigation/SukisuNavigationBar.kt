@@ -120,14 +120,14 @@ private val SukisuBarMaxWidth = 360.dp
 private const val SukisuBarHighlightExtraDegrees = -45f
 private const val SukisuPillHighlightExtraDegrees = 90f
 
-private val ShellTab.iconActive: DrawableResource
+internal val ShellTab.iconActive: DrawableResource
     get() = when (this) {
         ShellTab.Home -> Res.drawable.m4_icon_home_filled
         ShellTab.Search -> Res.drawable.m4_icon_search
         ShellTab.Library -> Res.drawable.m4_icon_library_filled
     }
 
-private val ShellTab.iconInactive: DrawableResource
+internal val ShellTab.iconInactive: DrawableResource
     get() = when (this) {
         ShellTab.Home -> Res.drawable.m4_icon_home_outlined
         ShellTab.Search -> Res.drawable.m4_icon_search

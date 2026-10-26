@@ -44,6 +44,41 @@ enum class InterfaceStyle {
     APPLE_MUSIC,
 }
 
+/**
+ * The bottom bar looks, in the baseline's declaration order. DEFAULT keeps the docked full-width bar, FLOATING
+ * detaches it into a pill, YUMA_PLAYER and APPLE_MUSIC are the floating neutral capsules, and SUKISU renders the
+ * SukiSU liquid-glass bar which fixes its own dimensions and ignores the bar tuning sliders.
+ */
+enum class NavigationBarStyle {
+    DEFAULT,
+    FLOATING,
+    YUMA_PLAYER,
+    APPLE_MUSIC,
+    SUKISU,
+}
+
+/** When the bottom chrome folds into the one-row compact layout. */
+enum class NavigationBarCompactBehavior {
+    ADAPTIVE,
+    ALWAYS_EXPANDED,
+    ALWAYS_COMPACT,
+}
+
+/** Where the Search page's field sits. */
+enum class SearchBarPosition {
+    TOP,
+    BOTTOM,
+}
+
+/** The mini player's backdrop material. */
+enum class MiniPlayerBackgroundStyle {
+    THEME,
+    GRADIENT,
+    GLOW,
+    FROSTED,
+    LIQUID_GLASS,
+}
+
 /** The Library tab's layout. It sets only the tab's layout and never the Apple Music experience switch. */
 enum class LibraryStyle {
     DEFAULT,
