@@ -194,6 +194,25 @@ internal class TdlightClientSession(
     val configured: Boolean get() = credentials != null
 
     /**
+     * Sends one request through the running client while its account is admitted. Browse and bots read this, rather
+     * than the raw client, so a request can never run against a session that is signed out, unverified or closed.
+     */
+    internal suspend fun admittedRequest(
+        operation: String,
+        query: TdApi.Function<*>,
+        timeoutMs: Long = AUTH_REQUEST_TIMEOUT_MS,
+    ): TdApi.Object {
+        val running = synchronized(lock) {
+            client.takeIf {
+                admissionFlow.value is TelegramNativeAdmission.Admitted &&
+                    stateFlow.value is TelegramAuthState.Ready &&
+                    !closeRequested.get()
+            }
+        } ?: throw TdlightRequestException("$operation requires an admitted Telegram account")
+        return running.requestOk(operation, query, timeoutMs)
+    }
+
+    /**
      * The admitted account's display name and phone digits for the settings row, read with GetMe. Null while the account
      * is not admitted, so an unverified session never names an account.
      */
