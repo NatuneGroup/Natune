@@ -32,7 +32,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import moe.rukamori.archivetune.nativetelegram.at_telegram_client
+import cnames.structs.at_telegram_client
 import moe.rukamori.archivetune.nativetelegram.at_telegram_client_create
 import moe.rukamori.archivetune.nativetelegram.at_telegram_client_destroy
 import moe.rukamori.archivetune.nativetelegram.at_telegram_client_execute
