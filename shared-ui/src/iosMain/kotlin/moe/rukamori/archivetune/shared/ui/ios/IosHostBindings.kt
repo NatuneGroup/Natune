@@ -81,7 +81,7 @@ internal val IosOpticalCapabilities = OpticalCapabilities(blur = true, refractio
  */
 internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTuneHostBindings {
     val controls = IosPlayerControls(graph)
-    val settingsOwners = IosSettingsOwners(graph)
+    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser)
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     return ArchiveTuneHostBindings(
