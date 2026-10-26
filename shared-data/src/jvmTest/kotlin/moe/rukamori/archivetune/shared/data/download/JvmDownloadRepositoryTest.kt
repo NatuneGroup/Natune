@@ -6,6 +6,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import kotlin.test.*
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 
 class JvmDownloadRepositoryTest {
@@ -14,8 +15,8 @@ class JvmDownloadRepositoryTest {
         val client = HttpClient(MockEngine { respond("fixture-media") })
         try {
             val repository = JvmDownloadRepository(dir, client)
-            val tidal = DownloadKey("same", AudioSourceType.TIDAL, "lossless")
-            val deezer = tidal.copy(source = AudioSourceType.DEEZER)
+            val tidal = DownloadKey("same", AudioSourceType.TIDAL, "lossless", provider = ContentProvider.TIDAL.id)
+            val deezer = tidal.copy(source = AudioSourceType.DEEZER, provider = ContentProvider.DEEZER.id)
             val first = repository.download(tidal, "https://audio.example/t")
             val second = repository.download(deezer, "https://audio.example/d")
             assertNotEquals(first, second)
@@ -33,7 +34,7 @@ class JvmDownloadRepositoryTest {
         })
         try {
             val repository = JvmDownloadRepository(dir, client)
-            val key = DownloadKey("same", AudioSourceType.TIDAL, "lossless")
+            val key = DownloadKey("same", AudioSourceType.TIDAL, "lossless", provider = ContentProvider.TIDAL.id)
             val old = launch { repository.download(key, "https://audio.example/old") }
             began.await()
             val result = repository.download(key, "https://audio.example/new")

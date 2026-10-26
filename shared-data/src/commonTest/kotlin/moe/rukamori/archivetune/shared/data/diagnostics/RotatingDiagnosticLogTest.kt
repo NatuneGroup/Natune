@@ -3,8 +3,30 @@ package moe.rukamori.archivetune.shared.data.diagnostics
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.test.runTest
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
+
+/**
+ * Runs a log test with a writer scope on the test scheduler, not `backgroundScope`: `advanceUntilIdle`
+ * does not drive background coroutines, so the writer loop would stall until the test body suspended.
+ * The scope is cancelled and joined at the end, so no writer survives its test.
+ */
+private fun runLogTest(block: suspend TestScope.(scope: CoroutineScope) -> Unit): TestResult =
+    runTest {
+        val job = SupervisorJob()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + job)
+        try {
+            block(scope)
+        } finally {
+            job.cancelAndJoin()
+        }
+    }
 
 class RotatingDiagnosticLogTest {
     private class MemoryFiles(initial: Map<String, String> = emptyMap()) : DiagnosticLogFiles {
@@ -28,10 +50,10 @@ class RotatingDiagnosticLogTest {
     }
 
     @Test
-    fun appendedLinesReachTheViewerAndClearHidesThem() = runTest {
+    fun appendedLinesReachTheViewerAndClearHidesThem() = runLogTest { scope ->
         var now = 1_000L
         val files = MemoryFiles()
-        val log = RotatingDiagnosticLog(files, backgroundScope, sessionStartMillis = 500L, nowMillis = { now }, formatTime = { "t$it" }, sessionHeader = "start")
+        val log = RotatingDiagnosticLog(files, scope, sessionStartMillis = 500L, nowMillis = { now }, formatTime = { "t$it" }, sessionHeader = "start")
 
         log.append(DiagnosticLevel.INFO, "Queue", "restored")
         testScheduler.advanceUntilIdle()
@@ -45,20 +67,20 @@ class RotatingDiagnosticLogTest {
     }
 
     @Test
-    fun earlierSessionsArePrunedToTheRetentionKeepingTheNewestWhole() = runTest {
+    fun earlierSessionsArePrunedToTheRetentionKeepingTheNewestWhole() = runLogTest { scope ->
         val large = "x".repeat(1_500 * 1024) + "\n"
         val files = MemoryFiles(mapOf("s1-p0.log" to large, "s2-p0.log" to large, "s3-p0.log" to "1 3 I/A: small\n"))
 
-        RotatingDiagnosticLog(files, backgroundScope, sessionStartMillis = 4L, nowMillis = { 5L }, formatTime = { "t$it" }, sessionHeader = "start")
+        RotatingDiagnosticLog(files, scope, sessionStartMillis = 4L, nowMillis = { 5L }, formatTime = { "t$it" }, sessionHeader = "start")
         testScheduler.advanceUntilIdle()
 
         assertEquals(setOf("s2-p0.log", "s3-p0.log", "s4-p0.log"), files.contents.keys)
     }
 
     @Test
-    fun aFullPartRotatesAndOnlyTheNewestPartsStay() = runTest {
+    fun aFullPartRotatesAndOnlyTheNewestPartsStay() = runLogTest { scope ->
         val files = MemoryFiles()
-        val log = RotatingDiagnosticLog(files, backgroundScope, sessionStartMillis = 9L, nowMillis = { 10L }, formatTime = { "t$it" }, sessionHeader = "start")
+        val log = RotatingDiagnosticLog(files, scope, sessionStartMillis = 9L, nowMillis = { 10L }, formatTime = { "t$it" }, sessionHeader = "start")
         val chunk = "y".repeat(60 * 1024)
 
         repeat(60) {

@@ -70,6 +70,8 @@ compose.resources {
     packageOfResClass = "moe.rukamori.archivetune.shared.ui.resources"
     // The library default (auto) does not generate the Res accessors, so ArchiveTuneRoot would not compile.
     generateResClass = always
+    // desktopApp renders shared strings through the same accessors, so they must be visible outside this module.
+    publicResClass = true
 }
 
 // Keep complete upstream notices in every platform resource bundle, not just the source checkout.
@@ -85,6 +87,10 @@ tasks.named<Test>("desktopTest") {
         "archivetune.screenshotDir",
         rootProject.layout.projectDirectory.dir("outputs/screenshots").asFile.absolutePath,
     )
+    // The coroutines-test debug-probes transformer emits an illegal "<anonymous>" method when it
+    // rewrites classes containing the Compose compiler's $$$$$NON_LOCAL_RETURN$$$$$ markers; stack
+    // decoration is off so host classes load. Probe-free tests still assert the same behaviour.
+    systemProperty("kotlinx.coroutines.debug", "off")
     outputs.upToDateWhen { false }
     outputs.cacheIf { false }
 }
