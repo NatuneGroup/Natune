@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -26,6 +27,9 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
+import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
+import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
@@ -47,6 +51,7 @@ import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
@@ -80,11 +85,15 @@ internal class IosSessionGraph private constructor(
     val http: HttpClient,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
+    internal val library: RoomLibraryRepository,
     val libraryContent: LibraryContentOwner,
     val pageOwners: LibraryPageOwners,
     val lyrics: HostLyrics,
+    val customArtwork: FileCustomArtworkRepository,
+    val playbackPool: IosPlaybackPool,
     val artworkLoader: IosArtworkLoader,
     private val owner: PortableQueueOwner,
+    private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
     private val drivers: List<Job>,
@@ -92,6 +101,25 @@ internal class IosSessionGraph private constructor(
 ) {
     /** The crossfade or automix blend armed into the next song. iOS connects no blend engine, so it stays null. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
+
+    /**
+     * Sets the app-level output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player
+     * does, so the same slider the Android app offers drives the output on this host too.
+     */
+    fun setVolume(volume: Float) {
+        if (!volume.isFinite()) return
+        val level = volume.coerceIn(0f, 1f)
+        playbackPort.setVolume(level)
+        scope.launch {
+            try {
+                settings.edit { set(PlayerVolumeKey, level) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report("volume was not saved: ${failure::class.simpleName}")
+            }
+        }
+    }
 
     fun report(message: String) = reportLine(message)
 
@@ -219,6 +247,14 @@ internal class IosSessionGraph private constructor(
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
             val history = RoomListeningHistory(database.listens(), offsetMsAt = ::iosOffsetMsAt)
             val player = host.player
+            val playbackPool = IosPlaybackPool(
+                http = http,
+                vault = host.credentials,
+                preferences = { vault.snapshots.value },
+                scope = scope,
+                log = report,
+                nowMs = ::iosNowMillis,
+            )
             // One InnerTubeX transport serves the catalogue and account paths; the resolver walks the shipped
             // player clients first and keeps InnerTubeX as the bounded extractor tier, like the desktop host.
             val youtubeTransport = IosYouTubeBrowseTransport(http)
@@ -231,7 +267,7 @@ internal class IosSessionGraph private constructor(
             )
             val locators = IosQueueLocatorResolver(
                 audio = OrderedAudioResolver(
-                    providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh),
+                    providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
                     youtube = IosYouTubeResolver(
                         http = http,
                         transport = youtubeTransport,
@@ -335,17 +371,22 @@ internal class IosSessionGraph private constructor(
                 http = http,
                 player = player,
                 queue = queue,
+                library = library,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
                 lyrics = lyrics,
+                customArtwork = FileCustomArtworkRepository(IosCustomArtworkFiles(), nowMillis = ::iosNowMillis),
+                playbackPool = playbackPool,
                 artworkLoader = IosArtworkLoader(http),
                 owner = owner,
+                playbackPort = host.playbackPort,
                 database = database,
                 listenDriver = listenDriver,
                 drivers = drivers,
                 reportLine = report,
             )
             lyrics.start()
+            playbackPool.start()
             return graph
         }
     }
@@ -362,7 +403,7 @@ internal fun iosOffsetMsAt(epochMs: Long): Long =
  * The text order the portable library sorts with: the user's locale, case-insensitive, so one artist never splits into
  * two groups by case.
  */
-private val iosTextOrder: Comparator<String> = Comparator { first, second ->
+internal val iosTextOrder: Comparator<String> = Comparator { first, second ->
     NSString.create(string = first).localizedCaseInsensitiveCompare(second).toInt()
 }
 

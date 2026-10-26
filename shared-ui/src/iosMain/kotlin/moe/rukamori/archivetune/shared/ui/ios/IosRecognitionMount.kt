@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package moe.rukamori.archivetune.shared.ui.ios
 
 import androidx.compose.runtime.Composable
@@ -24,10 +26,7 @@ import moe.rukamori.archivetune.shared.ui.screens.recognition.toMusicRecognition
 import moe.rukamori.archivetune.shared.ui.screens.recognition.toRecognizedTrackUi
 import moe.rukamori.archivetune.shared.ui.settings.recognition.RecognitionBackgroundPreferenceAdapter
 import moe.rukamori.archivetune.shared.ui.settings.recognition.RecognitionHistoryPreferenceAdapter
-import platform.Foundation.NSDate
-import platform.Foundation.NSDateFormatter
-import platform.Foundation.NSDateFormatterMediumStyle
-import platform.Foundation.NSDateFormatterShortStyle
+import platform.Foundation.*
 
 /**
  * Music recognition for the iOS root: the AVAudioEngine capture, the common fingerprint, the Shazam matcher over the
