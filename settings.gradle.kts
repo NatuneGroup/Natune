@@ -37,8 +37,14 @@ pluginManagement {
             name = "GcsCentral"
             setUrl("https://maven-central.storage-download.googleapis.com/maven2/")
         }
-        mavenCentral()
+        // Gradle Plugin Portal before mavenCentral(): portal-only artifacts (e.g.
+        // com.mikepenz.aboutlibraries.plugin:aboutlibraries-plugin) are resolved
+        // repository-by-repository in declaration order, and Maven Central's 429
+        // rate-limit response is fatal — it aborts the search before the portal
+        // is ever consulted. Central-hosted plugin dependencies still resolve
+        // through the GCS mirror first.
         gradlePluginPortal()
+        mavenCentral()
     }
 }
 

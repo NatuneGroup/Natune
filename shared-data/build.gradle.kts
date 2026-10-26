@@ -63,7 +63,8 @@ kotlin {
             implementation("androidx.datastore:datastore-preferences-core:1.2.1")
         }
         // IosChallengeEvaluator runs provider JavaScript on the same pinned quickjs-kt artifact as desktop.
-        getByName("iosMain").dependencies {
+        // Kotlin 2.4 creates intermediate source sets lazily: getByName fails here, the accessor works.
+        iosMain.dependencies {
             implementation(libs.quickjs.kt)
         }
     }
