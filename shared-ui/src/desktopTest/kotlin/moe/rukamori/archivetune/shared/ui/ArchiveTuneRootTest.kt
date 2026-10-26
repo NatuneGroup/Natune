@@ -16,11 +16,10 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class ArchiveTuneRootTest {
     @Test
-    fun rootShowsTheAppNameAndFoundationStatus() = runComposeUiTest {
+    fun rootShowsTheUnconfiguredHostBoundary() = runComposeUiTest {
         setContent { ArchiveTuneRoot() }
 
-        onNodeWithText("ArchiveTune").assertIsDisplayed()
-        onNodeWithText("Kotlin Multiplatform foundation").assertIsDisplayed()
+        onNodeWithText("Host integration is incomplete. Playback and account services are not connected.").assertIsDisplayed()
     }
 
     @Test

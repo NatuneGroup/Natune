@@ -7,8 +7,9 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 
 class QueueCheckpointTest {
     private val song = ContentItem(ContentRef("youtube", ContentKind.SONG, "same"), "Same")
+    // A permuted playOrder only exists under shuffle; without it QueueCheckpoint requires playOrder == timeline.
     private val queue = QueueState(3, listOf(ContentOccurrence("a", song), ContentOccurrence("b", song)),
-        "b", listOf("b", "a"))
+        "b", listOf("b", "a"), shuffleEnabled = true)
 
     @Test fun duplicatesKeepOccurrenceAndPlayOrder() {
         val checkpoint = QueueCheckpoint(queue, 500)
