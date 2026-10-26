@@ -3,11 +3,13 @@
 package moe.rukamori.archivetune.shared.ui
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
@@ -87,6 +89,10 @@ class IosHost {
     private var foregroundRequested = false
     private var nowPlaying: IosNowPlaying? = null
     private val telegramSession = MutableStateFlow<IosTelegramClient?>(null)
+    private val linkRoutes = Channel<String>(capacity = LINK_ROUTE_CAPACITY)
+
+    /** Links handed to the session graph, which resolves them into routes. The bound drops a burst of opens. */
+    internal val linkRequests = linkRoutes.receiveAsFlow()
 
     /**
      * The one TDLib session of this host, created once the account store exists, because its admission is that store's
@@ -219,6 +225,14 @@ class IosHost {
     /** Forwarded by the Swift app session when the app leaves the foreground. */
     fun backgrounded() {
         if (!closed) active.value = false
+    }
+
+    /**
+     * The `archivetune://` link the Swift app session receives in `onOpenURL`. It is queued for the session graph,
+     * which decides which routes a link may open; a link before the graph is ready is dropped rather than replayed.
+     */
+    fun openLink(link: String) {
+        if (!closed) linkRoutes.trySend(link)
     }
 
     /** One line in the persistent diagnostics log and the console, for failures the UI only reports. */
@@ -374,5 +388,6 @@ class IosHost {
 
     private companion object {
         const val PRESENCE_CLOSE_TIMEOUT_MS = 2_000L
+        const val LINK_ROUTE_CAPACITY = 8
     }
 }

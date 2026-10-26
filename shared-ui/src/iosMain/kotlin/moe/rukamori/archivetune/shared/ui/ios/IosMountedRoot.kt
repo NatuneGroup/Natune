@@ -8,6 +8,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +43,9 @@ internal fun IosMountedRoot(host: IosHost) {
         IosSessionState.SettingsUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_settings_unavailable)) }
         IosSessionState.GraphUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_host_graph_unavailable)) }
         is IosSessionState.Ready -> {
-            val bindings = remember(state.graph) { iosHostBindings(host, state.graph) }
+            val recognition = remember(state.graph) { IosRecognitionMount(state.graph) }
+            DisposableEffect(state.graph) { onDispose { recognition.close() } }
+            val bindings = remember(state.graph) { iosHostBindings(host, state.graph, recognition) }
             ArchiveTuneRoot(
                 host = bindings,
                 visible = active,

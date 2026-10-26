@@ -156,7 +156,7 @@ class IosListenerPresenceTransport(apiUrl: String) : ListenerPresenceTransport {
         val configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration
         configuration.URLCache = null
         configuration.HTTPCookieStorage = null
-        configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicyNever
+        configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicy.NSHTTPCookieAcceptPolicyNever
         configuration.HTTPShouldSetCookies = false
         configuration.URLCredentialStorage = null
         configuration.timeoutIntervalForRequest = REQUEST_TIMEOUT_MS / 1000.0
@@ -180,10 +180,13 @@ class IosListenerPresenceTransport(apiUrl: String) : ListenerPresenceTransport {
             ?: return Result.failure(IllegalStateException("Listener presence endpoint is not a URL"))
         val bytes = payloadJson.encodeToByteArray()
         val body = bytes.usePinned { NSData.create(bytes = it.addressOf(0), length = bytes.size.toULong()) }
-        val request = NSMutableURLRequest(url)
+        val request = NSMutableURLRequest(
+            uRL = url,
+            cachePolicy = platform.Foundation.NSURLRequestUseProtocolCachePolicy,
+            timeoutInterval = REQUEST_TIMEOUT_MS / 1000.0,
+        )
         request.HTTPMethod = "POST"
         request.HTTPShouldHandleCookies = false
-        request.timeoutInterval = REQUEST_TIMEOUT_MS / 1000.0
         request.setValue("application/json", forHTTPHeaderField = "Content-Type")
         request.HTTPBody = body
         return suspendCancellableCoroutine<Result<Unit>> { continuation ->
