@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.awt.Desktop
 import java.net.URI
+import java.net.URLDecoder
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.channels.Channel
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -142,11 +144,44 @@ private val launchLinks: Channel<String> by lazy {
  */
 private fun desktopLaunchRoutes(graph: DesktopSessionGraph): Flow<String> =
     launchLinks.receiveAsFlow().mapNotNull { link ->
+        val listenCode = desktopListenTogetherCode(link)
+        if (listenCode != null) {
+            graph.listenTogether.joinFromLink(listenCode)
+            return@mapNotNull null
+        }
         desktopLaunchRoute(link) ?: run {
             graph.report("link not opened: it names no page that a link may open")
             null
         }
     }
+
+/**
+ * The room code an `archivetune://listen` invite carries, or null when the link is not a listen invite. Mirrors the
+ * Android handler exactly: `?code=`, then `?room=`, then the second path segment (pathSegments[1] — on the https invite
+ * hosts the first segment is "listen"), accepted only when the link names a listen endpoint.
+ */
+internal fun desktopListenTogetherCode(link: String): String? {
+    val uri = try {
+        URI(link)
+    } catch (_: Exception) {
+        return null
+    }
+    val segments = uri.rawPath.orEmpty().split('/').filter { it.isNotEmpty() }
+    val isListenLink = segments.firstOrNull() == "listen" ||
+        uri.host?.equals("listen", ignoreCase = true) == true ||
+        ListenTogetherServers.isInviteHost(uri.host)
+    if (!isListenLink) return null
+    val query = uri.rawQuery.orEmpty().split('&').filter { it.isNotEmpty() }.mapNotNull {
+        val parts = it.split('=', limit = 2)
+        try {
+            URLDecoder.decode(parts[0], Charsets.UTF_8) to
+                URLDecoder.decode(parts.getOrElse(1) { "" }, Charsets.UTF_8)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }.toMap()
+    return (query["code"] ?: query["room"] ?: segments.getOrNull(1))?.takeIf { it.isNotBlank() }
+}
 
 /**
  * The route an `archivetune://open/...` link opens, or null when it opens none. The path and query are passed on as they
