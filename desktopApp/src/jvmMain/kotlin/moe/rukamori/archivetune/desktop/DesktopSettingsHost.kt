@@ -31,12 +31,18 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAdmission
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
+import moe.rukamori.archivetune.shared.data.provider.QobuzAccountVerifier
+import moe.rukamori.archivetune.shared.data.provider.QobuzBundleScrape
+import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceProbe
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
 import moe.rukamori.archivetune.shared.data.provider.TidalRefreshResult
 import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
 import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.QobuzTokenEntry
+import moe.rukamori.archivetune.shared.domain.settings.SourceHealth
+import moe.rukamori.archivetune.shared.domain.settings.SourceHealthStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalAuthFlowDevice
 import moe.rukamori.archivetune.shared.domain.settings.TidalDeviceLink
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceHealth
@@ -57,6 +63,10 @@ import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.QqMusicSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
+import moe.rukamori.archivetune.shared.ui.settings.DeezerLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginScreen
+import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyStreamingSettings
@@ -85,6 +95,75 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     val youTube = DesktopYouTubeAccountOwner(graph, controller)
     val qqMusic = DesktopQqMusicLoginOwner(graph.scope, graph.accountLifecycle, graph::report)
     val spotify = DesktopSpotifyAccounts(graph, controller)
+    val deezerWeb = DesktopDeezerWebSignIn(graph)
+
+    private val qobuzVerifier = QobuzAccountVerifier(graph.http)
+    private val qobuzScrape = QobuzBundleScrape(graph.http)
+    private val qobuzProbe = QobuzInstanceProbe(graph.http)
+    val qobuzTokenHealth = MutableStateFlow<Map<String, SourceHealth>>(emptyMap())
+    val qobuzInstanceHealth = MutableStateFlow<Map<String, SourceHealth>>(emptyMap())
+
+    /** The settings page's token test: the same two-call API proof per entry, with latency for the row. */
+    suspend fun checkQobuzTokens(tokens: List<QobuzTokenEntry>, probeTrack: String, quality: String) {
+        coroutineScope {
+            tokens.map { entry ->
+                async {
+                    val started = System.nanoTime()
+                    val status = try {
+                        qobuzVerifier.verify(entry)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        SourceHealthStatus.UNREACHABLE
+                    }
+                    entry.id to SourceHealth(status, latencyMs = (System.nanoTime() - started) / 1_000_000L)
+                }
+            }.awaitAll()
+        }.also { results -> qobuzTokenHealth.update { it + results } }
+    }
+
+    /** The settings page's instance test: the same search + download-music probe per configured base. */
+    suspend fun checkQobuzInstances(instances: List<String>, probeTrack: String, quality: String) {
+        val formatId = when (quality) {
+            "HI_RES" -> 7
+            "MAX" -> 27
+            else -> 6
+        }
+        coroutineScope {
+            instances.map { base ->
+                async {
+                    val started = System.nanoTime()
+                    val status = try {
+                        qobuzProbe.verify(base, probeTrack.ifBlank { null }, formatId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        SourceHealthStatus.UNREACHABLE
+                    }
+                    base to SourceHealth(status, latencyMs = (System.nanoTime() - started) / 1_000_000L)
+                }
+            }.awaitAll()
+        }.also { results -> qobuzInstanceHealth.update { it + results } }
+    }
+
+    fun forgetQobuzTokenHealth(ids: Set<String>) {
+        qobuzTokenHealth.update { it - ids }
+    }
+
+    fun forgetQobuzInstanceHealth(instances: Set<String>) {
+        qobuzInstanceHealth.update { it - instances }
+    }
+
+    suspend fun qobuzSecretCandidates(): List<String> = qobuzScrape.candidates().orEmpty()
+
+    suspend fun verifyQobuzToken(entry: QobuzTokenEntry): SourceHealthStatus =
+        try {
+            qobuzVerifier.verify(entry)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            SourceHealthStatus.UNREACHABLE
+        }
 
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
@@ -143,6 +222,7 @@ internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
 
 private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
+    "settings/qobuz", QobuzLoginRoute, DeezerLoginRoute,
     "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
     DesktopListenTogetherSettingsRoute, "settings/misc", "settings/logcat", "settings/backup_restore",
     "settings/lyrics/providers",
@@ -284,6 +364,33 @@ internal fun DesktopSettingsScreen(
                 onFailure = onFailure,
                 onNotice = onNotice,
                 scrollTo = scrollTo,
+            )
+            DeezerLoginRoute -> DesktopDeezerLoginPage(owners.deezerWeb, navigation)
+            "settings/qobuz" -> {
+                val tokenHealth by owners.qobuzTokenHealth.collectAsState()
+                val instanceHealth by owners.qobuzInstanceHealth.collectAsState()
+                QobuzSettings(
+                    controller = owners.controller,
+                    tokenHealth = tokenHealth,
+                    instanceHealth = instanceHealth,
+                    checkTokens = owners::checkQobuzTokens,
+                    checkInstances = owners::checkQobuzInstances,
+                    forgetTokenHealth = owners::forgetQobuzTokenHealth,
+                    forgetInstanceHealth = owners::forgetQobuzInstanceHealth,
+                    copyToClipboard = ::copyToDesktopClipboard,
+                    navigate = navigate,
+                    onNotice = onNotice,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            QobuzLoginRoute -> QobuzLoginScreen(
+                controller = owners.controller,
+                scrapeCandidates = owners::qobuzSecretCandidates,
+                verify = owners::verifyQobuzToken,
+                openWebPlayer = { openDesktopUri("https://play.qobuz.com/", graph::report) },
+                navigateUp = { navigation.back() },
+                onFailure = onFailure,
             )
             "settings/qqmusic" -> {
                 val loginState by owners.qqMusic.loginState.collectAsState()
