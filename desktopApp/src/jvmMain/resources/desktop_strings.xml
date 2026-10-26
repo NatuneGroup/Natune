@@ -77,6 +77,10 @@
     <string name="queue_remove">Remove from queue</string>
     <string name="player_menu_copy_link">Copy link</string>
     <string name="player_menu_sleep_timer">Sleep timer</string>
+    <string name="player_menu_add_to_playlist">Add to playlist</string>
+    <string name="player_menu_new_playlist">New playlist</string>
+    <string name="player_menu_create">Create</string>
+    <string name="player_menu_details">Details</string>
     <string name="appearance_theme">Theme &amp; colours</string>
     <string name="appearance_theme_desc">Colour palette, dark mode, fonts, Liquid Glass</string>
     <string name="appearance_player">Player</string>

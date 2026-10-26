@@ -119,7 +119,7 @@ fun PlayerQueueMenu(
                     ),
                 )
             }
-            if (!track.isLocal) {
+            if (!track.isLocal && state.radioSupported) {
                 add(
                     PlayerQueueGridItem(
                         label = Res.string.m5pq_start_radio,
@@ -191,7 +191,7 @@ fun PlayerQueueMenu(
                     ),
                 )
             }
-            if (!isQueue) {
+            if (!isQueue && state.alwaysOnDisplaySupported) {
                 add(
                     PlayerQueueGridItem(
                         label = Res.string.m5pq_aod_mode,
@@ -337,7 +337,7 @@ fun PlayerQueueMenu(
                     item { Spacer(modifier = Modifier.height(12.dp)) }
                 }
 
-                if (!track.isLocal) {
+                if (!track.isLocal && state.downloadsSupported) {
                     item {
                         PlayerQueueSurface(modifier = Modifier.padding(vertical = 6.dp)) {
                             when (state.download) {
@@ -424,14 +424,16 @@ fun PlayerQueueMenu(
                             )
                             PlayerQueueDivider()
                         }
-                        PlayerQueueRow(
-                            headline = stringResource(Res.string.m5pq_acoustic_quality_title),
-                            leading = { icon(PlayerQueueMenuIcon.GRAPHIC_EQ, LocalContentColor.current, Modifier) },
-                            onClick = {
-                                onDismiss()
-                                actions.openAcousticQuality(track)
-                            },
-                        )
+                        if (state.acousticQualitySupported) {
+                            PlayerQueueRow(
+                                headline = stringResource(Res.string.m5pq_acoustic_quality_title),
+                                leading = { icon(PlayerQueueMenuIcon.GRAPHIC_EQ, LocalContentColor.current, Modifier) },
+                                onClick = {
+                                    onDismiss()
+                                    actions.openAcousticQuality(track)
+                                },
+                            )
+                        }
                         PlayerQueueRow(
                             headline = stringResource(Res.string.m5pq_details),
                             leading = { icon(PlayerQueueMenuIcon.INFO, LocalContentColor.current, Modifier) },
@@ -451,12 +453,14 @@ fun PlayerQueueMenu(
                                 )
                                 PlayerQueueDivider()
                             }
-                            PlayerQueueRow(
-                                headline = stringResource(Res.string.m5pq_equalizer),
-                                leading = { icon(PlayerQueueMenuIcon.EQUALIZER, LocalContentColor.current, Modifier) },
-                                onClick = { actions.openEqualizer() },
-                            )
-                            PlayerQueueDivider()
+                            if (state.equalizerSupported) {
+                                PlayerQueueRow(
+                                    headline = stringResource(Res.string.m5pq_equalizer),
+                                    leading = { icon(PlayerQueueMenuIcon.EQUALIZER, LocalContentColor.current, Modifier) },
+                                    onClick = { actions.openEqualizer() },
+                                )
+                                PlayerQueueDivider()
+                            }
                             PlayerQueueRow(
                                 headline = stringResource(Res.string.m5pq_tempo_and_pitch),
                                 leading = { icon(PlayerQueueMenuIcon.SPEED, LocalContentColor.current, Modifier) },
