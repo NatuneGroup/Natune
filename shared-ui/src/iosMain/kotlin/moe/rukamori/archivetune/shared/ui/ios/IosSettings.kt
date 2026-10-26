@@ -37,10 +37,12 @@ import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceState
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
 import moe.rukamori.archivetune.shared.domain.settings.QobuzTokenEntry
 import moe.rukamori.archivetune.shared.domain.settings.SourceHealth
 import moe.rukamori.archivetune.shared.domain.settings.SourceHealthStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalAuthFlowDevice
+import moe.rukamori.archivetune.shared.domain.settings.TidalDeviceLink
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceHealth
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
@@ -73,8 +75,8 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
- * TIDAL account endpoints. This build carries no TIDAL device client, so the device sign-in row reports itself
- * unavailable, and a pasted refresh token is verified with TIDAL instead.
+ * TIDAL account endpoints. A build without a TIDAL device client leaves the device sign-in row disabled and a pasted
+ * refresh token is still verified with TIDAL; with a device client the real device-authorization flow runs.
  */
 internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     val controller = SettingsController(
@@ -85,6 +87,10 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
     )
     val accounts = graph.accountLifecycle
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
+
+    /** The device-link flow when this build carries a TIDAL device client, else the row stays disabled. */
+    val tidalDeviceLink: TidalDeviceLink? =
+        if (graph.tidalAuth.deviceSignInAvailable) TidalAccountDeviceLink(graph.tidalAuth) else null
 
     /** Whether this build names a pool deployment, so the pool rows report their real availability. */
     val poolConfigured: Boolean get() = graph.playbackPool.configured
@@ -247,7 +253,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 TidalSettings(
                     controller = owners.controller,
                     accounts = owners.accounts,
-                    deviceLink = null,
+                    deviceLink = owners.tidalDeviceLink,
                     openExternal = { uri -> openIosUri(uri, host::report) },
                     instanceHealth = health,
                     checkInstances = owners::checkTidalInstances,
