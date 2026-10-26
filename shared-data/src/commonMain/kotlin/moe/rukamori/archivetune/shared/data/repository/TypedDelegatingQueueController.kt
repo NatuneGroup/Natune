@@ -36,6 +36,9 @@ class TypedDelegatingQueueController(
     /** Shuffle is not a [ContinuationQueueController] command, so the host reaches it here, inside the owner's lock. */
     suspend fun setShuffle(enabled: Boolean): Boolean = owner.withQueueAccess { owner.setShuffle(enabled) }
 
+    /** "Start radio" on the song playing now. False when it cannot seed a watch-next queue. */
+    suspend fun startRadioSeamlessly(): Boolean = owner.withQueueAccess { owner.startRadioSeamlessly() }
+
     override suspend fun checkpoint(): Boolean = owner.withQueueAccess {
         val savedRevision = checkpoints.read()?.queue?.revision
         if (savedRevision != null) {

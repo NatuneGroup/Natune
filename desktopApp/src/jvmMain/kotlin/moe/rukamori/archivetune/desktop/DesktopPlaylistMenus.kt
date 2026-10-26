@@ -36,6 +36,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
+import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
+import moe.rukamori.archivetune.shared.domain.repository.radioQueueRequest
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportDestination
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportNaming
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTag
@@ -78,9 +82,10 @@ internal const val DesktopTagsRoute = "library/tags"
 /**
  * The playlist menus of the desktop host: the shared playlist overflow menu over the local playlist, the tag assignment
  * dialog over the portable tag store, and the CSV export to a file the user chooses. Speed-dial pins are owned by the
- * ordinary settings store. Rows without a desktop owner (the download group, per-playlist YouTube sync and hiding) are
- * hidden by the shared menu's capability facts; the remaining unconnected host members answer with the unavailable
- * notice instead of a silent no-op.
+ * ordinary settings store, and playlist radio seeds a watch-next collection off the provider page's own radio
+ * endpoint. Rows without a desktop owner (the download group, per-playlist YouTube sync and hiding) are hidden by
+ * the shared menu's capability facts; the remaining unconnected host members answer with the unavailable notice
+ * instead of a silent no-op.
  */
 internal class DesktopPlaylistMenuState(
     private val graph: DesktopSessionGraph,
@@ -102,7 +107,36 @@ internal class DesktopPlaylistMenuState(
     private var refusedAsUnavailable = false
 
     val host: PlaylistMenuHost = object : PlaylistMenuHost {
-        override suspend fun startPlaylistRadio(playlist: ContentRef) { unavailable() }
+        /**
+         * Android's playlist-menu radio row: the provider page's own `radioEndpoint` seeds a watch-next
+         * collection (`playQueue(YouTubeQueue(endpoint))`). A local playlist has no endpoint and reports
+         * unavailable; a provider page without one is reported, not silently ignored.
+         */
+        override suspend fun startPlaylistRadio(playlist: ContentRef) {
+            if (playlist.provider != ContentProvider.YOUTUBE.id || playlist.kind != ContentKind.PLAYLIST) {
+                unavailable()
+                return
+            }
+            val endpoint = withContext(Dispatchers.IO) {
+                YouTube.playlist(playlist.id).getOrThrow().playlist.radioEndpoint
+            }
+            val seed = when {
+                endpoint?.playlistId != null ->
+                    ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PLAYLIST, endpoint.playlistId)
+                endpoint?.videoId != null ->
+                    ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, endpoint.videoId)
+                else -> {
+                    graph.report("playlist radio: the provider page has no radio endpoint")
+                    return
+                }
+            }
+            graph.queue.load(
+                QueueLoadRequest(
+                    collection = radioQueueRequest(seed, endpoint.playlistSetVideoId, endpoint.params),
+                    kind = QueueCollectionKind.RADIO,
+                ),
+            )
+        }
         override suspend fun setSpeedDialPinned(playlist: ContentRef, pinned: Boolean) {
             require(playlist.provider == ContentProvider.LOCAL.id) { "Only local playlists pin to the speed dial" }
             graph.settings.edit {

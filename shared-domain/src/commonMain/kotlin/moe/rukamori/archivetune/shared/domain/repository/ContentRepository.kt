@@ -37,6 +37,8 @@ data class ContentItem(
     val album: String? = null,
     val artists: List<ContentCredit> = emptyList(),
     val albumId: String? = null,
+    /** Android's `ExtraIsMusicVideo` extra: the provider marked this entry a music video, so Hide Video drops it. */
+    val isVideo: Boolean = false,
 ) {
     init {
         require(albumId == null || albumId.isNotBlank())

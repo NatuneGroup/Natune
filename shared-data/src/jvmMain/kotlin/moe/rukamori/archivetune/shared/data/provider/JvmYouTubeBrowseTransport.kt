@@ -8,6 +8,9 @@ import moe.rukamori.archivetune.innertube.models.EpisodeItem
 import moe.rukamori.archivetune.innertube.models.PlaylistItem
 import moe.rukamori.archivetune.innertube.models.PodcastItem
 import moe.rukamori.archivetune.innertube.models.SongItem
+import moe.rukamori.archivetune.innertube.models.WatchEndpoint
+import moe.rukamori.archivetune.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_OMV
+import moe.rukamori.archivetune.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_UGC
 import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -28,9 +31,7 @@ class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTranspor
             is YouTubeBrowse.Playlist -> playlistPage(browse.playlistId, continuation)
             is YouTubeBrowse.Album -> albumPage(browse.browseId, continuation)
             is YouTubeBrowse.Search -> searchPage(browse, continuation)
-            is YouTubeBrowse.Section -> catalogueSectionPage(browse)
-            is YouTubeBrowse.ArtistItems -> catalogueArtistItemsPage(browse, continuation)
-            is YouTubeBrowse.Watch -> catalogueWatchPage(browse, continuation)
+            is YouTubeBrowse.WatchNext -> watchNextPage(browse, continuation)
         }
 
     private suspend fun playlistPage(playlistId: String, continuation: String?): YouTubeEntryPage =
@@ -48,6 +49,26 @@ class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTranspor
         if (continuation != null) throw UnsupportedContentOperation()
         val page = YouTube.album(browseId).getOrThrow()
         return YouTubeEntryPage(page.songs.map { it.toSongEntry() })
+    }
+
+    /**
+     * The watch-next queue page of `YouTubeQueue.getInitialStatus`/`nextPage`: the same endpoint and the same
+     * `next` request, page after page. The endpoint stays the seed the queue was opened with, as on Android.
+     */
+    private suspend fun watchNextPage(browse: YouTubeBrowse.WatchNext, continuation: String?): YouTubeEntryPage {
+        val page =
+            YouTube.next(
+                endpoint =
+                    WatchEndpoint(
+                        videoId = browse.videoId,
+                        playlistId = browse.playlistId,
+                        playlistSetVideoId = browse.playlistSetVideoId,
+                        params = browse.params,
+                    ),
+                continuation = continuation,
+                followAutomixPreview = browse.followAutomixPreview,
+            ).getOrThrow()
+        return YouTubeEntryPage(page.items.map { it.toSongEntry() }, page.continuation)
     }
 
     private suspend fun searchPage(browse: YouTubeBrowse.Search, continuation: String?): YouTubeEntryPage {
@@ -153,6 +174,11 @@ private fun SongItem.toSongEntry(): YouTubeEntry =
         explicit = explicit,
         setVideoId = setVideoId,
         album = album?.name,
+        isVideo =
+            endpoint
+                ?.watchEndpointMusicSupportedConfigs
+                ?.watchEndpointMusicConfig
+                ?.musicVideoType in setOf(MUSIC_VIDEO_TYPE_OMV, MUSIC_VIDEO_TYPE_UGC),
         artists = artists.toCredits(),
         albumId = album?.id?.takeIf(String::isNotBlank),
     )
