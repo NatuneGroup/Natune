@@ -6,7 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** The schema version [PortableStateDatabase] declares. Snapshots newer than this cannot be opened by this build. */
-const val PORTABLE_STATE_SCHEMA_VERSION: Int = 7
+const val PORTABLE_STATE_SCHEMA_VERSION: Int = 8
 
 /**
  * Writes a consistent copy of the open database to [target], which must not exist yet. VACUUM INTO reads one snapshot

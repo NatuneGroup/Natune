@@ -63,7 +63,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew --console=plain --stacktrace --profile -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" -Pkotlin.daemon.jvmargs="-Xmx4g" assembleGmsMobileUniversalDebug :app:lintGmsMobileUniversalDebug --warning-mode summary 2>&1 | python3 -u -c '
+          # gradle.properties caps daemons at 1.5 GiB for the local 8 GiB workspace; the runner
+          # has more RAM, and the app module needs a bigger Kotlin daemon to compile.
+          ./gradlew --console=plain --stacktrace --profile "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
+            assembleGmsMobileUniversalDebug :app:lintGmsMobileUniversalDebug --warning-mode summary 2>&1 | python3 -u -c '
           import re
           import sys
           warning = re.compile(r"^(WARNING: )?\[CXX5202\] This app only has 32-bit \[(armeabi-v7a|x86)\] native libraries\. Beginning August 1, 2019 Google Play store requires that all apps that include native libraries must provide 64-bit versions\. For more information, visit https://g\.co/64-bit-requirement$")
@@ -92,7 +95,8 @@ jobs:
         run: |
           set -euo pipefail
           # Fast Kotlin compile over the shared tree — the shared-ui JVM target is `desktop`.
-          ./gradlew --console=plain --stacktrace \
+          ./gradlew --console=plain --stacktrace "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
+            :shared:compileKotlinJvm \
             :shared-domain:compileKotlinJvm \
             :shared-data:compileKotlinJvm \
             :shared-ui:compileKotlinDesktop \
