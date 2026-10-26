@@ -21,12 +21,16 @@ class KtorTidalRepository(
     instanceBase: String? = null,
     apiBase: String = "https://tidal.com/v1",
     private val countryCode: String = "US",
+    resolver: TidalInstanceResolver? = null,
+    private val instances: () -> List<String> = { emptyList() },
 ) : PagedAudioProvider("tidal:${access.scope}:$apiBase:$instanceBase:$countryCode") {
     override val provider = ContentProvider.TIDAL
     override val source = AudioSourceType.TIDAL
     private val http = ProviderHttp(client)
     private val api = endpoint(apiBase)
     private val instance = instanceBase?.let(::endpoint)
+    /** The retained instance-racing resolver; shared across access scopes by the credential owner. */
+    private val instanceResolver = resolver ?: TidalInstanceResolver(client)
     private fun headers(): Map<String, String> {
         if (!access.isActive()) throw UnsupportedContentOperation()
         return when {
@@ -42,7 +46,7 @@ class KtorTidalRepository(
         val root = when (request.surface) {
             ContentSurface.SEARCH -> {
                 val query = requireNotNull(request.text).also { require(it.isNotBlank()) }
-                if (instance != null) http.json("$instance/search/", params + ("s" to query)).jsonObject
+                if (instance != null) http.json("$instance/search", params + ("s" to query)).jsonObject
                 else http.json("$api/search/tracks", locale + params + ("query" to query), headers()).jsonObject
             }
             ContentSurface.ALBUM -> http.json("$api/albums/${pathId(requireNotNull(request.parent).id)}/tracks",
@@ -63,52 +67,58 @@ class KtorTidalRepository(
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         if (!access.isActive()) throw UnsupportedContentOperation()
-        val track = match(request) ?: return null
         val quality = request.qualities[source] ?: "LOSSLESS"
         require(quality in setOf("HIGH", "LOW", "LOSSLESS", "HI_RES_LOSSLESS", "HI_RES", "DOLBY_ATMOS"))
-        val root: JsonObject
+        val query = TidalInstanceResolver.Query(
+            mediaId = request.mediaId,
+            title = request.target.title,
+            artists = request.target.artists,
+            album = request.target.album,
+            isrc = request.isrc,
+            durationMs = request.target.durationMs,
+        )
         if (!access.bearer.isNullOrBlank()) {
-            root = http.json("$api/tracks/${pathId(track.item.ref.id)}/playbackinfopostpaywall",
+            // Account path: official playbackinfopostpaywall manifest on the same scored candidate.
+            val track = instanceResolver.selectTracks(query).firstOrNull()
+                ?.let(instanceResolver::providerTrackOf) ?: return null
+            val root = http.json("$api/tracks/${pathId(track.item.ref.id)}/playbackinfopostpaywall",
                 mapOf("audioquality" to quality, "playbackmode" to "STREAM", "assetpresentation" to "FULL"),
                 mapOf("Authorization" to "Bearer ${access.bearer}")).jsonObject
-        } else {
-            val base = instance ?: throw UnsupportedContentOperation()
-            val format = when (quality) {
-                "HI_RES", "HI_RES_LOSSLESS" -> "FLAC_HIRES"
-                "LOSSLESS" -> "FLAC"
-                "DOLBY_ATMOS" -> "EAC3_JOC"
-                else -> null
-            }
-            val response = if (format == null) oldManifest(base, track.item.ref.id, quality) else try {
-                http.json("$base/trackManifests/", mapOf("id" to track.item.ref.id, "formats" to format,
-                    "adaptive" to "false", "manifestType" to "MPEG_DASH", "uriScheme" to "HTTPS",
-                    "usage" to "PLAYBACK")).jsonObject
-            } catch (failure: ProviderHttpFailure) {
-                if (failure.status != 404) throw failure
-                oldManifest(base, track.item.ref.id, quality)
-            }
-            root = response.obj("data") ?: response
-            val attributes = root.obj("data")?.obj("attributes")
-            if (attributes != null) {
-                if (attributes.preview()) return null
-                val returned = attributes.array("formats")?.map { it.jsonPrimitive.content }.orEmpty()
-                if (format !in returned) return null
-                val uri = attributes.text("uri") ?: throw ProviderProtocolFailure()
-                return manifest(request, track, quality, http.text(streamUrl(uri)))
-            }
+            if (root.preview()) return null
+            val data = root.obj("data") ?: root
+            if (data.preview()) return null
+            val encoded = data.text("manifest") ?: throw ProviderProtocolFailure()
+            val raw = try { Base64.decode(encoded).decodeToString(throwOnInvalidSequence = true) }
+                catch (failure: Exception) { throw ProviderProtocolFailure() }
+            return manifest(request, track, quality, raw)
         }
-        if (root.preview()) return null
-        val data = root.obj("data") ?: root
-        if (data.preview()) return null
-        val encoded = data.text("manifest") ?: throw ProviderProtocolFailure()
-        val raw = try { Base64.decode(encoded).decodeToString(throwOnInvalidSequence = true) }
-            catch (failure: Exception) { throw ProviderProtocolFailure() }
-        return manifest(request, track, quality, raw)
+        // Public-instance path: the retained racing resolver (no bundled hosts; the configured or
+        // pool-discovered list is required, exactly as the original). An empty list throws like
+        // the original's "TIDAL playback has no configured instance".
+        val configured = instances()
+        instanceResolver.setInstances(configured.ifEmpty { listOfNotNull(instance) })
+        val preferAtmos = quality.equals("DOLBY_ATMOS", ignoreCase = true)
+        val audioQuality = when {
+            quality.equals("HI_RES_LOSSLESS", true) || quality.equals("HI_RES", true) ->
+                TidalInstanceResolver.TidalAudioQuality.HI_RES_LOSSLESS
+            quality.equals("LOSSLESS", true) || preferAtmos -> TidalInstanceResolver.TidalAudioQuality.FLAC
+            else -> TidalInstanceResolver.TidalAudioQuality.AAC_320
+        }
+        return instanceResolver.resolve(
+            query,
+            preferAtmos = preferAtmos,
+            audioQuality = audioQuality,
+            accountScope = streamAccount(access.scope),
+            trustedTrackId = request.directIds[source],
+        ).prepared
     }
-    private suspend fun oldManifest(base: String, id: String, quality: String) =
-        http.json("$base/track/", mapOf("id" to id, "quality" to quality)).jsonObject
 
-    private fun manifest(request: AudioResolveRequest, track: ProviderTrack, quality: String, text: String): PreparedAudio? {
+    private fun manifest(
+        request: AudioResolveRequest,
+        track: ProviderTrack,
+        quality: String,
+        text: String,
+    ): PreparedAudio? {
         if (!access.isActive()) throw UnsupportedContentOperation()
         if (text.trimStart().startsWith("<")) {
             require(!text.contains("<!DOCTYPE", true) && !text.contains("<!ENTITY", true))
