@@ -15,19 +15,23 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.sin
 
-internal enum class PlayerSymbol { PREVIOUS, NEXT, PLAY, PAUSE, REPLAY, SHUFFLE, REPEAT, HEART, SHARE, MORE, SLEEP, DOWN, LYRICS, QUEUE, BACK, EXPAND }
+internal enum class PlayerSymbol { PREVIOUS, NEXT, PLAY, PAUSE, REPLAY, SHUFFLE, REPEAT, HEART, SHARE, MORE, SLEEP, DOWN, LYRICS, QUEUE, BACK, EXPAND, OUTPUT, STAR, VOLUME_LOW, VOLUME_UP, ADD, BEDTIME, CLOSE_X }
 
 internal fun PlayerAction.symbol() = when (this) {
     PlayerAction.PREVIOUS -> PlayerSymbol.PREVIOUS
@@ -38,6 +42,7 @@ internal fun PlayerAction.symbol() = when (this) {
     PlayerAction.SHARE -> PlayerSymbol.SHARE
     PlayerAction.SLEEP -> PlayerSymbol.SLEEP
     PlayerAction.COLLAPSE -> PlayerSymbol.DOWN
+    PlayerAction.OUTPUT -> PlayerSymbol.OUTPUT
     else -> PlayerSymbol.MORE
 }
 
@@ -50,6 +55,7 @@ internal fun PlayerAction.label(): StringResource = when (this) {
     PlayerAction.SHARE -> Res.string.m5_share
     PlayerAction.SLEEP -> Res.string.m5_sleep
     PlayerAction.COLLAPSE -> Res.string.m5_collapse
+    PlayerAction.OUTPUT -> Res.string.m5_output
     else -> Res.string.m5_more
 }
 
@@ -65,21 +71,30 @@ internal fun PlayerIcon(
     square: Boolean = false,
     secondary: Boolean = false,
     stateLabel: String? = null,
+    size: Dp = if (large) 76.dp else 48.dp,
+    iconSize: Dp = if (large) 34.dp else 24.dp,
+    width: Dp? = null,
+    container: Color? = null,
+    contentColor: Color = Color.Unspecified,
+    shape: Shape = if (square) RoundedCornerShape(20.dp) else CircleShape,
 ) {
-    val size = if (large) 76.dp else 48.dp
-    val color = if (large || secondary) MaterialTheme.colorScheme.onPrimaryContainer else LocalContentColor.current
-    val shape = if (square) RoundedCornerShape(20.dp) else CircleShape
+    val containerColor = container ?: if (large || secondary) MaterialTheme.colorScheme.primaryContainer else null
+    val color = when {
+        contentColor != Color.Unspecified -> contentColor
+        containerColor != null -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> LocalContentColor.current
+    }
     IconButton(
         onClick = onClick, enabled = enabled,
-        modifier = modifier.size(size).then(
-            if (large || secondary) Modifier.background(MaterialTheme.colorScheme.primaryContainer, shape) else Modifier,
+        modifier = modifier.size(width ?: size, size).then(
+            if (containerColor != null) Modifier.background(containerColor, shape) else Modifier,
         ).semantics {
             contentDescription = label
             if (selected != null) this.selected = selected
             if (stateLabel != null) stateDescription = stateLabel
         },
     ) {
-        Canvas(Modifier.size(if (large) 34.dp else 24.dp)) {
+        Canvas(Modifier.size(iconSize)) {
             val c = color.copy(alpha = if (enabled) 1f else .38f)
             val w = this.size.width
             val h = this.size.height
@@ -120,6 +135,42 @@ internal fun PlayerIcon(
                 PlayerSymbol.SLEEP -> { drawCircle(c, w * .32f, center = Offset(w*.5f,h*.5f), style=stroke); line(.5f,.3f,.5f,.5f); line(.5f,.5f,.65f,.6f) }
                 PlayerSymbol.EXPAND -> { line(.2f,.4f,.2f,.2f); line(.2f,.2f,.4f,.2f); line(.8f,.6f,.8f,.8f); line(.8f,.8f,.6f,.8f) }
                 PlayerSymbol.LYRICS, PlayerSymbol.QUEUE -> for (y in listOf(.25f,.5f,.75f)) line(.2f,y,if(symbol==PlayerSymbol.LYRICS && y==.75f) .6f else .8f,y)
+                PlayerSymbol.OUTPUT -> {
+                    drawRoundRect(c,Offset(w*.18f,h*.3f),Size(w*.64f,h*.36f),CornerRadius(w*.04f),style=stroke)
+                    drawArc(c,215f,110f,true,Offset(w*.28f,h*.62f),Size(w*.44f,h*.44f),style=Stroke(w*.07f,cap=StrokeCap.Round))
+                }
+                PlayerSymbol.STAR -> {
+                    val cx=w*.5f; val cy=h*.52f; val outer=w*.4f; val inner=outer*.42f
+                    val path=Path()
+                    for(i in 0 until 10) {
+                        val ang=(-90.0+i*36.0)*PI/180.0
+                        val rad=if(i%2==0) outer else inner
+                        val px=cx+(cos(ang)*rad).toFloat(); val py=cy+(sin(ang)*rad).toFloat()
+                        if(i==0) path.moveTo(px,py) else path.lineTo(px,py)
+                    }
+                    path.close()
+                    drawPath(path,c,style=if(selected==true) androidx.compose.ui.graphics.drawscope.Fill else stroke)
+                }
+                PlayerSymbol.VOLUME_LOW, PlayerSymbol.VOLUME_UP -> {
+                    val cone=Path().apply {
+                        moveTo(w*.14f,h*.4f); lineTo(w*.38f,h*.4f); lineTo(w*.66f,h*.16f)
+                        lineTo(w*.66f,h*.84f); lineTo(w*.38f,h*.6f); lineTo(w*.14f,h*.6f); close()
+                    }
+                    drawPath(cone,c)
+                    drawArc(c,-70f,140f,true,Offset(w*.55f,h*.32f),Size(w*.28f,h*.36f),style=stroke)
+                    if(symbol==PlayerSymbol.VOLUME_UP)
+                        drawArc(c,-70f,140f,true,Offset(w*.62f,h*.2f),Size(w*.34f,h*.6f),style=stroke)
+                }
+                PlayerSymbol.ADD -> { line(.28f,.5f,.72f,.5f); line(.5f,.28f,.5f,.72f) }
+                PlayerSymbol.BEDTIME -> {
+                    val crescent=Path().apply {
+                        addOval(androidx.compose.ui.geometry.Rect(Offset(w*.14f,h*.14f),Size(w*.68f,h*.68f)))
+                        addOval(androidx.compose.ui.geometry.Rect(Offset(w*.38f,h*.06f),Size(w*.62f,h*.62f)))
+                        fillType=PathFillType.EvenOdd
+                    }
+                    drawPath(crescent,c)
+                }
+                PlayerSymbol.CLOSE_X -> { line(.26f,.26f,.74f,.74f); line(.74f,.26f,.26f,.74f) }
             }
         }
     }

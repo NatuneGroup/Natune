@@ -84,8 +84,8 @@ fun dispatchNativePlayerAction(
         })
         PlayerAction.SEEK_BACKWARD, PlayerAction.SEEK_FORWARD ->
             if (native.canSeek && playback?.isSeekable == true) controls.seekStep(action == PlayerAction.SEEK_FORWARD)
-        PlayerAction.LIKE, PlayerAction.SHARE, PlayerAction.MORE, PlayerAction.TITLE, PlayerAction.ARTIST ->
-            controls.onAction(action, playback?.occurrenceId)
+        PlayerAction.LIKE, PlayerAction.SHARE, PlayerAction.MORE, PlayerAction.TITLE, PlayerAction.ARTIST,
+        PlayerAction.OUTPUT -> controls.onAction(action, playback?.occurrenceId)
         PlayerAction.COLLAPSE, PlayerAction.SLEEP -> Unit // Handled without a track above.
     }
 }

@@ -26,4 +26,9 @@
     <string name="m5_on">On</string>
     <string name="m5_off">Off</string>
     <string name="m5_repeat_one">Repeat one</string>
+    <string name="m5_output">Output</string>
+    <string name="m5_now_playing">Now playing</string>
+    <string name="m5_playing_from">Playing from %1$s</string>
+    <string name="m5_close">Close</string>
+    <string name="m5_add_to_playlist">Add to playlist</string>
 </resources>

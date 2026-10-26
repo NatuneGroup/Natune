@@ -16,7 +16,8 @@ fun queuePlayerState(queue: QueueState,playback: PlaybackSnapshot?,active: Boole
     val item=queue.entries.firstOrNull { it.occurrenceId==occurrenceId }?.item
     val index=queue.playOrder.indexOf(occurrenceId)
     return PlayerState(playback,item?.title.orEmpty(),item?.subtitle.orEmpty(),queue.playOrder,
-        canPrevious=index>0,canNext=index>=0 && index<queue.playOrder.lastIndex,active=active)
+        canPrevious=index>0,canNext=index>=0 && index<queue.playOrder.lastIndex,active=active,
+        albumTitle=item?.album,explicit=item?.explicit ?: false)
 }
 
 /**
