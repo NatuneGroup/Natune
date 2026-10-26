@@ -168,7 +168,7 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
         if (generation != tidalWebGeneration) return
         tidalWebState.value = when (outcome) {
             ProviderSignInOutcome.Accepted ->
-                ProviderSignInState.SignedIn(session.username ?: session.userId?.toString().orEmpty())
+                ProviderSignInState.SignedIn(session.accountName ?: session.userId?.toString().orEmpty())
             ProviderSignInOutcome.NotSaved -> ProviderSignInState.Failed(ProviderSignInFailure.NOT_SAVED)
             else -> ProviderSignInState.Failed(ProviderSignInFailure.UNVERIFIED)
         }

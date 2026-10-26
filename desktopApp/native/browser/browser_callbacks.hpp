@@ -279,12 +279,15 @@ public:
         done_ = env->GetMethodID(type, "onDone", "()V");
         cookies_ = env->GetMethodID(type, "onCookies", "(J[[Ljava/lang/String;)V");
         closed_ = env->GetMethodID(type, "onClosed", "(Z)V");
+        // Optional: only present when the attempt asked for a capture prefix. Null keeps older windows working.
+        navigate_ = env->GetMethodID(type, "onNavigate", "(Ljava/lang/String;)V");
         env->DeleteLocalRef(type);
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
             done_ = nullptr;
             cookies_ = nullptr;
             closed_ = nullptr;
+            navigate_ = nullptr;
         }
     }
 
@@ -299,6 +302,16 @@ public:
 
     void notifyDone() {
         withEnv([this](JNIEnv* env) { env->CallVoidMethod(target_, done_); });
+    }
+
+    /* A navigation matching the attempt's capture prefix: the one URL the window reports, and only then. */
+    void notifyNavigation(const std::string& url) {
+        if (!navigate_) return;
+        withEnv([&](JNIEnv* env) {
+            jstring value = javaString(env, url);
+            env->CallVoidMethod(target_, navigate_, value);
+            if (value) env->DeleteLocalRef(value);
+        });
     }
 
     /* A null rows pointer reports a failed or oversized read; the Kotlin side treats it as unavailable. */
@@ -358,6 +371,7 @@ private:
     jmethodID done_ = nullptr;
     jmethodID cookies_ = nullptr;
     jmethodID closed_ = nullptr;
+    jmethodID navigate_ = nullptr;
 };
 
 }  // namespace archivetune::browser

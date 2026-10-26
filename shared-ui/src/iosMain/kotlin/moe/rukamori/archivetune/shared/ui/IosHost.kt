@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.stateIn
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
 import moe.rukamori.archivetune.shared.data.platform.ios.*
-import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
+import moe.rukamori.archivetune.shared.data.provider.TIDAL_PKCE_REDIRECT_URI
 import moe.rukamori.archivetune.shared.domain.diagnostics.CrashReport
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLogStore
@@ -75,7 +75,7 @@ class IosHost {
     val embeddedBrowser = IosEmbeddedBrowserAuthPort { viewController }
 
     /** The embedded WKWebView sheet that catches the fixed TIDAL PKCE HTTPS return. */
-    val tidalPkceSheet = IosTidalPkceSheet({ viewController }, TidalAccountAuth.PKCE_REDIRECT_URI)
+    val tidalPkceSheet = IosTidalPkceSheet({ viewController }, TIDAL_PKCE_REDIRECT_URI)
 
     /** Stateless: each evaluation owns a fresh bounded QuickJS runtime, so there is nothing to close. */
     val challenges: ChallengeEvaluator = IosChallengeEvaluator()

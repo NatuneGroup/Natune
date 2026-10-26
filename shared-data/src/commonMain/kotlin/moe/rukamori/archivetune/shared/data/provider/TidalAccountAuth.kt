@@ -85,6 +85,9 @@ sealed interface TidalRefreshResult {
  * Every response is read with a bounded body and a wall timeout, and no request follows a redirect, so a bearer or client
  * secret never travels to another host. Failures carry no response text.
  */
+/** The fixed https return the embedded TIDAL PKCE WebView intercepts — the same URI the Android flow uses. */
+const val TIDAL_PKCE_REDIRECT_URI = "https://tidal.com/android/login/auth"
+
 class TidalAccountAuth(
     client: HttpClient,
     private val device: TidalClientCredentials?,
@@ -366,7 +369,7 @@ class TidalAccountAuth(
     private companion object {
         const val FULL_SCOPE = "r_usr+w_usr+w_sub"
         const val PKCE_AUTHORIZE_ENDPOINT = "https://login.tidal.com/authorize"
-        const val PKCE_REDIRECT_URI = "https://tidal.com/android/login/auth"
+        const val PKCE_REDIRECT_URI = TIDAL_PKCE_REDIRECT_URI
         const val REDUCED_SCOPE = "r_usr+w_usr"
         const val DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
         const val AUTH_USER_AGENT = "TIDAL/1000 (Linux; Android 10)"
