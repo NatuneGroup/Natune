@@ -27,7 +27,7 @@ on:
 jobs:
   android:
     name: Android ${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read
     outputs:
@@ -228,21 +228,21 @@ jobs:
         include:
           - platform: windows
             arch: x64
-            runner: windows-latest
+            runner: blacksmith-2vcpu-windows-2025
           - platform: linux
             arch: x64
             appimage_arch: x86_64
-            runner: ubuntu-24.04
+            runner: blacksmith-8vcpu-ubuntu-2404
           - platform: linux
             arch: arm64
             appimage_arch: aarch64
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-8vcpu-ubuntu-2404-arm
           - platform: macos
             arch: x64
-            runner: macos-13
+            runner: blacksmith-6vcpu-macos-latest
           - platform: macos
             arch: arm64
-            runner: macos-latest
+            runner: blacksmith-6vcpu-macos-latest
     env:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
@@ -517,7 +517,7 @@ jobs:
 
   ios:
     name: Unsigned iOS IPA
-    runs-on: macos-latest
+    runs-on: blacksmith-6vcpu-macos-latest
     permissions:
       contents: read
     env:
@@ -627,7 +627,7 @@ jobs:
       - android
       - desktop
       - ios
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: write
     concurrency:
@@ -783,7 +783,7 @@ jobs:
     name: Publish ${{ inputs.channel }} update-feed manifest
     needs: publish-release
     if: needs.publish-release.outputs.did_publish == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: write
     concurrency:
