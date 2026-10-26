@@ -16,6 +16,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -31,14 +32,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
+import moe.rukamori.archivetune.shared.domain.settings.LyricsRomanizeChineseKey
+import moe.rukamori.archivetune.shared.domain.settings.LyricsRomanizeHindiKey
+import moe.rukamori.archivetune.shared.domain.settings.LyricsRomanizeJapaneseKey
+import moe.rukamori.archivetune.shared.domain.settings.LyricsRomanizeKoreanKey
+import moe.rukamori.archivetune.shared.domain.settings.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
@@ -48,11 +60,16 @@ import moe.rukamori.archivetune.shared.ui.host.hostHistoryPage
 import moe.rukamori.archivetune.shared.ui.host.hostLibraryPage
 import moe.rukamori.archivetune.shared.ui.host.hostPlayOccurrence
 import moe.rukamori.archivetune.shared.ui.host.hostPlaylistPage
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsPhonetics
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsRomanizationPreferences
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsRomanizer
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationPresentation
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationSource
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationState
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
@@ -65,6 +82,7 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_queue_empty
 import moe.rukamori.archivetune.shared.ui.resources.ios_queue_remove
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSURL
+import platform.Foundation.NSURLComponents
 import platform.UIKit.UIApplication
 import platform.UIKit.UIPasteboard
 
@@ -79,19 +97,25 @@ internal val IosOpticalCapabilities = OpticalCapabilities(blur = true, refractio
  * external links are real. A surface whose owner is not connected on this host takes the explicit unbound boundary, so
  * no route shows an empty list, a fake page or a success that never happened.
  */
-internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTuneHostBindings {
+internal fun iosHostBindings(
+    host: IosHost,
+    graph: IosSessionGraph,
+    recognition: IosRecognitionMount,
+): ArchiveTuneHostBindings {
     val controls = IosPlayerControls(graph)
     val settingsOwners = IosSettingsOwners(graph)
+    val itemMenu = IosItemMenuState()
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     return ArchiveTuneHostBindings(
         queue = graph.queue,
         settings = graph.settings,
         actionScope = graph.scope,
-        // This host accepts no deep links yet, and the system back gesture is handled by the shell itself.
-        routes = ownRoutes.receiveAsFlow(),
+        // `archivetune://` links the Swift app session hands in merge with the host's own route opens. The system back
+        // gesture is handled by the shell itself.
+        routes = merge(iosLaunchRoutes(host, graph), ownRoutes.receiveAsFlow()),
         backRequests = emptyFlow(),
-        page = { route -> iosGraphPage(graph, route) { target -> ownRoutes.trySend(target) } },
+        page = { route -> iosGraphPage(graph, itemMenu, recognition, route) { target -> ownRoutes.trySend(target) } },
         artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         formatNewsDate = ::iosDiagnosticTime,
@@ -103,11 +127,12 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
                 IosUnboundSurface(Modifier.fillMaxSize())
             }
         },
-        overlays = { },
-        playerSlots = { expanded, active, _ -> iosPlayerSlots(graph, expanded, active) },
+        overlays = { route -> IosItemMenuDialog(itemMenu, graph, host, route.value) },
+        playerSlots = { expanded, active, _ -> iosPlayerSlots(host, graph, expanded, active) },
         playerControls = controls,
-        // The row menu needs the playlist and download owners this host does not connect yet.
-        more = { graph.report("the row menu is not connected on the iOS host") },
+        // The row menu offers the queue commands this host answers and the custom artwork editor; the rest of the
+        // baseline menu needs owners this host does not connect yet.
+        more = { occurrence -> itemMenu.open(occurrence) },
         playOccurrence = { collection, start -> hostPlayOccurrence(graph.pageOwners, collection, start) },
         openExternal = { uri -> openIosUri(uri, graph::report) },
         onFailure = { graph.report("a host request could not be completed") },
@@ -121,36 +146,93 @@ internal fun iosHostBindings(host: IosHost, graph: IosSessionGraph): ArchiveTune
  * key keeps each route's own page state apart.
  */
 @Composable
-private fun iosGraphPage(graph: IosSessionGraph, route: ArchiveRoute, openRoute: (String) -> Unit): ArchiveGraphPage =
+private fun iosGraphPage(
+    graph: IosSessionGraph,
+    menu: IosItemMenuState,
+    recognition: IosRecognitionMount,
+    route: ArchiveRoute,
+    openRoute: (String) -> Unit,
+): ArchiveGraphPage =
     key(route.value) {
         when (route.destination) {
             ArchiveDestination.LIBRARY ->
                 hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
             ArchiveDestination.PLAYLIST ->
-                hostPlaylistPage(graph.pageOwners, route) { graph.report("the row menu is not connected on the iOS host") }
+                hostPlaylistPage(graph.pageOwners, route) { menu.open(it) }
             ArchiveDestination.HISTORY -> hostHistoryPage(
                 owners = graph.pageOwners,
                 offsetMsAt = ::iosOffsetMsAt,
                 nowMs = ::iosNowMillis,
                 formatTime = ::iosDiagnosticTime,
-                more = { graph.report("the row menu is not connected on the iOS host") },
+                more = { menu.open(it) },
             )
+            ArchiveDestination.MUSIC_RECOGNITION -> iosRecognitionPage(mount = recognition, route)
+            ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> iosRecognitionDetailsPage(recognition, route)
             else -> ArchiveGraphPage.Host
         }
     }
 
 /**
+ * The `archivetune://` links the host receives, resolved into routes the root may open. A link that names no openable
+ * page is reported once and dropped.
+ */
+private fun iosLaunchRoutes(host: IosHost, graph: IosSessionGraph): Flow<String> =
+    host.linkRequests.mapNotNull { link ->
+        iosLaunchRoute(link) ?: run {
+            graph.report("link not opened: it names no page that a link may open")
+            null
+        }
+    }
+
+/**
+ * The route an `archivetune://open/...` link opens, or null when it opens none. The path and query are passed on as
+ * they arrived, and [ArchiveRoutes] decides the destination. A link starts no action: a recognition auto-start
+ * request and the sign-in page are refused, so another program cannot open the microphone or start a sign-in.
+ */
+internal fun iosLaunchRoute(link: String): String? {
+    val components = NSURLComponents.componentsWithString(link) ?: return null
+    val route = components.path.orEmpty().removePrefix("/") +
+        components.percentEncodedQuery?.let { "?$it" }.orEmpty()
+    val resolved = ArchiveRoutes.resolve(route) ?: return null
+    val opensAction = resolved.destination == ArchiveDestination.LOGIN || resolved.arguments.containsKey("autoStart")
+    return route.takeUnless { opensAction }
+}
+
+/**
  * The player's media slots. Lyrics come from the graph's lyrics owner and render through the shared renderers on the
- * player's own snapshot, so a tap seeks the one player. Romanization is off on this host until the Japanese pack is
- * connected to the lyrics surface.
+ * player's own snapshot, so a tap seeks the one player. The Japanese pack romanizes the lines it has loaded: an
+ * absent pack or an opted-out preference publishes the off presentation, as before.
  */
 @Composable
-private fun iosPlayerSlots(graph: IosSessionGraph, expanded: Boolean, active: Boolean): PlayerSlots {
+private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Boolean, active: Boolean): PlayerSlots {
     val document by graph.lyrics.current.collectAsState()
     val saved by graph.settings.snapshots.collectAsState()
     val preferences = saved ?: PreferenceSnapshot.EMPTY
     val sessionKey = document?.occurrenceId ?: NO_LYRICS_SESSION
     val romanization = remember(sessionKey) { LyricsRomanizationState(LyricsRomanizationPresentation.off(sessionKey)) }
+    val japanesePack by host.japaneseLanguagePack.collectAsState()
+    val tokenizer by (japanesePack?.tokenizer ?: flowOf(null)).collectAsState(initial = null)
+    val romanizationPreferences = remember(preferences) {
+        LyricsRomanizationPreferences(
+            romanizeJapanese = preferences[LyricsRomanizeJapaneseKey] ?: false,
+            romanizeKorean = preferences[LyricsRomanizeKoreanKey] ?: false,
+            romanizeChinese = preferences[LyricsRomanizeChineseKey] ?: false,
+            romanizeHindi = preferences[LyricsRomanizeHindiKey] ?: false,
+            romanizeOther = preferences[LyricsRomanizeOtherLanguagesKey] ?: false,
+        )
+    }
+    LaunchedEffect(sessionKey, tokenizer, document?.lines, romanizationPreferences) {
+        if (!romanizationPreferences.isEnabled) {
+            romanization.publish(LyricsRomanizationPresentation.off(sessionKey))
+            return@LaunchedEffect
+        }
+        val lines = document?.lines.orEmpty()
+        val phonetics = withContext(Dispatchers.Default) {
+            val romanizer = LyricsRomanizer(japaneseTokenizer = tokenizer)
+            lines.map { romanizer.phoneticsForLine(it, romanizationPreferences) }
+        }
+        romanization.publish(LyricsRomanizationPresentation(sessionKey, LyricsRomanizationSource.BUILT_IN, phonetics))
+    }
     val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
     val lyrics = playerLyricsSlots(

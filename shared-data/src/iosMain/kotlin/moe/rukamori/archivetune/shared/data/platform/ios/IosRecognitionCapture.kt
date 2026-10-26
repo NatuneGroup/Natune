@@ -4,6 +4,7 @@ package moe.rukamori.archivetune.shared.data.platform.ios
 
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
+import kotlinx.cinterop.get
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -23,6 +24,7 @@ import platform.AVFAudio.AVAudioSessionInterruptionNotification
 import platform.AVFAudio.AVAudioSessionMediaServicesWereResetNotification
 import platform.AVFAudio.AVAudioSessionRecordPermissionDenied
 import platform.AVFAudio.AVAudioSessionRecordPermissionGranted
+import platform.AVFAudio.inputIsAvailable
 import platform.Foundation.NSLock
 import platform.Foundation.NSNotificationCenter
 
@@ -136,7 +138,7 @@ class IosRecognitionCapture : RecognitionPermissionPort, RecognitionCapturePort 
         // The native policy switches the shared session for this window and keeps playback's category intent. The claim
         // is released exactly once by teardown, whichever way the window ends.
         capture.claimRecordingSession()
-        check(session.inputAvailable) { "no microphone input is available" }
+        check(session.inputIsAvailable) { "no microphone input is available" }
 
         val engine = AVAudioEngine()
         capture.attach(engine)

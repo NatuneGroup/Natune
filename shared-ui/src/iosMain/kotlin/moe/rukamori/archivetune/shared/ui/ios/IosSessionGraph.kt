@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -26,10 +27,12 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
+import moe.rukamori.archivetune.shared.data.provider.TidalClientCredentials
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
@@ -76,6 +79,8 @@ internal class IosSessionGraph private constructor(
     val pageOwners: LibraryPageOwners,
     val lyrics: HostLyrics,
     val artworkLoader: IosArtworkLoader,
+    val customArtwork: FileCustomArtworkRepository,
+    val playbackPool: IosPlaybackPool,
     private val owner: PortableQueueOwner,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
@@ -201,9 +206,14 @@ internal class IosSessionGraph private constructor(
             report: (String) -> Unit,
         ): IosSessionGraph {
             val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
-            // This build carries no TIDAL client identity, so the device and browser sign-ins report themselves
-            // unavailable. A pasted refresh token is still verified with TIDAL.
-            val tidalAuth = TidalAccountAuth(http, device = null, pkce = null, nowMs = ::iosNowMillis)
+            // The TIDAL client identities are host-supplied material read from Info.plist; without them the device
+            // and browser sign-ins report themselves unavailable, and a pasted refresh token is still verified.
+            val tidalAuth = TidalAccountAuth(
+                http,
+                device = iosTidalClientCredentials("ArchiveTuneTidalDeviceClientId", "ArchiveTuneTidalDeviceClientSecret"),
+                pkce = iosTidalClientCredentials("ArchiveTuneTidalClientId", "ArchiveTuneTidalClientSecret"),
+                nowMs = ::iosNowMillis,
+            )
             val tidalSessionRefresh = TidalSessionRefresh(
                 tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value }, nowMs = ::iosNowMillis,
             )
@@ -211,9 +221,18 @@ internal class IosSessionGraph private constructor(
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
             val history = RoomListeningHistory(database.listens(), offsetMsAt = ::iosOffsetMsAt)
             val player = host.player
+            // The pool cache has its own vault entry, so pooled accounts never overwrite a personal sign-in.
+            val playbackPool = IosPlaybackPool(
+                http = http,
+                vault = host.credentials,
+                preferences = { vault.snapshots.value },
+                scope = scope,
+                log = report,
+                nowMs = ::iosNowMillis,
+            )
             val locators = IosQueueLocatorResolver(
                 audio = OrderedAudioResolver(
-                    providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh),
+                    providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
                     youtube = IosYouTubeUnavailable,
                 ),
                 port = host.playbackPort,
@@ -312,6 +331,8 @@ internal class IosSessionGraph private constructor(
                 pageOwners = pageOwners,
                 lyrics = lyrics,
                 artworkLoader = IosArtworkLoader(http),
+                customArtwork = FileCustomArtworkRepository(IosCustomArtworkFiles(), nowMillis = ::iosNowMillis),
+                playbackPool = playbackPool,
                 owner = owner,
                 database = database,
                 listenDriver = listenDriver,
@@ -319,9 +340,17 @@ internal class IosSessionGraph private constructor(
                 reportLine = report,
             )
             lyrics.start()
+            playbackPool.start()
             return graph
         }
     }
+}
+
+/** A TIDAL client identity from Info.plist, or null when either half is absent; nothing is synthesized for it. */
+private fun iosTidalClientCredentials(idKey: String, secretKey: String): TidalClientCredentials? {
+    val id = (NSBundle.mainBundle.objectForInfoDictionaryKey(idKey) as? String)?.trim().orEmpty()
+    val secret = (NSBundle.mainBundle.objectForInfoDictionaryKey(secretKey) as? String)?.trim().orEmpty()
+    return if (id.isBlank() || secret.isBlank()) null else TidalClientCredentials(id, secret)
 }
 
 internal fun iosRepeatMode(preferences: PreferenceSnapshot?): QueueRepeatMode =
