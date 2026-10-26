@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 8,
-    "identityHash": "1cd7c790dd09c76f9b24194503435553",
+    "identityHash": "4e6fad25c4f984b4f0f7a5ef2085cc3e",
     "entities": [
       {
         "tableName": "queue_checkpoint",
@@ -100,7 +100,7 @@
       },
       {
         "tableName": "portable_playlist",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `tags` TEXT NOT NULL, `createdSeq` INTEGER, `songSortType` TEXT NOT NULL DEFAULT 'CUSTOM', `songSortDescending` INTEGER NOT NULL DEFAULT 1, `isHidden` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `tags` TEXT NOT NULL, `createdSeq` INTEGER, `songSortType` TEXT NOT NULL DEFAULT 'CUSTOM', `songSortDescending` INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -138,13 +138,6 @@
             "affinity": "INTEGER",
             "notNull": true,
             "defaultValue": "1"
-          },
-          {
-            "fieldPath": "isHidden",
-            "columnName": "isHidden",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -639,67 +632,184 @@
         }
       },
       {
-        "tableName": "portable_search_history",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `query` TEXT NOT NULL)",
+        "tableName": "portable_download_task",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `provider` TEXT NOT NULL, `kind` TEXT NOT NULL, `mediaId` TEXT NOT NULL, `title` TEXT NOT NULL, `source` TEXT, `quality` TEXT NOT NULL, `phase` TEXT NOT NULL, `bytesDownloaded` INTEGER NOT NULL, `totalBytes` INTEGER, `resumeBytes` INTEGER NOT NULL, `failReason` TEXT, `updateTimeMs` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaId",
+            "columnName": "mediaId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "quality",
+            "columnName": "quality",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phase",
+            "columnName": "phase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytesDownloaded",
+            "columnName": "bytesDownloaded",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "query",
-            "columnName": "query",
-            "affinity": "TEXT",
+            "fieldPath": "totalBytes",
+            "columnName": "totalBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "resumeBytes",
+            "columnName": "resumeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failReason",
+            "columnName": "failReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updateTimeMs",
+            "columnName": "updateTimeMs",
+            "affinity": "INTEGER",
             "notNull": true
           }
         ],
         "primaryKey": {
-          "autoGenerate": true,
+          "autoGenerate": false,
           "columnNames": [
             "id"
           ]
-        },
-        "indices": [
-          {
-            "name": "index_portable_search_history_query",
-            "unique": true,
-            "columnNames": [
-              "query"
-            ],
-            "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_portable_search_history_query` ON `${TABLE_NAME}` (`query`)"
-          }
-        ]
+        }
       },
       {
-        "tableName": "portable_set_video_id",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`videoId` TEXT NOT NULL, `setVideoId` TEXT, PRIMARY KEY(`videoId`))",
+        "tableName": "portable_local_track",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `path` TEXT NOT NULL, `modifiedEpochMs` INTEGER NOT NULL, `sizeBytes` INTEGER NOT NULL, `title` TEXT NOT NULL, `artistsJson` TEXT NOT NULL, `albumTitle` TEXT, `albumArtistName` TEXT, `albumYear` INTEGER, `durationMs` INTEGER, `year` INTEGER, `trackNumber` INTEGER, `artworkUri` TEXT, `lyricsText` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
-            "fieldPath": "videoId",
-            "columnName": "videoId",
+            "fieldPath": "id",
+            "columnName": "id",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "setVideoId",
-            "columnName": "setVideoId",
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedEpochMs",
+            "columnName": "modifiedEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "sizeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artistsJson",
+            "columnName": "artistsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "albumTitle",
+            "columnName": "albumTitle",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "albumArtistName",
+            "columnName": "albumArtistName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "albumYear",
+            "columnName": "albumYear",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "year",
+            "columnName": "year",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "trackNumber",
+            "columnName": "trackNumber",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "artworkUri",
+            "columnName": "artworkUri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lyricsText",
+            "columnName": "lyricsText",
             "affinity": "TEXT"
           }
         ],
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "videoId"
+            "id"
           ]
         }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1cd7c790dd09c76f9b24194503435553')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4e6fad25c4f984b4f0f7a5ef2085cc3e')"
     ]
   }
 }
