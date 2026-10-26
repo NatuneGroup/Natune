@@ -154,6 +154,13 @@ internal class DesktopListenTogether(
         }
     }.stateIn(scope, SharingStarted.Eagerly, ListenTogetherSettingsRole.NONE)
 
+    /** The local player's current song in room form, or null when it is not a YouTube song the room could play. */
+    val localCurrentTrack: StateFlow<TrackInfo?> =
+        combine(player.snapshot, queue.state) { snapshot, state ->
+            snapshot?.occurrenceId
+                ?.let { id -> state.entries.firstOrNull { it.occurrenceId == id }?.item?.toTrackInfo(snapshot.durationMs) }
+        }.stateIn(scope, SharingStarted.Eagerly, null)
+
     /** The connection log since the last clear. The client keeps its own bounded log, so a clear hides older lines here. */
     val logs: StateFlow<List<ListenTogetherSettingsLogLine>> = combine(client.logs, logsClearedAtMs) { entries, clearedAt ->
         entries.filter { it.timestampMs > clearedAt }.map { it.toLine() }
@@ -229,6 +236,22 @@ internal class DesktopListenTogether(
     fun leave() {
         client.leaveRoom()
         scope.launch { resetSync() }
+    }
+
+    /**
+     * Starts [track] in the room the way the Android app does: the host queues it for immediate play, a guest offers
+     * it to the host as a suggestion. Outside a room nothing is sent and the caller is told so.
+     */
+    fun playSharedTrack(track: TrackInfo): Boolean {
+        if (isHostInRoom()) {
+            scope.launch { queueSuggestion(track, playImmediately = true) }
+            return true
+        }
+        if (isGuestInRoom()) {
+            client.suggestTrack(track)
+            return true
+        }
+        return false
     }
 
     fun approve(userId: String) = client.approveJoin(userId)

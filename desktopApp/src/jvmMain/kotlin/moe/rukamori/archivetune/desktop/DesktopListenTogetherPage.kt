@@ -45,7 +45,7 @@ internal fun desktopListenTogetherPage(graph: DesktopSessionGraph, openRoute: (S
             leave = owner::leave,
             copyCode = { owner.client.roomCode.value?.let(::copyToDesktopClipboard) },
             shareInvite = { owner.inviteLink()?.let(::copyToDesktopClipboard) },
-            chat = unavailable,
+            chat = { openRoute("listen_together/chat") },
             approve = owner::approve,
             reject = owner::reject,
             approveSuggestion = owner::approveSuggestion,
@@ -92,7 +92,7 @@ internal fun DesktopListenTogetherSettingsPage(
 
 /** A member's mark: the first letter of the name on a round tile. The preset avatar art is not bundled on this host. */
 @Composable
-private fun DesktopListenTogetherAvatar(label: String, modifier: Modifier) {
+internal fun DesktopListenTogetherAvatar(label: String, modifier: Modifier) {
     Box(
         modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
