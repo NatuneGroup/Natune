@@ -25,21 +25,26 @@ class KtorQobuzRepository(
     private val digest: QobuzRequestDigest? = null,
     instanceBase: String? = null,
     apiBase: String = "https://www.qobuz.com/api.json/0.2",
+    resolver: QobuzInstanceResolver? = null,
+    private val instances: () -> List<String> = { emptyList() },
 ) : PagedAudioProvider("qobuz:${access?.scope ?: "public"}:$apiBase:$instanceBase") {
     override val provider = ContentProvider.QOBUZ
     override val source = AudioSourceType.QOBUZ
     private val http = ProviderHttp(client)
     private val api = endpoint(apiBase)
     private val instance = instanceBase?.let(::endpoint)
+    private val instanceResolver = resolver ?: QobuzInstanceResolver(client, nowMs)
     init {
-        require(access != null || instance != null)
+        require(access != null || instance != null || instances().isNotEmpty())
         require(access == null || digest != null) { "Account playback requires its request signer" }
     }
     private fun headers() = access?.let { mapOf("X-App-Id" to it.appId, "X-User-Auth-Token" to it.userToken) }.orEmpty()
     private suspend fun api(path: String, params: Map<String, String>): JsonObject {
         val account = access ?: throw UnsupportedContentOperation()
         if (!account.isActive()) throw UnsupportedContentOperation()
-        val result = http.json("$api/$path", params + ("app_id" to account.appId), headers()).jsonObject
+        val result = http.json("$api/$path",
+            params + ("app_id" to account.appId) + ("user_auth_token" to account.userToken),
+            headers()).jsonObject
         if (!account.isActive()) throw UnsupportedContentOperation()
         return result
     }
@@ -64,15 +69,22 @@ class KtorQobuzRepository(
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         if (access != null && !access.isActive()) throw UnsupportedContentOperation()
+        // Per the original's orderedBackends: the signed-in Qobuz API token runs first, then the
+        // proxy-instance backends.
+        if (access != null) resolveViaAccount(request)?.let { return it }
+        resolveViaInstances(request)?.let { return it }
+        return null
+    }
+
+    private suspend fun resolveViaAccount(request: AudioResolveRequest): PreparedAudio? {
         val track = match(request) ?: return null
         val format = request.qualities[source]?.toInt() ?: 6
         require(format in setOf(5, 6, 7, 27))
-        val root = if (access != null) {
-            val ts = nowMs() / 1000
-            val sig = requireNotNull(digest).md5Hex("trackgetFileUrlformat_id${format}intentstreamtrack_id${track.item.ref.id}$ts${access.appSecret}")
-            api("track/getFileUrl", mapOf("request_ts" to "$ts", "request_sig" to sig, "track_id" to track.item.ref.id,
-                "format_id" to "$format", "intent" to "stream"))
-        } else http.json("$instance/api/download-music", mapOf("track_id" to track.item.ref.id, "quality" to "$format")).jsonObject
+        val account = requireNotNull(access)
+        val ts = nowMs() / 1000
+        val sig = requireNotNull(digest).md5Hex("trackgetFileUrlformat_id${format}intentstreamtrack_id${track.item.ref.id}$ts${account.appSecret}")
+        val root = api("track/getFileUrl", mapOf("request_ts" to "$ts", "request_sig" to sig, "track_id" to track.item.ref.id,
+            "format_id" to "$format", "intent" to "stream"))
         if (root.preview()) return null
         val data = root.obj("data") ?: root
         val url = listOf("url", "downloadUrl", "download_url", "stream_url", "streamUrl", "link")
@@ -86,7 +98,31 @@ class KtorQobuzRepository(
         val rate = (data["sampling_rate"] as? JsonPrimitive)?.doubleOrNull?.times(1000)?.toInt()
         return PreparedAudio.Progressive(direct(request, track, url, mime, codecs,
             data.long("content_length"), rate, data.long("bit_depth")?.toInt(),
-            accountScope = access?.let { streamAccount(it.scope) }))
+            accountScope = streamAccount(account.scope)))
+    }
+
+    /**
+     * The proxy-instance backends: `$base/api/get-music` + `$base/api/download-music`, with the
+     * retained cooldowns, scoring, caches and pool discovery of `QobuzAudioProvider`.
+     */
+    private suspend fun resolveViaInstances(request: AudioResolveRequest): PreparedAudio? {
+        instanceResolver.setInstances(instances().ifEmpty { listOfNotNull(instance) })
+        if (instanceResolver.configuredInstances.isEmpty() && !instanceResolver.hasInstances()) return null
+        instanceResolver.discoverInstances()
+        val format = request.qualities[source]?.toInt() ?: 6
+        require(format in setOf(5, 6, 7, 27))
+        val resolved = instanceResolver.resolve(
+            QobuzInstanceResolver.Query(
+                mediaId = request.mediaId,
+                title = request.target.title,
+                artists = request.target.artists,
+                album = request.target.album,
+                durationMs = request.target.durationMs,
+                directTrackId = request.directIds[source],
+            ),
+            format,
+        ) ?: return null
+        return PreparedAudio.Progressive(resolved.stream)
     }
     private fun parse(obj: JsonObject): ProviderTrack {
         val id = obj.text("id") ?: obj.text("track_id") ?: throw ProviderProtocolFailure()
