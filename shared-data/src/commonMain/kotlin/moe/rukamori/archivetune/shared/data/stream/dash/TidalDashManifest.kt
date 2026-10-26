@@ -172,8 +172,8 @@ class TidalDashManifest private constructor(
         /** Text content of the first element with [tag], trimmed, so a BaseURL with surrounding whitespace still resolves. */
         private fun firstTagValue(text: String, tag: String): String =
             Regex(
-                """<${Regex.escape(tag)}\b[^>]*>(.*?)</${Regex.escape(tag)}>""",
-                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+                """<${Regex.escape(tag)}\b[^>]*>([\s\S]*?)</${Regex.escape(tag)}>""",
+                RegexOption.IGNORE_CASE,
             ).find(text)
                 ?.groupValues
                 ?.getOrNull(1)
