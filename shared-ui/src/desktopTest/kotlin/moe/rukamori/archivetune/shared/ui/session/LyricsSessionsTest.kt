@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.ui.session
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.*
+import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiRequestBudget
 import moe.rukamori.archivetune.shared.domain.repository.AiTextService
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.menu.*
@@ -95,6 +96,11 @@ class LyricsSessionsTest {
         val respond: suspend (List<String>) -> List<String> = { lines -> lines.map { "Bonjour" } },
     ) : AiTextService {
         var calls = 0
+        override suspend fun complete(
+            config: AiServiceSettings, budget: AiRequestBudget, systemPrompt: String,
+            userPrompt: String, temperature: Double, maxTokens: Int,
+        ): String = error("Not a completion test")
+        override suspend fun fetchModels(config: AiServiceSettings): List<AiModelOption> = error("Not a model test")
         override suspend fun translateLines(config: AiServiceSettings, targetLanguage: String, lines: List<String>, formatName: String): List<String> {
             calls++
             return respond(lines)

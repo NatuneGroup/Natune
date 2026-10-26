@@ -6,6 +6,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
 import kotlinx.coroutines.*
+import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiModelOption
+import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiRequestBudget
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiServiceSettings
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiModelOption
 import moe.rukamori.archivetune.shared.domain.lyrics.ai.AiRequestBudget
@@ -89,6 +91,11 @@ class AiIntegrationSettingsTest {
 
     private class FakeService : AiTextService {
         var tests = 0
+        override suspend fun complete(
+            config: AiServiceSettings, budget: AiRequestBudget, systemPrompt: String,
+            userPrompt: String, temperature: Double, maxTokens: Int,
+        ): String = error("Not a completion test")
+        override suspend fun fetchModels(config: AiServiceSettings): List<AiModelOption> = error("Not a model test")
         override suspend fun listModels(config: AiServiceSettings) = listOf("fake-service/model")
         override suspend fun test(config: AiServiceSettings) { tests++ }
         override suspend fun translateLines(config: AiServiceSettings, targetLanguage: String, lines: List<String>, formatName: String): List<String> = error("Not a lyrics test")
