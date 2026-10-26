@@ -1,0 +1,122 @@
+name: Build Pull Request
+
+# Recreated on blacksmith runners (previously parked under .github/inherited-workflows/).
+# Gives every PR into dev/main and every dev push an assemble + lint signal plus a fast
+# compile pass over the KMP shared modules, so agents get CI without local heavy builds.
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: 21
+          distribution: "temurin"
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Generate debug.keystore if not exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkey -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build and Lint Mobile Universal Debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --console=plain --stacktrace --profile assembleGmsMobileUniversalDebug :app:lintGmsMobileUniversalDebug --warning-mode summary 2>&1 | python3 -u -c '
+          import re
+          import sys
+          warning = re.compile(r"^(WARNING: )?\[CXX5202\] This app only has 32-bit \[(armeabi-v7a|x86)\] native libraries\. Beginning August 1, 2019 Google Play store requires that all apps that include native libraries must provide 64-bit versions\. For more information, visit https://g\.co/64-bit-requirement$")
+          for line in sys.stdin:
+              if not warning.match(line.rstrip()):
+                  sys.stdout.write(line)
+          '
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+          # Public ArchivePool base URL. The pool's /api/sources and /api/discovery/*
+          # endpoints reject unauthenticated reads with HTTP 401, so without these
+          # three values baked into BuildConfig the app silently gets 0 accounts
+          # and 0 discovered instances and falls back to YouTube for every track.
+          # Precedence: Actions variable (preferred — non-sensitive), then secret
+          # (kept for forks that stored the URL as a secret before vars existed),
+          # then the gradle default (https://archivepool.vercel.app) in build.gradle.kts.
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+          # POOL_CLIENT_KEY not needed: v2 feed protocol derives encryption from the read key.
+
+      - name: Compile KMP shared modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fast Kotlin compile over the shared tree — the shared-ui JVM target is `desktop`.
+          ./gradlew --console=plain --stacktrace \
+            :shared:compileKotlinJvm \
+            :shared-domain:compileKotlinJvm \
+            :shared-data:compileKotlinJvm \
+            :shared-ui:compileKotlinDesktop \
+            :desktopApp:compileKotlinJvm
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-mobile-universal-debug-${{ github.event_name }}-${{ github.event.number || github.run_id }}
+          path: |
+            app/build/outputs/apk/gms/mobile/universal/debug/*.apk
+            app/build/outputs/apk/gmsMobileUniversal/debug/*.apk
+            app/build/outputs/apk/mobile/universal/debug/*.apk
+            app/build/outputs/apk/mobileUniversal/debug/*.apk
+          retention-days: 7
+
+      - name: Upload local build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/reports/profile/
+            app/build/reports/lint-results*
+          if-no-files-found: warn
+          retention-days: 7
