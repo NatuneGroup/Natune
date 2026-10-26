@@ -65,6 +65,7 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 /**
  * A Spotify shelf title. The variant localises the feed's known keys itself, so the owner passes the meaning and never
