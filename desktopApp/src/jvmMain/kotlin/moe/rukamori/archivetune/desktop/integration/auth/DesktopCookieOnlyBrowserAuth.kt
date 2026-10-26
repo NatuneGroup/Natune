@@ -209,6 +209,7 @@ private fun openWindow(startUrl: String, origins: List<String>, attempt: CookieO
             origins.toTypedArray(),
             DesktopStrings["browser_title"],
             DesktopStrings["browser_finish"],
+            "",
             NativeCookieBrowserListener(attempt),
         )
     } catch (_: LinkageError) {

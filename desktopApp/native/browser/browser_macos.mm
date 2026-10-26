@@ -62,6 +62,8 @@ constexpr int kOpenTimeoutSeconds = 10;
 struct Record {
     std::shared_ptr<BrowserCallbacks> callbacks;
     std::vector<std::string> origins;
+    /* When set, a navigation to it is reported through onNavigate and cancelled, like shouldOverrideUrlLoading. */
+    std::string capturePrefix;
     bool failed = false;
 };
 
@@ -161,6 +163,15 @@ NSMutableDictionary<NSNumber *, ArchiveTuneBrowserSession *> *registry() {
 - (void)webView:(WKWebView *)webView
     decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
                     decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    const char *raw = navigationAction.request.URL.absoluteString.UTF8String;
+    const std::string target = raw ? raw : "";
+    Record *record = _record.get();
+    if (record && !record->capturePrefix.empty() &&
+        target.compare(0, record->capturePrefix.size(), record->capturePrefix) == 0) {
+        if (record->callbacks) record->callbacks->notifyNavigation(target);
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
     decisionHandler([self allowsURL:navigationAction.request.URL] ? WKNavigationActionPolicyAllow
                                                                   : WKNavigationActionPolicyCancel);
 }
@@ -298,10 +309,12 @@ void requestCookiesOnMain(jlong sessionId, jlong requestId, const std::string &o
 extern "C" {
 
 JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_open(
-    JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel, jobject listener) {
+    JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel,
+    jstring capturePrefix, jobject listener) {
     const std::string start = utf8FromJava(env, startUrl);
     const std::string windowTitle = utf8FromJava(env, title);
     const std::string finishText = utf8FromJava(env, doneLabel);
+    const std::string capture = utf8FromJava(env, capturePrefix);
     const std::vector<std::string> allowed = readOrigins(env, origins);
     const std::string startOrigin = httpsOriginOf(start);
     if (!allCanonical(allowed) || startOrigin.empty() || !contains(allowed, startOrigin)) return 0;
@@ -315,6 +328,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
     auto record = std::make_shared<Record>();
     record->callbacks = callbacks;
     record->origins = allowed;
+    record->capturePrefix = capture;
 
     auto reply = std::make_shared<std::promise<jlong>>();
     std::future<jlong> result = reply->get_future();

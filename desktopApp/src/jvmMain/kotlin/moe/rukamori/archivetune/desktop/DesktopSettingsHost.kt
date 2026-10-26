@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyStreamingSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
+import moe.rukamori.archivetune.shared.ui.settings.TidalLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
@@ -96,6 +97,7 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     val qqMusic = DesktopQqMusicLoginOwner(graph.scope, graph.accountLifecycle, graph::report)
     val spotify = DesktopSpotifyAccounts(graph, controller)
     val deezerWeb = DesktopDeezerWebSignIn(graph)
+    val tidalWeb = DesktopTidalWebSignIn(graph)
 
     private val qobuzVerifier = QobuzAccountVerifier(graph.http)
     private val qobuzScrape = QobuzBundleScrape(graph.http)
@@ -222,7 +224,7 @@ internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
 
 private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
-    "settings/qobuz", QobuzLoginRoute, DeezerLoginRoute,
+    "settings/qobuz", QobuzLoginRoute, DeezerLoginRoute, TidalLoginRoute,
     "settings/spotify_streaming", "settings/telegram", TelegramLoginRoute, "settings/lastfm", DesktopLastFmDashboardRoute, "settings/privacy", "settings/about",
     DesktopListenTogetherSettingsRoute, "settings/misc", "settings/logcat", "settings/backup_restore",
     "settings/lyrics/providers",
@@ -365,6 +367,7 @@ internal fun DesktopSettingsScreen(
                 onNotice = onNotice,
                 scrollTo = scrollTo,
             )
+            TidalLoginRoute -> DesktopTidalLoginPage(owners.tidalWeb, navigation)
             DeezerLoginRoute -> DesktopDeezerLoginPage(owners.deezerWeb, navigation)
             "settings/qobuz" -> {
                 val tokenHealth by owners.qobuzTokenHealth.collectAsState()

@@ -16,10 +16,19 @@ internal object NativeCookieBrowser {
 
     /**
      * Returns a window handle, or 0 when the window cannot be created or its owner does not answer in time. [origins]
-     * are canonical "https://host:port" strings, and the native side refuses every other navigation.
+     * are canonical "https://host:port" strings, and the native side refuses every other navigation. When
+     * [capturePrefix] is non-empty, a navigation starting with it is reported through the listener's `onNavigate`
+     * and cancelled — the embedded-login equivalent of the Android WebView's shouldOverrideUrlLoading intercept.
      */
     @JvmStatic
-    external fun open(startUrl: String, origins: Array<String>, title: String, doneLabel: String, listener: Any): Long
+    external fun open(
+        startUrl: String,
+        origins: Array<String>,
+        title: String,
+        doneLabel: String,
+        capturePrefix: String,
+        listener: Any,
+    ): Long
 
     /** Asks for the cookies of one authorized origin. The answer arrives on [NativeCookieBrowserListener.onCookies]. */
     @JvmStatic
@@ -38,11 +47,15 @@ internal interface NativeCookieBrowserSink {
     fun onFinish()
     fun onCookieRows(requestId: Long, rows: Array<Array<String>>?)
     fun onWindowClosed(failed: Boolean)
+
+    /** Only fires when the window was opened with a capture prefix; the one URL it reports. */
+    fun onNavigate(url: String) {}
 }
 
 /**
- * The object the native side calls on its owner thread. The JNI code finds these three methods by name and signature
- * (`onDone()V`, `onCookies(J[[Ljava/lang/String;)V`, `onClosed(Z)V`), so they stay public and unrenamed.
+ * The object the native side calls on its owner thread. The JNI code finds these four methods by name and signature
+ * (`onDone()V`, `onCookies(J[[Ljava/lang/String;)V`, `onClosed(Z)V`, `onNavigate(Ljava/lang/String;)V`), so they stay
+ * public and unrenamed.
  */
 internal class NativeCookieBrowserListener(private val sink: NativeCookieBrowserSink) {
     fun onDone() = sink.onFinish()
@@ -50,4 +63,6 @@ internal class NativeCookieBrowserListener(private val sink: NativeCookieBrowser
     fun onCookies(requestId: Long, rows: Array<Array<String>>?) = sink.onCookieRows(requestId, rows)
 
     fun onClosed(failed: Boolean) = sink.onWindowClosed(failed)
+
+    fun onNavigate(url: String) = sink.onNavigate(url)
 }

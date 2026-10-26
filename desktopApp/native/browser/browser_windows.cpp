@@ -84,6 +84,8 @@ struct Session {
     std::vector<std::string> origins;
     std::shared_ptr<BrowserCallbacks> callbacks;
     std::wstring userDataFolder;
+    /* When set, a navigation to it is reported through onNavigate and cancelled, like shouldOverrideUrlLoading. */
+    std::string capturePrefix;
     bool failed = false;
     ComPtr<ICoreWebView2Environment> environment;
     ComPtr<ICoreWebView2Controller> controller;
@@ -308,6 +310,12 @@ void attachController(Session &session, ICoreWebView2Controller *controller) {
                 bool allowed = false;
                 if (SUCCEEDED(args->get_Uri(&uri))) {
                     const std::string target = utf8FromWide(uri);
+                    if (!current->capturePrefix.empty() &&
+                        target.compare(0, current->capturePrefix.size(), current->capturePrefix) == 0) {
+                        if (current->callbacks) current->callbacks->notifyNavigation(target);
+                        CoTaskMemFree(uri);
+                        return args->put_Cancel(TRUE);
+                    }
                     const std::string origin = httpsOriginOf(target);
                     allowed = isInertUri(target) || (!origin.empty() && contains(current->origins, origin));
                 }
@@ -401,7 +409,8 @@ std::wstring makeUserDataFolder() {
 
 /* Owner thread only. Returns the session id, or 0 when the window or its folder cannot be created. */
 jlong createSession(const std::string &startUrl, const std::string &title, const std::string &finishText,
-                    const std::vector<std::string> &origins, const std::shared_ptr<BrowserCallbacks> &callbacks) {
+                    const std::vector<std::string> &origins, const std::string &capturePrefix,
+                    const std::shared_ptr<BrowserCallbacks> &callbacks) {
     const std::wstring folder = makeUserDataFolder();
     if (folder.empty()) return 0;
     const std::wstring titleWide = wideFromUtf8(title);
@@ -411,6 +420,7 @@ jlong createSession(const std::string &startUrl, const std::string &title, const
     session->id = nextSessionId();
     session->startUrl = startUrl;
     session->origins = origins;
+    session->capturePrefix = capturePrefix;
     session->callbacks = callbacks;
     session->userDataFolder = folder;
 
@@ -546,12 +556,14 @@ static bool ensureOwner() {
 }
 
 JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_open(
-    JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel, jobject listener) {
+    JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel,
+    jstring capturePrefix, jobject listener) {
     if (!ensureOwner()) return 0;
 
     const std::string start = utf8FromJava(env, startUrl);
     const std::string windowTitle = utf8FromJava(env, title);
     const std::string finishText = utf8FromJava(env, doneLabel);
+    const std::string capture = utf8FromJava(env, capturePrefix);
     const std::vector<std::string> allowed = readOrigins(env, origins);
     const std::string startOrigin = httpsOriginOf(start);
     if (!allCanonical(allowed) || startOrigin.empty() || !contains(allowed, startOrigin)) return 0;
@@ -571,7 +583,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
             reply->set_value(0);
             return;
         }
-        reply->set_value(createSession(start, windowTitle, finishText, allowed, callbacks));
+        reply->set_value(createSession(start, windowTitle, finishText, allowed, capture, callbacks));
     });
 
     if (result.wait_for(std::chrono::seconds(kOpenTimeoutSeconds)) == std::future_status::ready) return result.get();
