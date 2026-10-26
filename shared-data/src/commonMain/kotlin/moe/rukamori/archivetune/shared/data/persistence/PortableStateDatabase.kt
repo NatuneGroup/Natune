@@ -3,6 +3,8 @@ package moe.rukamori.archivetune.shared.data.persistence
 import androidx.room.*
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.coroutines.Dispatchers
+import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskDao
+import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskRow
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
 
@@ -15,15 +17,15 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
  * library songs, by [PortableStateMigrations.V4_TO_V5]. Version 6 adds the index of stored songs, the downloads and
  * the streamed cache entries that the downloaded and cache lists read, by [PortableStateMigrations.V5_TO_V6].
  * Version 7 adds each download's byte count and the complete album track lists, by
- * [PortableStateMigrations.V6_TO_V7]. Version 8 adds the search history and the synced-playlist set video ids
- * the Android schema-36 tables carry, by [PortableStateMigrations.V7_TO_V8].
+ * [PortableStateMigrations.V6_TO_V7]. Version 8 adds the persisted download queue, the rows a restarted owner
+ * resumes or marks stopped exactly like the retained download index, by [PortableStateMigrations.V7_TO_V8].
  */
 @Database(
     entities = [QueueCheckpointRow::class, LibraryItemRow::class, PortablePlaylistRow::class,
         PortablePlaylistEntry::class, PortableTagRow::class, PortablePlaylistTagRow::class,
         PortableListenEventRow::class, PortableListenEntityRow::class, PortableArtistBlockRow::class,
         PortableStoredSongRow::class, PortableAlbumCompleteRow::class, PortableAlbumTrackRow::class,
-        PortableSearchHistoryRow::class, PortableSetVideoIdRow::class],
+        PortableDownloadTaskRow::class, PortableLocalTrackRow::class],
     version = 8,
     exportSchema = true,
 )
@@ -35,8 +37,8 @@ abstract class PortableStateDatabase : RoomDatabase() {
     abstract fun artistBlocks(): ArtistBlockDao
     abstract fun storedSongs(): PortableStoredSongDao
     abstract fun albumTracks(): PortableAlbumTrackDao
-    abstract fun searchHistory(): PortableSearchHistoryDao
-    abstract fun setVideoIds(): PortableSetVideoIdDao
+    abstract fun downloadTasks(): PortableDownloadTaskDao
+    abstract fun localTracks(): PortableLocalTrackDao
 }
 
 expect object PortableStateDatabaseConstructor : RoomDatabaseConstructor<PortableStateDatabase> {
