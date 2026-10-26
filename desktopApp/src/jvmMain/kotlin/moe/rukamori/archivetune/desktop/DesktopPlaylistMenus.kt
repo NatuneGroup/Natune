@@ -48,6 +48,12 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPin
+import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
+import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.serializeSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.toggleSpeedDialPin
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
 import moe.rukamori.archivetune.shared.ui.menu.MenuShareHandler
 import moe.rukamori.archivetune.shared.ui.menu.MenuSharing
@@ -70,9 +76,10 @@ internal const val DesktopTagsRoute = "library/tags"
 
 /**
  * The playlist menus of the desktop host: the shared playlist overflow menu over the local playlist, the tag assignment
- * dialog over the portable tag store, and the CSV export to a file the user chooses. Rows whose owner is not connected
- * here (downloads, speed dial, YouTube sync, hiding, playlist radio and the custom playlist order) answer with the
- * unavailable notice instead of a silent no-op.
+ * dialog over the portable tag store, and the CSV export to a file the user chooses. Speed-dial pins are owned by the
+ * ordinary settings store. Rows without a desktop owner (the download group, per-playlist YouTube sync and hiding) are
+ * hidden by the shared menu's capability facts; the remaining unconnected host members answer with the unavailable
+ * notice instead of a silent no-op.
  */
 internal class DesktopPlaylistMenuState(
     private val graph: DesktopSessionGraph,
@@ -95,7 +102,14 @@ internal class DesktopPlaylistMenuState(
 
     val host: PlaylistMenuHost = object : PlaylistMenuHost {
         override suspend fun startPlaylistRadio(playlist: ContentRef) { unavailable() }
-        override suspend fun setSpeedDialPinned(playlist: ContentRef, pinned: Boolean) { unavailable() }
+        override suspend fun setSpeedDialPinned(playlist: ContentRef, pinned: Boolean) {
+            require(playlist.provider == ContentProvider.LOCAL.id) { "Only local playlists pin to the speed dial" }
+            graph.settings.edit {
+                val pins = parseSpeedDialPins(get(SpeedDialSongIdsKey, ""))
+                this[SpeedDialSongIdsKey] =
+                    serializeSpeedDialPins(toggleSpeedDialPin(pins, SpeedDialPin(SpeedDialPinType.PLAYLIST, playlist.id)))
+            }
+        }
         override suspend fun startMissingDownloads(songs: List<ContentOccurrence>) { unavailable() }
         override suspend fun removeDownloads(songs: List<ContentOccurrence>) { unavailable() }
         override fun openPlaylistTags(playlist: ContentRef) {
@@ -238,8 +252,13 @@ internal fun DesktopPlaylistMenuOverlay(state: DesktopPlaylistMenuState, graph: 
             state.dismissTags()
         }
     }
+    val settingsSnapshot by graph.settings.snapshots.collectAsState()
     state.menu?.let { target ->
         val ref = target.item.ref
+        val pinned = settingsSnapshot?.let { snapshot ->
+            parseSpeedDialPins(snapshot[SpeedDialSongIdsKey, ""])
+                .any { it.type == SpeedDialPinType.PLAYLIST && it.id == ref.id }
+        } ?: false
         // The shared menu is a dropdown, so it is anchored at the middle of the window.
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box {
@@ -251,7 +270,10 @@ internal fun DesktopPlaylistMenuOverlay(state: DesktopPlaylistMenuState, graph: 
                         name = target.item.title,
                         complete = target.complete,
                         download = CollectionDownloadState.NOT_DOWNLOADED,
-                        speedDialPinned = false,
+                        downloadsSupported = false,
+                        youtubeSync = false,
+                        hiding = false,
+                        speedDialPinned = pinned,
                         hidden = false,
                         browseId = null,
                         shareLink = null,

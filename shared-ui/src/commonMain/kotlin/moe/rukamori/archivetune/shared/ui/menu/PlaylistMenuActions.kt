@@ -63,6 +63,15 @@ data class PlaylistMenuFacts(
     val automatic: Boolean,
     /** The Downloaded Songs playlist has no tag row and no download group. */
     val downloadPlaylist: Boolean,
+    /**
+     * The host owns a download store. A host without one hides the whole download group instead of answering a
+     * row with a failure it can never satisfy.
+     */
+    val downloadsSupported: Boolean = true,
+    /** The host owns the per-playlist YouTube push, not only the full-library sync. */
+    val youtubeSync: Boolean = true,
+    /** The host owns the hidden flag on playlists. */
+    val hiding: Boolean = true,
     /** Telegram-channel playlists get the add-songs and refresh rows. */
     val telegramChannel: Boolean,
     /** The host can change this playlist's cover. */
@@ -114,7 +123,7 @@ fun playlistMenuActions(
         if (!facts.automatic && !facts.downloadPlaylist) {
             add(OverflowAction("manage_tags", Res.string.m6_manage_tags) { host.openPlaylistTags(ref) })
         }
-        if (!facts.downloadPlaylist) {
+        if (!facts.downloadPlaylist && facts.downloadsSupported) {
             when (facts.download) {
                 CollectionDownloadState.COMPLETED -> add(OverflowAction(
                     "remove_downloads", Res.string.m6_remove_download, songsReady, destructive = true,
@@ -134,13 +143,17 @@ fun playlistMenuActions(
                 add(OverflowAction("telegram_add_songs", Res.string.m6_telegram_add_songs) { host.openTelegramBots() })
                 add(OverflowAction("telegram_refresh", Res.string.m6_refresh_telegram_playlist) { host.refreshTelegramPlaylist(ref) })
             }
-            add(OverflowAction("sync_playlist", Res.string.m6_sync_playlist) { host.syncToYouTube(ref) })
-            add(OverflowAction(
-                "hide_playlist",
-                if (facts.hidden) Res.string.m6_unhide_playlist else Res.string.m6_hide_playlist,
-                confirm = if (facts.hidden) null else Res.string.m6_hide_playlist_confirm,
-                confirmArgs = listOf(name),
-            ) { host.setHidden(ref, !facts.hidden) })
+            if (facts.youtubeSync) {
+                add(OverflowAction("sync_playlist", Res.string.m6_sync_playlist) { host.syncToYouTube(ref) })
+            }
+            if (facts.hiding) {
+                add(OverflowAction(
+                    "hide_playlist",
+                    if (facts.hidden) Res.string.m6_unhide_playlist else Res.string.m6_hide_playlist,
+                    confirm = if (facts.hidden) null else Res.string.m6_hide_playlist_confirm,
+                    confirmArgs = listOf(name),
+                ) { host.setHidden(ref, !facts.hidden) })
+            }
             add(OverflowAction(
                 "delete_playlist", Res.string.m6_delete, destructive = true,
                 confirm = Res.string.m6_delete_playlist_confirm, confirmArgs = listOf(name),
