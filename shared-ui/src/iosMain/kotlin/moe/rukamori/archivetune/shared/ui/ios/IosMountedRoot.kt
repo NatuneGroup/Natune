@@ -13,6 +13,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,7 +44,8 @@ internal fun IosMountedRoot(host: IosHost) {
         IosSessionState.SettingsUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_settings_unavailable)) }
         IosSessionState.GraphUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_host_graph_unavailable)) }
         is IosSessionState.Ready -> {
-            val recognition = remember(state.graph) { IosRecognitionMount(state.graph) }
+            val uiScope = rememberCoroutineScope()
+            val recognition = remember(state.graph) { IosRecognitionMount(state.graph, uiScope) }
             DisposableEffect(state.graph) { onDispose { recognition.close() } }
             val bindings = remember(state.graph) { iosHostBindings(host, state.graph, recognition) }
             ArchiveTuneRoot(

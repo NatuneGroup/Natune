@@ -175,6 +175,7 @@ private suspend fun VaultProviderAccountStore.admitPoolEntry(
             is ProviderAccountCommitResult.Accepted -> return poolScopeForFeedId(feedId)
             ProviderAccountCommitResult.StaleGeneration -> Unit
             is ProviderAccountCommitResult.Failed -> return null
+            is ProviderAccountCommitResult.SameAccountRejected -> return null
         }
     }
     return null
@@ -367,7 +368,7 @@ private class IosQobuzSource(
                         access = QobuzAccess(it, entry.appId, entry.token, entry.appSecret, CredentialScope.PERSONAL) {
                             preferences()?.qobuzTokens().orEmpty().any { kept -> kept.token == entry.token }
                         },
-                        digest = IosQobuzRequestDigest,
+                        digest = IosQobuzRequestDigest(),
                     ),
                 )
             }
@@ -387,7 +388,7 @@ private class IosQobuzSource(
                     http,
                     nowMs = ::iosNowMillis,
                     access = QobuzAccess(scope, account.appId, account.token, account.appSecret, CredentialScope.PLAYBACK_POOL) { pool?.enabled() == true },
-                    digest = IosQobuzRequestDigest,
+                    digest = IosQobuzRequestDigest(),
                 ),
                 poolId = feedId,
                 pooled = true,
@@ -565,9 +566,9 @@ private class IosAmazonSource(
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         val snapshot = preferences() ?: return null
         val attempts = ArrayList<Attempt>()
-        val bypass = snapshot[AmazonBypassTokenKey].takeIf { it.isNotBlank() }
+        val bypass = snapshot[AmazonBypassTokenKey]?.takeIf { it.isNotBlank() }
         val jwtExpiry = snapshot[AmazonTurnstileJwtExpiryMsKey]
-        val turnstile = snapshot[AmazonTurnstileJwtKey].takeIf { it.isNotBlank() && (jwtExpiry ?: 0L) > iosNowMillis() }
+        val turnstile = snapshot[AmazonTurnstileJwtKey]?.takeIf { it.isNotBlank() && (jwtExpiry ?: 0L) > iosNowMillis() }
         if (bypass != null || turnstile != null) {
             val scope = providerAccountScope(ContentProvider.AMAZON.id, CredentialScope.PERSONAL)
             if (scope != null) {

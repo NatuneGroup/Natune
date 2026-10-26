@@ -84,9 +84,9 @@ final class ArchiveTuneSession {
         if presenter === token { presenter = nil }
     }
 
-    /// The onOpenURL entry: a deep link is handed to the host, which keeps it until the root collects it.
+    /// The onOpenURL entry: a deep link is handed to the host, which queues it for the session graph to resolve.
     func accept(_ url: URL) {
-        host.acceptUrl(url: url.absoluteString)
+        host.openLink(link: url.absoluteString)
     }
 
     /// Final process shutdown. Idempotent, and never reached by controller detach or reattach.
