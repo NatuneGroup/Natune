@@ -1,7 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.playerstyles
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -120,6 +121,7 @@ private class RoundedPolygonShape(private val path: Path) : Shape {
 }
 
 private val v10Shapes: List<RoundedPolygon>
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
     get() = listOf(
         MaterialShapes.Flower,
         MaterialShapes.Clover4Leaf,

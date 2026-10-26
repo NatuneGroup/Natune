@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
@@ -512,7 +513,9 @@ internal fun StyleIconButton(
     PlayerIcon(
         symbol = symbol,
         label = label ?: action?.let { stringResource(actionLabel(it)) } ?: "",
-        onClick = onClick ?: { action?.let(c.actions::onAction) },
+        onClick = onClick ?: {
+            if (action != null) c.actions.onAction(action)
+        },
         modifier = modifier,
         enabled = enabled,
         selected = selected,
