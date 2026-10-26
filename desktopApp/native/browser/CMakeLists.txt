@@ -23,6 +23,8 @@ find_package(JNI REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
+    # Static CRT: the package must not depend on vcruntime/msvcp DLLs an end user may not have.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     set(AE_WEBVIEW2_SDK "" CACHE PATH "Extracted official Microsoft.Web.WebView2 1.0.4258.31 NuGet SDK")
     if(NOT EXISTS "${AE_WEBVIEW2_SDK}/build/native/include/WebView2.h")
         message(FATAL_ERROR "Provide the official WebView2 1.0.4258.31 SDK with -DAE_WEBVIEW2_SDK; no external Chrome fallback.")

@@ -72,6 +72,11 @@ if(UNIX)
     # libm exists only on the Unix hosts; MSVC's CRT covers the same calls.
     target_link_libraries(archivetune_engine PRIVATE m)
 endif()
+if(APPLE)
+    # miniaudio's CoreAudio backend and the mixer need these; nothing else on Apple resolves them.
+    target_link_libraries(archivetune_engine PRIVATE
+        "-framework AudioToolbox" "-framework AudioUnit" "-framework CoreAudio" "-framework CoreFoundation")
+endif()
 
 # The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
 # the same search path at link time as the loader uses at run time.
@@ -79,8 +84,23 @@ if(UNIX AND NOT APPLE)
     target_link_options(archivetune_engine PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
 endif()
 if(UNIX AND NOT APPLE)
+    # The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
+    # the same search path at link time as the loader uses at run time. ld64 has no -rpath-link.
+    target_link_options(archivetune_engine PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
     # DT_RPATH is inherited by the FFmpeg/TLS/XML closure; DT_RUNPATH is not.
     target_link_options(archivetune_engine PRIVATE "LINKER:--disable-new-dtags")
+    set_property(TARGET archivetune_engine PROPERTY INSTALL_RPATH "$ORIGIN")
+endif()
+if(APPLE)
+    # Stage script gives every dylib an @rpath identity; @loader_path resolves them beside the library.
+    set_property(TARGET archivetune_engine PROPERTY INSTALL_RPATH "@loader_path")
+endif()
+if(MINGW)
+    # Static link libgcc/winpthreads so the package's only DLL dependencies are the staged ones and
+    # Windows system libraries. Windows DLL resolution already covers the install directory.
+    target_link_options(archivetune_engine PRIVATE -static)
+    # System.mapLibraryName gives archivetune_engine.dll; MinGW's lib prefix would break that lookup.
+    set_property(TARGET archivetune_engine PROPERTY PREFIX "")
 endif()
 if(APPLE)
     # Miniaudio's notarization-safe path links the audio frameworks instead of dlopening them.

@@ -6,7 +6,9 @@ import java.awt.Frame
 import java.awt.Window
 
 object DesktopLaunchIntake {
-    val links = DesktopDeepLinks(setOf("archivetune"), setOf("open"))
+    // archivetune://open is the app's own page route; archivetune://listen is the Listen Together
+    // invite the Android manifest declares — desktop intake accepts both like the original.
+    val links = DesktopDeepLinks(setOf("archivetune"), setOf("open", "listen"))
     @Volatile private var window: Window? = null
     fun receive(uri: String?) {
         if (uri != null) links.accept(uri)
