@@ -48,23 +48,23 @@ object AmazonInstances {
         pooled.forEach { instance ->
             val normalized = normalizeUrl(instance.baseUrl)
             if (normalized.isEmpty() || !seen.add(normalized)) return@forEach
-            val usable =
-                AmazonPoolInstance(
-                    normalized,
-                    instance.access.let { access ->
-                        if (access.turnstileJwt.isNullOrBlank() || isJwtUsable(access.turnstileJwtExpiresAtMs, nowMs)) {
-                            access
-                        } else {
-                            AmazonInstanceAccess(
-                                access.scope, access.operatorToken, null,
-                                turnstileJwtExpiresAtMs = null, isActive = access.isActive,
-                            )
-                        }
-                    },
-                )
-            if (!usable.access.operatorToken.isNullOrBlank() || !usable.access.turnstileJwt.isNullOrBlank()) {
-                out += usable
-            }
+            val jwt =
+                instance.access.turnstileJwt?.takeIf {
+                    it.isNotBlank() && isJwtUsable(instance.access.turnstileJwtExpiresAtMs, nowMs)
+                }
+            val operatorToken = instance.access.operatorToken?.takeIf { it.isNotBlank() }
+            if (jwt == null && operatorToken == null) return@forEach
+            val access =
+                if (jwt == instance.access.turnstileJwt) {
+                    instance.access
+                } else {
+                    AmazonInstanceAccess(
+                        instance.access.scope, operatorToken, jwt,
+                        turnstileJwtExpiresAtMs = instance.access.turnstileJwtExpiresAtMs,
+                        isActive = instance.access.isActive,
+                    )
+                }
+            out += AmazonPoolInstance(normalized, access)
         }
         return out
     }
