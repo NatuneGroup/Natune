@@ -124,14 +124,22 @@ they must not be server-administrator credentials.
 The release matrix publishes only when every platform job succeeds. These host
 recipes are not complete yet, so the matching jobs fail until they are added:
 
-- Windows x64: `desktopApp/native/scripts/build-native-deps.sh` covers Linux and
-  macOS only. The Windows media closure (FFmpeg, OpenSSL, libxml2, zlib built with
-  MSVC) and the static OpenSSL and zlib prefixes that `build-tdjni.ps1` reads
-  through `TDLIGHT_OPENSSL_PREFIX` and `TDLIGHT_ZLIB_PREFIX` need their own recipe.
-- macOS: `-PdesktopNativeDirectory` must point at a directory that holds the
-  engine together with its FFmpeg closure. The recipe currently names the engine
-  build directory only, so the FFmpeg dylibs and their install names still need a
-  staging step like `stage-linux-package.py`.
+- Windows x64: `desktopApp/native/scripts/build-native-deps.sh` now also builds
+  under MSYS2 MinGW-w64 (`mingw64` OpenSSL target, w32threads for FFmpeg).
+  `stage-windows-package.py` walks the PE import table, stages the prefix DLLs and
+  refuses anything outside the system-DLL allowlist. The engine builds with MinGW
+  (`MinGW Makefiles` generator, statically linked libgcc/winpthreads) while
+  `archivetune_system` and `archivetune_browser` stay MSVC with the static CRT, so
+  no vcruntime/msvcp DLL is needed. The static OpenSSL prefix `build-tdjni.ps1`
+  reads through `TDLIGHT_OPENSSL_PREFIX` comes from the same deps run
+  (`openssl-static`, produced for every host).
+- macOS: `stage-macos-package.py` installs the engine, stages the FFmpeg closure
+  as `@rpath/<name>` dylibs with an `@loader_path` rpath and audits `otool -L`
+  output, so `-PdesktopNativeDirectory` is no longer needed on any host. The x64
+  leg runs on an arm64 runner through a x64 JDK under Rosetta 2; the dependency
+  closure and tdjni build under `arch -x86_64`.
+- Linux arm64 runs on the `blacksmith-8vcpu-ubuntu-2404-arm` label; if the
+  organisation has no ARM pool the leg waits and must be relabelled.
 - iOS: `scripts/build_ios_native_core.sh` has not run on a Mac yet.
 
 Linux x64 and arm64 use the same recipe; the scripts choose the OpenSSL target and

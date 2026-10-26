@@ -40,6 +40,7 @@ STAGE="$BUILD/stage"
 log() { printf '[tdlight-jni] %s\n' "$*"; }
 die() { printf '[tdlight-jni] error: %s\n' "$*" >&2; exit 1; }
 
+GENERATOR_ARGS=()
 # The host names match the directories that desktopApp/build.gradle.kts stages for each host.
 case "$(uname -s)" in
     Linux)
@@ -58,8 +59,17 @@ case "$(uname -s)" in
         esac
         LIBRARY_NAME="libtdjni.dylib"
         ;;
+    MINGW64* | MSYS*)
+        case "$(uname -m)" in
+            x86_64) HOST_NAME="windows-x64" ;;
+            *) die "unsupported Windows architecture $(uname -m)" ;;
+        esac
+        LIBRARY_NAME="tdjni.dll"
+        # TDLib builds under MinGW officially; -static keeps winpthread/libgcc/libstdc++ out of the closure.
+        GENERATOR_ARGS=(-G "MinGW Makefiles" -DCMAKE_SHARED_LINKER_FLAGS=-static -DCMAKE_EXE_LINKER_FLAGS=-static)
+        ;;
     *)
-        die "this recipe covers Linux and macOS; on Windows run build-tdjni.ps1, which builds the same commit with MSVC"
+        die "unsupported host $(uname -s); on Windows run inside MSYS2 MINGW64 (see the README)"
         ;;
 esac
 
@@ -94,7 +104,7 @@ esac
 # TD_ENABLE_JNI builds the Java bindings' native side. Static OpenSSL keeps the staged library free of a system OpenSSL
 # dependency, which the Android build also avoids. Position-independent code is needed to link static archives into a
 # shared library.
-cmake -S "$SRC" -B "$CMAKE_BUILD" \
+cmake "${GENERATOR_ARGS[@]}" -S "$SRC" -B "$CMAKE_BUILD" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DTD_ENABLE_JNI=ON \
