@@ -96,7 +96,6 @@ jobs:
           set -euo pipefail
           # Fast Kotlin compile over the shared tree — the shared-ui JVM target is `desktop`.
           ./gradlew --console=plain --stacktrace "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
-            :shared:compileKotlinJvm \
             :shared-domain:compileKotlinJvm \
             :shared-data:compileKotlinJvm \
             :shared-ui:compileKotlinDesktop \
