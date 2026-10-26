@@ -35,14 +35,11 @@ jobs:
           java-version: 21
           distribution: "temurin"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-37
-            build-tools;35.0.0
-            ndk;30.0.16248370
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;35.0.0" "ndk;30.0.16248370"
 
       - name: Set Up Gradle
         uses: gradle/actions/setup-gradle@v6
