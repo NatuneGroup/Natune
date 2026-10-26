@@ -347,6 +347,9 @@ private fun YouTubeBrowse.requestKey(): String =
         is YouTubeBrowse.Search -> "search:${filter.name}:$query"
         is YouTubeBrowse.WatchNext ->
             "radio:${videoId.orEmpty()}:${playlistId.orEmpty()}:${playlistSetVideoId.orEmpty()}:${params.orEmpty()}"
+        is YouTubeBrowse.Section -> "section:$browseId:$params"
+        is YouTubeBrowse.ArtistItems -> "artist-items:$browseId:$params"
+        is YouTubeBrowse.Watch -> "watch:$videoId:$playlistId:$params"
     }
 
 private fun YouTubeBrowse.collectionKey(): String =
