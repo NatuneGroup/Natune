@@ -146,6 +146,31 @@ internal object PortableStateMigrations {
     }
 
     /**
+     * The step from v7 to v8. It creates the search history and the set-video-id tables that the Android schema-36
+     * `search_history` and `set_video_id` tables map to, so a cross-imported library keeps the searches and the
+     * synced playlist entry ids it carried. Both tables are new, so no existing row changes. Each statement matches
+     * its declaration, because Room's shape check compares them.
+     */
+    val V7_TO_V8: Migration = object : Migration(7, 8) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.exec(
+                "CREATE TABLE IF NOT EXISTS `portable_search_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT " +
+                    "NOT NULL, `query` TEXT NOT NULL)",
+            )
+            connection.exec(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_portable_search_history_query` " +
+                    "ON `portable_search_history` (`query`)",
+            )
+            connection.exec(
+                "CREATE TABLE IF NOT EXISTS `portable_set_video_id` (`videoId` TEXT NOT NULL, " +
+                    "`setVideoId` TEXT, PRIMARY KEY(`videoId`))",
+            )
+            // Hidden playlists keep their flag across an Android import; no portable surface reads it yet.
+            connection.exec("ALTER TABLE `portable_playlist` ADD COLUMN `isHidden` INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    /**
      * Writes the artist and album rows of every stored listen. Each occurrence is decoded the way the history reads it,
      * and [listenEntities] derives the rows, so an upgraded listen counts exactly as a new one does. A malformed
      * occurrence throws and aborts the upgrade, which keeps the old file intact, as the tag step does.

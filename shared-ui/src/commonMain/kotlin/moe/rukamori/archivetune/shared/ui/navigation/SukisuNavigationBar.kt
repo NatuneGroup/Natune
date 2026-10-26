@@ -98,8 +98,6 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
-import androidx.compose.foundation.layout.width
-import moe.rukamori.archivetune.shared.ui.resources.*
 
 /** The bar's fixed height (SukiSU's 64 dp). The shell reserves exactly this much chrome for the bar, plus its inset. */
 val SukisuNavigationBarHeight = 64.dp
