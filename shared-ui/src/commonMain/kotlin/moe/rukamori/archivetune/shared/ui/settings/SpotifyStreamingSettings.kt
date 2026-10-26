@@ -16,6 +16,8 @@ import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * Settings for the experimental Spotify streaming account, which is separate from the catalog account. The host runs

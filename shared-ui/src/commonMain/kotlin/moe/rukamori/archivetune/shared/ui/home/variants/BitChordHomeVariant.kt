@@ -42,6 +42,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.setValue
 
 /** The BitChord page as the owner delivers it. Each state is complete; the variant never invents a shelf. */
 sealed interface BitChordHomeUi {
