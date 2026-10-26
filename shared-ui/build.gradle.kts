@@ -80,8 +80,10 @@ compose.resources.customDirectory(
     sourceSetName = "commonMain",
     directoryProvider = layout.buildDirectory.dir("generated/romanization-notices/composeResources"),
 )
-tasks.matching { it.name.startsWith("generateResourceAccessors") || it.name.startsWith("prepareComposeResources") }
-    .configureEach { dependsOn(prepareRomanizationNotices) }
+tasks.matching {
+    it.name.startsWith("generateResourceAccessors") || it.name.startsWith("prepareComposeResources") ||
+        it.name.startsWith("copyNonXmlValueResources")
+}.configureEach { dependsOn(prepareRomanizationNotices) }
 
 // The screenshot test writes into the ignored repository outputs/ directory. It must run on every
 // invocation, because a cached result would skip the capture that the evidence relies on.

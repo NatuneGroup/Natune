@@ -27,7 +27,7 @@ on:
 jobs:
   android:
     name: Android ${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read
     outputs:
@@ -228,21 +228,26 @@ jobs:
         include:
           - platform: windows
             arch: x64
-            runner: windows-latest
+            jdk_arch: x64
+            runner: blacksmith-32vcpu-windows-2025
           - platform: linux
             arch: x64
+            jdk_arch: x64
             appimage_arch: x86_64
-            runner: ubuntu-24.04
+            runner: blacksmith-8vcpu-ubuntu-2404
           - platform: linux
             arch: arm64
+            jdk_arch: aarch64
             appimage_arch: aarch64
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-8vcpu-ubuntu-2404-arm
           - platform: macos
             arch: x64
-            runner: macos-13
+            jdk_arch: x64
+            runner: blacksmith-6vcpu-macos-latest
           - platform: macos
             arch: arm64
-            runner: macos-latest
+            jdk_arch: aarch64
+            runner: blacksmith-6vcpu-macos-latest
     env:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
@@ -285,6 +290,7 @@ jobs:
         with:
           java-version: '21'
           distribution: temurin
+          architecture: ${{ matrix.jdk_arch }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -299,9 +305,46 @@ jobs:
           restore-keys: |
             konan-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Build host native dependencies
+      - name: Set up MSYS2 MinGW toolchain (Windows)
+        if: matrix.platform == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          path-type: inherit
+          install: >-
+            mingw-w64-x86_64-toolchain
+            make
+            tar
+            curl
+            gnupg
+            python
+            binutils
+
+      - name: Install Rosetta 2 (macOS x64 leg)
+        if: matrix.platform == 'macos' && matrix.arch == 'x64'
         shell: bash
+        run: |
+          /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+          arch -x86_64 /usr/bin/true
+
+      - name: Build host native dependencies (Windows)
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
         run: bash desktopApp/native/scripts/build-native-deps.sh
+
+      - name: Build host native dependencies
+        if: matrix.platform != 'windows'
+        shell: bash
+        # The macOS x64 leg runs on an arm64 runner, so the whole dependency closure is built under
+        # Rosetta: darwin64-x86_64-cc dylibs for the x64 JDK/jpackage chain that packages it.
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.platform }}" == macos && "${{ matrix.arch }}" == x64 ]]; then
+            arch -x86_64 bash desktopApp/native/scripts/build-native-deps.sh
+          else
+            bash desktopApp/native/scripts/build-native-deps.sh
+          fi
 
       - name: Build TDLight native library (Windows)
         if: matrix.platform == 'windows'
@@ -313,8 +356,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TDLIGHT_OPENSSL_PREFIX="$GITHUB_WORKSPACE/desktopApp/build/native/openssl-static" \
-            bash desktopApp/tdlight-jvm/native/build-tdjni.sh
+          if [[ "${{ matrix.platform }}" == macos && "${{ matrix.arch }}" == x64 ]]; then
+            TDLIGHT_OPENSSL_PREFIX="$GITHUB_WORKSPACE/desktopApp/build/native/openssl-static" \
+              arch -x86_64 bash desktopApp/tdlight-jvm/native/build-tdjni.sh
+          else
+            TDLIGHT_OPENSSL_PREFIX="$GITHUB_WORKSPACE/desktopApp/build/native/openssl-static" \
+              bash desktopApp/tdlight-jvm/native/build-tdjni.sh
+          fi
 
       - name: Download WebView2 SDK (Windows)
         if: matrix.platform == 'windows'
@@ -357,7 +405,6 @@ jobs:
           ./gradlew.bat :desktopApp:createDistributable :desktopApp:packageMsi --no-daemon --max-workers=2 `
             "-PdesktopPackageVersion=$env:PACKAGE_VERSION" `
             "-PdesktopDisplayVersion=$env:DISPLAY_VERSION" `
-            '-PdesktopNativeDirectory=build/native/engine-build' `
             "-PdesktopWebView2Sdk=$env:WEBVIEW2_SDK"
 
       - name: Package Linux DEB and app image
@@ -376,8 +423,7 @@ jobs:
           set -euo pipefail
           ./gradlew :desktopApp:createDistributable :desktopApp:packageDmg --no-daemon --max-workers=2 \
             "-PdesktopPackageVersion=$PACKAGE_VERSION" \
-            "-PdesktopDisplayVersion=$DISPLAY_VERSION" \
-            '-PdesktopNativeDirectory=build/native/engine-build'
+            "-PdesktopDisplayVersion=$DISPLAY_VERSION"
 
       - name: Stage Windows installers and portable ZIP
         if: matrix.platform == 'windows'
@@ -490,7 +536,7 @@ jobs:
 
   ios:
     name: Unsigned iOS IPA
-    runs-on: macos-latest
+    runs-on: blacksmith-6vcpu-macos-latest
     permissions:
       contents: read
     env:
@@ -600,7 +646,7 @@ jobs:
       - android
       - desktop
       - ios
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: write
     concurrency:
@@ -756,7 +802,7 @@ jobs:
     name: Publish ${{ inputs.channel }} update-feed manifest
     needs: publish-release
     if: needs.publish-release.outputs.did_publish == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: write
     concurrency:

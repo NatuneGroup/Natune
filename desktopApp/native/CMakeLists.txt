@@ -69,17 +69,33 @@ target_link_libraries(archivetune_engine
         ${CMAKE_DL_LIBS}
         m
 )
+if(APPLE)
+    # miniaudio's CoreAudio backend and the mixer need these; nothing else on Apple resolves them.
+    target_link_libraries(archivetune_engine PRIVATE
+        "-framework AudioToolbox" "-framework AudioUnit" "-framework CoreAudio" "-framework CoreFoundation")
+endif()
 
-# The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
-# the same search path at link time as the loader uses at run time.
-target_link_options(archivetune_engine PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
 if(UNIX AND NOT APPLE)
+    # The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
+    # the same search path at link time as the loader uses at run time. ld64 has no -rpath-link.
+    target_link_options(archivetune_engine PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
     # DT_RPATH is inherited by the FFmpeg/TLS/XML closure; DT_RUNPATH is not.
     target_link_options(archivetune_engine PRIVATE "LINKER:--disable-new-dtags")
+    set_property(TARGET archivetune_engine PROPERTY INSTALL_RPATH "$ORIGIN")
+endif()
+if(APPLE)
+    # Stage script gives every dylib an @rpath identity; @loader_path resolves them beside the library.
+    set_property(TARGET archivetune_engine PROPERTY INSTALL_RPATH "@loader_path")
+endif()
+if(MINGW)
+    # Static link libgcc/winpthreads so the package's only DLL dependencies are the staged ones and
+    # Windows system libraries. Windows DLL resolution already covers the install directory.
+    target_link_options(archivetune_engine PRIVATE -static)
+    # System.mapLibraryName gives archivetune_engine.dll; MinGW's lib prefix would break that lookup.
+    set_property(TARGET archivetune_engine PROPERTY PREFIX "")
 endif()
 set_target_properties(archivetune_engine PROPERTIES
     BUILD_RPATH "${AE_PREFIX}/lib"
-    INSTALL_RPATH "$ORIGIN"
     BUILD_WITH_INSTALL_RPATH OFF
 )
 install(TARGETS archivetune_engine LIBRARY DESTINATION . RUNTIME DESTINATION .)
