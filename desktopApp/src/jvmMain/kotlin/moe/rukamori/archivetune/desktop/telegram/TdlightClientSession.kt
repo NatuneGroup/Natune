@@ -197,6 +197,23 @@ internal class TdlightClientSession(
     /** True when the build or launch supplies an api_id and api_hash, so [start] can create a client. */
     val configured: Boolean get() = credentials != null
 
+    /** Android's `downloadFileBlocking`: return a completed thumbnail path, else synchronously download it. */
+    internal suspend fun downloadFileBlocking(fileId: Int): String? {
+        if (fileId <= 0) return null
+        val existing = runCatching {
+            admittedRequest("telegramArtworkGetFile", TdApi.GetFile(fileId), ARTWORK_REQUEST_TIMEOUT_MS) as? TdApi.File
+        }.getOrNull()
+        existing?.local?.takeIf { it.isDownloadingCompleted && it.path.isNotBlank() }?.let { return it.path }
+        val downloaded = runCatching {
+            admittedRequest(
+                "telegramArtworkDownloadFile",
+                TdApi.DownloadFile(fileId, ARTWORK_DOWNLOAD_PRIORITY, 0, 0, true),
+                ARTWORK_REQUEST_TIMEOUT_MS,
+            ) as? TdApi.File
+        }.getOrNull()
+        return downloaded?.local?.path?.takeIf(String::isNotBlank)
+    }
+
     /**
      * Sends one request through the running client while its account is admitted. Browse and bots read this, rather
      * than the raw client, so a request can never run against a session that is signed out, unverified or closed.
@@ -410,6 +427,8 @@ internal class TdlightClientSession(
          */
         private const val AUTH_REQUEST_TIMEOUT_MS = 30_000L
 
+        private const val ARTWORK_REQUEST_TIMEOUT_MS = 30_000L
+        private const val ARTWORK_DOWNLOAD_PRIORITY = 32
         private const val CLOSE_CONFIRM_TIMEOUT_MS = 10_000L
     }
 }
