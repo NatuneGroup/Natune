@@ -85,6 +85,7 @@ fun hostHistoryPage(
         failed = if (local) pager.failed else activeRemote?.failed ?: false,
         canLoadMore = if (local) pager.continuation != null else activeRemote?.canLoadMore ?: false,
         busy = if (local) pager.busy else activeRemote?.busy ?: false,
+        rowMenu = local || activeRemote?.rowMenu == true,
     )
     val actions = HistoryActions(
         source = { source = it },
@@ -124,6 +125,8 @@ fun hostHistoryPage(
 interface RemoteHistoryPager {
     val source: HistorySource
     val playable: Boolean
+    /** Whether rows open the host's generic item menu; provider-native rows may suppress it. */
+    val rowMenu: Boolean
     var sections: List<HistorySectionUi>
     var query: String
     var loading: Boolean

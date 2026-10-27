@@ -85,7 +85,7 @@ internal fun desktopHostBindings(
         // Library, playlists, the local or liked playlist routes, search, YouTube albums and finite playlists, music
         // recognition and Listen Together read their owners. Every other destination keeps the boundary.
         page = { route ->
-            desktopGraphPage(graph, menu, createPlaylist, recognition, playlistMenus, route) { target -> ownRoutes.trySend(target) }
+            desktopGraphPage(graph, menu, createPlaylist, recognition, playlistMenus, settingsOwners.spotify, route, back = { backRequests.tryEmit(Unit) }) { target -> ownRoutes.trySend(target) }
         },
         // Item and news images load over the graph's one client, public http or https only; a failed image keeps its frame.
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },

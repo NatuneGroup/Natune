@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.provider.YouTubeMoodGenre
 import moe.rukamori.archivetune.shared.data.provider.YouTubeRelease
 import moe.rukamori.archivetune.shared.data.provider.YouTubeReleaseType
@@ -14,9 +15,17 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeShelf
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.settings.ActiveHomeSourcesKey
+import moe.rukamori.archivetune.shared.domain.settings.HomeSourceKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
+import moe.rukamori.archivetune.shared.ui.home.resolvedHomeSource
+import moe.rukamori.archivetune.shared.ui.home.resolvedHomeSources
+import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantNowPlaying
+import moe.rukamori.archivetune.shared.ui.home.variants.SpotifyHomeActions
+import moe.rukamori.archivetune.shared.ui.navigation.HomeSourceBinding
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
@@ -41,7 +50,42 @@ private val DISCOVERY_REQUEST = ContentRequest(ContentProvider.YOUTUBE, ContentS
 private val CHARTS_REQUEST = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.EXPLORE, text = "charts")
 
 @Composable
-internal fun desktopHomePage(graph: DesktopSessionGraph, openRoute: (String) -> Unit): ArchiveGraphPage {
+internal fun desktopHomePage(
+    graph: DesktopSessionGraph,
+    spotify: DesktopSpotifyAccounts,
+    openRoute: (String) -> Unit,
+): ArchiveGraphPage {
+    val preferences by graph.settings.snapshots.collectAsState()
+    val available = resolvedHomeSources(
+        stored = preferences?.get(ActiveHomeSourcesKey).orEmpty(),
+        spotifyAvailable = spotify.catalogConnected(),
+        qqAvailable = false,
+    )
+    val source = resolvedHomeSource(preferences?.get(HomeSourceKey), available)
+    val sourceChange: (HomeSource) -> Unit = { target ->
+        graph.scope.launch { graph.settings.edit { this[HomeSourceKey] = target.name } }
+    }
+    if (source == HomeSource.SPOTIFY) {
+        val owner = remember(graph, spotify) { DesktopSpotifyHome(graph, spotify, openRoute) }
+        val catalogAccount = preferences?.get(SpotifySpDcKey).orEmpty()
+        androidx.compose.runtime.LaunchedEffect(owner, catalogAccount) { owner.load() }
+        val snapshot by graph.queue.player.snapshot.collectAsState()
+        return ArchiveGraphPage.HomeSpotify(
+            source = HomeSourceBinding(source, available, sourceChange),
+            state = owner.ui,
+            actions = SpotifyHomeActions(
+                play = owner::play,
+                openPlaylist = owner::openPlaylist,
+                select = owner::select,
+                switchToYoutube = { sourceChange(HomeSource.YOUTUBE) },
+                refresh = { owner.load(force = true) },
+            ),
+            nowPlaying = HomeVariantNowPlaying(
+                isPlaying = snapshot?.playWhenReady == true,
+                trackRef = owner.activeSpotifyRef(),
+            ),
+        )
+    }
     val feed = graph.catalogueOwners.home
     androidx.compose.runtime.LaunchedEffect(feed) { feed.reload() }
     val snapshot by graph.queue.player.snapshot.collectAsState()
@@ -56,8 +100,8 @@ internal fun desktopHomePage(graph: DesktopSessionGraph, openRoute: (String) -> 
     )
     return ArchiveGraphPage.Home(
         source = HomeSource.YOUTUBE,
-        availableSources = listOf(HomeSource.YOUTUBE),
-        sourceChange = {},
+        availableSources = available,
+        sourceChange = sourceChange,
         design = HomeFeedDesign.Classic,
         shelves = shelves,
         page = page,

@@ -21,6 +21,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.QueueLocatorResolver
 import moe.rukamori.archivetune.shared.domain.repository.toPlaybackLocator
+import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
@@ -75,6 +76,11 @@ internal class DesktopQueueLocatorResolver(
         }
         storedFile(occurrence.item.ref.provider, occurrence.item.ref.id)?.let { path ->
             return PlaybackLocator.LocalFile(path.toFile().absolutePath)
+        }
+        if (occurrence.item.ref.provider == "telegram") {
+            val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)
+                ?: throw IllegalStateException("invalid Telegram media id: ${occurrence.item.ref.id}")
+            return PlaybackLocator.TelegramFile(track)
         }
         val request = occurrence.toResolveRequest(preferences()).withSourcePins(preferences(), occurrence.item.ref.id)
         // A "play from" pin forces the attempt chain for this one song, as the Android service's per-song

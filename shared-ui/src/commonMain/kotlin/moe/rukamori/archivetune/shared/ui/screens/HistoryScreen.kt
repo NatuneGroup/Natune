@@ -25,7 +25,7 @@ data class HistoryUi(
     val source: HistorySource = HistorySource.LOCAL, val availableSources: Set<HistorySource> = setOf(HistorySource.LOCAL),
     val sections: List<HistorySectionUi> = emptyList(), val query: String = "",
     val selectedEventIds: Set<Long> = emptySet(), val loading: Boolean = false, val failed: Boolean = false,
-    val canLoadMore: Boolean = false, val busy: Boolean = false,
+    val canLoadMore: Boolean = false, val busy: Boolean = false, val rowMenu: Boolean = true,
 )
 class HistoryActions(
     val source: (HistorySource) -> Unit, val query: (String) -> Unit, val back: () -> Unit,
@@ -102,7 +102,7 @@ fun HistoryScreen(
                             else artwork(event.row.item, Modifier.size(48.dp))
                         },
                         trailingContent = {
-                            if (selected.isEmpty()) TextButton({ actions.more(event.row) }) { Text(stringResource(Res.string.m4_more)) }
+                            if (selected.isEmpty() && state.rowMenu) TextButton({ actions.more(event.row) }) { Text(stringResource(Res.string.m4_more)) }
                         },
                         modifier = Modifier.testTag("history-event-${event.row.occurrenceId}").combinedClickable(
                             onClick = { if (selected.isNotEmpty()) { if (!state.busy && id != null) actions.toggleSelection(id) }

@@ -18,6 +18,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,8 +46,13 @@ import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileArtis
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileCacheTsKey
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileRecentItemsKey
 import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileTopTracksKey
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceEditor
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.ShowSpotifyPlaylistsKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyHistorySyncEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccessTokenExpiresAtKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccessTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccountAvatarUrlKey
@@ -67,19 +73,32 @@ import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
+import moe.rukamori.archivetune.spotify.SPOTIFY_HISTORY_ARCHIVE_LIMIT
 import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyAuth
 import moe.rukamori.archivetune.spotify.SpotifyHashProvider
+import moe.rukamori.archivetune.spotify.historyRetryWaitMillis
+import moe.rukamori.archivetune.spotify.mergePlayHistory
 import moe.rukamori.archivetune.spotify.models.SpotifyPlayHistory
+import moe.rukamori.archivetune.spotify.models.SpotifyPaging
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
+import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTrack
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTracksRef
+import moe.rukamori.archivetune.spotify.models.SpotifySavedTrack
+import moe.rukamori.archivetune.spotify.models.SpotifyTrack
+import moe.rukamori.archivetune.spotify.needsFullHistoryRead
+import moe.rukamori.archivetune.spotify.newestPlayedAtMillis
+import moe.rukamori.archivetune.spotify.playedAtMillis
+import moe.rukamori.archivetune.spotify.rateLimitCooldownMillis
 
 private const val SPOTIFY_PROVIDER = "spotify"
 private const val TOKEN_EXPIRY_GRACE_MS = 60_000L
 private const val PLAYLIST_PAGE_SIZE = 50
+private const val RECENTLY_PLAYED_CACHE_TTL_MS = 5 * 60 * 1000L
 
 /** In-flight parallel track-count fetches in [DesktopSpotifyAccounts.fetchAllPlaylists] — the Android cap. */
 private const val COUNT_FETCH_CONCURRENCY = 8
+private const val SPOTIFY_PAGE_CONCURRENCY = 8
 private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
 private const val REST_ME_URL = "https://api.spotify.com/v1/me"
 private const val WEB_PLAYER_USER_AGENT =
@@ -102,6 +121,11 @@ private val cacheJson = Json {
     encodeDefaults = true
 }
 private val playlistCacheSerializer = ListSerializer(serializer<SpotifyPlaylist>())
+private val historyCacheSerializer = ListSerializer(serializer<SpotifyPlayHistory>())
+
+private class CachedRecentlyPlayed(val items: List<SpotifyPlayHistory>, val fetchedAtMs: Long) {
+    fun isFresh(nowMs: Long): Boolean = nowMs - fetchedAtMs < RECENTLY_PLAYED_CACHE_TTL_MS
+}
 
 /** A Spotify account as its own profile reports it. */
 internal data class SpotifyAccountProfile(val userId: String, val displayName: String?)
@@ -137,6 +161,11 @@ internal class DesktopSpotifyAccounts(
     private var playlists: List<SpotifyPlaylist>? = null
     private var catalogAttempt: Job? = null
     private var streamingAttempt: Job? = null
+    private val historyLock = Mutex()
+    private val playback = DesktopSpotifyPlayback(graph)
+    private var recentlyPlayedCache: CachedRecentlyPlayed? = null
+    private var recentlyPlayedBlockedUntilMs = 0L
+    private var recentlyPlayedFullReadAtMs = 0L
 
     private val catalogState = MutableStateFlow(SpotifyCatalogAccountState())
     val catalog: StateFlow<SpotifyCatalogAccountState> = catalogState.asStateFlow()
@@ -184,15 +213,141 @@ internal class DesktopSpotifyAccounts(
         )
     }
 
-    /**
-     * The catalog account's recent plays, most recent first, as `Spotify.recentlyPlayed` answers them — the same
-     * web-player context read the Android history feed uses, with the catalog token retried once on 401. Throws
-     * when the catalog account is not connected or the read fails, so the history feed shows its failed state.
-     */
-    suspend fun recentlyPlayed(afterMillis: Long? = null): List<SpotifyPlayHistory> {
-        refreshToken(rejected = null)
-        return withTokenRetry { Spotify.recentlyPlayed(afterMillis = afterMillis).getOrThrow() }.items
+    /** Spotify history is offered only when the catalog account and Android's Spotify-content/history toggles are on. */
+    fun historyAvailable(): Boolean {
+        val prefs = snapshot()
+        return prefs[SpotifySpDcKey].orEmpty().isNotBlank() &&
+            prefs[ShowSpotifyPlaylistsKey] == true &&
+            prefs[SpotifyHistorySyncEnabledKey] == true
     }
+
+    /** The catalog account itself, independent of the playlist/history switches. Android offers Spotify Home from this. */
+    fun catalogConnected(): Boolean = snapshot()[SpotifySpDcKey].orEmpty().isNotBlank()
+
+    /** Restores or mints the catalog token once before a page issues its endpoint calls. */
+    suspend fun restoreCatalogSession(): Boolean =
+        try {
+            refreshToken(rejected = null)
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+
+    /** One authenticated catalog request with Android's rejected-token retry semantics. */
+    suspend fun <T> catalogCall(block: suspend () -> T): T = withTokenRetry(block)
+
+    /** The Spotify playlist source is offered only when the catalog account and the Android Spotify toggle are on. */
+    fun libraryAvailable(): Boolean {
+        val prefs = snapshot()
+        return prefs[SpotifySpDcKey].orEmpty().isNotBlank() && prefs[ShowSpotifyPlaylistsKey] == true
+    }
+
+    /** The cached playlist list when the integration page last read it, without starting a network read. */
+    fun cachedPlaylists(): List<SpotifyPlaylist>? = playlists
+
+    /** The catalog track as the app displays it. Playback still resolves through [playTrackList]. */
+    fun spotifyTrackItem(track: SpotifyTrack) = playback.spotifyTrackItem(track)
+
+    /**
+     * The user's Spotify playlists, in the service's order. Cached rows answer repeat page opens; a refresh goes through
+     * the same paged `myPlaylists` + per-playlist count fill as Android's `fetchAllPlaylists`.
+     */
+    suspend fun libraryPlaylists(force: Boolean = false): List<SpotifyPlaylist> {
+        val prefs = snapshot()
+        restoreCachedPlaylists(prefs)
+        val cached = playlists
+        if (!force && !cached.isNullOrEmpty()) return cached
+        refreshToken(rejected = null)
+        refreshProfile()
+        val loaded = fetchAllPlaylists()
+        playlists = loaded
+        controller.edit { this[SpotifyLibraryPlaylistsCacheKey] = cacheJson.encodeToString(playlistCacheSerializer, loaded) }
+        catalogState.update {
+            it.copy(playlistCount = loaded.size, accountName = snapshot()[SpotifyAccountNameKey].orEmpty())
+        }
+        return loaded
+    }
+
+    /** One playlist's header fields and every playable track, matching Android's `playlistWithTracks` drain. */
+    suspend fun playlistWithTracks(playlistId: String): Pair<SpotifyPlaylist, List<SpotifyTrack>> {
+        refreshToken(rejected = null)
+        val detail = withTokenRetry {
+            Spotify.playlistDetail(playlistId = playlistId, limit = PLAYLIST_PAGE_SIZE, offset = 0).getOrThrow()
+        }
+        val tracks = ArrayList<SpotifyTrack>(detail.tracks.items.size)
+        tracks += detail.tracks.items.playablePlaylistTracks()
+        tracks += drainSpotifyPages(detail.tracks) { offset ->
+            withTokenRetry {
+                Spotify.playlistTracks(playlistId = playlistId, limit = PLAYLIST_PAGE_SIZE, offset = offset).getOrThrow()
+            }
+        }.playablePlaylistTracks()
+        return detail.playlist to tracks
+    }
+
+    /** Every playable liked song, matching Android's `likedSongs` drain. */
+    suspend fun likedSongs(): List<SpotifyTrack> {
+        refreshToken(rejected = null)
+        val first = withTokenRetry {
+            Spotify.likedSongs(limit = PLAYLIST_PAGE_SIZE, offset = 0).getOrThrow()
+        }
+        return first.items.playableLikedTracks() +
+            drainSpotifyPages(first) { offset ->
+                withTokenRetry { Spotify.likedSongs(limit = PLAYLIST_PAGE_SIZE, offset = offset).getOrThrow() }
+            }.playableLikedTracks()
+    }
+
+    /** Maps a queue row resolved from Spotify back to its catalog row, for Spotify Home's active-track marker. */
+    fun spotifyRefForResolved(ref: ContentRef): ContentRef? = playback.spotifyRefForResolved(ref)
+
+    /** Resolves one tapped catalog track before its queue starts, matching Android's preload call. */
+    suspend fun resolveTrack(track: SpotifyTrack): ContentItem? = playback.resolveTrack(track)
+
+    /** Resolves every selected track with Android's four-at-a-time bounded resolver, then queues the matches. */
+    suspend fun playTrackList(
+        playlistId: String,
+        tracks: List<SpotifyTrack>,
+        startIndex: Int = 0,
+        shuffled: Boolean = false,
+    ) = playback.playTrackList(playlistId, tracks, startIndex, shuffled)
+
+    /** Converts one fetched play into the row the shared history host shows. */
+    suspend fun recentlyPlayed(force: Boolean = false): List<SpotifyPlayHistory> =
+        historyLock.withLock {
+            if (recentlyPlayedCache == null) restoreCachedRecentlyPlayed()
+            val cached = recentlyPlayedCache
+            val now = System.currentTimeMillis()
+            if (!force && cached != null && cached.isFresh(now)) return@withLock cached.items
+            val blockedForMs = recentlyPlayedBlockedUntilMs - now
+            if (blockedForMs > 0) {
+                cached?.let { return@withLock it.items }
+                throw rateLimitedException(blockedForMs)
+            }
+
+            refreshToken(rejected = null)
+            val cursorMillis = cached?.items?.newestPlayedAtMillis()
+            val fullRead = needsFullHistoryRead(cursorMillis, recentlyPlayedFullReadAtMs, now)
+            val fetched = try {
+                readRecentlyPlayed(cursorMillis.takeUnless { fullRead }, cached != null)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                cached?.let { return@withLock it.items }
+                throw failure
+            }
+
+            val merged = mergePlayHistory(fetched, cached?.items.orEmpty(), SPOTIFY_HISTORY_ARCHIVE_LIMIT)
+            val fetchedAtMs = System.currentTimeMillis()
+            recentlyPlayedCache = CachedRecentlyPlayed(merged, fetchedAtMs)
+            if (fullRead) recentlyPlayedFullReadAtMs = fetchedAtMs
+            recentlyPlayedBlockedUntilMs = 0L
+            controller.edit {
+                this[SpotifyRecentlyPlayedCacheKey] = cacheJson.encodeToString(historyCacheSerializer, merged)
+                this[SpotifyRecentlyPlayedCacheFetchedAtKey] = fetchedAtMs
+            }
+            merged
+        }
 
     /** Opens the catalog sign-in window. The connect row is disabled while this runs. */
     fun connectCatalog() {
@@ -249,6 +404,7 @@ internal class DesktopSpotifyAccounts(
             Spotify.accessToken = null
             Spotify.forgetAccount()
             playlists = null
+            clearRecentlyPlayedState()
         }
         browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_CATALOG)
         catalogErrorState.value = null
@@ -344,6 +500,7 @@ internal class DesktopSpotifyAccounts(
             if (changed) {
                 Spotify.accessToken = null
                 Spotify.forgetAccount()
+                clearRecentlyPlayedState()
             }
             playlists = null
             refreshTokenLocked(rejected = null)
@@ -410,6 +567,66 @@ internal class DesktopSpotifyAccounts(
             if (offset >= page.total || page.items.size < PLAYLIST_PAGE_SIZE) break
         }
         return loaded
+    }
+
+    /** Converts one fetched play into the row the shared history host shows. */
+    fun historyTrackRow(track: SpotifyTrack, playedAtMs: Long): ContentOccurrence =
+        playback.historyTrackRow(track, playedAtMs)
+
+    /** Resolves the selected Spotify play through the Android anonymous-then-account YouTube search/score path. */
+    suspend fun playHistoryTrack(start: ContentOccurrence) = playback.playHistoryTrack(start)
+
+    private fun restoreCachedRecentlyPlayed() {
+        val prefs = snapshot()
+        val cached = prefs[SpotifyRecentlyPlayedCacheKey].orEmpty()
+        if (cached.isBlank()) return
+        try {
+            val items = cacheJson.decodeFromString(historyCacheSerializer, cached)
+            recentlyPlayedCache = CachedRecentlyPlayed(items, prefs[SpotifyRecentlyPlayedCacheFetchedAtKey] ?: 0L)
+        } catch (_: Exception) {
+            graph.report("spotify history cache unreadable")
+        }
+    }
+
+    private suspend fun readRecentlyPlayed(
+        afterMillis: Long?,
+        hasCachedRows: Boolean,
+        retriesLeft: Int = 1,
+    ): List<SpotifyPlayHistory> =
+        try {
+            withTokenRetry { Spotify.recentlyPlayed(afterMillis = afterMillis).getOrThrow() }.items
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (!isSpotifyRateLimitMessage(failure.message)) throw failure
+            val retryAfterSec = (failure as? Spotify.SpotifyException)?.retryAfterSec
+            recentlyPlayedBlockedUntilMs = maxOf(
+                recentlyPlayedBlockedUntilMs,
+                System.currentTimeMillis() + rateLimitCooldownMillis(retryAfterSec),
+            )
+            val waitMs = if (retriesLeft > 0) {
+                historyRetryWaitMillis(retryAfterSec, hasCachedRows, (failure as? Spotify.SpotifyException)?.quotaExceeded == true)
+            } else {
+                null
+            } ?: throw failure
+            delay(waitMs)
+            readRecentlyPlayed(afterMillis, hasCachedRows, retriesLeft - 1)
+        }
+
+    private fun rateLimitedException(waitMs: Long): Spotify.SpotifyException {
+        val waitSec = (waitMs + 999L) / 1000L
+        return Spotify.SpotifyException(
+            statusCode = 429,
+            message = "Rate limited — Spotify asked to wait ${waitSec}s before the history endpoint may be called again",
+            retryAfterSec = waitSec,
+        )
+    }
+
+    private fun clearRecentlyPlayedState() {
+        recentlyPlayedCache = null
+        recentlyPlayedBlockedUntilMs = 0L
+        recentlyPlayedFullReadAtMs = 0L
+        playback.clearHistoryTracks()
     }
 
     private suspend fun playlistTrackCount(playlistId: String): Int? =
@@ -533,6 +750,53 @@ internal class DesktopSpotifyAccounts(
     }
 }
 
+/** The playlist tracks of a page that Spotify can actually play — local files have no YouTube match. */
+private fun List<SpotifyPlaylistTrack>.playablePlaylistTracks(): List<SpotifyTrack> =
+    mapNotNull { item -> item.track?.takeUnless(SpotifyTrack::isLocal) }
+
+/** The liked songs of a page that Spotify can actually play. */
+private fun List<SpotifySavedTrack>.playableLikedTracks(): List<SpotifyTrack> =
+    mapNotNull { item -> item.track.takeUnless(SpotifyTrack::isLocal) }
+
+/** Android's bounded playlist-page drain: overlap known offsets, then stop where the serial reader would stop. */
+private suspend fun <T> drainSpotifyPages(
+    firstPage: SpotifyPaging<T>,
+    fetchPage: suspend (offset: Int) -> SpotifyPaging<T>,
+): List<T> {
+    val step = firstPage.nextOffset ?: return emptyList()
+    if (firstPage.total <= 0 || step != firstPage.limit) return drainSpotifyPagesSerially(step, fetchPage)
+    val offsets = buildList {
+        var offset = step
+        while (offset < firstPage.total) {
+            add(offset)
+            offset += step
+        }
+    }
+    val pages = coroutineScope {
+        val permits = Semaphore(SPOTIFY_PAGE_CONCURRENCY)
+        offsets.map { offset -> async(Dispatchers.IO) { permits.withPermit { fetchPage(offset) } } }.awaitAll()
+    }
+    val items = ArrayList<T>()
+    for (page in pages) {
+        items += page.items
+        if (page.nextOffset == null) break
+    }
+    return items
+}
+
+private suspend fun <T> drainSpotifyPagesSerially(
+    from: Int,
+    fetchPage: suspend (offset: Int) -> SpotifyPaging<T>,
+): List<T> {
+    val items = ArrayList<T>()
+    var offset = from
+    while (true) {
+        val page = fetchPage(offset)
+        items += page.items
+        offset = page.nextOffset ?: return items
+    }
+}
+
 /** The catalog snapshots Android keeps per account; a new or removed account must not inherit them. */
 private fun PreferenceEditor.clearCatalogSnapshots() {
     this[InlineSpotifyProfileRecentItemsKey] = null
@@ -614,6 +878,15 @@ private fun parseObject(text: String): JsonObject? =
     } catch (_: Exception) {
         null
     }
+
+/* Spotify's raw 429 body is not a reader-facing message; this matches Android's history retry detection. */
+private fun isSpotifyRateLimitMessage(message: String?): Boolean =
+    message != null &&
+        (
+            message.contains("429") ||
+                message.contains("Too Many Requests", ignoreCase = true) ||
+                message.contains("Rate limit", ignoreCase = true)
+            )
 
 private fun JsonObject.child(name: String): JsonObject? = this[name] as? JsonObject
 
