@@ -48,6 +48,11 @@ internal class DeezerPoolAccount(val id: Long?, val arl: String, val premium: Bo
     override fun toString() = "DeezerPoolAccount(id=$id, REDACTED)"
 }
 
+/** One shared Qobuz subscriber credential from the pool feed. */
+internal class QobuzPoolAccount(val id: Long?, val token: String, val appId: String, val appSecret: String, val premium: Boolean) {
+    override fun toString() = "QobuzPoolAccount(id=$id, REDACTED)"
+}
+
 /**
  * The desktop client of the Playback Pool, over the same ArchivePool contract as Android's PoolAccountManager: the
  * account feed at `/api/accounts` (the combined `/api/sources` when a deployment predates the split), v2 field
@@ -57,7 +62,7 @@ internal class DeezerPoolAccount(val id: Long?, val arl: String, val premium: Bo
  *
  * The decrypted accounts are cached in the platform vault under their own key, never in the settings file and never
  * over a personal sign-in. The time of the last attempt is cached with them, so an empty or failed feed stays throttled
- * across restarts. Only the TIDAL and Deezer lists are kept: the other pooled services have no source on this host.
+ * across restarts. TIDAL, Deezer and Qobuz are kept; the other pooled services have no source on this host.
  */
 internal class DesktopPlaybackPool(
     private val http: HttpClient,
@@ -82,6 +87,7 @@ internal class DesktopPlaybackPool(
     @Volatile private var loaded = false
     @Volatile private var tidal: List<TidalPoolAccount> = emptyList()
     @Volatile private var deezer: List<DeezerPoolAccount> = emptyList()
+    @Volatile private var qobuz: List<QobuzPoolAccount> = emptyList()
     @Volatile private var lastAttemptAtMs = 0L
     @Volatile private var discovered: List<String> = emptyList()
     @Volatile private var discoveredAtMs = 0L
@@ -115,6 +121,12 @@ internal class DesktopPlaybackPool(
         if (!enabled()) return emptyList()
         ensureLoaded()
         return deezer.sortedWith(compareBy({ coolingDown(DEEZER, it.id) }, { !it.premium }))
+    }
+
+    suspend fun qobuzAccounts(): List<QobuzPoolAccount> {
+        if (!enabled()) return emptyList()
+        ensureLoaded()
+        return qobuz.sortedWith(compareBy({ coolingDown(QOBUZ, it.id) }, { !it.premium }))
     }
 
     /**
@@ -191,6 +203,7 @@ internal class DesktopPlaybackPool(
         mutex.withLock {
             tidal = emptyList()
             deezer = emptyList()
+            qobuz = emptyList()
             discovered = emptyList()
             discoveredAtMs = 0L
             loaded = true
@@ -218,11 +231,13 @@ internal class DesktopPlaybackPool(
                     val decrypt = decryptorFor(root)
                     val nextTidal = parseTidal(accountsArray(root, TIDAL), decrypt)
                     val nextDeezer = parseDeezer(accountsArray(root, DEEZER), decrypt)
-                    if (nextTidal.isEmpty() && nextDeezer.isEmpty() && hasAccounts()) {
+                    val nextQobuz = parseQobuz(accountsArray(root, QOBUZ), decrypt)
+                    if (nextTidal.isEmpty() && nextDeezer.isEmpty() && nextQobuz.isEmpty() && hasAccounts()) {
                         log("Playback Pool answered empty lists; the cached accounts are kept")
                     } else {
                         tidal = nextTidal
                         deezer = nextDeezer
+                        qobuz = nextQobuz
                     }
                 }
                 result == null -> log("Playback Pool could not be reached")
@@ -235,10 +250,11 @@ internal class DesktopPlaybackPool(
         }
     }
 
-    private fun hasAccounts() = tidal.isNotEmpty() || deezer.isNotEmpty()
+    private fun hasAccounts() = tidal.isNotEmpty() || deezer.isNotEmpty() || qobuz.isNotEmpty()
 
     /** Android re-reads a pool that serves every service daily; one that is missing a service is retried sooner. */
-    private fun refreshIntervalMs(): Long = if (tidal.isNotEmpty() && deezer.isNotEmpty()) FULL_INTERVAL_MS else PARTIAL_INTERVAL_MS
+    private fun refreshIntervalMs(): Long =
+        if (tidal.isNotEmpty() && deezer.isNotEmpty() && qobuz.isNotEmpty()) FULL_INTERVAL_MS else PARTIAL_INTERVAL_MS
 
     private fun coolingDown(service: String, id: Long?): Boolean {
         val key = "$service:${id ?: 0L}"
@@ -259,6 +275,7 @@ internal class DesktopPlaybackPool(
                     if (enabled()) {
                         tidal = parseTidal(cached[TIDAL] as? JsonArray, passthrough)
                         deezer = parseDeezer(cached[DEEZER] as? JsonArray, passthrough)
+                        qobuz = parseQobuz(cached[QOBUZ] as? JsonArray, passthrough)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -293,6 +310,17 @@ internal class DesktopPlaybackPool(
                     })
                 }
             })
+            put(QOBUZ, buildJsonArray {
+                qobuz.forEach { account ->
+                    add(buildJsonObject {
+                        account.id?.let { put("id", it) }
+                        put("token", account.token)
+                        put("appId", account.appId)
+                        put("appSecret", account.appSecret)
+                        put("premium", account.premium)
+                    })
+                }
+            })
         }
         try {
             vault.write(CACHE_KEY, document.toString())
@@ -312,6 +340,7 @@ internal class DesktopPlaybackPool(
             when (service) {
                 TIDAL -> tidal = merged(tidal, deadId, { it.id }, parseTidal(entries, decrypt).firstOrNull()) ?: return@withLock
                 DEEZER -> deezer = merged(deezer, deadId, { it.id }, parseDeezer(entries, decrypt).firstOrNull()) ?: return@withLock
+                QOBUZ -> qobuz = merged(qobuz, deadId, { it.id }, parseQobuz(entries, decrypt).firstOrNull()) ?: return@withLock
                 else -> return@withLock
             }
             persist()
@@ -363,6 +392,15 @@ internal class DesktopPlaybackPool(
             DeezerPoolAccount(entryId(entry), arl, flag(entry, "premium", false))
         }
 
+    private fun parseQobuz(array: JsonArray?, decrypt: (String) -> String?): List<QobuzPoolAccount> =
+        array.orEmpty().mapNotNull { element ->
+            val entry = element as? JsonObject ?: return@mapNotNull null
+            val token = field(entry, "token", decrypt) ?: return@mapNotNull null
+            val appId = field(entry, "appId", decrypt) ?: return@mapNotNull null
+            val appSecret = field(entry, "appSecret", decrypt) ?: return@mapNotNull null
+            QobuzPoolAccount(entryId(entry), token, appId, appSecret, flag(entry, "premium", false))
+        }
+
     private fun field(entry: JsonObject, name: String, decrypt: (String) -> String?): String? {
         val raw = (entry[name] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" } ?: return null
         return decrypt(raw)?.takeIf { it.isNotBlank() }
@@ -371,6 +409,7 @@ internal class DesktopPlaybackPool(
     companion object {
         const val TIDAL = "tidal"
         const val DEEZER = "deezer"
+        const val QOBUZ = "qobuz"
         private val CACHE_KEY = CredentialKey("archivepool", CredentialScope.PLAYBACK_POOL, "feed-cache-v1")
         private const val ENCRYPTED_PREFIX = "enc:1:"
         private const val CLIENT_KEY_DOMAIN = "archivepool-client:"

@@ -11,6 +11,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -337,6 +338,8 @@ internal fun DesktopSettingsScreen(
             "settings/integration" -> {
                 val spotifyAccount by owners.spotify.catalog.collectAsState()
                 val spotifyError by owners.spotify.catalogError.collectAsState()
+                var showImport by remember { mutableStateOf(false) }
+                val importer = remember(graph, owners.spotify) { DesktopCrossServiceImport(graph, owners.spotify) }
                 LaunchedEffect(Unit) { owners.spotify.restore() }
                 IntegrationSettings(
                     controller = owners.controller,
@@ -352,10 +355,17 @@ internal fun DesktopSettingsScreen(
                     onLogoutSpotify = owners.spotify::logOutCatalog,
                     onDismissSpotifyError = owners.spotify::dismissCatalogError,
                     onPoolAccountsChanged = graph.playbackPool::onEnabledChanged,
-                    onOpenCrossServiceImport = unavailable,
+                    onOpenCrossServiceImport = { showImport = true },
                     onFailure = onFailure,
                     scrollTo = scrollTo,
                 )
+                if (showImport) {
+                    DesktopCrossServiceImportDialog(
+                        importer = importer,
+                        openPlaylist = { id -> navigate("local_playlist/$id") },
+                        onDismiss = { showImport = false },
+                    )
+                }
             }
             "settings/spotify_streaming" -> {
                 val signingIn by owners.spotify.streamingSignInInProgress.collectAsState()

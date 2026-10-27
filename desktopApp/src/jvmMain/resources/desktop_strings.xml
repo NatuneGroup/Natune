@@ -136,4 +136,12 @@
     <string name="drive_auth_done">Natune can now use Google Drive. You can close this tab and return to the app.</string>
     <string name="drive_auth_declined">Google Drive access was not granted. You can close this tab and return to Natune.</string>
     <string name="library_top_mixes_unavailable">AI integration is required before Natune can build personal top mixes. AI mixes are not connected on desktop yet.</string>
+    <string name="cross_service_import_title">Import playlist</string>
+    <string name="cross_service_import_url_label">Playlist URL</string>
+    <string name="cross_service_import_hint">Paste a YouTube Music, Spotify, Apple Music, Amazon Music, Tidal, Qobuz or Deezer playlist link.</string>
+    <string name="cross_service_import_fetching">Reading the source playlist…</string>
+    <string name="cross_service_import_resolving">Matching tracks on YouTube Music… %1$d/%2$d</string>
+    <string name="cross_service_import_done">Imported %1$d of %2$d tracks.</string>
+    <string name="cross_service_import_start">Import</string>
+    <string name="cross_service_import_open">Open playlist</string>
 </resources>
