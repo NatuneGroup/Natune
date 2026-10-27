@@ -178,6 +178,43 @@ class JvmDownloadRepository(
     }
 
     /**
+     * Commits a complete file produced by a non-HTTP provider. The bytes are copied under the download root and indexed
+     * like a fetched download, so provider-owned storage such as TDLib's file cache is never consumed by the import.
+     */
+    suspend fun importLocalFile(key: DownloadKey, source: Path, song: ContentItem): Path = withContext(Dispatchers.IO) {
+        require(Files.isRegularFile(source)) { "Local download source is missing: $source" }
+        require(song.ref.kind == ContentKind.SONG && song.ref.id == key.mediaId) {
+            "Download song does not match its media id"
+        }
+        val provider = key.provider ?: song.ref.provider
+        val owned = key.copy(provider = provider)
+        val destination = path(provider, owned)
+        Files.createDirectories(destination.parent)
+        val bytes = Files.size(source)
+        require(bytes > 0) { "Empty local download" }
+        val staging = Files.createTempFile(destination.parent, destination.fileName.toString(), ".part")
+        try {
+            Files.copy(source, staging, StandardCopyOption.REPLACE_EXISTING)
+            FileChannel.open(staging, StandardOpenOption.WRITE).use { it.force(true) }
+            currentCoroutineContext().ensureActive()
+            mutex.withLock {
+                val placeFile: suspend () -> Unit = {
+                    Files.move(staging, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                }
+                val displaced = index?.commitDownload(song, owned.source, owned.quality, bytes, System.currentTimeMillis(), placeFile)
+                    ?: run { placeFile(); null }
+                if (displaced != null) {
+                    val earlier = DownloadKey(key.mediaId, displaced.source, displaced.quality, provider)
+                    runCatching { Files.deleteIfExists(path(provider, earlier)) }
+                }
+            }
+        } finally {
+            Files.deleteIfExists(staging)
+        }
+        destination
+    }
+
+    /**
      * The resumable form of [download] that the queue owner drives. Staging belongs to [taskId], never to the
      * request, so a paused or failed transfer keeps its bytes and the next call for the same task continues from
      * them. With [resumeFromBytes] above zero the request asks for an HTTP range continuation: a 206 appends to the

@@ -181,7 +181,7 @@ private data class TelegramSyncTrack(
     val mediaId: String get() = TelegramTrackRef(chatId, messageId, fileId, fileUniqueId).toMediaId()
 }
 
-private class TdlightChannelLibrary(
+internal class TdlightChannelLibrary(
     private val graph: DesktopSessionGraph,
     private val session: TdlightClientSession,
 ) : TelegramChannelLibrary {
@@ -381,20 +381,20 @@ private val BRACKET_TAG_REGEX = Regex("\\[[^\\]]*\\]")
 private val LEADING_TRACK_NUMBER_REGEX = Regex("^\\s*\\d{1,3}\\s*[.\\-]\\s*")
 private val WHITESPACE_REGEX = Regex("\\s+")
 
-private fun fileExtension(fileName: String): String = fileName.substringAfterLast('.', "").lowercase(Locale.US)
+internal fun fileExtension(fileName: String): String = fileName.substringAfterLast('.', "").lowercase(Locale.US)
 private fun isLosslessAudio(mimeType: String, fileName: String): Boolean {
     val mime = mimeType.trim().lowercase(Locale.US)
     return mime in LOSSLESS_MIME_TYPES || fileExtension(fileName) in LOSSLESS_EXTENSIONS
 }
-private fun isAudioDocument(mimeType: String, fileName: String): Boolean =
+internal fun isAudioDocument(mimeType: String, fileName: String): Boolean =
     mimeType.trim().lowercase(Locale.US).startsWith("audio/") || fileExtension(fileName) in AUDIO_EXTENSIONS
-private fun cleanTrackName(raw: String): String =
+internal fun cleanTrackName(raw: String): String =
     raw.replace(NOISE_SUFFIX_REGEX, " ")
         .replace(BRACKET_TAG_REGEX, " ")
         .replace(LEADING_TRACK_NUMBER_REGEX, "")
         .replace(WHITESPACE_REGEX, " ")
         .trim()
-private fun deriveTrackMetadata(tagTitle: String, tagPerformer: String?, fileName: String): Pair<String, String?> {
+internal fun deriveTrackMetadata(tagTitle: String, tagPerformer: String?, fileName: String): Pair<String, String?> {
     val performer = tagPerformer?.trim()?.takeIf(String::isNotEmpty)
     if (tagTitle.isNotBlank()) return cleanTrackName(tagTitle).ifBlank { tagTitle.trim() } to performer
     val base = cleanTrackName(fileName.substringBeforeLast('.').ifBlank { fileName })

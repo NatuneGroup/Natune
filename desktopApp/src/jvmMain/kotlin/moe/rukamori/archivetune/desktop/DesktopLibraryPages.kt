@@ -88,6 +88,7 @@ internal fun desktopGraphPage(
         ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopCommentTogetherPage(graph)
         ArchiveDestination.TELEGRAM_BROWSE -> desktopTelegramBrowsePage(graph, back)
         ArchiveDestination.TELEGRAM_BOTS -> desktopTelegramBotsPage(graph, back, openRoute)
+        ArchiveDestination.TELEGRAM_BOT_CHAT -> desktopTelegramBotChatPage(graph, route.arguments.getValue("botId"))
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu, spotify)
         ArchiveDestination.ACCOUNT -> desktopAccountPage(graph)
         ArchiveDestination.NEWS -> desktopNewsPage()
