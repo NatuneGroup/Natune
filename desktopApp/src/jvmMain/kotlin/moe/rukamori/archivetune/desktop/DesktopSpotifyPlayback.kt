@@ -14,7 +14,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.innertube.models.AlbumItem
+import moe.rukamori.archivetune.innertube.models.ArtistItem
 import moe.rukamori.archivetune.innertube.models.SongItem
+import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -29,14 +32,22 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueStart
 import moe.rukamori.archivetune.shared.domain.settings.DefaultMetadataSourceKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.spotify.SpotifyMapper
+import moe.rukamori.archivetune.spotify.models.SpotifyAlbum
 import moe.rukamori.archivetune.spotify.models.SpotifySimpleArtist
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 
 /** Spotify catalog rows and their Android-identical YouTube resolution into the host queue. */
+internal sealed interface SpotifyCatalogTarget {
+    data class AlbumPage(val browseId: String) : SpotifyCatalogTarget
+    data class Song(val song: SongItem) : SpotifyCatalogTarget
+    data class SpotifyTracks(val tracks: List<SpotifyTrack>) : SpotifyCatalogTarget
+}
+
 internal class DesktopSpotifyPlayback(
     private val graph: DesktopSessionGraph,
 ) {
     private val historyTracks = ConcurrentHashMap<String, SpotifyTrack>()
+    private val catalogTracks = ConcurrentHashMap<String, SpotifyTrack>()
     private val resolvedSources = object : LinkedHashMap<ContentRef, ContentRef>(SPOTIFY_RESOLUTION_CACHE_MAX, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ContentRef, ContentRef>?): Boolean =
             size > SPOTIFY_RESOLUTION_CACHE_MAX
@@ -66,15 +77,56 @@ internal class DesktopSpotifyPlayback(
         return ContentOccurrence(occurrenceId, spotifyTrackItem(track))
     }
 
+    /** One catalog row from a Spotify library section; the id maps it back to the fetched track on tap. */
+    fun catalogTrackRow(track: SpotifyTrack, occurrenceId: String): ContentOccurrence {
+        catalogTracks[occurrenceId] = track
+        return ContentOccurrence(occurrenceId, spotifyTrackItem(track))
+    }
+
+    /** Resolves a tapped catalog track and starts its YouTube radio, as Android's `SpotifyPlayableRow` does. */
+    suspend fun playCatalogTrack(start: QueueStart) {
+        val track = catalogTracks[start.occurrenceId] ?: throw IllegalStateException("Spotify library row is no longer loaded")
+        playResolvedTrack(track)
+    }
+
     /** Resolves the selected Spotify play through the Android anonymous-then-account YouTube search/score path. */
     suspend fun playHistoryTrack(start: ContentOccurrence) {
         val track = historyTracks[start.occurrenceId] ?: throw IllegalStateException("Spotify history row is no longer loaded")
+        playResolvedTrack(track)
+    }
+
+    private suspend fun playResolvedTrack(track: SpotifyTrack) {
         val resolved = resolveSpotifyTrack(track) ?: throw IllegalStateException(DesktopStrings["spotify_track_unavailable"])
+        playYouTubeSongRef(resolved.ref)
+    }
+
+    /** Android's artist fallback: search YouTube Music for the exact display name, then use its first artist. */
+    suspend fun resolveArtistTarget(artistName: String): ContentRef? =
+        searchYouTube<ArtistItem>(artistName, YouTube.SearchFilter.FILTER_ARTIST)
+            ?.let { ContentRef(ContentProvider.YOUTUBE.id, ContentKind.ARTIST, it.id) }
+
+    /** Android's album fallback order: YouTube album, then song album, then the Spotify tracks. */
+    suspend fun resolveAlbumTarget(album: SpotifyAlbum): SpotifyCatalogTarget? {
+        val query = "${album.name} ${album.artists.joinToString(" ") { it.name }}".trim()
+        searchYouTube<AlbumItem>(query, YouTube.SearchFilter.FILTER_ALBUM)?.let {
+            return SpotifyCatalogTarget.AlbumPage(it.browseId)
+        }
+        searchYouTube<SongItem>(query, YouTube.SearchFilter.FILTER_SONG)?.let { song ->
+            song.album?.id?.takeIf(String::isNotBlank)?.let { return SpotifyCatalogTarget.AlbumPage(it) }
+            return SpotifyCatalogTarget.Song(song)
+        }
+        return album.tracks?.items?.takeUnless { it.isEmpty() }?.let(SpotifyCatalogTarget::SpotifyTracks)
+    }
+
+    suspend fun playYouTubeSong(song: SongItem) =
+        playYouTubeSongRef(ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, song.id))
+
+    private suspend fun playYouTubeSongRef(ref: ContentRef) {
         graph.queue.load(
             QueueLoadRequest(
-                collection = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.RADIO, parent = resolved.ref),
+                collection = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.RADIO, parent = ref),
                 kind = QueueCollectionKind.RADIO,
-                start = QueueStart(resolved.ref),
+                start = QueueStart(ref),
                 playWhenReady = true,
             ),
         )
@@ -208,6 +260,19 @@ internal class DesktopSpotifyPlayback(
 
     fun clearHistoryTracks() {
         historyTracks.clear()
+        catalogTracks.clear()
+    }
+
+    private suspend inline fun <reified T : YTItem> searchYouTube(
+        query: String,
+        filter: YouTube.SearchFilter,
+    ): T? {
+        val anonymous = YouTube.search(query, filter, useAccountContext = false)
+        currentCoroutineContext().ensureActive()
+        anonymous.getOrNull()?.items?.filterIsInstance<T>()?.firstOrNull()?.let { return it }
+        val fallback = YouTube.search(query, filter)
+        currentCoroutineContext().ensureActive()
+        return fallback.getOrThrow().items.filterIsInstance<T>().firstOrNull()
     }
 
     private fun spotifyArtistCredit(artist: SpotifySimpleArtist): ContentCredit? =

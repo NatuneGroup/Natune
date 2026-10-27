@@ -36,6 +36,7 @@ import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.serializer
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopCookieOnlyBrowserAuth
+import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.shared.domain.platform.AuthorizedHttpsOrigin
 import moe.rukamori.archivetune.shared.domain.platform.CookieOnlyLoginFailure
 import moe.rukamori.archivetune.shared.domain.platform.CookieOnlyLoginOutcome
@@ -49,6 +50,7 @@ import moe.rukamori.archivetune.shared.domain.settings.InlineSpotifyProfileTopTr
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
+import moe.rukamori.archivetune.shared.domain.repository.QueueStart
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceEditor
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.ShowSpotifyPlaylistsKey
@@ -79,6 +81,8 @@ import moe.rukamori.archivetune.spotify.SpotifyAuth
 import moe.rukamori.archivetune.spotify.SpotifyHashProvider
 import moe.rukamori.archivetune.spotify.historyRetryWaitMillis
 import moe.rukamori.archivetune.spotify.mergePlayHistory
+import moe.rukamori.archivetune.spotify.models.SpotifyAlbum
+import moe.rukamori.archivetune.spotify.models.SpotifyArtist
 import moe.rukamori.archivetune.spotify.models.SpotifyPlayHistory
 import moe.rukamori.archivetune.spotify.models.SpotifyPaging
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
@@ -297,6 +301,45 @@ internal class DesktopSpotifyAccounts(
                 withTokenRetry { Spotify.likedSongs(limit = PLAYLIST_PAGE_SIZE, offset = offset).getOrThrow() }
             }.playableLikedTracks()
     }
+
+    /** Android's `libraryArtists`: the libraryV3 Artists filter, drained through its own offsets. */
+    suspend fun libraryArtists(): List<SpotifyArtist> {
+        refreshToken(rejected = null)
+        return collectSpotifyPages { limit, offset ->
+            withTokenRetry { Spotify.myArtists(limit = limit, offset = offset).getOrThrow() }
+        }
+    }
+
+    /** Android's `libraryAlbums`: the libraryV3 Albums filter, drained through its own offsets. */
+    suspend fun libraryAlbums(): List<SpotifyAlbum> {
+        refreshToken(rejected = null)
+        return collectSpotifyPages { limit, offset ->
+            withTokenRetry { Spotify.myAlbums(limit = limit, offset = offset).getOrThrow() }
+        }
+    }
+
+    /** The library-section row that remembers which catalog track produced it. */
+    fun libraryTrackRow(track: SpotifyTrack, section: String): ContentOccurrence =
+        playback.catalogTrackRow(track, "spotify:library:$section:${track.id}")
+
+    /** A tapped Library song resolves to a YouTube radio, matching Android's `SpotifyPlayableRow`. */
+    suspend fun playLibraryTrack(start: QueueStart) = playback.playCatalogTrack(start)
+
+    suspend fun album(albumId: String): SpotifyAlbum {
+        refreshToken(rejected = null)
+        return withTokenRetry { Spotify.album(albumId).getOrThrow() }
+    }
+
+    suspend fun artist(artistId: String): SpotifyArtist {
+        refreshToken(rejected = null)
+        return withTokenRetry { Spotify.artist(artistId).getOrThrow() }
+    }
+
+    suspend fun resolveArtistTarget(artistName: String) = playback.resolveArtistTarget(artistName)
+
+    suspend fun resolveAlbumTarget(album: SpotifyAlbum): SpotifyCatalogTarget? = playback.resolveAlbumTarget(album)
+
+    suspend fun playYouTubeSong(song: SongItem) = playback.playYouTubeSong(song)
 
     /** Maps a queue row resolved from Spotify back to its catalog row, for Spotify Home's active-track marker. */
     fun spotifyRefForResolved(ref: ContentRef): ContentRef? = playback.spotifyRefForResolved(ref)
@@ -794,6 +837,20 @@ private suspend fun <T> drainSpotifyPagesSerially(
         val page = fetchPage(offset)
         items += page.items
         offset = page.nextOffset ?: return items
+    }
+}
+
+/** Android's `collectPages`: serial page reads, always following the endpoint's next offset. */
+private suspend fun <T> collectSpotifyPages(
+    fetchPage: suspend (limit: Int, offset: Int) -> SpotifyPaging<T>,
+): List<T> {
+    val items = ArrayList<T>()
+    var offset = 0
+    val limit = PLAYLIST_PAGE_SIZE
+    while (true) {
+        val page = fetchPage(limit, offset)
+        items += page.items
+        offset = page.nextOffset?.takeIf { it > offset } ?: return items
     }
 }
 

@@ -91,7 +91,7 @@ internal fun desktopHostBindings(
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
         formatNewsDate = { epochMs -> dates.format(Date(epochMs)) },
-        librarySourceSelector = { },
+        librarySourceSelector = { DesktopLibrarySourceSelector(graph, settingsOwners.spotify) },
         hostScreen = { route, navigation ->
             if (desktopMountsSettings(route)) {
                 DesktopSettingsScreen(settingsOwners, graph, route, navigation)
@@ -114,7 +114,7 @@ internal fun desktopHostBindings(
         // The row menu queues the chosen row through the one queue. Other song rows need owners this host does not connect.
         more = { occurrence -> menu.open(occurrence) },
         // The row's list is read whole from its owner in owner order, then the queue receives that list as one replacement.
-        playOccurrence = { collection, start -> desktopPlayOccurrence(graph, collection, start) },
+        playOccurrence = { collection, start -> desktopPlayOccurrence(graph, settingsOwners.spotify, collection, start) },
         openExternal = { uri -> openDesktopUri(uri, graph::report) },
         onFailure = { graph.report("a host request could not be completed") },
         // The desktop root has no screen beneath it, so back at the root has nothing to pop.
