@@ -27,12 +27,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTidalPkceSheet
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramNativeAdmission
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccountVerifier
 import moe.rukamori.archivetune.shared.data.provider.QobuzBundleScrape
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceProbe
+import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
 import moe.rukamori.archivetune.shared.data.provider.TidalRefreshResult
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCookieOnlyBrowserAuth
 import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceState
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
@@ -64,6 +67,12 @@ import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActio
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
+import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
+import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInFailure
+import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInKind
+import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInOutcome
+import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInPage
+import moe.rukamori.archivetune.shared.ui.settings.ProviderSignInState
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.QobuzLoginScreen
 import moe.rukamori.archivetune.shared.ui.settings.QobuzSettings
@@ -72,6 +81,8 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsHomePage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.TelegramSettings
+import moe.rukamori.archivetune.shared.ui.settings.DeezerLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.TidalLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.UpdateCommit
 import moe.rukamori.archivetune.shared.ui.settings.UpdateFeedResult
@@ -82,10 +93,11 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
- * TIDAL account endpoints. A build without a TIDAL device client leaves the device sign-in row disabled and a pasted
- * refresh token is still verified with TIDAL; with a device client the real device-authorization flow runs.
+ * TIDAL account endpoints. The device link shows when this build carries a TIDAL device client, and a pasted refresh
+ * token is always verified with TIDAL.
  */
-internal class IosSettingsOwners(private val graph: IosSessionGraph) {
+internal class IosSettingsOwners(private val graph: IosSessionGraph, browser: IosCookieOnlyBrowserAuth) {
+    val deezerWeb = IosDeezerWebSignIn(graph, browser)
     val controller = SettingsController(
         graph.settings,
         graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY,
@@ -132,6 +144,73 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph) {
 
     suspend fun verifyDeezer(arl: String): DeezerArlAccount? =
         verifyDeezerArl(graph.http, arl)?.let { DeezerArlAccount(it.name, it.lossless, it.userId) }
+
+    val tidalDeviceLink: TidalDeviceLink? =
+        if (graph.tidalAuth.deviceSignInAvailable) TidalAccountDeviceLink(graph.tidalAuth) else null
+
+    val tidalWebState = MutableStateFlow<ProviderSignInState>(ProviderSignInState.Idle)
+    private var tidalWebGeneration = 0L
+
+    /** Dismissed sheet or navigated away: the next redirect-captured code belongs to a dead attempt. */
+    fun cancelTidalWeb() {
+        tidalWebGeneration += 1
+        tidalWebState.value = ProviderSignInState.Idle
+    }
+
+    /**
+     * The PKCE web sign-in the Android `settings/tidal/login` WebView ran: the authorize page navigates inside the
+     * embedded sheet until it returns to the fixed https redirect, then the captured code is exchanged and the
+     * session is verified and committed. No cookie or token is ever written to logs or settings outside the vault.
+     */
+    suspend fun signInTidalPkce(sheet: IosTidalPkceSheet) {
+        val generation = ++tidalWebGeneration
+        if (!graph.tidalAuth.pkceSignInAvailable) {
+            tidalWebState.value = ProviderSignInState.Failed(ProviderSignInFailure.UNAVAILABLE)
+            return
+        }
+        tidalWebState.value = ProviderSignInState.Opening
+        val authorization = try {
+            graph.tidalAuth.startPkceAuthorization()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        if (authorization == null) {
+            tidalWebState.value = ProviderSignInState.Failed(ProviderSignInFailure.UNAVAILABLE)
+            return
+        }
+        if (generation != tidalWebGeneration) return
+        tidalWebState.value = ProviderSignInState.Waiting
+        val code = sheet.authorizeCode(authorization.authorizeUrl)
+        if (generation != tidalWebGeneration) return
+        if (code.isNullOrBlank()) {
+            tidalWebState.value = ProviderSignInState.Idle
+            return
+        }
+        tidalWebState.value = ProviderSignInState.Verifying
+        val session = try {
+            graph.tidalAuth.exchangePkceCode(authorization, code)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        if (generation != tidalWebGeneration) return
+        if (session == null) {
+            tidalWebState.value = ProviderSignInState.Failed(ProviderSignInFailure.UNVERIFIED)
+            return
+        }
+        val attempt = graph.accountLifecycle.begin(ProviderAccountLifecycle.TIDAL)
+        val outcome = graph.accountLifecycle.commitTidal(attempt, session)
+        if (generation != tidalWebGeneration) return
+        tidalWebState.value = when (outcome) {
+            ProviderSignInOutcome.Accepted ->
+                ProviderSignInState.SignedIn(session.accountName ?: session.userId?.toString().orEmpty())
+            ProviderSignInOutcome.NotSaved -> ProviderSignInState.Failed(ProviderSignInFailure.NOT_SAVED)
+            else -> ProviderSignInState.Failed(ProviderSignInFailure.UNVERIFIED)
+        }
+    }
 
     private val qobuzVerifier = QobuzAccountVerifier(graph.http)
     private val qobuzScrape = QobuzBundleScrape(graph.http)
@@ -245,7 +324,7 @@ internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.subst
 
 private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
-    "settings/qobuz", QobuzLoginRoute, "settings/update",
+    "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
 )
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
@@ -292,6 +371,26 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                     onNotice = onNotice,
                     onFailure = onFailure,
                     scrollTo = scrollTo,
+                )
+            }
+            DeezerLoginRoute -> {
+                val signInState by owners.deezerWeb.state.collectAsState()
+                ProviderSignInPage(
+                    kind = ProviderSignInKind.DEEZER_WEB,
+                    state = signInState,
+                    onStart = { scope.launch { owners.deezerWeb.signIn() } },
+                    onCancel = owners.deezerWeb::cancel,
+                    onDone = { navigation.back() },
+                )
+            }
+            TidalLoginRoute -> {
+                val signInState by owners.tidalWebState.collectAsState()
+                ProviderSignInPage(
+                    kind = ProviderSignInKind.TIDAL_WEB,
+                    state = signInState,
+                    onStart = { scope.launch { owners.signInTidalPkce(host.tidalPkceSheet) } },
+                    onCancel = owners::cancelTidalWeb,
+                    onDone = { navigation.back() },
                 )
             }
             "settings/deezer" -> DeezerSettings(
