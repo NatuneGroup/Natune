@@ -86,7 +86,11 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
+import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.innertube.models.YouTubeLocale
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.shared.domain.settings.ContentCountryKey
+import moe.rukamori.archivetune.shared.domain.settings.ContentLanguageKey
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
 import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
@@ -890,6 +894,18 @@ private fun JvmYouTubeBrowseTransport.applyPersistedSession(snapshot: Preference
         visitorData = snapshot?.get(VisitorDataKey),
         dataSyncId = signIn?.dataSyncId,
         useLoginForBrowse = snapshot?.get(UseLoginForBrowse) != false,
+    )
+    // The content locale the App applies at launch and restores from the same two preferences: the device's country
+    // and language, validated like Android's code maps before a user's pinned choice replaces them. A region-less or
+    // non-ISO host locale (en-001, und) never reaches the wire — YouTube rejects it with a 400.
+    val device = Locale.getDefault()
+    YouTube.locale = YouTubeLocale(
+        gl = snapshot?.get(ContentCountryKey)?.takeIf { it != "system" }
+            ?: device.country.takeIf { it.length == 2 }
+            ?: "US",
+        hl = snapshot?.get(ContentLanguageKey)?.takeIf { it != "system" }
+            ?: device.language.takeIf { it.length == 2 }
+            ?: "en",
     )
 }
 
