@@ -126,9 +126,10 @@ def walk_onboarding() -> None:
     shot("01-onboarding")
     # Welcome -> Let's go; Permissions -> Continue; Login -> Skip for now;
     # Community -> Start listening. The pager is not user-scrollable.
+    # Labels use typographic apostrophes (Let’s go) — use . for the quote.
     steps = [
-        "let's go|lets_go|get started",
-        "^continue$|^not now$|allow.*later",
+        "let.s go|lets_go|get started",
+        "^next$|^continue$|^not now$|allow.*later",
         "skip for now|skip_for_now|^skip$",
         "^start listening$|onboarding_finish",
     ]
