@@ -138,7 +138,7 @@ def walk_onboarding() -> None:
             time.sleep(5)
             shot("02-onboarding-done")
             return
-        if tap_text(steps[step], f"onb-{i}"):
+        if tap_text(steps[step], f"onb-{i}", scrolls=3):
             step += 1
     shot("02-onboarding-end")
 
