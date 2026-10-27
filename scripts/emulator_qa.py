@@ -157,7 +157,14 @@ def navigate() -> None:
     # The settings gear only exists on the Home route; go back first.
     tap_text("^home$|nav.*home", "nav-home")
     time.sleep(3)
-    tap_text("^settings$|settings.*icon|more options|^account$", "nav-settings")
+    # The gear has contentDescription "Settings" but the home feed's merged
+    # semantics sometimes hide it from uiautomator — fall back to its fixed
+    # top-right position on the 1080x2400 emulator display.
+    if not tap_text("^settings$|settings.*icon|more options|^account$",
+                    "nav-settings", scrolls=1):
+        print("settings gear not in dump; tapping (985,140)")
+        adb("shell", "input", "tap", "985", "140")
+        time.sleep(3)
     time.sleep(3)
     shot("06-settings")
     tap_text("^appearance$|^interface$", "nav-appearance", scrolls=2)
