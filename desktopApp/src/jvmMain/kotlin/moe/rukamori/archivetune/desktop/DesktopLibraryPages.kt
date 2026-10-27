@@ -77,6 +77,14 @@ internal fun desktopGraphPage(
 ): ArchiveGraphPage = key(route.value) {
     when (route.destination) {
         ArchiveDestination.HOME -> desktopHomePage(graph, spotify, openRoute)
+        ArchiveDestination.DISCOVERY -> desktopDiscoveryPage(graph, openRoute)
+        ArchiveDestination.CHARTS -> desktopChartsPage(graph)
+        ArchiveDestination.MOODS -> desktopMoodsPage(graph)
+        ArchiveDestination.BROWSE, ArchiveDestination.YOUTUBE_BROWSE -> desktopBrowsePage(graph, route)
+        ArchiveDestination.RELEASES -> desktopReleasesPage(graph)
+        ArchiveDestination.ARTIST_SONGS -> desktopArtistSongsPage(graph, route, menu, openRoute, back)
+        ArchiveDestination.ARTIST_ALBUMS -> desktopArtistAlbumsPage(graph, route, menu, openRoute, back)
+        ArchiveDestination.ARTIST_ITEMS -> desktopArtistItemsPage(graph, route, menu, openRoute, back)
         ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, spotify)
         ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
             hostSearchPage(graph.catalogPages, route) { openRoute(ArchiveRoutes.musicRecognition()) }
@@ -84,7 +92,7 @@ internal fun desktopGraphPage(
             if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
                 desktopSpotifyArtistPage(graph, spotify, route, menu, back)
             } else {
-                desktopArtistPage(graph, route, menu)
+                desktopArtistPage(graph, route, menu, openRoute, back)
             }
         ArchiveDestination.ALBUM ->
             if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {

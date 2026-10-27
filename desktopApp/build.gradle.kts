@@ -35,8 +35,10 @@ kotlin {
             implementation(libs.metrolist.extractor)
             implementation(compose.desktop.currentOs)
             implementation(compose.components.resources)
-            // Material icons for the player queue menu's semantic icon binding.
-            implementation(libs.compose.material.icons.extended)
+            // Material icons for the player queue menu's semantic icon binding. The CMP artifact is required: the
+            // androidx coordinates pull androidx.compose.ui:ui:1.6.0, whose stale Application_desktopKt shadows the
+            // real entry point on the runtime classpath.
+            implementation(compose.materialIconsExtended)
             // Pinned here for the isolated native lane; centralize in the catalog at integration.
             implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
             implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")

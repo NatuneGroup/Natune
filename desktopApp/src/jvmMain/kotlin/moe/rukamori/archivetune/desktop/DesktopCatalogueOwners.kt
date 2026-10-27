@@ -179,6 +179,19 @@ internal class DesktopCatalogueOwners(
     val releases = DesktopReleasesFeed(this)
 
     private val artists = LinkedHashMap<ContentRef, DesktopArtistOwner>()
+    private val sectionFeeds = LinkedHashMap<ContentRequest, DesktopSectionFeed>()
+
+    /**
+     * The flat category browse a mood/genre tile or a shelf's "see all" opens: one section read, paged flat like
+     * the Android browse screen (the provider sends no continuation for these pages).
+     */
+    fun browseSection(request: ContentRequest): DesktopSectionFeed =
+        sectionFeeds.getOrPut(request) {
+            while (sectionFeeds.size >= MAX_SHOWN_PAGES) sectionFeeds.remove(sectionFeeds.keys.first())
+            val section = request.section!!
+            DesktopSectionFeed(this) { catalogue.browseSection(section.id, section.params) }
+        }
+
     fun artist(ref: ContentRef): DesktopArtistOwner =
         artists.getOrPut(ref) {
             while (artists.size >= MAX_SHOWN_PAGES) artists.remove(artists.keys.first())
@@ -192,7 +205,7 @@ internal class DesktopCatalogueOwners(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            owners.report("catalogue read failed: ${failure::class.simpleName}")
+            owners.report("catalogue read failed: ${failure::class.simpleName} ${failure.message}")
         }
     }
 
@@ -308,6 +321,46 @@ internal class DesktopShelfFeed(
             if (gen != generation) return@launch
             shelves = if (continuation == null) page.shelves else shelves + page.shelves
             this@DesktopShelfFeed.continuation = page.continuation
+            initialized = true
+        }.invokeOnCompletion {
+            if (gen == generation) {
+                loading = false
+                if (it != null && it !is CancellationException) failed = true
+            }
+        }
+    }
+}
+
+/**
+ * One section browse page: the provider's shelf rows flattened into the browse screen's single list. The provider
+ * sends no continuation for category pages, so the whole page is the one read.
+ */
+internal class DesktopSectionFeed(
+    private val owners: DesktopCatalogueOwners,
+    private val read: suspend () -> YouTubeShelfPage,
+) {
+    var entries by mutableStateOf<List<moe.rukamori.archivetune.shared.data.provider.YouTubeEntry>>(emptyList())
+        private set
+    var title by mutableStateOf<String?>(null)
+        private set
+    var loading by mutableStateOf(true)
+        private set
+    var failed by mutableStateOf(false)
+        private set
+    var initialized by mutableStateOf(false)
+        private set
+
+    private var generation = 0
+
+    fun reload() {
+        val gen = ++generation
+        loading = true
+        failed = false
+        owners.launch {
+            val page = read()
+            if (gen != generation) return@launch
+            entries = page.shelves.flatMap { it.entries }
+            title = page.title
             initialized = true
         }.invokeOnCompletion {
             if (gen == generation) {
