@@ -20,10 +20,14 @@ PKG = "moe.rukamori.archivetune.debug"
 OUT = Path("qa-artifacts")
 OUT.mkdir(exist_ok=True)
 
+# The Android Appearance "Player design style" dropdown shows display
+# names, not enum ids. Android offers 17 entries; the 18th style
+# (METROLIST_KMP) lives in shared-domain only and is not listed on Android.
 STYLES = [
-    "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10",
-    "Apple Music", "Bitchord", "TikTok", "SimpMusic", "SpatialFlow",
-    "Looper", "Flamingo", "Metrolist KMP",
+    "Classic", "Modern", "Minimal", "Cinematic", "Little", "Expressive",
+    "Immersive", "Immersive Extended", "Material Extended", "Editorial",
+    "Apple Music", "BitChord", "TikTok", "SimpMusic", "SpatialFlow",
+    "Looper", "Flamingo",
 ]
 
 
@@ -150,6 +154,9 @@ def navigate() -> None:
     tap_text("^library$|nav.*library", "nav-library")
     time.sleep(3)
     shot("05-library")
+    # The settings gear only exists on the Home route; go back first.
+    tap_text("^home$|nav.*home", "nav-home")
+    time.sleep(3)
     tap_text("^settings$|settings.*icon|more options|^account$", "nav-settings")
     time.sleep(3)
     shot("06-settings")
@@ -161,8 +168,8 @@ def navigate() -> None:
 def select_styles() -> None:
     results = []
     for i, style in enumerate(STYLES, 1):
-        tap_text("^player design$|^player style$", f"style-open-{i}",
-                 scrolls=4)
+        tap_text("^player design style$|^player design$|^player style$",
+                 f"style-open-{i}", scrolls=4)
         time.sleep(1)
         ok = tap_text(f"^{re.escape(style)}$", f"style-{i}", scrolls=4)
         shot(f"style-{i:02d}-{style.replace(' ', '_')}")
@@ -172,6 +179,7 @@ def select_styles() -> None:
         # case Back sent the app to the launcher instead.
         adb("shell", "input", "keyevent", "4")
         foreground()
+    results.append("n/a on Android host (shared-domain only): METROLIST_KMP")
     (OUT / "styles.txt").write_text("\n".join(results) + "\n")
     print("\n".join(results))
 
