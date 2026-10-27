@@ -162,8 +162,9 @@ def navigate() -> None:
     # top-right position on the 1080x2400 emulator display.
     if not tap_text("^settings$|settings.*icon|more options|^account$",
                     "nav-settings", scrolls=1):
-        print("settings gear not in dump; tapping (985,140)")
-        adb("shell", "input", "tap", "985", "140")
+        # Gear circle measured on the 1080x2400 home screenshot.
+        print("settings gear not in dump; tapping (975,210)")
+        adb("shell", "input", "tap", "975", "210")
         time.sleep(3)
     time.sleep(3)
     shot("06-settings")
