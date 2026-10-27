@@ -106,8 +106,7 @@ jobs:
           ./gradlew --console=plain --stacktrace "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
             :shared-domain:compileKotlinJvm \
             :shared-data:compileKotlinJvm \
-            :shared-ui:compileKotlinDesktop \
-            :desktopApp:compileKotlinJvm
+            :shared-ui:compileKotlinDesktop
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
@@ -130,3 +129,36 @@ jobs:
             app/build/reports/lint-results*
           if-no-files-found: warn
           retention-days: 7
+
+  # The desktop host compiles in its own job so a mid-flight desktopApp breakage reports
+  # itself without blocking the Android assemble/lint signal.
+  desktop-compile:
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: 21
+          distribution: "temurin"
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Compile desktop app
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --console=plain --stacktrace "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
+            :desktopApp:compileKotlinJvm
