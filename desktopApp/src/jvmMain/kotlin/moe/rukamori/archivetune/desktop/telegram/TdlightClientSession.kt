@@ -7,8 +7,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -64,6 +67,7 @@ internal class TdlightClientSession(
     override val authState: StateFlow<TelegramAuthState> = stateFlow.asStateFlow()
 
     private val admissionFlow = MutableStateFlow<TelegramNativeAdmission>(TelegramNativeAdmission.NotAdmitted)
+    private val chatMessageFlows = java.util.concurrent.ConcurrentHashMap<Long, MutableSharedFlow<TdApi.Message>>()
 
     /** Whether a verified Telegram account stands behind this session. Playback and browse read this, not [authState]. */
     val admission: StateFlow<TelegramNativeAdmission> = admissionFlow.asStateFlow()
@@ -227,6 +231,15 @@ internal class TdlightClientSession(
 
     private fun onUpdate(update: TdApi.Object) {
         if (update is TdApi.UpdateAuthorizationState) handleAuthorizationState(update.authorizationState)
+        if (update is TdApi.UpdateNewMessage) chatMessageFlows[update.message.chatId]?.tryEmit(update.message)
+    }
+
+    /** Live bot-chat replies. A collector is registered before SendMessage so a fast bot reply is never missed. */
+    internal fun messagesForChat(chatId: Long): SharedFlow<TdApi.Message> =
+        chatMessageFlows.getOrPut(chatId) { MutableSharedFlow(replay = 0, extraBufferCapacity = 64) }.asSharedFlow()
+
+    internal fun forgetChat(chatId: Long) {
+        chatMessageFlows.remove(chatId)
     }
 
     private fun handleAuthorizationState(state: TdApi.AuthorizationState) {

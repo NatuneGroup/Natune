@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import org.drinkless.tdlib.TdApi
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
@@ -55,9 +56,11 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPin
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.TelegramLosslessOnlyKey
 import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
 import moe.rukamori.archivetune.shared.domain.settings.serializeSpeedDialPins
 import moe.rukamori.archivetune.shared.domain.settings.toggleSpeedDialPin
+import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
 import moe.rukamori.archivetune.shared.ui.host.queuedEntry
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
 import moe.rukamori.archivetune.shared.ui.menu.MenuShareHandler
@@ -105,6 +108,7 @@ internal class DesktopPlaylistMenuState(
         private set
 
     private var refusedAsUnavailable = false
+    private val telegramChannels = TdlightChannelLibrary(graph, graph.telegram)
 
     val host: PlaylistMenuHost = object : PlaylistMenuHost {
         /**
@@ -161,15 +165,30 @@ internal class DesktopPlaylistMenuState(
             require(playlist.provider == ContentProvider.LOCAL.id) { "Only local playlists are deleted here" }
             graph.library.deletePlaylist(playlist.id)
         }
-        override fun openTelegramBots() { unavailable() }
-        override suspend fun refreshTelegramPlaylist(playlist: ContentRef) { unavailable() }
+        override fun openTelegramBots() {
+            menu = null
+            openRoute("telegram/bots")
+        }
+        override suspend fun refreshTelegramPlaylist(playlist: ContentRef) {
+            val chatId = playlist.id.removePrefix("LPtg").toLongOrNull() ?: return
+            val title = menu?.takeIf { it.item.ref == playlist }?.item?.title ?: graph.library.item(playlist).title
+            val losslessOnly = graph.settings.snapshots.value?.get(TelegramLosslessOnlyKey) ?: false
+            telegramChannels.startSync(chatId, title, losslessOnly)
+        }
     }
 
     /** A local playlist has no share link, so the export row stands in for share; a link is copied when one exists. */
     val sharing = MenuShareHandler(object : MenuSharing {
         override suspend fun shareLink(url: String) = copyToDesktopClipboard(url)
         override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) { unavailable() }
-        override suspend fun telegramMessageLink(mediaId: String): String? = null
+        override suspend fun telegramMessageLink(mediaId: String): String? {
+            val track = TelegramTrackRef.fromMediaId(mediaId) ?: return null
+            val link = graph.telegram.admittedRequest(
+                "telegramMessageLink",
+                TdApi.GetMessageLink(track.chatId, track.messageId, 0, 0, null, false, false),
+            ) as? TdApi.MessageLink
+            return link?.link?.takeIf(String::isNotBlank)
+        }
     })
 
     /** Opens the menu at once, then fills in the complete song list, so the song rows enable once the list is read. */
@@ -317,7 +336,7 @@ internal fun DesktopPlaylistMenuOverlay(state: DesktopPlaylistMenuState, graph: 
                         editable = true,
                         automatic = false,
                         downloadPlaylist = false,
-                        telegramChannel = false,
+                        telegramChannel = ref.provider == ContentProvider.LOCAL.id && ref.id.startsWith("LPtg"),
                         canChangeCover = false,
                         canRemoveCover = false,
                     ),

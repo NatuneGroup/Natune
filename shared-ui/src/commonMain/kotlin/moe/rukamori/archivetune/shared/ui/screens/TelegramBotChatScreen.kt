@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +37,15 @@ data class TelegramBotCommandUi(val command: String, val description: String)
 
 /** One audio reply from the bot. [id] is the owner's stable media id; [performer] is already resolved by the owner. */
 data class TelegramBotTrackUi(val id: String, val title: String, val performer: String?)
+
+/** The open Add to playlist dialog for [track]. [playlists] is null while the owner loads the editable list. */
+data class TelegramBotPlaylistPickUi(
+    val track: TelegramBotTrackUi,
+    val playlists: List<PlaylistChoiceUi>?,
+    val newName: String = "",
+    val busy: Boolean = false,
+    val failed: Boolean = false,
+)
 
 /**
  * Owner-produced outcome of the last send, choice, download or forward. Success is only shown when the owner
@@ -63,6 +74,7 @@ data class TelegramBotChatUi(
     val results: List<TelegramBotTrackUi>,
     val advertisedCommands: List<TelegramBotCommandUi>,
     val notice: TelegramBotChatNotice?,
+    val playlistPick: TelegramBotPlaylistPickUi? = null,
 )
 
 /**
@@ -80,6 +92,10 @@ data class TelegramBotChatActions(
     val playAll: () -> Unit,
     val download: (TelegramBotTrackUi) -> Unit,
     val addToPlaylist: (TelegramBotTrackUi) -> Unit,
+    val playlistName: (String) -> Unit,
+    val choosePlaylist: (PlaylistChoiceUi) -> Unit,
+    val createPlaylist: () -> Unit,
+    val dismissPlaylistPick: () -> Unit,
     val dismissNotice: () -> Unit,
 )
 
@@ -176,6 +192,48 @@ fun TelegramBotChatScreen(
             }
         }
     }
+    state.playlistPick?.let { TelegramBotPlaylistPickDialog(it, actions) }
+}
+
+@Composable
+private fun TelegramBotPlaylistPickDialog(pick: TelegramBotPlaylistPickUi, actions: TelegramBotChatActions) {
+    val playlists = pick.playlists.orEmpty()
+    AlertDialog(
+        onDismissRequest = { if (!pick.busy) actions.dismissPlaylistPick() },
+        title = { Text(stringResource(Res.string.m4_telegram_bot_add_to_playlist)) },
+        text = {
+            Column {
+                if (pick.playlists == null) Text(stringResource(Res.string.m4_loading))
+                if (pick.failed) Text(stringResource(Res.string.m4_playlist_write_failed), color = MaterialTheme.colorScheme.error)
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(playlists, key = { it.ref.collectionUiKey() }) { playlist ->
+                        ListItem(
+                            headlineContent = { Text(playlist.name) },
+                            supportingContent = { Text(stringResource(Res.string.m4_song_count, playlist.songCount)) },
+                            modifier = Modifier.clickable(enabled = !pick.busy) { actions.choosePlaylist(playlist) },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+                    }
+                    if (playlists.isEmpty() && pick.playlists != null) item { Text(stringResource(Res.string.m4_empty)) }
+                }
+                OutlinedTextField(
+                    value = pick.newName,
+                    onValueChange = actions.playlistName,
+                    singleLine = true,
+                    enabled = !pick.busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    placeholder = { Text(stringResource(Res.string.m4_create_playlist)) },
+                    trailingIcon = {
+                        TextButton(onClick = actions.createPlaylist, enabled = !pick.busy && pick.newName.isNotBlank()) {
+                            Text(stringResource(Res.string.m4_create_playlist))
+                        }
+                    },
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = actions.dismissPlaylistPick, enabled = !pick.busy) { Text(stringResource(Res.string.m4_cancel)) } },
+    )
 }
 
 @Composable
