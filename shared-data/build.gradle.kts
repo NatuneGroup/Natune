@@ -58,6 +58,11 @@ kotlin {
             implementation(project(":core"))
             // Bundled SQLite (~0.6 MB native/ABI) stays off Android; only hosts that open the portable DB pull it.
             implementation("androidx.sqlite:sqlite-bundled:2.6.2")
+            // TidalDns ports the original's OkHttp bootstrap-resolver + DoH client verbatim.
+            implementation(libs.okhttp)
+        }
+        androidMain.dependencies {
+            implementation(libs.okhttp)
         }
         jvmTest.dependencies {
             // Real retained-version writer/reader for synthetic DataStore compatibility/rollback tests.
