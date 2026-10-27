@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
 import moe.rukamori.archivetune.shared.domain.library.LibraryDefaults
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
+import moe.rukamori.archivetune.shared.domain.library.LibrarySource
 import moe.rukamori.archivetune.shared.domain.library.librarySortState
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -27,9 +28,11 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.repository.QueueStart
+import moe.rukamori.archivetune.shared.domain.settings.LibrarySourceKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistEditLockKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistSortDescendingKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistSortTypeKey
+import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.host.hostCatalogDetailPage
 import moe.rukamori.archivetune.shared.ui.host.hostHistoryPage
 import moe.rukamori.archivetune.shared.ui.host.hostLibraryPage
@@ -74,11 +77,22 @@ internal fun desktopGraphPage(
 ): ArchiveGraphPage = key(route.value) {
     when (route.destination) {
         ArchiveDestination.HOME -> desktopHomePage(graph, spotify, openRoute)
-        ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, openRoute)
+        ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, spotify)
         ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
             hostSearchPage(graph.catalogPages, route) { openRoute(ArchiveRoutes.musicRecognition()) }
-        ArchiveDestination.ALBUM -> hostCatalogDetailPage(graph.catalogPages, route) { occurrence -> menu.open(occurrence) }
-            ?: ArchiveGraphPage.Host
+        ArchiveDestination.ARTIST ->
+            if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
+                desktopSpotifyArtistPage(graph, spotify, route, menu, back)
+            } else {
+                desktopArtistPage(graph, route, menu)
+            }
+        ArchiveDestination.ALBUM ->
+            if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
+                desktopSpotifyAlbumPage(graph, spotify, route, menu, back)
+            } else {
+                hostCatalogDetailPage(graph.catalogPages, route) { occurrence -> menu.open(occurrence) }
+                    ?: ArchiveGraphPage.Host
+            }
         ArchiveDestination.PLAYLISTS -> desktopPlaylistsPage(graph, creation, playlistMenus, spotify)
         ArchiveDestination.TAGS -> desktopTagsPage(graph, playlistMenus)
         ArchiveDestination.PLAYLIST -> desktopPlaylistPage(graph, menu, spotify, route)
@@ -105,10 +119,16 @@ internal fun desktopGraphPage(
     }
 }
 
-/** One Library section, from the shared page over the graph's owners. */
+/** One Library section, from the shared page over the graph's owners or the Spotify catalog account. */
 @Composable
-private fun desktopLibraryPage(graph: DesktopSessionGraph, openRoute: (String) -> Unit): ArchiveGraphPage =
-    hostLibraryPage(graph.pageOwners, DesktopStrings["library_top_mixes_unavailable"], openRoute)
+private fun desktopLibraryPage(graph: DesktopSessionGraph, spotify: DesktopSpotifyAccounts): ArchiveGraphPage {
+    val snapshot by graph.settings.snapshots.collectAsState()
+    val stored = snapshot?.get(LibrarySourceKey).toEnum(LibraryDefaults.source)
+    return when (stored.resolved(spotify.libraryAvailable())) {
+        LibrarySource.YTM -> hostLibraryPage(graph.pageOwners, DesktopStrings["library_top_mixes_unavailable"]) {}
+        LibrarySource.SPOTIFY -> desktopSpotifyLibraryPage(graph, spotify)
+    }
+}
 
 /** The local listening history, on the user's calendar days and clock. */
 @Composable
@@ -359,7 +379,24 @@ private data class SpotifyPlaylistPageState(
 )
 
 /** Plays [start] inside the complete list [collection] names, in the order the owner shows it. */
-internal fun desktopPlayOccurrence(graph: DesktopSessionGraph, collection: ContentRequest?, start: QueueStart) {
+internal fun desktopPlayOccurrence(
+    graph: DesktopSessionGraph,
+    spotify: DesktopSpotifyAccounts,
+    collection: ContentRequest?,
+    start: QueueStart,
+) {
+    if (collection?.provider == ContentProvider.SPOTIFY_CATALOG) {
+        graph.scope.launch {
+            try {
+                spotify.playLibraryTrack(start)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("spotify library play failed: ${failure.javaClass.simpleName}")
+            }
+        }
+        return
+    }
     if (collection != null && hostPlayCatalogOccurrence(graph.catalogPages, collection, start)) return
     hostPlayOccurrence(graph.pageOwners, collection, start)
 }
