@@ -71,6 +71,8 @@ struct Session {
     WebKitWebView *view = nullptr;
     WebKitNetworkSession *network = nullptr;
     std::vector<std::string> origins;
+    /* When set, a navigation to it is reported through onNavigate and cancelled, like shouldOverrideUrlLoading. */
+    std::string capturePrefix;
     std::shared_ptr<BrowserCallbacks> callbacks;
     bool failed = false;
 
@@ -155,6 +157,12 @@ gboolean onDecidePolicy(WebKitWebView *, WebKitPolicyDecision *decision, WebKitP
                 WebKitNavigationAction *action =
                     webkit_navigation_policy_decision_get_navigation_action(WEBKIT_NAVIGATION_POLICY_DECISION(decision));
                 const char *uri = webkit_uri_request_get_uri(webkit_navigation_action_get_request(action));
+                if (uri && !session->capturePrefix.empty() &&
+                    strncmp(uri, session->capturePrefix.c_str(), session->capturePrefix.size()) == 0) {
+                    if (session->callbacks) session->callbacks->notifyNavigation(uri);
+                    webkit_policy_decision_ignore(decision);
+                    return TRUE;
+                }
                 allow = allowedUri(*session, uri);
                 break;
             }
@@ -260,11 +268,13 @@ void onCookiesReady(GObject *source, GAsyncResult *result, gpointer data) {
 
 /* Owner thread only. Builds the window, its Finish control and the policy-enforcing web view. */
 jlong createSession(const std::string &startUrl, const std::string &title, const std::string &finishText,
-                    const std::vector<std::string> &origins, const std::shared_ptr<BrowserCallbacks> &callbacks) {
+                    const std::vector<std::string> &origins, const std::string &capturePrefix,
+                    const std::shared_ptr<BrowserCallbacks> &callbacks) {
     try {
         auto session = std::make_unique<Session>();
         session->id = nextSessionId();
         session->origins = origins;
+        session->capturePrefix = capturePrefix;
         session->callbacks = callbacks;
         /* An ephemeral network session keeps cookies in memory only and never shares them with another attempt. */
         session->network = webkit_network_session_new_ephemeral();
@@ -429,12 +439,14 @@ void throwIllegalState(JNIEnv *env, const char *message) {
 extern "C" {
 
 JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_open(
-    JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel, jobject listener) {
+    JNIEnv *env, jclass, jstring startUrl, jobjectArray origins, jstring title, jstring doneLabel,
+    jstring capturePrefix, jobject listener) {
     if (!ensureOwner()) return 0;
 
     const std::string start = utf8FromJava(env, startUrl);
     const std::string windowTitle = utf8FromJava(env, title);
     const std::string finishText = utf8FromJava(env, doneLabel);
+    const std::string capture = utf8FromJava(env, capturePrefix);
     const std::vector<std::string> allowed = readOrigins(env, origins);
     const std::string startOrigin = httpsOriginOf(start);
     if (!allCanonical(allowed) || startOrigin.empty() || !contains(allowed, startOrigin)) return 0;
@@ -454,7 +466,7 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
             reply->set_value(0);
             return;
         }
-        reply->set_value(createSession(start, windowTitle, finishText, allowed, callbacks));
+        reply->set_value(createSession(start, windowTitle, finishText, allowed, capture, callbacks));
     });
 
     if (result.wait_for(std::chrono::seconds(kOpenTimeoutSeconds)) == std::future_status::ready) return result.get();

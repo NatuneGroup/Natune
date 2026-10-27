@@ -29,14 +29,22 @@ internal object DesktopCredentials {
 
     /**
      * The Telegram application identity for TDLight. The unprefixed names the Android build reads are accepted at run time
-     * too. There is no built-in fallback identity, so without both values the Telegram session stays not configured.
+     * too. Without both values the same public Telegram Desktop identity the Android BuildConfig falls back to is used,
+     * so sign-in works out of the box with just a phone number and login code.
      */
     val telegramApi: TelegramApiCredentials?
         get() {
             val id = value("ARCHIVETUNE_TELEGRAM_API_ID").ifBlank { runtime("TELEGRAM_API_ID") }.toIntOrNull() ?: 0
             val hash = value("ARCHIVETUNE_TELEGRAM_API_HASH").ifBlank { runtime("TELEGRAM_API_HASH") }
-            return if (id > 0 && hash.isNotBlank()) TelegramApiCredentials(id, hash) else null
+            if (id <= 0 || hash.isBlank()) {
+                return TelegramApiCredentials(TELEGRAM_DESKTOP_API_ID, TELEGRAM_DESKTOP_API_HASH)
+            }
+            return TelegramApiCredentials(id, hash)
         }
+
+    /** The public Telegram Desktop api_id/api_hash — the same fallback the Android BuildConfig uses. */
+    private const val TELEGRAM_DESKTOP_API_ID = 2040
+    private const val TELEGRAM_DESKTOP_API_HASH = "b18441a1ff607e10a989891a5462e627"
 
     /**
      * The ArchivePool deployment of the Playback Pool, without a trailing slash, or null when the feed is turned off. A
