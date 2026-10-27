@@ -163,6 +163,7 @@ internal fun desktopSpotifyArtistPage(
     spotify: DesktopSpotifyAccounts,
     route: ArchiveRoute,
     menu: DesktopItemMenuState,
+    openRoute: (String) -> Unit,
     back: () -> Unit,
 ): ArchiveGraphPage {
     val artistId = route.arguments.getValue("artistId")
@@ -193,6 +194,8 @@ internal fun desktopSpotifyArtistPage(
                 arguments = mapOf("artistId" to resolved.id, "provider" to ContentProvider.YOUTUBE.id),
             ),
             menu,
+            openRoute,
+            back,
         )
     }
     return spotifyDetailPlaceholder(
