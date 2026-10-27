@@ -61,8 +61,10 @@ kotlin {
             // TidalDns ports the original's OkHttp bootstrap-resolver + DoH client verbatim.
             implementation(libs.okhttp)
         }
-        androidMain.dependencies {
-            implementation(libs.okhttp)
+        if (hasAndroidSdk) {
+            androidMain.dependencies {
+                implementation(libs.okhttp)
+            }
         }
         jvmTest.dependencies {
             // Real retained-version writer/reader for synthetic DataStore compatibility/rollback tests.

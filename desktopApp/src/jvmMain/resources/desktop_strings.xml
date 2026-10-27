@@ -29,6 +29,13 @@
     <string name="spotify_dj_unsupported">Spotify DJ playlists can only be played in the Spotify app.</string>
     <string name="library_source_ytm">YouTube Music</string>
     <string name="home_source_spotify">Spotify</string>
+    <string name="spotify_your_playlists">Your Spotify playlists</string>
+    <string name="spotify_your_artists">Your Spotify artists</string>
+    <string name="spotify_library_playlists_empty">No playlists on this source yet.</string>
+    <string name="spotify_library_artists_empty">No artists on this source yet.</string>
+    <string name="spotify_library_mixes_unavailable">Mixes are built from your YouTube listening history, so Spotify has none to show.</string>
+    <string name="spotify_load_failed">Could not load this Spotify section. Try again in a moment.</string>
+    <string name="spotify_tracks_count">%1$d tracks</string>
     <string name="youtube_login_window_hint">Sign in to YouTube Music in the window that opened, then press Finish sign-in.</string>
     <string name="challenge_unavailable">The provider challenge could not complete within its safety limits.</string>
     <string name="host_surface_unbound">This screen is not connected on the desktop host yet.</string>
