@@ -80,10 +80,12 @@ def swipe_up() -> None:
     time.sleep(2)
 
 
-def tap_text(pattern: str, tag: str, scrolls: int = 0) -> bool:
+def tap_text(pattern: str, tag: str, scrolls: int = 0,
+             clickable_only: bool = False) -> bool:
     """Tap the first node matching `pattern`; clickable nodes win over plain
-    text (the onboarding subtitle mentions 'start listening' too). With
-    scrolls>0, swipe up and re-dump until found."""
+    text (the onboarding subtitles mention 'next'/'start listening' too).
+    clickable_only ignores text hits so scrolling continues to the real
+    button. With scrolls>0, swipe up and re-dump until found."""
     pat = re.compile(pattern, re.I)
     for attempt in range(scrolls + 1):
         nodes = dump_ui(f"{tag}-{attempt}" if attempt else tag)
@@ -93,7 +95,7 @@ def tap_text(pattern: str, tag: str, scrolls: int = 0) -> bool:
             if pat.search(hay):
                 (clickable if click else plain).append(
                     (text, desc, resid, cx, cy))
-        hit = (clickable + plain or [None])[0]
+        hit = (clickable + (plain if not clickable_only else []) or [None])[0]
         if hit:
             text, desc, resid, cx, cy = hit
             print(f"tap '{pattern}' -> ({cx},{cy}) [{text or desc or resid}]")
@@ -127,37 +129,32 @@ def walk_onboarding() -> None:
     # Welcome -> Let's go; Permissions -> Continue; Login -> Skip for now;
     # Community -> Start listening. The pager is not user-scrollable.
     # Labels use typographic apostrophes (Let’s go) — use . for the quote.
-    steps = [
-        "let.s go|lets_go|get started",
-        "^next$|^continue$|^not now$|allow.*later",
-        "skip for now|skip_for_now|^skip$",
-        "^start listening$|onboarding_finish",
-    ]
-    step = 0
-    for i in range(1, 12):
-        if step >= len(steps):
-            time.sleep(5)
-            shot("02-onboarding-done")
-            return
-        if tap_text(steps[step], f"onb-{i}", scrolls=3):
-            step += 1
-    shot("02-onboarding-end")
+    # Every page's action button must be a clickable node (the subtitles
+    # contain the same words) and may sit below the fold: keep scrolling.
+    # Each page shows exactly one of these buttons; a miss after scrolling
+    # means onboarding is finished.
+    for i in range(1, 16):
+        if not tap_text("let.s go|^next$|^skip for now$|^start listening$",
+                        f"onb-{i}", scrolls=3, clickable_only=True):
+            break
+    time.sleep(5)
+    shot("02-onboarding-done")
 
 
 def navigate() -> None:
     foreground()
     time.sleep(5)
     shot("03-home")
-    tap_text("^search$|nav.*search", "nav-search")
+    tap_text("^search$|nav.*search", "nav-search", clickable_only=True)
     time.sleep(3)
     shot("04-search")
-    tap_text("^library$|nav.*library", "nav-library")
+    tap_text("^library$|nav.*library", "nav-library", clickable_only=True)
     time.sleep(3)
     shot("05-library")
-    tap_text("^settings$|settings.*icon|more options|^account$", "nav-settings")
+    tap_text("^settings$|settings.*icon|more options|^account$", "nav-settings", clickable_only=True)
     time.sleep(3)
     shot("06-settings")
-    tap_text("^appearance$|^interface$", "nav-appearance")
+    tap_text("^appearance$|^interface$", "nav-appearance", scrolls=2, clickable_only=True)
     time.sleep(3)
     shot("07-appearance")
 
@@ -166,9 +163,9 @@ def select_styles() -> None:
     results = []
     for i, style in enumerate(STYLES, 1):
         tap_text("^player design$|^player style$", f"style-open-{i}",
-                 scrolls=4)
+                 scrolls=4, clickable_only=True)
         time.sleep(1)
-        ok = tap_text(f"^{re.escape(style)}$", f"style-{i}", scrolls=4)
+        ok = tap_text(f"^{re.escape(style)}$", f"style-{i}", scrolls=4, clickable_only=True)
         shot(f"style-{i:02d}-{style.replace(' ', '_')}")
         results.append(f"{'selected' if ok else 'NOT SELECTABLE'}: {style}")
         time.sleep(1)
