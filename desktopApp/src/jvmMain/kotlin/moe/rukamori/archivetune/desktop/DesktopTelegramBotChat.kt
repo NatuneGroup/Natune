@@ -299,7 +299,7 @@ internal class DesktopTelegramBotChatOwner(
     private suspend fun persistTracks(newTracks: List<BotTrack>, sourceTitle: String) {
         val stored = newTracks.map { it.copy(sourceTitle = sourceTitle) }
         // Android persists the song rows first; the result list appears only after the write succeeds.
-        graph.library.saveItems(stored.map { it.item() })
+        graph.library.saveItems(stored.map { it.item(it.cachedArtworkUri()) })
         tracks.putAll(stored.associateBy { it.mediaId })
         stored.forEach { track ->
             track.thumbnailBytes?.let { bytes ->
@@ -347,7 +347,7 @@ internal class DesktopTelegramBotChatOwner(
 
     private fun play(selected: List<BotTrack>, startIndex: Int) {
         if (selected.isEmpty()) return
-        val entries = selected.map(BotTrack::occurrence)
+        val entries = selected.map { it.occurrence(it.cachedArtworkUri()) }
         scope.launch {
             runCatching { graph.queue.replace(entries, entries[startIndex.coerceIn(entries.indices)].occurrenceId, true) }
                 .onFailure { graph.report("the Telegram track was not played: ${it.javaClass.simpleName}") }
@@ -368,7 +368,7 @@ internal class DesktopTelegramBotChatOwner(
                 graph.downloadStore.importLocalFile(
                     key = DownloadKey(track.mediaId, AudioSourceType.YOUTUBE, "telegram", "telegram"),
                     source = Path.of(path),
-                    song = track.item(),
+                    song = track.item(track.cachedArtworkUri()),
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -436,8 +436,19 @@ internal class DesktopTelegramBotChatOwner(
     }
 
     private suspend fun addThenForward(track: BotTrack, playlistId: String) {
-        graph.library.mutate(LibraryMutation.AddToPlaylist(playlistId, listOf(track.occurrence())))
+        graph.library.mutate(LibraryMutation.AddToPlaylist(playlistId, listOf(track.occurrence(track.cachedArtworkUri()))))
         maybeForward(track)
+    }
+
+    private fun BotTrack.cachedArtworkUri(): String? {
+        val metadata = deriveTrackMetadata(title, artist, fileName)
+        return graph.telegramTrackArtworkUri(
+            thumbnailFileId,
+            metadata.first,
+            metadata.second,
+            fileUniqueId.ifEmpty { "$chatId-$messageId" },
+            thumbnailBytes,
+        )
     }
 
     private suspend fun bots(): List<TelegramBot> =
@@ -475,8 +486,8 @@ private data class BotTrack(
     val mediaId = TelegramTrackRef(chatId, messageId, fileId, fileUniqueId).toMediaId()
     private val lookupMetadata get() = deriveTrackMetadata(title, artist, fileName)
     val ui get() = TelegramBotTrackUi(mediaId, displayTitle(), artist ?: lookupMetadata.second)
-    fun occurrence() = ContentOccurrence("telegram:$chatId:$messageId", item())
-    fun item(): ContentItem {
+    fun occurrence(artworkUri: String? = null) = ContentOccurrence("telegram:$chatId:$messageId", item(artworkUri))
+    fun item(artworkUri: String? = telegramArtworkUri(thumbnailFileId, lookupMetadata.first, lookupMetadata.second)): ContentItem {
         val metadata = lookupMetadata
         val artistName = metadata.second ?: sourceTitle?.takeIf(String::isNotBlank) ?: "Telegram"
         return ContentItem(
@@ -484,6 +495,7 @@ private data class BotTrack(
             title = metadata.first,
             subtitle = artistName,
             artists = listOf(ContentCredit(artistName)),
+            artworkUri = artworkUri,
             durationMs = durationSeconds.takeIf { it > 0 }?.let { it * 1000L },
         )
     }
