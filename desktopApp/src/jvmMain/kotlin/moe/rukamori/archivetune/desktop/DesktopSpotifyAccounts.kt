@@ -89,6 +89,7 @@ import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTrack
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylistTracksRef
 import moe.rukamori.archivetune.spotify.models.SpotifySavedTrack
+import moe.rukamori.archivetune.spotify.models.SpotifySearchResult
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 import moe.rukamori.archivetune.spotify.needsFullHistoryRead
 import moe.rukamori.archivetune.spotify.newestPlayedAtMillis
@@ -99,6 +100,9 @@ private const val SPOTIFY_PROVIDER = "spotify"
 private const val TOKEN_EXPIRY_GRACE_MS = 60_000L
 private const val PLAYLIST_PAGE_SIZE = 50
 private const val RECENTLY_PLAYED_CACHE_TTL_MS = 5 * 60 * 1000L
+private const val SEARCH_CACHE_MAX_SIZE = 64
+private const val SEARCH_CACHE_TTL_MS = 5 * 60 * 1000L
+private const val SEARCH_PAGE_SIZE = 20
 
 /** In-flight parallel track-count fetches in [DesktopSpotifyAccounts.fetchAllPlaylists] — the Android cap. */
 private const val COUNT_FETCH_CONCURRENCY = 8
@@ -130,6 +134,8 @@ private val historyCacheSerializer = ListSerializer(serializer<SpotifyPlayHistor
 private class CachedRecentlyPlayed(val items: List<SpotifyPlayHistory>, val fetchedAtMs: Long) {
     fun isFresh(nowMs: Long): Boolean = nowMs - fetchedAtMs < RECENTLY_PLAYED_CACHE_TTL_MS
 }
+
+private class CachedSearch(val result: SpotifySearchResult, val expiresAtMs: Long)
 
 /** A Spotify account as its own profile reports it. */
 internal data class SpotifyAccountProfile(val userId: String, val displayName: String?)
@@ -170,6 +176,10 @@ internal class DesktopSpotifyAccounts(
     private var recentlyPlayedCache: CachedRecentlyPlayed? = null
     private var recentlyPlayedBlockedUntilMs = 0L
     private var recentlyPlayedFullReadAtMs = 0L
+    private val searchCache = object : LinkedHashMap<String, CachedSearch>(SEARCH_CACHE_MAX_SIZE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedSearch>?): Boolean =
+            size > SEARCH_CACHE_MAX_SIZE
+    }
 
     private val catalogState = MutableStateFlow(SpotifyCatalogAccountState())
     val catalog: StateFlow<SpotifyCatalogAccountState> = catalogState.asStateFlow()
@@ -322,6 +332,34 @@ internal class DesktopSpotifyAccounts(
     fun libraryTrackRow(track: SpotifyTrack, section: String): ContentOccurrence =
         playback.catalogTrackRow(track, "spotify:library:$section:${track.id}")
 
+    /** A search row keyed like Android's `SpotifySearchItem.Track`, so its tap can recover the fetched track. */
+    fun searchTrackRow(track: SpotifyTrack): ContentOccurrence =
+        playback.catalogTrackRow(track, "spotify:search:track:${track.id}")
+
+    /** Android's `search`: normalize, authenticate, use the five-minute result cache, then retry once on a stale token. */
+    suspend fun search(
+        query: String,
+        types: List<String> = listOf("track", "album", "artist", "playlist"),
+        limit: Int = SEARCH_PAGE_SIZE,
+        offset: Int = 0,
+    ): SpotifySearchResult {
+        val normalizedQuery = query.trim()
+        require(normalizedQuery.isNotEmpty()) { "Spotify search query is empty" }
+        refreshToken(rejected = null)
+        val cacheKey = "$normalizedQuery|${types.joinToString(",")}|$limit|$offset"
+        val now = System.currentTimeMillis()
+        synchronized(searchCache) {
+            searchCache[cacheKey]?.takeIf { it.expiresAtMs > now }?.let { return it.result }
+        }
+        val result = withTokenRetry {
+            Spotify.search(query = normalizedQuery, types = types, limit = limit, offset = offset).getOrThrow()
+        }
+        synchronized(searchCache) {
+            searchCache[cacheKey] = CachedSearch(result, now + SEARCH_CACHE_TTL_MS)
+        }
+        return result
+    }
+
     /** A tapped Library song resolves to a YouTube radio, matching Android's `SpotifyPlayableRow`. */
     suspend fun playLibraryTrack(start: QueueStart) = playback.playCatalogTrack(start)
 
@@ -447,6 +485,7 @@ internal class DesktopSpotifyAccounts(
             Spotify.accessToken = null
             Spotify.forgetAccount()
             playlists = null
+            synchronized(searchCache) { searchCache.clear() }
             clearRecentlyPlayedState()
         }
         browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_CATALOG)

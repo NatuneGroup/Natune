@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import io.ktor.client.HttpClient
+import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
@@ -19,6 +20,8 @@ import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.IOException
 import java.net.URI
+import java.net.URLDecoder
+import java.net.URLEncoder
 import java.nio.file.Files
 import java.nio.file.Paths
 import javax.imageio.ImageIO
@@ -35,6 +38,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.yield
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkDirectory
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkKeys
@@ -44,8 +50,9 @@ import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
 import org.jetbrains.skia.Image as SkiaImage
 
 /**
- * Fetches and decodes the artwork the desktop shows: a public http or https image, requested with no cookie and no
- * account header, so a thumbnail never carries a credential. A missing, oversized, slow or undecodable image reads as
+ * Fetches and decodes the artwork the desktop shows: a public http or https image, a local file image, or Android's
+ * `tgart:` Telegram model (catalogue cover, then TDLib thumbnail). Network images carry no cookie and no account
+ * header, so a thumbnail never carries a credential. A missing, oversized, slow or undecodable image reads as
  * no image, and its frame keeps the placeholder. Decoded images sit in a bounded least-recently-used cache.
  *
  * A custom cover the user picked replaces the artwork at its URL on every slot, as on Android. It is read from the
@@ -56,6 +63,7 @@ internal class DesktopArtworkLoader(
     private val http: HttpClient,
     private val customArtwork: CustomArtworkRepository,
     private val customFiles: CustomArtworkFiles,
+    private val telegramFile: suspend (Int) -> String?,
 ) {
     private val lock = Any()
     private val cache = object : LinkedHashMap<String, ImageBitmap>(CACHE_ENTRIES, 0.75f, true) {
@@ -63,6 +71,7 @@ internal class DesktopArtworkLoader(
             size > CACHE_ENTRIES
     }
     private val permits = Semaphore(MAX_CONCURRENT_FETCHES)
+    private val telegramCoverCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** The stored custom covers, so a slot recomposes when one is set or removed. */
     val overrides: StateFlow<CustomArtworkOverrides> get() = customArtwork.overrides
@@ -84,11 +93,22 @@ internal class DesktopArtworkLoader(
     suspend fun load(uri: String?): ImageBitmap? {
         val target = displayUri(uri) ?: return null
         val custom = target != uri
-        if (!custom && !isPublicWebImage(target)) return null
+        val kind = when {
+            custom || target.startsWith("file:") -> ArtworkKind.LOCAL_FILE
+            target.startsWith("tgart:") -> ArtworkKind.TELEGRAM
+            isPublicWebImage(target) -> ArtworkKind.REMOTE
+            else -> return null
+        }
         synchronized(lock) { cache[target] }?.let { return it }
         val bitmap = try {
             withTimeout(FETCH_TIMEOUT_MS) {
-                permits.withPermit { if (custom) readCustomCover(target) else fetchAndDecode(target) }
+                permits.withPermit {
+                    when (kind) {
+                        ArtworkKind.LOCAL_FILE -> readImageFile(target)
+                        ArtworkKind.REMOTE -> fetchAndDecode(target)
+                        ArtworkKind.TELEGRAM -> fetchTelegram(target)
+                    }
+                }
             }
         } catch (_: TimeoutCancellationException) {
             null
@@ -105,7 +125,7 @@ internal class DesktopArtworkLoader(
      * Reads a custom cover from its override file. A picked photo is often larger than a thumbnail, so it is decoded
      * subsampled and then scaled to the same edge bound the remote images keep, instead of being refused.
      */
-    private suspend fun readCustomCover(fileUri: String): ImageBitmap? = withContext(Dispatchers.IO) {
+    private suspend fun readImageFile(fileUri: String): ImageBitmap? = withContext(Dispatchers.IO) {
         try {
             val file = Paths.get(URI(fileUri))
             if (!Files.isRegularFile(file) || Files.size(file) > CustomArtworkLimits.MAX_COVER_BYTES) return@withContext null
@@ -160,6 +180,59 @@ internal class DesktopArtworkLoader(
         return withContext(Dispatchers.Default) { decode(bytes) }
     }
 
+    /** Android's `tgart:` fetcher: an iTunes catalogue cover first, then the embedded TDLib thumbnail. */
+    private suspend fun fetchTelegram(uri: String): ImageBitmap? {
+        val location = try {
+            URI(uri)
+        } catch (_: Exception) {
+            return null
+        }
+        val fileId = location.authority?.toIntOrNull()?.takeIf { it > 0 } ?: 0
+        val query = location.rawQuery.orEmpty().split('&').filter { it.isNotEmpty() }.associate { part ->
+            val key = part.substringBefore('=')
+            val value = part.substringAfter('=', "")
+            key to URLDecoder.decode(value, Charsets.UTF_8)
+        }
+        val title = query["t"].orEmpty()
+        val artist = query["a"].orEmpty().takeIf(String::isNotBlank)
+        if (title.isNotBlank()) {
+            telegramCoverUrl(title, artist)?.let { remote -> fetchAndDecode(remote) }?.let { return it }
+        }
+        val path = if (fileId > 0) telegramFile(fileId) else null
+        return path?.let { Paths.get(it).toUri().toString() }?.let { readImageFile(it) }
+    }
+
+    /** The Android iTunes lookup: one result, 100px artwork widened to 600px, hits and misses both cached. */
+    private suspend fun telegramCoverUrl(title: String, artist: String?): String? {
+        val cleaned = cleanTelegramTitle(title)
+        if (cleaned.isBlank()) return null
+        val key = "${cleaned.lowercase(java.util.Locale.US)}|${artist?.lowercase(java.util.Locale.US).orEmpty()}"
+        telegramCoverCache[key]?.let { return it.takeIf(String::isNotBlank) }
+        val term = listOfNotNull(artist?.takeIf(String::isNotBlank), cleaned).joinToString(" ")
+        val url = "https://itunes.apple.com/search?term=" + URLEncoder.encode(term, "UTF-8") +
+            "&entity=song&limit=1&media=music"
+        val artwork = http.prepareGet(url) {
+            header("User-Agent", "ArchiveTune")
+        }.execute { response ->
+            if (!response.status.isSuccess()) return@execute null
+            val text = response.readBoundedBytes(MAX_TELEGRAM_LOOKUP_BYTES)?.decodeToString() ?: return@execute null
+            val root = runCatching { Json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return@execute null
+            val first = (root["results"] as? kotlinx.serialization.json.JsonArray)?.firstOrNull() as? JsonObject
+            (first?.get("artworkUrl100") as? JsonPrimitive)?.content
+                ?.replace(Regex("/\\d+x\\d+bb\\.jpg$"), "/600x600bb.jpg")
+        }
+        if (telegramCoverCache.size >= MAX_TELEGRAM_LOOKUP_CACHE) telegramCoverCache.clear()
+        telegramCoverCache[key] = artwork.orEmpty()
+        return artwork
+    }
+
+    private fun cleanTelegramTitle(raw: String): String = raw
+        .replace(Regex("\\((?:official|lyric|audio|video|hd|hq|visualizer)[^)]*\\)", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("\\[[^\\]]*\\]"), " ")
+        .replace(Regex("^\\s*\\d+\\s*[.\\-]\\s*"), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
     /** Refuses an image whose edge is out of bounds before its pixels are kept, so one image cannot dominate memory. */
     private fun decode(bytes: ByteArray): ImageBitmap? {
         val image = try {
@@ -174,12 +247,30 @@ internal class DesktopArtworkLoader(
         return image.toComposeImageBitmap()
     }
 
+    private enum class ArtworkKind { REMOTE, LOCAL_FILE, TELEGRAM }
+
     private companion object {
         const val CACHE_ENTRIES = 32
         const val MAX_CONCURRENT_FETCHES = 4
         const val FETCH_TIMEOUT_MS = 15_000L
         const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
         const val MAX_IMAGE_EDGE = 1024
+        const val MAX_TELEGRAM_LOOKUP_BYTES = 64 * 1024
+        const val MAX_TELEGRAM_LOOKUP_CACHE = 512
+    }
+}
+
+/** Android's `tgart://<fileId>?t=<title>&a=<artist>` model. */
+internal fun telegramArtworkUri(fileId: Int, title: String?, artist: String?): String? {
+    if (fileId <= 0 && title.isNullOrBlank()) return null
+    val encode = { value: String -> URLEncoder.encode(value, "UTF-8").replace("+", "%20") }
+    return buildString {
+        append("tgart://").append(fileId.coerceAtLeast(0))
+        val query = buildList {
+            title?.takeIf(String::isNotBlank)?.let { add("t=" + encode(it)) }
+            artist?.takeIf(String::isNotBlank)?.let { add("a=" + encode(it)) }
+        }
+        if (query.isNotEmpty()) append('?').append(query.joinToString("&"))
     }
 }
 

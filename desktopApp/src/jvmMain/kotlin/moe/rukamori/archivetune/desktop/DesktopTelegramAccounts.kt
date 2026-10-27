@@ -177,6 +177,8 @@ private data class TelegramSyncTrack(
     val mimeType: String,
     val fileName: String,
     val sizeBytes: Long,
+    val thumbnailFileId: Int,
+    val albumCoverMinithumbnail: ByteArray?,
 ) {
     val mediaId: String get() = TelegramTrackRef(chatId, messageId, fileId, fileUniqueId).toMediaId()
 }
@@ -311,6 +313,8 @@ internal class TdlightChannelLibrary(
                 mimeType = audio.mimeType.orEmpty(),
                 fileName = audio.fileName.orEmpty(),
                 sizeBytes = audio.audio?.size ?: 0L,
+                thumbnailFileId = audio.albumCoverThumbnail?.file?.id ?: 0,
+                albumCoverMinithumbnail = audio.albumCoverMinithumbnail?.data,
             )
         }
         is TdApi.MessageDocument -> messageContent.document?.let { document ->
@@ -326,6 +330,8 @@ internal class TdlightChannelLibrary(
                 mimeType = document.mimeType.orEmpty(),
                 fileName = document.fileName.orEmpty(),
                 sizeBytes = document.document?.size ?: 0L,
+                thumbnailFileId = document.thumbnail?.file?.id ?: 0,
+                albumCoverMinithumbnail = document.minithumbnail?.data,
             )
         }
         else -> null
@@ -341,6 +347,13 @@ internal class TdlightChannelLibrary(
                 subtitle = metadata.second ?: channelTitle.ifBlank { "Telegram" },
                 album = channelTitle.takeIf { it.isNotBlank() },
                 artists = listOf(moe.rukamori.archivetune.shared.domain.repository.ContentCredit(metadata.second ?: channelTitle.ifBlank { "Telegram" })),
+                artworkUri = graph.telegramTrackArtworkUri(
+                    thumbnailFileId,
+                    metadata.first,
+                    metadata.second,
+                    fileUniqueId.ifEmpty { "$chatId-$messageId" },
+                    albumCoverMinithumbnail,
+                ),
                 durationMs = durationSeconds.takeIf { it > 0 }?.let { it * 1000L },
             ),
         )

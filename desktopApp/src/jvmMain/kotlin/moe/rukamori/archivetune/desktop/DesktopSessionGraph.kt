@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.desktop
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
 import java.text.Collator
 import java.util.Locale
@@ -236,7 +237,26 @@ class DesktopSessionGraph private constructor(
     internal val catalogueOwners = DesktopCatalogueOwners(catalogue, youtubeContent, pageOwners)
 
     /** The one artwork loader of the window slots. It fetches over the same client as the sources and holds no other resource. */
-    internal val artworkLoader = DesktopArtworkLoader(http, customArtwork, customArtworkFiles)
+    internal val artworkLoader = DesktopArtworkLoader(http, customArtwork, customArtworkFiles) { fileId ->
+        telegram.downloadFileBlocking(fileId)
+    }
+
+    /** Android's artwork fallback for a Telegram track with no `tgart:` model: cache its inline minithumbnail. */
+    internal fun telegramTrackArtworkUri(
+        fileId: Int,
+        title: String?,
+        artist: String?,
+        uniqueKey: String,
+        minithumbnail: ByteArray?,
+    ): String? = telegramArtworkUri(fileId, title, artist) ?: runCatching {
+        if (minithumbnail == null || minithumbnail.isEmpty()) return null
+        val directory = instanceDirectory.resolve("telegram_artwork")
+        Files.createDirectories(directory)
+        val safeKey = uniqueKey.replace(Regex("[^A-Za-z0-9_-]"), "_").ifBlank { "track" }
+        val file = directory.resolve("$safeKey.jpg")
+        if (!Files.exists(file)) Files.write(file, minithumbnail)
+        file.toUri().toString()
+    }.getOrNull()
 
     /** The one sleep timer of this process. It only pauses [player], so every window shares it. */
     internal val sleepTimer = DesktopSleepTimer(this)

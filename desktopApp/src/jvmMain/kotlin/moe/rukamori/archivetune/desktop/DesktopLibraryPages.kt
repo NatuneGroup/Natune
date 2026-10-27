@@ -87,7 +87,7 @@ internal fun desktopGraphPage(
         ArchiveDestination.ARTIST_ITEMS -> desktopArtistItemsPage(graph, route, menu, openRoute, back)
         ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, spotify)
         ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
-            hostSearchPage(graph.catalogPages, route) { openRoute(ArchiveRoutes.musicRecognition()) }
+            desktopSearchPage(graph, graph.catalogPages, spotify, route) { openRoute(ArchiveRoutes.musicRecognition()) }
         ArchiveDestination.ARTIST ->
             if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
                 desktopSpotifyArtistPage(graph, spotify, route, menu, openRoute, back)
