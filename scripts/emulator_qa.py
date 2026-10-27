@@ -80,12 +80,11 @@ def swipe_up() -> None:
     time.sleep(2)
 
 
-def tap_text(pattern: str, tag: str, scrolls: int = 0,
-             clickable_only: bool = False) -> bool:
+def tap_text(pattern: str, tag: str, scrolls: int = 0) -> bool:
     """Tap the first node matching `pattern`; clickable nodes win over plain
-    text (the onboarding subtitles mention 'next'/'start listening' too).
-    clickable_only ignores text hits so scrolling continues to the real
-    button. With scrolls>0, swipe up and re-dump until found."""
+    text. Tapping a text node inside a button still hits the button, and the
+    anchored patterns cannot match subtitle paragraphs. With scrolls>0,
+    swipe up and re-dump until found."""
     pat = re.compile(pattern, re.I)
     for attempt in range(scrolls + 1):
         nodes = dump_ui(f"{tag}-{attempt}" if attempt else tag)
@@ -95,7 +94,7 @@ def tap_text(pattern: str, tag: str, scrolls: int = 0,
             if pat.search(hay):
                 (clickable if click else plain).append(
                     (text, desc, resid, cx, cy))
-        hit = (clickable + (plain if not clickable_only else []) or [None])[0]
+        hit = (clickable + plain or [None])[0]
         if hit:
             text, desc, resid, cx, cy = hit
             print(f"tap '{pattern}' -> ({cx},{cy}) [{text or desc or resid}]")
@@ -135,7 +134,7 @@ def walk_onboarding() -> None:
     # means onboarding is finished.
     for i in range(1, 16):
         if not tap_text("let.s go|^next$|^skip for now$|^start listening$",
-                        f"onb-{i}", scrolls=3, clickable_only=True):
+                        f"onb-{i}", scrolls=3):
             break
     time.sleep(5)
     shot("02-onboarding-done")
@@ -145,16 +144,16 @@ def navigate() -> None:
     foreground()
     time.sleep(5)
     shot("03-home")
-    tap_text("^search$|nav.*search", "nav-search", clickable_only=True)
+    tap_text("^search$|nav.*search", "nav-search")
     time.sleep(3)
     shot("04-search")
-    tap_text("^library$|nav.*library", "nav-library", clickable_only=True)
+    tap_text("^library$|nav.*library", "nav-library")
     time.sleep(3)
     shot("05-library")
-    tap_text("^settings$|settings.*icon|more options|^account$", "nav-settings", clickable_only=True)
+    tap_text("^settings$|settings.*icon|more options|^account$", "nav-settings")
     time.sleep(3)
     shot("06-settings")
-    tap_text("^appearance$|^interface$", "nav-appearance", scrolls=2, clickable_only=True)
+    tap_text("^appearance$|^interface$", "nav-appearance", scrolls=2)
     time.sleep(3)
     shot("07-appearance")
 
@@ -163,9 +162,9 @@ def select_styles() -> None:
     results = []
     for i, style in enumerate(STYLES, 1):
         tap_text("^player design$|^player style$", f"style-open-{i}",
-                 scrolls=4, clickable_only=True)
+                 scrolls=4)
         time.sleep(1)
-        ok = tap_text(f"^{re.escape(style)}$", f"style-{i}", scrolls=4, clickable_only=True)
+        ok = tap_text(f"^{re.escape(style)}$", f"style-{i}", scrolls=4)
         shot(f"style-{i:02d}-{style.replace(' ', '_')}")
         results.append(f"{'selected' if ok else 'NOT SELECTABLE'}: {style}")
         time.sleep(1)
