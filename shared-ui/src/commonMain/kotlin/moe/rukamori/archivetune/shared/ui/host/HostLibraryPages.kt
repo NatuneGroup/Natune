@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.library.DefaultLibraryFilterOrder
+import moe.rukamori.archivetune.shared.domain.library.LibraryDefaults
 import moe.rukamori.archivetune.shared.domain.library.LibraryFilter
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.library.toLibraryFilterOrder
@@ -30,6 +31,7 @@ import moe.rukamori.archivetune.shared.domain.repository.MyTopPeriod as DomainMy
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
 import moe.rukamori.archivetune.shared.domain.repository.QueueStart
 import moe.rukamori.archivetune.shared.domain.repository.hasBlockedArtist
+import moe.rukamori.archivetune.shared.domain.settings.ChipSortTypeKey
 import moe.rukamori.archivetune.shared.domain.settings.HideAiMixKey
 import moe.rukamori.archivetune.shared.domain.settings.HideCachedCardKey
 import moe.rukamori.archivetune.shared.domain.settings.HideLikedSongsCardKey
@@ -40,6 +42,7 @@ import moe.rukamori.archivetune.shared.domain.settings.LibraryChipOrderKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
 import moe.rukamori.archivetune.shared.domain.settings.TopSize
+import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.resources.*
@@ -93,7 +96,8 @@ fun hostLibraryPage(owners: LibraryPageOwners, topMixesUnavailable: String, open
     var chosen by remember { mutableStateOf<LibraryFilter?>(null) }
     var attempt by remember { mutableStateOf(0) }
     val order = snapshot?.get(LibraryChipOrderKey)?.toLibraryFilterOrder() ?: DefaultLibraryFilterOrder
-    val filter = chosen ?: order.firstOrNull { it != LibraryFilter.LIBRARY } ?: LibraryFilter.SONGS
+    val defaultFilter = snapshot?.get(ChipSortTypeKey).toEnum(LibraryDefaults.chipSortType)
+    val filter = chosen ?: defaultFilter.takeIf { it in order } ?: order.first()
     val page by remember(filter, attempt) { content.chipPage(filter) }.collectAsState(PagedContentState(loading = true))
     // The baseline card shows the stored My Top size, which defaults to 50. The card's hide preference removes it, so the entry goes too.
     val myTopSize = snapshot?.takeUnless { it.get(HideTop50CardKey) == true }
