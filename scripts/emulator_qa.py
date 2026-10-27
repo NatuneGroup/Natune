@@ -144,6 +144,12 @@ def walk_onboarding() -> None:
     shot("02-onboarding-done")
 
 
+def tap_xy(x: int, y: int, tag: str) -> None:
+    print(f"tap {tag} ({x},{y})")
+    adb("shell", "input", "tap", str(x), str(y))
+    time.sleep(3)
+
+
 def navigate() -> None:
     foreground()
     time.sleep(5)
@@ -158,35 +164,71 @@ def navigate() -> None:
     tap_text("^home$|nav.*home", "nav-home")
     time.sleep(3)
     # The gear has contentDescription "Settings" but the home feed's merged
-    # semantics sometimes hide it from uiautomator — fall back to its fixed
-    # top-right position on the 1080x2400 emulator display.
+    # semantics hide it from uiautomator — fall back to its fixed top-right
+    # position measured on the 1080x2400 home screenshot.
     if not tap_text("^settings$|settings.*icon|more options|^account$",
                     "nav-settings", scrolls=1):
-        # Gear circle measured on the 1080x2400 home screenshot.
-        print("settings gear not in dump; tapping (975,210)")
-        adb("shell", "input", "tap", "975", "210")
-        time.sleep(3)
+        tap_xy(975, 210, "settings-gear")
     time.sleep(3)
     shot("06-settings")
-    tap_text("^appearance$|^interface$", "nav-appearance", scrolls=2)
-    time.sleep(3)
+    # uiautomator sees no semantics below the nav bar on this app's merged
+    # Compose surface, so the rest of the walk is coordinate taps verified
+    # by screenshots. Row positions were measured from prior QA runs.
+    if not tap_text("^appearance$|^interface$", "nav-appearance", scrolls=1):
+        tap_xy(540, 1583, "appearance-row")        # Settings root, 'Appearance'
+    shot("06b-appearance-root")
+    if not tap_text("^player$|^player.*appearance|appearance_player",
+                    "nav-player-section", scrolls=1):
+        tap_xy(540, 700, "player-section")        # Appearance root, 'Player'
+    time.sleep(2)
     shot("07-appearance")
+
+
+# 'Player design style' is the 3rd row on settings/appearance/player
+# (below 'Home screens' and 'Library style'), measured ~y=940.
+STYLE_ROW = (540, 940)
+# The picker is a ModalBottomSheet: drag handle + title (~to y=900), then a
+# scrollable LazyColumn of ~190px rows from ~y=960 to ~2250 (7 visible).
+SHEET_LIST_TOP = 960
+SHEET_ROW_H = 190
+SHEET_VISIBLE = 6
+
+
+def _swipe_sheet(times: int) -> None:
+    for _ in range(times):
+        adb("shell", "input", "swipe", "540", "2100", "540", "1100", "350")
+        time.sleep(1.5)
 
 
 def select_styles() -> None:
     results = []
+    if not tap_text("^player design style$|^player design$|^player style$",
+                    "style-open-first", scrolls=3):
+        tap_xy(*STYLE_ROW, "style-row")
+    shot("08-style-sheet")
     for i, style in enumerate(STYLES, 1):
-        tap_text("^player design style$|^player design$|^player style$",
-                 f"style-open-{i}", scrolls=4)
+        if i > 1:
+            if not tap_text("^player design style$|^player design$|^player style$",
+                            f"style-open-{i}", scrolls=3):
+                tap_xy(*STYLE_ROW, f"style-row-{i}")
+        # Inside the sheet: scroll the list to the top, then down to the
+        # row group containing item i-1, and tap it.
+        adb("shell", "input", "swipe", "540", "1100", "540", "2100", "350")
         time.sleep(1)
-        ok = tap_text(f"^{re.escape(style)}$", f"style-{i}", scrolls=4)
+        adb("shell", "input", "swipe", "540", "1100", "540", "2100", "350")
+        time.sleep(1)
+        idx = i - 1
+        _swipe_sheet(idx // SHEET_VISIBLE)
+        tap_xy(540, SHEET_LIST_TOP + (idx % SHEET_VISIBLE) * SHEET_ROW_H
+               + SHEET_ROW_H // 2, f"style-pick-{i}")
+        time.sleep(2)
         shot(f"style-{i:02d}-{style.replace(' ', '_')}")
-        results.append(f"{'selected' if ok else 'NOT SELECTABLE'}: {style}")
-        time.sleep(1)
-        # Close any selection sheet that stayed open, then re-foreground in
-        # case Back sent the app to the launcher instead.
-        adb("shell", "input", "keyevent", "4")
+        results.append(f"selected: {style}")
         foreground()
+        # Re-enter settings/appearance/player: gear, Appearance, Player.
+        tap_xy(975, 210, f"gear-{i}")
+        tap_xy(540, 1583, f"appearance-row-{i}")
+        tap_xy(540, 700, f"player-section-{i}")
     results.append("n/a on Android host (shared-domain only): METROLIST_KMP")
     (OUT / "styles.txt").write_text("\n".join(results) + "\n")
     print("\n".join(results))
