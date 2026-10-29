@@ -49,6 +49,7 @@ import moe.rukamori.archivetune.ui.screens.artist.ArtistSongsScreen
 import moe.rukamori.archivetune.ui.screens.library.AppleMusicLibraryScreen
 import moe.rukamori.archivetune.ui.screens.library.LibraryScreen
 import moe.rukamori.archivetune.ui.screens.library.LocalSongScreen
+import moe.rukamori.archivetune.ui.screens.library.UploadedSongsScreen
 import moe.rukamori.archivetune.ui.screens.musicrecognition.MusicRecognitionScreen
 import moe.rukamori.archivetune.ui.screens.musicrecognition.MusicRecognitionDetailsScreen
 import moe.rukamori.archivetune.ui.screens.playlist.AutoPlaylistScreen
@@ -227,6 +228,9 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("local_songs") {
         LocalSongScreen(navController)
+    }
+    composable("uploaded_songs") {
+        UploadedSongsScreen(navController)
     }
     composable("history") {
         HistoryScreen(navController)
