@@ -33,7 +33,7 @@ fun playerAppearanceSettingsRows(
     navigate: (String) -> Unit,
     chooseHomeScreens: () -> Unit,
 ): List<SettingsRow> = buildList {
-    val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    val style = preferences.selectedPlayerDesignStyle()
     // The same per-style answers the players render from; Metrolist has native controls.
     fun note(setting: PlayerStyleSetting) = if (style.honors(setting)) null else Res.string.m6_player_setting_not_used
     val volume = style.honors(PlayerStyleSetting.VOLUME_BAR)
@@ -66,16 +66,16 @@ fun playerAppearanceSettingsRows(
             SettingsRow.Option("CUSTOM", Res.string.m6_custom), SettingsRow.Option("BLUR", Res.string.m6_blur),
             SettingsRow.Option("COLORING", Res.string.m6_coloring), SettingsRow.Option("BLUR_GRADIENT", Res.string.m6_blur_gradient),
             SettingsRow.Option("GLOW", Res.string.m6_glow), SettingsRow.Option("GLOW_ANIMATED", Res.string.m6_glow_animated),
-        ), enabled = style.honors(PlayerStyleSetting.BACKGROUND), write = { selected ->
-            this[PlayerBackgroundStyleKey] = selected
-            if (selected == "CUSTOM") this[LyricsBackgroundStyleKey] = "CUSTOM"
-            else if (this[LyricsBackgroundStyleKey] == "CUSTOM") this[LyricsBackgroundStyleKey] = "DEFAULT"
-        }, description = note(PlayerStyleSetting.BACKGROUND)))
+        ), enabled = style.honors(PlayerStyleSetting.BACKGROUND),
+        write = { setPlayerBackgroundStyle(it) }, description = note(PlayerStyleSetting.BACKGROUND)))
     add(SettingsRow.Choice("lyrics_background_style", Res.string.m6_lyrics_background, LyricsBackgroundStyleKey, "DEFAULT",
         listOf(SettingsRow.Option("DEFAULT", Res.string.m6_default), SettingsRow.Option("FOLLOW_THEME", Res.string.m6_follow_theme),
             SettingsRow.Option("COLORING", Res.string.m6_coloring), SettingsRow.Option("MOVING_BLUR", Res.string.m6_moving_blur)) +
             (if (background == "CUSTOM") listOf(SettingsRow.Option("CUSTOM", Res.string.m6_custom)) else emptyList()),
-        enabled = background != "CUSTOM"))
+        enabled = background != "CUSTOM",
+        description = Res.string.m6_custom_lyrics_background.takeIf { background == "CUSTOM" },
+        read = { if (it[PlayerBackgroundStyleKey] == "CUSTOM") "CUSTOM"
+            else it[LyricsBackgroundStyleKey, "DEFAULT"].takeUnless { value -> value == "CUSTOM" } ?: "DEFAULT" }))
     if (background == "CUSTOM")
         add(SettingsRow.Action("customized_background", Res.string.m6_custom_background, { navigate("customize_background") }))
     val blur = !preferences[DisableBlurKey, false]
@@ -84,16 +84,22 @@ fun playerAppearanceSettingsRows(
             add(SettingsRow.Option("THEME", Res.string.m6_follow_theme))
             add(SettingsRow.Option("GRADIENT", Res.string.m6_gradient))
             add(SettingsRow.Option("GLOW", Res.string.m6_glow))
-            if (blur) {
-                add(SettingsRow.Option("FROSTED", Res.string.m6_frosted))
-                add(SettingsRow.Option("LIQUID_GLASS", Res.string.m6_liquid_glass))
+            listOf(MiniPlayerBackgroundStyle.FROSTED to Res.string.m6_frosted,
+                MiniPlayerBackgroundStyle.LIQUID_GLASS to Res.string.m6_liquid_glass).forEach { (material, label) ->
+                val reason = miniPlayerMaterialBlock(material, !blur, blurSupported, preferences[LiquidGlassEnabledKey, false])
+                add(SettingsRow.Option(material.name, label, enabled = reason == null, description = when (reason) {
+                    MiniPlayerMaterialBlock.BLUR_DISABLED -> Res.string.m6_blur_disabled
+                    MiniPlayerMaterialBlock.UNSUPPORTED -> Res.string.m6_material_unsupported
+                    MiniPlayerMaterialBlock.GLASS_DISABLED -> Res.string.m6_liquid_glass_required
+                    null -> null
+                }))
             }
         }, write = {
-            this[MiniPlayerBackgroundStyleKey] =
-                if (it == "LIQUID_GLASS" && (!blurSupported || !this[LiquidGlassEnabledKey, false])) "THEME" else it
+            val material = MiniPlayerBackgroundStyle.valueOf(it)
+            if (miniPlayerMaterialBlock(material, this[DisableBlurKey, false], blurSupported,
+                    this[LiquidGlassEnabledKey, false]) == null) this[MiniPlayerBackgroundStyleKey] = it
         }))
-    add(SettingsRow.Toggle("compact_mini_player", Res.string.m6_compact_player, CompactMiniPlayerKey, false,
-        enabled = preferences.interfaceStyle() != InterfaceStyle.APPLE_MUSIC))
+    add(SettingsRow.Toggle("compact_mini_player", Res.string.m6_compact_player, CompactMiniPlayerKey, false))
     add(SettingsRow.Toggle("hide_player_thumbnail", Res.string.m6_hide_thumbnail, HidePlayerThumbnailKey, false,
         description = note(PlayerStyleSetting.HIDE_THUMBNAIL), enabled = style.honors(PlayerStyleSetting.HIDE_THUMBNAIL)))
     add(SettingsRow.Decimal("thumbnail_corner_radius", Res.string.m6_thumbnail_radius, ThumbnailCornerRadiusKey, 16f, 0f..64f,

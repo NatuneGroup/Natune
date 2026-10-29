@@ -24,10 +24,12 @@ and a SponsorBlock lookup for them would be both meaningless and a leak.
   query, fragment or userinfo) so a bad value cannot redirect lookups.
 - `SponsorBlockRepository.kt` — Ktor/OkHttp client, settings read from DataStore per
   lookup, access-ordered LRU of 64 responses. Overlapping segments are merged, since
-  seeking out of one into the next reads as a stutter. Never throws: a missing
-  segment list must not break playback, and a 404 is a normal "nothing published".
+  seeking out of one into the next reads as a stutter. Lookup failures do not break
+  playback; coroutine cancellation propagates, and a 404 is normal "nothing published".
 - `SponsorBlockPlaybackController.kt` — polls 200ms while playing, 750ms otherwise,
   and seeks out of a segment it is inside.
+- `PodcastSponsorBlockDriver.kt` (`shared-ui`) — the desktop and iOS path, podcast
+  episodes only.
 
 ## Behaviour worth keeping
 
@@ -38,6 +40,26 @@ and a SponsorBlock lookup for them would be both meaningless and a leak.
 - **Re-attaches on crossfade promotion.** `MusicService` builds a new session player
   and releases the old one there; a listener left on the old player goes deaf for the
   rest of the session.
+
+## Podcast episodes
+
+Episodes are skipped only when **Skip podcast segments** (`sponsor_block_podcasts_enabled`)
+is also on. It is off by default and has no effect while SponsorBlock itself is off. Only
+episodes that play from YouTube are looked up, through the same lookup songs use; other
+providers are never looked up. Android handles them in `SponsorBlockPlaybackController`.
+The shared desktop and iOS sessions handle them in `PodcastSponsorBlockDriver`, which skips
+podcast segments only, because songs are not skipped there yet.
+
+Both controllers observe settings during the current episode, including while paused.
+Turning either opt-in off cancels an in-flight lookup and clears loaded segments; changing
+categories or the API origin replaces that occurrence's lookup. Cache hits still check
+the current gates. Late responses cannot re-enable skipping after a settings edit or
+player promotion. A seek requires an advancing, seekable player, and an end-of-episode
+segment is not marked skipped when it is left to play out.
+
+The shared domain gate and portable request-configuration tests cover these policy
+boundaries without an advancing synthetic playback engine. They are authored, not
+locally executed; CI and real playback verification remain required.
 
 ## Defaults
 

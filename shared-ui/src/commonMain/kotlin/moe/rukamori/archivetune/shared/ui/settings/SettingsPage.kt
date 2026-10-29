@@ -86,17 +86,26 @@ fun SettingsPage(
                     } ?: row.description
                     if (row is SettingsRow.Status) {
                         Text(row.value, maxLines = if (row.fullText) Int.MAX_VALUE else 2)
+                    } else if (row is SettingsRow.Choice) {
+                        val stored = row.read(preferences)
+                        val option = row.options.firstOrNull { it.value == stored }
+                            ?: row.options.firstOrNull { it.value == row.default } ?: row.options.first()
+                        Column {
+                            Text(stringResource(option.label))
+                            description?.let {
+                                Text(
+                                    stringResource(it),
+                                    modifier = if (visible && resumed && motionEnabled) Modifier.basicMarquee(iterations = 2) else Modifier,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
                     } else if (description != null) {
                         Text(
                             stringResource(description),
                             modifier = if (visible && resumed && motionEnabled) Modifier.basicMarquee(iterations = 2) else Modifier,
                             maxLines = 1,
                         )
-                    } else if (row is SettingsRow.Choice) {
-                        val stored = preferences[row.key, row.default]
-                        val option = row.options.firstOrNull { it.value == stored }
-                            ?: row.options.firstOrNull { it.value == row.default } ?: row.options.first()
-                        Text(stringResource(option.label))
                     } else if (row is SettingsRow.IntChoice) {
                         val stored = preferences[row.key, row.default]
                         val option = row.options.firstOrNull { it.value == stored }
@@ -138,8 +147,12 @@ fun SettingsPage(
             title = { Text(stringResource(row.title)) },
             text = { Column(Modifier.verticalScroll(rememberScrollState())) {
                 row.options.forEach { option ->
-                    TextButton(onClick = { commit { row.write(this, option.value) }; editing = null }) {
-                        Text(stringResource(option.label))
+                    TextButton(enabled = option.enabled,
+                        onClick = { commit { row.write(this, option.value) }; editing = null }) {
+                        Column {
+                            Text(stringResource(option.label))
+                            option.description?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+                        }
                     }
                 }
             } },

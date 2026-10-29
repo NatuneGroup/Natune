@@ -56,7 +56,7 @@ class AndroidSettingsStore(
     }
 }
 
-private fun Preferences.sharedSnapshot(): PreferenceSnapshot = PreferenceSnapshot.of(
+internal fun Preferences.sharedSnapshot(): PreferenceSnapshot = PreferenceSnapshot.of(
     *asMap().map { (key, value) ->
         val shared = when (value) {
             is Boolean -> BooleanPreferenceKey(key.name)
@@ -72,7 +72,7 @@ private fun Preferences.sharedSnapshot(): PreferenceSnapshot = PreferenceSnapsho
     }.toTypedArray(),
 )
 
-private fun PreferenceKey<*>.nativeKey(): Preferences.Key<*> = when (kind) {
+internal fun PreferenceKey<*>.nativeKey(): Preferences.Key<*> = when (kind) {
     PreferenceKind.BOOLEAN -> booleanPreferencesKey(name)
     PreferenceKind.STRING -> stringPreferencesKey(name)
     PreferenceKind.FLOAT -> floatPreferencesKey(name)

@@ -37,17 +37,16 @@ fun LyricsProviderSettings(
     if (preferences == null) { CircularProgressIndicator(); return }
     var dialog by remember { mutableStateOf<ProviderDialog?>(null) }
     val scope = rememberCoroutineScope()
-    val enabled = !preferences[PrioritizeWordSyncedLyricsKey, false]
     val paxVisible = preferences[EnablePaxsenixLyricsKey, true]
-    LaunchedEffect(enabled, paxVisible) {
-        if (!enabled || !paxVisible && dialog != ProviderDialog.ORDER) dialog = null
+    LaunchedEffect(paxVisible) {
+        if (!paxVisible && dialog != ProviderDialog.ORDER) dialog = null
     }
     SettingsPage(
         lyricsProviderSettingsRows(preferences, { dialog = ProviderDialog.ORDER }, { dialog = ProviderDialog.STATS },
             { dialog = ProviderDialog.ENDPOINTS }),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
     )
-    if (dialog == ProviderDialog.ORDER && enabled) {
+    if (dialog == ProviderDialog.ORDER) {
         var order by remember(dialog) { mutableStateOf(preferences.lyricsProviderOrder()) }
         AlertDialog(
             onDismissRequest = { dialog = null },
@@ -67,9 +66,7 @@ fun LyricsProviderSettings(
             } },
             confirmButton = { TextButton(onClick = { scope.launch {
                 try {
-                    controller.edit {
-                        if (!this[PrioritizeWordSyncedLyricsKey, false]) setLyricsProviderOrder(order)
-                    }
+                    controller.edit { setLyricsProviderOrder(order) }
                     dialog = null
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { onFailure() }
@@ -78,7 +75,7 @@ fun LyricsProviderSettings(
         )
     }
     val selected = dialog
-    if (selected in setOf(ProviderDialog.STATS, ProviderDialog.ENDPOINTS) && enabled && paxVisible) {
+    if (selected in setOf(ProviderDialog.STATS, ProviderDialog.ENDPOINTS) && paxVisible) {
         var stats by remember(selected, preferences[PaxsenixEndpointKey], preferences[PaxsenixApiKeyKey]) { mutableStateOf<PaxsenixStats?>(null) }
         var checks by remember(selected, preferences[PaxsenixEndpointKey], preferences[PaxsenixApiKeyKey]) {
             mutableStateOf<List<PaxsenixDiagnostics.PathCheck>?>(null)

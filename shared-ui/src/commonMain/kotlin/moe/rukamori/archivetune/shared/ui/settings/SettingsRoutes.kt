@@ -13,7 +13,8 @@ fun settingsSearchRoute(parentKey: String, scrollKey: String?): String? {
     val supportsScroll = owner !in setOf(
         "developer_options", "about", "po_token", "account", "logcat", "listen_together", "canvas", "android_auto",
     )
-    return if (!supportsScroll || scrollKey.isNullOrBlank()) route else "$route?scrollTo=$scrollKey"
+    val target = if (owner == "lyrics" && scrollKey == "use_lyrics_v2") "lyrics_mode" else scrollKey
+    return if (!supportsScroll || target.isNullOrBlank()) route else "$route?scrollTo=$target"
 }
 
 private val routes = mapOf(
@@ -78,7 +79,8 @@ private val crossPageOwners = buildMap {
         "interface_style", "dynamic_theme", "random_theme_on_startup", "dark_theme", "pure_black", "color_palette", "color_source",
         "palette_picker", "theme_creator", "app_icon", "disable_animations", "splash_overlay_enabled", "hide_status_bar",
         "ui_scale", "blur_intensity", "disable_blur", "backdrop_blur", "backdrop_blur_amount", "font_preference",
-        "use_system_font", "custom_font", "liquid_glass_effects", "wallpaper_permission")
+        "use_system_font", "custom_font", "liquid_glass_effects", "wallpaper_permission",
+        "apple_music_headers", "apple_music_menus", "apple_music_search_bar", "apple_music_palette")
     own("appearance_player", "appearance",
         "player_design_style", "player_background_style", "lyrics_background_style", "mini_player_background_style",
         "player_buttons_style", "player_slider_style", "show_player_volume_bar", "hide_player_thumbnail", "crop_thumbnail_to_square",

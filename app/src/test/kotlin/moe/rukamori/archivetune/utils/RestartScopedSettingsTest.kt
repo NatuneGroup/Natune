@@ -70,8 +70,8 @@ class RestartScopedSettingsTest {
         assertTrue(settings.tabletModeEnabled)
         assertTrue(settings.liquidGlassEnabled)
         assertTrue(settings.liquidGlassNavBarEnabled)
-        assertTrue(settings.navigationBarFrostedBlur)
-        assertTrue(settings.navigationBarTintFrostedBlur)
+        assertFalse(settings.navigationBarFrostedBlur)
+        assertFalse(settings.navigationBarTintFrostedBlur)
     }
 
     @Test

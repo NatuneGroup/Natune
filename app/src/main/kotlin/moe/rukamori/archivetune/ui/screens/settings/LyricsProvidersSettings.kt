@@ -240,30 +240,19 @@ fun LyricsProvidersSettings(
                     .then(positions.containerModifier()),
         ) {
             preferenceGroup(title = providersTitle) {
-                // "Prioritize Word Synced Lyrics" sits at the TOP of the providers
-                // group because when it's ON it overrides every other toggle and the
-                // Lyrics Priority order below — the app queries only BetterLyrics,
-                // BetterLyrics Portato, YouLyPlus, and Unison directly. Putting it
-                // first makes the override relationship visually obvious.
+                // This is a preliminary sweep; the ordinary fallback still reads the controls below.
                 item {
                     SwitchPreference(
                         modifier = positions.modifierFor("prioritize_word_synced_lyrics"),
                         title = { Text(stringResource(R.string.prioritize_word_synced_lyrics)) },
-                        description = stringResource(R.string.prioritize_word_synced_lyrics_desc),
+                        description = stringResource(R.string.settings_word_sync_fallback),
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         checked = prioritizeWordSynced,
                         onCheckedChange = onPrioritizeWordSyncedChange,
                     )
                 }
 
-                // When "Prioritize Word Synced Lyrics" is ON, the per-provider
-                // toggles and Lyrics Priority order are ignored by LyricsHelper
-                // (the four word-sync-capable providers are queried directly).
-                // We grey them out here to signal that they have no effect while
-                // the override is active. They remain visible (not hidden) so the
-                // user can still see their state and understand what will resume
-                // when the override is turned back off.
-                val providerTogglesEnabled = !prioritizeWordSynced
+                val providerTogglesEnabled = true
 
                 item {
                     SwitchPreference(
@@ -650,7 +639,7 @@ fun LyricsProvidersSettings(
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         checked = enableMusixmatchExperimental,
                         onCheckedChange = onEnableMusixmatchExperimentalChange,
-                        isEnabled = !prioritizeWordSynced,
+                        isEnabled = true,
                     )
                 }
                 item(visible = enableMusixmatchExperimental) {

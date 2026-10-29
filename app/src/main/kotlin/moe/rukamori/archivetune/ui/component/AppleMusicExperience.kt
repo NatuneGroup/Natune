@@ -13,19 +13,23 @@ package moe.rukamori.archivetune.ui.component
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.datastore.preferences.core.MutablePreferences
-import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
 import moe.rukamori.archivetune.constants.InterfaceStyle
 import moe.rukamori.archivetune.constants.LibraryStyle
 import moe.rukamori.archivetune.constants.LibraryStyleKey
-import moe.rukamori.archivetune.constants.PlayerDesignStyle
-import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
-import moe.rukamori.archivetune.constants.StyleBeforeAppleMusicKey
-import moe.rukamori.archivetune.extensions.toEnum
+import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.InterfaceStyle as SharedInterfaceStyle
+import moe.rukamori.archivetune.shared.domain.settings.applyInterfaceStyle as applySharedInterfaceStyle
+import moe.rukamori.archivetune.shared.domain.settings.appleMusicHeaders
+import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
+import moe.rukamori.archivetune.shared.domain.settings.appleMusicPalette
+import moe.rukamori.archivetune.shared.domain.settings.appleMusicSearchBar
+import moe.rukamori.archivetune.shared.domain.settings.interfaceStyle
+import moe.rukamori.archivetune.shared.domain.settings.libraryStyle as sharedLibraryStyle
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.PreferenceStore
+import moe.rukamori.archivetune.utils.applySharedPreferenceEdit
 import moe.rukamori.archivetune.utils.dataStore
-import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 
 /**
  * The Library tab's layout style and its setter.
@@ -35,50 +39,36 @@ import moe.rukamori.archivetune.utils.rememberPreference
  */
 @Composable
 fun rememberLibraryStyle(): Pair<LibraryStyle, (LibraryStyle) -> Unit> {
-    // The style lays out the Library tab and nothing else. It used to also write the switch and
-    // force the player style, so picking it silently restyled the player, the tab bar and the
-    // headers and left the switch on afterwards. The style reads the switch back only to seed the
-    // default for data that predates the style key; choosing a style never writes it.
-    val (legacyEnabled) = rememberPreference(AppleMusicExperienceKey, defaultValue = false)
-    val (style, setStyle) =
-        rememberEnumPreference(
-            LibraryStyleKey,
-            defaultValue = if (legacyEnabled) LibraryStyle.APPLE_MUSIC else LibraryStyle.DEFAULT,
-        )
-    return style to setStyle
+    return rememberPreferenceSnapshot().libraryStyle()
 }
 
 /** [rememberLibraryStyle] read from a page's [PreferenceSnapshot] instead of its own collectors. */
 fun PreferenceSnapshot.libraryStyle(): Pair<LibraryStyle, (LibraryStyle) -> Unit> {
-    val legacyEnabled = this[AppleMusicExperienceKey, false]
-    val (style, setStyle) =
-        enumState(
-            LibraryStyleKey,
-            defaultValue = if (legacyEnabled) LibraryStyle.APPLE_MUSIC else LibraryStyle.DEFAULT,
-        )
-    return style to setStyle
+    val (_, setStyle) = enumState(LibraryStyleKey, defaultValue = LibraryStyle.DEFAULT)
+    return LibraryStyle.valueOf(current.sharedSnapshot().sharedLibraryStyle().name) to setStyle
 }
 
 /**
- * True when the Apple Music presentation is on: the player design, the tab bar, the page headers and
- * the menus all ask this.
- *
- * It is the experience switch and nothing else. It used to be true whenever the library style was
- * Apple Music as well, which is what made a layout choice for one tab restyle the rest of the app.
+ * Preset status only. Renderers must read the preference for their own surface, not this indicator.
  */
 @Composable
 fun rememberAppleMusicExperience(): Boolean {
-    val (enabled) = rememberPreference(AppleMusicExperienceKey, defaultValue = false)
-    return enabled
+    return rememberPreferenceSnapshot().current.sharedSnapshot().interfaceStyle() == SharedInterfaceStyle.APPLE_MUSIC
 }
 
-/**
- * Sets the Apple Music Experience: the switch, the library style and the player design style move
- * together, because the switch is the control that promises the whole presentation.
- *
- * The experience owns the player style while it is on, and it records what it displaced so turning
- * it off can give that back. A style picked by hand in the meantime is newer than ours and wins.
- */
+@Composable
+fun rememberAppleMusicHeaders(): Boolean = rememberPreferenceSnapshot().current.sharedSnapshot().appleMusicHeaders()
+
+@Composable
+fun rememberAppleMusicMenus(): Boolean = rememberPreferenceSnapshot().current.sharedSnapshot().appleMusicMenus()
+
+@Composable
+fun rememberAppleMusicSearchBar(): Boolean = rememberPreferenceSnapshot().current.sharedSnapshot().appleMusicSearchBar()
+
+@Composable
+fun rememberAppleMusicPalette(): Boolean = rememberPreferenceSnapshot().current.sharedSnapshot().appleMusicPalette()
+
+/** Only the explicit preset action coordinates the independently editable surfaces. */
 @Composable
 fun rememberAppleMusicExperienceToggle(): (Boolean) -> Unit {
     val dataStore = LocalContext.current.dataStore
@@ -90,33 +80,12 @@ fun rememberAppleMusicExperienceToggle(): (Boolean) -> Unit {
 }
 
 internal fun MutablePreferences.applyInterfaceStyle(style: InterfaceStyle) {
-    val enabled = style == InterfaceStyle.APPLE_MUSIC
-    if ((this[AppleMusicExperienceKey] ?: false) == enabled) return
-
-    val playerStyle = this[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
-    this[AppleMusicExperienceKey] = enabled
-    this[LibraryStyleKey] = if (enabled) LibraryStyle.APPLE_MUSIC.name else LibraryStyle.DEFAULT.name
-
-    if (enabled) {
-        if (playerStyle != PlayerDesignStyle.APPLE_MUSIC) {
-            this[StyleBeforeAppleMusicKey] = playerStyle.name
-        }
-        this[PlayerDesignStyleKey] = PlayerDesignStyle.APPLE_MUSIC.name
-    } else if (playerStyle == PlayerDesignStyle.APPLE_MUSIC) {
-        this[PlayerDesignStyleKey] =
-            this[StyleBeforeAppleMusicKey]
-                .toEnum(PlayerDesignStyle.Default)
-                .takeUnless { it == PlayerDesignStyle.APPLE_MUSIC }
-                ?.name ?: PlayerDesignStyle.Default.name
-    }
+    applySharedPreferenceEdit { applySharedInterfaceStyle(SharedInterfaceStyle.valueOf(style.name)) }
 }
 
 @Composable
 fun rememberInterfaceStyle(): Pair<InterfaceStyle, (InterfaceStyle) -> Unit> {
-    val appleMusic = rememberAppleMusicExperience()
-    val setAppleMusic = rememberAppleMusicExperienceToggle()
-    val style = if (appleMusic) InterfaceStyle.APPLE_MUSIC else InterfaceStyle.MATERIAL_EXPRESSIVE
-    return style to { selected -> setAppleMusic(selected == InterfaceStyle.APPLE_MUSIC) }
+    return rememberInterfaceStyle(rememberPreferenceSnapshot())
 }
 
 /**
@@ -125,8 +94,7 @@ fun rememberInterfaceStyle(): Pair<InterfaceStyle, (InterfaceStyle) -> Unit> {
  */
 @Composable
 fun rememberInterfaceStyle(prefs: PreferenceSnapshot): Pair<InterfaceStyle, (InterfaceStyle) -> Unit> {
-    val setAppleMusic = rememberAppleMusicExperienceToggle()
-    val style =
-        if (prefs[AppleMusicExperienceKey, false]) InterfaceStyle.APPLE_MUSIC else InterfaceStyle.MATERIAL_EXPRESSIVE
-    return style to { selected -> setAppleMusic(selected == InterfaceStyle.APPLE_MUSIC) }
+    val dataStore = LocalContext.current.dataStore
+    val style = InterfaceStyle.valueOf(prefs.current.sharedSnapshot().interfaceStyle().name)
+    return style to { selected -> PreferenceStore.launchEdit(dataStore) { applyInterfaceStyle(selected) } }
 }

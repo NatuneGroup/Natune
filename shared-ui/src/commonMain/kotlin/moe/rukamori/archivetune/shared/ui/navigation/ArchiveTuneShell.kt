@@ -113,7 +113,7 @@ fun ArchiveTuneShell(
         val frostedGate = LocalFrostedNavigationGate.current
         val frostedOnScreen = frostedNavigationOnScreen(layout, preferences)
         SideEffect { frostedGate?.onScreen = frostedOnScreen }
-        val apple = preferences.interfaceStyle() == InterfaceStyle.APPLE_MUSIC
+        val apple = preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC
         val pill = rememberPillStyle(preferences)
         val glowStrength = preferences.navigationBarGlowStrength()
         var chromeHeight by remember(layout) { mutableIntStateOf(0) }

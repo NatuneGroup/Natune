@@ -10,6 +10,35 @@ import moe.rukamori.archivetune.shared.domain.settings.*
 import kotlin.test.*
 
 class VaultSettingsStoreTest {
+    @Test fun openNormalizesLegacyConflictsButExactReplacementStillSupportsRollbackAndEmpty() = disk { path ->
+        DesktopSettingsStore.open(path).also { ordinary ->
+            ordinary.edit {
+                this[DynamicThemeKey] = true
+                this[RandomThemeKey] = true
+                this[UseSystemFontKey] = true
+                this[BitPerfectUsbOutputKey] = true
+                this[AutomixEnabledKey] = true
+            }
+            ordinary.close()
+        }
+        val owner = VaultTestOwner.open(path, TestSettingsVault())
+        val migrated = owner.snapshot()
+        assertEquals(false, migrated[RandomThemeKey])
+        assertEquals("SYSTEM", migrated[AppFontPreferenceKey])
+        assertNull(migrated[UseSystemFontKey])
+        assertEquals(true, migrated[AutomixEnabledKey])
+        assertEquals(false, migrated[BitPerfectUsbOutputKey])
+        val expected = migrated.keys.associateWith { migrated[it] }
+        owner.settings.replaceAll(PreferenceSnapshot.EMPTY)
+        assertTrue(owner.snapshot().keys.isEmpty())
+        owner.settings.replaceAll(migrated)
+        assertEquals(expected, owner.snapshot().let { snapshot -> snapshot.keys.associateWith { snapshot[it] } })
+        owner.close()
+        val reopened = VaultTestOwner.open(path, TestSettingsVault())
+        assertEquals(expected, reopened.snapshot().let { snapshot -> snapshot.keys.associateWith { snapshot[it] } })
+        reopened.close()
+    }
+
     @Test fun actualDiskContainsOnlyReferencesAndRehydratesLogicalAccountValuesInSeparateScopes() = disk { path ->
         val vault = TestSettingsVault()
         val credentials = listOf(

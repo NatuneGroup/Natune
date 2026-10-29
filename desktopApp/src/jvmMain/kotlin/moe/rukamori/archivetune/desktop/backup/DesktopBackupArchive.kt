@@ -52,6 +52,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceKind
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.StringPreferenceKey
 import moe.rukamori.archivetune.shared.domain.settings.StringSetPreferenceKey
+import moe.rukamori.archivetune.shared.domain.settings.normalizeRestoredSettings
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 
 /**
@@ -523,6 +524,7 @@ internal class DesktopPendingRestore private constructor(
             @Suppress("UNCHECKED_CAST")
             editor[key as PreferenceKey<Any>] = restored[key as PreferenceKey<Any>]
         }
+        editor.normalizeRestoredSettings(restored.keys.filter { BackupPreferencePolicy.includes(it.name, owned) }.map { it.name }.toSet())
         settings.replaceAll(editor.snapshot())
     }
 

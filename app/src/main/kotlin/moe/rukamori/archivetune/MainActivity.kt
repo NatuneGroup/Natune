@@ -335,7 +335,7 @@ import moe.rukamori.archivetune.ui.component.TopSearch
 import moe.rukamori.archivetune.ui.component.TvNavigationRail
 import moe.rukamori.archivetune.ui.component.pillBottomInset
 import moe.rukamori.archivetune.ui.component.pillHorizontalInset
-import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicPalette
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
 import moe.rukamori.archivetune.ui.component.rememberPredictiveSheetBackState
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerTheme
@@ -959,7 +959,6 @@ class MainActivity : ComponentActivity() {
             // Restart-scoped: swapping the typography live remeasures every text node in the app.
             val fontPreference = StartupSettings.fontPreference
             val customFontUri = StartupSettings.customFontUri
-            val legacyUseSystemFont by rememberPreference(UseSystemFontKey, defaultValue = false)
             val isSystemInDarkTheme = isSystemInDarkTheme()
             val useDarkTheme =
                 remember(darkTheme, isSystemInDarkTheme) {
@@ -972,16 +971,7 @@ class MainActivity : ComponentActivity() {
                 NavigationBarStyleKey,
                 defaultValue = NavigationBarStyle.DEFAULT,
             )
-            // The Apple Music Experience carries the tab bar with it, the same way it carries the
-            // iOS page headers. Written as a read-side override so turning the switch back off
-            // restores whichever bar the user had chosen instead of overwriting that choice.
-            val appleMusicExperience = rememberAppleMusicExperience()
-            val navigationBarStyle =
-                if (appleMusicExperience) {
-                    NavigationBarStyle.APPLE_MUSIC
-                } else {
-                    navigationBarStyleStored
-                }
+            val navigationBarStyle = navigationBarStyleStored
             // Restart-scoped (see StartupSettings): each of these turns on a whole-NavHost backdrop
             // recording, which cannot be set up or torn down cheaply while the app is running.
             val navigationBarFrostedBlur = StartupSettings.navigationBarFrostedBlur
@@ -1067,14 +1057,6 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(DefaultThemeColor)
             }
 
-            LaunchedEffect(legacyUseSystemFont) {
-                if (!legacyUseSystemFont) return@LaunchedEffect
-                val preferences = dataStore.data.first()
-                if (preferences[FontPreferenceKey] == null) {
-                    dataStore.edit { it[FontPreferenceKey] = AppFontPreference.SYSTEM.name }
-                }
-            }
-
             LaunchedEffect(playerConnection, enableDynamicTheme, isSystemInDarkTheme, customThemeColor) {
                 val playerConnection = playerConnection
                 if (!enableDynamicTheme || playerConnection == null) {
@@ -1133,7 +1115,7 @@ class MainActivity : ComponentActivity() {
                 darkTheme = useDarkTheme,
                 pureBlack = pureBlack,
                 themeColor = themeColor,
-                defaultSeed = if (rememberAppleMusicExperience()) DefaultThemeColor else ExpressiveThemeColor,
+                defaultSeed = if (rememberAppleMusicPalette()) DefaultThemeColor else ExpressiveThemeColor,
                 seedPalette = if (!enableDynamicTheme) customThemeSeedPalette else null,
                 disableAnimations = disableAnimations,
                 fontPreference = fontPreference,

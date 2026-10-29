@@ -17,7 +17,7 @@ enum class RestartReason { UI_SCALE, FONT, TABLET_MODE, GLASS, NAVIGATION_GLASS,
 internal fun MutablePreferences.setCustomFont(uri: String, name: String) {
     this[CustomFontUriKey] = uri
     this[CustomFontNameKey] = name
-    this[FontPreferenceKey] = AppFontPreference.CUSTOM.name
+    setFontPreference(AppFontPreference.CUSTOM)
 }
 
 /** Effective values, not raw-key existence: writing a default or migrating a font is not an edit. */

@@ -24,11 +24,17 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.constants.SponsorBlockApiUrlKey
 import moe.rukamori.archivetune.constants.SponsorBlockCategoriesKey
 import moe.rukamori.archivetune.constants.SponsorBlockEnabledKey
+import moe.rukamori.archivetune.constants.SponsorBlockPodcastsEnabledKey
 import moe.rukamori.archivetune.utils.dataStore
+import moe.rukamori.archivetune.utils.isLocalMediaId
+import moe.rukamori.archivetune.shared.domain.playback.SponsorBlockPlaybackPolicy
 import timber.log.Timber
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -68,37 +74,49 @@ class SponsorBlockRepository
                 override fun removeEldestEntry(eldest: Map.Entry<String, List<SponsorBlockSegment>>) = size > CACHE_ENTRIES
             }
 
-        suspend fun settings(): SponsorBlockSettings {
-            val preferences = context.dataStore.data.first()
+        suspend fun settings(): SponsorBlockSettings = observeSettings().first()
+
+        fun observeSettings(): Flow<SponsorBlockSettings> = context.dataStore.data.map { preferences ->
             val categories =
                 preferences[SponsorBlockCategoriesKey]
                     ?.mapNotNull(SponsorBlockCategory::fromApiName)
                     ?.toSet()
                     ?: SponsorBlockCategory.Defaults
-            return SponsorBlockSettings(
+            SponsorBlockSettings(
                 enabled = preferences[SponsorBlockEnabledKey] ?: false,
                 categories = categories,
                 apiUrl = normalizeSponsorBlockApiUrl(preferences[SponsorBlockApiUrlKey]) ?: SPONSORBLOCK_DEFAULT_API_URL,
+                podcastsEnabled = preferences[SponsorBlockPodcastsEnabledKey] ?: false,
             )
         }
 
         /**
          * Segments for [videoId], or an empty list when the feature is off, the id is not a YouTube
-         * one, or the lookup fails. Never throws: a segment list is an enhancement, and playback
-         * must not depend on a third-party service answering.
+         * one, the item is a podcast episode while podcast skipping is off, or the lookup fails. Never
+         * fails playback: a segment list is an enhancement. Coroutine cancellation still propagates,
+         * so disabling a setting can stop an in-flight lookup.
          */
-        suspend fun segments(videoId: String): List<SponsorBlockSegment> {
+        suspend fun segments(
+            videoId: String,
+            podcast: Boolean = false,
+        ): List<SponsorBlockSegment> {
             if (!YOUTUBE_ID.matches(videoId)) return emptyList()
             val settings = settings()
-            if (!settings.enabled || settings.categories.isEmpty()) return emptyList()
+            if (settings.categories.isEmpty() || !SponsorBlockPlaybackPolicy.allowsLookup(
+                    videoId, settings.enabled, settings.podcastsEnabled, podcast, videoId.isLocalMediaId(),
+                )) return emptyList()
 
             val key = "${settings.apiUrl}|${settings.categories.sortedBy { it.apiName }.joinToString(",") { it.apiName }}|$videoId"
             synchronized(cache) { cache[key] }?.let { return it }
 
-            val segments =
-                runCatching { fetch(videoId, settings) }
-                    .onFailure { Timber.tag(TAG).w(it, "SponsorBlock lookup failed for %s", videoId) }
-                    .getOrDefault(emptyList())
+            val segments = try {
+                fetch(videoId, settings)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Timber.tag(TAG).w(failure, "SponsorBlock lookup failed for %s", videoId)
+                emptyList()
+            }
 
             synchronized(cache) { cache[key] = segments }
             return segments
@@ -165,11 +183,12 @@ class SponsorBlockRepository
         }
     }
 
-/** Settings snapshot, read once per lookup so a change takes effect on the next track. */
+/** Settings snapshot; observed live by the controller and rechecked before every lookup, including cache hits. */
 data class SponsorBlockSettings(
     val enabled: Boolean,
     val categories: Set<SponsorBlockCategory>,
     val apiUrl: String,
+    val podcastsEnabled: Boolean = false,
 )
 
 @kotlinx.serialization.Serializable

@@ -27,8 +27,8 @@ import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.TerminalPlaybackAuthentication
 import moe.rukamori.archivetune.shared.domain.settings.AllowAgeRestrictedKey
 import moe.rukamori.archivetune.shared.domain.settings.AudioQualityKey
-import moe.rukamori.archivetune.shared.domain.settings.PlayerStreamClientKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.manualPlaybackClient
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.source.YouTubeFallbackTier
@@ -253,13 +253,14 @@ class IosYouTubeResolver(
      * then the embedded age-gate bypasses only while the user opted in to age-restricted content.
      */
     private fun clientOrder(preferences: () -> PreferenceSnapshot?): List<YouTubeClient> {
-        val preferred = preferredClient(preferences()?.get(PlayerStreamClientKey))
+        val snapshot = preferences()
+        val preferred = preferredClient(snapshot?.manualPlaybackClient())
         return buildList {
             add(preferred)
             lastSuccessful?.takeIf { it != preferred }?.let { add(it) }
             addAll(STREAM_FALLBACK_CLIENTS)
             if (preferred != YouTubeClient.WEB_REMIX) add(YouTubeClient.WEB_REMIX)
-            if (preferences()?.get(AllowAgeRestrictedKey) == true) addAll(AGE_GATE_BYPASS_CLIENTS)
+            if (snapshot?.get(AllowAgeRestrictedKey) == true) addAll(AGE_GATE_BYPASS_CLIENTS)
         }.distinct()
     }
 
