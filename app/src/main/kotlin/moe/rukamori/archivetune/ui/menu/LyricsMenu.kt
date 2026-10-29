@@ -8,7 +8,7 @@
 
 package moe.rukamori.archivetune.ui.menu
 
-import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicMenus
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.border
@@ -1764,7 +1764,7 @@ fun AnchoredLyricsOverflowMenu(
     onDismiss: () -> Unit,
     viewModel: LyricsMenuViewModel = hiltViewModel(),
 ) {
-    if (!rememberAppleMusicExperience()) {
+    if (!rememberAppleMusicMenus()) {
         val menuState = LocalMenuState.current
         LaunchedEffect(Unit) {
             menuState.show {

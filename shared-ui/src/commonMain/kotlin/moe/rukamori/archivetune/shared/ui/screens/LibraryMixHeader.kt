@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.screens
 
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +59,8 @@ data class LibraryShortcutsUi(
     val myTopSize: Int?,
     val likedDetail: String? = null,
     val likedRoute: String = "auto_playlist/liked",
+    /** The uploads card has no hide preference; it is the only route to the account's uploads shelf. */
+    val uploads: Boolean = false,
 )
 
 /**
@@ -112,7 +116,7 @@ fun LazyListScope.libraryMixHeader(
     artwork: ContentArtwork,
 ) {
     val shortcuts = state.shortcuts
-    if (shortcuts.liked || shortcuts.offline || shortcuts.cached || shortcuts.localFiles || shortcuts.myTopSize != null) {
+    if (shortcuts.liked || shortcuts.offline || shortcuts.cached || shortcuts.localFiles || shortcuts.myTopSize != null || shortcuts.uploads) {
         item(key = "library-mix-shortcuts", contentType = "library-mix-shortcuts") {
             LibraryShortcutGrid(shortcuts, actions.openRoute)
         }
@@ -209,6 +213,20 @@ private fun LibraryShortcutGrid(state: LibraryShortcutsUi, open: (String) -> Uni
                 Spacer(Modifier.weight(1f))
             }
         }
+        if (state.uploads) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ShortcutSlot(true) { modifier ->
+                    ShortcutCard(
+                        title = stringResource(Res.string.uploads_title),
+                        detail = stringResource(Res.string.uploads_on_account),
+                        accent = colors.tertiary,
+                        tag = "uploads",
+                        modifier = modifier,
+                    ) { open("uploaded_songs") }
+                }
+                Spacer(Modifier.weight(1f))
+            }
+        }
     }
 }
 
@@ -259,13 +277,13 @@ private fun RecentlyPlayedRail(recent: List<ContentOccurrence>, play: (ContentOc
                     artwork(song.item, Modifier.size(110.dp).clip(RoundedCornerShape(28.dp)))
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        song.item.title,
+                        effectiveSong(song.item).title,
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        song.item.subtitle,
+                        effectiveSong(song.item).subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -350,7 +368,7 @@ private fun LibraryMixRailItem(
     open: (ContentOccurrence) -> Unit,
     artwork: ContentArtwork,
 ) {
-    val item = occurrence.item
+    val item = effectiveSong(occurrence.item)
     if (item.ref.kind == ContentKind.ARTIST) {
         Column(
             modifier = Modifier.width(80.dp).clickable { open(occurrence) },

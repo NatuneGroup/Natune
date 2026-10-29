@@ -222,9 +222,9 @@ fun LocalPlaylistScreen(
                 songs
             } else {
                 songs.filter { song ->
-                    song.song.song.title
+                    song.song.effectiveTitle
                         .contains(query.text, ignoreCase = true) ||
-                        song.song.artists.fastAny { it.name.contains(query.text, ignoreCase = true) }
+                        song.song.effectiveArtistNames.fastAny { it.contains(query.text, ignoreCase = true) }
                 }
             }
         }

@@ -10,8 +10,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.repository.*
+import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.navigation.*
@@ -48,6 +51,8 @@ class ArchiveTuneHostBindings(
     val openExternal: (String) -> Unit,
     val onFailure: () -> Unit,
     val onBackAtRoot: () -> Unit,
+    val podcastProgress: Flow<List<PodcastProgress>> = flowOf(emptyList()),
+    val songMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository? = null,
 )
 
 /** Host lifecycle is an input: losing UI visibility never pauses background audio. */
@@ -60,12 +65,25 @@ fun ArchiveTuneRoot(
     television: Boolean = false,
 ) {
     key(host) {
+        // A null local means this host has no edit store; leave repository-supplied effective rows intact.
+        val edits by remember(host) {
+            host.songMetadata?.observeOverrides()
+                ?.map { it as Map<ContentRef, moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataOverride>? }
+                ?: kotlinx.coroutines.flow.flowOf(null)
+        }.collectAsState(initial = null)
         val saved by host.settings.snapshots.collectAsState()
         val preferences = saved
         if (preferences == null) {
             ArchiveTuneTheme { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         } else {
-            ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television)
+            val progress by host.podcastProgress.collectAsState(emptyList())
+            val byEpisode = remember(progress) { progress.associateBy { it.episodeId } }
+            CompositionLocalProvider(
+                moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides provides edits,
+                LocalPodcastProgress provides byEpisode,
+            ) {
+                ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television)
+            }
         }
     }
 }
@@ -133,9 +151,14 @@ private fun ArchiveTuneLoadedRoot(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(current.item.title, Modifier.weight(1f), maxLines = 1)
+                                val playing = playback?.playWhenReady == true
+                                val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, playing, policy.motion)
                                 TextButton(onClick = {
-                                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
-                                }) { Text(stringResource(if (playback?.playWhenReady == true) Res.string.integration_pause else Res.string.integration_play)) }
+                                    if (playing) host.queue.player.pause() else host.queue.player.play()
+                                }) {
+                                    Text(stringResource(if (playing) Res.string.integration_pause else Res.string.integration_play),
+                                        playMotion.modifier)
+                                }
                             }
                         },
                     ) {

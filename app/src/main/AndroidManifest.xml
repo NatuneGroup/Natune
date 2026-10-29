@@ -2,7 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-sdk tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui" />
+    <!--
+        The app floor is API 24, below the minSdk these libraries declare (lyrics-ui 29,
+        morideobfuscator 26). The override lets the manifest merge; their behaviour on API 24-28
+        is not verified and needs a device check before release.
+    -->
+    <uses-sdk tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui,moe.rukamori.archivetune.morideobfuscator" />
 
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
@@ -414,11 +419,13 @@
         <activity
             android:name=".ui.screens.settings.PoTokenExtractionActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.ArchiveTune" />
 
         <activity
             android:name=".ui.screens.settings.AmazonTurnstileActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.ArchiveTune" />
 
         <activity

@@ -13,13 +13,15 @@ fun settingsSearchRoute(parentKey: String, scrollKey: String?): String? {
     val supportsScroll = owner !in setOf(
         "developer_options", "about", "po_token", "account", "logcat", "listen_together", "canvas", "android_auto",
     )
-    return if (!supportsScroll || scrollKey.isNullOrBlank()) route else "$route?scrollTo=$scrollKey"
+    val target = if (owner == "lyrics" && scrollKey == "use_lyrics_v2") "lyrics_mode" else scrollKey
+    return if (!supportsScroll || target.isNullOrBlank()) route else "$route?scrollTo=$target"
 }
 
 private val routes = mapOf(
     "account" to "settings/account", "appearance" to "settings/appearance",
-    "appearance_theme" to "settings/appearance/theme", "appearance_player" to "settings/appearance/player",
-    "appearance_interface" to "settings/appearance/interface", "appearance_extras" to "settings/appearance/extras",
+    // Appearance is one page; its three section owners keep resolving so indexed rows still land on it.
+    "appearance_theme" to "settings/appearance", "appearance_player" to "settings/appearance",
+    "appearance_interface" to "settings/appearance", "appearance_extras" to "settings/appearance/extras",
     "aod" to "settings/appearance/aod_customized", "navigation_bar" to "settings/appearance/navigation_bar",
     "lyrics_animations" to "settings/appearance/lyrics_animations", "playback" to "settings/player",
     "ytdlp" to SettingsRoutes.YTDLP, "sources" to "settings/sources", "applemusic" to "settings/applemusic",
@@ -77,7 +79,8 @@ private val crossPageOwners = buildMap {
         "interface_style", "dynamic_theme", "random_theme_on_startup", "dark_theme", "pure_black", "color_palette", "color_source",
         "palette_picker", "theme_creator", "app_icon", "disable_animations", "splash_overlay_enabled", "hide_status_bar",
         "ui_scale", "blur_intensity", "disable_blur", "backdrop_blur", "backdrop_blur_amount", "font_preference",
-        "use_system_font", "custom_font", "liquid_glass_effects", "wallpaper_permission")
+        "use_system_font", "custom_font", "liquid_glass_effects", "wallpaper_permission",
+        "apple_music_headers", "apple_music_menus", "apple_music_search_bar", "apple_music_palette")
     own("appearance_player", "appearance",
         "player_design_style", "player_background_style", "lyrics_background_style", "mini_player_background_style",
         "player_buttons_style", "player_slider_style", "show_player_volume_bar", "hide_player_thumbnail", "crop_thumbnail_to_square",

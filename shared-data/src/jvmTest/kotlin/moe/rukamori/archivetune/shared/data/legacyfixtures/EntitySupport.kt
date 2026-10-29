@@ -8,4 +8,7 @@ data class SongEntity(val id: String, val title: String, val duration: Int, val 
     val liked: Boolean, val likedDate: LocalDateTime?, val inLibrary: LocalDateTime?)
 data class ArtistEntity(val id: String?, val name: String, val thumbnailUrl: String?)
 data class AlbumEntity(val id: String, val title: String)
-data class Song(val song: SongEntity, val artists: List<ArtistEntity>, val album: AlbumEntity?)
+data class Song(
+    val song: SongEntity, val artists: List<ArtistEntity>, val album: AlbumEntity?,
+    val metadataOverride: SongMetadataOverrideEntity? = null,
+)

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="song_metadata_edit">Edit song info</string>
+    <string name="song_metadata_title">Song title</string>
+    <string name="song_metadata_artists">Artists (one per line)</string>
+    <string name="song_metadata_reset">Reset to original</string>
     <!-- The brand name stays untranslated; it is shared with the window title and the Android host. -->
     <string name="app_name">Natune</string>
     <string name="foundation_status">Kotlin Multiplatform foundation</string>

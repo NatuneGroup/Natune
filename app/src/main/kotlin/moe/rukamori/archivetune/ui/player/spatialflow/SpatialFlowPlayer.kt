@@ -138,6 +138,9 @@ import moe.rukamori.archivetune.ui.player.rememberMeshPalette
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import moe.rukamori.archivetune.ui.utils.highRes
 import androidx.navigation.NavController
+import moe.rukamori.archivetune.ui.player.PlayerControlCrossfade
+import moe.rukamori.archivetune.ui.player.PlayerControlKind
+import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 
 
 // Blurred canvas backdrop (behind the controls) — Apple Music player recipe.
@@ -828,6 +831,9 @@ fun SpatialFlowPlayerContent(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+                val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+                val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
                 ButtonGroup(
                     modifier =
                         Modifier
@@ -852,7 +858,7 @@ fun SpatialFlowPlayerContent(
                                 label = "PrevCorner",
                             )
                             Button(
-                                onClick = { playerConnection.seekToPrevious() },
+                                onClick = previousMotion.onClick { playerConnection.seekToPrevious() },
                                 modifier =
                                     with(scope) {
                                         Modifier
@@ -877,7 +883,7 @@ fun SpatialFlowPlayerContent(
                                     Icon(
                                         painter = painterResource(id = R.drawable.spatialflow_ic_skip_previous),
                                         contentDescription = "Previous Song",
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(36.dp).then(previousMotion.modifier),
                                     )
                                 }
                             }
@@ -928,14 +934,15 @@ fun SpatialFlowPlayerContent(
                                     if (isLoading && !isPlaying) {
                                         CircularWavyProgressIndicator(modifier = Modifier.size(42.dp))
                                     } else {
-                                        Icon(
-                                            painter =
-                                                painterResource(
-                                                    id = if (isPlaying) R.drawable.spatialflow_ic_pause else R.drawable.spatialflow_ic_play,
-                                                ),
-                                            contentDescription = if (isPlaying) "Pause" else "Play",
-                                            modifier = Modifier.size(42.dp),
-                                        )
+                                        PlayerControlCrossfade(
+                                            if (isPlaying) R.drawable.spatialflow_ic_pause else R.drawable.spatialflow_ic_play,
+                                        ) { playGlyph ->
+                                            Icon(
+                                                painter = painterResource(id = playGlyph),
+                                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                                modifier = Modifier.size(42.dp).then(playPauseMotion.modifier),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -956,7 +963,7 @@ fun SpatialFlowPlayerContent(
                                 label = "NextCorner",
                             )
                             Button(
-                                onClick = { playerConnection.seekToNext() },
+                                onClick = nextMotion.onClick { playerConnection.seekToNext() },
                                 modifier =
                                     with(scope) {
                                         Modifier
@@ -981,7 +988,7 @@ fun SpatialFlowPlayerContent(
                                     Icon(
                                         painter = painterResource(id = R.drawable.spatialflow_ic_skip_next),
                                         contentDescription = "Next Song",
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(36.dp).then(nextMotion.modifier),
                                     )
                                 }
                             }
@@ -1121,109 +1128,6 @@ fun SpatialFlowPlayerContent(
                         }
                     },
                 )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun SpatialFlowArtworkPager(
-    mediaMetadata: MediaMetadata,
-    queueWindows: List<androidx.media3.common.Timeline.Window>,
-    currentWindowIndex: Int,
-    userScrollEnabled: Boolean,
-    artUrl: String?,
-    cornerRadius: androidx.compose.ui.unit.Dp,
-    shadowElevation: androidx.compose.ui.unit.Dp,
-    onPlaySongAtWindow: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
-    val pagerState =
-        rememberPagerState(initialPage = currentWindowIndex.coerceAtLeast(0)) {
-            queueWindows.size.coerceAtLeast(1)
-        }
-
-    LaunchedEffect(currentWindowIndex) {
-        if (currentWindowIndex >= 0 &&
-            currentWindowIndex < pagerState.pageCount &&
-            pagerState.currentPage != currentWindowIndex
-        ) {
-            if (animationsDisabled) pagerState.scrollToPage(currentWindowIndex)
-            else pagerState.animateScrollToPage(currentWindowIndex)
-        }
-    }
-
-    LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
-        if (!pagerState.isScrollInProgress &&
-            currentWindowIndex >= 0 &&
-            pagerState.currentPage != currentWindowIndex
-        ) {
-            onPlaySongAtWindow(pagerState.currentPage)
-        }
-    }
-
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            userScrollEnabled = userScrollEnabled,
-            modifier = Modifier.fillMaxSize(),
-        ) { page ->
-            val pageMetadata =
-                if (page == currentWindowIndex) {
-                    mediaMetadata
-                } else {
-                    queueWindows.getOrNull(page)?.mediaItem?.metadata ?: mediaMetadata
-                }
-            val pageArtUrl = if (page == currentWindowIndex) artUrl else pageMetadata.thumbnailUrl
-
-            var isError by remember(pageArtUrl) { mutableStateOf(false) }
-
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .ordinarySleeve(LocalPlayerPresentation.current.hideSleeve)
-                        .shadow(shadowElevation, RoundedCornerShape(cornerRadius))
-                        .clip(RoundedCornerShape(cornerRadius)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (!pageArtUrl.isNullOrBlank() && !isError) {
-                    AsyncImage(
-                        model = pageArtUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        onError = { isError = true },
-                        modifier = Modifier.fillMaxSize().playerSeekDoubleTap(),
-                    )
-                } else {
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .background(
-                                    androidx.compose.ui.graphics.Brush.verticalGradient(
-                                        colors =
-                                            listOf(
-                                                MaterialTheme.colorScheme.surfaceVariant,
-                                                MaterialTheme.colorScheme.surfaceContainerHighest,
-                                            ),
-                                    ),
-                                ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.spatialflow_ic_music_note),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.size(96.dp),
-                        )
-                    }
-                }
             }
         }
     }

@@ -61,10 +61,13 @@ class DriveBackupWorker(context: Context, parameters: WorkerParameters) : Corout
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
-        val manager = applicationContext.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, applicationContext.getString(R.string.drive_backup_title), NotificationManager.IMPORTANCE_LOW),
-        )
+        // Notification channels exist from API 26; below that the notification posts without one.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = applicationContext.getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, applicationContext.getString(R.string.drive_backup_title), NotificationManager.IMPORTANCE_LOW),
+            )
+        }
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.backup)
             .setContentTitle(applicationContext.getString(R.string.drive_backup_title))

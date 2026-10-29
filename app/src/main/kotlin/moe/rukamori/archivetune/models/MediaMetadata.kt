@@ -15,6 +15,7 @@ import moe.rukamori.archivetune.innertube.models.EpisodeItem
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_OMV
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_UGC
+import moe.rukamori.archivetune.songmetadata.withSongMetadataOverride
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.resize
 import java.io.Serializable
@@ -36,7 +37,7 @@ data class MediaMetadata(
     val inLibrary: LocalDateTime? = null,
     val isMusicVideo: Boolean = false,
     // Podcast-episode marker (upstream 15.0.0 parity): episodes share the song
-    // shape but must skip lyrics, SponsorBlock, stats and crossfade paths.
+    // shape but must skip lyrics, stats and crossfade paths. SponsorBlock needs its separate podcast opt-in.
     // Default false keeps every existing constructor and copy() call intact.
     val isPodcast: Boolean = false,
     /** ISRC of the recording this item represents, when the source catalogue supplied one. */
@@ -46,6 +47,9 @@ data class MediaMetadata(
     // can show "suggested by X". Additive defaulted field: existing constructors,
     // copy() calls and componentN order are unaffected.
     val suggestedBy: String? = null,
+    /** Display edits must not become provider lookup names or canonical database writes. */
+    val canonicalTitle: String? = null,
+    val canonicalArtists: List<Artist>? = null,
 ) : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -70,10 +74,19 @@ data class MediaMetadata(
         }
     }
 
+    fun canonicalMetadata(): MediaMetadata =
+        if (canonicalTitle == null && canonicalArtists == null) this
+        else copy(
+            title = canonicalTitle ?: title,
+            artists = canonicalArtists ?: artists,
+            canonicalTitle = null,
+            canonicalArtists = null,
+        )
+
     fun toSongEntity() =
         SongEntity(
             id = id,
-            title = title,
+            title = canonicalTitle ?: title,
             duration = duration,
             thumbnailUrl = thumbnailUrl,
             albumId = album?.id,
@@ -114,7 +127,7 @@ fun Song.toMediaMetadata() =
             },
         explicit = song.explicit,
         isMusicVideo = song.isMusicVideo,
-    )
+    ).withSongMetadataOverride(metadataOverride)
 
 fun EpisodeItem.toMediaMetadata() =
     MediaMetadata(
@@ -180,6 +193,7 @@ fun SongItem.toMediaMetadata() =
             },
         explicit = explicit,
         setVideoId = setVideoId,
+        isPodcast = isPodcast,
         isMusicVideo =
             endpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType in
                 listOf(MUSIC_VIDEO_TYPE_OMV, MUSIC_VIDEO_TYPE_UGC),

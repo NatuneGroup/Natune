@@ -145,7 +145,6 @@ import moe.rukamori.archivetune.ui.utils.highRes
 import moe.rukamori.archivetune.viewmodels.HomeViewModel
 
 private val HomeFeedMaxWidth = 1_200.dp
-private val HomeSectionSpacing = 18.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -658,15 +657,6 @@ private fun RukamoriHomeContent(
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.rukamoriSectionSpacer(key: String) {
-    item(
-        key = "home_section_spacer_$key",
-        contentType = "section_spacer",
-    ) {
-        Spacer(Modifier.height(HomeSectionSpacing))
-    }
-}
-
 // ──────────────────────────────────────────────────────────────────────
 // Quick picks — verbatim port of upstream rukamori HomeScreenComponents
 // (the hero-carousel cards that were missing from this fork).
@@ -819,14 +809,14 @@ private fun QuickPicksSection(
                                     .padding(20.dp),
                         ) {
                             Text(
-                                text = song.song.title,
+                                text = song.effectiveTitle,
                                 style = MaterialTheme.typography.titleLargeEmphasized,
                                 color = Color.White,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                text = song.artists.joinToString { it.name },
+                                text = song.effectiveArtistNames.joinToString(),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = Color.White.copy(alpha = 0.78f),
                                 maxLines = 1,
@@ -982,6 +972,7 @@ private fun RemoteQuickPicksSection(
                             .height(heroHeight),
                 ) { index ->
                     val song = songs[index]
+                    val displayNames = moe.rukamori.archivetune.ui.component.effectiveSongMetadata(song.id, song.title, song.artists.map { it.name })
                     val isActive = song.id == mediaMetadata?.id
                     val context = LocalContext.current
                     val imageRequest =
@@ -1078,14 +1069,14 @@ private fun RemoteQuickPicksSection(
                                     .padding(20.dp),
                         ) {
                             Text(
-                                text = song.title,
+                                text = displayNames.title,
                                 style = MaterialTheme.typography.titleLargeEmphasized,
                                 color = Color.White,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                text = song.artists.joinToString { artist -> artist.name },
+                                text = displayNames.artistNames.joinToString(),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = Color.White.copy(alpha = 0.78f),
                                 maxLines = 1,

@@ -494,8 +494,8 @@ fun HomeFeedSongCard(
     val isActive = song.id == mediaMetadata?.id
     HomeFeedShelfCard(
         thumbnailUrl = song.song.thumbnailUrl,
-        title = song.song.title,
-        subtitle = song.artists.joinToString { it.name },
+        title = song.effectiveTitle,
+        subtitle = song.effectiveArtistNames.joinToString(),
         isActive = isActive,
         isPlaying = isPlaying,
         onClick = {
@@ -534,9 +534,12 @@ fun HomeFeedYTItemCard(
     modifier: Modifier = Modifier,
     isPlaying: Boolean = false,
 ) {
+    val songNames = (item as? SongItem)?.let {
+        moe.rukamori.archivetune.ui.component.effectiveSongMetadata(it.id, it.title, it.artists.map { artist -> artist.name })
+    }
     val subtitle =
         when (item) {
-            is SongItem -> item.artists.joinToString { it.name }
+            is SongItem -> songNames?.artistNames?.joinToString().orEmpty()
             is AlbumItem -> item.artists?.joinToString { it.name } ?: item.year?.toString().orEmpty()
             is ArtistItem -> item.subscriberCountText.orEmpty()
             is PlaylistItem -> item.songCountText.orEmpty()
@@ -588,7 +591,7 @@ fun HomeFeedYTItemCard(
         }
     HomeFeedShelfCard(
         thumbnailUrl = item.thumbnail,
-        title = item.title,
+        title = songNames?.title ?: item.title,
         subtitle = subtitle,
         isCircular = item is ArtistItem,
         isActive = item.id in listOf(mediaMetadata?.album?.id, mediaMetadata?.id),

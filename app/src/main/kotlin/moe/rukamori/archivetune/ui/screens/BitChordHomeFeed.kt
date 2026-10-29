@@ -470,8 +470,8 @@ fun BitChordRecentsShelf(
                             val globalIndex = columnIndex * BitChordRecentTracksPerColumn + rowIndexInColumn
                             BitChordCompactTrackRow(
                                 artworkUrl = song.thumbnailUrl,
-                                title = song.song.title,
-                                subtitle = song.artists.joinToString { it.name },
+                                title = song.effectiveTitle,
+                                subtitle = song.effectiveArtistNames.joinToString(),
                                 isCurrent = mediaMetadata?.id == song.id,
                                 onClick = { onPlaySong(song, globalIndex) },
                                 onLongClick = { onSongLongClick(song) },
@@ -491,8 +491,8 @@ fun BitChordRecentsShelf(
                 items(distinctSongs, key = { "recent_${it.id}" }) { song ->
                     BitChordHeroCard(
                         artworkUrl = song.thumbnailUrl,
-                        title = song.song.title,
-                        subtitle = song.artists.joinToString { it.name },
+                        title = song.effectiveTitle,
+                        subtitle = song.effectiveArtistNames.joinToString(),
                         isCurrent = mediaMetadata?.id == song.id,
                         isPlaying = isPlaying,
                         modifier = Modifier.width(bitChordHeroCardWidth(availableWidth)),
@@ -506,4 +506,4 @@ fun BitChordRecentsShelf(
     Spacer(Modifier.height(BitChordShelfBottomSpacing))
 }
 
-fun Song.artistLine(): String = artists.joinToString { it.name }
+fun Song.artistLine(): String = effectiveArtistNames.joinToString()

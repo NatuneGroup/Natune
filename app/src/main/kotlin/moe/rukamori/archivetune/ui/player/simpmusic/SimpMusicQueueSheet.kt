@@ -84,6 +84,8 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
+import moe.rukamori.archivetune.ui.player.QueueExtrasBar
+import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.ui.utils.highRes
 
 private val SheetSurface = Color(0xFF202020)
@@ -113,6 +115,7 @@ internal fun SimpMusicQueueSheet(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
+    val queueActionScope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(currentWindowIndex, entries.size) {
         if (currentWindowIndex in 0 until entries.size) {
             runCatching { listState.scrollToItem(currentWindowIndex) }
@@ -198,6 +201,16 @@ internal fun SimpMusicQueueSheet(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
+
+                QueueExtrasBar(
+                    onJumpToCurrent = {
+                        if (currentWindowIndex in entries.indices) queueActionScope.launch {
+                            listState.animateScrollToItem(currentWindowIndex)
+                        }
+                    },
+                    contentColor = Color.White,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
 
                 LazyColumn(
                     state = listState,

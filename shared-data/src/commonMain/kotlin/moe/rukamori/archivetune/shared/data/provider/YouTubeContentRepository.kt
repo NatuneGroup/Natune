@@ -117,10 +117,7 @@ interface YouTubeAccountTransport {
     /** One page of a listing. A null [continuation] asks for the first page. */
     suspend fun listing(listing: YouTubeListing, continuation: String?): YouTubeEntryPage
 
-    /**
-     * One page of the account history. A null [continuation] asks for the first response. The core client's history
-     * browse returns one response with no continuation, so this is the recent history, not a complete archive.
-     */
+    /** One page of account history. Null starts the archive; subsequent reads use the returned provider cursor. */
     suspend fun history(continuation: String?): YouTubeEntryPage
 
     suspend fun likeSong(videoId: String, liked: Boolean)
@@ -216,8 +213,6 @@ class YouTubeContentRepository(
             continuation?.let { wrapped ->
                 YouTubeContinuation.decode(wrapped, key) ?: throw foreignCursor(wrapped, key, request.surface)
             }
-        // The history response is one page with no continuation, so no history token can have been issued.
-        if (listing == null && cursor != null) throw IllegalArgumentException("Foreign continuation")
         return withTimeoutOrNull(FinitePlaylistCompletion.TIMEOUT_MS) {
             readAccountPage(binding, admission, key, listing, cursor)
         } ?: throw IncompleteFinitePlaylistException("Account listing timed out")

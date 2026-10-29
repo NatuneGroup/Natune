@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.ui.screens.settings.ThemePalettes
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPalette
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPaletteCodec
 import moe.rukamori.archivetune.utils.AppProxy
+import moe.rukamori.archivetune.utils.applyStartupRandomTheme
 import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
@@ -432,7 +433,7 @@ class App :
                 }
 
                 // Apply random theme on startup if enabled
-                if (prefs[RandomThemeOnStartupKey] == true) {
+                if (prefs[RandomThemeOnStartupKey] == true && prefs[DynamicThemeKey] == false) {
                     val randomPalette = ThemePalettes.generateRandomPalette()
                     val seedPalette =
                         ThemeSeedPalette(
@@ -443,7 +444,7 @@ class App :
                         )
                     val encodedPalette = ThemeSeedPaletteCodec.encodeForPreference(seedPalette, "Random")
                     dataStore.edit { settings ->
-                        settings[CustomThemeColorKey] = encodedPalette
+                        settings.applyStartupRandomTheme(prefs[CustomThemeColorKey], encodedPalette)
                     }
                 }
 

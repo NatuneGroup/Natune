@@ -152,6 +152,8 @@ fun AppleMusicSettings(
             SettingsRow.Toggle(
                 "apple_music_experience", Res.string.m6_apple_music_experience, AppleMusicExperienceKey,
                 PreferenceDefaults.appleMusicExperience,
+                read = { it.interfaceStyle() == InterfaceStyle.APPLE_MUSIC },
+                write = { applyInterfaceStyle(if (it) InterfaceStyle.APPLE_MUSIC else InterfaceStyle.MATERIAL_EXPRESSIVE) },
             ),
         )
         add(

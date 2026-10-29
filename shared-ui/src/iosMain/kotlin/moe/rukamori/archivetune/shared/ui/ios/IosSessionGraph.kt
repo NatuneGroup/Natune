@@ -14,8 +14,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -24,6 +27,7 @@ import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
+import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
@@ -37,6 +41,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalPkceClient
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeResolver
+import moe.rukamori.archivetune.shared.data.provider.KtorSponsorBlockRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
@@ -54,6 +59,9 @@ import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
+import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
+import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
@@ -64,6 +72,8 @@ import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
+import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
+import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
@@ -88,6 +98,7 @@ internal class IosSessionGraph private constructor(
     val http: HttpClient,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
+    val youtubeTransport: IosYouTubeBrowseTransport,
     internal val library: RoomLibraryRepository,
     val libraryContent: LibraryContentOwner,
     val pageOwners: LibraryPageOwners,
@@ -103,9 +114,11 @@ internal class IosSessionGraph private constructor(
     private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
+    private val progressDriver: PodcastProgressDriver,
     private val drivers: List<Job>,
     private val reportLine: (String) -> Unit,
 ) {
+    val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
     /** The crossfade or automix blend armed into the next song. iOS connects no blend engine, so it stays null. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 
@@ -180,13 +193,14 @@ internal class IosSessionGraph private constructor(
         queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item
 
     /**
-     * Final shutdown. The open listen is finished first so its play time is kept, then the queue is checkpointed while
-     * the owner can still write, and only then are the database and the client released. The host's player, port and
-     * settings belong to the host, which closes them afterwards.
+     * Final shutdown. The open listen and podcast position are finished first so their play time and progress are kept,
+     * then the queue is checkpointed while the owner can still write, and only then are the database and the client
+     * released. The host's player, port and settings belong to the host, which closes them afterwards.
      */
     suspend fun close() = withContext(NonCancellable) {
         listenTogether.close()
         listenDriver.close()
+        progressDriver.close()
         lyrics.close()
         drivers.forEach { it.cancel() }
         checkpointNow(queue, reportLine)
@@ -256,8 +270,13 @@ internal class IosSessionGraph private constructor(
             val tidalSessionRefresh = TidalSessionRefresh(
                 tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value }, nowMs = ::iosNowMillis,
             )
-            val library = RoomLibraryRepository(database.library(), listens = database.listens())
+            val songMetadata = moe.rukamori.archivetune.shared.data.persistence.RoomSongMetadataRepository(database.songMetadataOverrides())
+            val library = RoomLibraryRepository(database.library(), listens = database.listens(), songMetadata = songMetadata)
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
+            val blockedQueueArtists = artistBlocks.observeBlockedArtists().map { refs ->
+                refs.filter { it.provider == ContentProvider.YOUTUBE.id }.mapTo(HashSet()) { it.id }
+            }
+            val queueArtistBlocks = blockedQueueArtists.stateIn(scope, SharingStarted.Eagerly, blockedQueueArtists.first())
             val history = RoomListeningHistory(database.listens(), offsetMsAt = ::iosOffsetMsAt)
             val player = host.player
             val playbackPool = IosPlaybackPool(
@@ -305,6 +324,12 @@ internal class IosSessionGraph private constructor(
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { iosRepeatMode(vault.snapshots.value) },
                 autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+                songMetadata = songMetadata,
+                autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
+                autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
+                hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
+                hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
+                blockedArtistIds = { queueArtistBlocks.value },
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
             try {
@@ -322,6 +347,23 @@ internal class IosSessionGraph private constructor(
                 preferences = vault.snapshots,
                 report = report,
                 nowMs = ::iosNowMillis,
+            )
+            // Written from the same snapshots; close() flushes the open episode before the database is released.
+            val progressDriver = PodcastProgressDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                store = RoomPodcastProgressStore(database.podcastProgress()),
+                report = report,
+                nowMs = ::iosNowMillis,
+            )
+            // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
+            PodcastSponsorBlockDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                preferences = vault.snapshots,
+                repository = KtorSponsorBlockRepository(http),
             )
             val lyrics = HostLyrics(
                 scope = scope,
@@ -403,6 +445,7 @@ internal class IosSessionGraph private constructor(
                 player = player,
                 queue = queue,
                 library = library,
+                youtubeTransport = youtubeTransport,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
                 history = history,
@@ -415,6 +458,7 @@ internal class IosSessionGraph private constructor(
                 playbackPort = host.playbackPort,
                 database = database,
                 listenDriver = listenDriver,
+                progressDriver = progressDriver,
                 drivers = drivers,
                 reportLine = report,
             )

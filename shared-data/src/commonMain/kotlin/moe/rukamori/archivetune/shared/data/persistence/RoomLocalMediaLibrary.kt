@@ -2,6 +2,10 @@ package moe.rukamori.archivetune.shared.data.persistence
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository
+import moe.rukamori.archivetune.shared.domain.songmetadata.withSongMetadataOverride
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -88,6 +92,7 @@ abstract class PortableLocalTrackDao {
 class RoomLocalMediaLibrary(
     private val dao: PortableLocalTrackDao,
     private val settings: SettingsStore,
+    private val songMetadata: SongMetadataRepository? = null,
 ) : LocalMediaLibrary {
     override suspend fun extractionVersion(): Int =
         settings.snapshots.value?.get(LocalScanExtractionVersionKey) ?: 0
@@ -105,7 +110,12 @@ class RoomLocalMediaLibrary(
     }
 
     override fun observeLocalSongs(): Flow<List<ContentItem>> =
-        dao.observeLocalSongRows().map { rows -> rows.map { ContentJson.decode(Json.parseToJsonElement(it.json).jsonObject).item } }
+        combine(dao.observeLocalSongRows(), songMetadata?.observeOverrides() ?: flowOf(emptyMap())) { rows, edits ->
+            rows.map {
+                val item = ContentJson.decode(Json.parseToJsonElement(it.json).jsonObject).item
+                item.withSongMetadataOverride(edits[item.ref])
+            }
+        }
 }
 
 private fun PortableLocalTrackRow.toItem(): ContentItem {

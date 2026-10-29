@@ -48,6 +48,7 @@ import moe.rukamori.archivetune.db.entities.SetVideoIdEntity
 import moe.rukamori.archivetune.db.entities.SongAlbumMap
 import moe.rukamori.archivetune.db.entities.SongArtistMap
 import moe.rukamori.archivetune.db.entities.SongEntity
+import moe.rukamori.archivetune.db.entities.SongMetadataOverrideEntity
 import moe.rukamori.archivetune.db.entities.SortedSongAlbumMap
 import moe.rukamori.archivetune.db.entities.SortedSongArtistMap
 import moe.rukamori.archivetune.db.entities.TagEntity
@@ -60,11 +61,12 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 
 private const val TAG = "MusicDatabase"
-private const val CURRENT_VERSION = 36
+private const val CURRENT_VERSION = 38
 
 class MusicDatabase(
     private val delegate: InternalDatabase,
 ) : DatabaseDao by delegate.dao {
+    val podcastProgress: PodcastProgressDao get() = delegate.podcastProgress
     val openHelper: SupportSQLiteOpenHelper
         get() = delegate.openHelper
 
@@ -128,6 +130,8 @@ class MusicDatabase(
         PlaylistTagMap::class,
         LibraryTopMixEntity::class,
         LibraryTopMixSongMap::class,
+        PodcastProgressEntity::class,
+        SongMetadataOverrideEntity::class,
     ],
     views = [
         SortedSongArtistMap::class,
@@ -164,6 +168,7 @@ class MusicDatabase(
 @TypeConverters(Converters::class)
 abstract class InternalDatabase : RoomDatabase() {
     abstract val dao: DatabaseDao
+    abstract val podcastProgress: PodcastProgressDao
 
     companion object {
         const val DB_NAME = "song.db"
@@ -180,6 +185,7 @@ abstract class InternalDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2,
                         *universalMigrations,
+                        PodcastProgressMigration,
                     ).addCallback(DatabaseCallback())
                     .fallbackToDestructiveMigration()
                     .fallbackToDestructiveMigrationOnDowngrade()
@@ -360,6 +366,10 @@ private class UniversalMigration(
         try {
             val expected = expectedDb.openHelper.writableDatabase
             SchemaTools.reconcileDatabase(db = db, expectedDb = expected)
+            // Schema 38 added the override table (37 is the podcast progress table). Reconciliation
+            // creates it for every upgrade path, and this moves any title a pre-38 rename left in
+            // the canonical row into it.
+            if (to >= 38) SchemaTools.moveLegacyTitleOverrides(db)
             Log.i(TAG, "Migration completed successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Migration failed", e)
@@ -409,6 +419,7 @@ private object SchemaTools {
             val db = fileHelper.writableDatabase
 
             reconcileDatabase(db = db, expectedDb = expected)
+            moveLegacyTitleOverrides(db)
             if (identityHash != null) {
                 updateIdentityHash(db = db, identityHash = identityHash)
             }
@@ -416,6 +427,16 @@ private object SchemaTools {
             runCatching { fileHelper.close() }
             runCatching { expectedDb.close() }
         }
+    }
+
+    /**
+     * Before the override table existed, renaming a song overwrote its canonical title and set
+     * titleOverride. The typed title moves into the override table and the flag is cleared, so the
+     * canonical row can follow the provider again without losing what the user typed.
+     */
+    fun moveLegacyTitleOverrides(db: SupportSQLiteDatabase) {
+        db.execSQL(SongMetadataOverrideSql.MOVE_LEGACY_TITLES)
+        db.execSQL(SongMetadataOverrideSql.CLEAR_LEGACY_TITLE_FLAG)
     }
 
     fun reconcileDatabase(

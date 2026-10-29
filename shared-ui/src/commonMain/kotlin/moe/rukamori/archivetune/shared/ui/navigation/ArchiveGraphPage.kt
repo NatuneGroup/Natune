@@ -95,6 +95,8 @@ sealed interface ArchiveGraphPage {
         val subscribe: ((ContentRef, Boolean) -> Unit)?, val retry: () -> Unit, val loadMore: () -> Unit) : ArchiveGraphPage
     data class Podcast(val state: PodcastUi, val subscribe: ((Boolean) -> Unit)?, val retry: () -> Unit, val loadMore: () -> Unit) : ArchiveGraphPage
     data class LocalSongs(val state: LocalSongsUi, val actions: LocalSongsActions) : ArchiveGraphPage
+    /** The signed-in YouTube Music uploads shelf, its running transfers and the confirmed delete. */
+    data class Uploads(val state: UploadsUi, val actions: UploadsActions) : ArchiveGraphPage
     data class Downloads(val state: DownloadsUi, val actions: moe.rukamori.archivetune.shared.ui.screens.DownloadActions) : ArchiveGraphPage
     data class History(val state: HistoryUi, val actions: HistoryActions) : ArchiveGraphPage
     data class Statistics(val state: StatisticsUi, val actions: StatisticsActions,

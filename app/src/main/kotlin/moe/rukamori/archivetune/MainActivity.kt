@@ -37,6 +37,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -299,6 +300,7 @@ import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
+import moe.rukamori.archivetune.songmetadata.observeSongMetadataOverrideMap
 import moe.rukamori.archivetune.ui.component.AutoResizeText
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
@@ -334,7 +336,7 @@ import moe.rukamori.archivetune.ui.component.TopSearch
 import moe.rukamori.archivetune.ui.component.TvNavigationRail
 import moe.rukamori.archivetune.ui.component.pillBottomInset
 import moe.rukamori.archivetune.ui.component.pillHorizontalInset
-import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicPalette
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
 import moe.rukamori.archivetune.ui.component.rememberPredictiveSheetBackState
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerTheme
@@ -612,8 +614,7 @@ class MainActivity : ComponentActivity() {
      * else that needs to know). Safe to call from the main thread.
      */
     private fun isPipEligible(): Boolean {
-        // PiP requires API 26+ (O). The app's minSdk is 26, so this check
-        // is always true — kept for defensive clarity.
+        // Picture-in-picture is API 26+ (O); on older devices the activity never enters it.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
         if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
         val pipEnabled = dataStore.get(EnablePipModeKey, false)
@@ -631,6 +632,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Computes the [PictureInPictureParams] for the current playback. */
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun buildPipParams(): PictureInPictureParams =
         PictureInPictureParams
             .Builder()
@@ -639,7 +641,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (isPipEligible()) {
+        // isPipEligible() already requires O; the explicit check is what lets the API 26 calls below pass lint.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isPipEligible()) {
             try {
                 enterPictureInPictureMode(buildPipParams())
             } catch (e: IllegalStateException) {
@@ -653,6 +656,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
         newConfig: Configuration,
@@ -956,7 +960,6 @@ class MainActivity : ComponentActivity() {
             // Restart-scoped: swapping the typography live remeasures every text node in the app.
             val fontPreference = StartupSettings.fontPreference
             val customFontUri = StartupSettings.customFontUri
-            val legacyUseSystemFont by rememberPreference(UseSystemFontKey, defaultValue = false)
             val isSystemInDarkTheme = isSystemInDarkTheme()
             val useDarkTheme =
                 remember(darkTheme, isSystemInDarkTheme) {
@@ -969,16 +972,7 @@ class MainActivity : ComponentActivity() {
                 NavigationBarStyleKey,
                 defaultValue = NavigationBarStyle.DEFAULT,
             )
-            // The Apple Music Experience carries the tab bar with it, the same way it carries the
-            // iOS page headers. Written as a read-side override so turning the switch back off
-            // restores whichever bar the user had chosen instead of overwriting that choice.
-            val appleMusicExperience = rememberAppleMusicExperience()
-            val navigationBarStyle =
-                if (appleMusicExperience) {
-                    NavigationBarStyle.APPLE_MUSIC
-                } else {
-                    navigationBarStyleStored
-                }
+            val navigationBarStyle = navigationBarStyleStored
             // Restart-scoped (see StartupSettings): each of these turns on a whole-NavHost backdrop
             // recording, which cannot be set up or torn down cheaply while the app is running.
             val navigationBarFrostedBlur = StartupSettings.navigationBarFrostedBlur
@@ -1064,14 +1058,6 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(DefaultThemeColor)
             }
 
-            LaunchedEffect(legacyUseSystemFont) {
-                if (!legacyUseSystemFont) return@LaunchedEffect
-                val preferences = dataStore.data.first()
-                if (preferences[FontPreferenceKey] == null) {
-                    dataStore.edit { it[FontPreferenceKey] = AppFontPreference.SYSTEM.name }
-                }
-            }
-
             LaunchedEffect(playerConnection, enableDynamicTheme, isSystemInDarkTheme, customThemeColor) {
                 val playerConnection = playerConnection
                 if (!enableDynamicTheme || playerConnection == null) {
@@ -1130,7 +1116,7 @@ class MainActivity : ComponentActivity() {
                 darkTheme = useDarkTheme,
                 pureBlack = pureBlack,
                 themeColor = themeColor,
-                defaultSeed = if (rememberAppleMusicExperience()) DefaultThemeColor else ExpressiveThemeColor,
+                defaultSeed = if (rememberAppleMusicPalette()) DefaultThemeColor else ExpressiveThemeColor,
                 seedPalette = if (!enableDynamicTheme) customThemeSeedPalette else null,
                 disableAnimations = disableAnimations,
                 fontPreference = fontPreference,
@@ -2431,6 +2417,11 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                    // Keyed on the database so the Room subscription is not restarted on every recomposition.
+                    val songMetadataOverrides by remember(database) {
+                        database.observeSongMetadataOverrideMap()
+                    }.collectAsStateWithLifecycle(initialValue = emptyMap())
+
                     CompositionLocalProvider(
                         moe.rukamori.archivetune.ui.component.LocalRestartPrompt provides restartPrompt,
                         LocalHapticFeedback provides customHaptic,
@@ -2441,6 +2432,7 @@ class MainActivity : ComponentActivity() {
                         moe.rukamori.archivetune.ui.component.LocalBackAnimationStyle provides backAnimationStyle,
                         moe.rukamori.archivetune.LocalHideScrollbar provides hideScrollbar,
                         LocalDatabase provides database,
+                        moe.rukamori.archivetune.ui.component.LocalSongMetadataOverrides provides songMetadataOverrides,
                         LocalDensity provides scaledDensity,
                         LocalContentColor provides if (pureBlack) Color.White else contentColorFor(MaterialTheme.colorScheme.surface),
                         LocalPlayerConnection provides playerConnection,

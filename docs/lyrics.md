@@ -11,6 +11,23 @@ Word-level timing only exists where the provider supplies it (TTML and the
 rich-sync providers). Everything else is line-synced, and a renderer must degrade
 to whole-line highlighting rather than pretending.
 
+## Provider and animation setting dependencies
+
+Prioritize word-synced lyrics first tries BetterLyrics, YouLyPlus and Unison in that fixed
+order, regardless of their user switches. Provider switches and priority still control the
+ordinary fallback and manual provider search; they remain editable while word-sync priority
+is on. The shared helper follows this Android policy, with actual host/provider availability
+checked separately from the user toggle. Portato is not part of the fixed sweep.
+
+`LyricsModeKey` is the canonical renderer selection; the old `use_lyrics_v2` search anchor
+navigates to that selector rather than editing an ignored boolean. Android's tuning page
+applies to V2, not Enhanced, Spotify-style Enhanced or the SimpMusic renderer. It stays reachable
+but disables unavailable controls with a reason. App/system reduced motion disables bounce,
+glow, interlude and last-word/LRC bounce effects without changing saved values; V2 adaptive
+scroll, soft reveal and fill-width settings remain editable. The shared renderer does not yet
+read these Android V2 tuning preferences, so shared tuning rows are explicitly unavailable
+and keep the values rather than advertising an unimplemented effect.
+
 ## Language and AI follow-up (implemented and source-reviewed)
 
 Preserve raw Unicode, semantic ZWJ/ZWNJ, combining marks and source spacing. Korean
@@ -82,6 +99,25 @@ player-style self-containment rule (2026-09-01, amended 2026-09-07): SimpMusic's
 used to highlight whole lines off the same word timings Bitchord swept through, and
 a second copy of the sweep is a second thing to fix whenever a provider changes shape.
 Everything else in each style stays its own.
+
+## The box edge fade
+
+Every scrolling lyrics surface fades the top and bottom of its own box with
+`lyricsViewportFade` (`shared-ui`, `lyrics/LyricsViewportFade.kt`): an offscreen layer
+with a smoothstep `DstIn` mask, 56dp at the top and 96dp at the bottom, each capped at
+22% of the box height. The ramps belong to the box, so they stay put while lines scroll
+under them, and the mask only fades the lyrics, never the glass or artwork behind them.
+`LyricsEnhanced`, `LyricsV2`, `SimpMusicLyrics`, the legacy `Lyrics` and the shared
+`LyricsFullscreenRenderer` each apply it themselves, so hosts (the lyrics page, the
+SimpMusic card, every player style's lyrics pane) must not add a second edge mask.
+Flamingo keeps only its controls-visible mask that clears the lines from under its controls.
+
+`KaraokeLyricsView` (lyrics-ui 1.0.x) hard-codes its own 20dp/100dp mask. Enhanced's synced
+pane (`ui/component/EnhancedKaraokePane.kt`) measures
+the view taller by those amounts and lifts it, so the library's ramps sit outside the
+clipped box and the anchor offset is raised by the same 20dp. Re-check both numbers when
+the library is upgraded. The single-active-line strip (TikTok main lyrics) has no list and
+no fade.
 
 ## Two things that were wrong, so they do not come back
 

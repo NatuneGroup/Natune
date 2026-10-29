@@ -434,6 +434,28 @@ fun LibraryMixScreen(
                     }
                 }
 
+                // 2b. Uploads shortcut. It is not hidden with the others because it is the only route to the account's uploads.
+                item(key = "uploads_shortcut") {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = 24.dp, end = 24.dp, top = 12.dp),
+                    ) {
+                        ShortcutCard(
+                            title = stringResource(R.string.uploads),
+                            countText = stringResource(R.string.uploads_on_account),
+                            iconRes = R.drawable.cloud,
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+                            iconColor = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.weight(1f),
+                            onClick = { navController.navigate("uploaded_songs") },
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+
                 // 3. Recently Played Horizontal Row
                 if (recentSongs.isNotEmpty()) {
                     item(key = "recently_played") {
@@ -491,14 +513,14 @@ fun LibraryMixScreen(
                                         }
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
-                                            text = song.song.title,
+                                            text = song.effectiveTitle,
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             color = MaterialTheme.colorScheme.onBackground,
                                         )
                                         Text(
-                                            text = song.artists.joinToString(", ") { it.name },
+                                            text = song.effectiveArtistNames.joinToString(", "),
                                             style = MaterialTheme.typography.bodySmall,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
@@ -1533,95 +1555,6 @@ private fun MostPlayedAlbumSpotlightCard(
                         modifier = Modifier.size(16.dp),
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun ShortcutCard(
-    title: String,
-    countText: String,
-    iconRes: Int,
-    containerColor: Color,
-    iconColor: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1.0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
-        label = "ShortcutCardScale",
-    )
-
-    val isDark =
-        MaterialTheme.colorScheme.surface.let {
-            ColorUtils.calculateLuminance(it.toArgb()) < 0.5
-        }
-
-    val surfaceContainerColor = MaterialTheme.colorScheme.surfaceContainer
-    val finalBgColor =
-        remember(surfaceContainerColor, iconColor, isDark) {
-            if (isDark) {
-                Color(ColorUtils.blendARGB(surfaceContainerColor.toArgb(), iconColor.toArgb(), 0.08f))
-            } else {
-                Color(ColorUtils.blendARGB(surfaceContainerColor.toArgb(), iconColor.toArgb(), 0.06f))
-            }
-        }
-
-    val iconBgColor =
-        remember(iconColor, isDark) {
-            if (isDark) {
-                iconColor.copy(alpha = 0.16f)
-            } else {
-                iconColor.copy(alpha = 0.10f)
-            }
-        }
-
-    Box(
-        modifier =
-            modifier
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }.clip(RoundedCornerShape(26.dp))
-                .background(finalBgColor)
-                .clickable(
-                    interactionSource = interactionSource,
-                    onClick = onClick,
-                ).padding(12.dp),
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(iconBgColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(id = iconRes),
-                    contentDescription = null,
-                    tint = iconColor,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = countText,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
     }

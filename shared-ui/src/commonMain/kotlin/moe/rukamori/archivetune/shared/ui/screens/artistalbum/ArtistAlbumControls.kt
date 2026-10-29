@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
@@ -230,18 +231,20 @@ internal fun ArtistAlbumTrackRow(
     selected: Boolean = false,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val display = effectiveSong(item)
+    val displaySubtitle = if (subtitle == item.subtitle) display.subtitle else subtitle
     val scheme = MaterialTheme.colorScheme
     ListItem(
         headlineContent = {
             Text(
-                text = item.title,
+                text = display.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = if (active) scheme.primary else scheme.onSurface,
             )
         },
         supportingContent = {
-            if (subtitle.isNotBlank()) Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (displaySubtitle.isNotBlank()) Text(displaySubtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         leadingContent = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -283,6 +286,8 @@ internal fun ArtistAlbumCard(
     modifier: Modifier = Modifier,
     width: Dp? = 152.dp,
 ) {
+    val display = effectiveSong(item)
+    val displaySubtitle = if (subtitle == item.subtitle) display.subtitle else subtitle
     val scheme = MaterialTheme.colorScheme
     Column(
         modifier = modifier
@@ -293,7 +298,7 @@ internal fun ArtistAlbumCard(
     ) {
         artwork(item, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)))
         Text(
-            text = item.title,
+            text = display.title,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Medium,
             color = if (active) scheme.primary else scheme.onSurface,
@@ -302,7 +307,7 @@ internal fun ArtistAlbumCard(
         )
         if (subtitle.isNotBlank()) {
             Text(
-                text = subtitle,
+            text = displaySubtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,

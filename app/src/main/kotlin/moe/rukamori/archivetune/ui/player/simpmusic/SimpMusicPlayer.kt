@@ -45,7 +45,6 @@
 package moe.rukamori.archivetune.ui.player.simpmusic
 
 import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
-import moe.rukamori.archivetune.ui.utils.smoothFadingEdge
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.ui.menu.AddToPlaylistDialog
@@ -179,6 +178,8 @@ import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.utils.highRes
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import java.util.Locale
+import moe.rukamori.archivetune.ui.player.PlayerControlKind
+import moe.rukamori.archivetune.ui.player.playerControlMotion
 
 /** The dark ground the palette gradient fades into — SimpMusic's own backdrop colour. */
 private val Backdrop = Color(0xFF121212)
@@ -211,9 +212,6 @@ private fun Color.asSurface(): Color {
     }
     return c
 }
-
-/** SimpMusic's accent, the tint its shuffle and repeat take when active. */
-private val Seed = Color(0xFF8ECAE6)
 
 /**
  * Lyrics inside the 300dp card, not on a full screen. The renderers' own default (26sp) fits about
@@ -1005,133 +1003,6 @@ private fun clockTime(ms: Long): String {
 }
 
 /**
- * Shuffle, previous, play/pause, next, repeat — SimpMusic's PlayerControlLayout.
- *
- * The sizes are theirs, not approximations: a 96dp row, each control centred in its own weighted
- * cell, 32dp for shuffle and repeat, 42dp for the skips, and 72dp for the play button — which is a
- * FILLED DISC glyph (PlayCircle), not a bare triangle with a circle drawn round it. The active
- * tint is SimpMusic's seed blue.
- */
-@Composable
-private fun SimpMusicTransportRow(
-    isPlaying: Boolean,
-    canSkipPrevious: Boolean,
-    canSkipNext: Boolean,
-    playerConnection: PlayerConnection,
-    modifier: Modifier = Modifier,
-) {
-    val shuffleEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
-    val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
-
-    Row(
-        modifier = modifier.height(96.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SimpMusicControl(
-            cell = 42.dp,
-            icon = 32.dp,
-            painter = painterResource(R.drawable.simpmusic_shuffle),
-            contentDescription = stringResource(R.string.shuffle),
-            tint = if (shuffleEnabled) Seed else Color.White,
-            onClick = { playerConnection.player.shuffleModeEnabled = !shuffleEnabled },
-        )
-        SimpMusicControl(
-            cell = 52.dp,
-            icon = 42.dp,
-            painter = painterResource(R.drawable.simpmusic_skip_previous),
-            contentDescription = stringResource(R.string.widget_previous),
-            tint = Color.White.copy(alpha = if (canSkipPrevious) 1f else 0.4f),
-            enabled = canSkipPrevious,
-            onClick = playerConnection::seekToPrevious,
-        )
-        SimpMusicControl(
-            cell = 96.dp,
-            icon = 72.dp,
-            painter =
-                painterResource(
-                    if (isPlaying) R.drawable.simpmusic_pause_circle else R.drawable.simpmusic_play_circle,
-                ),
-            contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
-            tint = Color.White,
-            onClick = { playerConnection.player.togglePlayPause() },
-        )
-        SimpMusicControl(
-            cell = 52.dp,
-            icon = 42.dp,
-            painter = painterResource(R.drawable.simpmusic_skip_next),
-            contentDescription = stringResource(R.string.next),
-            tint = Color.White.copy(alpha = if (canSkipNext) 1f else 0.4f),
-            enabled = canSkipNext,
-            onClick = playerConnection::seekToNext,
-        )
-        SimpMusicControl(
-            cell = 42.dp,
-            icon = 32.dp,
-            painter =
-                painterResource(
-                    if (repeatMode == Player.REPEAT_MODE_ONE) {
-                        R.drawable.simpmusic_repeat_one
-                    } else {
-                        R.drawable.simpmusic_repeat
-                    },
-                ),
-            contentDescription =
-                stringResource(
-                    when (repeatMode) {
-                        Player.REPEAT_MODE_ONE -> R.string.repeat_mode_one
-                        Player.REPEAT_MODE_ALL -> R.string.repeat_mode_all
-                        else -> R.string.repeat_mode_off
-                    },
-                ),
-            tint = if (repeatMode == Player.REPEAT_MODE_OFF) Color.White else Seed,
-            onClick = {
-                playerConnection.player.repeatMode =
-                    when (repeatMode) {
-                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                        else -> Player.REPEAT_MODE_OFF
-                    }
-            },
-        )
-    }
-}
-
-/**
- * One transport control: a circular ripple [cell] wide holding an [icon]-wide glyph, centred in its
- * own weighted slot. A plain IconButton cannot express this — it forces a 48dp touch target and its
- * own icon size, which is what made the row's spacing wrong.
- */
-@Composable
-private fun RowScope.SimpMusicControl(
-    cell: androidx.compose.ui.unit.Dp,
-    icon: androidx.compose.ui.unit.Dp,
-    painter: androidx.compose.ui.graphics.painter.Painter,
-    contentDescription: String,
-    tint: Color,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-) {
-    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-        Box(
-            modifier =
-                Modifier
-                    .size(cell)
-                    .clip(CircleShape)
-                    .clickable(enabled = enabled, onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painter,
-                contentDescription = contentDescription,
-                tint = tint,
-                modifier = Modifier.size(icon),
-            )
-        }
-    }
-}
-
-/**
  * SimpMusic's row under the transport: track details on the left, add-to-queue and the queue on
  * the right. Three 24dp glyphs in a 32dp row, which is what that style has there.
  */
@@ -1253,11 +1124,9 @@ private fun SimpMusicLyricsCard(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(300.dp)
-                        // Lines dissolve at the card's edges instead of being cut off at them,
-                        // which is what Spotify's card does and what this was missing. DstIn on
-                        // the box, so it masks at the card edge while the list scrolls under it.
-                        .smoothFadingEdge(vertical = 36.dp),
+                        // Every lyrics renderer fades the top and bottom of its own box, so the
+                        // lines dissolve at the card edges without a second mask stacked here.
+                        .height(300.dp),
             ) {
                 if (!renderLyrics) {
                     // Deliberately empty, and deliberately still 300dp: the height is what keeps
@@ -1481,6 +1350,7 @@ private fun SimpMusicStickyToolbar(
                         ),
                     contentDescription = stringResource(R.string.action_like),
                     tint = if (liked) MaterialTheme.colorScheme.error else Color.White,
+                    modifier = Modifier.playerControlMotion(PlayerControlKind.Like, liked),
                 )
             }
             IconButton(onClick = { playerConnection.player.togglePlayPause() }) {
@@ -1492,6 +1362,7 @@ private fun SimpMusicStickyToolbar(
                     contentDescription =
                         stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
                     tint = Color.White,
+                    modifier = Modifier.playerControlMotion(PlayerControlKind.PlayPause, isPlaying),
                 )
             }
         }

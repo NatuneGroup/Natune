@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.getValue
 
@@ -137,8 +138,8 @@ private fun Shelf(
                 itemsIndexed(shelf.rows.chunked(4), key = { i, _ -> i }) { column, rows ->
                     Column(Modifier.widthIn(min = 280.dp, max = 360.dp)) {
                         rows.forEachIndexed { row, occurrence ->
-                            ListItem(headlineContent = { Text(occurrence.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                                supportingContent = { Text(occurrence.item.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            ListItem(headlineContent = { Text(effectiveSong(occurrence.item).title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = { Text(effectiveSong(occurrence.item).subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 leadingContent = {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Text((column * 4 + row + 1).toString())
@@ -168,8 +169,8 @@ private fun Shelf(
 internal fun CatalogCard(row: ContentOccurrence, open: () -> Unit, more: (() -> Unit)?, artwork: ContentArtwork) {
     Column(Modifier.width(160.dp).clickable(onClick = open).testTag("catalog-${row.occurrenceId}")) {
         artwork(row.item, Modifier.fillMaxWidth().aspectRatio(1f))
-        Text(row.item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(row.item.subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(effectiveSong(row.item).title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(effectiveSong(row.item).subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         more?.let { TextButton(it) { Text(stringResource(Res.string.m4_more)) } }
     }
 }
@@ -233,8 +234,8 @@ fun BrowseScreen(
             Column(Modifier.padding(8.dp).fillMaxWidth().clickable { actions.open(row) }
                 .testTag("browse-${row.occurrenceId}")) {
                 artwork(row.item, Modifier.fillMaxWidth().aspectRatio(1f))
-                Text(row.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(row.item.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(effectiveSong(row.item).title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(effectiveSong(row.item).subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 actions.more?.let { more ->
                     TextButton({ more(row) }) { Text(stringResource(Res.string.m4_more)) }
                 }

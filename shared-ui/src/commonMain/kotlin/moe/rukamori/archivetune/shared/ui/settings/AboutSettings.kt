@@ -66,7 +66,7 @@ fun NatuneAboutLogo(modifier: Modifier = Modifier) {
     Image(
         painter = painterResource(Res.drawable.natune_logo),
         contentDescription = null,
-        modifier = modifier.size(96.dp).clip(RoundedCornerShape(24.dp)),
+        modifier = modifier.size(112.dp).clip(RoundedCornerShape(28.dp)),
     )
 }
 

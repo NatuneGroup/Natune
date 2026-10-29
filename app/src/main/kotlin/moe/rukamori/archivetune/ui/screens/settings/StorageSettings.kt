@@ -92,7 +92,9 @@ import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.ui.utils.formatFileSize
-import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.conflictAwareState
+import moe.rukamori.archivetune.utils.cacheCapacityState
 import moe.rukamori.archivetune.viewmodels.StorageCacheClearUiKind
 import moe.rukamori.archivetune.viewmodels.StorageCacheClearUiModel
 import moe.rukamori.archivetune.viewmodels.StorageFolderUiModel
@@ -112,6 +114,7 @@ fun StorageSettings(
     scrollTo: String? = null,
 ) {
     val context = LocalContext.current
+    val prefs = rememberPreferenceSnapshot()
     val restartPrompt = LocalRestartPrompt.current
     val imageDiskCache = context.imageLoader.diskCache ?: return
     val playerCache = LocalPlayerConnection.current?.service?.playerCache ?: return
@@ -149,22 +152,22 @@ fun StorageSettings(
         }
 
     val (smartTrimmer, onSmartTrimmerChange) =
-        rememberPreference(
+        prefs.conflictAwareState(
             key = SmartTrimmerKey,
             defaultValue = false,
         )
     val (maxImageCacheSize, onMaxImageCacheSizeChange) =
-        rememberPreference(
+        prefs.cacheCapacityState(
             key = MaxImageCacheSizeKey,
             defaultValue = 512,
         )
     val (maxSongCacheSize, onMaxSongCacheSizeChange) =
-        rememberPreference(
+        prefs.cacheCapacityState(
             key = MaxSongCacheSizeKey,
             defaultValue = 1024,
         )
     val (maxCanvasCacheSize, onMaxCanvasCacheSizeChange) =
-        rememberPreference(
+        prefs.cacheCapacityState(
             key = MaxCanvasCacheSizeKey,
             defaultValue = 256,
         )
@@ -223,9 +226,6 @@ fun StorageSettings(
     )
     val isSmartTrimmerAvailable = maxImageCacheSize != 0 || maxSongCacheSize != 0
 
-    LaunchedEffect(isSmartTrimmerAvailable) {
-        if (!isSmartTrimmerAvailable && smartTrimmer) onSmartTrimmerChange(false)
-    }
     LaunchedEffect(maxImageCacheSize) {
         if (maxImageCacheSize == 0) {
             viewModel.clearImageCache(showFeedback = false)
@@ -674,7 +674,8 @@ private fun StorageFolderSection(
             SwitchPreference(
                 modifier = positions.modifierFor("smart_trimmer"),
                 title = { Text(stringResource(R.string.smart_trimmer)) },
-                description = stringResource(R.string.smart_trimmer_description),
+                description = stringResource(if (isSmartTrimmerAvailable)
+                    R.string.smart_trimmer_description else R.string.settings_caches_required),
                 checked = smartTrimmer && isSmartTrimmerAvailable,
                 onCheckedChange = onSmartTrimmerChange,
                 isEnabled = isSmartTrimmerAvailable,

@@ -9,6 +9,9 @@ package moe.rukamori.archivetune.playback
 
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.constants.AudioSourceType
+import androidx.datastore.preferences.core.Preferences
+import moe.rukamori.archivetune.constants.*
+import moe.rukamori.archivetune.shared.domain.settings.resolveAudioOffloadRequest
 
 internal enum class AudioAuthenticityProbeAvailability {
     DISABLED,
@@ -44,8 +47,21 @@ internal fun resolveAudioOffloadEnabled(
     crossfadeEnabled: Boolean,
     automixEnabled: Boolean,
     authenticityRejectionEnabled: Boolean,
-): Boolean =
-    requested && !crossfadeEnabled && !automixEnabled && !authenticityRejectionEnabled
+    processingEnabled: Boolean = false,
+    usbOutputEnabled: Boolean = false,
+): Boolean = resolveAudioOffloadRequest(requested, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled,
+    processingEnabled, usbOutputEnabled)
+
+/** One snapshot, not combine() of independent collectors that can momentarily straddle an atomic edit. */
+internal fun Preferences.effectiveAudioOffloadEnabled(bitPerfectSinkActive: Boolean): Boolean = resolveAudioOffloadEnabled(
+    requested = this[AudioOffload] == true,
+    crossfadeEnabled = this[CrossfadeEnabledKey] == true,
+    automixEnabled = this[AutomixEnabledKey] == true,
+    authenticityRejectionEnabled = this[RejectSuspectedUpscaledAudioKey] == true,
+    processingEnabled = this[TryptifyAudioProcessingKey] == true || this[LastwaveAudioProcessingKey] == true ||
+        this[FloatDspEnabledKey] == true,
+    usbOutputEnabled = bitPerfectSinkActive || this[BitPerfectUsbOutputKey] == true || this[UsbExclusiveAudioKey] == true,
+)
 
 internal fun resolveAudioSourceAttemptTimeoutMs(source: AudioSourceType): Long =
     when (source) {

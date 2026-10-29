@@ -126,6 +126,8 @@ class VaultSettingsStore private constructor(
             val metadata = routes.keys.associateBy { referenceKey(it) }
             require(raw.keys.none { it.name.startsWith(REFERENCE_PREFIX) && it !in metadata })
             val logical = raw.toEditor()
+            logical.migrateAppleMusicSettings()
+            logical.normalizeSettingsConflicts()
             // The Canary channel is gone: a stored CANARY selection becomes NIGHTLY once, and its retired
             // cache keys drop — the same one-shot DataStore migration the app runs, applied at the funnel
             // every host's settings pass through.

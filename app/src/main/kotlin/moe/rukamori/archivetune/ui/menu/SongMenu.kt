@@ -51,7 +51,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -65,8 +64,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -102,6 +99,7 @@ import moe.rukamori.archivetune.db.entities.detectAudioExtensionFromSpans
 import moe.rukamori.archivetune.db.entities.extensionToMimeType
 import moe.rukamori.archivetune.db.entities.PlaylistSong
 import moe.rukamori.archivetune.db.entities.Song
+import moe.rukamori.archivetune.songmetadata.buildSongMetadataOverride
 import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.models.toMediaMetadata
@@ -117,7 +115,6 @@ import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
 import moe.rukamori.archivetune.ui.component.SongListItem
-import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.utils.TrackInfoAndSpecs
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.resize
@@ -264,66 +261,30 @@ fun SongMenu(
     // PlayerMenu's sleep timer entry.
     var showSleepTimerSheet by rememberSaveable { mutableStateOf(false) }
 
-    val TextFieldValueSaver: Saver<TextFieldValue, *> =
-        Saver(
-            save = { it.text },
-            restore = { text -> TextFieldValue(text, TextRange(text.length)) },
-        )
-
-    var titleField by rememberSaveable(stateSaver = TextFieldValueSaver) {
-        mutableStateOf(TextFieldValue(song.song.title))
-    }
-
-    var artistField by rememberSaveable(stateSaver = TextFieldValueSaver) {
-        mutableStateOf(
-            TextFieldValue(
-                song.artists
-                    .firstOrNull()
-                    ?.name
-                    .orEmpty(),
-            ),
-        )
-    }
-
     if (showEditDialog) {
-        TextFieldDialog(
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.edit),
-                    contentDescription = null,
-                )
+        EditSongInfoDialog(
+            initialTitle = song.effectiveTitle,
+            initialArtistNames = song.effectiveArtistNames,
+            hasOverride = song.metadataOverride != null,
+            onSave = { newTitle, newArtistNames ->
+                // The canonical row is never renamed: only the fields that differ from it are stored.
+                val edit =
+                    buildSongMetadataOverride(
+                        songId = song.id,
+                        canonicalTitle = song.song.title,
+                        canonicalArtistNames = song.artists.map { it.name },
+                        enteredTitle = newTitle,
+                        enteredArtistNames = newArtistNames,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                database.query { setSongMetadataOverride(song.id, edit) }
+                showEditDialog = false
+                onDismiss()
             },
-            title = {
-                Text(text = stringResource(R.string.edit_song))
-            },
-            textFields =
-                listOf(
-                    stringResource(R.string.song_title) to titleField,
-                    stringResource(R.string.artist_name) to artistField,
-                ),
-            onTextFieldsChange = { index, newValue ->
-                if (index == 0) {
-                    titleField = newValue
-                } else {
-                    artistField = newValue
-                }
-            },
-            onDoneMultiple = { values ->
-                val newTitle = values[0]
-                val newArtist = values[1]
-
-                coroutineScope.launch {
-                    database.query {
-                        update(song.song.copy(title = newTitle, titleOverride = true))
-                        val artist = song.artists.firstOrNull()
-                        if (artist != null) {
-                            update(artist.copy(name = newArtist))
-                        }
-                    }
-
-                    showEditDialog = false
-                    onDismiss()
-                }
+            onReset = {
+                database.query { setSongMetadataOverride(song.id, null) }
+                showEditDialog = false
+                onDismiss()
             },
             onDismiss = { showEditDialog = false },
         )
@@ -590,7 +551,7 @@ fun SongMenu(
     val addToQueueText = stringResource(R.string.add_to_queue)
     val addToPlaylistText = stringResource(R.string.add_to_playlist)
     val shareText = stringResource(R.string.share)
-    val editText = stringResource(R.string.edit)
+    val editText = stringResource(R.string.edit_song_info)
 
     val primaryActions =
         remember(
@@ -1392,8 +1353,8 @@ fun SongMenu(
                     AcousticQualityMenuAction(
                         target = AcousticAuditTarget(
                             mediaId = song.id,
-                            title = song.title,
-                            artists = song.artists.joinToString { it.name },
+                            title = song.effectiveTitle,
+                            artists = song.effectiveArtistNames.joinToString(),
                         ),
                         onDismiss = onDismiss,
                     )
@@ -1412,8 +1373,8 @@ fun SongMenu(
                                 bottomSheetPageState.show {
                                     TrackInfoAndSpecs(
                                         trackId = song.id,
-                                        title = song.title,
-                                        artists = song.artists.joinToString { it.name },
+                                        title = song.effectiveTitle,
+                                        artists = song.effectiveArtistNames.joinToString(),
                                         album = song.album?.title ?: song.song.albumName,
                                         artwork = song.thumbnailUrl,
                                         durationMs = song.song.duration.takeIf { it > 0 }?.times(1_000L),
