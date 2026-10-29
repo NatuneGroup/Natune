@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 class PersistedPreferenceRegistrySettingsTest {
     @Test
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
-        assertEquals(636, PersistedPreferenceKeys.size)
+        assertEquals(646, PersistedPreferenceKeys.size)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
     }
 
@@ -87,6 +87,16 @@ class PersistedPreferenceRegistrySettingsTest {
                 TabletModeEnabledKey,
                 LiquidGlassEnabledKey,
                 LiquidGlassNavBarEnabledKey,
+                LiquidGlassIntensityKey,
+                LiquidGlassRefractionHeightKey,
+                LiquidGlassRefractionAmountKey,
+                LiquidGlassBlurRadiusKey,
+                LiquidGlassTintOpacityKey,
+                LiquidGlassShadowDepthKey,
+                LiquidGlassDepth3DKey,
+                LiquidGlassChromaticAberrationKey,
+                LiquidGlassBackdropVibrancyKey,
+                LiquidGlassAdaptiveLuminanceKey,
                 NavigationBarFrostedBlurKey,
                 NavigationBarTintFrostedBlurKey,
                 BitPerfectUsbOutputKey,

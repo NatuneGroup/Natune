@@ -172,6 +172,13 @@ renderer unchanged. The bridges are plain Kotlin callbacks with a cancel handle
 
 SpatialFlow's player (a second Media3 player, 50–60 s buffering, a 250 ms progress loop and a simpler linear crossfade handoff) is a useful comparison, not a source to copy wholesale: this fork already has stronger readiness, generation, cache, codec, audio-route and promotion safeguards, so measure before borrowing anything. Before changing buffer sizes or adding audio processors, measure transition latency, resolver calls, cache hit rate, decoder state, dropped frames, CPU, radio use, and thermal status. Low-end validation must cover crossfade, canvas/artwork, lyrics, and audio offload independently.
 
+Liquid glass reads the app-wide backdrop through a throttled layer (`ThrottledLayerBackdrop`,
+32 ms, with a trailing record so the last frame is never stale); blur and refraction need Android 12,
+runtime shaders Android 13, and older devices fall back to the plain surfaces. The About page's
+SukiSU background (`SukisuAboutBackground`) runs its frame and colour loops only while its entry is
+RESUMED, motion is allowed (`LocalAnimationsDisabled`, `LocalAnimationScale` above 0) and the header
+is on screen; otherwise it draws one still frame.
+
 ## Data and privacy
 
 Spotify history synchronization is read-only and uses the existing authenticated Recently Played request. It is opt-in, appears in the History source list only when enabled, and never launches Spotify playback or a background WebView.
