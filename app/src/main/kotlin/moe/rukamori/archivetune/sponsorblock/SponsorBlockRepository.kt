@@ -78,21 +78,7 @@ class SponsorBlockRepository
 
         suspend fun settings(): SponsorBlockSettings = observeSettings().first()
 
-        fun observeSettings(): Flow<SponsorBlockSettings> = context.dataStore.data.map { settingsFrom(it) }
-
-        private fun settingsFrom(preferences: Preferences): SponsorBlockSettings {
-            val categories =
-                preferences[SponsorBlockCategoriesKey]
-                    ?.mapNotNull(SponsorBlockCategory::fromApiName)
-                    ?.toSet()
-                    ?: SponsorBlockCategory.Defaults
-            return SponsorBlockSettings(
-                enabled = preferences[SponsorBlockEnabledKey] ?: false,
-                categories = categories,
-                apiUrl = normalizeSponsorBlockApiUrl(preferences[SponsorBlockApiUrlKey]) ?: SPONSORBLOCK_DEFAULT_API_URL,
-                podcastsEnabled = preferences[SponsorBlockPodcastsEnabledKey] ?: false,
-            )
-        }
+        fun observeSettings(): Flow<SponsorBlockSettings> = context.dataStore.data.map { sponsorBlockSettingsFrom(it) }
 
         /**
          * Segments for [videoId], or an empty list when the feature is off, the id is not a YouTube
@@ -110,7 +96,7 @@ class SponsorBlockRepository
             // public segment database can know it.
             val preferences = context.dataStore.data.first()
             if (videoId in preferences[YouTubeUploadedVideoIdsKey].orEmpty()) return emptyList()
-            val settings = settingsFrom(preferences)
+            val settings = sponsorBlockSettingsFrom(preferences)
             if (settings.categories.isEmpty() || !SponsorBlockPlaybackPolicy.allowsLookup(
                     videoId, settings.enabled, settings.podcastsEnabled, podcast, videoId.isLocalMediaId(),
                 )) return emptyList()
@@ -199,6 +185,20 @@ data class SponsorBlockSettings(
     val apiUrl: String,
     val podcastsEnabled: Boolean = false,
 )
+
+internal fun sponsorBlockSettingsFrom(preferences: Preferences): SponsorBlockSettings {
+    val rawOrigin = preferences[SponsorBlockApiUrlKey]
+    val origin = normalizeSponsorBlockApiUrl(rawOrigin)
+    // Only an unset/blank value selects the public server; invalid saved origins refuse lookup.
+    val originAllowed = rawOrigin.isNullOrBlank() || origin != null
+    return SponsorBlockSettings(
+        enabled = (preferences[SponsorBlockEnabledKey] ?: false) && originAllowed,
+        categories = preferences[SponsorBlockCategoriesKey]
+            ?.mapNotNull(SponsorBlockCategory::fromApiName)?.toSet() ?: SponsorBlockCategory.Defaults,
+        apiUrl = origin ?: SPONSORBLOCK_DEFAULT_API_URL,
+        podcastsEnabled = preferences[SponsorBlockPodcastsEnabledKey] ?: false,
+    )
+}
 
 @kotlinx.serialization.Serializable
 internal data class SponsorBlockPrefixResult(
