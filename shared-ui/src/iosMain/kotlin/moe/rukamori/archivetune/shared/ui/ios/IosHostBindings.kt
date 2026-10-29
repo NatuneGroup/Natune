@@ -290,6 +290,7 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
         lyrics = lyrics.full,
         compactLyrics = lyrics.compact,
         queue = { modifier -> IosQueuePanel(graph, modifier) },
+        outputButton = { modifier, tint, enabled -> IosAudioRoutePicker(modifier, tint, enabled) },
     )
 }
 

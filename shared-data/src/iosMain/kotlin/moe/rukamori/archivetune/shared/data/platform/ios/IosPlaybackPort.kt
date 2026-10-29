@@ -13,6 +13,7 @@ import moe.rukamori.archivetune.nativeaudio.*
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
+import moe.rukamori.archivetune.shared.data.playback.outputLatencyMillis
 import moe.rukamori.archivetune.shared.data.stream.nativePlaintext
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
@@ -534,7 +535,11 @@ class IosPlaybackPort : PlaybackPort {
                 s.load_generation.toLong(), s.seek_generation.toLong(), s.error_sequence.toLong(),
                 s.position_us, s.duration_us, s.buffered_us, s.playback_speed)
             if (observation.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
-            mapper.observe(observation, SystemMonotonicClock.nowNanos())?.let { state.value = it }
+            mapper.observe(
+                observation,
+                SystemMonotonicClock.nowNanos(),
+                outputLatencyMs = outputLatencyMillis(at_audio_output_latency(native)),
+            )?.let { state.value = it }
             mapper.failure(observation) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
             observation.hasSource &&
                 (observation.isBuffering || (observation.playWhenReady && !observation.isEnded))

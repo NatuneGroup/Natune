@@ -7,7 +7,7 @@ HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/Native" "$(SRCROOT)/../desktopApp
 // The TDLib closure archive is static, so its export header must not expect a shared tdjson.
 GCC_PREPROCESSOR_DEFINITIONS = $(inherited) TDJSON_STATIC_DEFINE=1
 LIBRARY_SEARCH_PATHS = $(inherited) "$(ARCHIVETUNE_NATIVE_ROOT)/lib"
-OTHER_LDFLAGS = $(inherited) -framework ArchiveTuneShared -larchivetune_engine -larchivetune_telegram -lavfilter -lavformat -lavcodec -lswscale -lswresample -lavutil -lssl -lcrypto -lxml2 -lz -liconv -lc++ -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework QuartzCore -framework MediaPlayer -framework Security -framework AuthenticationServices -framework WebKit -framework SystemConfiguration
+OTHER_LDFLAGS = $(inherited) -framework ArchiveTuneShared -larchivetune_engine -larchivetune_telegram -lavfilter -lavformat -lavcodec -lswscale -lswresample -lavutil -lssl -lcrypto -lxml2 -lz -liconv -lc++ -framework AVFoundation -framework AVKit -framework AudioToolbox -framework CoreAudio -framework QuartzCore -framework MediaPlayer -framework ImageIO -framework Security -framework AuthenticationServices -framework WebKit -framework SystemConfiguration
 CLANG_ENABLE_MODULES = YES
 CLANG_ENABLE_OBJC_ARC = YES
 CLANG_CXX_LANGUAGE_STANDARD = c++17
