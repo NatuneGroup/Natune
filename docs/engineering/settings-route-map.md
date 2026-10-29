@@ -14,10 +14,10 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings` (home) | ✓ | ✓ | ✓ | |
 | `settings/account` | ✓ | ✓ | — | no YouTube account owner on iOS |
 | `settings/hidden_playlists` | ✓ | — | — | |
-| `settings/appearance` | ✓ | ✓ | ✓ | hub: theme/player/interface |
-| `settings/appearance/theme` | ✓ | ✓ | ✓ | no wallpaper colors/dynamic/font picker on iOS — reports unavailable |
-| `settings/appearance/player` | ✓ | ✓ | ✓ | blur supported, home-screen chooser unavailable |
-| `settings/appearance/interface` | ✓ | ✓ | ✓ | arrange chips/tags unavailable |
+| `settings/appearance` | ✓ | ✓ | ✓ | one page: Theme, Player and Interface sections (anchors `appearance_theme`, `appearance_player`, `appearance_interface`); D/iOS: no wallpaper colors/dynamic, no font picker on iOS, home-screen chooser and arrange chips/tags unavailable |
+| `settings/appearance/theme` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_theme` (or its `scrollTo`) |
+| `settings/appearance/player` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_player` (or its `scrollTo`) |
+| `settings/appearance/interface` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_interface` (or its `scrollTo`) |
 | `settings/appearance/extras` | ✓ | ✓ | ✓ | |
 | `settings/appearance/lyrics_animations` | ✓ | ✓ | ✓ | |
 | `settings/appearance/navigation_bar` | ✓ | — | — | Android-only surface |

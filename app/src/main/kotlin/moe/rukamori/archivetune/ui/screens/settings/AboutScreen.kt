@@ -862,7 +862,7 @@ private fun AboutHeaderCard(
             verticalArrangement = Arrangement.spacedBy(AboutSpacing.xs),
         ) {
             Surface(
-                modifier = Modifier.size(80.dp),
+                modifier = Modifier.size(AboutDimensions.HeroIconSize),
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -873,10 +873,9 @@ private fun AboutHeaderCard(
                     painter = painterResource(R.drawable.about_splash),
                     contentDescription = null,
                     colorFilter = iconColorFilter,
-                    modifier =
-                        Modifier
-                            .padding(AboutSpacing.xs)
-                            .size(64.dp),
+                    // The splash drawable already insets its glyph to about half of the canvas, so it
+                    // fills the circle without extra padding and stays clear of the clipped edge.
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
             Text(
@@ -1128,6 +1127,7 @@ private fun AboutContributorsStatusSegment(
 
 private object AboutDimensions {
     val ScreenContentMaxWidth = 840.dp
+    val HeroIconSize = 112.dp
     val DialogContentMaxWidth = 920.dp
     val DialogListPadding = PaddingValues(vertical = 8.dp)
 }
