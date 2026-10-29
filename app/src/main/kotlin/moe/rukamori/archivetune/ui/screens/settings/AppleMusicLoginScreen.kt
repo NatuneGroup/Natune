@@ -26,6 +26,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppleMusicDevTokenKey
 import moe.rukamori.archivetune.constants.AppleMusicMediaUserTokenKey
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
@@ -108,7 +109,7 @@ fun AppleMusicLoginScreen(navController: NavController) {
         // minutes after the user has closed the sheet. Releasing the WebView tears all of it down.
         onRelease = { it.releaseAuthWebView("AppleAuth") },
         factory = { ctx ->
-            WebView(ctx).apply {
+            createAuthWebView(ctx).apply {
                 webViewClient =
                     object : android.webkit.WebViewClient() {
                         override fun onReceivedHttpAuthRequest(
@@ -130,13 +131,6 @@ fun AppleMusicLoginScreen(navController: NavController) {
                             }
                         }
                     }
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    setSupportZoom(true)
-                    builtInZoomControls = true
-                    displayZoomControls = false
-                }
                 addJavascriptInterface(
                     object {
                         @JavascriptInterface

@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
@@ -50,11 +51,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.ui.component.IconButton
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.potoken.BotGuardTokenGenerator
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import android.webkit.HttpAuthHandler
@@ -79,6 +82,7 @@ class PoTokenExtractionActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
         val targetUrl =
             intent
@@ -294,15 +298,10 @@ class PoTokenExtractionActivity : ComponentActivity() {
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .windowInsetsPadding(WindowInsets.systemBars),
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                        .imePadding(),
                 factory = { ctx ->
-                    WebView(ctx).apply {
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.setSupportZoom(true)
-                        settings.builtInZoomControls = true
-                        settings.displayZoomControls = false
-
+                    createAuthWebView(ctx).apply {
                         addJavascriptInterface(
                             object {
                                 @JavascriptInterface
