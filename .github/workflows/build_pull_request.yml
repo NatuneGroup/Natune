@@ -110,6 +110,8 @@ jobs:
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
+        # Organization artifact storage can be exhausted independently of this build's verdict.
+        continue-on-error: true
         with:
           name: app-mobile-universal-debug-${{ github.event_name }}-${{ github.event.number || github.run_id }}
           path: |
@@ -122,6 +124,7 @@ jobs:
       - name: Upload local build diagnostics
         if: always()
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: pr-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
