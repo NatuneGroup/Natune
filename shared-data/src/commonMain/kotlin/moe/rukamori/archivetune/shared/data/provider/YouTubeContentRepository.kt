@@ -298,12 +298,30 @@ internal data class YouTubeContinuation(val requestKey: String, val offset: Int,
 private fun String.escapeField(): String = replace("%", "%25").replace("|", "%7C")
 
 private fun ContentRequest.toBrowse(): YouTubeBrowse {
-    val section = section
-    if (section != null && surface != ContentSurface.RADIO) {
-        return when (surface) {
-            ContentSurface.ARTIST -> YouTubeBrowse.ArtistItems(section.id, section.params)
-            else -> YouTubeBrowse.Section(section.id, section.params)
+    val browseSection = section
+    // RADIO keeps its own watch-next route below; every other section is a provider browse or watch endpoint.
+    if (browseSection != null && surface != ContentSurface.RADIO) {
+        val playlistId = browseSection.id.takeIf(String::isNotBlank)
+        // Radio and mix ids are endless watch queues; the video id comes from the request text when the
+        // endpoint named a song, else it is encoded in the RDAMVM playlist id.
+        if (browseSection.id.startsWith("RDAMVM")) {
+            return YouTubeBrowse.Watch(browseSection.id.removePrefix("RDAMVM"), playlistId, browseSection.params)
         }
+        if (surface == ContentSurface.ARTIST) {
+            return if (text != null || playlistId?.startsWith("RD") == true) {
+                YouTubeBrowse.Watch(text, playlistId, browseSection.params)
+            } else {
+                YouTubeBrowse.ArtistItems(browseSection.id, browseSection.params)
+            }
+        }
+        if (playlistId?.startsWith("RD") == true) {
+            return YouTubeBrowse.Watch(null, playlistId, browseSection.params)
+        }
+        return YouTubeBrowse.Section(browseSection.id, browseSection.params)
+    }
+    if (surface == ContentSurface.ARTIST && text != null) {
+        // A video-id-only watch endpoint, e.g. playing one provider song without a radio id.
+        return YouTubeBrowse.Watch(text, null, null)
     }
     return when (surface) {
         ContentSurface.PLAYLIST -> {
@@ -356,9 +374,6 @@ private fun YouTubeBrowse.requestKey(): String =
         is YouTubeBrowse.Watch -> "watch:$videoId:$playlistId:$params"
         is YouTubeBrowse.WatchNext ->
             "radio:${videoId.orEmpty()}:${playlistId.orEmpty()}:${playlistSetVideoId.orEmpty()}:${params.orEmpty()}"
-        is YouTubeBrowse.Section -> "section:$browseId:$params"
-        is YouTubeBrowse.ArtistItems -> "artist-items:$browseId:$params"
-        is YouTubeBrowse.Watch -> "watch:$videoId:$playlistId:$params"
     }
 
 private fun YouTubeBrowse.collectionKey(): String =
