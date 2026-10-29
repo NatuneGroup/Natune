@@ -40,6 +40,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Check release scripts with fake tools
+        run: python3 -m unittest scripts.test_release_workflow scripts.test_native_release_packaging
+
       - name: Decide whether to build
         id: version
         shell: bash

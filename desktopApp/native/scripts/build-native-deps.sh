@@ -83,7 +83,9 @@ fetch() {
     local url="$1" dest="$2" sha="$3"
     if [ ! -f "$dest" ]; then
         log "downloading $(basename "$dest")"
-        curl -fsSL -o "$dest.part" "$url"
+        curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 300 \
+            --connect-timeout 30 --max-time 180 -o "$dest.part" "$url"
         mv "$dest.part" "$dest"
     fi
     if ! sha256_check "$sha" "$dest"; then
@@ -126,8 +128,16 @@ build_zlib() {
     stamp_done zlib && return 0
     log "building zlib $ZLIB_VERSION"
     unpack "$DOWNLOADS/zlib-$ZLIB_VERSION.tar.gz" "zlib-$ZLIB_VERSION"
-    (cd "$SRC/zlib-$ZLIB_VERSION" && ./configure --prefix="$PREFIX" --shared && make -j"$JOBS" && make install) \
-        >"$LOGS/zlib.log" 2>&1
+    if [ "$OPENSSL_TARGET" = mingw64 ]; then
+        # The Unix configure recipe names ELF .so files even on MinGW; use upstream's DLL/import-library recipe.
+        (cd "$SRC/zlib-$ZLIB_VERSION" && make -f win32/Makefile.gcc -j"$JOBS" && \
+            make -f win32/Makefile.gcc install SHARED_MODE=1 \
+                BINARY_PATH="$PREFIX/bin" INCLUDE_PATH="$PREFIX/include" LIBRARY_PATH="$PREFIX/lib") \
+            >"$LOGS/zlib.log" 2>&1
+    else
+        (cd "$SRC/zlib-$ZLIB_VERSION" && ./configure --prefix="$PREFIX" --shared && make -j"$JOBS" && make install) \
+            >"$LOGS/zlib.log" 2>&1
+    fi
     stamp_set zlib
 }
 
@@ -215,4 +225,6 @@ main() {
     log "miniaudio: $SRC/miniaudio-$MINIAUDIO_VERSION/miniaudio.h"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

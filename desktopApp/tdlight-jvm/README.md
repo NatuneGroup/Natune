@@ -32,16 +32,19 @@ because a mismatch fails at run time with no compile-time signal.
 
 ## Building libtdjni
 
-Each host has one recipe. Both build the `tdjni` target of the pinned commit and stage the same two files under
+Release CI uses the shell recipe on all hosts, including MSYS2 MinGW on Windows. The separate MSVC PowerShell
+recipe remains for callers that supply MSVC-built dependencies. Both build the `tdjni` target of the pinned commit and stage the same two files under
 `desktopApp/build/tdlight-jvm/stage/`: the host's library, and `notices/TDLight-Boost-1.0-LICENSE.txt`, copied verbatim
 from the pinned tree's `LICENSE_1_0.txt`.
 
 | Host | Recipe | Staged library |
 |---|---|---|
 | Linux x86_64 | `native/build-tdjni.sh` | `stage/linux-x64/native/libtdjni.so` |
+| Linux arm64 | `native/build-tdjni.sh` | `stage/linux-arm64/native/libtdjni.so` |
 | macOS arm64 | `native/build-tdjni.sh` | `stage/macos-arm64/native/libtdjni.dylib` |
 | macOS x86_64 | `native/build-tdjni.sh` | `stage/macos-x64/native/libtdjni.dylib` |
-| Windows x64 | `native/build-tdjni.ps1` | `stage/windows-x64/native/tdjni.dll` |
+| Windows x64 (MSYS2 MinGW, CI) | `native/build-tdjni.sh` | `stage/windows-x64/native/tdjni.dll` |
+| Windows x64 (MSVC, separate recipe) | `native/build-tdjni.ps1` | `stage/windows-x64/native/tdjni.dll` |
 
 The packaging task in `desktopApp/build.gradle.kts` refuses to stage a desktop package until the host's library and the
 notice both exist. It names the recipe for the host that is missing.
@@ -56,7 +59,26 @@ The caller supplies a static OpenSSL prefix built for the host, so the staged li
 dependency. The script refuses a dirty checkout, a checkout that is not the pinned commit, and a build that does not
 yield exactly one library. Outputs stay under `desktopApp/build/tdlight-jvm`, which Git ignores.
 
-### Windows x64
+### Windows x64 — MSYS2 MinGW release CI
+
+From an MSYS2 MINGW64 shell, with JDK 21, MinGW GCC/CMake/gperf, GNU make, Git,
+Perl and pkg-config installed:
+
+```bash
+bash desktopApp/native/scripts/build-native-deps.sh
+TDLIGHT_OPENSSL_PREFIX="$PWD/desktopApp/build/native/openssl-static" \
+TDLIGHT_ZLIB_PREFIX="$PWD/desktopApp/build/native/prefix" \
+  bash desktopApp/tdlight-jvm/native/build-tdjni.sh
+```
+
+The first command produces the MinGW static OpenSSL and zlib archives used by
+TDLib. Both CMake stages use `MinGW Makefiles`; `tdjni.dll` has the JVM's expected
+unprefixed name and statically linked compiler/thread runtimes. An import of an
+unstaged MinGW runtime, OpenSSL or zlib DLL is rejected before staging. The Java
+example uses a copied install tree and the Windows codegen executable's `.exe`
+suffix, not an MSYS-only symlink that native CMake cannot follow.
+
+### Windows x64 — separate MSVC recipe
 
 From a PowerShell prompt in the repository root:
 
@@ -94,7 +116,9 @@ Microsoft redistribution notice with it.
 
 ## Status
 
-Source only. Neither recipe has been run, and no native artifact, digest or build result exists yet. The CMake options,
-the target name, the license file location, the static OpenSSL and zlib variables, the Visual Studio generator name and
-the dumpbin import set come from the pin, the TDLib layout and the CMake find modules. Each recipe stops on any mismatch
-rather than guessing, and the first real run on each host is the confirmation.
+Earlier Nightly logs show the macOS shell recipe reaching staging, while Linux
+stopped at missing `gperf` and Windows stopped while downloading native sources.
+Those runs do not validate the changed recipes. Exact-head Blacksmith native
+builds, package audits and runtime loading remain required; fake-tool unit
+regressions are not compilation or playback evidence. The separate MSVC recipe
+remains unverified.
