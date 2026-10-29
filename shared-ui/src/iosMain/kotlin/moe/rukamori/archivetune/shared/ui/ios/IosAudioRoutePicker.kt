@@ -45,5 +45,10 @@ internal fun IosAudioRoutePicker(modifier: Modifier, tint: Color, enabled: Boole
 @OptIn(ExperimentalForeignApi::class)
 private fun Color.toUIColor(): UIColor {
     val color = convert(ColorSpaces.Srgb)
-    return UIColor(color.red.toDouble(), color.green.toDouble(), color.blue.toDouble(), color.alpha.toDouble())
+    return UIColor.colorWithRed(
+        red = color.red.toDouble(),
+        green = color.green.toDouble(),
+        blue = color.blue.toDouble(),
+        alpha = color.alpha.toDouble(),
+    )
 }
