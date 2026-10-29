@@ -141,9 +141,12 @@ internal class DesktopListenTogether(
     fun commentTogether(native: CommentTogetherNativePorts): CommentTogetherOwnerBinding =
         CommentTogetherOwnerBinding(scope, client, chat, songPicker, serverChatSupported, native)
 
-    /** The track the room currently plays, for the chat card's local row; null outside a room or with none shared. */
+    /** The local player's current song in room form, or null when it is not a YouTube song the room could play. */
     val localCurrentTrack: StateFlow<TrackInfo?> =
-        client.roomState.map { it?.currentTrack }.stateIn(scope, SharingStarted.Eagerly, client.roomState.value?.currentTrack)
+        combine(player.snapshot, queue.state) { snapshot, state ->
+            val occurrenceId = snapshot?.occurrenceId ?: return@combine null
+            state.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item?.toTrackInfo(snapshot.durationMs)
+        }.stateIn(scope, SharingStarted.Eagerly, null)
 
     /**
      * Plays a track shared in chat: the host queues it immediately for the room, a guest sends it through the same
