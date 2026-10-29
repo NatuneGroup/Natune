@@ -67,8 +67,11 @@ target_link_libraries(archivetune_engine
         ${AE_swscale_LIBRARY}
         Threads::Threads
         ${CMAKE_DL_LIBS}
-        m
 )
+if(UNIX)
+    # libm exists only on the Unix hosts; MSVC's CRT covers the same calls.
+    target_link_libraries(archivetune_engine PRIVATE m)
+endif()
 
 if(UNIX AND NOT APPLE)
     # The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
@@ -78,11 +81,25 @@ if(UNIX AND NOT APPLE)
     # DT_RPATH is inherited by the FFmpeg/TLS/XML closure; DT_RUNPATH is not.
     target_link_options(archivetune_engine PRIVATE "LINKER:--disable-new-dtags")
 endif()
+# The packaged layout puts the media closure beside the engine: $ORIGIN resolves it on ELF hosts, while
+# Apple dylibs carry @rpath install names that @loader_path resolves.
+if(APPLE)
+    set(AE_INSTALL_RPATH "@loader_path")
+else()
+    set(AE_INSTALL_RPATH "$ORIGIN")
+endif()
 set_target_properties(archivetune_engine PROPERTIES
     BUILD_RPATH "${AE_PREFIX}/lib"
-    INSTALL_RPATH "$ORIGIN"
+    INSTALL_RPATH "${AE_INSTALL_RPATH}"
     BUILD_WITH_INSTALL_RPATH OFF
 )
+if(MINGW)
+    # Static libgcc and winpthreads keep the package's DLL dependencies to the staged closure and the Windows
+    # system libraries; the stage script refuses anything else.
+    target_link_options(archivetune_engine PRIVATE -static)
+    # System.mapLibraryName gives archivetune_engine.dll; MinGW's lib prefix would break that lookup.
+    set_target_properties(archivetune_engine PROPERTIES PREFIX "")
+endif()
 install(TARGETS archivetune_engine LIBRARY DESTINATION . RUNTIME DESTINATION .)
 
 include(CTest)
@@ -92,7 +109,10 @@ if(BUILD_TESTING)
     target_compile_options(archivetune_realtime_test PRIVATE -Wall -Wextra)
     target_link_libraries(archivetune_realtime_test PRIVATE
         ${AE_avformat_LIBRARY} ${AE_avcodec_LIBRARY} ${AE_avfilter_LIBRARY} ${AE_avutil_LIBRARY}
-        Threads::Threads ${CMAKE_DL_LIBS} m)
+        Threads::Threads ${CMAKE_DL_LIBS})
+    if(UNIX)
+        target_link_libraries(archivetune_realtime_test PRIVATE m)
+    endif()
     if(UNIX AND NOT APPLE)
         target_link_options(archivetune_realtime_test PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
         target_link_options(archivetune_realtime_test PRIVATE "LINKER:--disable-new-dtags")

@@ -227,6 +227,7 @@ compose.desktop {
                         <key>CFBundleURLName</key><string>ArchiveTune</string>
                         <key>CFBundleURLSchemes</key><array><string>archivetune</string></array>
                         </dict></array>
+                        <key>NSMicrophoneUsageDescription</key><string>Natune uses the microphone for audio recognition.</string>
                     """.trimIndent()
                 }
             }
@@ -250,7 +251,7 @@ val configureNativeEngine = tasks.register<Exec>("configureNativeEngine") {
     onlyIf { nativePrefix.get().asFile.resolve("lib").isDirectory }
     outputs.file(nativeEngineBuildDir.map { it.file("CMakeCache.txt") })
     inputs.file(file("native/CMakeLists.txt"))
-    commandLine(
+    val engineArguments = mutableListOf(
         "cmake",
         "-S", file("native").absolutePath,
         "-B", nativeEngineBuildDir.get().asFile.absolutePath,
@@ -258,6 +259,12 @@ val configureNativeEngine = tasks.register<Exec>("configureNativeEngine") {
         "-DAE_PREFIX=${nativePrefix.get().asFile.absolutePath}",
         "-DAE_MINIAUDIO_DIR=${nativeMiniaudioDir.get().asFile.absolutePath}",
     )
+    // The engine's C/pthread sources need the MinGW toolchain that built the FFmpeg closure; MSVC
+    // stays reserved for archivetune_system and archivetune_browser, which need cppwinrt/WebView2.
+    if (System.getProperty("os.name").startsWith("Windows")) {
+        engineArguments += listOf("-G", "MinGW Makefiles")
+    }
+    commandLine(*engineArguments.toTypedArray())
 }
 
 val hostIsLinux = System.getProperty("os.name").startsWith("Linux")
@@ -355,6 +362,12 @@ val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") 
             copy { from(input); from(system); into(layout.buildDirectory.dir("distribution-resources/$host-$arch/native")) }
             copy { from(rootProject.file("LICENSE")); into(layout.buildDirectory.dir("distribution-resources/common/notices")) }
         } else if (!hostIsLinux) {
+            // The stage script already installed the engine and its media closure with the platform's own
+            // closure audit; what remains here is the OS adapter the engine never links.
+            val engineName = System.mapLibraryName("archivetune_engine")
+            check(hostNativeDirectory.get().asFile.resolve(engineName).isFile) {
+                "Host playback engine missing; run the host's stage-*-package.py first."
+            }
             val systemName = System.mapLibraryName("archivetune_system")
             val system = nativeSystemBuildDir.get().asFile.walkTopDown().firstOrNull { it.name == systemName && it.isFile }
                 ?: error("Host native OS adapter missing")
@@ -398,8 +411,8 @@ tasks.register<Exec>("stageMacosNativeResources") {
 tasks.register<Exec>("stageWindowsNativeResources") {
     dependsOn("buildNativeEngine")
     onlyIf { hostIsWindows }
-    commandLine("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-        file("native/scripts/stage-windows-package.ps1").absolutePath)
+    // MSYS2 Python on PATH (installed next to the mingw-w64 toolchain by setup-msys2); objdump too.
+    commandLine("python", file("native/scripts/stage-windows-package.py").absolutePath)
 }
 tasks.matching { it.name in setOf("prepareAppResources", "createDistributable", "packageDeb", "packageRpm", "packageMsi", "packageDmg") }.configureEach {
     dependsOn(stageDesktopNativeResources)
