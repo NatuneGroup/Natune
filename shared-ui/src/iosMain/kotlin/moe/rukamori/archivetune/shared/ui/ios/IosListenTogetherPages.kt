@@ -32,6 +32,7 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
+import platform.Foundation.dateWithTimeIntervalSince1970
 
 /** The Listen Together settings route, as the shared settings index names it. */
 internal const val IosListenTogetherSettingsRoute = "settings/integrations/listen_together"
