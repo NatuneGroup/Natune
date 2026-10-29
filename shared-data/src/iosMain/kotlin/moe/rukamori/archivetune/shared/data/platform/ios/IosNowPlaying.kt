@@ -5,6 +5,9 @@ package moe.rukamori.archivetune.shared.data.platform.ios
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import platform.MediaPlayer.*
@@ -18,6 +21,7 @@ class IosNowPlaying(
     private val metadata: (occurrenceId: String) -> ContentItem?,
     private val next: () -> Unit,
     private val previous: () -> Unit,
+    metadataChanges: Flow<*>? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val center = MPNowPlayingInfoCenter.defaultCenter()
@@ -44,7 +48,7 @@ class IosNowPlaying(
             }) { event ->
                 player.seekTo(((event as MPChangePlaybackPositionCommandEvent).positionTime * 1_000).toLong())
             }
-            player.snapshot.collect { snapshot ->
+            combine(player.snapshot, metadataChanges ?: flowOf(Unit)) { snapshot, _ -> snapshot }.collect { snapshot ->
                 if (snapshot == null) {
                     center.nowPlayingInfo = null
                 } else {

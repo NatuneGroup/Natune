@@ -12,6 +12,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.glass.BusyLinearProgress
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -35,11 +36,12 @@ fun ContentRow(
     /** Extra row actions, such as the playlist drag handle and move buttons, drawn before the overflow button. */
     trailingControls: (@Composable () -> Unit)? = null,
 ) {
+    val display = effectiveSong(occurrence.item)
     ListItem(
-        headlineContent = { Text(occurrence.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        headlineContent = { Text(display.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
             Column {
-                Text(occurrence.item.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(display.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 PodcastEpisodeProgress(occurrence.item.ref)
             }
         },

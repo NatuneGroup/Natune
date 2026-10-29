@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.shared.data.persistence
 
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
@@ -12,34 +13,17 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Rebuilds a version-7 database file from the committed schema export, seeds it, and opens it through Room so the
+ * Rebuilds a database file from a committed schema export, seeds it, and opens it through Room so the
  * retained migrations run for real. The export's createSql, index and room_master_table statements are exactly what
- * a version-7 build produced, so the file is indistinguishable from one a user carried over.
+ * a build of that version produced, so the file is indistinguishable from one a user carried over.
  */
 class PortableStateMigrationTest {
-    @Test fun versionSevenFileMigratesToCurrentKeepingRows() = runBlocking<Unit> {
-        val spec = schema(7)
+    @Test fun versionSevenFileMigratesToLatestKeepingRows() = runBlocking<Unit> {
         val file = Files.createTempFile("archivetune-v7", ".db")
-        val connection = BundledSQLiteDriver().open(file.toString())
-        try {
-            for (entity in spec.jsonObject.getValue("entities").jsonArray) {
-                val table = entity.jsonObject.getValue("tableName").jsonPrimitive.content
-                connection.exec(entity.jsonObject.getValue("createSql").jsonPrimitive.content, table)
-                entity.jsonObject["indices"]?.jsonArray?.forEach { index ->
-                    connection.exec(index.jsonObject.getValue("createSql").jsonPrimitive.content, table)
-                }
-            }
-            spec.jsonObject.getValue("setupQueries").jsonArray.forEach { query ->
-                connection.prepare(query.jsonPrimitive.content).use { it.step() }
-            }
-            connection.prepare("PRAGMA user_version = 7").use { it.step() }
-            connection.prepare(
-                "INSERT INTO portable_playlist (id, title, tags, createdSeq, songSortType, songSortDescending) " +
-                    "VALUES ('keep-me', 'Seeded', '[]', 1, 'CUSTOM', 1)",
-            ).use { it.step() }
-        } finally {
-            connection.close()
-        }
+        rebuildFromExport(7, file, listOf(
+            "INSERT INTO portable_playlist (id, title, tags, createdSeq, songSortType, songSortDescending) " +
+                "VALUES ('keep-me', 'Seeded', '[]', 1, 'CUSTOM', 1)",
+        ))
 
         val database = openPortableStateDatabase(file.toString())
         try {
@@ -54,7 +38,10 @@ class PortableStateMigrationTest {
                 assertTrue(it.step())
                 assertEquals(PORTABLE_STATE_SCHEMA_VERSION.toLong(), it.getLong(0))
             }
-            for (table in listOf("portable_search_history", "portable_set_video_id", "portable_podcast_progress")) {
+            for (table in listOf(
+                "portable_search_history", "portable_set_video_id", "portable_podcast_progress",
+                "portable_song_metadata_override",
+            )) {
                 migrated.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").use {
                     it.bindText(1, table)
                     assertTrue(it.step(), "$table was not created by the migration")
@@ -128,6 +115,71 @@ class PortableStateMigrationTest {
         backup.parent.toFile().deleteRecursively()
     }
 
+    @Test fun versionEightFileMigratesToLatestGainingSongMetadataOverrides() = runBlocking<Unit> {
+        val file = Files.createTempFile("archivetune-v8", ".db")
+        rebuildFromExport(8, file, listOf(
+            "INSERT INTO portable_playlist (id, title, tags, createdSeq, songSortType, songSortDescending) " +
+                "VALUES ('keep-me', 'Seeded', '[]', 1, 'CUSTOM', 1)",
+        ))
+
+        val database = openPortableStateDatabase(file.toString())
+        try {
+            database.openNow()
+        } finally {
+            database.close()
+        }
+
+        val migrated = BundledSQLiteDriver().open(file.toString())
+        try {
+            migrated.prepare("PRAGMA user_version").use {
+                assertTrue(it.step())
+                assertEquals(PORTABLE_STATE_SCHEMA_VERSION.toLong(), it.getLong(0))
+            }
+            migrated.prepare("PRAGMA table_info(`portable_song_metadata_override`)").use {
+                val columns = mutableListOf<String>()
+                val primaryKey = mutableListOf<String>()
+                while (it.step()) {
+                    columns += "${it.getText(1)}:${it.getText(2)}:notnull=${it.getLong(3)}"
+                    if (it.getLong(5) > 0) primaryKey += it.getText(1)
+                }
+                assertEquals(
+                    listOf(
+                        "provider:TEXT:notnull=1",
+                        "songId:TEXT:notnull=1",
+                        "title:TEXT:notnull=0",
+                        "artistNamesJson:TEXT:notnull=0",
+                        "updatedAtMs:INTEGER:notnull=1",
+                    ),
+                    columns,
+                    "portable_song_metadata_override was not created by the migration",
+                )
+                assertEquals(listOf("provider", "songId"), primaryKey)
+            }
+            migrated.prepare("SELECT id FROM portable_playlist").use {
+                assertTrue(it.step())
+                assertEquals("keep-me", it.getText(0))
+                assertFalse(it.step())
+            }
+            migrated.prepare(
+                "INSERT INTO portable_song_metadata_override (provider, songId, title, artistNamesJson, updatedAtMs) " +
+                    "VALUES ('youtube', 'song', 'Edited', '[\"Edited artist\"]', 7)",
+            ).use { it.step() }
+            migrated.prepare(
+                "SELECT title, artistNamesJson, updatedAtMs FROM portable_song_metadata_override " +
+                    "WHERE provider = 'youtube' AND songId = 'song'",
+            ).use {
+                assertTrue(it.step())
+                assertEquals("Edited", it.getText(0))
+                assertEquals("[\"Edited artist\"]", it.getText(1))
+                assertEquals(7L, it.getLong(2))
+                assertFalse(it.step())
+            }
+        } finally {
+            migrated.close()
+            Files.deleteIfExists(file)
+        }
+    }
+
     @Test fun currentSchemaExportIdentityMatchesARoomCreatedDatabase() = runBlocking<Unit> {
         val file = Files.createTempFile("archivetune-schema-export", ".db")
         val database = openPortableStateDatabase(file.toString())
@@ -139,6 +191,27 @@ class PortableStateMigrationTest {
                 assertEquals(schema(PORTABLE_STATE_SCHEMA_VERSION).getValue("identityHash").jsonPrimitive.content, it.getText(0))
             }
         } finally { connection.close(); Files.deleteIfExists(file) }
+    }
+
+    private fun rebuildFromExport(version: Int, file: Path, seed: List<String>) {
+        val spec = schema(version)
+        val connection = BundledSQLiteDriver().open(file.toString())
+        try {
+            for (entity in spec.getValue("entities").jsonArray) {
+                val table = entity.jsonObject.getValue("tableName").jsonPrimitive.content
+                connection.exec(entity.jsonObject.getValue("createSql").jsonPrimitive.content, table)
+                entity.jsonObject["indices"]?.jsonArray?.forEach { index ->
+                    connection.exec(index.jsonObject.getValue("createSql").jsonPrimitive.content, table)
+                }
+            }
+            spec.getValue("setupQueries").jsonArray.forEach { query ->
+                connection.prepare(query.jsonPrimitive.content).use { it.step() }
+            }
+            seed.forEach { statement -> connection.prepare(statement).use { it.step() } }
+            connection.prepare("PRAGMA user_version = $version").use { it.step() }
+        } finally {
+            connection.close()
+        }
     }
 
     private fun schema(version: Int): JsonObject = Json.parseToJsonElement(

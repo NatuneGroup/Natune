@@ -77,6 +77,7 @@ internal fun desktopHostBindings(
     val settingsOwners = DesktopSettingsOwners(graph)
     return ArchiveTuneHostBindings(
         queue = graph.queue,
+        songMetadata = graph.library.songMetadata,
         settings = graph.settings,
         actionScope = graph.scope,
         // Deep links from the desktop intake open their page through the root. Back arrives from the window.

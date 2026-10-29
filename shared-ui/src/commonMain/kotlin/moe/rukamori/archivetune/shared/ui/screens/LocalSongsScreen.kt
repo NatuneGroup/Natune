@@ -11,6 +11,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.songmetadata.withSongMetadataOverrides
+import moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides
 import moe.rukamori.archivetune.shared.ui.component.LibrarySortHeader
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
@@ -63,8 +65,10 @@ fun LocalSongsScreen(
     modifier: Modifier = Modifier, contentPadding: PaddingValues = LocalShellContentPadding.current,
     textOrder: Comparator<String> = defaultCollectionTextOrder,
 ) {
-    val visible = remember(state.rows, state.query, state.sort, state.descending, textOrder) {
-        visibleLocalSongs(state.rows, state.query, state.sort, state.descending, textOrder)
+    val edits = LocalSongMetadataOverrides.current
+    val visible = remember(state.rows, state.query, state.sort, state.descending, textOrder, edits) {
+        val rows = state.rows.map { it.copy(row = it.row.withSongMetadataOverrides(edits)) }
+        visibleLocalSongs(rows, state.query, state.sort, state.descending, textOrder)
     }
     val queue = remember(visible) { visible.map { it.row } }
     LazyColumn(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentPadding = contentPadding) {

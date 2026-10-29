@@ -23,4 +23,4 @@ interface ArtistBlockRepository {
 
 /** Whether any artist credit of this item is blocked. A credit without a provider id is never blocked. */
 fun ContentItem.hasBlockedArtist(blocked: Set<ContentRef>): Boolean =
-    artists.any { credit -> credit.ref(ref.provider)?.let { it in blocked } == true }
+    (canonicalSongMetadata?.artists ?: artists).any { credit -> credit.ref(ref.provider)?.let { it in blocked } == true }

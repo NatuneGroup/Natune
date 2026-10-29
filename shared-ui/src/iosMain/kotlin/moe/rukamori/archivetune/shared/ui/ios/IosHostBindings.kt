@@ -129,6 +129,7 @@ internal fun iosHostBindings(
     val goBack: () -> Unit = { backChannel.trySend(Unit) }
     return ArchiveTuneHostBindings(
         queue = graph.queue,
+        songMetadata = graph.library.songMetadata,
         settings = graph.settings,
         actionScope = graph.scope,
         // `archivetune://` links the Swift app session hands in merge with the host's own route opens. The system back

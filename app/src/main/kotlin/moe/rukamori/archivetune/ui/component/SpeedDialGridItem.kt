@@ -58,6 +58,7 @@ fun SpeedDialGridItem(
     isActive: Boolean = false,
     isPlaying: Boolean = false,
 ) {
+    val displayTitle = if (item is SongItem) effectiveSongMetadata(item.id, item.title, item.artists.map { it.name }).title else item.title
     val context = LocalContext.current
     val density = LocalDensity.current
     val motionScheme = MaterialTheme.motionScheme
@@ -148,7 +149,7 @@ fun SpeedDialGridItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = item.title,
+                    text = displayTitle,
                     style = MaterialTheme.typography.labelLargeEmphasized,
                     color = foregroundColor,
                     maxLines = 1,

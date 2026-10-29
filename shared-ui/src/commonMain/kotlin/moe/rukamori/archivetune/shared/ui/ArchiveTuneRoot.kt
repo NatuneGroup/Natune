@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
@@ -51,6 +52,7 @@ class ArchiveTuneHostBindings(
     val onFailure: () -> Unit,
     val onBackAtRoot: () -> Unit,
     val podcastProgress: Flow<List<PodcastProgress>> = flowOf(emptyList()),
+    val songMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository? = null,
 )
 
 /** Host lifecycle is an input: losing UI visibility never pauses background audio. */
@@ -63,6 +65,12 @@ fun ArchiveTuneRoot(
     television: Boolean = false,
 ) {
     key(host) {
+        // A null local means this host has no edit store; leave repository-supplied effective rows intact.
+        val edits by remember(host) {
+            host.songMetadata?.observeOverrides()
+                ?.map { it as Map<ContentRef, moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataOverride>? }
+                ?: kotlinx.coroutines.flow.flowOf(null)
+        }.collectAsState(initial = null)
         val saved by host.settings.snapshots.collectAsState()
         val preferences = saved
         if (preferences == null) {
@@ -70,7 +78,10 @@ fun ArchiveTuneRoot(
         } else {
             val progress by host.podcastProgress.collectAsState(emptyList())
             val byEpisode = remember(progress) { progress.associateBy { it.episodeId } }
-            CompositionLocalProvider(LocalPodcastProgress provides byEpisode) {
+            CompositionLocalProvider(
+                moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides provides edits,
+                LocalPodcastProgress provides byEpisode,
+            ) {
                 ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television)
             }
         }

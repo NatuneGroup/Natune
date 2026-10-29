@@ -326,6 +326,7 @@ import moe.rukamori.archivetune.extensions.findNextMediaItemById
 import moe.rukamori.archivetune.extensions.getQueueWindows
 import moe.rukamori.archivetune.extensions.mediaItems
 import moe.rukamori.archivetune.extensions.metadata
+import moe.rukamori.archivetune.extensions.withEffectiveSongMetadata
 import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.extensions.toEnum
 import moe.rukamori.archivetune.extensions.toContinuationQueue
@@ -372,6 +373,7 @@ import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.songmetadata.SongMetadataOverrideCache
 import moe.rukamori.archivetune.songmetadata.observeSongMetadataOverrideMap
 import moe.rukamori.archivetune.songmetadata.withSongMetadataOverride
+import moe.rukamori.archivetune.songmetadata.withEffectiveSongNames
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
@@ -5564,7 +5566,7 @@ class MusicService :
         val song = database.song(mediaId).first()
         val mediaMetadata =
             withContext(Dispatchers.Main) {
-                player.findNextMediaItemById(mediaId)?.metadata
+                player.findNextMediaItemById(mediaId)?.metadata?.canonicalMetadata()
             } ?: return
         val metadataSource =
             dataStore
@@ -7309,26 +7311,25 @@ class MusicService :
      */
     private var lastSongMetadataOverrides: Map<String, SongMetadataOverrideEntity> = emptyMap()
 
-    private fun onSongMetadataOverridesChanged(overrides: Map<String, SongMetadataOverrideEntity>) {
+    private suspend fun onSongMetadataOverridesChanged(overrides: Map<String, SongMetadataOverrideEntity>) {
         val previous = lastSongMetadataOverrides
         lastSongMetadataOverrides = overrides
         SongMetadataOverrideCache.replaceAll(overrides)
         val changedIds = (previous.keys + overrides.keys).filter { previous[it] != overrides[it] }
         if (changedIds.isEmpty()) return
-        ioScope.launch {
-            // Reads the canonical row with its current override, so a reset reverts the queue too.
-            val refreshed =
-                changedIds.mapNotNull { songId ->
-                    runCatching { database.getSongById(songId) }.getOrNull()
-                }
-            scope.launch {
-                refreshed.forEach { song -> replaceQueuedSongMetadata(song.id, song.toMediaMetadata()) }
-            }
+        // Stay in the collector's order: a slow earlier database read must not undo a newer edit/reset.
+        val canonical = withContext(Dispatchers.IO) {
+            changedIds.associateWith { songId -> database.getSongById(songId)?.toMediaMetadata()?.canonicalMetadata() }
+        }
+        changedIds.forEach { songId ->
+            val metadata = canonical[songId] ?: queuedMetadataByMediaId[songId]
+                ?: player.mediaItems.firstOrNull { it.mediaId == songId }?.metadata
+            metadata?.let { replaceQueuedSongMetadata(songId, it.withSongMetadataOverride(overrides[songId])) }
         }
     }
 
     /**
-     * Swaps one queued item for a copy that carries the effective metadata. The media id, URI and
+     * Updates every queued occurrence with the effective metadata. The media id, URI and
      * cache key stay as they were, so an edit changes what is shown without changing what is played.
      */
     private fun replaceQueuedSongMetadata(
@@ -7336,38 +7337,23 @@ class MusicService :
         effective: MediaMetadata,
     ) {
         if (currentMediaMetadata.value?.id == mediaId) {
-            currentMediaMetadata.value =
-                currentMediaMetadata.value?.copy(title = effective.title, artists = effective.artists)
+            currentMediaMetadata.value = currentMediaMetadata.value?.withEffectiveSongNames(effective)
         }
-        val index =
-            (0 until player.mediaItemCount).firstOrNull {
-                player.getMediaItemAt(it).mediaId == mediaId
-            } ?: return
-        val item = player.getMediaItemAt(index)
-        val names = effective.artists.joinToString { it.name }
-        val platformMetadata =
-            item.mediaMetadata
-                .buildUpon()
-                .setTitle(effective.title)
-                .setSubtitle(names)
-                .setArtist(names)
-                .build()
-        val tag = (item.metadata ?: effective).copy(title = effective.title, artists = effective.artists)
-        val updated =
-            item
-                .buildUpon()
-                .setTag(tag)
-                .setMediaMetadata(platformMetadata)
-                .build()
-        val isCurrentItem = index == player.currentMediaItemIndex
-        val positionMs = player.currentPosition
-        runCatching { player.replaceMediaItem(index, updated) }
-            .onSuccess {
-                // Replacing the current item can restart it from zero; resume where the listener was.
-                if (isCurrentItem && player.currentPosition + 1_000L < positionMs) player.seekTo(positionMs)
-            }.onFailure {
-                Timber.tag(TAG).w(it, "metadata: failed to apply song edit mediaId=%s", mediaId)
-            }
+        // One song may occur more than once. Every occurrence must change, without changing play order.
+        for (index in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(index)
+            if (item.mediaId != mediaId) continue
+            val updated = item.withEffectiveSongMetadata(effective)
+            if (updated == item) continue
+            val isCurrentItem = index == player.currentMediaItemIndex
+            val positionMs = player.currentPosition
+            runCatching { player.replaceMediaItem(index, updated) }
+                .onSuccess {
+                    if (isCurrentItem && player.currentPosition + 1_000L < positionMs) player.seekTo(positionMs)
+                }.onFailure {
+                    Timber.tag(TAG).w(it, "metadata: failed to apply song edit mediaId=%s", mediaId)
+                }
+        }
     }
 
     /**
@@ -7382,12 +7368,10 @@ class MusicService :
         if (currentMediaMetadata.value?.id == mediaId) {
             currentMediaMetadata.value = effective
         }
-        queuedMetadataByMediaId[mediaId] = resolved
-        val index =
-            (0 until player.mediaItemCount).firstOrNull {
-                player.getMediaItemAt(it).mediaId == mediaId
-            } ?: return
+        queuedMetadataByMediaId[mediaId] = resolved.canonicalMetadata()
+        for (index in 0 until player.mediaItemCount) {
         val item = player.getMediaItemAt(index)
+        if (item.mediaId != mediaId) continue
         val platformMetadata =
             item.mediaMetadata
                 .buildUpon()
@@ -7401,13 +7385,17 @@ class MusicService :
         val updated =
             item
                 .buildUpon()
-                .setTag(effective)
+                .setTag(effective.copy(
+                    setVideoId = item.metadata?.setVideoId ?: effective.setVideoId,
+                    suggestedBy = item.metadata?.suggestedBy ?: effective.suggestedBy,
+                ))
                 .setMediaMetadata(platformMetadata)
                 .build()
         runCatching { player.replaceMediaItem(index, updated) }
             .onFailure {
                 Timber.tag(TAG).w(it, "metadata: failed to update MediaItem metadata mediaId=%s", mediaId)
             }
+        }
     }
 
     /** Commits a resolved fallback artwork to the metadata flow and the queued MediaItem. */
@@ -7480,7 +7468,7 @@ class MusicService :
             player.currentPosition,
             player.volume,
         )
-        mediaItem?.metadata?.let { queuedMetadataByMediaId[mediaItem.mediaId] = it }
+        mediaItem?.metadata?.let { queuedMetadataByMediaId[mediaItem.mediaId] = it.canonicalMetadata() }
         trimResolutionCaches()
         updateSpotifyPlaybackReporting(mediaItem?.mediaId)
 
@@ -8987,8 +8975,8 @@ class MusicService :
                 runBlocking(Dispatchers.IO) { database.song(mediaId).first() }
             }.getOrNull()
         val queuedMetadata =
-            currentMediaMetadata.value?.takeIf { it.id == mediaId }
-                ?: queuedMetadataByMediaId[mediaId]
+            (currentMediaMetadata.value?.takeIf { it.id == mediaId }
+                ?: queuedMetadataByMediaId[mediaId])?.canonicalMetadata()
         val title =
             song?.song?.title
                 ?: queuedMetadata?.title
@@ -9061,7 +9049,7 @@ class MusicService :
         for (index in 0 until player.mediaItemCount) {
             val item = runCatching { player.getMediaItemAt(index) }.getOrNull() ?: continue
             present.add(item.mediaId)
-            item.metadata?.let { queuedMetadataByMediaId[item.mediaId] = it }
+            item.metadata?.let { queuedMetadataByMediaId[item.mediaId] = it.canonicalMetadata() }
         }
         queuedMetadataByMediaId.keys.retainAll(present)
         appleDrmTrackInfo.keys.retainAll(present)
