@@ -1,7 +1,9 @@
 """Native release regressions using fake tools only; no native or JVM compilation."""
 
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -83,7 +85,32 @@ class NativeReleasePackagingTest(unittest.TestCase):
             self.assertFalse((root / "build/distribution-resources/macos-arm64").exists())
             audits = [call.args[0] for call in run.call_args_list if call.args[0][0] == "lipo"]
             self.assertEqual(2, len(audits))
-            self.assertTrue(all(args[1:3] == ["-verify_arch", "x86_64"] for args in audits))
+            # lipo takes the input file first; the operation-first form makes it read the path as an arch flag.
+            for args in audits:
+                self.assertTrue(Path(args[1]).name.endswith(".dylib"), args)
+                self.assertEqual(["-verify_arch", "x86_64"], list(args[2:]))
+
+    def test_macos_reports_the_architecture_it_verifies_against(self):
+        module = load_stager()
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.macos_fixture(directory)
+            with patch.object(module.subprocess, "run", side_effect=self.macos_tool), \
+                    contextlib.redirect_stderr(output):
+                module.stage("arm64", root)
+        self.assertIn("lipo architecture arm64", output.getvalue())
+
+    def test_ios_closure_keeps_the_ffmpeg_key_check_and_its_short_gnupg_home(self):
+        verify = (ROOT / "scripts/build_ios_native_core.sh").read_text() \
+            .split("verify_ffmpeg_signature() {", 1)[1].split("\n}\n", 1)[0]
+        # The check stays a real signature check against the pinned release fingerprint.
+        self.assertIn('grep -q "^\\[GNUPG:\\] VALIDSIG .* $FFMPEG_SIGNING_FPR\\$"', verify)
+        self.assertIn("--batch --yes --no-tty --import", verify)
+        # The keyring lives in a short temporary home: macOS refuses the long gpg-agent socket path.
+        self.assertIn('mktemp -d "$tmp/archivetune-ffmpeg-gpg.XXXXXX"', verify)
+        self.assertNotIn('gnupg="$WORK/gnupg"', verify)
+        # A failure prints the gpg log instead of only naming the file.
+        self.assertIn('tail -n 20 "$log" >&2', verify)
 
     def test_macos_rejects_a_wrong_architecture_instead_of_omitting_the_audit(self):
         module = load_stager()
@@ -96,6 +123,25 @@ class NativeReleasePackagingTest(unittest.TestCase):
             with patch.object(module.subprocess, "run", side_effect=wrong_arch):
                 with self.assertRaises(subprocess.CalledProcessError):
                     module.stage("x64", root)
+
+    def test_native_deps_minGW_zlib_uses_the_install_target_and_reports_failures(self):
+        script = DEPS.read_text()
+        # install builds libz.a, zlib1.dll and libz.dll.a; the default target would also build the examples.
+        self.assertIn('"$MAKE_TOOL" -f win32/Makefile.gcc -j"$JOBS" install', script)
+        self.assertEqual(1, script.count("win32/Makefile.gcc"))
+        self.assertIn("fail_log", script)
+
+    def test_native_deps_prints_the_failing_log_instead_of_exiting_silently(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "build.log"
+            log.write_text("\n".join(f"line {index}" for index in range(1, 101)) + "\n")
+            env = dict(os.environ, DEPS_SCRIPT=str(DEPS), LOG=str(log))
+            result = subprocess.run(["bash", "-c", 'source "$DEPS_SCRIPT"; fail_log "$LOG"'],
+                                    env=env, text=True, capture_output=True, timeout=10)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("line 100", result.stderr)
+            self.assertNotIn("line 1\n", result.stderr)
 
     def test_download_retries_keep_checksum_validation_and_reuse_verified_files(self):
         with tempfile.TemporaryDirectory() as directory:

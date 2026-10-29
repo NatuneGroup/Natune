@@ -36,6 +36,8 @@ def dependencies(library):
 def stage(arch, root=None):
     if arch not in ("arm64", "x64"):
         raise ValueError(f"Unsupported macOS package architecture: {arch}")
+    lipo_arch = "x86_64" if arch == "x64" else "arm64"
+    print(f"Staging the macOS {arch} closure as lipo architecture {lipo_arch}", file=sys.stderr)
     root = pathlib.Path(root) if root is not None else pathlib.Path(__file__).resolve().parents[2]
     build = root / "build"
     prefix = build / "native/prefix/lib"
@@ -64,7 +66,9 @@ def stage(arch, root=None):
         if not library.name.endswith(".dylib") or library.is_symlink():
             continue
         # Audit the binary, not Python's architecture: Homebrew Python may remain arm64 under an x64 JDK.
-        subprocess.run(["lipo", "-verify_arch", "x86_64" if arch == "x64" else "arm64", str(library)], check=True)
+        # lipo takes the input file before the command (`lipo <input_file> -verify_arch <arch>`); with the
+        # operation first it reads the trailing path as another architecture flag and rejects every dylib.
+        subprocess.run(["lipo", str(library), "-verify_arch", lipo_arch], check=True)
         rewrites = ["-id", f"@rpath/{library.name}"]
         for dep in dependencies(library):
             name = dep.rsplit("/", 1)[-1]
