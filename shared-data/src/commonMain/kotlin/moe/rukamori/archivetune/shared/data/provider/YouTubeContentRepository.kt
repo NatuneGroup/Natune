@@ -299,11 +299,29 @@ private fun String.escapeField(): String = replace("%", "%25").replace("|", "%7C
 
 private fun ContentRequest.toBrowse(): YouTubeBrowse {
     val section = section
+    // A song-seeded watch names its video id in the request text; blank text names none.
+    val textSeed = text?.trim()?.takeIf(String::isNotEmpty)
     if (section != null && surface != ContentSurface.RADIO) {
-        return when (surface) {
-            ContentSurface.ARTIST -> YouTubeBrowse.ArtistItems(section.id, section.params)
-            else -> YouTubeBrowse.Section(section.id, section.params)
+        val playlistId = section.id.takeIf(String::isNotBlank)
+        // Radio and mix ids are endless watch queues. The video id is the request text when the endpoint named a
+        // song, else the one encoded in the RDAMVM playlist id.
+        if (section.id.startsWith("RDAMVM")) {
+            val videoId = section.id.removePrefix("RDAMVM").takeIf(String::isNotBlank)
+            return YouTubeBrowse.Watch(videoId, playlistId, section.params)
         }
+        if (surface == ContentSurface.ARTIST) {
+            return if (textSeed != null || playlistId?.startsWith("RD") == true) {
+                YouTubeBrowse.Watch(textSeed, playlistId, section.params)
+            } else {
+                YouTubeBrowse.ArtistItems(section.id, section.params)
+            }
+        }
+        if (playlistId?.startsWith("RD") == true) return YouTubeBrowse.Watch(null, playlistId, section.params)
+        return YouTubeBrowse.Section(section.id, section.params)
+    }
+    if (surface == ContentSurface.ARTIST && textSeed != null) {
+        // A video-id-only watch endpoint, e.g. playing one provider song without a radio id.
+        return YouTubeBrowse.Watch(textSeed, null, null)
     }
     return when (surface) {
         ContentSurface.PLAYLIST -> {
