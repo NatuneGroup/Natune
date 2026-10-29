@@ -13,7 +13,7 @@
  *
  * A page is the full-bleed treatment TikTok gives a post: a mesh-gradient
  * backdrop blended from the artwork's own palette (the Bitchord player
- * style's blend, ported — see TikTokMeshBackdrop.kt), the sharp artwork as
+ * style's blend, drawn once behind the pager by MeshBackdrop), the sharp artwork as
  * the hero in the middle (tapping it toggles playback, TikTok's
  * tap-to-pause; its edges dissolve into the backdrop so the cover never
  * meets the colours it was sampled from in a hard line), the action rail
