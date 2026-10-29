@@ -409,6 +409,9 @@ internal fun desktopPlayOccurrence(
         }
         return
     }
+    // Shelf and artist-list rows play from the catalogue owner that recorded them; the shared catalogue and library
+    // owners never hold those rows.
+    if (collection != null && graph.catalogueOwners.playOccurrence(collection, start)) return
     if (collection != null && hostPlayCatalogOccurrence(graph.catalogPages, collection, start)) return
     hostPlayOccurrence(graph.pageOwners, collection, start)
 }
