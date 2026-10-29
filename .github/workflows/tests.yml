@@ -69,6 +69,14 @@ jobs:
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
           SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
 
+      - name: Run shared KMP module tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --console=plain --stacktrace --continue \
+            "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
+            :shared-domain:jvmTest :shared-data:jvmTest :shared-ui:desktopTest
+
       - name: Upload local test diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -79,6 +87,8 @@ jobs:
             app/build/reports/tests/
             app/build/test-results/
             app/build/reports/jacoco/
+            shared-*/build/reports/tests/
+            shared-*/build/test-results/
           if-no-files-found: warn
           retention-days: 7
 
@@ -90,5 +100,6 @@ jobs:
           path: |
             app/build/reports/jacoco/*.xml
             app/build/test-results/**/TEST-*.xml
+            shared-*/build/test-results/**/TEST-*.xml
           if-no-files-found: warn
           retention-days: 7
