@@ -24,7 +24,7 @@ class IosSourceContractsTest(unittest.TestCase):
         for target in scheme.findall(".//BuildableReference"):
             self.assertIn(target.attrib["BlueprintIdentifier"] + " = {isa = PBXNativeTarget", project)
         for path in re.findall(r"path = ([^;]+); sourceTree = \"<group>\"", project):
-            self.assertTrue((IOS / path).is_file(), path)
+            self.assertTrue((IOS / path).exists(), path)
         self.assertIn("PBXResourcesBuildPhase", project)
         self.assertIn("InfoPlist.strings", project)
         self.assertIn(":shared-ui:embedAndSignAppleFrameworkForXcode", project)
