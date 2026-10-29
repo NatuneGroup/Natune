@@ -103,6 +103,9 @@ class UsbExclusiveAudioOutputProvider(
     }
 
     private fun exclusiveDeviceFor(formatConfig: FormatConfig): AudioDeviceInfo? {
+        // AAudio is an Android 8.0 library. Below it no exclusive stream can open, so the standard
+        // output plays and no open is attempted.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
         if (!exclusiveWanted() || !FloatDsp.available) return null
         if (formatConfig.enableOffload || formatConfig.enableTunneling) return null
         val format = formatConfig.format
