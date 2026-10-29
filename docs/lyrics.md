@@ -83,6 +83,25 @@ used to highlight whole lines off the same word timings Bitchord swept through, 
 a second copy of the sweep is a second thing to fix whenever a provider changes shape.
 Everything else in each style stays its own.
 
+## The box edge fade
+
+Every scrolling lyrics surface fades the top and bottom of its own box with
+`lyricsViewportFade` (`shared-ui`, `lyrics/LyricsViewportFade.kt`): an offscreen layer
+with a smoothstep `DstIn` mask, 56dp at the top and 96dp at the bottom, each capped at
+22% of the box height. The ramps belong to the box, so they stay put while lines scroll
+under them, and the mask only fades the lyrics, never the glass or artwork behind them.
+`LyricsEnhanced`, `LyricsV2`, `SimpMusicLyrics`, the legacy `Lyrics` and the shared
+`LyricsFullscreenRenderer` each apply it themselves, so hosts (the lyrics page, the
+SimpMusic card, every player style's lyrics pane) must not add a second edge mask.
+Flamingo keeps only its controls-visible mask that clears the lines from under its controls.
+
+`KaraokeLyricsView` (lyrics-ui 1.0.x) hard-codes its own 20dp/100dp mask. Enhanced's synced
+pane (`ui/component/EnhancedKaraokePane.kt`) measures
+the view taller by those amounts and lifts it, so the library's ramps sit outside the
+clipped box and the anchor offset is raised by the same 20dp. Re-check both numbers when
+the library is upgraded. The single-active-line strip (TikTok main lyrics) has no list and
+no fade.
+
 ## Two things that were wrong, so they do not come back
 
 - **Clock gating.** The sweep must be driven by `PlayerConnection.isAudioAdvancing`

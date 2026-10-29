@@ -21,13 +21,13 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -47,6 +47,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.first
@@ -59,6 +60,7 @@ import moe.rukamori.archivetune.constants.AmazonInstancesKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtExpiryMsKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtKey
 import moe.rukamori.archivetune.ui.component.IconButton
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import timber.log.Timber
 
@@ -107,6 +109,7 @@ class AmazonTurnstileActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent { TurnstileContent() }
     }
 
@@ -179,7 +182,7 @@ class AmazonTurnstileActivity : ComponentActivity() {
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1">
               <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
-              <style>html,body{margin:0;padding:0;background:transparent;}#cf{display:flex;justify-content:center;padding:12px;}</style>
+              <style>:root{color-scheme:light dark;}html,body{margin:0;padding:0;background:Canvas;color:CanvasText;}#cf{display:flex;justify-content:center;padding:12px;}</style>
             </head>
             <body>
               <div id="cf"></div>
@@ -252,7 +255,9 @@ class AmazonTurnstileActivity : ComponentActivity() {
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .padding(innerPadding),
+                        .padding(innerPadding)
+                        .consumeWindowInsets(innerPadding)
+                        .imePadding(),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!configured) {
@@ -264,68 +269,60 @@ class AmazonTurnstileActivity : ComponentActivity() {
                         modifier = Modifier.padding(24.dp),
                     )
                 } else {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(24.dp),
-                    ) {
-                        CircularProgressIndicator()
-                        Spacer(Modifier.height(20.dp))
-                        Text(
-                            text = status ?: verifying,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            Text(
+                                text = status ?: verifying,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
 
-                    // The WebView is effectively invisible (transparent, behind the status UI) unless
-                    // Cloudflare escalates to a visible interactive challenge, in which case it shows.
-                    AndroidView(
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .windowInsetsPadding(WindowInsets.systemBars),
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                setBackgroundColor(0)
-
-                                addJavascriptInterface(
-                                    object {
-                                        @JavascriptInterface
-                                        fun onToken(token: String?) {
-                                            if (!token.isNullOrBlank()) {
-                                                runOnUiThread {
-                                                    status = signingIn
-                                                    onTurnstileToken(token)
+                        // Keep the progress visible without putting it underneath an auth canvas.
+                        AndroidView(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            factory = { ctx ->
+                                createAuthWebView(ctx).apply {
+                                    addJavascriptInterface(
+                                        object {
+                                            @JavascriptInterface
+                                            fun onToken(token: String?) {
+                                                if (!token.isNullOrBlank()) {
+                                                    runOnUiThread {
+                                                        status = signingIn
+                                                        onTurnstileToken(token)
+                                                    }
                                                 }
                                             }
-                                        }
 
-                                        @JavascriptInterface
-                                        fun onError(message: String?) {
-                                            runOnUiThread {
-                                                finishWithError(message?.takeIf { it.isNotBlank() } ?: "turnstile-failed")
+                                            @JavascriptInterface
+                                            fun onError(message: String?) {
+                                                runOnUiThread {
+                                                    finishWithError(message?.takeIf { it.isNotBlank() } ?: "turnstile-failed")
+                                                }
                                             }
-                                        }
-                                    },
-                                    "Android",
-                                )
+                                        },
+                                        "Android",
+                                    )
 
-                                loadDataWithBaseURL(
-                                    AmazonAudioProvider.TURNSTILE_ORIGIN,
-                                    challengeHtml(),
-                                    "text/html",
-                                    "utf-8",
-                                    null,
-                                )
+                                    loadDataWithBaseURL(
+                                        AmazonAudioProvider.TURNSTILE_ORIGIN,
+                                        challengeHtml(),
+                                        "text/html",
+                                        "utf-8",
+                                        null,
+                                    )
 
-                                activeWebView = this
-                            }
-                        },
-                    )
+                                    activeWebView = this
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }

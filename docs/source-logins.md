@@ -11,6 +11,73 @@ credentials, verify access where supported, and show loading/recovery rather tha
 | Deezer | `arl` cookie | `CookieManager` (the cookie is HttpOnly) | `DeezerAudioProvider.verifyArl` |
 | Apple Music | Music User Token (+ developer token) | MusicKit instance poll, localStorage fallback | none available — the token shape is the only check |
 
+## Auth browser rendering and keyboard policy
+
+Every interactive Android auth WebView, including Spotify's OAuth popups, is created
+by `createAuthWebView`. It supplies an opaque white fallback canvas, JavaScript/DOM
+storage, touch-mode focus and match-parent native dimensions. View force-dark,
+algorithmic darkening and legacy WebView force-dark are explicitly disabled when
+supported. Provider-authored CSS and `color-scheme` remain untouched; this does not
+force a light page or inject input colors.
+
+The Spotify input-text report is not a reproduced forced-dark diagnosis: the
+previous Spotify views had no explicit transparent background or force-dark call,
+and the Android XML host theme is light even when Compose is dark. The explicit
+policy removes dependence on WebView defaults, while fixing the source-visible
+layout hazards below. Provider/device rendering still requires real-device QA.
+
+`AuthWebViewSheet` now serves both Spotify profiles and all routed Android web
+sign-ins. Its shared KMP `AuthWebViewLayout` consumes the remaining IME inset,
+reserves a weighted browser viewport and bounds the scrollable heading/status area
+to one third of the available height. Long errors and recovery controls can no
+longer measure the browser to zero in a short window. After a viewport shrink or
+width reflow, the Android browser scrolls its DOM-focused control into view without
+reading or exporting its value. The same layout backs the shared YouTube screen
+and provider pages that embed a host web surface.
+
+| Surface | Rendering/layout correction |
+|---|---|
+| Spotify catalog, streaming and their OAuth popups | Shared factory and keyboard-aware sheet; native popup/root dimensions remain match-parent. Profile selection, popup profile inheritance, cookie resets/capture and the unsupported-multi-profile fallback are unchanged. |
+| YouTube embedded login, onboarding and embedded install recovery | Shared factory/sheet; same-WebView return, retry jar, private verification and YouTube-scoped logout are unchanged. |
+| Deezer | Shared factory/sheet; existing ARL capture and verification are unchanged. |
+| Tidal PKCE and web-player fallback | Shared factory/sheet; existing redirect/Bearer handling is unchanged. |
+| Qobuz | Shared factory/sheet; existing token hook and verified secret search are unchanged. |
+| Apple Music | Shared factory/sheet; existing MusicKit/localStorage capture is unchanged. |
+| Last.fm and Libre.fm | Shared factory/sheet; existing auth redirects and session exchange are unchanged. |
+| YouTube PO-token extraction Activity | Shared factory, explicit edge-to-edge IME/system-bar handling and `adjustResize`; the Activity previously had no explicit resize mode. |
+| Amazon Turnstile Activity | Previously transparent HTML/native canvas now uses an opaque browser and authored `Canvas`/`CanvasText` with `color-scheme: light dark`. Status is above, not underneath, the challenge. Explicit IME handling and `adjustResize` keep interactive challenges usable. |
+
+Discord PKCE and YouTube device-code approval open the system browser, not an
+Android WebView. Telegram uses native TDLib phone/code/password controls, QQ Music
+uses QR approval, and pasted provider/scrobbling credentials use native dialogs.
+Those do not inherit auth-WebView color transforms. Headless cipher/BotGuard views
+are not sign-in surfaces and are not changed.
+
+On iOS, `installAuthWebView` is shared by the Deezer cookie sheet
+(`IosDeezerWebSignIn` via `IosCookieOnlyBrowserAuth`), the Tidal PKCE sheet and the
+generic embedded OAuth adapter. Their old full-controller frames/autoresizing
+masks did not account for the navigation bar or keyboard. The browser is now
+opaque and constrained to the safe area and keyboard layout guide, without
+forcing UIKit/page appearance or replacing the caller's nonpersistent data store.
+`ASWebAuthenticationSession` remains OS-owned and ephemeral. Other currently
+unwired iOS sign-ins are not newly implemented; Qobuz remains an external web
+player plus native credential entry.
+
+Desktop Spotify catalog/streaming, YouTube, Deezer and Tidal use the existing
+isolated native browser window (WebKitGTK, WebView2 or WKWebView). These have no
+app-imposed darkening, transparent canvas or Android IME sheet, and already resize
+their positive-height browser area with the window; their native setup is
+unchanged. Qobuz, Discord, Last.fm/Libre.fm and device approval use external
+browsers; Telegram/QQ Music and pasted credentials are native surfaces. The
+generic Chromium OAuth adapter also retains its isolated private profile and
+unmodified page rendering.
+
+Configuration/resize-decision unit tests, short-viewport Compose layout tests and
+iOS native layout/configuration tests are authored but unrun locally. They do
+not establish visible provider input text, successful sign-in or software-keyboard
+behavior; exact-head CI and light/dark, portrait/landscape, IME and popup device QA
+remain required.
+
 ## Why credential presence is not proof
 
 Three of the four hand out a credential that *looks* right before anyone has signed in:

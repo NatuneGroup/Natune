@@ -44,6 +44,7 @@ import moe.rukamori.archivetune.constants.TidalTokenExpiryKey
 import moe.rukamori.archivetune.constants.TidalUserIdKey
 import moe.rukamori.archivetune.tidal.TidalAccountManager
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
@@ -196,7 +197,7 @@ fun TidalLoginScreen(navController: NavController) {
         subtitle = stringResource(R.string.auth_webview_tidal_subtitle),
         onRelease = { it.releaseAuthWebView("TidalAuth") },
         factory = { ctx ->
-            WebView(ctx).apply {
+            createAuthWebView(ctx).apply {
                 webViewClient =
                     object : WebViewClient() {
                         override fun onReceivedHttpAuthRequest(
@@ -240,13 +241,6 @@ fun TidalLoginScreen(navController: NavController) {
                             injectBearerHook(view, url)
                         }
                     }
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    setSupportZoom(true)
-                    builtInZoomControls = true
-                    displayZoomControls = false
-                }
                 addJavascriptInterface(
                     object {
                         @JavascriptInterface

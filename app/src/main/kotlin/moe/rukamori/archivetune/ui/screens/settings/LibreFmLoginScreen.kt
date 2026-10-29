@@ -39,6 +39,7 @@ import moe.rukamori.archivetune.lastfm.LastFmAppCredentials
 import moe.rukamori.archivetune.lastfm.models.Authentication
 import moe.rukamori.archivetune.scrobbling.lastFmSignInKeys
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
@@ -147,7 +148,7 @@ fun LibreFmLoginScreen(navController: NavController) {
         title = stringResource(R.string.lastfm_connect_librefm_button),
         subtitle = stringResource(R.string.auth_webview_librefm_subtitle),
         factory = { ctx ->
-            WebView(ctx).apply {
+            createAuthWebView(ctx).apply {
                 webViewClient = object : WebViewClient() {
                     override fun onReceivedHttpAuthRequest(
                         view: WebView?,
@@ -172,13 +173,6 @@ fun LibreFmLoginScreen(navController: NavController) {
                         view: WebView,
                         url: String?,
                     ): Boolean = handleRedirect(url)
-                }
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    setSupportZoom(true)
-                    builtInZoomControls = true
-                    displayZoomControls = false
                 }
                 resetAuthWebViewSession(ctx, this, clearCookies = true) {
                     // Libre.fm's auth URL — same shape as Last.fm's but

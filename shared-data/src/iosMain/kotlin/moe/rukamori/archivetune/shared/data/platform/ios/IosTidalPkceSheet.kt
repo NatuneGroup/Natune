@@ -14,8 +14,6 @@ import platform.Foundation.NSURLQueryItem
 import platform.Foundation.NSURLRequest
 import platform.UIKit.UIAdaptivePresentationControllerDelegateProtocol
 import platform.UIKit.UIPresentationController
-import platform.UIKit.UIViewAutoresizingFlexibleHeight
-import platform.UIKit.UIViewAutoresizingFlexibleWidth
 import platform.UIKit.UIViewController
 import platform.UIKit.presentationController
 import platform.WebKit.WKNavigation
@@ -54,9 +52,7 @@ class IosTidalPkceSheet(
             websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore()
         }
         val controller = UIViewController()
-        val webView = WKWebView(frame = controller.view.bounds, configuration = configuration)
-        webView.autoresizingMask = UIViewAutoresizingFlexibleWidth or UIViewAutoresizingFlexibleHeight
-        controller.view.addSubview(webView)
+        val webView = controller.installAuthWebView(configuration)
         try {
             withTimeout(TIMEOUT_MS) {
                 suspendCancellableCoroutine { continuation ->

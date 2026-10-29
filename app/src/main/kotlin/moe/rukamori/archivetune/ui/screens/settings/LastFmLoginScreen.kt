@@ -40,6 +40,7 @@ import moe.rukamori.archivetune.lastfm.LastFmAppCredentials
 import moe.rukamori.archivetune.lastfm.models.Authentication
 import moe.rukamori.archivetune.scrobbling.lastFmSignInKeys
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
@@ -152,7 +153,7 @@ fun LastFmLoginScreen(navController: NavController) {
         title = stringResource(R.string.lastfm_login),
         subtitle = stringResource(R.string.auth_webview_lastfm_subtitle),
         factory = { ctx ->
-            WebView(ctx).apply {
+            createAuthWebView(ctx).apply {
                 webViewClient =
                     object : WebViewClient() {
                         override fun onReceivedHttpAuthRequest(
@@ -179,13 +180,6 @@ fun LastFmLoginScreen(navController: NavController) {
                             url: String?,
                         ): Boolean = handleRedirect(url)
                     }
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    setSupportZoom(true)
-                    builtInZoomControls = true
-                    displayZoomControls = false
-                }
                 resetAuthWebViewSession(ctx, this, clearCookies = true) {
                     loadUrl(LastFmAppCredentials.authUrl(apiKey = signInPair.first))
                 }
