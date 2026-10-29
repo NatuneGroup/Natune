@@ -46,7 +46,7 @@ class PreferenceDefaultsSettingsTest {
             ),
             PlayerDesignStyle.entries.map { it.name },
         )
-        assertEquals(listOf("MATERIAL_EXPRESSIVE", "APPLE_MUSIC"), InterfaceStyle.entries.map { it.name })
+        assertEquals(listOf("MATERIAL_EXPRESSIVE", "APPLE_MUSIC", "CUSTOM"), InterfaceStyle.entries.map { it.name })
         assertEquals(listOf("DEFAULT", "APPLE_MUSIC"), LibraryStyle.entries.map { it.name })
         assertEquals(listOf("DEFAULT", "SYSTEM", "CUSTOM"), AppFontPreference.entries.map { it.name })
     }
