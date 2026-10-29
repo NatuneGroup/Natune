@@ -30,6 +30,25 @@ fun AppearanceThemeSettings(
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    ThemeChoicePage(controller, pickCustomFont, onFailure, scrollTo, modifier) { preferences, chooseInterface, chooseFont, pickFont ->
+        appearanceThemeSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded,
+            navigate, openWallpaperSettings, chooseInterface, chooseFont, pickFont)
+    }
+}
+
+/**
+ * A settings page whose rows include the theme section, with the interface-style and font pickers those rows open.
+ * [rows] receives the open-interface-picker, open-font-picker and pick-custom-font actions.
+ */
+@Composable
+internal fun ThemeChoicePage(
+    controller: SettingsController,
+    pickCustomFont: suspend () -> Pair<String, String>?,
+    onFailure: () -> Unit,
+    scrollTo: String?,
+    modifier: Modifier,
+    rows: (preferences: PreferenceSnapshot, chooseInterface: () -> Unit, chooseFont: () -> Unit, pickFont: () -> Unit) -> List<SettingsRow>,
+) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
@@ -47,9 +66,7 @@ fun AppearanceThemeSettings(
         controller.edit { setCustomFont(selected.first, selected.second) }
     }
     SettingsPage(
-        appearanceThemeSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded,
-            navigate, openWallpaperSettings, { choosingInterface = true }, { choosingFont = true },
-            { attempt { selectCustomFont() } }),
+        rows(preferences, { choosingInterface = true }, { choosingFont = true }, { attempt { selectCustomFont() } }),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
     )
     if (choosingInterface) AlertDialog(

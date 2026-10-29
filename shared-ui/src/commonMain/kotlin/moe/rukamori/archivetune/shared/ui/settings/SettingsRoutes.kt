@@ -18,8 +18,9 @@ fun settingsSearchRoute(parentKey: String, scrollKey: String?): String? {
 
 private val routes = mapOf(
     "account" to "settings/account", "appearance" to "settings/appearance",
-    "appearance_theme" to "settings/appearance/theme", "appearance_player" to "settings/appearance/player",
-    "appearance_interface" to "settings/appearance/interface", "appearance_extras" to "settings/appearance/extras",
+    // Appearance is one page; its three section owners keep resolving so indexed rows still land on it.
+    "appearance_theme" to "settings/appearance", "appearance_player" to "settings/appearance",
+    "appearance_interface" to "settings/appearance", "appearance_extras" to "settings/appearance/extras",
     "aod" to "settings/appearance/aod_customized", "navigation_bar" to "settings/appearance/navigation_bar",
     "lyrics_animations" to "settings/appearance/lyrics_animations", "playback" to "settings/player",
     "ytdlp" to SettingsRoutes.YTDLP, "sources" to "settings/sources", "applemusic" to "settings/applemusic",
