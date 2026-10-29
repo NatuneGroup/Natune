@@ -31,11 +31,12 @@ package moe.rukamori.archivetune.ui.component
 import android.content.Context
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
+import moe.rukamori.archivetune.shared.ui.component.AuthWebViewLayout
 
 /** Renders [factory]'s WebView inside the shared Spotify-style sign-in sheet. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,51 +70,28 @@ fun AuthWebViewScreen(
     statusContent: (@Composable () -> Unit)? = null,
     factory: (Context) -> WebView,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
     // Real state, so assigning from the factory recomposes and enables the BackHandler below.
     var webView by remember { mutableStateOf<WebView?>(null) }
 
-    ModalBottomSheet(
-        modifier = modifier.fillMaxHeight(),
-        onDismissRequest = { onDismiss?.invoke() ?: run { navController.navigateUp() } },
-        sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+    AuthWebViewSheet(
+        title = title,
+        subtitle = subtitle,
+        modifier = modifier,
+        onDismiss = { onDismiss?.invoke() ?: run { navController.navigateUp() } },
+        statusContent = statusContent,
     ) {
-        Column(
+        AndroidView(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            statusContent?.invoke()
-            AndroidView(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(MaterialTheme.shapes.large),
-                factory = { ctx -> factory(ctx).also { webView = it } },
-                onRelease = { released ->
-                    onRelease?.invoke(released)
-                    if (webView === released) webView = null
-                },
-            )
-        }
+                    .weight(1f)
+                    .clip(MaterialTheme.shapes.large),
+            factory = { ctx -> factory(ctx).also { webView = it } },
+            onRelease = { released ->
+                onRelease?.invoke(released)
+                if (webView === released) webView = null
+            },
+        )
     }
 
     // Enabled purely on presence: canGoBack() is polled at press time because it changes during
@@ -124,5 +103,49 @@ fun AuthWebViewScreen(
         } else {
             onDismiss?.invoke() ?: run { navController.navigateUp() }
         }
+    }
+}
+
+/** Shared by the routed sign-ins and both Spotify profiles, including their popup container. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AuthWebViewSheet(
+    title: String,
+    subtitle: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    statusContent: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        modifier = modifier.fillMaxHeight(),
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentWindowInsets = { WindowInsets.safeDrawing },
+    ) {
+        AuthWebViewLayout(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp),
+            header = {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                statusContent?.invoke()
+            },
+            content = content,
+        )
     }
 }

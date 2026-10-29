@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.constants.DeezerArlKey
 import moe.rukamori.archivetune.constants.DeezerEnabledKey
 import moe.rukamori.archivetune.deezer.DeezerAudioProvider
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
@@ -123,7 +124,7 @@ fun DeezerLoginScreen(navController: NavController) {
         // posting to a dead WebView.
         onRelease = { it.releaseAuthWebView(beforeDestroy = ::stopDeezerArlExtraction) },
         factory = { ctx ->
-            WebView(ctx).apply {
+            createAuthWebView(ctx).apply {
                 webViewClient =
                     DeezerArlWebViewClient { arl ->
                         // The retry stops at the first cookie it sees, but a later navigation starts a
@@ -132,13 +133,6 @@ fun DeezerLoginScreen(navController: NavController) {
                             finishLogin(arl)
                         }
                     }
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    setSupportZoom(true)
-                    builtInZoomControls = true
-                    displayZoomControls = false
-                }
                 // Clearing cookies first means an already-signed-in browser session cannot hand back
                 // a stale ARL for an account the user is trying to switch away from.
                 resetAuthWebViewSession(ctx, this, clearCookies = true) {

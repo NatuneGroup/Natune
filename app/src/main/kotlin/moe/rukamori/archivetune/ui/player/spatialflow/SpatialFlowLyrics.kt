@@ -103,6 +103,7 @@ import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FO
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.player.SelectedLyrics
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
@@ -405,6 +406,7 @@ internal fun SpatialFlowLyricsOverlay(
                             modifier =
                                 Modifier
                                     .fillMaxSize()
+                                    .lyricsViewportFade()
                                     .verticalScroll(rememberScrollState())
                                     .padding(horizontal = 16.dp, vertical = 28.dp),
                         ) {

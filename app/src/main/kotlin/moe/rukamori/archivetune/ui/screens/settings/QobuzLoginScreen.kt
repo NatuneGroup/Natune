@@ -40,6 +40,7 @@ import moe.rukamori.archivetune.qobuz.QobuzBundleSecrets
 import moe.rukamori.archivetune.qobuz.QobuzToken
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
@@ -209,7 +210,7 @@ fun QobuzLoginScreen(navController: NavController) {
         // which is part of why the second visit felt slower than the first.
         onRelease = { it.releaseAuthWebView("QobuzAuth") },
         factory = { ctx ->
-            WebView(ctx).apply {
+            createAuthWebView(ctx).apply {
                 webViewClient =
                     object : WebViewClient() {
                         override fun onReceivedHttpAuthRequest(
@@ -236,13 +237,6 @@ fun QobuzLoginScreen(navController: NavController) {
                             }
                         }
                     }
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    setSupportZoom(true)
-                    builtInZoomControls = true
-                    displayZoomControls = false
-                }
                 addJavascriptInterface(
                     object {
                         @JavascriptInterface

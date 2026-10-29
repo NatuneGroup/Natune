@@ -1934,11 +1934,12 @@ fun FlamingoPlayerContent(
     }
 }
 
-// Alpha-mask stops for the lyrics edge fade, per controls-visibility state.
+// Alpha-mask stops that clear the lyrics from under the controls while they are shown. The top and
+// bottom box edges are faded by the lyrics renderer itself, so the first stops stay opaque here.
 private val FlamingoLyricsEdgeFadeStopsControlsVisible =
     listOf(
-        Color.Transparent,
-        Color(0x59000000),
+        Color.Black,
+        Color.Black,
         Color.Black,
         Color.Black,
         Color.Black,
@@ -1957,28 +1958,6 @@ private val FlamingoLyricsEdgeFadeStopsControlsVisible =
         Color.Transparent,
     )
 
-private val FlamingoLyricsEdgeFadeStopsControlsHidden =
-    listOf(
-        Color.Transparent,
-        Color(0x59000000),
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-    )
-
 private fun Modifier.flamingoLyricsEdgeFade(
     weightLambda: () -> Boolean,
 ): Modifier = drawWithCache {
@@ -1991,13 +1970,8 @@ private fun Modifier.flamingoLyricsEdgeFade(
         blendMode = BlendMode.Plus
     }
     val rect = androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)
-    val fadeBrush = Brush.verticalGradient(
-        if (weightLambda()) {
-            FlamingoLyricsEdgeFadeStopsControlsVisible
-        } else {
-            FlamingoLyricsEdgeFadeStopsControlsHidden
-        },
-    )
+    val controlsVisible = weightLambda()
+    val fadeBrush = Brush.verticalGradient(FlamingoLyricsEdgeFadeStopsControlsVisible)
 
     onDrawWithContent {
         val canvas = this.drawContext.canvas
@@ -2005,10 +1979,12 @@ private fun Modifier.flamingoLyricsEdgeFade(
 
         drawContent()
 
-        drawRect(
-            brush = fadeBrush,
-            blendMode = BlendMode.DstIn,
-        )
+        if (controlsVisible) {
+            drawRect(
+                brush = fadeBrush,
+                blendMode = BlendMode.DstIn,
+            )
+        }
 
         canvas.restore()
     }
