@@ -85,6 +85,9 @@ class LibraryContentOwner(
     /** Told about every like this owner wrote, after the write succeeded. It must not suspend for long. */
     private val onLikeWritten: suspend (ContentRef, Boolean) -> Unit = { _, _ -> },
 ) {
+    /** Used by local history playback's query filter; display edits never alter the stored listen. */
+    suspend fun songMetadataOverrides() = library.songMetadata?.overrides()
+
     /**
      * One Library section, re-read whenever its sort, its filter or the playlist order changes. An unavailable section
      * emits a failed state, so the screen never shows a list it could not produce.

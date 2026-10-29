@@ -39,6 +39,8 @@ data class ContentItem(
     val albumId: String? = null,
     /** Android's `ExtraIsMusicVideo` extra: the provider marked this entry a music video, so Hide Video drops it. */
     val isVideo: Boolean = false,
+    /** A display projection retains its provider names so refresh, persistence and audio lookup stay canonical. */
+    val canonicalSongMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.CanonicalSongMetadata? = null,
 ) {
     init {
         require(albumId == null || albumId.isNotBlank())

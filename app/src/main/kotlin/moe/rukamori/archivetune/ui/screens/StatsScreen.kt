@@ -176,6 +176,7 @@ fun StatsScreen(
     val isYearPickerOpen by viewModel.yearPickerOpen.collectAsStateWithLifecycle()
     val rateLimitedMessage = stringResource(R.string.stats_remote_rate_limited)
     val unknownArtistLabel = stringResource(R.string.stats_unknown_artist)
+    val songMetadataOverrides = moe.rukamori.archivetune.ui.component.LocalSongMetadataOverrides.current
     val remoteFailureMessage = stringResource(R.string.stats_remote_load_failed)
     val currentDate = remember { LocalDateTime.now() }
 
@@ -236,7 +237,7 @@ fun StatsScreen(
                     }
 
                     is StatsScreenState.Success -> {
-                        val dashboard = state.data.toDashboard()
+                        val dashboard = state.data.toDashboard(songMetadataOverrides)
                         StatsScreenContent(
                             dashboard = dashboard,
                             // The local library bounds its own range chips; nothing here has changed.
@@ -279,7 +280,9 @@ fun StatsScreen(
                     }
 
                     is RemoteHistoryUiState.Success -> {
-                        val plays = remember(state.page) { state.page.historyPlays(unknownArtistLabel) }
+                        val plays = remember(state.page, songMetadataOverrides, unknownArtistLabel) {
+                            state.page.historyPlays(unknownArtistLabel, songMetadataOverrides)
+                        }
                         val history = rememberStatsScreenContent(plays, period, currentDate)
                         if (history == null) {
                             StatsStatusScreen(
@@ -1083,66 +1086,6 @@ private fun StatsEmptyCard(modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * One listen as a remote feed reports it: the track, its artist and album, how long it lasted and
- * when it happened.
- *
- * A YouTube history section names the day of a whole shelf and nothing finer, so [hasClockTime] is
- * false there and the hour chart is left empty rather than filled with a midnight no play claimed.
- */
-@Immutable
-private data class StatsPlay(
-    val trackId: String,
-    val title: String,
-    val thumbnailUrl: String?,
-    val artistName: String,
-    val album: StatsPlayAlbum?,
-    val durationMs: Long,
-    val playedAt: Instant?,
-    val hasClockTime: Boolean = true,
-)
-
-/** An album as a feed reports it: what to group its plays by, and what an album row shows. */
-@Immutable
-private data class StatsPlayAlbum(
-    val id: String,
-    val title: String,
-    val thumbnailUrl: String?,
-)
-
-/**
- * The YouTube history page as a play feed.
- *
- * Its sections carry the songs and date the whole shelf to a day, which is all the day chart needs
- * and all the hour chart must not use.
- */
-private fun HistoryPage.historyPlays(unknownArtistLabel: String): List<StatsPlay> =
-    sections.orEmpty().flatMap { section ->
-        val playedAt = section.playedAt()
-        section.songs.map { song ->
-            StatsPlay(
-                trackId = song.id,
-                title = song.title,
-                thumbnailUrl = song.thumbnail,
-                artistName = song.artists.joinToString { it.name }.ifBlank { unknownArtistLabel },
-                album =
-                    song.album
-                        ?.takeIf { it.name.isNotBlank() }
-                        ?.let { album ->
-                            // A song's own artwork is its album cover on YouTube Music; the album
-                            // node nested in the item carries no artwork of its own.
-                            StatsPlayAlbum(
-                                id = album.id.ifBlank { album.name },
-                                title = album.name,
-                                thumbnailUrl = song.thumbnail,
-                            )
-                        },
-                durationMs = (song.duration ?: 0).toLong() * 1_000L,
-                playedAt = playedAt,
-                hasClockTime = false,
-            )
-        }
-    }
 
 /** Spotify's recently played as a play feed. Every entry is stamped with a wall-clock instant. */
 private fun List<SpotifyPlayHistory>.spotifyPlays(unknownArtistLabel: String): List<StatsPlay> =
@@ -1169,21 +1112,6 @@ private fun List<SpotifyPlayHistory>.spotifyPlays(unknownArtistLabel: String): L
         )
     }
 
-/** The day a history section's title names, or null when it names one this code cannot read. */
-private fun HistoryPage.HistorySection.sectionDate(): LocalDate? {
-    val title = title.trim().lowercase(Locale.getDefault())
-    return when {
-        title == "today" -> LocalDate.now()
-        title == "yesterday" -> LocalDate.now().minusDays(1)
-        title.contains("this week") -> LocalDate.now()
-        title.contains("last week") -> LocalDate.now().minusDays(7)
-        else -> parseHistoryDate(title)
-    }
-}
-
-/** A section dates its songs to the day it names, which is what midnight of that day marks. */
-private fun HistoryPage.HistorySection.playedAt(): Instant? =
-    sectionDate()?.atStartOfDay(ZoneId.systemDefault())?.toInstant()
 
 /** The earliest play the feed knows about; it bounds the range chips. */
 private fun List<StatsPlay>.firstPlay(): LocalDateTime? =
@@ -1195,7 +1123,9 @@ private fun List<StatsPlay>.firstPlay(): LocalDateTime? =
  * Room has already windowed and ordered these, so this only carries each row's library entity
  * across — which is what lets a local card open, queue or menu what it is showing.
  */
-private fun StatsUiData.toDashboard(): StatsDashboardData {
+private fun StatsUiData.toDashboard(
+    overrides: Map<String, moe.rukamori.archivetune.db.entities.SongMetadataOverrideEntity>,
+): StatsDashboardData {
     val songsById = mostPlayedSongs.associateBy(Song::id)
     // A rank the entity query left out is a blocked artist's song: nothing behind it could be
     // opened or queued, so it is not a row the local list can draw.
@@ -1204,7 +1134,7 @@ private fun StatsUiData.toDashboard(): StatsDashboardData {
             songsById[ranked.id]?.let { entity ->
                 StatsSongRank(
                     id = ranked.id,
-                    title = ranked.title,
+                    title = overrides[ranked.id]?.title ?: entity.effectiveTitle,
                     thumbnailUrl = ranked.thumbnailUrl,
                     playCount = ranked.songCountListened,
                     timeListenedMs = ranked.timeListened ?: 0L,
@@ -1325,25 +1255,6 @@ private fun List<StatsPlay>.toDashboard(window: LongRange): StatsDashboardData {
     )
 }
 
-private fun parseHistoryDate(title: String): LocalDate? {
-    val year = LocalDate.now().year
-    val fullDateFormatters =
-        listOf(
-            DateTimeFormatter.ofPattern("MMM d, uuuu", Locale.ENGLISH),
-            DateTimeFormatter.ofPattern("MMMM d, uuuu", Locale.ENGLISH),
-        )
-    fullDateFormatters.firstNotNullOfOrNull { formatter ->
-        runCatching { LocalDate.parse(title.replaceFirstChar { it.uppercase() }, formatter) }.getOrNull()
-    }?.let { return it }
-    return listOf("MMM d", "MMMM d").firstNotNullOfOrNull { pattern ->
-        runCatching {
-            LocalDate.parse(
-                "${title.replaceFirstChar { it.uppercase() }}, $year",
-                DateTimeFormatter.ofPattern("$pattern, uuuu", Locale.ENGLISH),
-            )
-        }.getOrNull()
-    }?.let { parsed -> if (parsed.isAfter(LocalDate.now())) parsed.minusYears(1) else parsed }
-}
 
 /**
  * Groups plays into the slot shape the local charts expect.

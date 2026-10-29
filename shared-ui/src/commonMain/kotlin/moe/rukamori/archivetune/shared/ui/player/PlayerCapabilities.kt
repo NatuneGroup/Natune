@@ -17,7 +17,7 @@ data class PlayerCapabilities(
     val monochrome: Boolean = false,
 )
 
-private val sharedControls = setOf("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V10")
+private val sharedControls = setOf("V1", "V2", "V3", "V4", "V6")
 private val volumeRows = setOf("V7", "V8", "BITCHORD", "APPLE_MUSIC", "FLAMINGO")
 private val sleeves = setOf("BITCHORD", "SIMPMUSIC", "SPATIALFLOW", "LOOPER", "FLAMINGO", "APPLE_MUSIC")
 private val horizontalSwipes = setOf("SIMPMUSIC", "SPATIALFLOW", "LOOPER")
@@ -39,6 +39,22 @@ val PlayerDesignStyle.capabilities: PlayerCapabilities
         artworkCanvas = name in artworkCanvases,
         monochrome = this == PlayerDesignStyle.V7 || this == PlayerDesignStyle.V8,
     )
+
+/** A shared player preference whose effect depends on the selected style; mirrors the Android host's list. */
+enum class PlayerStyleSetting { BACKGROUND, HIDE_THUMBNAIL, CORNER_RADIUS, BUTTONS_STYLE, SLIDER_STYLE, VOLUME_BAR }
+
+private val sharedThumbnails = setOf("V1", "V2", "V3", "V4", "V6")
+
+/** Whether this style's full player reads [setting]; Settings disables a row that would change nothing. */
+fun PlayerDesignStyle.honors(setting: PlayerStyleSetting): Boolean = when (setting) {
+    // V5 fills the sheet with an opaque primaryContainer field, so no backdrop can show through.
+    PlayerStyleSetting.BACKGROUND -> capabilities.backgroundChoice && this != PlayerDesignStyle.V5
+    PlayerStyleSetting.HIDE_THUMBNAIL -> name in sharedThumbnails || capabilities.ordinarySleeve ||
+        name in setOf("V8", "V9", "V10", "METROLIST_KMP")
+    PlayerStyleSetting.CORNER_RADIUS -> name in sharedThumbnails || capabilities.ordinarySleeve || name in setOf("V8", "V9")
+    PlayerStyleSetting.BUTTONS_STYLE, PlayerStyleSetting.SLIDER_STYLE -> capabilities.sharedControls
+    PlayerStyleSetting.VOLUME_BAR -> capabilities.volume
+}
 
 fun PlayerDesignStyle.resolveBackground(stored: PlayerBackgroundStyle): PlayerBackgroundStyle =
     if (!capabilities.backgroundChoice || stored == PlayerBackgroundStyle.DEFAULT) capabilities.nativeBackground else stored
@@ -69,8 +85,14 @@ data class PlayerPreferences(
     val metrolistPresentation: MetrolistPresentation,
 )
 
+/** The sleeve is transparent but still laid out, so morphs and pagers keep their bounds. */
+val PlayerPreferences.sleeveHidden: Boolean get() = hideSleeve && style.honors(PlayerStyleSetting.HIDE_THUMBNAIL)
+
+fun PlayerPreferences.sleeveRadiusOr(native: Float): Float =
+    if (style.honors(PlayerStyleSetting.CORNER_RADIUS)) sleeveRadius else native
+
 fun PreferenceSnapshot.playerPreferences(): PlayerPreferences {
-    val style = this[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    val style = selectedPlayerDesignStyle()
     fun bounded(value: Float?, default: Float, range: ClosedFloatingPointRange<Float>) =
         value?.takeIf { it.isFinite() }?.coerceIn(range) ?: default
     return PlayerPreferences(

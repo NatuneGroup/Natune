@@ -61,6 +61,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.Alignment
@@ -507,6 +508,7 @@ private fun MiniPlayerTransportButton(
     isPrimary: Boolean = false,
     compact: Boolean,
     colors: MiniPlayerContentColors,
+    motion: PlayerControlMotion? = null,
 ) {
     val view = LocalView.current
     val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
@@ -521,7 +523,7 @@ private fun MiniPlayerTransportButton(
             disabledContentColor = colors.disabledButtonIcon,
         )
     val handleClick =
-        remember(enableHapticFeedback, onClick, view) {
+        remember(enableHapticFeedback, onClick, view, motion) {
             {
                 if (enableHapticFeedback) {
                     view.performHapticFeedback(
@@ -529,11 +531,14 @@ private fun MiniPlayerTransportButton(
                         android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
                     )
                 }
+                motion?.tap()
                 onClick()
             }
         }
+    // The glyph is read through state so the remembered content keeps one Crossfade across play/pause.
+    val currentIcon by rememberUpdatedState(iconResId)
     val content: @Composable () -> Unit =
-        remember(iconResId, contentDescription, isPrimary, compact) {
+        remember(contentDescription, isPrimary, compact, motion) {
             @Composable {
                 val iconSize =
                     when {
@@ -542,11 +547,13 @@ private fun MiniPlayerTransportButton(
                         compact -> 17.dp
                         else -> 20.dp
                     }
-                Icon(
-                    painter = painterResource(iconResId),
-                    contentDescription = contentDescription,
-                    modifier = Modifier.size(iconSize),
-                )
+                PlayerControlCrossfade(currentIcon) { glyph ->
+                    Icon(
+                        painter = painterResource(glyph),
+                        contentDescription = contentDescription,
+                        modifier = Modifier.size(iconSize).then(motion?.modifier ?: Modifier),
+                    )
+                }
             }
         }
 
@@ -583,6 +590,9 @@ private fun MiniPlayerTransportControls(
     compact: Boolean,
     showSkipButtons: Boolean = true,
 ) {
+    val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+    val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+    val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
     val onPrevious = remember(playerConnection) { { playerConnection.seekToPrevious() } }
     val onNext = remember(playerConnection) { { playerConnection.seekToNext() } }
     val onPlayPause =
@@ -609,6 +619,7 @@ private fun MiniPlayerTransportControls(
                 enabled = canSkipPrevious,
                 compact = compact,
                 colors = colors,
+                motion = previousMotion,
             )
         }
 
@@ -627,6 +638,7 @@ private fun MiniPlayerTransportControls(
             isPrimary = true,
             compact = compact,
             colors = colors,
+            motion = playPauseMotion,
         )
 
         if (showSkipButtons) {
@@ -637,6 +649,7 @@ private fun MiniPlayerTransportControls(
                 enabled = canSkipNext,
                 compact = compact,
                 colors = colors,
+                motion = nextMotion,
             )
         }
     }

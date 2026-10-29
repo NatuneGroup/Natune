@@ -43,18 +43,22 @@ fun playbackSettingsRows(
 ): List<SettingsRow> = buildList {
     val crossfade = preferences[CrossfadeEnabledKey, false]
     val offload = preferences[AudioOffload, false]
-    val blocked = preferences[BitPerfectUsbOutputKey, false] || bitPerfectSinkActive
+    val blocked = preferences.bitPerfectOutputSelected() || bitPerfectSinkActive
+    val bypassReason = Res.string.m6_processing_bypassed_bit_perfect.takeIf { blocked }
     add(SettingsRow.Action("preferred_sources", Res.string.m6_source_settings, { navigate("settings/sources") }))
     add(SettingsRow.Action("lyrics", Res.string.m6_lyrics_settings, { navigate("settings/lyrics") }))
     add(SettingsRow.Toggle("enable_video_playback", Res.string.m6_video_playback, EnableVideoPlaybackKey, false))
     add(SettingsRow.Toggle("enable_pip_mode", Res.string.m6_pip, EnablePipModeKey, false,
-        enabled = preferences[EnableVideoPlaybackKey, false]))
+        enabled = preferences[EnableVideoPlaybackKey, false],
+        description = Res.string.m6_video_required.takeUnless { preferences[EnableVideoPlaybackKey, false] }))
     add(SettingsRow.Number("history_duration", Res.string.m6_history_duration, HistoryDuration, 30, 1..60,
         read = { (it[HistoryDuration] ?: it[HISTORY_DURATION_LEGACY_FLOAT_KEY]?.takeIf(Float::isFinite)?.roundToInt() ?: 30).coerceIn(1, 60) },
         write = { this[HistoryDuration] = it; this[HISTORY_DURATION_LEGACY_FLOAT_KEY] = null }))
     add(SettingsRow.Toggle("crossfade", Res.string.m6_crossfade, CrossfadeEnabledKey, false,
+        description = Res.string.m6_transition_exclusions,
         write = { setPlaybackOutputPreference(CrossfadeEnabledKey, it) }))
     add(SettingsRow.Toggle("automix", Res.string.m6_automix, AutomixEnabledKey, false,
+        description = Res.string.m6_transition_exclusions,
         write = { setPlaybackOutputPreference(AutomixEnabledKey, it) }))
     if (preferences[AutomixEnabledKey, false])
         add(SettingsRow.Choice("automix_performance", Res.string.m6_automix_performance, AutomixPerformanceModeKey, "BALANCED",
@@ -62,9 +66,13 @@ fun playbackSettingsRows(
                 SettingsRow.Option("PERFORMANCE", Res.string.m6_performance))))
     add(SettingsRow.Decimal("crossfade_duration", Res.string.m6_crossfade_duration, CrossfadeDurationKey, 5f, 0f..10f,
         enabled = crossfade))
-    add(SettingsRow.Toggle("crossfade_gapless", Res.string.m6_crossfade_gapless, CrossfadeGaplessKey, true, enabled = crossfade))
-    add(SettingsRow.Toggle("skip_silence", Res.string.m6_skip_silence, SkipSilenceKey, false, enabled = !offload))
-    add(SettingsRow.Toggle("audio_normalization", Res.string.m6_audio_normalization, AudioNormalizationKey, true))
+    add(SettingsRow.Toggle("crossfade_gapless", Res.string.m6_crossfade_gapless, CrossfadeGaplessKey, true, enabled = crossfade,
+        description = Res.string.m6_crossfade_required.takeUnless { crossfade }))
+    add(SettingsRow.Toggle("skip_silence", Res.string.m6_skip_silence, SkipSilenceKey, false, enabled = !offload && !blocked,
+        description = bypassReason ?: Res.string.m6_processing_unavailable_offload.takeIf { offload },
+        write = { setPcmProcessingPreference(SkipSilenceKey, it) }))
+    add(SettingsRow.Toggle("audio_normalization", Res.string.m6_audio_normalization, AudioNormalizationKey, true,
+        enabled = !blocked, description = bypassReason, write = { setPcmProcessingPreference(AudioNormalizationKey, it) }))
     add(SettingsRow.Toggle("sponsor_block", Res.string.m6_sponsorblock, SponsorBlockEnabledKey, false))
     if (preferences[SponsorBlockEnabledKey, false]) {
         val categories = listOf("sponsor" to Res.string.m6_sponsor, "selfpromo" to Res.string.m6_selfpromo,
@@ -79,35 +87,35 @@ fun playbackSettingsRows(
                         .intersect(categories.map { it.first }.toSet())
                 }))
         }
+        add(SettingsRow.Toggle("sponsor_block_podcasts", Res.string.m6_sponsor_block_podcasts,
+            SponsorBlockPodcastsEnabledKey, false))
     }
     add(SettingsRow.Choice("audio_quality", Res.string.m6_audio_quality, AudioQualityKey, "AUTO", listOf(
         SettingsRow.Option("HIGHEST", Res.string.m6_highest), SettingsRow.Option("HIGH", Res.string.m6_high),
         SettingsRow.Option("AUTO", Res.string.m6_quality_auto), SettingsRow.Option("LOW", Res.string.m6_low))))
-    add(SettingsRow.Toggle("reject_suspected_upscaled_audio", Res.string.m6_reject_upscaled, RejectSuspectedUpscaledAudioKey, false))
+    add(SettingsRow.Toggle("reject_suspected_upscaled_audio", Res.string.m6_reject_upscaled, RejectSuspectedUpscaledAudioKey, false,
+        enabled = !blocked, description = bypassReason, write = { setAuthenticityRejection(it) }))
     add(SettingsRow.Toggle("audio_offload", Res.string.m6_audio_offload, AudioOffload, false,
+        enabled = !preferences[RejectSuspectedUpscaledAudioKey, false],
+        description = if (preferences[RejectSuspectedUpscaledAudioKey, false])
+            Res.string.m6_offload_unavailable_authenticity else Res.string.m6_offload_exclusions,
         write = { setPlaybackOutputPreference(AudioOffload, it) }))
     add(SettingsRow.Toggle("bit_perfect_usb", Res.string.m6_bit_perfect_usb, BitPerfectUsbOutputKey, false,
+        description = Res.string.m6_usb_exclusions,
         enabled = bitPerfectSupported, read = { bitPerfectSupported && it[BitPerfectUsbOutputKey, false] },
         write = { setPlaybackOutputPreference(BitPerfectUsbOutputKey, it) }))
     add(SettingsRow.Toggle("usb_exclusive_audio", Res.string.m6_usb_exclusive, UsbExclusiveAudioKey, false,
+        description = Res.string.m6_usb_exclusions,
         enabled = usbExclusiveSupported, read = { usbExclusiveSupported && it[UsbExclusiveAudioKey, false] },
         write = { setPlaybackOutputPreference(UsbExclusiveAudioKey, it) }))
     add(SettingsRow.Toggle("tryptify_engine", Res.string.m6_tryptify, TryptifyAudioProcessingKey, false,
-        enabled = !blocked, read = { !blocked && it[TryptifyAudioProcessingKey, false] }, write = { enabled ->
-            this[TryptifyAudioProcessingKey] = enabled
-            if (enabled) { this[LastwaveAudioProcessingKey] = false; this[AudioOffload] = false }
-        }))
+        enabled = !blocked, description = bypassReason, write = { setAudioProcessingPreference(TryptifyAudioProcessingKey, it) }))
     add(SettingsRow.Toggle("lastwave_engine", Res.string.m6_lastwave, LastwaveAudioProcessingKey, false,
-        enabled = !blocked, read = { !blocked && !it[TryptifyAudioProcessingKey, false] && it[LastwaveAudioProcessingKey, false] },
-        write = { enabled ->
-            this[LastwaveAudioProcessingKey] = enabled
-            if (enabled) { this[TryptifyAudioProcessingKey] = false; this[AudioOffload] = false }
-        }))
+        enabled = !blocked, description = bypassReason,
+        read = { !it[TryptifyAudioProcessingKey, false] && it[LastwaveAudioProcessingKey, false] },
+        write = { setAudioProcessingPreference(LastwaveAudioProcessingKey, it) }))
     add(SettingsRow.Toggle("float_dsp", Res.string.m6_float_dsp, FloatDspEnabledKey, false,
-        enabled = !blocked, read = { !blocked && it[FloatDspEnabledKey, false] }, write = { enabled ->
-            this[FloatDspEnabledKey] = enabled
-            if (enabled) this[AudioOffload] = false
-        }))
+        enabled = !blocked, description = bypassReason, write = { setAudioProcessingPreference(FloatDspEnabledKey, it) }))
     add(SettingsRow.Toggle("seek_seconds_addup", Res.string.m6_seek_extra, SeekExtraSeconds, false))
     add(SettingsRow.Toggle("pause_mute", Res.string.m6_pause_mute, PauseOnDeviceMuteKey, false))
     if (preferences[PauseOnDeviceMuteKey, false])
@@ -122,6 +130,8 @@ fun playbackSettingsRows(
         enabled = preferences[TidalEnabledKey, true]))
     add(SettingsRow.Action("artwork_priority", Res.string.m6_artwork_priority, arrangeArtworkProviders))
     add(SettingsRow.Toggle("persistent_queue", Res.string.m6_persistent_queue, PersistentQueueKey, true))
+    add(SettingsRow.Toggle("infinite_queue", Res.string.queue_infinite, AutoLoadMoreKey, true,
+        description = Res.string.queue_infinite_description))
     add(SettingsRow.Toggle("permanent_shuffle", Res.string.m6_permanent_shuffle, PermanentShuffleKey, false))
     add(SettingsRow.Toggle("swipe_up_queue", Res.string.m6_swipe_queue, SwipeUpToOpenQueueKey, true))
     add(SettingsRow.Toggle("queue_after_manual", Res.string.m6_queue_manual, QueueAddAfterManualKey, true))

@@ -19,7 +19,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
  * [convert] produces the portable-state database and preference snapshot a host restore stages exactly like a
  * native archive. Custom fonts are dropped — the portable build keeps no font directory.
  *
- * [JvmBackupArchiveCodec] applies the baseline's bounds and validation, and [LegacySongDbImport] reads schema-36
+ * [JvmBackupArchiveCodec] applies the baseline's bounds and validation, and [LegacySongDbImport] reads schema-37
  * rows, so every refusal the Android restore would produce is produced here as well, as [IllegalArgumentException].
  */
 object AndroidBackupArchive {

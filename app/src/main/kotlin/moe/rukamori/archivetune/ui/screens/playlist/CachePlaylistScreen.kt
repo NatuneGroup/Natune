@@ -204,12 +204,12 @@ fun CachePlaylistScreen(
                     }
 
                     SongSortType.NAME -> {
-                        cachedSongs.sortedBy { it.song.title }
+                        cachedSongs.sortedBy { it.effectiveTitle }
                     }
 
                     SongSortType.ARTIST -> {
                         cachedSongs.sortedBy { song ->
-                            song.artists.joinToString(separator = "") { artist -> artist.name }
+                            song.effectiveArtistNames.joinToString(separator = "")
                         }
                     }
 
@@ -261,8 +261,8 @@ fun CachePlaylistScreen(
             } else {
                 wrappedSongs.filter { wrapper ->
                     val song = wrapper.item
-                    song.title.contains(query.text, true) ||
-                        song.artists.any { it.name.contains(query.text, true) }
+                    song.effectiveTitle.contains(query.text, true) ||
+                        song.effectiveArtistNames.any { it.contains(query.text, true) }
                 }
             }
         }

@@ -33,6 +33,38 @@ per operation, including selected-occurrence resolution. Ambiguous empty termina
 envelopes fail incomplete; only explicit numeric-zero initial counts prove empty.
 No live envelope test or fixed 80-track server limit is established.
 
+## Infinite queue and queue editing (local source; validation pending)
+
+`MusicService` owns Android recommendation work through `AndroidInfiniteQueue`;
+`PortableQueueOwner` owns the same feature through `PortableInfiniteQueue`. Both
+use `InfiniteQueuePolicy`: seed with at most three songs remaining, page a radio
+tail with at most five, counting the current song in actual shuffle/play order.
+Only confirmed-exhausted finite membership may seed radio. Finite paging remains
+independent of the infinity setting; unknown/failed legacy tails do not prove
+exhaustion. A consumed radio tail keeps its provenance with a null continuation,
+so a checkpointed exhausted radio may reseed from its current song while an
+unknown legacy finite queue never seeds. Deliberate repeated playlist/manual
+occurrences remain intact.
+
+The existing `AutoLoadMoreKey` (`autoLoadMore`, default true) gates requests and
+their commits. Off/repeat changes invalidate in-flight work, including late
+responses; recommendations are filtered and deduplicated against the live queue.
+Each attempt has a 15-second bound and at most three recommendation pages.
+Empty/failing attempts back off 30/60/120/240/300 seconds using monotonic time;
+preference toggles do not reset that cooldown. Playback/queue events reconsider
+loading, not an unconditional retry timer. Appending never skips a playing last
+song; an ended queue advances only with its existing playback intent preserved.
+
+Android's default and custom queue sheets expose the persisted toggle and queue
+save/clear/jump actions without replacing their transports. Desktop/iOS bind the
+common queue panel to their existing checkpointed facade, settings and transactional
+library. Queue editing and undo use occurrence identities, preserve the current
+song and live additions, and invalidate stale undo on replacement. Undo/loading/source
+labels are runtime state; saved queue formats, database schemas and legacy readers
+are unchanged. Portable collection titles remain limited by available request
+metadata (the provider page has no collection-title field). These changes and the
+focused tests still need exact-head CI and device/host interaction validation.
+
 ## YouTube login ownership (local source; validation pending)
 
 Login-only official Music install recognition makes one owned fixed same-WebView
@@ -48,6 +80,56 @@ Existing anonymous MetrolistGroup InnerTubeX `v0.9.2` is separate maintenance, n
 the login or pager implementation. Primary/manual client, terminal auth errors,
 YTPlayerUtils → InnerTubeX → NewPipe → Echo and direct-audio guards remain intact.
 Focused tests, independent review and remote compilation/execution remain pending.
+
+## Podcast history and progress (local source; validation pending)
+
+Android History and the shared desktop/iOS History page retain dated songs and podcast
+episodes from the signed-in YouTube archive. Near-tail reads and explicit Load more use
+the returned browse cursor; overlapping entries merge within a date, not across dates.
+Failures retain the loaded archive and require retry, and an account change invalidates
+old pages/actions. Songs retain their existing radio entry point; an episode tap queues
+that episode without silently starting radio. Shuffle reads the remaining archive first,
+bounded to 100 additional pages, and never starts playback from a failed/unknown prefix.
+
+The Android/JVM adapters use core's public lower-level browse API, with a private client
+and the current auth, locale, static proxy credentials and DNS. Core and its gitlink are
+unchanged. Core's rotating-proxy selector is internal: while rotation is active, the
+existing routed first-page request remains available, with a visible paging-unavailable
+notice and retry; complete-history shuffle is unavailable. No completed archive is
+claimed for that limited page. Full paging with rotation needs an approved public core
+continuation/routing API. iOS uses its existing native InnerTube session with explicit
+authenticated browse, without changing anonymous browse settings.
+
+`PodcastProgressRecorder` consumes actual engine samples only. Provider-qualified episode
+bookmarks write every five seconds of monotonic observation time and on pause, seek,
+transition and stop. A seekable new occurrence resumes once; a played episode replays
+from zero. Natural end, at least 95 percent, or the final 30 seconds mark an episode
+played and reset its stored position. Unknown duration stays unknown. FIFO reads/writes
+prevent a slow bookmark read or repeated episode from overwriting newer progress.
+`PlaybackSessionObservers` moves Android progress and SponsorBlock listeners together
+on player promotion. Episode rows observe persisted progress, showing a thin indicator,
+Played, and remaining time where available.
+
+Android adds only `podcast_progress` in schema 36 → 37; unsaved episodes need no library
+row or foreign key. Portable schema 8 → 9 retains `portable_podcast_progress`. Whole-DB
+backups include these tables, and desktop's schema-37 Android archive importer preserves
+bookmarks alongside existing library/playlist occurrences. SponsorBlock's independent
+podcast opt-in is documented in [SponsorBlock](../sponsorblock.md).
+
+Song title/artist edits add `song_metadata_override` beside the canonical `song` row in
+Android schema 37 → 38, and `portable_song_metadata_override` in portable schema 9 → 10.
+The edit is display-only: an effective item keeps the provider title and credits beside the
+override, so provider refresh, persistence, audio lookup and scrobble identity stay
+canonical, and a reset restores the provider names. Pre-38 `titleOverride` titles move into
+the table during the upgrade and the flag is cleared.
+
+Focused parser, paging/account, progress/policy, row-recomposition, portable migration/
+snapshot, and Android archive-import tests are authored but unrun locally. Android's
+migration test checks the additive SQL contract, not a real Android Room upgrade.
+Schema exports were prepared without running KSP: CI must confirm generated identities
+for Android 38 and portable 10, including the new portable identity assertion, and those
+two exports still need committing once a build emits them. Build,
+test, device/account/audio and upgrade/restore validation remain unverified.
 
 ## Sources
 

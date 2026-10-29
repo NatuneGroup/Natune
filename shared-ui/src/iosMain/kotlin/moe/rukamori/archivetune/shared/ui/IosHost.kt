@@ -254,9 +254,10 @@ class IosHost {
         metadata: (occurrenceId: String) -> ContentItem?,
         next: () -> Unit,
         previous: () -> Unit,
+        metadataChanges: kotlinx.coroutines.flow.Flow<*>? = null,
     ): IosNowPlaying {
         check(!closed && nowPlaying == null)
-        return IosNowPlaying(player, metadata, next, previous).also { nowPlaying = it }
+        return IosNowPlaying(player, metadata, next, previous, metadataChanges).also { nowPlaying = it }
     }
 
     /** Final process shutdown, called only by the Swift app session at willTerminate. Idempotent. */
@@ -385,6 +386,7 @@ class IosHost {
         installPlaybackRetry(opening::retryAfterFailure)
         installSystemControls(
             metadata = opening::metadata,
+            metadataChanges = opening.queue.state,
             next = { opening.scope.launch { opening.skipNext() } },
             previous = { opening.scope.launch { opening.skipPrevious() } },
         )

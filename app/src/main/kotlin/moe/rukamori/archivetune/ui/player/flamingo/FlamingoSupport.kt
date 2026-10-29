@@ -36,7 +36,9 @@ import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.toRect
 import androidx.compose.ui.graphics.BlendMode
@@ -675,4 +677,46 @@ fun flamingoImageResolve(image: Bitmap): Bitmap {
         drawColor((0x40000000).toInt())
     }
     return FlamingoBitmapResolver.blurBitmap(resizedBitmap, 25)
+}
+
+/**
+ * Corner interpolation for the shared-element overlay clip — after canary's
+ * AdaptiveCornerShape: the artwork's corner radius morphs between the
+ * playing-bar thumbnail (5dp at 69dp) and the album square (8dp at 400dp) as
+ * the shared bounds travel, so the overlay never falls back to sharp
+ * rectangle corners mid-flight.
+ */
+internal class FlamingoAdaptiveCornerShape(
+    private val smallRadius: Dp,
+    private val smallSize: Dp,
+    private val largeRadius: Dp,
+    private val largeSize: Dp,
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: androidx.compose.ui.unit.Density,
+    ): Outline {
+        val elementSize = minOf(size.width, size.height)
+        val smallSizePx = with(density) { smallSize.toPx() }
+        val largeSizePx = with(density) { largeSize.toPx() }
+        val t =
+            if (largeSizePx > smallSizePx) {
+                ((elementSize - smallSizePx) / (largeSizePx - smallSizePx)).coerceIn(0f, 1f)
+            } else {
+                1f
+            }
+        val smallRadiusPx = with(density) { smallRadius.toPx() }
+        val largeRadiusPx = with(density) { largeRadius.toPx() }
+        val radius = smallRadiusPx + (largeRadiusPx - smallRadiusPx) * t
+        return Outline.Rounded(
+            RoundRect(
+                left = 0f,
+                top = 0f,
+                right = size.width,
+                bottom = size.height,
+                cornerRadius = CornerRadius(radius, radius),
+            ),
+        )
+    }
 }

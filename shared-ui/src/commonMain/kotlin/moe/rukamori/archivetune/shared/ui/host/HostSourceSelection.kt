@@ -4,6 +4,7 @@ import moe.rukamori.archivetune.shared.data.provider.AudioAttempt
 import moe.rukamori.archivetune.shared.domain.repository.AudioResolveRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
+import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 import moe.rukamori.archivetune.shared.domain.settings.AudioSourceOrderKey
 import moe.rukamori.archivetune.shared.domain.settings.DeezerAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -53,17 +54,20 @@ fun hostSourceQualities(preferences: PreferenceSnapshot?): Map<AudioSourceType, 
 }
 
 /** The resolve request of one queue occurrence: its match target, its authoritative catalog id and the stored qualities. */
-fun ContentOccurrence.toAudioResolveRequest(preferences: PreferenceSnapshot?): AudioResolveRequest = AudioResolveRequest(
-    mediaId = item.ref.id,
+fun ContentOccurrence.toAudioResolveRequest(preferences: PreferenceSnapshot?): AudioResolveRequest {
+    val canonical = item.canonicalSong()
+    return AudioResolveRequest(
+    mediaId = canonical.ref.id,
     target = TrackMatching.Target(
-        title = item.title,
-        artists = item.artists.map { it.name },
-        album = item.album,
-        durationMs = item.durationMs,
+        title = canonical.title,
+        artists = canonical.artists.map { it.name },
+        album = canonical.album,
+        durationMs = canonical.durationMs,
     ),
     directIds = item.ref.directSourceId()?.let { mapOf(it) }.orEmpty(),
     qualities = hostSourceQualities(preferences),
 )
+}
 
 /** A catalog id is authoritative only for the source that issued it. */
 private fun ContentRef.directSourceId(): Pair<AudioSourceType, String>? =

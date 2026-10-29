@@ -34,6 +34,8 @@ class LyricsHelper(
     private val isNetworkAvailable: () -> Boolean = { true },
     /** Receives provider failures that Android reports through `reportException`. */
     private val reportProviderFailure: (providerName: String, error: Throwable) -> Unit = { _, _ -> },
+    /** Availability is not a user toggle: a priority sweep may ignore switches, never a missing native provider. */
+    private val isAvailable: (providerName: String) -> Boolean = { true },
 ) {
     private val providers: List<LyricsProvider> = providers.toList()
     private val calls = LyricsProviderCalls(reportProviderFailure)
@@ -127,7 +129,7 @@ class LyricsHelper(
 
         if (!networkAvailable()) return
 
-        val enabled = providers.filter { isEnabled(it.name) }
+        val enabled = providers.filter { isEnabled(it.name) && isAvailable(it.name) }
         val collected = streamAllProviders(enabled, request, callback)
         allResultsCache.put(key, collected)
     }
@@ -169,7 +171,7 @@ class LyricsHelper(
 
         val usable =
             providers.filter { provider ->
-                isEnabled(provider.name) && LyricsMediaIdPolicy.supportsMediaId(provider, request.mediaId)
+                isEnabled(provider.name) && isAvailable(provider.name) && LyricsMediaIdPolicy.supportsMediaId(provider, request.mediaId)
             }
         // Android takes the first of the user-ordered list. The host's list order plays that role here.
         val candidates = if (preferredProviderOnly) usable.take(1) else usable
@@ -186,7 +188,7 @@ class LyricsHelper(
         val sweepProviders =
             LyricsProviderOrder.WORD_SYNC_NAMES
                 .mapNotNull { name -> providers.firstOrNull { it.name == name } }
-                .filter { isEnabled(it.name) }
+                .filter { isAvailable(it.name) }
         if (sweepProviders.isEmpty()) return null
 
         val answers =

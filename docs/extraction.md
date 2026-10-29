@@ -112,6 +112,14 @@ back; the external plugin above is a different thing and is fine.
 
 ## Client selection
 
+Automatic client selection ignores, but retains, the saved manual client; turning automatic
+selection off makes that choice available again. Desktop and iOS use the same shared
+`manualPlaybackClient` gate before their existing client walks. This does not change fallback
+tier order, authentication policy or video-scoped tokens. Retired persisted names
+`ARCHIVETUNE_EXTRACTOR` and `HI_RES_LOSSLESS` normalize to `WEB_REMIX`; selectors no longer offer
+the latter as a separate client because the runtime already resolves it to WEB_REMIX. This is
+not removal of provider high-resolution quality choices or of manual client mode.
+
 `YTPlayerUtils.STREAM_FALLBACK_CLIENTS` is tried in order: `VISIONOS`,
 `ANDROID_VR`, `WEB_REMIX`, `WEB`, `MWEB`, `WEB_CREATOR`. Playback asks for
 `WEB_REMIX` first (`NativeStreamRepository`), which is the YouTube Music client.

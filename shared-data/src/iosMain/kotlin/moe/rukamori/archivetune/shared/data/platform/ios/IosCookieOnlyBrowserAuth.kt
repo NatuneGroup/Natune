@@ -28,8 +28,6 @@ import platform.UIKit.UIBarButtonItem
 import platform.UIKit.UIBarButtonItemStyle
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIPresentationController
-import platform.UIKit.UIViewAutoresizingFlexibleHeight
-import platform.UIKit.UIViewAutoresizingFlexibleWidth
 import platform.UIKit.UIViewController
 import platform.UIKit.navigationItem
 import platform.UIKit.presentationController
@@ -71,9 +69,7 @@ class IosCookieOnlyBrowserAuth(
                 websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore()
             }
             val controller = UIViewController()
-            val webView = WKWebView(frame = controller.view.bounds, configuration = configuration)
-            webView.autoresizingMask = UIViewAutoresizingFlexibleWidth or UIViewAutoresizingFlexibleHeight
-            controller.view.addSubview(webView)
+            val webView = controller.installAuthWebView(configuration)
             try {
                 withTimeoutOrNull(COOKIE_LOGIN_TIMEOUT_MS) {
                     suspendCancellableCoroutine { continuation ->

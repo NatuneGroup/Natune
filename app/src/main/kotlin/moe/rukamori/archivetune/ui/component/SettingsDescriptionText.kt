@@ -23,6 +23,7 @@ import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -52,6 +53,9 @@ fun SettingsDescriptionText(
         fontWeight = fontWeight,
         iterations = 2,
         animationEnabled = active && visible,
+        // Motion here starts only once the row is resumed and measured on screen, so an edge fade
+        // would pop in late over text that was already readable. Settings text scrolls unfaded.
+        fadeWidth = 0.dp,
         modifier = modifier.onGloballyPositioned { coordinates ->
             visible = coordinates.isAttached &&
                 !coordinates.boundsInWindow()

@@ -143,12 +143,13 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
         own("qobuz", "sources", "qobuz")
         own("tidal", "sources", "tidal")
 
-        // Appearance is now a hub of three pages, so every row indexed under it has to say which.
+        // Appearance is one page in three sections. The section owners stay so each row (and the
+        // lyrics-indexed background row) keeps resolving; all three open the one page.
         own(
             "appearance_theme", "appearance",
             "interface_style", "dynamic_theme", "random_theme_on_startup", "dark_theme", "pure_black", "color_palette",
             "color_source", "palette_picker", "theme_creator", "app_icon", "disable_animations",
-            "splash_overlay_enabled",
+            "splash_overlay_enabled", "apple_music_headers", "apple_music_menus", "apple_music_search_bar", "apple_music_palette",
             "hide_status_bar", "ui_scale", "blur_intensity", "disable_blur", "backdrop_blur",
             "backdrop_blur_amount", "font_preference", "use_system_font", "custom_font",
             "liquid_glass_effects", "wallpaper_permission",
@@ -180,16 +181,14 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
         own("downloads", "storage", "downloaded_songs", "download_location")
     }
 
-private fun searchableSettingsRoute(parentKey: String, scrollKey: String?): String? {
+internal fun searchableSettingsRoute(parentKey: String, scrollKey: String?): String? {
     // A child indexed under the wrong page is navigated to the page that actually holds it.
     val ownerKey = CROSS_PAGE_SCROLL_OWNERS["$parentKey/${scrollKey.orEmpty()}"] ?: parentKey
     val route =
         when (ownerKey) {
             "account" -> "settings/account"
             "appearance" -> "settings/appearance"
-            "appearance_theme" -> "settings/appearance/theme"
-            "appearance_player" -> "settings/appearance/player"
-            "appearance_interface" -> "settings/appearance/interface"
+            "appearance_theme", "appearance_player", "appearance_interface" -> "settings/appearance"
             "appearance_extras" -> "settings/appearance/extras"
             "aod" -> "settings/appearance/aod_customized"
             "navigation_bar" -> "settings/appearance/navigation_bar"

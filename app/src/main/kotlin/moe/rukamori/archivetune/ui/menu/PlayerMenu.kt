@@ -1337,6 +1337,7 @@ fun PlayerMenu(
 
 @Composable
 fun TempoPitchDialog(onDismiss: () -> Unit) {
+    if (BitPerfectProcessingNotice(R.string.tempo_and_pitch, onDismiss)) return
     val playerConnection = LocalPlayerConnection.current ?: return
     val initialSpeed = remember { playerConnection.player.playbackParameters.speed }
     val initialPitch = remember { playerConnection.player.playbackParameters.pitch }
@@ -1660,76 +1661,6 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
             }
         },
     )
-}
-
-private enum class PitchMode {
-    Semitones,
-    Multiplier,
-}
-
-private const val TempoMin = 0.25f
-private const val TempoMax = 2f
-private const val PitchMin = 0.25f
-private const val PitchMax = 2f
-
-private fun Float.safeCoerceIn(
-    min: Float,
-    max: Float,
-    fallback: Float,
-): Float {
-    val safe = if (this.isFinite()) this else fallback
-    return safe.coerceIn(min, max)
-}
-
-private fun Float.quantize(step: Float): Float {
-    if (step <= 0f) return this
-    return (round(this / step) * step).coerceAtLeast(0f)
-}
-
-private fun pitchToSemitones(pitch: Float): Int {
-    val safePitch = pitch.safeCoerceIn(PitchMin, PitchMax, fallback = 1f).coerceAtLeast(0.0001f)
-    return (12f * log2(safePitch)).roundToInt().coerceIn(-12, 12)
-}
-
-private fun semitonesToPitch(semitones: Int): Float = 2f.pow(semitones.toFloat() / 12f).coerceIn(PitchMin, PitchMax)
-
-private fun isPitchSemitoneAligned(pitch: Float): Boolean {
-    val safePitch = pitch.safeCoerceIn(PitchMin, PitchMax, fallback = 1f).coerceAtLeast(0.0001f)
-    val semitones = (12f * log2(safePitch)).roundToInt()
-    val reconstructed = 2f.pow(semitones.toFloat() / 12f)
-    return abs(reconstructed - pitch) < 0.0015f
-}
-
-private fun formatMultiplier(multiplier: Float): String = String.format("%.2f", multiplier)
-
-private fun sliderToMultiplier(slider: Float): Float {
-    val t = slider.coerceIn(0f, 1f)
-    val y = (t - 0.5f) * 2f
-    val curve = 2.2f
-    val absY = abs(y).pow(curve)
-    val shaped =
-        when {
-            y > 0f -> absY
-            y < 0f -> -absY
-            else -> 0f
-        }
-    val exponent = if (y < 0f) 2f * shaped else shaped
-    return 2f.pow(exponent).coerceIn(TempoMin, TempoMax)
-}
-
-private fun multiplierToSlider(multiplier: Float): Float {
-    val m = multiplier.coerceIn(TempoMin, TempoMax)
-    val log = log2(m)
-    val curve = 2.2f
-    val shaped = if (m < 1f) (log / 2f) else log
-    val absShaped = abs(shaped).pow(1f / curve)
-    val y =
-        when {
-            shaped > 0f -> absShaped
-            shaped < 0f -> -absShaped
-            else -> 0f
-        }
-    return (0.5f + y / 2f).coerceIn(0f, 1f)
 }
 
 private fun AudioSourceType.sourceLabelRes(): Int =

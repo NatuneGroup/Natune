@@ -15,6 +15,10 @@ import kotlinx.coroutines.sync.withLock
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.HistoryOrigin
 import moe.rukamori.archivetune.shared.domain.repository.ListeningEvent
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
+import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataOverride
+import moe.rukamori.archivetune.shared.domain.songmetadata.withSongMetadataOverrides
+import moe.rukamori.archivetune.shared.domain.songmetadata.matchesSongSearch
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m4_last_week
@@ -86,6 +90,7 @@ fun hostHistoryPage(
         canLoadMore = if (local) pager.continuation != null else activeRemote?.canLoadMore ?: false,
         busy = if (local) pager.busy else activeRemote?.busy ?: false,
         rowMenu = local || activeRemote?.rowMenu == true,
+        paginationUnavailable = !local && activeRemote?.paginationUnavailable == true,
     )
     val actions = HistoryActions(
         source = { source = it },
@@ -106,7 +111,7 @@ fun hostHistoryPage(
             local -> {
                 { pager.shuffle() }
             }
-            activeRemote?.playable == true -> {
+            activeRemote?.playable == true && !activeRemote.paginationUnavailable -> {
                 { activeRemote.shuffle(activeRemote.query) }
             }
             else -> null
@@ -123,6 +128,7 @@ fun hostHistoryPage(
  * can be queued; a read-only source hides shuffle and navigates instead of playing.
  */
 interface RemoteHistoryPager {
+    val paginationUnavailable: Boolean get() = false
     val source: HistorySource
     val playable: Boolean
     /** Whether rows open the host's generic item menu; provider-native rows may suppress it. */
@@ -225,7 +231,8 @@ private class LocalHistoryPager(
                     owners.report("history is too long to shuffle completely")
                     return@withLock null
                 }
-                events.filter { it.matches(filter) }.map { it.item.queuedEntry() }
+                val edits = owners.content.songMetadataOverrides()
+                events.filter { it.matches(filter, edits) }.map { it.item.queuedEntry() }
             } ?: return@launch
             if (entries.isEmpty()) return@launch
             val shuffled = entries.shuffled()
@@ -262,7 +269,8 @@ private class LocalHistoryPager(
                     owners.report("history section is too long to play completely")
                     return@withLock null
                 }
-                events.filter { keyOf(it, day) == sectionKey && it.matches(filter) }
+                val edits = owners.content.songMetadataOverrides()
+                events.filter { keyOf(it, day) == sectionKey && it.matches(filter, edits) }
             } ?: return@launch
             val entries = section.map { it.id to it.item.queuedEntry() }
             val listenId = eventIds[event.eventId ?: return@launch]
@@ -320,8 +328,8 @@ private class LocalHistoryPager(
 
 private fun ListeningEvent.historyRow(): ContentOccurrence = ContentOccurrence("history:$id", item.item, item.setVideoId)
 
-private fun ListeningEvent.matches(query: String): Boolean =
-    query.isEmpty() || item.item.title.contains(query, true) || item.item.subtitle.contains(query, true)
+private fun ListeningEvent.matches(query: String, edits: Map<ContentRef, SongMetadataOverride>?): Boolean =
+    item.item.withSongMetadataOverrides(edits).matchesSongSearch(query)
 
 private const val TODAY = "today"
 private const val YESTERDAY = "yesterday"

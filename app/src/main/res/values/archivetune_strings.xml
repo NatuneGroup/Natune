@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="player_native_controls_description">This layout keeps its native transport and seek controls.</string>
+    <string name="player_setting_not_used">Not used by the %1$s player</string>
     <string name="player_volume_bar_existing_layouts">Available in Immersive, V8, BitChord, Apple Music and Flamingo layouts</string>
     <string name="blur_setting_overridden">Turned off by \"Disable blur effects\"</string>
     <string name="explore">Explore</string>
@@ -1174,4 +1175,18 @@
     <string name="youtube_playlist_reload">Reload playlist from beginning</string>
     <string name="youtube_playlist_cancel">Cancel playlist loading</string>
     <string name="playlist_add_incomplete">Could not finish adding songs. Retry or cancel. Songs already added are kept.</string>
+    <string name="queue_infinite">Infinite queue</string>
+    <string name="queue_infinite_description">Automatically add related music near the end of the queue. Repeat modes keep the current queue.</string>
+    <string name="queue_autoplay_off">Autoplay is off</string>
+    <string name="queue_save_playlist">Save queue as playlist</string>
+    <string name="queue_clear_upcoming">Clear queue except current song</string>
+    <string name="queue_jump_current">Jump to current song</string>
+    <string name="queue_lock_edits">Lock queue editing</string>
+    <string name="queue_unlock_edits">Unlock queue editing</string>
+    <string name="queue_source_title">Playing from %1$s</string>
+    <string name="queue_time_remaining">%1$s remaining</string>
+    <string name="queue_actions">Queue actions</string>
+    <string name="queue_select_tracks">Select tracks</string>
+    <string name="queue_selection_count">%1$d selected</string>
+    <string name="queue_save_failed">Could not save the queue. Try again.</string>
 </resources>

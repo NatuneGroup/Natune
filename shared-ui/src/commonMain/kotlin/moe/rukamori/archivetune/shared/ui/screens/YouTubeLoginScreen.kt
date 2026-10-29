@@ -8,6 +8,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.glass.BusyLinearProgress
+import moe.rukamori.archivetune.shared.ui.component.AuthWebViewLayout
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
@@ -54,16 +55,17 @@ fun YouTubeLoginScreen(
 ) {
     Column(modifier.fillMaxSize()) {
         ManagementHeader(stringResource(Res.string.m4_youtube_login_title), actions.back)
-        Column(
+        AuthWebViewLayout(
             Modifier.fillMaxWidth().weight(1f).padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            header = {
+                Text(
+                    stringResource(Res.string.m4_youtube_login_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LoginStatusContent(state.status, actions)
+            },
         ) {
-            Text(
-                stringResource(Res.string.m4_youtube_login_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            LoginStatusContent(state.status, actions)
             Box(Modifier.fillMaxWidth().weight(1f).clip(MaterialTheme.shapes.large)) {
                 webSurface(Modifier.fillMaxSize())
             }

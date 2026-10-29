@@ -3,6 +3,8 @@
  */
 package moe.rukamori.archivetune.shared.ui.home.variants
 
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -386,14 +388,14 @@ private fun SpotifyTrackTile(
         artwork(item, Modifier.size(56.dp).clip(RoundedCornerShape(SpotifyThumbnailCorner)))
         Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(
-                text = item.title,
+                text = effectiveSong(item).title,
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = item.subtitle,
+                text = effectiveSong(item).subtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -489,7 +491,7 @@ private fun SpotifyMediaCard(
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            text = item.title,
+            text = effectiveSong(item).title,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -497,7 +499,7 @@ private fun SpotifyMediaCard(
             modifier = Modifier.fillMaxWidth().basicMarquee(),
         )
         Text(
-            text = item.subtitle,
+            text = effectiveSong(item).subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.secondary,
             maxLines = 1,
@@ -526,7 +528,7 @@ private fun SpotifyArtistCard(
             if (isResolving) SpotifySelectionIndicator()
         }
         Text(
-            text = item.title,
+            text = effectiveSong(item).title,
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -635,7 +637,7 @@ private fun SpotifyQuickGridCell(
                 ),
         )
         Text(
-            text = item.title,
+            text = effectiveSong(item).title,
             style = MaterialTheme.typography.labelMedium.copy(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,

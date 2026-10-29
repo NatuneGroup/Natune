@@ -2,12 +2,13 @@ package moe.rukamori.archivetune.shared.data.persistence
 
 import kotlinx.serialization.json.*
 import moe.rukamori.archivetune.shared.domain.repository.*
+import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 
 internal object ContentJson {
     fun encode(occurrence: ContentOccurrence): JsonObject = buildJsonObject {
         put("occurrence", occurrence.occurrenceId)
         put("setVideoId", occurrence.setVideoId?.let(::JsonPrimitive) ?: JsonNull)
-        val item = occurrence.item
+        val item = occurrence.item.canonicalSong()
         put("provider", item.ref.provider); put("kind", item.ref.kind.name); put("id", item.ref.id)
         put("title", item.title); put("subtitle", item.subtitle); put("explicit", item.explicit)
         put("artwork", item.artworkUri?.let(::JsonPrimitive) ?: JsonNull)

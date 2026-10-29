@@ -28,12 +28,11 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import moe.rukamori.archivetune.shared.domain.settings.InterfaceStyle
 import moe.rukamori.archivetune.shared.domain.settings.DisableAnimationsKey
 import moe.rukamori.archivetune.shared.domain.settings.HideSearchChromeWhileScrollingKey
 import moe.rukamori.archivetune.shared.domain.settings.SearchBarPositionKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
-import moe.rukamori.archivetune.shared.domain.settings.interfaceStyle
+import moe.rukamori.archivetune.shared.domain.settings.appleMusicSearchBar
 import moe.rukamori.archivetune.shared.ui.navigation.LocalNavigationBarHiddenByScroll
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.NavigationBarAnimationSpec
@@ -67,7 +66,7 @@ fun SearchScreen(
     preferences: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
     contentPadding: PaddingValues = LocalShellContentPadding.current,
 ) {
-    val appleMusicStyle = preferences.interfaceStyle() == InterfaceStyle.APPLE_MUSIC
+    val appleMusicStyle = preferences.appleMusicSearchBar()
     val pill = rememberPillStyle(preferences)
     val searchBarAtBottom = preferences[SearchBarPositionKey] == "BOTTOM"
     val hideSearchBarWhileScrolling = preferences[HideSearchChromeWhileScrollingKey, false]

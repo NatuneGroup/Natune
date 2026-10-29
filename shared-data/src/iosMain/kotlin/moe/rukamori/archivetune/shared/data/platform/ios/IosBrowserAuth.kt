@@ -149,9 +149,7 @@ class IosEmbeddedBrowserAuthPort(
             websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore()
         }
         val controller = UIViewController()
-        val webView = WKWebView(frame = controller.view.bounds, configuration = configuration)
-        webView.autoresizingMask = UIViewAutoresizingFlexibleWidth or UIViewAutoresizingFlexibleHeight
-        controller.view.addSubview(webView)
+        val webView = controller.installAuthWebView(configuration)
         try {
             withTimeout(120_000) {
                 suspendCancellableCoroutine { continuation ->

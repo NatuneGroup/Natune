@@ -23,6 +23,8 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.IosHost
+import moe.rukamori.archivetune.shared.ui.menu.BoundEditSongInfoDialog
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_add_to_queue
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_play_next
@@ -48,6 +50,9 @@ internal class IosItemMenuState {
     var artworkTarget: ContentItem? by mutableStateOf(null)
         private set
 
+    var songInfoTarget: ContentItem? by mutableStateOf(null)
+        private set
+
     fun open(occurrence: ContentOccurrence) {
         target = occurrence
     }
@@ -55,6 +60,7 @@ internal class IosItemMenuState {
     fun dismiss() {
         target = null
         artworkTarget = null
+        songInfoTarget = null
     }
 
     fun openCustomArtwork() {
@@ -65,6 +71,11 @@ internal class IosItemMenuState {
 
     fun closeCustomArtwork() {
         artworkTarget = null
+    }
+
+    fun openSongInfo() {
+        songInfoTarget = target?.item
+        target = null
     }
 
     /**
@@ -101,6 +112,15 @@ internal fun ContentOccurrence.queuedEntry(): ContentOccurrence =
 @Composable
 internal fun IosItemMenuDialog(menu: IosItemMenuState, graph: IosSessionGraph, host: IosHost, routeKey: String) {
     DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
+    val songMetadata = graph.library.songMetadata
+    menu.songInfoTarget?.let { item ->
+        if (songMetadata != null) BoundEditSongInfoDialog(
+            song = item,
+            repository = songMetadata,
+            onDismiss = menu::dismiss,
+            onFailure = { graph.report("the song information was not saved") },
+        )
+    }
     menu.artworkTarget?.let { item ->
         BoundCustomArtworkEditDialog(
             artworkUrl = item.artworkUri,
@@ -116,7 +136,7 @@ internal fun IosItemMenuDialog(menu: IosItemMenuState, graph: IosSessionGraph, h
     val occurrence = menu.target ?: return
     AlertDialog(
         onDismissRequest = menu::dismiss,
-        title = { Text(occurrence.item.title) },
+        title = { Text(effectiveSong(occurrence.item).title) },
         text = {
             Column {
                 TextButton(
@@ -128,6 +148,9 @@ internal fun IosItemMenuDialog(menu: IosItemMenuState, graph: IosSessionGraph, h
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(stringResource(Res.string.m5pq_add_to_queue)) }
                 if (occurrence.item.ref.kind == ContentKind.SONG) {
+                    if (songMetadata != null) TextButton(onClick = menu::openSongInfo, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.song_metadata_edit))
+                    }
                     TextButton(onClick = menu::openCustomArtwork, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(Res.string.m4_custom_artwork_title))
                     }

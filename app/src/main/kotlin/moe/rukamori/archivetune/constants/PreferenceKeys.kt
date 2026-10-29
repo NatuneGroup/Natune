@@ -1374,7 +1374,7 @@ enum class PlayerDesignStyle(
         get() = nativeBackground != null && nativeBackground != PlayerBackgroundStyle.DEFAULT
 
     companion object {
-        private val SharedTransportStyles = setOf(V1, V2, V3, V4, V5, V6, V7, V10)
+        private val SharedTransportStyles = setOf(V1, V2, V3, V4, V6)
         private val VolumeRowStyles = setOf(V7, V8, BITCHORD, APPLE_MUSIC, FLAMINGO)
         private val OrdinarySleeveStyles = setOf(BITCHORD, SIMPMUSIC, SPATIALFLOW, LOOPER, FLAMINGO, APPLE_MUSIC)
         private val HorizontalArtworkSkipStyles = setOf(SIMPMUSIC, SPATIALFLOW, LOOPER)
@@ -1459,11 +1459,6 @@ val CompactBottomPillsKey = booleanPreferencesKey("compactBottomPills")
 // The round library and search buttons that replace the tab bar while it is compacted. Off follows
 // the Liquid Glass master switch (glass when it is on); on keeps them in solid theme colours.
 val CompactControlsStockColorKey = booleanPreferencesKey("compactControlsStockColor")
-
-enum class InterfaceStyle {
-    MATERIAL_EXPRESSIVE,
-    APPLE_MUSIC,
-}
 
 enum class SearchBarPosition {
     TOP,
@@ -1658,8 +1653,8 @@ val ShowSpotifyPlaylistsKey = booleanPreferencesKey("show_spotify_playlists")
 val LibrarySourceKey = stringPreferencesKey("library_source")
 
 /**
- * The Apple Music Experience: the iOS-inspired hero on playlist, album and library detail pages —
- * a big left-aligned title with pink accent pills, in place of the artwork backdrop.
+ * Last explicitly applied preset, retained for legacy backups. Surface preferences own rendering;
+ * this flag must never force individual settings after their one-time migration.
  */
 val AppleMusicExperienceKey = booleanPreferencesKey("apple_music_experience")
 
@@ -1674,6 +1669,9 @@ val SponsorBlockCategoriesKey = stringSetPreferencesKey("sponsor_block_categorie
 
 /** Origin of the SponsorBlock instance to ask; blank means the public one. */
 val SponsorBlockApiUrlKey = stringPreferencesKey("sponsor_block_api_url")
+
+/** Also skip marked segments in podcast episodes. Has effect only while [SponsorBlockEnabledKey] is on. */
+val SponsorBlockPodcastsEnabledKey = booleanPreferencesKey("sponsor_block_podcasts_enabled")
 
 
 /** The player design style [AppleMusicExperienceKey] displaced, so switching it off can restore it. */

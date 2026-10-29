@@ -156,9 +156,9 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEnt
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
 import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
-import moe.rukamori.archivetune.ui.utils.smoothFadingEdge
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
@@ -747,10 +747,7 @@ fun LyricsV2(
                 Modifier
                     .fillMaxSize()
                     .nestedScroll(nestedScrollConnection)
-                    .smoothFadingEdge(vertical = 80.dp)
-                    .graphicsLayer {
-                        compositingStrategy = CompositingStrategy.Offscreen
-                    },
+                    .lyricsViewportFade(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             itemsIndexed(

@@ -29,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
+import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
+import moe.rukamori.archivetune.shared.ui.player.sleeveRadiusOr
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
 
 private val v8Text = Color.White
@@ -71,7 +73,8 @@ internal fun V8Player(c: PlayerRenderContext) {
 private fun V8Artwork(c: PlayerRenderContext, modifier: Modifier) {
     val id = c.state.playback?.occurrenceId
     Box(
-        modifier.aspectRatio(1f).clip(RoundedCornerShape(8.dp)).playerSeekDoubleTap(c),
+        modifier.aspectRatio(1f).clip(RoundedCornerShape(c.preferences.sleeveRadiusOr(8f).dp))
+            .graphicsLayer { alpha = if (c.preferences.sleeveHidden) 0f else 1f }.playerSeekDoubleTap(c),
     ) {
         if (c.state.canvasAvailable) c.slots.canvas(id, c.surfaces.artwork, Modifier.fillMaxSize())
         else c.slots.artwork(id, Modifier.fillMaxSize())

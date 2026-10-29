@@ -282,8 +282,8 @@ fun AutoPlaylistScreen(
             } else {
                 wrappedSongs.filter { wrapper ->
                     val song = wrapper.item
-                    song.song.title.contains(searchQuery, true) ||
-                        song.artists.any { it.name.contains(searchQuery, true) }
+                    song.effectiveTitle.contains(searchQuery, true) ||
+                        song.effectiveArtistNames.any { it.contains(searchQuery, true) }
                 }
             }
         }

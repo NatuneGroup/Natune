@@ -10,12 +10,16 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import androidx.annotation.StringRes
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.mutableIntStateOf
 import moe.rukamori.archivetune.utils.playerVolumeVisibility
 import moe.rukamori.archivetune.utils.setCustomFont
+import moe.rukamori.archivetune.utils.conflictAwareState
+import moe.rukamori.archivetune.utils.setPlayerBackgroundStyle
+import moe.rukamori.archivetune.utils.PreferenceStore
+import moe.rukamori.archivetune.ui.component.canonicalFontState
 import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.RestartScopedSettings
 import moe.rukamori.archivetune.ui.component.RestartToApplyNotice
@@ -73,9 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.constants.LibraryStyle
 import moe.rukamori.archivetune.ui.component.libraryStyle
-import moe.rukamori.archivetune.ui.component.rememberInterfaceStyle
 import moe.rukamori.archivetune.constants.HideSearchChromeWhileScrollingKey
-import moe.rukamori.archivetune.constants.InterfaceStyle
 import moe.rukamori.archivetune.constants.SearchBarPosition
 import moe.rukamori.archivetune.constants.SearchBarPositionKey
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -140,6 +142,8 @@ import moe.rukamori.archivetune.constants.PlayerButtonsStyle
 import moe.rukamori.archivetune.constants.PlayerButtonsStyleKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
+import moe.rukamori.archivetune.constants.PlayerStyleSetting
+import moe.rukamori.archivetune.constants.honors
 import moe.rukamori.archivetune.constants.PureBlackKey
 import moe.rukamori.archivetune.constants.RandomThemeOnStartupKey
 import moe.rukamori.archivetune.constants.SliderStyle
@@ -173,16 +177,32 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.asPaddingValues
 
-/** The three pages Appearance is split across. */
-enum class AppearanceSection { THEME, PLAYER, INTERFACE }
+/**
+ * The three sections of the Appearance page. Their old sub-page routes still resolve, and open the
+ * one page at the section's first heading.
+ */
+enum class AppearanceSection(val anchor: String) {
+    THEME("appearance_theme"),
+    PLAYER("appearance_player"),
+    INTERFACE("appearance_interface"),
+}
+
+/** One section's rows, built against the page's shared [PreferencePositions]. */
+private typealias AppearanceRows = LazyListScope.(PreferencePositions) -> Unit
 
 /**
- * Appearance itself: three links, nothing else. Every row that used to be here lives on one of the
- * sub-pages, and the settings search index points at whichever one owns it.
+ * Appearance is one scrolling page: the theme, player and interface rows follow each other under
+ * the same group headings the other settings pages use. Every section reads the page's single
+ * preference snapshot.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceSettings(navController: NavController, scrollTo: String? = null) {
+    val prefs = rememberPreferenceSnapshot()
+    val themeRows = appearanceThemeRows(navController, prefs)
+    val playerRows = appearancePlayerRows(navController, prefs)
+    val interfaceRows = appearanceInterfaceRows(navController, prefs)
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -219,129 +239,42 @@ fun AppearanceSettings(navController: NavController, scrollTo: String? = null) {
                 Modifier
                     .padding(top = innerPadding.calculateTopPadding())
                     .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                    // Measures the viewport rather than the scrolling content, so scrollToKey can
+                    // work in pure deltas.
                     .then(positions.containerModifier()),
         ) {
-            preferenceGroup {
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("appearance_theme"),
-                        title = { Text(stringResource(R.string.appearance_theme)) },
-                        description = stringResource(R.string.appearance_theme_desc),
-                        icon = { Icon(painterResource(R.drawable.palette), null) },
-                        onClick = { navController.navigate("settings/appearance/theme") },
-                    )
-                }
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("appearance_player"),
-                        title = { Text(stringResource(R.string.appearance_player)) },
-                        description = stringResource(R.string.appearance_player_desc),
-                        icon = { Icon(painterResource(R.drawable.play), null) },
-                        onClick = { navController.navigate("settings/appearance/player") },
-                    )
-                }
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("appearance_interface"),
-                        title = { Text(stringResource(R.string.appearance_interface)) },
-                        description = stringResource(R.string.appearance_interface_desc),
-                        icon = { Icon(painterResource(R.drawable.nav_bar), null) },
-                        onClick = { navController.navigate("settings/appearance/interface") },
-                    )
-                }
-            }
+            themeRows(positions)
+            playerRows(positions)
+            interfaceRows(positions)
         }
     }
 }
 
+/** The retired `settings/appearance/{theme,player,interface}` routes: the one page, at [section]. */
 @Composable
 fun AppearanceSectionSettings(
     navController: NavController,
     section: AppearanceSection,
     scrollTo: String? = null,
 ) {
-    // One composable per section, each collecting only the preferences its own rows show.
-    when (section) {
-        AppearanceSection.THEME -> AppearanceThemeSection(navController, scrollTo)
-        AppearanceSection.PLAYER -> AppearancePlayerSection(navController, scrollTo)
-        AppearanceSection.INTERFACE -> AppearanceInterfaceSection(navController, scrollTo)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AppearanceSectionScaffold(
-    navController: NavController,
-    @StringRes titleRes: Int,
-    scrollTo: String?,
-    content: LazyListScope.(PreferencePositions) -> Unit,
-) {
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            SettingsTopAppBar(
-                title = { Text(stringResource(titleRes)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = navController::navigateUp,
-                        onLongClick = navController::backToMain,
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.arrow_back),
-                            contentDescription = null,
-                        )
-                    }
-                },
-            )
-        },
-    ) { innerPadding ->
-        val playerAwareBottomPadding =
-            LocalPlayerAwareWindowInsets.current
-                .only(WindowInsetsSides.Bottom)
-                .asPaddingValues()
-                .calculateBottomPadding()
-        val topPadding = innerPadding.calculateTopPadding()
-        val listState = rememberLazyListState()
-        val positions = rememberPreferencePositions()
-
-        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
-
-        LazyColumn(
-            state = listState,
-            contentPadding =
-                PaddingValues(
-                    bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding,
-                ),
-            modifier =
-                Modifier
-                    .padding(top = topPadding)
-                    .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
-                    // Measures the viewport rather than the scrolling content, so scrollToKey can
-                    // work in pure deltas.
-                    .then(positions.containerModifier()),
-        ) {
-            content(positions)
-        }
-    }
+    AppearanceSettings(navController, scrollTo ?: section.anchor)
 }
 
 @Composable
-private fun AppearanceThemeSection(
+private fun appearanceThemeRows(
     navController: NavController,
-    scrollTo: String?,
-) {
+    prefs: PreferenceSnapshot,
+): AppearanceRows {
     val context = LocalContext.current
-    val prefs = rememberPreferenceSnapshot()
     val restartPrompt = LocalRestartPrompt.current
     val defaultDisableAnimations = remember(context) { context.isLowRamDevice() }
     val (wallpaperExtractionFailed) = prefs.state(WallpaperExtractionFailedKey, defaultValue = false)
-    val (dynamicTheme, onDynamicThemeChange) = prefs.state(DynamicThemeKey, defaultValue = true)
+    val (dynamicTheme, onDynamicThemeChange) = prefs.conflictAwareState(DynamicThemeKey, defaultValue = true)
     val (randomThemeOnStartup, onRandomThemeOnStartupChange) =
-        prefs.state(RandomThemeOnStartupKey, defaultValue = false)
+        prefs.conflictAwareState(RandomThemeOnStartupKey, defaultValue = false)
     val (darkMode, onDarkModeChange) = prefs.enumState(DarkModeKey, defaultValue = DarkMode.AUTO)
     val (liquidGlassEnabled, onLiquidGlassEnabledChange) =
         prefs.restartState(restartPrompt, LiquidGlassEnabledKey, defaultValue = false)
-    val (interfaceStyle, onInterfaceStyleChange) = rememberInterfaceStyle(prefs)
     val (pureBlack, onPureBlackChange) = prefs.state(PureBlackKey, defaultValue = false)
     val (disableBlur, onDisableBlurChange) = prefs.state(DisableBlurKey, defaultValue = false)
     val (disableAnimations, onDisableAnimationsChange) =
@@ -354,7 +287,7 @@ private fun AppearanceThemeSection(
     val (backdropEnabled, onBackdropEnabledChange) = prefs.state(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount, onBackdropBlurAmountChange) = prefs.state(BackdropBlurAmountKey, defaultValue = 60)
     val (fontPreference, onFontPreferenceChange) =
-        prefs.restartEnumState(restartPrompt, FontPreferenceKey, defaultValue = AppFontPreference.DEFAULT)
+        prefs.canonicalFontState(restartPrompt)
     val customFontUri = prefs[CustomFontUriKey, ""]
     val customFontName = prefs[CustomFontNameKey, ""]
     val pendingRestart = StartupSettings.pending(prefs.current)
@@ -419,15 +352,15 @@ private fun AppearanceThemeSection(
     val themeTitle = stringResource(R.string.theme)
     val liquidGlassTitle = stringResource(R.string.liquid_glass)
 
-    AppearanceSectionScaffold(navController, R.string.appearance_theme, scrollTo) { positions ->
+    return { positions ->
         // Liquid Glass gets a header of its own. The master switch used to be the first row
-        // under "Theme", the navigation bar's glass toggle is a page away under Interface, and
+        // under "Theme", the navigation bar's glass toggle is on its own page off Interface, and
         // the mini player's is a value buried in a background-style picker — three places, with
         // nothing to say they were one feature. The switch and a link to the navigation bar's
         // own glass options sit together here; the mini player's stays where it is, because it
         // is one choice among several backgrounds rather than a glass setting that wandered.
         preferenceGroup(
-            modifier = positions.modifierFor("liquid_glass"),
+            modifier = positions.modifierFor("liquid_glass", AppearanceSection.THEME.anchor),
             title = liquidGlassTitle,
         ) {
             item {
@@ -478,22 +411,7 @@ private fun AppearanceThemeSection(
             modifier = positions.modifierFor("dynamic_theme"),
             title = themeTitle,
         ) {
-        item {
-            EnumListPreference(
-                modifier = positions.modifierFor("interface_style", "apple_music_experience"),
-                title = { Text(stringResource(R.string.interface_style)) },
-                description = stringResource(R.string.interface_style_desc),
-                icon = { Icon(painterResource(R.drawable.palette), null) },
-                selectedValue = interfaceStyle,
-                onValueSelected = onInterfaceStyleChange,
-                valueText = {
-                    when (it) {
-                        InterfaceStyle.MATERIAL_EXPRESSIVE -> stringResource(R.string.interface_style_material_expressive)
-                        InterfaceStyle.APPLE_MUSIC -> stringResource(R.string.apple_music_experience)
-                    }
-                },
-            )
-        }
+            independentAppleMusicPreferences(prefs, positions)
 
         item {
             SwitchPreference(
@@ -501,6 +419,7 @@ private fun AppearanceThemeSection(
                 icon = { Icon(painterResource(R.drawable.palette), null) },
                 checked = dynamicTheme,
                 onCheckedChange = onDynamicThemeChange,
+                description = stringResource(R.string.settings_palette_sources_exclusive),
             )
         }
 
@@ -525,7 +444,7 @@ private fun AppearanceThemeSection(
             SwitchPreference(
                 modifier = positions.modifierFor("random_theme_on_startup"),
                 title = { Text(stringResource(R.string.random_theme_on_startup)) },
-                description = stringResource(R.string.random_theme_on_startup_desc),
+                description = stringResource(R.string.settings_palette_sources_exclusive),
                 icon = { Icon(painterResource(R.drawable.shuffle), null) },
                 checked = randomThemeOnStartup,
                 onCheckedChange = onRandomThemeOnStartupChange,
@@ -775,11 +694,10 @@ private fun AppearanceThemeSection(
 }
 
 @Composable
-private fun AppearancePlayerSection(
+private fun appearancePlayerRows(
     navController: NavController,
-    scrollTo: String?,
-) {
-    val prefs = rememberPreferenceSnapshot()
+    prefs: PreferenceSnapshot,
+): AppearanceRows {
     val (playerDesignStyle, onPlayerDesignStyleChange) =
         prefs.enumState(PlayerDesignStyleKey, defaultValue = PlayerDesignStyle.Default)
     val (appleMusicAnimatedArtwork, onAppleMusicAnimatedArtworkChange) =
@@ -807,7 +725,7 @@ private fun AppearancePlayerSection(
         prefs.state(CropThumbnailToSquareKey, defaultValue = false)
     val (thumbnailCornerRadius, onThumbnailCornerRadiusChange) =
         prefs.state(ThumbnailCornerRadiusKey, defaultValue = 16f)
-    val (playerBackground, onPlayerBackgroundChange) =
+    val (playerBackground) =
         prefs.enumState(PlayerBackgroundStyleKey, defaultValue = PlayerBackgroundStyle.DEFAULT)
     val (configuredLyricsBackground, onLyricsBackgroundChange) =
         prefs.enumState(LyricsBackgroundStyleKey, defaultValue = LyricsBackgroundStyle.DEFAULT)
@@ -817,7 +735,6 @@ private fun AppearancePlayerSection(
     val (liquidGlassEnabled) = prefs.state(LiquidGlassEnabledKey, defaultValue = false)
     val (disableBlur) = prefs.state(DisableBlurKey, defaultValue = false)
     val (libraryStyle, setLibraryStyle) = prefs.libraryStyle()
-    val (interfaceStyle) = rememberInterfaceStyle(prefs)
     val (albumCanvasEnabled, onAlbumCanvasEnabledChange) =
         prefs.state(AlbumCanvasEnabledKey, defaultValue = true)
     val (playerButtonsStyle, onPlayerButtonsStyleChange) =
@@ -851,7 +768,7 @@ private fun AppearancePlayerSection(
     val lyricsBackground = configuredLyricsBackground.resolveFor(playerBackground)
     // Same source of truth the player renders from, so the picker can never offer a backdrop the
     // player will discard — or hide one it would have honoured.
-    val isPlayerStyleCustomizationEnabled = playerDesignStyle.supportsBackgroundChoice
+    val isPlayerStyleCustomizationEnabled = playerDesignStyle.honors(PlayerStyleSetting.BACKGROUND)
     val isVolumeBarSupported =
         playerDesignStyle.hasVolumeRow
 
@@ -937,8 +854,9 @@ private fun AppearancePlayerSection(
     val playerTitle = stringResource(R.string.player)
     val albumPageTitle = stringResource(R.string.album_page)
 
-    AppearanceSectionScaffold(navController, R.string.appearance_player, scrollTo) { positions ->
+    return { positions ->
         preferenceGroup(
+            modifier = positions.modifierFor(AppearanceSection.PLAYER.anchor),
             title = playerTitle,
         ) {
             item {
@@ -986,35 +904,7 @@ private fun AppearancePlayerSection(
                         icon = { Icon(painterResource(R.drawable.palette), null) },
                         selectedValue = playerDesignStyle,
                         onValueSelected = onPlayerDesignStyleChange,
-                        valueText = {
-                            when (it) {
-                                PlayerDesignStyle.V1 -> stringResource(R.string.player_design_v1)
-                                PlayerDesignStyle.V2 -> stringResource(R.string.player_design_v2)
-                                PlayerDesignStyle.V3 -> stringResource(R.string.player_design_v3)
-                                PlayerDesignStyle.V4 -> stringResource(R.string.player_design_v4)
-                                PlayerDesignStyle.V5 -> stringResource(R.string.player_design_v5)
-                                PlayerDesignStyle.V6 -> stringResource(R.string.player_design_v6)
-                                PlayerDesignStyle.V7 -> stringResource(R.string.player_design_v7)
-                                PlayerDesignStyle.V8 -> stringResource(R.string.player_design_v8)
-                                PlayerDesignStyle.V9 -> stringResource(R.string.player_design_v9)
-                                PlayerDesignStyle.APPLE_MUSIC ->
-                                    stringResource(R.string.player_design_apple_music)
-                                PlayerDesignStyle.V10 ->
-                                    stringResource(R.string.player_design_v10)
-                                PlayerDesignStyle.BITCHORD ->
-                                    stringResource(R.string.player_design_bitchord)
-                                PlayerDesignStyle.TIKTOK ->
-                                    stringResource(R.string.player_design_tiktok)
-                                PlayerDesignStyle.SIMPMUSIC ->
-                                    stringResource(R.string.player_design_simpmusic)
-                                PlayerDesignStyle.SPATIALFLOW ->
-                                    stringResource(R.string.player_design_spatialflow)
-                                PlayerDesignStyle.LOOPER ->
-                                    stringResource(R.string.player_design_looper)
-                                PlayerDesignStyle.FLAMINGO ->
-                                    stringResource(R.string.player_design_flamingo)
-                            }
-                        },
+                        valueText = { playerDesignStyleLabel(it) },
                     )
                 }
         }
@@ -1126,25 +1016,11 @@ private fun AppearancePlayerSection(
             Column(modifier = positions.modifierFor("player_background_style")) {
                 EnumListPreference(
                     title = { Text(stringResource(R.string.player_background_style)) },
-                    description =
-                        if (isPlayerStyleCustomizationEnabled) {
-                            null
-                        } else {
-                            stringResource(R.string.player_background_style_v8_v9_desc)
-                        },
+                    description = playerSettingNote(playerDesignStyle, PlayerStyleSetting.BACKGROUND),
                     icon = { Icon(painterResource(R.drawable.gradient), null) },
                     selectedValue = playerBackground,
                     onValueSelected = { selectedBackground ->
-                        onPlayerBackgroundChange(selectedBackground)
-                        when {
-                            selectedBackground == PlayerBackgroundStyle.CUSTOM -> {
-                                onLyricsBackgroundChange(LyricsBackgroundStyle.CUSTOM)
-                            }
-
-                            configuredLyricsBackground == LyricsBackgroundStyle.CUSTOM -> {
-                                onLyricsBackgroundChange(LyricsBackgroundStyle.DEFAULT)
-                            }
-                        }
+                        PreferenceStore.launchEdit(prefs.dataStore) { setPlayerBackgroundStyle(selectedBackground) }
                     },
                     isEnabled = isPlayerStyleCustomizationEnabled,
                     valueText = {
@@ -1173,6 +1049,8 @@ private fun AppearancePlayerSection(
                     values = availableLyricsBackgroundStyles,
                     onValueSelected = onLyricsBackgroundChange,
                     isEnabled = playerBackground != PlayerBackgroundStyle.CUSTOM,
+                    description = if (playerBackground == PlayerBackgroundStyle.CUSTOM)
+                        stringResource(R.string.settings_custom_lyrics_background) else null,
                     valueText = {
                         when (it) {
                             LyricsBackgroundStyle.DEFAULT -> stringResource(R.string.lyrics_background_default)
@@ -1210,98 +1088,7 @@ private fun AppearancePlayerSection(
 
         item {
             Column(modifier = positions.modifierFor("mini_player_background_style")) {
-                EnumListPreference(
-                    title = { Text(stringResource(R.string.mini_player_background_style)) },
-                    icon = { Icon(painterResource(R.drawable.gradient), null) },
-                    selectedValue = miniPlayerBackground,
-                    onValueSelected = { newStyle ->
-                        // Guard the LIQUID_GLASS style: only commit it when the master
-                        // Liquid Glass toggle is on AND we're on Android 12+. Otherwise
-                        // silently downgrade to THEME so the picker still closes but no
-                        // unsupported state is persisted. The user sees the warning below
-                        // telling them why their selection didn't apply.
-                        val canUseLiquidGlass =
-                            liquidGlassEnabled &&
-                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                        val effective =
-                            if (newStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS &&
-                                !canUseLiquidGlass
-                            ) {
-                                MiniPlayerBackgroundStyle.THEME
-                            } else {
-                                newStyle
-                            }
-                        onMiniPlayerBackgroundChange(effective)
-                    },
-                    valueText = {
-                        when (it) {
-                            MiniPlayerBackgroundStyle.THEME -> stringResource(R.string.follow_theme)
-                            MiniPlayerBackgroundStyle.GRADIENT -> stringResource(R.string.gradient)
-                            MiniPlayerBackgroundStyle.GLOW -> stringResource(R.string.glow)
-                            MiniPlayerBackgroundStyle.FROSTED -> stringResource(R.string.frosted_blur)
-                            MiniPlayerBackgroundStyle.LIQUID_GLASS -> stringResource(R.string.liquid_glass)
-                        }
-                    },
-                    isValueEnabled = { style ->
-                        !disableBlur ||
-                            (
-                                style != MiniPlayerBackgroundStyle.FROSTED &&
-                                    style != MiniPlayerBackgroundStyle.LIQUID_GLASS
-                            )
-                    },
-                    valueDescription = { style ->
-                        if (disableBlur &&
-                            (
-                                style == MiniPlayerBackgroundStyle.FROSTED ||
-                                    style == MiniPlayerBackgroundStyle.LIQUID_GLASS
-                            )
-                        ) {
-                            stringResource(R.string.blur_setting_overridden)
-                        } else {
-                            ""
-                        }
-                    },
-                )
-                // Pre-Android 12 warning: frosted mini player uses RenderEffect (API 31+).
-                // On pre-S the FROSTED style is silently downgraded to THEME — surface a
-                // warning so users on older devices know why their selection isn't applying.
-                if (disableBlur &&
-                    (
-                        miniPlayerBackground == MiniPlayerBackgroundStyle.FROSTED ||
-                            miniPlayerBackground == MiniPlayerBackgroundStyle.LIQUID_GLASS
-                    )
-                ) {
-                    Text(
-                        text = stringResource(R.string.blur_setting_overridden),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
-                    )
-                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
-                    miniPlayerBackground == MiniPlayerBackgroundStyle.FROSTED
-                ) {
-                    Text(
-                        text = stringResource(R.string.frosted_mini_player_unsupported),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
-                    )
-                }
-                // Liquid Glass mini player requires the master Liquid Glass toggle
-                // (Appearance → Liquid Glass effects) AND Android 12+. If the user
-                // somehow has LIQUID_GLASS selected but the master toggle is off (e.g.
-                // they turned the master off after selecting LIQUID_GLASS), surface a
-                // hint that the master toggle needs to be on for the style to apply.
-                if (!disableBlur && miniPlayerBackground == MiniPlayerBackgroundStyle.LIQUID_GLASS &&
-                    (!liquidGlassEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
-                ) {
-                    Text(
-                        text = stringResource(R.string.liquid_glass_mini_player_unsupported),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
-                    )
-                }
+                MiniPlayerMaterialPreference(miniPlayerBackground, onMiniPlayerBackgroundChange, disableBlur, liquidGlassEnabled)
             }
         }
 
@@ -1319,7 +1106,6 @@ private fun AppearancePlayerSection(
                         CompactLayoutChoice.COMPACT -> stringResource(R.string.compact_layout)
                     }
                 },
-                isEnabled = interfaceStyle != InterfaceStyle.APPLE_MUSIC,
             )
         }
 
@@ -1327,10 +1113,13 @@ private fun AppearancePlayerSection(
             SwitchPreference(
                 modifier = positions.modifierFor("hide_player_thumbnail"),
                 title = { Text(stringResource(R.string.hide_player_thumbnail)) },
-                description = stringResource(R.string.hide_player_thumbnail_desc),
+                description =
+                    playerSettingNote(playerDesignStyle, PlayerStyleSetting.HIDE_THUMBNAIL)
+                        ?: stringResource(R.string.hide_player_thumbnail_desc),
                 icon = { Icon(painterResource(R.drawable.hide_image), null) },
                 checked = hidePlayerThumbnail,
                 onCheckedChange = onHidePlayerThumbnailChange,
+                isEnabled = playerDesignStyle.honors(PlayerStyleSetting.HIDE_THUMBNAIL),
             )
         }
 
@@ -1338,6 +1127,8 @@ private fun AppearancePlayerSection(
             ThumbnailCornerRadiusSelectorButton(
                 thumbnailCornerRadius = thumbnailCornerRadius,
                 onThumbnailCornerRadiusChange = onThumbnailCornerRadiusChange,
+                isEnabled = playerDesignStyle.honors(PlayerStyleSetting.CORNER_RADIUS),
+                note = playerSettingNote(playerDesignStyle, PlayerStyleSetting.CORNER_RADIUS),
             )
         }
 
@@ -1365,12 +1156,7 @@ private fun AppearancePlayerSection(
             Column(modifier = positions.modifierFor("player_buttons_style")) {
                 EnumListPreference(
                     title = { Text(stringResource(R.string.player_buttons_style)) },
-                    description =
-                        if (playerDesignStyle.supportsSharedButtons) {
-                            null
-                        } else {
-                            stringResource(R.string.player_native_controls_description)
-                        },
+                    description = playerSettingNote(playerDesignStyle, PlayerStyleSetting.BUTTONS_STYLE),
                     icon = { Icon(painterResource(R.drawable.palette), null) },
                     selectedValue = playerButtonsStyle,
                     onValueSelected = onPlayerButtonsStyleChange,
@@ -1389,7 +1175,7 @@ private fun AppearancePlayerSection(
             Column(modifier = positions.modifierFor("player_slider_style")) {
                 PreferenceEntry(
                     title = { Text(stringResource(R.string.player_slider_style)) },
-                    description = if (playerDesignStyle.supportsSharedSeekStyle) sliderStyleLabel(sliderStyle) else stringResource(R.string.player_native_controls_description),
+                    description = playerSettingNote(playerDesignStyle, PlayerStyleSetting.SLIDER_STYLE) ?: sliderStyleLabel(sliderStyle),
                     icon = { Icon(painterResource(R.drawable.sliders), null) },
                     onClick = {
                         showSliderOptionDialog = true
@@ -1419,11 +1205,10 @@ private fun AppearancePlayerSection(
 }
 
 @Composable
-private fun AppearanceInterfaceSection(
+private fun appearanceInterfaceRows(
     navController: NavController,
-    scrollTo: String?,
-) {
-    val prefs = rememberPreferenceSnapshot()
+    prefs: PreferenceSnapshot,
+): AppearanceRows {
     val restartPrompt = LocalRestartPrompt.current
     val (searchBarPosition, onSearchBarPositionChange) =
         prefs.enumState(SearchBarPositionKey, defaultValue = SearchBarPosition.TOP)
@@ -1483,12 +1268,12 @@ private fun AppearanceInterfaceSection(
     val miscTitle = stringResource(R.string.misc)
     val extrasTitle = stringResource(R.string.extras)
 
-    AppearanceSectionScaffold(navController, R.string.appearance_interface, scrollTo) { positions ->
+    return { positions ->
         // The three settings that decide what the Home tab shows were scattered through
         // "Misc" between tablet mode, the scrollbar toggle and the library chips. They are
         // one decision — which home you get — so they read as one group.
         preferenceGroup(
-            modifier = positions.modifierFor("home_screen"),
+            modifier = positions.modifierFor("home_screen", AppearanceSection.INTERFACE.anchor),
             title = homeTitle,
         ) {
             item {

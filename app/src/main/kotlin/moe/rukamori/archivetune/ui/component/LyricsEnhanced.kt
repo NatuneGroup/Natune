@@ -88,7 +88,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -156,6 +155,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
 import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
@@ -1131,66 +1131,47 @@ fun LyricsEnhanced(
             }
 
             else -> {
-                BoxWithConstraints(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .nestedScroll(nestedScrollConnection),
-                ) {
-                    val lyricsViewportOffset = remember(maxHeight) { maxHeight * 0.08f }
-                    val lyricsContentWidth =
-                        minOf(maxWidth, if (spotifyStyle) 760.dp else 860.dp)
-
-                    // Keyed on the session + a position-reset counter so that when the song repeats
-                    // (REPEAT_MODE_ONE wraps position to 0) or the user seeks backward by more than
-                    // 1 second, the KaraokeLyricsView instance is disposed and recreated — the
-                    // library's internal highlight state doesn't reset on backward position jumps,
-                    // so without this re-key the karaoke animation freezes at the line that was
-                    // active just before the repeat.
-                    key(lyricsSessionKey, positionResetCounter, karaokeGeneration) {
-                        KaraokeLyricsView(
-                            listState = listState,
-                            lyrics = syncedLyrics,
-                            currentPosition = playbackSyncPosition,
-                            onLineClicked = { line ->
-                                if (isSelectionModeActive) {
-                                    toggleSelectedLine(line.selectionKey())
-                                } else if (lyricsClick && isSynced && line.start > 0) {
-                                    player.seekTo(line.start.toLong())
+                // Keyed on the session + a position-reset counter so that when the song repeats
+                // (REPEAT_MODE_ONE wraps position to 0) or the user seeks backward by more than
+                // 1 second, the KaraokeLyricsView instance is disposed and recreated — the
+                // library's internal highlight state doesn't reset on backward position jumps,
+                // so without this re-key the karaoke animation freezes at the line that was
+                // active just before the repeat.
+                key(lyricsSessionKey, positionResetCounter, karaokeGeneration) {
+                    EnhancedKaraokePane(
+                        listState = listState,
+                        lyrics = syncedLyrics,
+                        currentPosition = playbackSyncPosition,
+                        onLineClicked = { line ->
+                            if (isSelectionModeActive) {
+                                toggleSelectedLine(line.selectionKey())
+                            } else if (lyricsClick && isSynced && line.start > 0) {
+                                player.seekTo(line.start.toLong())
+                            }
+                        },
+                        onLinePressed = { line ->
+                            val lineKey = line.selectionKey()
+                            if (!isSelectionModeActive) {
+                                isSelectionModeActive = true
+                                if (!selectedLineKeys.contains(lineKey)) {
+                                    selectedLineKeys.add(lineKey)
                                 }
-                            },
-                            onLinePressed = { line ->
-                                val lineKey = line.selectionKey()
-                                if (!isSelectionModeActive) {
-                                    isSelectionModeActive = true
-                                    if (!selectedLineKeys.contains(lineKey)) {
-                                        selectedLineKeys.add(lineKey)
-                                    }
-                                } else if (!selectedLineKeys.contains(lineKey)) {
-                                    toggleSelectedLine(lineKey)
-                                }
-                            },
-                            textColor = textColor,
-                            normalLineTextStyle = normalTextStyle,
-                            accompanimentLineTextStyle = accompanimentTextStyle,
-                            phoneticTextStyle = phoneticTextStyle,
-                            blendMode = BlendMode.SrcOver,
-                            // Per-line RenderEffect blur is the single heaviest per-frame cost in
-                            // this view; drop it when animations are disabled (low-RAM default).
-                            useBlurEffect = lyricsLineBlur && !animationsDisabled,
-                            showTranslation = showTranslations,
-                            showPhonetic = romanizationPreferences.showsRomanization,
-                            offset = lyricsViewportOffset,
-                            // Reduced from 36.dp → 20.dp → 8.dp.
-                            keepAliveZone = 8.dp,
-                            modifier =
-                                Modifier
-                                    .widthIn(max = lyricsContentWidth)
-                                    .fillMaxWidth()
-                                    .fillMaxHeight()
-                                    .align(Alignment.TopCenter),
-                        )
-                    }
+                            } else if (!selectedLineKeys.contains(lineKey)) {
+                                toggleSelectedLine(lineKey)
+                            }
+                        },
+                        textColor = textColor,
+                        normalLineTextStyle = normalTextStyle,
+                        accompanimentLineTextStyle = accompanimentTextStyle,
+                        phoneticTextStyle = phoneticTextStyle,
+                        // Per-line RenderEffect blur is the single heaviest per-frame cost in
+                        // this view; drop it when animations are disabled (low-RAM default).
+                        useBlurEffect = lyricsLineBlur && !animationsDisabled,
+                        showTranslation = showTranslations,
+                        showPhonetic = romanizationPreferences.showsRomanization,
+                        maxContentWidth = if (spotifyStyle) 760.dp else 860.dp,
+                        modifier = Modifier.fillMaxSize().nestedScroll(nestedScrollConnection),
+                    )
                 }
             }
         }
@@ -1350,7 +1331,7 @@ private fun PlainLyricsView(
 
     LazyColumn(
         state = listState,
-        modifier = modifier,
+        modifier = modifier.lyricsViewportFade(),
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {

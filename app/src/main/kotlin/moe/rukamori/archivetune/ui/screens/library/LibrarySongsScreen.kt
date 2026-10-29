@@ -502,7 +502,7 @@ fun LibrarySongsScreen(
                         // dynamic background.
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = song.song.title,
+                                text = song.effectiveTitle,
                                 style =
                                     MaterialTheme.typography.bodyLarge.copy(
                                         fontWeight = FontWeight.SemiBold,
@@ -514,7 +514,7 @@ fun LibrarySongsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = song.artists.joinToString(", ") { it.name },
+                                text = song.effectiveArtistNames.joinToString(", "),
                                 style = MaterialTheme.typography.bodySmall,
                                 color =
                                     if (isActive) {

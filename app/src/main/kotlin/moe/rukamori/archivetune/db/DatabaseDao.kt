@@ -55,6 +55,7 @@ import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.db.entities.SongAlbumMap
 import moe.rukamori.archivetune.db.entities.SongArtistMap
 import moe.rukamori.archivetune.db.entities.SongEntity
+import moe.rukamori.archivetune.db.entities.SongMetadataOverrideEntity
 import moe.rukamori.archivetune.db.entities.SongWithStats
 import moe.rukamori.archivetune.db.entities.TagEntity
 import moe.rukamori.archivetune.extensions.reversed
@@ -1285,15 +1286,45 @@ interface DatabaseDao {
         }
     }
 
+    /**
+     * Matches what the user sees, so an edited title or artist is findable by its new name. A song
+     * without an override is matched on its canonical title and artist links.
+     */
     @Transaction
-    @Query("SELECT * FROM song WHERE title LIKE '%' || :query || '%' AND inLibrary IS NOT NULL LIMIT :previewSize")
+    @Query(SongMetadataOverrideSql.SEARCH_SONGS)
     fun searchSongs(
         query: String,
         previewSize: Int = Int.MAX_VALUE,
     ): Flow<List<Song>>
 
-    @Query("SELECT COUNT(1) FROM song WHERE title LIKE '%' || :query || '%' AND inLibrary IS NOT NULL")
+    @Query(SongMetadataOverrideSql.SEARCH_SONGS_COUNT)
     suspend fun searchSongsCount(query: String): Int
+
+    @Query("SELECT * FROM song_metadata_override")
+    fun observeSongMetadataOverrides(): Flow<List<SongMetadataOverrideEntity>>
+
+    @Transaction
+    @Query("SELECT * FROM song WHERE id IN (SELECT songId FROM song_metadata_override)")
+    fun observeEditedSongs(): Flow<List<Song>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun insertSongMetadataOverride(metadataOverride: SongMetadataOverrideEntity)
+
+    @Query("DELETE FROM song_metadata_override WHERE songId = :songId")
+    fun deleteSongMetadataOverride(songId: String)
+
+    /**
+     * Replaces the override for one song in a single transaction. Passing null restores the canonical
+     * metadata, so saving and resetting share one path and cannot leave a half-written row behind.
+     */
+    @Transaction
+    fun setSongMetadataOverride(
+        songId: String,
+        metadataOverride: SongMetadataOverrideEntity?,
+    ) {
+        deleteSongMetadataOverride(songId)
+        metadataOverride?.let { insertSongMetadataOverride(it) }
+    }
 
     @Transaction
     @SuppressWarnings(RoomWarnings.QUERY_MISMATCH)
@@ -1589,7 +1620,7 @@ interface DatabaseDao {
             )
         }
 
-        mediaMetadata.artists.forEachIndexed { index, artist ->
+        mediaMetadata.canonicalMetadata().artists.forEachIndexed { index, artist ->
             val artistId = artist.id ?: artistByName(artist.name)?.id ?: ArtistEntity.generateArtistId()
 
             insert(
@@ -1667,7 +1698,9 @@ interface DatabaseDao {
     ) {
         update(
             song.song.copy(
-                title = if (song.song.titleOverride) song.song.title else mediaMetadata.title,
+                // Canonical title always follows the provider. A user edit lives in
+                // song_metadata_override, which this refresh never reads or writes.
+                title = mediaMetadata.canonicalTitle ?: mediaMetadata.title,
                 duration = mediaMetadata.duration,
                 thumbnailUrl = mediaMetadata.thumbnailUrl,
                 albumId = mediaMetadata.album?.id,
@@ -1677,7 +1710,7 @@ interface DatabaseDao {
             ),
         )
         songArtistMap(song.id).forEach(::delete)
-        mediaMetadata.artists.forEachIndexed { index, artist ->
+        mediaMetadata.canonicalMetadata().artists.forEachIndexed { index, artist ->
             val artistId = artist.id ?: artistByName(artist.name)?.id ?: ArtistEntity.generateArtistId()
 
             insert(

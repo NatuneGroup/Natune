@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.songmetadata.withSongMetadataOverrides
+import moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import org.jetbrains.compose.resources.stringResource
@@ -26,6 +28,7 @@ data class HistoryUi(
     val sections: List<HistorySectionUi> = emptyList(), val query: String = "",
     val selectedEventIds: Set<Long> = emptySet(), val loading: Boolean = false, val failed: Boolean = false,
     val canLoadMore: Boolean = false, val busy: Boolean = false, val rowMenu: Boolean = true,
+    val paginationUnavailable: Boolean = false,
 )
 class HistoryActions(
     val source: (HistorySource) -> Unit, val query: (String) -> Unit, val back: () -> Unit,
@@ -33,7 +36,7 @@ class HistoryActions(
     val play: (HistoryEventUi, sectionKey: String) -> Unit, val more: (ContentOccurrence) -> Unit,
     val toggleSelection: (Long) -> Unit, val selectAllVisible: (Set<Long>) -> Unit, val clearSelection: () -> Unit,
     val removeEvents: (Set<Long>) -> Unit, val retry: () -> Unit, val loadMore: () -> Unit,
-    /** The baseline's shuffle-all over the visible rows. Null where the source's rows cannot be queued. */
+    /** The owner completes remote paging before shuffling query-filtered rows. Null for read-only sources. */
     val shuffleAll: (() -> Unit)? = null,
 )
 
@@ -43,13 +46,25 @@ fun HistoryScreen(
     modifier: Modifier = Modifier, contentPadding: PaddingValues = LocalShellContentPadding.current,
 ) {
     var removal by remember(state.source) { mutableStateOf<Set<Long>?>(null) }
-    val sections = remember(state.sections, state.query) {
+    val edits = LocalSongMetadataOverrides.current
+    val sections = remember(state.sections, state.query, edits) {
         val query = state.query.trim()
-        (if (query.isEmpty()) state.sections else state.sections.map { section -> section.copy(events = section.events.filter {
+        val effectiveSections = state.sections.map { section ->
+            section.copy(events = section.events.map { it.copy(row = it.row.withSongMetadataOverrides(edits)) })
+        }
+        (if (query.isEmpty()) effectiveSections else effectiveSections.map { section -> section.copy(events = section.events.filter {
             it.row.item.title.contains(query, true) || it.row.item.subtitle.contains(query, true)
         }) }).filter { it.events.isNotEmpty() }
     }
     val local = state.source == HistorySource.LOCAL
+    val list = key(state.source) { rememberLazyListState() }
+    val loadMore by rememberUpdatedState(actions.loadMore)
+    LaunchedEffect(list, state.canLoadMore, state.loading, state.failed, state.busy, state.sections) {
+        if (!state.canLoadMore || state.loading || state.failed || state.busy) return@LaunchedEffect
+        snapshotFlow { list.layoutInfo.let { layout ->
+            layout.totalItemsCount > 0 && (layout.visibleItemsInfo.lastOrNull()?.index ?: -1) >= layout.totalItemsCount - 4
+        } }.collect { if (it) loadMore() }
+    }
     val localIds = state.sections.flatMap { it.events }.mapNotNull { it.eventId }.toSet()
     val selected = if (local) state.selectedEventIds intersect localIds else emptySet()
     val visibleIds = sections.flatMap { it.events }.mapNotNull { it.eventId }.toSet()
@@ -76,7 +91,8 @@ fun HistoryScreen(
             }), Modifier.weight(1f))
             val shuffleAll = actions.shuffleAll
             if (shuffleAll != null) {
-                TextButton(shuffleAll, modifier = Modifier.testTag("history-shuffle")) {
+                TextButton(shuffleAll, enabled = !state.loading && !state.busy && !state.failed,
+                    modifier = Modifier.testTag("history-shuffle")) {
                     Text(stringResource(Res.string.m4_shuffle))
                 }
             }
@@ -89,14 +105,19 @@ fun HistoryScreen(
             TextButton({ removal = selected.toSet() }, enabled = !state.busy,
                 modifier = Modifier.testTag("history-remove")) { Text(stringResource(Res.string.m4_remove)) }
         }
-        LazyColumn(Modifier.weight(1f), contentPadding = contentPadding) {
+        LazyColumn(Modifier.weight(1f), state = list, contentPadding = contentPadding) {
             item("load") { LoadFeedback(state.loading, state.failed, sections.isEmpty(), actions.retry) }
             sections.forEach { section ->
                 item("header-${section.key}") { Text(section.dateLabel, Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
                 items(section.events, key = { "event-${it.row.occurrenceId}" }) { event ->
                     val id = event.eventId
                     ListItem(headlineContent = { Text(event.row.item.title) },
-                        supportingContent = { Text(event.row.item.subtitle + "\n" + event.timeLabel) },
+                        supportingContent = {
+                            Column {
+                                Text(event.row.item.subtitle + "\n" + event.timeLabel)
+                                PodcastEpisodeProgress(event.row.item.ref)
+                            }
+                        },
                         leadingContent = {
                             if (selected.isNotEmpty() && id != null) Checkbox(id in selected, { actions.toggleSelection(id) }, enabled = !state.busy)
                             else artwork(event.row.item, Modifier.size(48.dp))
@@ -112,7 +133,13 @@ fun HistoryScreen(
                 }
             }
             if (state.canLoadMore) item("more") {
-                TextButton(actions.loadMore, enabled = !state.loading && !state.failed) { Text(stringResource(Res.string.m4_load_more)) }
+                TextButton(actions.loadMore, enabled = !state.loading && !state.failed && !state.busy) { Text(stringResource(Res.string.m4_load_more)) }
+            }
+            if (state.paginationUnavailable) item("route-boundary") {
+                Column(Modifier.padding(16.dp)) {
+                    Text(stringResource(Res.string.history_paging_route_unavailable))
+                    TextButton(actions.retry, enabled = !state.loading) { Text(stringResource(Res.string.m4_retry)) }
+                }
             }
         }
     }

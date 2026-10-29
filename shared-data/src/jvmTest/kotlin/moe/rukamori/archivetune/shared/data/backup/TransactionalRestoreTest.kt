@@ -43,6 +43,38 @@ class TransactionalRestoreTest {
     private fun archive(categories: Set<BackupCategory>): ByteArray =
         JvmBackupArchiveCodec().create(after(), categories, mapOf("song.db" to fixture()))
 
+    @Test fun candidateConflictsNormalizeInsideTheRestoreCommitAndRollbackIsExact() = runTest {
+        setup { _, prefs, _, restore ->
+            val previous = prefs.snapshot()
+            val incoming = after().toEditor().apply {
+                this[DynamicThemeKey] = true
+                this[RandomThemeKey] = true
+                this[AudioOffload] = true
+                this[RejectSuspectedUpscaledAudioKey] = true
+                this[MaxSongCacheSizeKey] = 0
+                this[MaxImageCacheSizeKey] = 0
+                this[SmartCacheTrimmerKey] = true
+            }.snapshot()
+            val selected = setOf(BackupCategory.SETTINGS)
+            val bytes = JvmBackupArchiveCodec().create(incoming, selected)
+            prefs.failNextWrite = true
+            assertFailsWith<java.io.IOException> { restore.restore(bytes, selected) }
+            val rolledBack = prefs.snapshot()
+            assertEquals(previous.keys, rolledBack.keys)
+            previous.keys.forEach { assertEquals(previous[it], rolledBack[it], it.name) }
+
+            restore.restore(bytes, selected)
+            val restored = prefs.snapshot()
+            assertEquals(true, restored[DynamicThemeKey])
+            assertEquals(false, restored[RandomThemeKey])
+            assertEquals(false, restored[AudioOffload])
+            assertEquals(true, restored[RejectSuspectedUpscaledAudioKey])
+            assertEquals(false, restored[SmartCacheTrimmerKey])
+            assertEquals("device-bound", restored[device])
+            assertEquals("new value", restored[inserted])
+        }
+    }
+
     /** Real AndroidX on disk, reopened after EVERY operation. Failure controls are test-only. */
     private class DiskPreferences(private val root: Path) : RestorePreferences {
         var failNextWrite = false

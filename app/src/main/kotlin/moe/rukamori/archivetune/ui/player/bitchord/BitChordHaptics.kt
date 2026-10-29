@@ -89,6 +89,9 @@ class Haptics internal constructor(context: Context) {
                 moe.rukamori.archivetune.constants.EnableHapticFeedbackKey,
             ) == false
         ) return
+        // Effects are VibrationEffect objects (API 26+). Below that this style stays silent rather than
+        // probing a motor it cannot drive.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         HapticDevice.of(app)?.play(haptic)
     }
 }
@@ -178,7 +181,11 @@ private fun rhythmOf(haptic: Haptic): List<Beat> = when (haptic) {
  *     rather than letting the total run past ~80ms.
  *
  * Effects are immutable, so each one is compiled on first use and kept.
+ *
+ * Every member uses [VibrationEffect] (API 26), so the class is only reached on API 26+; [Haptics.play]
+ * checks that before asking for a device.
  */
+@RequiresApi(Build.VERSION_CODES.O)
 private class HapticDevice private constructor(
     private val vibrator: Vibrator,
     private val canCompose: Boolean,

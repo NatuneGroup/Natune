@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="podcast_episode_played">Played</string>
+    <string name="podcast_episode_remaining">%1$s remaining</string>
+    <string name="podcast_episode_position">Played %1$s</string>
+    <string name="history_paging_route_unavailable">Recent history is available through IP rotation. Older pages cannot use this route yet; turn off IP rotation and retry to load the full archive.</string>
+</resources>

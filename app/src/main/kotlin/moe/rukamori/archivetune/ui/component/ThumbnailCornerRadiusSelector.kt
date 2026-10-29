@@ -41,13 +41,15 @@ fun ThumbnailCornerRadiusSelectorButton(
     onThumbnailCornerRadiusChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     onRadiusSelected: (Float) -> Unit = {},
+    isEnabled: Boolean = true,
+    note: String? = null,
 ) {
     var showDialog by remember { mutableStateOf(false) }
 
     PreferenceEntry(
         modifier = modifier,
         title = { Text(text = stringResource(id = R.string.custom_radius)) },
-        description = stringResource(id = R.string.corner_radius, thumbnailCornerRadius.roundToInt()),
+        description = note ?: stringResource(id = R.string.corner_radius, thumbnailCornerRadius.roundToInt()),
         icon = {
             Icon(
                 painter = painterResource(id = R.drawable.image),
@@ -62,9 +64,10 @@ fun ThumbnailCornerRadiusSelectorButton(
             )
         },
         onClick = { showDialog = true },
+        isEnabled = isEnabled,
     )
 
-    if (showDialog) {
+    if (showDialog && isEnabled) {
         ThumbnailCornerRadiusModal(
             initialRadius = thumbnailCornerRadius,
             onDismiss = { showDialog = false },

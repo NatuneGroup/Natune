@@ -2,6 +2,8 @@
 
 package moe.rukamori.archivetune.shared.ui.home
 
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -173,13 +175,13 @@ private fun QqTrackRow(
     ListItem(
         headlineContent = {
             Text(
-                occurrence.item.title,
+                effectiveSong(occurrence.item).title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = if (active) MaterialTheme.colorScheme.primary else Color.Unspecified,
             )
         },
-        supportingContent = { Text(occurrence.item.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { Text(effectiveSong(occurrence.item).subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingContent = { artwork(occurrence.item, Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))) },
         trailingContent = {
             if (active && playing) {

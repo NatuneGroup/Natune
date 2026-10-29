@@ -52,6 +52,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepositor
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
+import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
@@ -65,6 +66,7 @@ import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeCatalogueTransport
+import moe.rukamori.archivetune.shared.data.provider.KtorSponsorBlockRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
@@ -82,14 +84,15 @@ import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
-import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
-import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.YouTubeLocale
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
+import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
+import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentCountryKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentLanguageKey
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
@@ -97,7 +100,6 @@ import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
-import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
 import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
@@ -106,6 +108,8 @@ import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
+import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
+import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
@@ -162,6 +166,7 @@ class DesktopSessionGraph private constructor(
     private val ordinarySettings: DesktopSettingsStore,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
+    private val progressDriver: PodcastProgressDriver,
     /** The one scrobbling owner: the signed Last.fm-compatible service, its pending queue and the playback driver. */
     internal val lastFm: DesktopLastFm,
     /** The one lyrics owner: the shared provider runtime following the player's current occurrence. */
@@ -211,6 +216,7 @@ class DesktopSessionGraph private constructor(
     internal val news: DesktopNewsRepository,
     private val drivers: List<Job>,
 ) {
+    internal val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
     /** The playlist tag catalog and assignments, in the same portable file as the playlists. */
     internal val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
 
@@ -227,6 +233,9 @@ class DesktopSessionGraph private constructor(
         scope = scope,
         report = { message -> desktopDiagnostic(message) },
     )
+
+    /** The `uploaded_songs` owner: YouTube Music upload, shelf browse and delete over the one settings sign-in. */
+    internal val uploads = DesktopYouTubeUploads(scope, settings, queue, { message -> report(message) })
 
     /** Search, albums and finite playlists over the same YouTube catalogue the queue router reads. */
     internal val catalogPages = CatalogPageOwners(youtubeContent, pageOwners)
@@ -331,12 +340,14 @@ class DesktopSessionGraph private constructor(
     }
 
     /**
-     * Final shutdown, after the window has stopped asking for work. The open listen is finished first so its play time
-     * is kept, then the queue is checkpointed while the owner can still write, and only then are the stores released.
+     * Final shutdown, after the window has stopped asking for work. The open listen and podcast position are finished
+     * first so their play time and progress are kept, then the queue is checkpointed while the owner can still write,
+     * and only then are the stores released.
      */
     suspend fun close() = withContext(NonCancellable) {
         listenTogether.close()
         listenDriver.close()
+        progressDriver.close()
         lastFm.close()
         lyricsSurface.close()
         japaneseLanguagePack?.close()
@@ -347,6 +358,7 @@ class DesktopSessionGraph private constructor(
         owner.close()
         locators.close()
         telegram.close()
+        uploads.close()
         http.close()
         player.close()
         settings.close()
@@ -508,8 +520,13 @@ class DesktopSessionGraph private constructor(
             )
             val tidalSessionRefresh = TidalSessionRefresh(tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value })
             val textOrder = deviceTextOrder()
-            val library = RoomLibraryRepository(database.library(), listens = database.listens())
+            val songMetadata = moe.rukamori.archivetune.shared.data.persistence.RoomSongMetadataRepository(database.songMetadataOverrides())
+            val library = RoomLibraryRepository(database.library(), listens = database.listens(), songMetadata = songMetadata)
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = { System.currentTimeMillis() })
+            val blockedQueueArtists = artistBlocks.observeBlockedArtists().map { refs ->
+                refs.filter { it.provider == ContentProvider.YOUTUBE.id }.mapTo(HashSet()) { it.id }
+            }
+            val queueArtistBlocks = blockedQueueArtists.stateIn(scope, SharingStarted.Eagerly, blockedQueueArtists.first())
             val history = RoomListeningHistory(
                 database.listens(),
                 offsetMsAt = { epochMs -> TimeZone.getDefault().getOffset(epochMs).toLong() },
@@ -609,7 +626,13 @@ class DesktopSessionGraph private constructor(
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { repeatModeOf(vault.snapshots.value) },
                 autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+                autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
+                autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
+                hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
+                hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
+                blockedArtistIds = { queueArtistBlocks.value },
                 handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
+                songMetadata = songMetadata,
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
             try {
@@ -639,6 +662,22 @@ class DesktopSessionGraph private constructor(
                 history = history,
                 preferences = vault.snapshots,
                 report = ::desktopDiagnostic,
+            )
+            // Written from the same snapshots; close() flushes the open episode before the database is released.
+            val progressDriver = PodcastProgressDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                store = RoomPodcastProgressStore(database.podcastProgress()),
+                report = ::desktopDiagnostic,
+            )
+            // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
+            PodcastSponsorBlockDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                preferences = vault.snapshots,
+                repository = KtorSponsorBlockRepository(http),
             )
             val lastFm = DesktopLastFm(
                 scope = scope,
@@ -827,6 +866,7 @@ class DesktopSessionGraph private constructor(
                 ordinarySettings = ordinary,
                 database = database,
                 listenDriver = listenDriver,
+                progressDriver = progressDriver,
                 lastFm = lastFm,
                 lyrics = lyrics,
                 japaneseLanguagePack = pack,
@@ -926,24 +966,6 @@ private fun JvmYouTubeBrowseTransport.applyPersistedSession(snapshot: Preference
         hl = snapshot?.get(ContentLanguageKey)?.takeIf { it != "system" }
             ?: device.language.takeIf { it.length == 2 }
             ?: "en",
-    )
-}
-
-internal fun repeatModeOf(preferences: PreferenceSnapshot?): QueueRepeatMode =
-    preferences?.get(RepeatModeKey)?.let { QueueRepeatMode.fromStoredValue(it) } ?: QueueRepeatMode.OFF
-
-private fun QueueState.metadataFor(occurrenceId: String?, repeat: QueueRepeatMode): DesktopMediaMetadata? {
-    val id = occurrenceId ?: currentOccurrenceId ?: return null
-    val occurrence = entries.firstOrNull { it.occurrenceId == id } ?: return null
-    val item = occurrence.item
-    return DesktopMediaMetadata(
-        occurrenceId = id,
-        title = item.title,
-        artists = item.artists.map { it.name },
-        album = item.album.orEmpty(),
-        artworkUri = item.artworkUri,
-        canNext = QueueAdvancePolicy.successor(repeat, playOrder, id) != null,
-        canPrevious = playOrder.indexOf(id) > 0,
     )
 }
 

@@ -87,7 +87,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastAny
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.exoplayer.offline.Download
@@ -230,18 +229,10 @@ fun OnlinePlaylistScreen(
     var query by
         rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
 
+    val songMetadataOverrides = moe.rukamori.archivetune.ui.component.LocalSongMetadataOverrides.current
     val filteredSongs =
-        remember(songs, query) {
-            if (query.text.isEmpty()) {
-                songs.mapIndexed { index, song -> index to song }
-            } else {
-                songs
-                    .mapIndexed { index, song -> index to song }
-                    .filter { (_, song) ->
-                        song.title.contains(query.text, ignoreCase = true) ||
-                            song.artists.fastAny { it.name.contains(query.text, ignoreCase = true) }
-                    }
-            }
+        remember(songs, query, songMetadataOverrides) {
+            songs.filterByEffectiveNames(query.text, songMetadataOverrides)
         }
 
     val focusRequester = remember { FocusRequester() }

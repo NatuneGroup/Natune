@@ -37,6 +37,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.constants.AudioSourceOrderKey
+import moe.rukamori.archivetune.constants.AppleMusicSettingsMigratedKey
+import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
+import moe.rukamori.archivetune.shared.domain.settings.migrateAppleMusicSettings
+import moe.rukamori.archivetune.shared.domain.settings.normalizeSettingsConflicts
 import moe.rukamori.archivetune.constants.HISTORY_DURATION_LEGACY_FLOAT_KEY
 import moe.rukamori.archivetune.constants.HISTORY_DURATION_MAX
 import moe.rukamori.archivetune.constants.HISTORY_DURATION_MIN
@@ -55,6 +59,24 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     name = "settings",
     produceMigrations = { _ ->
         listOf(
+            object : DataMigration<Preferences> {
+                override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+                    currentData[AppleMusicExperienceKey] == true && currentData[AppleMusicSettingsMigratedKey] != true
+
+                override suspend fun migrate(currentData: Preferences): Preferences =
+                    currentData.editSharedPreferences { migrateAppleMusicSettings() }
+
+                override suspend fun cleanUp() {}
+            },
+            object : DataMigration<Preferences> {
+                override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+                    currentData != currentData.editSharedPreferences { normalizeSettingsConflicts() }
+
+                override suspend fun migrate(currentData: Preferences): Preferences =
+                    currentData.editSharedPreferences { normalizeSettingsConflicts() }
+
+                override suspend fun cleanUp() {}
+            },
             object : DataMigration<Preferences> {
                 override suspend fun shouldMigrate(currentData: Preferences): Boolean =
                     currentData[HISTORY_DURATION_LEGACY_FLOAT_KEY] != null &&

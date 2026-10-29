@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.home.variants
 
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -333,7 +335,7 @@ private fun RukamoriSpeedDialTile(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = occurrence.item.title,
+                        text = effectiveSong(occurrence.item).title,
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                         color = foreground,
                         maxLines = 1,

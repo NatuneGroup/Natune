@@ -5,6 +5,8 @@
  */
 package moe.rukamori.archivetune.shared.ui.home.variants
 
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
+
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -213,7 +215,7 @@ internal fun BitChordHeroCard(
                 .padding(start = 16.dp, end = 16.dp, top = 34.dp, bottom = 14.dp),
         ) {
             Text(
-                text = item.title,
+                text = effectiveSong(item).title,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.W700,
                 fontFamily = LocalArchiveTuneFontFamily.current,
@@ -222,7 +224,7 @@ internal fun BitChordHeroCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = item.subtitle,
+                text = effectiveSong(item).subtitle,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.W400,
                 fontFamily = LocalArchiveTuneFontFamily.current,
@@ -283,7 +285,7 @@ internal fun BitChordShelfCard(
         }
         Spacer(Modifier.height(10.dp))
         Text(
-            text = item.title,
+            text = effectiveSong(item).title,
             fontSize = 16.sp,
             fontWeight = FontWeight.W600,
             fontFamily = LocalArchiveTuneFontFamily.current,
@@ -293,7 +295,7 @@ internal fun BitChordShelfCard(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = item.subtitle,
+            text = effectiveSong(item).subtitle,
             fontSize = 14.sp,
             fontWeight = FontWeight.W400,
             fontFamily = LocalArchiveTuneFontFamily.current,
@@ -336,7 +338,7 @@ internal fun BitChordCompactTrackRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = item.title,
+                text = effectiveSong(item).title,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.W600,
                 fontFamily = LocalArchiveTuneFontFamily.current,
@@ -346,7 +348,7 @@ internal fun BitChordCompactTrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = item.subtitle,
+                text = effectiveSong(item).subtitle,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.W400,
                 fontFamily = LocalArchiveTuneFontFamily.current,

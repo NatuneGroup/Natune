@@ -22,6 +22,7 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.glass.LocalOpticalPolicy
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -208,8 +209,8 @@ private fun YearRecapCardContent(
             when (card) {
                 YearRecapCard.TOP_SONG -> statistics.songs.firstOrNull()?.let { top ->
                     artwork(top.item, Modifier.size(160.dp))
-                    Text(top.item.title, style = MaterialTheme.typography.headlineMedium)
-                    Text(top.item.subtitle)
+                    Text(effectiveSong(top.item).title, style = MaterialTheme.typography.headlineMedium)
+                    Text(effectiveSong(top.item).subtitle)
                     Text(stringResource(Res.string.m4_stats_plays, top.playCount))
                     songMenu?.let { menu ->
                         TextButton({ menu(top.item.ref) }) { Text(stringResource(Res.string.m4_more)) }
@@ -225,7 +226,7 @@ private fun YearRecapCardContent(
                     Text(stringResource(Res.string.m4_stats_plays, statistics.playCount), style = MaterialTheme.typography.headlineMedium)
                     Text(stringResource(Res.string.m4_stats_listening, formatDuration(statistics.playTimeMs)))
                     if (card == YearRecapCard.SUMMARY) {
-                        statistics.songs.firstOrNull()?.let { Text(it.item.title) }
+                        statistics.songs.firstOrNull()?.let { Text(effectiveSong(it.item).title) }
                         statistics.artists.firstOrNull()?.let { Text(it.item.title) }
                         statistics.albums.firstOrNull()?.let { Text(it.item.title) }
                     }

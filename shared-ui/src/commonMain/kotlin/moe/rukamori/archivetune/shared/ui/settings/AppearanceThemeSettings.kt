@@ -29,6 +29,27 @@ fun AppearanceThemeSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    customFontPickerSupported: Boolean = true,
+) {
+    ThemeChoicePage(controller, pickCustomFont, onFailure, scrollTo, modifier, customFontPickerSupported) { preferences, chooseInterface, chooseFont, pickFont ->
+        appearanceThemeSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded,
+            navigate, openWallpaperSettings, chooseInterface, chooseFont, pickFont, customFontPickerSupported)
+    }
+}
+
+/**
+ * A settings page whose rows include the theme section, with the interface-style and font pickers those rows open.
+ * [rows] receives the open-interface-picker, open-font-picker and pick-custom-font actions.
+ */
+@Composable
+internal fun ThemeChoicePage(
+    controller: SettingsController,
+    pickCustomFont: suspend () -> Pair<String, String>?,
+    onFailure: () -> Unit,
+    scrollTo: String?,
+    modifier: Modifier,
+    customFontPickerSupported: Boolean = true,
+    rows: (preferences: PreferenceSnapshot, chooseInterface: () -> Unit, chooseFont: () -> Unit, pickFont: () -> Unit) -> List<SettingsRow>,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -47,9 +68,7 @@ fun AppearanceThemeSettings(
         controller.edit { setCustomFont(selected.first, selected.second) }
     }
     SettingsPage(
-        appearanceThemeSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded,
-            navigate, openWallpaperSettings, { choosingInterface = true }, { choosingFont = true },
-            { attempt { selectCustomFont() } }),
+        rows(preferences, { choosingInterface = true }, { choosingFont = true }, { attempt { selectCustomFont() } }),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
     )
     if (choosingInterface) AlertDialog(
@@ -57,8 +76,14 @@ fun AppearanceThemeSettings(
         title = { Text(stringResource(Res.string.m6_interface_style)) },
         text = { Column {
             InterfaceStyle.entries.forEach { style ->
-                TextButton(onClick = { attempt { controller.interfaceStyle(style); choosingInterface = false } }) {
-                    Text(stringResource(if (style == InterfaceStyle.APPLE_MUSIC) Res.string.m6_apple_music else Res.string.m6_material_expressive))
+                TextButton(enabled = style != InterfaceStyle.CUSTOM,
+                    onClick = { attempt { controller.interfaceStyle(style); choosingInterface = false } }) {
+                    RadioButton(selected = preferences.interfaceStyle() == style, onClick = null)
+                    Text(stringResource(when (style) {
+                        InterfaceStyle.APPLE_MUSIC -> Res.string.m6_apple_music
+                        InterfaceStyle.MATERIAL_EXPRESSIVE -> Res.string.m6_material_expressive
+                        InterfaceStyle.CUSTOM -> Res.string.m6_interface_custom_mixed
+                    }))
                 }
             }
         } },
@@ -70,9 +95,9 @@ fun AppearanceThemeSettings(
         title = { Text(stringResource(Res.string.m6_font)) },
         text = { Column {
             AppFontPreference.entries.forEach { font ->
-                TextButton(onClick = { attempt {
+                TextButton(enabled = font != AppFontPreference.CUSTOM || customFontPickerSupported, onClick = { attempt {
                     if (font == AppFontPreference.CUSTOM && preferences[CustomFontUriKey].isNullOrBlank()) selectCustomFont()
-                    else controller.edit { this[FontPreferenceKey] = font.name; this[UseSystemFontKey] = null }
+                    else controller.edit { setFontPreference(font) }
                     choosingFont = false
                 } }) {
                     Text(stringResource(when (font) {
@@ -82,6 +107,7 @@ fun AppearanceThemeSettings(
                     }))
                 }
             }
+            if (!customFontPickerSupported) Text(stringResource(Res.string.m6_custom_font_picker_unavailable))
         } },
         confirmButton = {},
         dismissButton = { TextButton(onClick = { choosingFont = false }) { Text(stringResource(Res.string.m6_cancel)) } },

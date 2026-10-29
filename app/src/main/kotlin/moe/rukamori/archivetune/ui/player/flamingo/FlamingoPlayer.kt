@@ -261,6 +261,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import moe.rukamori.archivetune.utils.isLocalMediaId
+import moe.rukamori.archivetune.ui.player.PlayerControlKind
+import moe.rukamori.archivetune.ui.player.playerControlMotion
+import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 
 private const val AnimDurationMillis = 300
 private const val ShareAlbumKey = "flamingoAlbum"
@@ -346,48 +349,6 @@ private val FlamingoQueueEdgeFadeStops =
         Color.Black,
         Color.Transparent,
     )
-
-/**
- * Corner interpolation for the shared-element overlay clip — after canary's
- * AdaptiveCornerShape: the artwork's corner radius morphs between the
- * playing-bar thumbnail (5dp at 69dp) and the album square (8dp at 400dp) as
- * the shared bounds travel, so the overlay never falls back to sharp
- * rectangle corners mid-flight.
- */
-private class FlamingoAdaptiveCornerShape(
-    private val smallRadius: Dp,
-    private val smallSize: Dp,
-    private val largeRadius: Dp,
-    private val largeSize: Dp,
-) : Shape {
-    override fun createOutline(
-        size: Size,
-        layoutDirection: LayoutDirection,
-        density: androidx.compose.ui.unit.Density,
-    ): Outline {
-        val elementSize = minOf(size.width, size.height)
-        val smallSizePx = with(density) { smallSize.toPx() }
-        val largeSizePx = with(density) { largeSize.toPx() }
-        val t =
-            if (largeSizePx > smallSizePx) {
-                ((elementSize - smallSizePx) / (largeSizePx - smallSizePx)).coerceIn(0f, 1f)
-            } else {
-                1f
-            }
-        val smallRadiusPx = with(density) { smallRadius.toPx() }
-        val largeRadiusPx = with(density) { largeRadius.toPx() }
-        val radius = smallRadiusPx + (largeRadiusPx - smallRadiusPx) * t
-        return Outline.Rounded(
-            RoundRect(
-                left = 0f,
-                top = 0f,
-                right = size.width,
-                bottom = size.height,
-                cornerRadius = CornerRadius(radius, radius),
-            ),
-        )
-    }
-}
 
 private fun formatTime(seconds: Long): String {
     val minutes = seconds / 60
@@ -1228,8 +1189,7 @@ fun FlamingoPlayerContent(
 
                 if (landscape) {
                     val landscapeSwipeModifier =
-                        Modifier
-
+                        if (!LocalPlayerPresentation.current.swipeArtwork) Modifier else Modifier
                             .pointerInput(playerConnection) {
                                 val swipeThresholdPx = 72.dp.toPx()
                                 var accumulatedDrag = 0f
@@ -1934,11 +1894,12 @@ fun FlamingoPlayerContent(
     }
 }
 
-// Alpha-mask stops for the lyrics edge fade, per controls-visibility state.
+// Alpha-mask stops that clear the lyrics from under the controls while they are shown. The top and
+// bottom box edges are faded by the lyrics renderer itself, so the first stops stay opaque here.
 private val FlamingoLyricsEdgeFadeStopsControlsVisible =
     listOf(
-        Color.Transparent,
-        Color(0x59000000),
+        Color.Black,
+        Color.Black,
         Color.Black,
         Color.Black,
         Color.Black,
@@ -1957,28 +1918,6 @@ private val FlamingoLyricsEdgeFadeStopsControlsVisible =
         Color.Transparent,
     )
 
-private val FlamingoLyricsEdgeFadeStopsControlsHidden =
-    listOf(
-        Color.Transparent,
-        Color(0x59000000),
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-        Color.Black,
-    )
-
 private fun Modifier.flamingoLyricsEdgeFade(
     weightLambda: () -> Boolean,
 ): Modifier = drawWithCache {
@@ -1991,13 +1930,8 @@ private fun Modifier.flamingoLyricsEdgeFade(
         blendMode = BlendMode.Plus
     }
     val rect = androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)
-    val fadeBrush = Brush.verticalGradient(
-        if (weightLambda()) {
-            FlamingoLyricsEdgeFadeStopsControlsVisible
-        } else {
-            FlamingoLyricsEdgeFadeStopsControlsHidden
-        },
-    )
+    val controlsVisible = weightLambda()
+    val fadeBrush = Brush.verticalGradient(FlamingoLyricsEdgeFadeStopsControlsVisible)
 
     onDrawWithContent {
         val canvas = this.drawContext.canvas
@@ -2005,10 +1939,12 @@ private fun Modifier.flamingoLyricsEdgeFade(
 
         drawContent()
 
-        drawRect(
-            brush = fadeBrush,
-            blendMode = BlendMode.DstIn,
-        )
+        if (controlsVisible) {
+            drawRect(
+                brush = fadeBrush,
+                blendMode = BlendMode.DstIn,
+            )
+        }
 
         canvas.restore()
     }
@@ -2834,6 +2770,7 @@ private fun FlamingoPlayingList(
     val scope = rememberCoroutineScope()
     val localPlayer = playerConnection.localPlayer
     val density = LocalDensity.current
+    val queueListState = rememberLazyListState(initialFirstVisibleItemIndex = (currentWindowIndex + 1).coerceAtLeast(0))
 
     Spacer(modifier = Modifier.height(12.dp))
 
@@ -2856,26 +2793,10 @@ private fun FlamingoPlayingList(
                 .height(65.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) {
-                Text(
-                    text = stringResource(id = R.string.flamingo_queue_header_title),
-                    fontSize = 16.5.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    text = stringResource(id = R.string.flamingo_queue_header_count, upNextCount),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .padding(top = 2.dp)
-                        .overlayEffect()
-                        .alpha(0.35f),
-                )
-            }
+            FlamingoQueueHeading(
+                upNextCount, Modifier.fillMaxWidth().weight(1f),
+                Modifier.padding(top = 2.dp).overlayEffect().alpha(0.35f),
+            )
 
             Row(
                 modifier = Modifier
@@ -2910,7 +2831,8 @@ private fun FlamingoPlayingList(
                                 painterResource(id = R.drawable.flamingo_np_shuffle),
                                 contentDescription = null,
                                 modifier = Modifier
-                                    .size(dp),
+                                    .size(dp)
+                                    .playerControlMotion(PlayerControlKind.Shuffle, shuffleModeEnabled),
                                 tint = shuffleIconTint.value,
                             )
                         }
@@ -2945,9 +2867,11 @@ private fun FlamingoPlayingList(
                         contentAlignment = Alignment.Center,
                     ) {
                         FlamingoWrapper {
-                            AnimatedContent(targetState = repeatMode, transitionSpec = {
-                                fadeIn() togetherWith fadeOut()
-                            }) { mode ->
+                            AnimatedContent(
+                                targetState = repeatMode,
+                                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                modifier = Modifier.playerControlMotion(PlayerControlKind.Repeat, repeatMode),
+                            ) { mode ->
                                 when (mode) {
                                     REPEAT_MODE_ONE -> Icon(
                                         painterResource(id = R.drawable.flamingo_np_repeatone),
@@ -2975,6 +2899,16 @@ private fun FlamingoPlayingList(
                 }
             }
         }
+
+        moe.rukamori.archivetune.ui.player.QueueExtrasBar(
+            onJumpToCurrent = {
+                if (currentWindowIndex in queueWindows.indices) scope.launch {
+                    queueListState.animateScrollToItem(currentWindowIndex + 1)
+                }
+            },
+            contentColor = Color.White,
+            modifier = Modifier.padding(horizontal = 30.dp),
+        )
 
         if (queueWindows.isEmpty()) {
             Column(
@@ -3020,10 +2954,7 @@ private fun FlamingoPlayingList(
             val currentWindow = queueWindows.getOrNull(currentWindowIndex)
             val currentDisplayIndex = 1 + historyWindows.size
 
-            val state = rememberLazyListState(
-                initialFirstVisibleItemIndex = currentDisplayIndex,
-                initialFirstVisibleItemScrollOffset = 0,
-            )
+            val state = queueListState
 
             // Seeded from the queue at composition so the up-next rows exist on the first
             // frame; the LaunchedEffect below re-syncs it while the page stays composed.
@@ -3696,6 +3627,7 @@ private fun FlamingoActionButtonsRow(
                 transitionSpec = {
                     fadeIn() togetherWith fadeOut()
                 },
+                modifier = Modifier.playerControlMotion(PlayerControlKind.Like, currentSongLiked),
             ) { liked ->
                 if (liked) {
                     Icon(
@@ -4217,6 +4149,8 @@ private fun FlamingoPlayerControl(
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center,
                     ) {
+                        val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+                        val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
                         Row(
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
@@ -4229,6 +4163,7 @@ private fun FlamingoPlayerControl(
                                         indication = ripple(bounded = false),
                                         onClick = {
                                             FlamingoHaptics.click(context)
+                                            previousMotion.tap()
                                             player.seekToPreviousMediaItem()
                                         },
                                     ),
@@ -4239,7 +4174,8 @@ private fun FlamingoPlayerControl(
                                     contentDescription = "Previous",
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(10.dp),
+                                        .padding(10.dp)
+                                        .then(previousMotion.modifier),
                                 )
                             }
 
@@ -4301,6 +4237,7 @@ private fun FlamingoPlayerControl(
                                         indication = ripple(bounded = false),
                                         onClick = {
                                             FlamingoHaptics.click(context)
+                                            nextMotion.tap()
                                             player.seekToNextMediaItem()
                                         },
                                     ),
@@ -4311,7 +4248,8 @@ private fun FlamingoPlayerControl(
                                     contentDescription = "Next",
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(10.dp),
+                                        .padding(10.dp)
+                                        .then(nextMotion.modifier),
                                 )
                             }
                         }

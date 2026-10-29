@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import moe.rukamori.archivetune.shared.domain.repository.*
+import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataOverride
 
 class RoomLibraryRepositoryTest {
     @Test fun committedPlaylistMutationsPreserveDuplicatesOrderAndTags() = runTest {
@@ -37,6 +38,37 @@ class RoomLibraryRepositoryTest {
             assertEquals("Track 4", repo.page(ContentQuery(RoomLibraryRepository.SONGS, text = "Track 4")).items.single().item.title)
             assertFailsWith<IllegalArgumentException> { repo.page(ContentQuery("unsupported")) }
             assertFailsWith<IllegalArgumentException> { repo.page(ContentQuery(RoomLibraryRepository.SONGS), "remote-token") }
+        } finally { db.close() }
+    }
+
+    @Test fun editedNamesDriveDisplayAndLocalSearchWhileStoredRowsStayCanonical() = runTest {
+        val db = openPortableStateDatabase(":memory:")
+        try {
+            val metadata = RoomSongMetadataRepository(db.songMetadataOverrides())
+            val repo = RoomLibraryRepository(db.library(), songMetadata = metadata)
+            val song = ContentItem(ContentRef("youtube", ContentKind.SONG, "same"), "Provider title",
+                artists = listOf(ContentCredit("Provider artist", "UC1")))
+            repo.saveItems(listOf(song))
+            metadata.setOverride(song.ref, SongMetadataOverride("Edited title", listOf("Edited artist"), 7L))
+
+            val page = repo.page(ContentQuery(RoomLibraryRepository.SONGS))
+            assertEquals("Edited title", page.items.single().item.title)
+            assertEquals(listOf("Edited artist"), page.items.single().item.artists.map { it.name })
+            assertEquals("Provider title", page.items.single().item.canonicalSongMetadata?.title)
+            assertEquals("Edited title", repo.observe(ContentQuery(RoomLibraryRepository.SONGS)).first().items.single().item.title)
+            assertEquals("Edited title", repo.findSong("same", "youtube")?.title)
+
+            // Local search answers from the edited fields, like the Android host; the provider names the
+            // user no longer sees do not match.
+            assertEquals("same", repo.page(ContentQuery(RoomLibraryRepository.SONGS, text = "edited title")).items.single().item.ref.id)
+            assertEquals("same", repo.page(ContentQuery(RoomLibraryRepository.SONGS, text = "EDITED ARTIST")).items.single().item.ref.id)
+            assertTrue(repo.page(ContentQuery(RoomLibraryRepository.SONGS, text = "Provider title")).items.isEmpty())
+            assertTrue(repo.page(ContentQuery(RoomLibraryRepository.SONGS, text = "Provider artist")).items.isEmpty())
+
+            // The stored row itself is untouched, so a reset brings the provider names back.
+            metadata.setOverride(song.ref, null)
+            assertEquals("Provider title", repo.page(ContentQuery(RoomLibraryRepository.SONGS)).items.single().item.title)
+            assertEquals("same", repo.page(ContentQuery(RoomLibraryRepository.SONGS, text = "Provider artist")).items.single().item.ref.id)
         } finally { db.close() }
     }
 }

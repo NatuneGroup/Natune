@@ -74,7 +74,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
-import moe.rukamori.archivetune.shared.domain.settings.AppleMusicExperienceKey
+import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.ArtistSeparatorsKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
@@ -501,7 +501,7 @@ internal fun DesktopPlayerMenuDialog(
     val pin = snapshot?.get(SongSourceOverrideKey)?.let { SongSourceOverride.get(it, track.mediaId) }
     val state = PlayerQueueMenuState(
         style = snapshot?.get(PlayerDesignStyleKey).toEnum(PlayerDesignStyle.Default),
-        appleMusicExperience = snapshot?.get(AppleMusicExperienceKey) ?: false,
+        appleMusicExperience = snapshot?.appleMusicMenus() ?: false,
         download = PlayerQueueDownloadState.NOT_DOWNLOADED,
         pinnedToSpeedDial = snapshot?.get(SpeedDialSongIdsKey)?.let { raw ->
             parseSpeedDialPins(raw).any { it.type == SpeedDialPinType.SONG && it.id == track.mediaId }
