@@ -414,11 +414,13 @@
         <activity
             android:name=".ui.screens.settings.PoTokenExtractionActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.ArchiveTune" />
 
         <activity
             android:name=".ui.screens.settings.AmazonTurnstileActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.ArchiveTune" />
 
         <activity

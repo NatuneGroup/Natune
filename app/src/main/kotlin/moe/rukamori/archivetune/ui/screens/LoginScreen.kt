@@ -40,6 +40,7 @@ import moe.rukamori.archivetune.auth.YouTubeLoginDocumentCallbacks
 import moe.rukamori.archivetune.auth.mergePreferredYouTubeCookies
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
+import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.viewmodels.LoginError
 import moe.rukamori.archivetune.viewmodels.LoginScreenState
@@ -112,17 +113,10 @@ fun LoginScreen(
                 (view.tag as? YouTubeLoginWebViewClient)?.destroy(view)
             },
             factory = { webContext ->
-                WebView(webContext).apply {
+                createAuthWebView(webContext).apply {
                     val owner = YouTubeLoginWebViewClient(viewModel, webRevision)
                     webViewClient = owner
                     tag = owner
-                    settings.apply {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true
-                        setSupportZoom(true)
-                        builtInZoomControls = true
-                        displayZoomControls = false
-                    }
                     // Keep this jar, including through the official return and explicit Retry.
                     val loginView = this
                     CookieManager.getInstance().apply {
