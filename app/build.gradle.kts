@@ -177,7 +177,9 @@ android {
 
     defaultConfig {
     applicationId = "moe.rukamori.archivetune"
-        minSdk = 26
+        // API 24 floor. Platform calls newer than 24 are guarded at their call sites, and the
+        // AAudio entry points are loaded at runtime (native/dsp) so the library loads on 24-25.
+        minSdk = 24
         targetSdk = 37
         // Version. Unsigned local builds use the committed base values. Signed CI builds pass an
         // allocated VERSION_CODE_OVERRIDE above trustedUpgradeVersionCodeFloor, enforced above.
@@ -480,7 +482,8 @@ android {
     }
 
     compileOptions {
-        isCoreLibraryDesugaringEnabled = false
+        // java.time, java.util.Base64 and other Java 8+ APIs are used below API 26 (minSdk 24).
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
