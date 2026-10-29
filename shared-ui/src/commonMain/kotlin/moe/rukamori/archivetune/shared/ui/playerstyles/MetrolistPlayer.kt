@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.player.*
@@ -54,7 +55,8 @@ internal fun MetrolistPlayer(c: PlayerRenderContext) {
 private fun MetrolistArtwork(c: PlayerRenderContext,vintage: Boolean) {
     val frame=if(vintage) Modifier.border(8.dp,MaterialTheme.colorScheme.outlineVariant,RoundedCornerShape(0.dp)).padding(16.dp)
         .background(MaterialTheme.colorScheme.surfaceContainerHigh) else Modifier.clip(RoundedCornerShape(12.dp))
-    Box(Modifier.fillMaxWidth().aspectRatio(1f).testTag("metrolist-square-artwork").then(frame)) {
+    Box(Modifier.fillMaxWidth().aspectRatio(1f).testTag("metrolist-square-artwork").then(frame)
+        .graphicsLayer { alpha = if (c.preferences.sleeveHidden) 0f else 1f }) {
         Crossfade(c.state.playback?.occurrenceId,
             animationSpec=tween(if(c.motionActive) 300 else 0),label="metrolist-artwork") { occurrence ->
             c.slots.artwork(occurrence,Modifier.fillMaxSize())
