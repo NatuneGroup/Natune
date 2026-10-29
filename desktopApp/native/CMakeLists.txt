@@ -67,8 +67,11 @@ target_link_libraries(archivetune_engine
         ${AE_swscale_LIBRARY}
         Threads::Threads
         ${CMAKE_DL_LIBS}
-        m
 )
+if(UNIX)
+    # libm exists only on the Unix hosts; MSVC's CRT covers the same calls.
+    target_link_libraries(archivetune_engine PRIVATE m)
+endif()
 
 if(UNIX AND NOT APPLE)
     # The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
@@ -106,7 +109,10 @@ if(BUILD_TESTING)
     target_compile_options(archivetune_realtime_test PRIVATE -Wall -Wextra)
     target_link_libraries(archivetune_realtime_test PRIVATE
         ${AE_avformat_LIBRARY} ${AE_avcodec_LIBRARY} ${AE_avfilter_LIBRARY} ${AE_avutil_LIBRARY}
-        Threads::Threads ${CMAKE_DL_LIBS} m)
+        Threads::Threads ${CMAKE_DL_LIBS})
+    if(UNIX)
+        target_link_libraries(archivetune_realtime_test PRIVATE m)
+    endif()
     if(UNIX AND NOT APPLE)
         target_link_options(archivetune_realtime_test PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
         target_link_options(archivetune_realtime_test PRIVATE "LINKER:--disable-new-dtags")
