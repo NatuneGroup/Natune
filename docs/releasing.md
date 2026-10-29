@@ -150,6 +150,11 @@ recipe changes still require an exact-head Blacksmith packaging run:
   `build/native/openssl-static` and `TDLIGHT_ZLIB_PREFIX` at `build/native/prefix`.
   The latter contains both zlib's DLL/import library and its static `libz.a`.
   Do not feed these MinGW archives to the separate MSVC PowerShell recipe.
+  zlib uses upstream's `win32/Makefile.gcc install` recipe (which builds
+  `libz.a`, `zlib1.dll`, `libz.dll.a` and `zlib.pc` without the example programs)
+  and every dependency build runs under the MSYS build of `make`, whose recipes
+  are POSIX. A failing dependency prints the end of its own log, so a red leg
+  names its cause instead of only an exit status.
   Downloads retry bounded connection/TLS failures without changing checksum or
   FFmpeg signature verification. The WebView2 SDK argument is the extracted
   package root, not its `build/native` child.
@@ -158,7 +163,9 @@ recipe changes still require an exact-head Blacksmith packaging run:
   output, so `-PdesktopNativeDirectory` is no longer needed on any host. The x64
   leg runs on an arm64 runner through a x64 JDK under Rosetta 2; the dependency
   closure and tdjni build under `arch -x86_64`. CMake and the stager also receive
-  the packaging JVM architecture explicitly; `lipo` rejects mismatched dylibs.
+  the packaging JVM architecture explicitly, the stager prints the `lipo`
+  architecture it audits, and `lipo` takes the file before `-verify_arch`, so it
+  rejects mismatched dylibs instead of reading the path as an architecture flag.
   The browser install task owns only its library output, so Gradle cannot clean
   the playback engine and media closure as stale browser outputs.
 - Linux x64 and arm64 install `gperf` for TDLib source generation. The arm64 leg
@@ -166,7 +173,11 @@ recipe changes still require an exact-head Blacksmith packaging run:
 - iOS release CI explicitly expects the runner's Xcode 26.6 and builds only the
   `iphoneos` native closure. It retains the producer's strict version check
   rather than allowing an arbitrary/unverified Xcode, and keeps code signing
-  disabled for the IPA. This is not yet a successful device-link/package result.
+  disabled for the IPA. The job installs gpg like the desktop macOS legs, and the
+  producer verifies the FFmpeg tarball against the pinned release fingerprint
+  inside a short-lived temporary `GNUPGHOME` (macOS caps unix socket paths, so the
+  keyring cannot live under the deep work tree) and prints the gpg log on failure.
+  This is not yet a successful device-link/package result.
 
 Nightly preparation runs `scripts.test_release_workflow` and
 `scripts.test_native_release_packaging` with Python's standard-library unittest.
