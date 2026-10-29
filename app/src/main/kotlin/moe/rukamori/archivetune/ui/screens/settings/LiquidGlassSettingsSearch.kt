@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.ui.screens.settings
 
+import android.content.Context
 import androidx.compose.material3.ColorScheme
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.R
@@ -7,12 +8,16 @@ import moe.rukamori.archivetune.R
 internal const val LIQUID_GLASS_SETTINGS_SEARCH_KEY = "liquid_glass_settings"
 
 /** Search index for Appearance → Liquid Glass customisation; hidden from the main list like the other sub-pages. */
-internal fun liquidGlassSettingsItem(navController: NavController, colorScheme: ColorScheme): SettingsItem =
+internal fun liquidGlassSettingsItem(
+    context: Context,
+    navController: NavController,
+    colorScheme: ColorScheme,
+): SettingsItem =
     SettingsItem(
         key = LIQUID_GLASS_SETTINGS_SEARCH_KEY,
         icon = R.drawable.blur_on,
-        title = "Liquid Glass customisation",
-        subtitle = "Refraction, blur, tint and optical quality",
+        title = context.getString(R.string.liquid_glass_settings_title),
+        subtitle = context.getString(R.string.liquid_glass_customisation_subtitle),
         accentColor = colorScheme.secondary,
         keywords = listOf("liquid glass", "glass tuning", "glass customisation", "glass customization", "refraction", "glass blur"),
         onClick = { navController.navigate(LIQUID_GLASS_SETTINGS_ROUTE) },
