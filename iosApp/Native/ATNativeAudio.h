@@ -28,6 +28,9 @@ void at_audio_speed(at_audio_output *output, float speed);
 void at_audio_volume(at_audio_output *output, float volume);
 void at_audio_stop(at_audio_output *output);
 void at_audio_snapshot(at_audio_output *output, ae_snapshot *snapshot);
+/* Main-thread OS estimate in seconds: max(session output latency, output-node presentation latency), since these
+ * overlap rather than form additive stages. Negative means unavailable. Never read from the realtime callback. */
+double at_audio_output_latency(at_audio_output *output);
 size_t at_audio_last_error(at_audio_output *output, char *buffer, size_t length);
 /* Shared session policy for one microphone recording window. Playback outputs and recording windows coordinate the one
  * AVAudioSession here, never inside the render callback. An open window keeps play-and-record, and playback started in

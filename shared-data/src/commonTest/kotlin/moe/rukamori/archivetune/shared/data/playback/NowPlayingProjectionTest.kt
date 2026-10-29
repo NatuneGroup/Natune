@@ -97,6 +97,11 @@ class NowPlayingProjectionTest {
     }
 
     @Test
+    fun outputLatencyChangesDoNotRewriteSystemMetadataOrTransport() {
+        assertEquals(NowPlayingChanges(false, false, false), changes(snapshot.copy(outputLatencyMs = 2_000L)))
+    }
+
+    @Test
     fun metadataCorrectionsAndDiscoveredDurationPublishWithoutATransportChange() {
         val original = nowPlayingProjection(snapshot, item)
         for (replacement in listOf(item.copy(title = "Corrected"), item.copy(subtitle = "Credit"), item.copy(album = null))) {

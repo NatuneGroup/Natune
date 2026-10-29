@@ -188,6 +188,24 @@ class EnginePlaybackMapperTest {
     }
 
     @Test
+    fun outputLatencyStaysSeparateFromMediaPositionsAndSurvivesStop() {
+        val mapper = EnginePlaybackMapper()
+        mapper.beginRequest(request, engineLoadGeneration = 1L)
+        val snapshot = assertNotNull(mapper.observe(state(positionUs = 3_000_000L), 1L, outputLatencyMs = 2_000L))
+        assertEquals(3_000L, snapshot.positionMs)
+        assertEquals(2_000L, snapshot.outputLatencyMs)
+        assertEquals(2_000L, assertNotNull(mapper.stopped(2L)).outputLatencyMs)
+    }
+
+    @Test
+    fun missingLatencyDoesNotReuseThePreviousRoutesEstimate() {
+        val mapper = EnginePlaybackMapper()
+        mapper.beginRequest(request, engineLoadGeneration = 1L)
+        mapper.observe(state(), 1L, outputLatencyMs = 2_000L)
+        assertNull(assertNotNull(mapper.observe(state(), 2L)).outputLatencyMs)
+    }
+
+    @Test
     fun speedChangesAreReportedFromTheEngine() {
         val mapper = EnginePlaybackMapper()
         mapper.beginRequest(request, engineLoadGeneration = 1L)

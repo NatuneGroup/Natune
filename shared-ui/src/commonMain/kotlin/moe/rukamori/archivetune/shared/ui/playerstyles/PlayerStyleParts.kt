@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -515,6 +516,15 @@ internal fun StyleIconButton(
     enabled: Boolean = true,
     selected: Boolean? = null,
 ) {
+    val outputButton = c.slots.outputButton
+    if (action == PlayerAction.OUTPUT && outputButton != null) {
+        outputButton(
+            modifier.size(width ?: size, size),
+            if (iconColor == Color.Unspecified) LocalContentColor.current else iconColor,
+            enabled,
+        )
+        return
+    }
     PlayerIcon(
         symbol = symbol,
         label = label ?: action?.let { stringResource(actionLabel(it)) } ?: "",

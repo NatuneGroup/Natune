@@ -102,4 +102,6 @@ class PlayerSlots(
     val lyrics: @Composable (modifier: Modifier) -> Unit,
     val compactLyrics: @Composable (modifier: Modifier) -> Unit,
     val queue: @Composable (modifier: Modifier) -> Unit,
+    /** A native route control when the host supplies one; other hosts retain their existing OUTPUT action. */
+    val outputButton: (@Composable (modifier: Modifier, tint: Color, enabled: Boolean) -> Unit)? = null,
 )
