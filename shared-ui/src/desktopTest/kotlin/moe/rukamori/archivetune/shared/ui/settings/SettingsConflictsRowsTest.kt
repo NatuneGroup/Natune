@@ -6,12 +6,12 @@ import moe.rukamori.archivetune.shared.ui.resources.*
 
 class SettingsConflictsRowsTest {
     @Test fun hostsWithoutACustomFontPickerKeepTheSavedFontAndExplainTheUnavailableAction() {
-        val before = PreferenceSnapshot.of(AppFontPreferenceKey to "CUSTOM", CustomFontUriKey to "file:///saved/font.otf")
+        val before = PreferenceSnapshot.of(FontPreferenceKey to "CUSTOM", CustomFontUriKey to "file:///saved/font.otf")
         val row = appearanceThemeSettingsRows(before, false, false, false, false, {}, {}, {}, {}, {},
             customFontPickerSupported = false).single { it.anchor == "custom_font" }
         assertFalse(row.enabled)
         assertEquals(Res.string.m6_custom_font_picker_unavailable, row.description)
-        assertEquals("CUSTOM", before[AppFontPreferenceKey])
+        assertEquals("CUSTOM", before[FontPreferenceKey])
     }
 
     @Test fun paletteAndCacheRowsUseTheSameAtomicRulesAsTheAndroidHost() {

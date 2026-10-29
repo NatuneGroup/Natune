@@ -95,6 +95,7 @@ TELEGRAM_SYMBOLS="td_json_client_create td_json_client_send td_json_client_recei
 
 XCODE_UNVERIFIED=0
 XCODE_LINE=""
+GPG_BIN=""
 SHA256=()
 PLATFORM=""
 
@@ -108,9 +109,16 @@ esac
 preflight() {
     [ "$(uname -s)" = "Darwin" ] || die "this producer runs on macOS with full Xcode; this host is $(uname -s), so nothing was built"
     local tool
-    for tool in xcodebuild xcrun curl tar perl pkg-config gpg awk git cmake gperf; do
+    for tool in xcodebuild xcrun curl tar perl pkg-config awk git cmake gperf; do
         command -v "$tool" >/dev/null 2>&1 || die "$tool is required; see the prerequisites in this script's header"
     done
+    if command -v gpg >/dev/null 2>&1; then
+        GPG_BIN="$(command -v gpg)"
+    elif command -v gpg2 >/dev/null 2>&1; then
+        GPG_BIN="$(command -v gpg2)"
+    else
+        die "gpg or gpg2 is required for the FFmpeg release signature; see the prerequisites in this script's header"
+    fi
     if command -v gmake >/dev/null 2>&1; then
         mkdir -p "$WORK/bin"
         ln -sf "$(command -v gmake)" "$WORK/bin/make"
@@ -142,7 +150,9 @@ fetch() {
     local url="$1" dest="$2" sha="$3"
     if [ ! -f "$dest" ]; then
         log "downloading $(basename "$dest")"
-        curl -fsSL -o "$dest.part" "$url"
+        curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 300 \
+            --connect-timeout 30 --max-time 180 -o "$dest.part" "$url"
         mv "$dest.part" "$dest"
     fi
     if [ "$(sha256_of "$dest")" != "$sha" ]; then
@@ -153,20 +163,37 @@ fetch() {
 
 verify_ffmpeg_signature() {
     local tarball="$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz"
-    local gnupg="$WORK/gnupg"
+    local log="$WORK/logs/ffmpeg-signature.log"
     local status="$WORK/logs/ffmpeg-verify-status.txt"
-    mkdir -p "$gnupg" "$WORK/logs"
-    chmod 700 "$gnupg"
-    GNUPGHOME="$gnupg" gpg --batch --import "$DOWNLOADS/ffmpeg-devel.asc" >"$WORK/logs/ffmpeg-signature.log" 2>&1 \
-        || die "gpg could not import the FFmpeg release key; see $WORK/logs/ffmpeg-signature.log"
+    local tmp gnupg
+    mkdir -p "$WORK/logs"
+    # gpg-agent keeps its sockets inside GNUPGHOME, and macOS rejects unix socket paths longer than 104
+    # bytes. $WORK sits deep under the checkout, so a keyring there made gpg fail before it verified
+    # anything; a short-lived home under TMPDIR keeps the sockets short and leaves no keyring behind.
+    tmp="${TMPDIR:-/tmp}"
+    tmp="${tmp%/}"
+    gnupg="$(mktemp -d "$tmp/archivetune-ffmpeg-gpg.XXXXXX")" \
+        || die "could not create a temporary GNUPGHOME for the FFmpeg signature check"
+    : >"$log"
+    if ! GNUPGHOME="$gnupg" "$GPG_BIN" --batch --yes --no-tty --import "$DOWNLOADS/ffmpeg-devel.asc" \
+        >>"$log" 2>&1; then
+        tail -n 20 "$log" >&2 || true
+        die "gpg could not import the FFmpeg release key, so the tarball stays unverified; see $log"
+    fi
     # gpg exits non-zero for a bad signature; the status lines decide, so the exit status is not checked here.
-    GNUPGHOME="$gnupg" gpg --batch --status-fd 1 --verify "$tarball.asc" "$tarball" \
-        >"$status" 2>>"$WORK/logs/ffmpeg-signature.log" || true
+    GNUPGHOME="$gnupg" "$GPG_BIN" --batch --status-fd 1 --verify "$tarball.asc" "$tarball" \
+        >"$status" 2>>"$log" || true
     if grep -q "^\[GNUPG:\] VALIDSIG .* $FFMPEG_SIGNING_FPR\$" "$status"; then
         log "FFmpeg $FFMPEG_VERSION signature verified against $FFMPEG_SIGNING_FPR"
     else
-        die "FFmpeg signature verification FAILED; see $WORK/logs/ffmpeg-signature.log"
+        tail -n 20 "$log" >&2 || true
+        grep "^\[GNUPG:\]" "$status" >&2 || true
+        die "FFmpeg signature verification FAILED; the tarball is not signed by $FFMPEG_SIGNING_FPR, see $log"
     fi
+    if command -v gpgconf >/dev/null 2>&1; then
+        GNUPGHOME="$gnupg" gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+    fi
+    rm -rf -- "$gnupg"
 }
 
 download_sources() {

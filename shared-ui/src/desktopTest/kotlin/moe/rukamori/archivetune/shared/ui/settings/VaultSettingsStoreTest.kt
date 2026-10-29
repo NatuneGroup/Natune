@@ -14,7 +14,7 @@ class VaultSettingsStoreTest {
         DesktopSettingsStore.open(path).also { ordinary ->
             ordinary.edit {
                 this[DynamicThemeKey] = true
-                this[RandomThemeKey] = true
+                this[RandomThemeOnStartupKey] = true
                 this[UseSystemFontKey] = true
                 this[BitPerfectUsbOutputKey] = true
                 this[AutomixEnabledKey] = true
@@ -23,8 +23,8 @@ class VaultSettingsStoreTest {
         }
         val owner = VaultTestOwner.open(path, TestSettingsVault())
         val migrated = owner.snapshot()
-        assertEquals(false, migrated[RandomThemeKey])
-        assertEquals("SYSTEM", migrated[AppFontPreferenceKey])
+        assertEquals(false, migrated[RandomThemeOnStartupKey])
+        assertEquals("SYSTEM", migrated[FontPreferenceKey])
         assertNull(migrated[UseSystemFontKey])
         assertEquals(true, migrated[AutomixEnabledKey])
         assertEquals(false, migrated[BitPerfectUsbOutputKey])

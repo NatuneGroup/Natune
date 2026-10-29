@@ -22,6 +22,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -29,13 +30,27 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import org.junit.Assume.assumeTrue
 
 /**
  * Live-network smoke test of the exact InnerTubeX calls the iOS resolver and browse transport make. The iOS
  * classes are thin wrappers over these calls; running them on the JVM proves the request shapes, params and the
  * extractor path against real YouTube while the iOS simulator's trust store is broken in this environment.
+ *
+ * These requests leave the machine, so the tests are opt-in: they run only when the `INNERTUBE_SMOKE`
+ * environment variable is `1`, and are otherwise reported as skipped. The `Unit tests` workflow stays
+ * authoritative for the offline suites and sets the flag from its `innertube_smoke` manual-dispatch input;
+ * locally, run `INNERTUBE_SMOKE=1 ./gradlew :shared-data:jvmTest` to exercise them deliberately.
  */
 class JvmInnerTubeXSmokeTest {
+    /** A live YouTube run must be asked for; a network outage or a rate limit is not a regression here. */
+    @BeforeTest
+    fun requireLiveNetworkOptIn() =
+        assumeTrue(
+            "Live InnerTube smoke test skipped: set INNERTUBE_SMOKE=1 to run it against YouTube.",
+            System.getenv(INNERTUBE_SMOKE) == "1",
+        )
+
     private val client =
         HttpClient(CIO) {
             expectSuccess = true
@@ -123,5 +138,6 @@ class JvmInnerTubeXSmokeTest {
 
     private companion object {
         const val VIDEO_ID = "60ItHLz5WEA"
+        const val INNERTUBE_SMOKE = "INNERTUBE_SMOKE"
     }
 }

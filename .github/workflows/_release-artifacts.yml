@@ -93,52 +93,27 @@ env:
 
 jobs:
   android:
-    name: Android ${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
+    name: Android ${{ matrix.variant }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     if: inputs.build_android
     permissions:
-      contents: read
+      # Write only for the staging prerelease that carries the APK when artifact storage is full.
+      contents: write
     outputs:
       signing_status: ${{ steps.sign-apk.outputs.signing_status }}
     strategy:
       fail-fast: false
       matrix:
+        variant:
+          - gms-mobile-arm64
+          - gms-mobile-armeabi
+          - gms-mobile-x86_64
+          - gms-mobile-universal
+          - foss-mobile-universal
+          - gms-tv-universal
+        # Matching an existing row adds nothing; only Stable gets the seventh, x86 APK.
         include:
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: arm64
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: armeabi
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: x86
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: x86_64
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: universal
-          - distribution: foss
-            distribution_name: Foss
-            device: mobile
-            device_name: Mobile
-            abi: universal
-          - distribution: gms
-            distribution_name: Gms
-            device: tv
-            device_name: Tv
-            abi: universal
+          - variant: ${{ inputs.channel == 'stable' && 'gms-mobile-x86' || 'gms-mobile-arm64' }}
     env:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
@@ -184,14 +159,13 @@ jobs:
           java-version: '21'
           distribution: temurin
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-37
-            build-tools;35.0.0
-            ndk;30.0.16248370
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          SDK_DIR="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f | sort -V | tail -n1)"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-37.0" "build-tools;35.0.0" "ndk;30.0.16248370"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -203,13 +177,12 @@ jobs:
         shell: bash
         env:
           CHANNEL: ${{ inputs.channel }}
-          DISTRIBUTION: ${{ matrix.distribution }}
-          DISTRIBUTION_NAME: ${{ matrix.distribution_name }}
-          DEVICE: ${{ matrix.device }}
-          DEVICE_NAME: ${{ matrix.device_name }}
-          ABI: ${{ matrix.abi }}
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
+          IFS=- read -r DISTRIBUTION DEVICE ABI <<< "$VARIANT"
+          DISTRIBUTION_NAME="${DISTRIBUTION^}"
+          DEVICE_NAME="${DEVICE^}"
           ABI_CAP="$(tr '[:lower:]' '[:upper:]' <<< "${ABI:0:1}")${ABI:1}"
           CHANNEL_SUFFIX=release
           if [[ "$CHANNEL" == nightly ]]; then
@@ -230,10 +203,20 @@ jobs:
           APK_NAME: ${{ steps.variant.outputs.apk_name }}
         run: |
           set -euo pipefail
-          mapfile -t APKS < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          APK_ROOT=app/build/outputs/apk
+          # List what the assemble step actually left behind before asserting, so a miss names its own cause.
+          if [[ ! -d "$APK_ROOT" ]]; then
+            echo "::error::$APK_ROOT does not exist after the assemble task."
+            find app/build -maxdepth 4 -type d -print 2>/dev/null | sort || true
+            exit 1
+          fi
+          echo "APK files under $APK_ROOT:"
+          find "$APK_ROOT" -type f -name '*.apk' -print | sort
+          # Only .apk files count, so the listing files and metadata AGP writes beside the APK cannot inflate it.
+          mapfile -t APKS < <(find "$APK_ROOT" -type f -name '*.apk' | sort)
           if [[ "${#APKS[@]}" -ne 1 ]]; then
             echo "::error::Expected exactly one release APK, found ${#APKS[@]}."
-            find app/build/outputs/apk -maxdepth 8 -type f -print || true
+            find "$APK_ROOT" -maxdepth 8 -type f -print || true
             exit 1
           fi
           mkdir -p release-assets
@@ -257,11 +240,32 @@ jobs:
             exit 0
           fi
 
-          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -n 1)"
-          if [[ -z "$BUILD_TOOLS" || ! -x "$BUILD_TOOLS/apksigner" || ! -x "$BUILD_TOOLS/zipalign" ]]; then
+          # ANDROID_HOME is not exported by every runner image; the SDK locations below cover the rest.
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$SDK_ROOT" || ! -d "$SDK_ROOT/build-tools" ]]; then
+            for candidate in /usr/local/lib/android/sdk "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+              if [[ -d "$candidate/build-tools" ]]; then
+                SDK_ROOT="$candidate"
+                break
+              fi
+            done
+          fi
+          echo "Android SDK root: ${SDK_ROOT:-<none found>}"
+          # The highest version that actually carries both tools: a partially installed directory must not win.
+          BUILD_TOOLS=""
+          if [[ -n "$SDK_ROOT" && -d "$SDK_ROOT/build-tools" ]]; then
+            echo "Installed build-tools: $(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tr '\n' ' ')"
+            while IFS= read -r candidate; do
+              if [[ -x "$candidate/apksigner" && -x "$candidate/zipalign" ]]; then
+                BUILD_TOOLS="$candidate"
+              fi
+            done < <(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V)
+          fi
+          if [[ -z "$BUILD_TOOLS" ]]; then
             echo "::error::Android build-tools do not contain apksigner and zipalign."
             exit 1
           fi
+          echo "Using build-tools: $BUILD_TOOLS"
           KEYSTORE_FILE="$(mktemp)"
           ALIGNED_APK="$RUNNER_TEMP/aligned-$APK_NAME"
           trap 'rm -f "$KEYSTORE_FILE" "$ALIGNED_APK"' EXIT
@@ -278,19 +282,49 @@ jobs:
           echo "signing_status=signed" >> "$GITHUB_OUTPUT"
 
       - name: Upload Android APK
+        id: upload-apk
         uses: actions/upload-artifact@v7
+        # Artifact storage is metered per organization and can be exhausted independently of this
+        # build; the APK is then handed over through a release, whose assets are metered separately.
+        continue-on-error: true
         with:
-          name: android-${{ inputs.channel }}-${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
+          name: android-${{ inputs.channel }}-${{ matrix.variant }}
           path: release-assets/${{ steps.variant.outputs.apk_name }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
+
+      - name: Publish Android APK to a staging release when artifact upload fails
+        if: steps.upload-apk.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APK_NAME: ${{ steps.variant.outputs.apk_name }}
+          VARIANT: ${{ matrix.variant }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-android-${VARIANT}"
+          echo "::warning::Workflow-artifact upload failed; handing $APK_NAME over through release $STAGING_TAG."
+          # The tag carries the variant, so the parallel matrix legs never race on one release.
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Staging hand-off: $CHANNEL android $VARIANT (run $GITHUB_RUN_ID)" \
+              --notes "Temporary release-asset hand-off for workflow run $GITHUB_RUN_ID; removed once the $CHANNEL release is published."
+          fi
+          gh release upload "$STAGING_TAG" "release-assets/$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber
 
   desktop:
     name: Desktop ${{ matrix.platform }}-${{ matrix.arch }}
     if: inputs.build_desktop
     runs-on: ${{ matrix.runner }}
     permissions:
-      contents: read
+      # Write only for the staging prerelease that carries the installers when artifact storage is full.
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -385,7 +419,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev gperf
 
       - name: Install native build prerequisites (macOS)
         if: matrix.platform == 'macos'
@@ -403,14 +437,26 @@ jobs:
           path-type: inherit
           install: >-
             mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gperf
+            mingw-w64-x86_64-pkgconf
             make
             tar
             curl
             gnupg
+            perl
             python
             binutils
             pkgconf
             diffutils
+
+      - name: Locate MinGW tools for the Gradle packaging steps
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          echo "ARCHIVETUNE_MINGW_BIN=$(cygpath -w /mingw64/bin)" >> "$GITHUB_ENV"
+          echo "ARCHIVETUNE_MSYS_BIN=$(cygpath -w /usr/bin)" >> "$GITHUB_ENV"
 
       - name: Install Rosetta 2 (macOS x64 leg)
         if: matrix.platform == 'macos' && matrix.arch == 'x64'
@@ -444,7 +490,8 @@ jobs:
         # for hosts that produce a MSVC-built static prefix, which this workflow does not create.
         run: |
           set -euo pipefail
-          TDLIGHT_OPENSSL_PREFIX="$GITHUB_WORKSPACE/desktopApp/build/native/openssl-static" \
+          TDLIGHT_OPENSSL_PREFIX="$PWD/desktopApp/build/native/openssl-static" \
+          TDLIGHT_ZLIB_PREFIX="$PWD/desktopApp/build/native/prefix" \
             bash desktopApp/tdlight-jvm/native/build-tdjni.sh
 
       - name: Build TDLight native library (Linux and macOS)
@@ -471,16 +518,17 @@ jobs:
             -Uri 'https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.4258.31' `
             -OutFile $archive
           Expand-Archive -Path $archive -DestinationPath $sdkRoot
-          $sdk = Join-Path $sdkRoot 'build\native'
-          if (-not (Test-Path $sdk)) {
+          if (-not (Test-Path (Join-Path $sdkRoot 'build\native\include\WebView2.h'))) {
             throw "WebView2 SDK was not found under $sdkRoot"
           }
-          "WEBVIEW2_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEBVIEW2_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build native engine before packaging (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          # Keep the host CMake first (the OS/browser adapters use its native generator).
+          $env:PATH += ";$env:ARCHIVETUNE_MINGW_BIN;$env:ARCHIVETUNE_MSYS_BIN"
           ./gradlew.bat :desktopApp:buildNativeEngine --no-daemon --max-workers=2 `
             "-PdesktopPackageVersion=$env:PACKAGE_VERSION" `
             "-PdesktopDisplayVersion=$env:DISPLAY_VERSION"
@@ -498,6 +546,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          $env:PATH += ";$env:ARCHIVETUNE_MINGW_BIN;$env:ARCHIVETUNE_MSYS_BIN"
           ./gradlew.bat :desktopApp:createDistributable :desktopApp:packageMsi --no-daemon --max-workers=2 `
             "-PdesktopPackageVersion=$env:PACKAGE_VERSION" `
             "-PdesktopDisplayVersion=$env:DISPLAY_VERSION" `
@@ -533,7 +582,7 @@ jobs:
           Copy-Item $msi.FullName (Join-Path $out "natune-desktop-windows-x64-$env:DISPLAY_VERSION.msi")
 
           $appImage = Join-Path $env:GITHUB_WORKSPACE 'desktopApp/build/compose/binaries/main/app/Natune'
-          if (-not (Test-Path (Join-Path $appImage 'bin/Natune.exe'))) { throw "Desktop app image is missing: $appImage" }
+          if (-not (Test-Path (Join-Path $appImage 'Natune.exe'))) { throw "Desktop app image is missing: $appImage" }
           $exeDir = Join-Path $env:RUNNER_TEMP 'natune-exe'
           New-Item -ItemType Directory -Force -Path $exeDir | Out-Null
           & (Join-Path $env:JAVA_HOME 'bin/jpackage.exe') `
@@ -616,7 +665,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          mapfile -t DMGS < <(find desktopApp/build/compose/binaries -type f -name '*.dmg' | sort)
+          # macOS still ships Bash 3.2, which has no mapfile builtin.
+          DMGS=()
+          while IFS= read -r -d '' dmg; do
+            DMGS+=("$dmg")
+          done < <(find desktopApp/build/compose/binaries -type f -name '*.dmg' -print0)
           if [[ "${#DMGS[@]}" -ne 1 ]]; then
             echo "::error::Expected one DMG package, found ${#DMGS[@]}."
             exit 1
@@ -624,23 +677,52 @@ jobs:
           cp "${DMGS[0]}" "release-assets/natune-desktop-macos-${ARCH}-${DISPLAY_VERSION}.dmg"
 
       - name: Upload desktop artifacts
+        id: upload-desktop
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: desktop-${{ inputs.channel }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: release-assets/*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
+
+      - name: Publish desktop installers to a staging release when artifact upload fails
+        if: steps.upload-desktop.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-desktop-${PLATFORM}-${ARCH}"
+          echo "::warning::Workflow-artifact upload failed; handing the $PLATFORM-$ARCH installers over through release $STAGING_TAG."
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Staging hand-off: $CHANNEL desktop $PLATFORM-$ARCH (run $GITHUB_RUN_ID)" \
+              --notes "Temporary release-asset hand-off for workflow run $GITHUB_RUN_ID; removed once the $CHANNEL release is published."
+          fi
+          gh release upload "$STAGING_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
 
   ios:
     name: Unsigned iOS IPA
     runs-on: blacksmith-6vcpu-macos-latest
     if: inputs.build_ios
     permissions:
-      contents: read
+      # Write only for the staging prerelease that carries the IPA when artifact storage is full.
+      contents: write
     env:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       PACKAGE_VERSION: ${{ inputs.package_version }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
+      # Match the selected Blacksmith Xcode explicitly; do not bypass the producer's version gate.
+      ARCHIVETUNE_XCODE_VERSION: '26.6'
       ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
       ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
       ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
@@ -692,9 +774,17 @@ jobs:
           restore-keys: |
             konan-${{ runner.os }}-${{ runner.arch }}-
 
+      # The native closure verifies the FFmpeg tarball against the release key, exactly as the desktop
+      # macOS legs do, so both jobs install the same gpg instead of trusting the image.
+      - name: Install the FFmpeg release-key prerequisites (macOS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v gpg >/dev/null 2>&1 || brew install gnupg
+
       - name: Build the iOS native dependency closure
         shell: bash
-        run: bash scripts/build_ios_native_core.sh
+        run: bash scripts/build_ios_native_core.sh iphoneos
 
       - name: Build unsigned device app and create IPA
         shell: bash
@@ -731,12 +821,38 @@ jobs:
           )
 
       - name: Upload unsigned iOS IPA
+        id: upload-ipa
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: ios-${{ inputs.channel }}
           path: release-assets/natune-ios-${{ inputs.version_name }}.ipa
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
+
+      - name: Publish unsigned iOS IPA to a staging release when artifact upload fails
+        if: steps.upload-ipa.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-ios"
+          echo "::warning::Workflow-artifact upload failed; handing the iOS IPA over through release $STAGING_TAG."
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Staging hand-off: $CHANNEL ios (run $GITHUB_RUN_ID)" \
+              --notes "Temporary release-asset hand-off for workflow run $GITHUB_RUN_ID; removed once the $CHANNEL release is published."
+          fi
+          gh release upload "$STAGING_TAG" "release-assets/natune-ios-${VERSION_NAME}.ipa" \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
   publish-release:
     name: Publish ${{ inputs.channel }} release
@@ -762,9 +878,42 @@ jobs:
           persist-credentials: false
 
       - name: Download build artifacts
+        id: download-build-artifacts
         uses: actions/download-artifact@v8
+        # A full artifact quota fails this download as well; the staging releases hold the same sets.
+        continue-on-error: true
         with:
+          pattern: "{android,desktop,ios}-${{ inputs.channel }}*"
           path: downloaded-artifacts
+          merge-multiple: true
+
+      - name: Restore the staging release hand-off
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACTS_OUTCOME: ${{ steps.download-build-artifacts.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p downloaded-artifacts
+          mapfile -t STAGING_TAGS < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/staging-${GITHUB_RUN_ID}-" \
+              --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' || true
+          )
+          if [[ "${#STAGING_TAGS[@]}" -eq 0 ]]; then
+            if [[ "$ARTIFACTS_OUTCOME" == "success" ]]; then
+              echo "Workflow artifacts are complete; run $GITHUB_RUN_ID left no staging release hand-off."
+              exit 0
+            fi
+            echo "::error::Neither workflow artifacts nor staging release assets are available for run $GITHUB_RUN_ID."
+            exit 1
+          fi
+          # Release assets are metered separately from artifact storage, so a leg whose artifact
+          # upload hit the quota is restored from its staging release. Existing files are kept as
+          # they arrived and only overwritten by an identical hand-off.
+          for STAGING_TAG in "${STAGING_TAGS[@]}"; do
+            echo "Restoring release assets from $STAGING_TAG."
+            gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-artifacts --clobber
+          done
 
       - name: Create release and update-feed manifest
         id: publish
@@ -782,10 +931,14 @@ jobs:
 
           TARGET_BRANCH=main
           APK_SUFFIX=release
+          EXPECTED_APKS=7
           if [[ "$CHANNEL" == nightly ]]; then
             TARGET_BRANCH=dev
             APK_SUFFIX=nightly
+            EXPECTED_APKS=6
           fi
+          # Three Windows, four Linux, two macOS installers and one IPA.
+          EXPECTED_ASSETS=$((EXPECTED_APKS + 10))
 
           CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_BRANCH" --jq '.sha')"
           if [[ "$CURRENT_SHA" != "$COMMIT_SHA" ]]; then
@@ -796,8 +949,8 @@ jobs:
 
           mapfile -d '' RELEASE_FILES < <(find downloaded-artifacts -type f -print0 | sort -z)
           mapfile -d '' APK_FILES < <(find downloaded-artifacts -type f -name "app-*-${APK_SUFFIX}.apk" -print0 | sort -z)
-          if [[ "${#RELEASE_FILES[@]}" -ne 17 || "${#APK_FILES[@]}" -ne 7 ]]; then
-            echo "::error::Expected 17 release assets including 7 $APK_SUFFIX APKs; found ${#RELEASE_FILES[@]} files and ${#APK_FILES[@]} APKs."
+          if [[ "${#RELEASE_FILES[@]}" -ne "$EXPECTED_ASSETS" || "${#APK_FILES[@]}" -ne "$EXPECTED_APKS" ]]; then
+            echo "::error::Expected $EXPECTED_ASSETS release assets including $EXPECTED_APKS $APK_SUFFIX APKs; found ${#RELEASE_FILES[@]} files and ${#APK_FILES[@]} APKs."
             find downloaded-artifacts -type f -print || true
             exit 1
           fi
@@ -889,13 +1042,62 @@ jobs:
           echo "did_publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload update-feed manifest for the next job
+        id: upload-update-feed
         if: steps.publish.outputs.did_publish == 'true'
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: update-feed-${{ inputs.channel }}
           path: ${{ inputs.channel }}.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
+
+      - name: Publish update-feed manifest to a staging release when artifact upload fails
+        if: steps.publish.outputs.did_publish == 'true' && steps.upload-update-feed.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANIFEST: ${{ inputs.channel }}.json
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-update-feed"
+          echo "::warning::Workflow-artifact upload failed; handing $MANIFEST over through release $STAGING_TAG."
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Staging hand-off: $CHANNEL update-feed (run $GITHUB_RUN_ID)" \
+              --notes "Temporary release-asset hand-off for workflow run $GITHUB_RUN_ID; removed once the $CHANNEL update-feed manifest is published."
+          fi
+          gh release upload "$STAGING_TAG" "$MANIFEST" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Delete the staging release hand-off
+        if: steps.publish.outputs.did_publish == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t STAGING_TAGS < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/staging-${GITHUB_RUN_ID}-" \
+              --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' || true
+          )
+          for STAGING_TAG in "${STAGING_TAGS[@]}"; do
+            # publish-update-feed still reads the manifest from its own staging release.
+            if [[ "$STAGING_TAG" == *-update-feed ]]; then
+              continue
+            fi
+            if gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
+              echo "Deleted staging release $STAGING_TAG."
+            else
+              echo "::warning::Could not delete staging release $STAGING_TAG; it stays prerelease-only."
+            fi
+          done
 
   publish-update-feed:
     name: Publish ${{ inputs.channel }} update-feed manifest
@@ -909,10 +1111,32 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Download update-feed manifest
+        id: download-update-feed
         uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
           name: update-feed-${{ inputs.channel }}
           path: feed-artifact
+
+      - name: Restore the update-feed manifest from its staging release
+        if: steps.download-update-feed.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANIFEST: ${{ inputs.channel }}.json
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-update-feed"
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Neither the workflow artifact nor staging release $STAGING_TAG holds the $MANIFEST manifest."
+            exit 1
+          fi
+          mkdir -p feed-artifact
+          gh release download "$STAGING_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir feed-artifact \
+            --pattern "$MANIFEST" \
+            --clobber
 
       - name: Publish current manifest to the fixed update-feed release
         shell: bash
@@ -964,3 +1188,16 @@ jobs:
           gh release upload update-feed "feed-artifact/${CHANNEL}.json" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+      - name: Delete the staging update-feed hand-off
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-update-feed"
+          if gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes ||
+              echo "::warning::Could not delete staging release $STAGING_TAG."
+          fi

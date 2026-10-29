@@ -6,6 +6,7 @@ import java.time.LocalDateTime
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
+import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.models.*
 import moe.rukamori.archivetune.playback.queues.*
 import moe.rukamori.archivetune.shared.domain.persistence.*
@@ -31,6 +32,28 @@ class LegacyQueueCompatibilityTest {
         // Retained Kotlin object classes have no readResolve: legacy Java decoding creates a new
         // instance. QueueExt correctly dispatches by `is`, not singleton reference equality.
         assertEquals(original, decoded.copy(queueType = original.queueType))
+    }
+
+    @Test fun retainedSongConversionKeepsPodcastMarkersThroughQueueSerialization() {
+        val song = SongItem(
+            id = "converted",
+            title = "Converted title",
+            artists = emptyList(),
+            duration = null,
+            thumbnail = "https://image.invalid/cover",
+            album = null,
+            explicit = false,
+            setVideoId = null,
+            endpoint = null,
+        )
+        val original = fixture().copy(items = listOf(
+            song.toMediaMetadata(),
+            song.copy(isPodcast = true).toMediaMetadata(),
+        ))
+        assertFalse(original.items[0].isPodcast)
+        assertTrue(original.items[1].isPodcast)
+        assertEquals(-1, original.items[1].duration)
+        assertRetainedValues(original, LegacyJavaQueueReader().read(write(original)))
     }
 
     @Test fun retainedMetadataAndEveryRadioVariantRoundTripWithoutProjection() {

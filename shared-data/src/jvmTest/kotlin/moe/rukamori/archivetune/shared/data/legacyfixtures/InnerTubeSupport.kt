@@ -1,11 +1,12 @@
 package moe.rukamori.archivetune.innertube.models
 
-// Test-only signatures for unused conversion methods; none of these objects enters a Java fixture.
+// Test-only signatures for retained Android conversion methods; none of these objects enters a Java fixture.
 data class Artist(val id: String?, val name: String)
 data class Album(val id: String, val name: String)
 data class Podcast(val id: String?, val name: String)
 data class SongItem(val id: String, val title: String, val artists: List<Artist>, val duration: Int?,
-    val thumbnail: String, val album: Album?, val explicit: Boolean, val setVideoId: String?, val endpoint: WatchEndpoint?)
+    val thumbnail: String, val album: Album?, val explicit: Boolean, val setVideoId: String?, val endpoint: WatchEndpoint?,
+    val isPodcast: Boolean = false)
 data class EpisodeItem(val id: String, val title: String, val podcast: Podcast?, val duration: Int?,
     val thumbnail: String, val endpoint: WatchEndpoint)
 data class WatchEndpoint(val playlistSetVideoId: String?, val watchEndpointMusicSupportedConfigs: WatchEndpointMusicSupportedConfigs?) {

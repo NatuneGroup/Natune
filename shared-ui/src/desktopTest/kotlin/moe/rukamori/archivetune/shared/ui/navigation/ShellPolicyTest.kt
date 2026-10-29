@@ -19,7 +19,17 @@ class ShellPolicyTest {
         val adaptive = PreferenceSnapshot.of(NavigationBarCompactBehaviorKey to "ADAPTIVE")
         assertEquals(ShellLayout.BottomBar, shellLayout(400f, false, adaptive, false))
         assertEquals(ShellLayout.CompactRow, shellLayout(400f, false, adaptive, true))
-        val hidden = PreferenceSnapshot.of(NavigationBarHideOnScrollKey to true)
+        // "Hide while scrolling" without a stored compact behaviour resolves to ADAPTIVE (PillStyle), so the
+        // bar compacts into the one-row layout on scroll instead of sliding away.
+        val hideOnly = PreferenceSnapshot.of(NavigationBarHideOnScrollKey to true)
+        assertEquals(NavigationBarCompactBehavior.ADAPTIVE, hideOnly.navigationBarCompactBehavior())
+        assertEquals(ShellLayout.CompactRow, shellLayout(400f, false, hideOnly, true))
+        // Sliding away is the expanded-bar variant, as in the host MainActivity: it needs the explicit choice.
+        val hidden = PreferenceSnapshot.of(
+            NavigationBarHideOnScrollKey to true,
+            NavigationBarCompactBehaviorKey to "ALWAYS_EXPANDED",
+        )
+        assertEquals(ShellLayout.BottomBar, shellLayout(400f, false, hidden, false))
         assertEquals(ShellLayout.MiniPlayerOnly, shellLayout(400f, false, hidden, true))
     }
     @Test fun searchStepsAsideAndDetailKeepsTheCompactRow() {

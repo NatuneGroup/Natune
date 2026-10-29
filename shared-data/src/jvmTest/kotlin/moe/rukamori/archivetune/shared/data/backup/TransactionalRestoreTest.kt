@@ -48,12 +48,12 @@ class TransactionalRestoreTest {
             val previous = prefs.snapshot()
             val incoming = after().toEditor().apply {
                 this[DynamicThemeKey] = true
-                this[RandomThemeKey] = true
+                this[RandomThemeOnStartupKey] = true
                 this[AudioOffload] = true
                 this[RejectSuspectedUpscaledAudioKey] = true
                 this[MaxSongCacheSizeKey] = 0
                 this[MaxImageCacheSizeKey] = 0
-                this[SmartCacheTrimmerKey] = true
+                this[SmartTrimmerKey] = true
             }.snapshot()
             val selected = setOf(BackupCategory.SETTINGS)
             val bytes = JvmBackupArchiveCodec().create(incoming, selected)
@@ -66,10 +66,10 @@ class TransactionalRestoreTest {
             restore.restore(bytes, selected)
             val restored = prefs.snapshot()
             assertEquals(true, restored[DynamicThemeKey])
-            assertEquals(false, restored[RandomThemeKey])
+            assertEquals(false, restored[RandomThemeOnStartupKey])
             assertEquals(false, restored[AudioOffload])
             assertEquals(true, restored[RejectSuspectedUpscaledAudioKey])
-            assertEquals(false, restored[SmartCacheTrimmerKey])
+            assertEquals(false, restored[SmartTrimmerKey])
             assertEquals("device-bound", restored[device])
             assertEquals("new value", restored[inserted])
         }

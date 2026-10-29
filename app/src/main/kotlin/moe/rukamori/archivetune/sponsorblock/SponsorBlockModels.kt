@@ -63,11 +63,11 @@ internal data class SponsorBlockApiSegment(
 
 /**
  * Accepts only a plain https origin, so a mistyped or hostile value cannot redirect lookups
- * somewhere with a path, a query, or embedded credentials. Returns null when the value is unusable
- * and the caller should fall back to [SPONSORBLOCK_DEFAULT_API_URL].
+ * somewhere with a path, a query, or embedded credentials. Returns null for unset or invalid values;
+ * only an unset/blank value selects [SPONSORBLOCK_DEFAULT_API_URL], while invalid values refuse lookup.
  */
 fun normalizeSponsorBlockApiUrl(raw: String?): String? {
-    val trimmed = raw?.trim()?.removeSuffix("/").orEmpty()
+    val trimmed = raw?.trim().orEmpty()
     if (trimmed.isEmpty()) return null
     val url = runCatching { java.net.URI(trimmed) }.getOrNull() ?: return null
     if (!url.scheme.equals("https", ignoreCase = true)) return null
