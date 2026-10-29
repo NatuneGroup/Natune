@@ -83,9 +83,9 @@ jobs:
         # unrelated change; pass the innertube_smoke input on a manual dispatch to run them.
         run: |
           set -euo pipefail
-          ./gradlew --console=plain --stacktrace --continue --rerun \
+          ./gradlew --console=plain --stacktrace --continue \
             "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
-            :shared-domain:jvmTest :shared-data:jvmTest :shared-ui:desktopTest
+            :shared-domain:jvmTest --rerun :shared-data:jvmTest --rerun :shared-ui:desktopTest --rerun
         env:
           INNERTUBE_SMOKE: ${{ inputs.innertube_smoke == true && '1' || '0' }}
 

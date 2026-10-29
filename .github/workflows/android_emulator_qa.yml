@@ -134,6 +134,7 @@ jobs:
       - name: Upload QA artifacts
         if: always()
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: emulator-qa-${{ github.run_id }}
           path: |
