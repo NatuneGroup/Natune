@@ -44,6 +44,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
+import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.LyricsRomanizeChineseKey
@@ -59,7 +62,11 @@ import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
 import moe.rukamori.archivetune.shared.ui.host.hostHistoryPage
 import moe.rukamori.archivetune.shared.ui.host.hostLibraryPage
 import moe.rukamori.archivetune.shared.ui.host.hostPlayOccurrence
+import moe.rukamori.archivetune.shared.ui.host.civilFromDays
 import moe.rukamori.archivetune.shared.ui.host.hostPlaylistPage
+import moe.rukamori.archivetune.shared.ui.host.hostStatisticsPage
+import moe.rukamori.archivetune.shared.ui.host.hostYearInMusicPage
+import moe.rukamori.archivetune.shared.ui.host.StatisticsRangeWindow
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsPhonetics
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsRomanizer
@@ -80,9 +87,17 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_host_surface_unbound
 import moe.rukamori.archivetune.shared.ui.resources.ios_library_top_mixes_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.ios_queue_empty
 import moe.rukamori.archivetune.shared.ui.resources.ios_queue_remove
+import moe.rukamori.archivetune.shared.ui.resources.stats_range_1m
+import moe.rukamori.archivetune.shared.ui.resources.stats_range_1w
+import moe.rukamori.archivetune.shared.ui.resources.stats_range_1y
+import moe.rukamori.archivetune.shared.ui.resources.stats_range_3m
+import moe.rukamori.archivetune.shared.ui.resources.stats_range_6m
+import moe.rukamori.archivetune.shared.ui.resources.stats_range_all
 import org.jetbrains.compose.resources.stringResource
+import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLComponents
+import platform.Foundation.NSUUID
 import platform.UIKit.UIApplication
 import platform.UIKit.UIPasteboard
 
@@ -142,8 +157,8 @@ internal fun iosHostBindings(
 }
 
 /**
- * The Library, the local history and the playlist routes the library owner answers. Every other destination keeps the host boundary. The
- * key keeps each route's own page state apart.
+ * The Library, the local history, the playlist, the statistics and the year-in-music routes the owners answer. Every other
+ * destination keeps the host boundary. The key keeps each route's own page state apart.
  */
 @Composable
 private fun iosGraphPage(
@@ -168,6 +183,8 @@ private fun iosGraphPage(
             )
             ArchiveDestination.MUSIC_RECOGNITION -> iosRecognitionPage(mount = recognition, route)
             ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> iosRecognitionDetailsPage(recognition, route)
+            ArchiveDestination.STATISTICS -> iosStatisticsPage(graph, openRoute)
+            ArchiveDestination.RECAP -> iosRecapPage(graph, route, openRoute)
             else -> ArchiveGraphPage.Host
         }
     }
@@ -262,6 +279,122 @@ private const val NO_LYRICS_SESSION = "ios-no-lyrics"
 
 /** Routes this host opens itself. The bound keeps a burst of taps from growing memory, and the root drains them promptly. */
 private const val OWN_ROUTE_CAPACITY = 4
+
+/** Milliseconds in one civil day. The range labels count civil days from the device clock. */
+private const val DAY_MS = 86_400_000L
+
+/**
+ * The shared Statistics page over the iOS listening history, on the device's own calendar and locale. The six fixed chip
+ * names resolve here, on the composition, because the range label is a plain callback that the page calls while it composes.
+ */
+@Composable
+private fun iosStatisticsPage(graph: IosSessionGraph, openRoute: (String) -> Unit): ArchiveGraphPage {
+    val continuousLabels = mapOf(
+        "c0" to stringResource(Res.string.stats_range_1w),
+        "c1" to stringResource(Res.string.stats_range_1m),
+        "c2" to stringResource(Res.string.stats_range_3m),
+        "c3" to stringResource(Res.string.stats_range_6m),
+        "c4" to stringResource(Res.string.stats_range_1y),
+        "c5" to stringResource(Res.string.stats_range_all),
+    )
+    return hostStatisticsPage(
+        statistics = graph.history,
+        earliestListenMs = graph.history::earliestListenMs,
+        play = { rank -> iosPlayNow(graph, rank.item) },
+        open = { ref -> openRoute(ArchiveRoutes.content(ref)) },
+        recap = { year -> openRoute("year_in_music?year=$year") },
+        // The page hands over only a content reference here, not the item a row menu needs, so the row menu stays off.
+        more = null,
+        nowMs = ::iosNowMillis,
+        offsetMsAt = ::iosOffsetMsAt,
+        rangeLabel = { window -> iosStatisticsRangeLabel(window, continuousLabels) },
+        formatDuration = ::iosStatsDuration,
+        formatWeekday = ::iosWeekdayName,
+        report = graph::report,
+    )
+}
+
+/** The shared year recap over the iOS listening history. Sharing the card image is not connected on this host. */
+@Composable
+private fun iosRecapPage(graph: IosSessionGraph, route: ArchiveRoute, openRoute: (String) -> Unit): ArchiveGraphPage =
+    hostYearInMusicPage(
+        statistics = graph.history,
+        earliestListenMs = graph.history::earliestListenMs,
+        yearArg = route.arguments["year"]?.toIntOrNull(),
+        share = null,
+        songMenu = null,
+        openRecap = { year -> openRoute("year_in_music?year=$year") },
+        nowMs = ::iosNowMillis,
+        offsetMsAt = ::iosOffsetMsAt,
+        formatDuration = ::iosStatsDuration,
+        report = graph::report,
+    )
+
+/** Plays one ranked item now: it is inserted next in the queue and then selected, through the queue owner. */
+private fun iosPlayNow(graph: IosSessionGraph, item: ContentItem) {
+    val occurrence = ContentOccurrence(occurrenceId = "stats:${NSUUID().UUIDString.lowercase()}", item = item)
+    queueCommand(graph, "the song was not played") {
+        graph.queue.insert(listOf(occurrence), UserQueuedKind.PLAY_NEXT)
+        graph.queue.select(occurrence.occurrenceId, 0L)
+    }
+}
+
+/** The device's short month names, January first. Read on each use, so a locale change applies without a restart. */
+private val iosMonthNames: List<String>
+    get() = NSDateFormatter().shortMonthSymbols?.mapNotNull { it as? String }.orEmpty()
+
+/** The device's short weekday names, Sunday first, so index 0 is the statistics slot for Sunday. */
+private val iosWeekdays: List<String>
+    get() = NSDateFormatter().shortWeekdaySymbols?.mapNotNull { it as? String }.orEmpty()
+
+/**
+ * The chip text the baseline formats: "dd MMM - dd MMM" for weeks, where a week inside one month starts with a bare day;
+ * "MMM" or "MMM yyyy" for months; "yyyy" for years; and the six fixed names. The fixed windows are matched by their key,
+ * because their continuousIndex is the number of months or years each one spans, not a slot.
+ */
+private fun iosStatisticsRangeLabel(window: StatisticsRangeWindow, continuousLabels: Map<String, String>): String {
+    continuousLabels[window.key]?.let { return it }
+    val start = window.startCivil ?: return window.key
+    val end = window.endCivil ?: start
+    val months = iosMonthNames
+    fun month(number: Int): String = months.getOrElse(number - 1) { number.toString() }
+    fun padded(day: Int): String = day.toString().padStart(2, '0')
+    val now = iosNowMillis()
+    val currentYear = civilFromDays((now + iosOffsetMsAt(now)).floorDiv(DAY_MS)).first
+    return when {
+        window.key.startsWith("y") -> "${start.first}"
+        window.key.startsWith("m") ->
+            if (start.first == currentYear) month(start.second) else "${month(start.second)} ${start.first}"
+        else -> {
+            val startText = "${padded(start.third)} ${month(start.second)}"
+            val endText = "${padded(end.third)} ${month(end.second)}"
+            when {
+                start.first != currentYear -> "$startText, ${start.first} - $endText, ${end.first}"
+                start.second != end.second -> "$startText - $endText"
+                else -> "${start.third} - $endText"
+            }
+        }
+    }
+}
+
+/** Durations in the baseline's form: "Xd Xh Xm Xs" from a day on, "Xh Xm Xs" from an hour on, otherwise "M:SS". */
+private fun iosStatsDuration(durationMs: Long): String {
+    var seconds = durationMs.coerceAtLeast(0L) / 1000L
+    val days = seconds / 86_400L
+    seconds %= 86_400L
+    val hours = seconds / 3_600L
+    seconds %= 3_600L
+    val minutes = seconds / 60L
+    seconds %= 60L
+    return when {
+        days > 0L -> "${days}d ${hours}h ${minutes}m ${seconds}s"
+        hours > 0L -> "${hours}h ${minutes}m ${seconds}s"
+        else -> "$minutes:${seconds.toString().padStart(2, '0')}"
+    }
+}
+
+/** The short weekday name for a statistics slot, where Sunday is 0. */
+private fun iosWeekdayName(index: Int): String = iosWeekdays.getOrElse(index) { index.toString() }
 
 /**
  * The player's queue panel: the one queue in play order, the current song marked. A row plays its song, the current
