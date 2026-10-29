@@ -722,8 +722,6 @@ jobs:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       PACKAGE_VERSION: ${{ inputs.package_version }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
-      # Match the selected Blacksmith Xcode explicitly; do not bypass the producer's version gate.
-      ARCHIVETUNE_XCODE_VERSION: '26.6'
       ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
       ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
       ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}

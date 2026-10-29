@@ -18,7 +18,7 @@ struct ArchiveTuneApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ComposeRoot().ignoresSafeArea()
+            AppRoot()
                 .onOpenURL { url in
                     // Custom scheme and invite links; the host classifies, routes and reports what it cannot open.
                     ArchiveTuneSession.shared.accept(url)
@@ -65,6 +65,10 @@ final class ArchiveTuneSession {
         ) { [weak self] _ in
             self?.shutdown()
         })
+        if #available(iOS 26.0, *) {
+            // The Kotlin player still picks the Compose renderer for every other look and when the setting is off.
+            host.setNativeLyricsFactory { lyrics in SystemLyrics.makeController(lyrics) }
+        }
     }
 
     /// Re-presents the single controller for a new representable. A previous representable that has not been
@@ -84,6 +88,9 @@ final class ArchiveTuneSession {
         if presenter === token { presenter = nil }
     }
 
+    /// The system glass tab bar and mini player bridge. The Kotlin root stays the owner of tabs and playback.
+    var nativeChrome: IosNativeChrome { host.nativeChrome }
+
     /// The onOpenURL entry: a deep link is handed to the host, which queues it for the session graph to resolve.
     func accept(_ url: URL) {
         host.openLink(link: url.absoluteString)
@@ -97,6 +104,20 @@ final class ArchiveTuneSession {
         observers.removeAll()
         presenter = nil
         host.close()
+    }
+}
+
+/// On iOS 26 and later the system Liquid Glass chrome is drawn above the Compose root; earlier releases keep the
+/// Compose root alone, unchanged. The Kotlin "Native iOS interface" setting decides whether the chrome shows.
+private struct AppRoot: View {
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            NativeChromeHost(chrome: ArchiveTuneSession.shared.nativeChrome) {
+                ComposeRoot().ignoresSafeArea()
+            }
+        } else {
+            ComposeRoot().ignoresSafeArea()
+        }
     }
 }
 

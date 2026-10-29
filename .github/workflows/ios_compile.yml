@@ -1,8 +1,9 @@
 name: iOS compile
 
 # Compiles the shared modules for the iOS simulator on a macOS runner. Linux skips these tasks because Apple
-# cinterop needs the Xcode toolchain, so this is the only compile signal for iosMain. Runs only when iOS-facing
-# sources change, to keep macOS minutes bounded.
+# cinterop needs the Xcode toolchain, so this is the only compile signal for iosMain. It then links the static
+# simulator framework and type-checks the Swift app against it on an Xcode 26 SDK, which the iOS 26 glass and
+# lyric views need. Runs only when iOS-facing sources change, to keep macOS minutes bounded.
 on:
   pull_request:
     branches:
@@ -18,6 +19,8 @@ on:
       - 'shared-*/build.gradle.kts'
       - 'shared-data/src/nativeInterop/**'
       - 'iosApp/Native/**'
+      - 'iosApp/ArchiveTune/**'
+      - 'iosApp/ArchiveTune.xcodeproj/**'
       - 'gradle/libs.versions.toml'
       - '.github/workflows/ios_compile.yml'
   workflow_dispatch:
@@ -40,6 +43,29 @@ jobs:
           submodules: true
           persist-credentials: false
 
+      # The Liquid Glass and TextRenderer APIs exist only in the iOS 26 SDK. Keep the runner's Xcode when it is
+      # already the 26.4 the native closure expects; otherwise pick 26.4 or the newest installed Xcode 26.
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(xcodebuild -version 2>/dev/null | awk 'NR == 1 { print $2 }' || true)"
+          if [[ "$current" != "26.4" ]]; then
+            candidate=""
+            for preferred in /Applications/Xcode_26.4.app /Applications/Xcode_26.4.0.app; do
+              if [[ -d "$preferred" ]]; then candidate="$preferred"; break; fi
+            done
+            if [[ -z "$candidate" ]]; then
+              candidate="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1 || true)"
+            fi
+            if [[ -z "$candidate" ]]; then
+              echo "::error::No Xcode 26 is installed on this runner; the selected Xcode is ${current:-none}."
+              exit 1
+            fi
+            sudo xcode-select -s "$candidate/Contents/Developer"
+          fi
+          xcodebuild -version
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -61,3 +87,19 @@ jobs:
 
       - name: Compile shared modules for the iOS simulator
         run: ./gradlew :shared-ui:compileKotlinIosSimulatorArm64 --continue --stacktrace
+
+      # A static framework needs no native closure, so the Swift sources can be checked without the full app link.
+      - name: Link the simulator framework
+        run: ./gradlew :shared-ui:linkDebugFrameworkIosSimulatorArm64 --stacktrace
+
+      - name: Type-check the Swift app against the framework
+        shell: bash
+        run: |
+          set -euo pipefail
+          FRAMEWORKS="shared-ui/build/bin/iosSimulatorArm64/debugFramework"
+          test -d "$FRAMEWORKS/ArchiveTuneShared.framework"
+          xcrun --sdk iphonesimulator swiftc -typecheck \
+            -swift-version 5 \
+            -target arm64-apple-ios16.0-simulator \
+            -F "$FRAMEWORKS" \
+            iosApp/ArchiveTune/*.swift

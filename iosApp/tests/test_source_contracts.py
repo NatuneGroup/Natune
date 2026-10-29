@@ -40,6 +40,8 @@ class IosSourceContractsTest(unittest.TestCase):
         ios_job = release.split("\n  ios:\n", 1)[1].split("\n  publish-release:\n", 1)[0]
         self.assertIn(f"ARCHIVETUNE_XCODE_VERSION: '{expected.group(1)}'", ios_job)
         self.assertIn("uses: maxim-lobanov/setup-xcode@v1", ios_job)
+        self.assertEqual(1, ios_job.count("uses: maxim-lobanov/setup-xcode@v1"))
+        self.assertEqual(1, ios_job.count("ARCHIVETUNE_XCODE_VERSION:"))
         self.assertIn("xcode-version: ${{ env.ARCHIVETUNE_XCODE_VERSION }}", ios_job)
         self.assertLess(ios_job.index("setup-xcode@v1"), ios_job.index("bash scripts/build_ios_native_core.sh"))
 
@@ -131,6 +133,22 @@ class IosSourceContractsTest(unittest.TestCase):
         clock = (UI_COMMON / "lyrics/LyricsClock.kt").read_text()
         self.assertIn("feed - outputDelayMs", clock)
         self.assertIn("change != LyricsAnchorChange.STALE", clock)
+        timeline = (UI_COMMON / "lyrics/NativeLyricsFeed.kt").read_text()
+        self.assertIn("private val lyricsClock = LyricsClock()", timeline)
+        self.assertIn("val feed = lyricsClock.feedMs.longValue", timeline)
+        self.assertNotIn("outputLatencyOffsetMs(", timeline)
+        bindings = (UI_IOS / "IosHostBindings.kt").read_text()
+        self.assertNotIn("rememberIosLyricsSyncOffsetMs", bindings)
+
+    def test_native_swift_chrome_and_lyrics_share_the_kotlin_host(self):
+        app = (IOS / "ArchiveTune/ArchiveTuneApp.swift").read_text()
+        self.assertIn("if #available(iOS 26.0, *)", app)
+        self.assertIn("NativeChromeHost(chrome: ArchiveTuneSession.shared.nativeChrome)", app)
+        self.assertIn("host.setNativeLyricsFactory", app)
+        self.assertIn("SystemLyrics.makeController(lyrics)", app)
+        project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
+        self.assertIn("NativeChrome.swift", project)
+        self.assertIn("SystemLyrics.swift", project)
 
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()

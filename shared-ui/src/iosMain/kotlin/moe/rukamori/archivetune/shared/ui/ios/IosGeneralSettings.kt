@@ -62,6 +62,7 @@ internal fun IosGeneralSettingsPage(
             arrangePlaylistTags = unavailable,
             onFailure = onFailure,
             scrollTo = appearanceScrollTarget(path, scrollTo),
+            nativeIosInterface = true,
         )
         "settings/appearance/extras" -> RowsPage(controller, scrollTo, onFailure) { appearanceExtrasSettingsRows() }
         "settings/appearance/lyrics_animations" -> RowsPage(controller, scrollTo, onFailure) { lyricsAnimationSettingsRows() }

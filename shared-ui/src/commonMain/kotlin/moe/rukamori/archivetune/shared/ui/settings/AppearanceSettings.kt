@@ -37,10 +37,12 @@ fun appearanceSettingsRows(
     arrangeLibraryChips: () -> Unit,
     arrangePlaylistTags: () -> Unit,
     customFontPickerSupported: Boolean = true,
+    nativeIosInterface: Boolean = false,
 ): List<SettingsRow> = buildList {
     add(SettingsRow.Header("appearance_theme", Res.string.m6_appearance_theme))
     addAll(appearanceThemeSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded,
-        navigate, openWallpaperSettings, chooseInterface, chooseFont, pickCustomFont, customFontPickerSupported))
+        navigate, openWallpaperSettings, chooseInterface, chooseFont, pickCustomFont, customFontPickerSupported,
+        nativeIosInterface))
     add(SettingsRow.Header("appearance_player", Res.string.m6_appearance_player))
     addAll(playerAppearanceSettingsRows(preferences, blurSupported, navigate, chooseHomeScreens))
     add(SettingsRow.Header("appearance_interface", Res.string.m6_appearance_interface))
@@ -66,10 +68,11 @@ fun AppearanceSettings(
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
     customFontPickerSupported: Boolean = true,
+    nativeIosInterface: Boolean = false,
 ) {
     ThemeChoicePage(controller, pickCustomFont, onFailure, scrollTo, modifier, customFontPickerSupported) { preferences, chooseInterface, chooseFont, pickFont ->
         appearanceSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded, blurSupported,
             navigate, openWallpaperSettings, chooseInterface, chooseFont, pickFont, chooseHomeScreens,
-            arrangeLibraryChips, arrangePlaylistTags, customFontPickerSupported)
+            arrangeLibraryChips, arrangePlaylistTags, customFontPickerSupported, nativeIosInterface)
     }
 }
