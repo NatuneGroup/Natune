@@ -33,7 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerPanel
+import androidx.compose.ui.graphics.graphicsLayer
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
+import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
+import moe.rukamori.archivetune.shared.ui.player.sleeveRadiusOr
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.m5_collapse
@@ -112,7 +115,8 @@ private fun V9Header(c: PlayerRenderContext, colors: V9Colors) {
 @Composable
 private fun V9Artwork(c: PlayerRenderContext, modifier: Modifier) {
     val id = c.state.playback?.occurrenceId
-    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(30.dp)).playerSeekDoubleTap(c)) {
+    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(c.preferences.sleeveRadiusOr(30f).dp))
+        .graphicsLayer { alpha = if (c.preferences.sleeveHidden) 0f else 1f }.playerSeekDoubleTap(c)) {
         if (c.state.canvasAvailable) c.slots.canvas(id, c.surfaces.artwork, Modifier.fillMaxSize())
         else c.slots.artwork(id, Modifier.fillMaxSize())
     }

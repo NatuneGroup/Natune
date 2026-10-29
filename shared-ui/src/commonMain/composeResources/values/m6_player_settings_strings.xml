@@ -29,6 +29,7 @@
     <string name="m6_seek_grow">Expand seek bar during interaction</string>
     <string name="m6_flamingo_effect">Flamingo background effect</string>
     <string name="m6_player_volume">Show player volume bar</string>
+    <string name="m6_player_setting_not_used">Not used by the selected player</string>
     <string name="m6_player_background">Player background</string>
     <string name="m6_gradient">Gradient</string>
     <string name="m6_blur">Blur</string>

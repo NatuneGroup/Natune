@@ -33,7 +33,9 @@ sealed class SettingsRow(
         anchor: String, title: StringResource, val key: StringPreferenceKey, val default: String,
         val options: List<Option>, enabled: Boolean = true,
         val write: PreferenceEditor.(String) -> Unit = { this[key] = it },
-    ) : SettingsRow(anchor, title, enabled = enabled) {
+        /** Replaces the selected option's label, for example to say why the row is disabled. */
+        description: StringResource? = null,
+    ) : SettingsRow(anchor, title, description, enabled) {
         init { require(options.isNotEmpty() && options.map { it.value }.distinct().size == options.size) }
     }
 
@@ -84,7 +86,8 @@ sealed class SettingsRow(
         val range: ClosedFloatingPointRange<Float>, val steps: Int = 0, enabled: Boolean = true,
         val normalize: (Float) -> Float = { it },
         val unit: SettingsUnit = SettingsUnit.NONE,
-    ) : SettingsRow(anchor, title, enabled = enabled)
+        description: StringResource? = null,
+    ) : SettingsRow(anchor, title, description, enabled)
 }
 
 /** Display-only units for numeric rows; the persisted value stays a plain number and never carries text. */

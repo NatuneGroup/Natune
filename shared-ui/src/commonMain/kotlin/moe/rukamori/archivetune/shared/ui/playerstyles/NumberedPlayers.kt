@@ -72,6 +72,8 @@ import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
 import moe.rukamori.archivetune.shared.ui.player.playerTime
 import moe.rukamori.archivetune.shared.ui.player.rememberPlayerControlMotion
 import moe.rukamori.archivetune.shared.ui.player.resolveBackground
+import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
+import moe.rukamori.archivetune.shared.ui.player.sleeveRadiusOr
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.m5_collapse
 import moe.rukamori.archivetune.shared.ui.resources.m5_like
@@ -90,9 +92,8 @@ internal fun PlayerSleeve(
     radius: Float = 16f,
     canvasAllowed: Boolean = true,
 ) {
-    val ordinary=c.preferences.style.capabilities.ordinarySleeve
-    val hidden=ordinary && c.preferences.hideSleeve
-    val r=if(ordinary) c.preferences.sleeveRadius else radius
+    val hidden=c.preferences.sleeveHidden
+    val r=c.preferences.sleeveRadiusOr(radius)
     Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(r.dp)).graphicsLayer { alpha=if(hidden) 0f else 1f }
         .testTag("player-sleeve")) {
         if(canvasAllowed && c.state.canvasAvailable && c.preferences.style.capabilities.artworkCanvas) {
@@ -153,7 +154,7 @@ private fun NumberedArtwork(c: PlayerRenderContext, textColor: Color, modifier: 
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         PlayingFromHeader(c, textColor, Modifier.padding(vertical = 4.dp))
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (c.optical.artworkBlur && !(c.preferences.hideSleeve && c.preferences.style.capabilities.ordinarySleeve)) {
+            if (c.optical.artworkBlur && !c.preferences.sleeveHidden) {
                 c.slots.artwork(
                     c.state.playback?.occurrenceId,
                     Modifier.fillMaxSize().graphicsLayer { alpha = .6f }.blur(36.dp),
