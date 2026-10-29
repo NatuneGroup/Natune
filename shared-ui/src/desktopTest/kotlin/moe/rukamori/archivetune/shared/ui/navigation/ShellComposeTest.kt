@@ -94,6 +94,8 @@ class ShellComposeTest {
             }
         }
         onNodeWithTag("shell-bottom-bar").assertIsDisplayed()
+        // Every layout names its tabs the same way, so the bottom bar owes the rail's contract too.
+        ShellTab.entries.forEach { onNodeWithTag("shell-tab-${it.name}").assertIsDisplayed() }
         onNodeWithTag("shell-tab-Library").performClick()
         onNodeWithText("Route library").assertIsDisplayed()
         onRoot().writeM4Screenshot("shell-home-desktop.png")
