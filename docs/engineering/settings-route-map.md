@@ -21,6 +21,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/appearance/extras` | ✓ | ✓ | ✓ | |
 | `settings/appearance/lyrics_animations` | ✓ | ✓ | ✓ | |
 | `settings/appearance/navigation_bar` | ✓ | — | — | Android-only surface |
+| `settings/appearance/liquid_glass` | ✓ | — | — | Android-only liquid glass tuning; added after the baseline |
 | `settings/appearance/aod_customized` | ✓ | — | — | Android-only surface |
 | `settings/appearance/icon` | ✓ | — | — | launcher icon switcher, Android-only |
 | `settings/appearance/palette_picker` | ✓ | — | — | Android-only |

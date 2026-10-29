@@ -63,6 +63,14 @@ review and confirmed fixes are complete; no all-language or device QA is claimed
 | `ui/component/LyricsV2.kt` | Alternate full-screen renderer |
 | `ui/player/simpmusic/SimpMusicLyrics.kt` | The SIMPMUSIC lyrics *mode* — a user-selectable style, reachable from the full-screen surface and the card |
 
+In the shared modules `LyricsFullscreenRenderer` draws every look. On iOS 26 and later, with
+the "Native iOS interface" setting on, the Enhanced look is drawn by the SwiftUI view in
+`iosApp/ArchiveTune/SystemLyrics.swift` instead. It reads the same render rows and the same
+lyric clock through `NativeLyricsDocument` and `NativeLyricsTimeline`, so seeking, sync offset
+and the tap policy match the Compose renderer. Both use `LyricsClock`, which subtracts the
+snapshot's output-latency estimate once at the playback speed, separately from the user offset;
+the iOS host does not add a second route-latency offset.
+
 `LyricsMode` (settings) picks between these. Do not delete `SimpMusicLyrics`
 thinking it is player-style chrome — it is a lyrics style a user can select.
 

@@ -16,12 +16,20 @@ fun appearanceThemeSettingsRows(
     chooseFont: () -> Unit,
     pickCustomFont: () -> Unit,
     customFontPickerSupported: Boolean = true,
+    nativeIosInterface: Boolean = false,
 ): List<SettingsRow> = buildList {
     val blur = !preferences[DisableBlurKey, false]
     val dynamic = preferences[DynamicThemeKey, true]
-    add(SettingsRow.Toggle("liquid_glass_effects", Res.string.m6_liquid_glass, LiquidGlassEnabledKey, false, enabled = blur))
-    add(SettingsRow.Action("liquid_glass_nav_bar_link", Res.string.m6_nav_glass,
-        { navigate("settings/appearance/navigation_bar?scrollTo=liquid_glass_nav_bar") }))
+    if (nativeIosInterface) {
+        // The iOS host draws no refraction, so the shared glass toggles would do nothing there. The system glass of
+        // the native interface takes their place; the stored glass choices stay untouched for other hosts.
+        add(SettingsRow.Toggle("native_ios_interface", Res.string.ios_native_interface, NativeIosInterfaceKey, true,
+            description = Res.string.ios_native_interface_desc))
+    } else {
+        add(SettingsRow.Toggle("liquid_glass_effects", Res.string.m6_liquid_glass, LiquidGlassEnabledKey, false, enabled = blur))
+        add(SettingsRow.Action("liquid_glass_nav_bar_link", Res.string.m6_nav_glass,
+            { navigate("settings/appearance/navigation_bar?scrollTo=liquid_glass_nav_bar") }))
+    }
     add(SettingsRow.Action("interface_style", Res.string.m6_interface_style, chooseInterface, description = when (preferences.interfaceStyle()) {
         InterfaceStyle.MATERIAL_EXPRESSIVE -> Res.string.m6_material_expressive
         InterfaceStyle.APPLE_MUSIC -> Res.string.m6_apple_music

@@ -192,6 +192,7 @@ internal fun searchableSettingsRoute(parentKey: String, scrollKey: String?): Str
             "appearance_extras" -> "settings/appearance/extras"
             "aod" -> "settings/appearance/aod_customized"
             "navigation_bar" -> "settings/appearance/navigation_bar"
+            LIQUID_GLASS_SETTINGS_SEARCH_KEY -> LIQUID_GLASS_SETTINGS_ROUTE
             "lyrics_animations" -> "settings/appearance/lyrics_animations"
             "playback" -> "settings/player"
             "ytdlp" -> "settings/player/ytdlp"

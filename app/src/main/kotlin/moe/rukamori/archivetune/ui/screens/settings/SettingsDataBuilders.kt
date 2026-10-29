@@ -1115,7 +1115,7 @@ fun buildSettingsGroups(
                     appearance,
                     appearanceExtras,
                     aodCustomization,
-                    navigationBar,
+                    navigationBar, liquidGlassSettingsItem(context, navController, colorScheme),
                     lyricsAnimations,
                     playback,
                     canvas,

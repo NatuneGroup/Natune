@@ -1,5 +1,9 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,15 +15,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_clear_selection
@@ -33,6 +43,8 @@ internal val LYRICS_ROW_PADDING = 16.dp
 private const val LINE_HEIGHT_FACTOR = 1.25f
 private const val PHONETIC_SIZE_RATIO = 0.55f
 private const val SELECTED_ROW_ALPHA = 0.16f
+private const val BACKGROUND_SIZE_RATIO = 0.7f
+private const val BACKGROUND_ACTIVE_ALPHA = 0.72f
 
 /** One lyric row: the swept line with its reading and translation beneath. Tap and long press are host-decided. */
 @Composable
@@ -50,12 +62,15 @@ internal fun LyricsRowItem(
     reduceMotion: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
+    depth: LyricsDepth = LyricsDepth.Flat,
+    depthEnabled: Boolean = false,
 ) {
     // Unsynced text has no timing to follow, so it reads at full strength rather than as an idle line.
     val linePalette = if (row.isSynced) palette else palette.copy(dim = palette.bright)
     Column(
         Modifier
             .fillMaxWidth()
+            .then(if (depthEnabled) Modifier.lyricsDepth(depth, alignment, animate = !reduceMotion) else Modifier)
             .testTag(lyricsRowTag(row.index))
             .background(if (selected) palette.glow.copy(alpha = SELECTED_ROW_ALPHA) else Color.Transparent)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
@@ -73,10 +88,52 @@ internal fun LyricsRowItem(
             reduceMotion = reduceMotion,
             modifier = Modifier.fillMaxWidth(),
         )
+        row.background?.let { background ->
+            val backgroundStyle = remember(mainStyle) { lyricsBackgroundStyle(mainStyle) }
+            Text(
+                text = background,
+                style = backgroundStyle,
+                color = if (active) palette.bright.copy(alpha = BACKGROUND_ACTIVE_ALPHA) else palette.dim,
+            )
+        }
         row.phonetic?.let { Text(text = it, style = phoneticStyle, color = palette.dim) }
         row.translation?.let { Text(text = it, style = phoneticStyle, color = palette.dim) }
     }
 }
+
+/**
+ * Scale, fade and softening by distance from the sung line. The scale grows from the row's aligned edge so a
+ * start-aligned line does not drift sideways. Without reduced motion the change follows a soft spring.
+ */
+@Composable
+private fun Modifier.lyricsDepth(depth: LyricsDepth, alignment: LyricsLineAlignment, animate: Boolean): Modifier {
+    val spec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
+    val scale by animateFloatAsState(depth.scale, if (animate) spec else snap(), label = "lyrics-depth-scale")
+    val alpha by animateFloatAsState(depth.alpha, if (animate) spec else snap(), label = "lyrics-depth-alpha")
+    val blur by animateFloatAsState(depth.blurDp, if (animate) spec else snap(), label = "lyrics-depth-blur")
+    val originX = when (alignment) {
+        LyricsLineAlignment.START -> 0f
+        LyricsLineAlignment.CENTER -> 0.5f
+        LyricsLineAlignment.END -> 1f
+    }
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+        this.alpha = alpha
+        transformOrigin = TransformOrigin(originX, 0.5f)
+    }.then(if (blur > BLUR_THRESHOLD_DP) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
+}
+
+/** Below this the softening is invisible, and skipping it spares the row an offscreen layer. */
+private const val BLUR_THRESHOLD_DP = 0.05f
+
+/** Background vocals sit beneath the lead line, smaller and lighter, as Apple Music sets them. */
+internal fun lyricsBackgroundStyle(mainStyle: TextStyle): TextStyle =
+    mainStyle.copy(
+        fontSize = if (mainStyle.fontSize.isSpecified) mainStyle.fontSize * BACKGROUND_SIZE_RATIO else mainStyle.fontSize,
+        lineHeight = if (mainStyle.lineHeight.isSpecified) mainStyle.lineHeight * BACKGROUND_SIZE_RATIO else mainStyle.lineHeight,
+        fontWeight = FontWeight.SemiBold,
+    )
 
 /** The bar shown while lines are selected. It holds the count and the share and clear actions. */
 @Composable

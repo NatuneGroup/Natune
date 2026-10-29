@@ -58,6 +58,17 @@ val ListenTogetherInTopBarKey = BooleanPreferenceKey("listenTogetherInTopBar")
 val TikTokMainLyricsEnabledKey = BooleanPreferenceKey("tiktokMainLyricsEnabled")
 val LibraryChipOrderKey = StringPreferenceKey("libraryChipOrder")
 val PlaylistTagOrderKey = StringPreferenceKey("playlistTagOrder")
+// moe/rukamori/archivetune/constants/LiquidGlassPreferenceKeys.kt
+val LiquidGlassIntensityKey = StringPreferenceKey("liquidGlassIntensity")
+val LiquidGlassRefractionHeightKey = FloatPreferenceKey("liquidGlassRefractionHeight")
+val LiquidGlassRefractionAmountKey = FloatPreferenceKey("liquidGlassRefractionAmount")
+val LiquidGlassBlurRadiusKey = FloatPreferenceKey("liquidGlassBlurRadius")
+val LiquidGlassTintOpacityKey = FloatPreferenceKey("liquidGlassTintOpacity")
+val LiquidGlassShadowDepthKey = FloatPreferenceKey("liquidGlassShadowDepth")
+val LiquidGlassDepth3DKey = BooleanPreferenceKey("liquidGlassDepth3D")
+val LiquidGlassChromaticAberrationKey = BooleanPreferenceKey("liquidGlassChromaticAberration")
+val LiquidGlassBackdropVibrancyKey = BooleanPreferenceKey("liquidGlassBackdropVibrancy")
+val LiquidGlassAdaptiveLuminanceKey = BooleanPreferenceKey("liquidGlassAdaptiveLuminance")
 // moe/rukamori/archivetune/constants/PreferenceKeys.kt
 val DynamicThemeKey = BooleanPreferenceKey("dynamicTheme")
 val CustomThemeColorKey = StringPreferenceKey("customThemeColor")
@@ -672,3 +683,5 @@ val InlineCanaryReleasesFingerprintKey = StringPreferenceKey("canary_releases_fi
 // tf/monochrome/android/data/preferences/PreferencesManager.kt
 val InlineUsbExclusiveBitPerfectEnabledKey = BooleanPreferenceKey("usb_exclusive_bit_perfect_enabled")
 val InlineMultichannelDownmixEnabledKey = BooleanPreferenceKey("multichannel_downmix_enabled")
+// iOS host only: the system tab bar, mini player and lyrics on iOS 26 and later. Android never reads it.
+val NativeIosInterfaceKey = BooleanPreferenceKey("nativeIosInterface")

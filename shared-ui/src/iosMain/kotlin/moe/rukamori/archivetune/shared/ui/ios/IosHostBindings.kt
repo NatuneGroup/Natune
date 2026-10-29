@@ -46,6 +46,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.settings.NativeIosInterfaceKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.LyricsRomanizeChineseKey
@@ -70,6 +71,7 @@ import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsPhonetic
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsRomanizer
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsMode
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationPresentation
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationSource
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationState
@@ -163,6 +165,7 @@ internal fun iosHostBindings(
         // The iOS root has no screen beneath it, so back at the root has nothing to pop.
         onBackAtRoot = { },
         podcastProgress = graph.podcastProgress.observeAll(),
+        nativeChrome = host.nativeChrome.shell,
     )
 }
 
@@ -270,26 +273,52 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
     }
     val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    val reducedMotion = rememberIosReduceMotion()
+    val lyricsSettings = preferences.playerLyricsSettings(
+        // Both renderers apply the route delay from PlaybackSnapshot through LyricsClock, not a second sync offset.
+        syncOffsetMs = 0L,
+        reducedMotion = reducedMotion,
+        depthEffects = true,
+        backgroundVocals = true,
+    )
     val lyrics = playerLyricsSlots(
         lines = document?.lines.orEmpty(),
         sessionKey = sessionKey,
         playback = graph.player.snapshot,
         romanization = romanization,
-        settings = preferences.playerLyricsSettings(syncOffsetMs = 0L, reducedMotion = false),
+        settings = lyricsSettings,
         actions = actions,
         compactStyle = if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
         fullVisible = expanded && active,
         compactVisible = expanded && active,
         resumed = active,
     )
+    // Only the Enhanced look has a native counterpart; the other looks and older systems keep the Compose renderer.
+    val registeredNativeLyrics by host.nativeLyricsFactory.collectAsState()
+    val nativeLyrics = registeredNativeLyrics
+        ?.takeIf { preferences[NativeIosInterfaceKey, true] && lyricsSettings.mode == LyricsMode.ENHANCED }
+    val fullLyrics: @Composable (Modifier) -> Unit = if (nativeLyrics == null) lyrics.full else { modifier ->
+        IosNativeLyricsSurface(
+            factory = nativeLyrics,
+            lines = document?.lines.orEmpty(),
+            sessionKey = sessionKey,
+            playback = graph.player.snapshot,
+            romanization = romanization,
+            settings = lyricsSettings,
+            onSeek = actions.onSeek,
+            visible = expanded && active,
+            modifier = modifier,
+        )
+    }
     return PlayerSlots(
         artwork = { occurrenceId, modifier -> IosQueueArtwork(occurrenceId, graph, modifier) },
         // No canvas loop source is connected. The artwork slot keeps the cover, as it does for a song without a canvas.
         canvas = { _, _, _ -> },
         customBackground = { _, modifier -> IosArtworkPlaceholder(modifier) },
-        lyrics = lyrics.full,
+        lyrics = fullLyrics,
         compactLyrics = lyrics.compact,
         queue = { modifier -> IosQueuePanel(graph, modifier) },
+        outputButton = { modifier, tint, enabled -> IosAudioRoutePicker(modifier, tint, enabled) },
     )
 }
 

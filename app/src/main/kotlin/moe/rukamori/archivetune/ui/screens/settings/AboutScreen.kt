@@ -83,6 +83,7 @@ import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import moe.rukamori.archivetune.ui.component.preferenceGroup
+import moe.rukamori.archivetune.ui.screens.settings.about.SukisuAboutBackground
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.viewmodels.AboutContributorsUiState
@@ -147,8 +148,7 @@ private fun AboutScreenContent(
     onRetryTranslationContributors: () -> Unit,
     onRetryDependencyLicenses: () -> Unit,
 ) {
-    // Same rule as the Updates screen and the launch popup: the effective channel decides which
-    // changelog feed opens and which pill the header shows.
+    // Same rule as the Updates screen and the launch popup: the effective channel picks the feed and pill.
     val storedChannel by rememberEnumPreference(
         UpdateChannelKey,
         defaultValue = defaultUpdateChannel,
@@ -158,6 +158,7 @@ private fun AboutScreenContent(
     val listState = rememberLazyListState()
 
     Scaffold(
+        containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             SettingsTopAppBar(
@@ -177,69 +178,68 @@ private fun AboutScreenContent(
         },
     ) { innerPadding ->
         val playerAwareBottomPadding =
-            LocalPlayerAwareWindowInsets.current
-                .only(WindowInsetsSides.Bottom)
-                .asPaddingValues()
-                .calculateBottomPadding()
+            LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Bottom).asPaddingValues().calculateBottomPadding()
         val playerAwareInsets =
             LocalPlayerAwareWindowInsets.current.only(
                 WindowInsetsSides.Horizontal,
             )
 
-        when (state) {
-            AboutScreenState.Loading -> {
-                AboutLoadingContent(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                            .windowInsetsPadding(playerAwareInsets),
-                )
-            }
+        SukisuAboutBackground(listState = listState, modifier = Modifier.fillMaxSize()) {
+            when (state) {
+                AboutScreenState.Loading -> {
+                    AboutLoadingContent(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                                .windowInsetsPadding(playerAwareInsets),
+                    )
+                }
 
-            AboutScreenState.Empty -> {
-                AboutMessageContent(
-                    message = stringResource(R.string.no_results_found),
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                            .windowInsetsPadding(playerAwareInsets),
-                )
-            }
+                AboutScreenState.Empty -> {
+                    AboutMessageContent(
+                        message = stringResource(R.string.no_results_found),
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                                .windowInsetsPadding(playerAwareInsets),
+                    )
+                }
 
-            is AboutScreenState.Error -> {
-                AboutMessageContent(
-                    message = stringResource(state.messageResId),
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                            .windowInsetsPadding(playerAwareInsets),
-                )
-            }
+                is AboutScreenState.Error -> {
+                    AboutMessageContent(
+                        message = stringResource(state.messageResId),
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                                .windowInsetsPadding(playerAwareInsets),
+                    )
+                }
 
-            is AboutScreenState.Success -> {
-                AboutSuccessContent(
-                    model = state.model,
-                    effectiveChannel = effectiveChannel,
-                    onNavigateToChangelog = onNavigateToChangelog,
-                    onNavigateToUpdates = onNavigateToUpdates,
-                    onOpenUri = onOpenUri,
-                    onRetryContributors = onRetryContributors,
-                    onOpenTranslationContributors = onOpenTranslationContributors,
-                    onOpenDependencyLicenses = onOpenDependencyLicenses,
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .windowInsetsPadding(playerAwareInsets),
-                    contentPadding =
-                        PaddingValues(
-                            top = innerPadding.calculateTopPadding(),
-                            bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding,
-                        ),
-                    listState = listState,
-                )
+                is AboutScreenState.Success -> {
+                    AboutSuccessContent(
+                        model = state.model,
+                        effectiveChannel = effectiveChannel,
+                        onNavigateToChangelog = onNavigateToChangelog,
+                        onNavigateToUpdates = onNavigateToUpdates,
+                        onOpenUri = onOpenUri,
+                        onRetryContributors = onRetryContributors,
+                        onOpenTranslationContributors = onOpenTranslationContributors,
+                        onOpenDependencyLicenses = onOpenDependencyLicenses,
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .windowInsetsPadding(playerAwareInsets),
+                        contentPadding =
+                            PaddingValues(
+                                top = innerPadding.calculateTopPadding(),
+                                bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding,
+                            ),
+                        listState = listState,
+                    )
+                }
             }
         }
     }
