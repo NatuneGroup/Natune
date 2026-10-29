@@ -90,6 +90,10 @@ import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.utils.isLocalMediaId
+import moe.rukamori.archivetune.ui.player.PlayerControlCrossfade
+import moe.rukamori.archivetune.ui.player.PlayerControlKind
+import moe.rukamori.archivetune.ui.player.playerControlMotion
+import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -353,7 +357,7 @@ fun LooperPlayerContent(
                             contentDescription = stringResource(R.string.looper_favourite),
                             tint =
                                 if (currentSongLiked) accentColor else Color.White.copy(alpha = 0.2f),
-                            modifier = Modifier.size(28.dp),
+                            modifier = Modifier.size(28.dp).playerControlMotion(PlayerControlKind.Like, currentSongLiked),
                         )
                     }
                 }
@@ -373,6 +377,9 @@ fun LooperPlayerContent(
 
                 Spacer(Modifier.height(24.dp))
 
+                val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+                val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+                val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
                 Row(
                     modifier =
                         Modifier
@@ -388,6 +395,7 @@ fun LooperPlayerContent(
                             enabled = canSkipPrevious,
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                previousMotion.tap()
                                 playerConnection.seekToPrevious()
                             },
                         ) {
@@ -395,9 +403,11 @@ fun LooperPlayerContent(
                                 painter = painterResource(R.drawable.player_fast_forward),
                                 contentDescription = stringResource(R.string.widget_previous),
                                 tint = Color.White,
+                                // Motion sits outside the mirror so its nudge reads in screen direction.
                                 modifier =
                                     Modifier
                                         .size(28.dp)
+                                        .then(previousMotion.modifier)
                                         .graphicsLayer { scaleX = -1f },
                             )
                         }
@@ -425,15 +435,14 @@ fun LooperPlayerContent(
                                 modifier = Modifier.size(32.dp),
                             )
                         } else {
-                            Icon(
-                                painter =
-                                    painterResource(
-                                        if (isPlaying) R.drawable.player_pause else R.drawable.player_play,
-                                    ),
-                                contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
-                                tint = if (isPlaying) Color.White else Color.Black,
-                                modifier = Modifier.size(28.dp),
-                            )
+                            PlayerControlCrossfade(if (isPlaying) R.drawable.player_pause else R.drawable.player_play) { playGlyph ->
+                                Icon(
+                                    painter = painterResource(playGlyph),
+                                    contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
+                                    tint = if (isPlaying) Color.White else Color.Black,
+                                    modifier = Modifier.size(28.dp).then(playPauseMotion.modifier),
+                                )
+                            }
                         }
                     }
 
@@ -444,6 +453,7 @@ fun LooperPlayerContent(
                             enabled = canSkipNext,
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                nextMotion.tap()
                                 playerConnection.seekToNext()
                             },
                         ) {
@@ -451,7 +461,7 @@ fun LooperPlayerContent(
                                 painter = painterResource(R.drawable.player_fast_forward),
                                 contentDescription = stringResource(R.string.next),
                                 tint = Color.White,
-                                modifier = Modifier.size(28.dp),
+                                modifier = Modifier.size(28.dp).then(nextMotion.modifier),
                             )
                         }
                     }
@@ -482,6 +492,7 @@ fun LooperPlayerContent(
                             active = shuffleModeEnabled,
                             horizontalPadding = 20.dp,
                             iconSize = 16.dp,
+                            iconModifier = Modifier.playerControlMotion(PlayerControlKind.Shuffle, shuffleModeEnabled),
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 playerConnection.player.shuffleModeEnabled =
@@ -500,6 +511,7 @@ fun LooperPlayerContent(
                                     repeatMode == androidx.media3.common.Player.REPEAT_MODE_ALL,
                             horizontalPadding = 18.dp,
                             iconSize = 20.dp,
+                            iconModifier = Modifier.playerControlMotion(PlayerControlKind.Repeat, repeatMode),
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 playerConnection.player.repeatMode =
@@ -652,6 +664,7 @@ private fun LooperUtilityPill(
     horizontalPadding: androidx.compose.ui.unit.Dp,
     iconSize: androidx.compose.ui.unit.Dp,
     onClick: () -> Unit,
+    iconModifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
     Row(
@@ -674,7 +687,7 @@ private fun LooperUtilityPill(
             painter = painterResource(iconRes),
             contentDescription = contentDescription,
             tint = if (active) Color.White else Color.White.copy(alpha = 0.5f),
-            modifier = Modifier.size(iconSize),
+            modifier = Modifier.size(iconSize).then(iconModifier),
         )
     }
 }

@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="player_native_controls_description">This layout keeps its native transport and seek controls.</string>
+    <string name="player_setting_not_used">Not used by the %1$s player</string>
     <string name="player_volume_bar_existing_layouts">Available in Immersive, V8, BitChord, Apple Music and Flamingo layouts</string>
     <string name="blur_setting_overridden">Turned off by \"Disable blur effects\"</string>
     <string name="explore">Explore</string>

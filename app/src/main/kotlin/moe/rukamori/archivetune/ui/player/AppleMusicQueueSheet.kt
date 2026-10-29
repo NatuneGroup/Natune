@@ -358,7 +358,7 @@ fun AppleMusicQueueSheet(
                         ),
                     contentDescription = "Repeat",
                     tint = adaptivePrimary,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(24.dp).playerControlMotion(PlayerControlKind.Repeat, repeatMode),
                 )
             }
             // Sleep timer pill.

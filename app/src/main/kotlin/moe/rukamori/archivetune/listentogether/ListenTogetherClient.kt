@@ -21,6 +21,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.PowerManager
 import android.widget.Toast
 import androidx.annotation.RequiresPermission
@@ -812,6 +813,8 @@ class ListenTogetherClient @Inject constructor(
     }
 
     private fun ensureNotificationChannel() {
+        // Notification channels exist from API 26; below that the notifications post without one.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         try {
             val nm = context.getSystemService(NotificationManager::class.java)
             val existing = nm?.getNotificationChannel(NOTIFICATION_CHANNEL_ID)
