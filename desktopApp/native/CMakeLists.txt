@@ -78,11 +78,25 @@ if(UNIX AND NOT APPLE)
     # DT_RPATH is inherited by the FFmpeg/TLS/XML closure; DT_RUNPATH is not.
     target_link_options(archivetune_engine PRIVATE "LINKER:--disable-new-dtags")
 endif()
+# The packaged layout puts the media closure beside the engine: $ORIGIN resolves it on ELF hosts, while
+# Apple dylibs carry @rpath install names that @loader_path resolves.
+if(APPLE)
+    set(AE_INSTALL_RPATH "@loader_path")
+else()
+    set(AE_INSTALL_RPATH "$ORIGIN")
+endif()
 set_target_properties(archivetune_engine PROPERTIES
     BUILD_RPATH "${AE_PREFIX}/lib"
-    INSTALL_RPATH "$ORIGIN"
+    INSTALL_RPATH "${AE_INSTALL_RPATH}"
     BUILD_WITH_INSTALL_RPATH OFF
 )
+if(MINGW)
+    # Static libgcc and winpthreads keep the package's DLL dependencies to the staged closure and the Windows
+    # system libraries; the stage script refuses anything else.
+    target_link_options(archivetune_engine PRIVATE -static)
+    # System.mapLibraryName gives archivetune_engine.dll; MinGW's lib prefix would break that lookup.
+    set_target_properties(archivetune_engine PROPERTIES PREFIX "")
+endif()
 install(TARGETS archivetune_engine LIBRARY DESTINATION . RUNTIME DESTINATION .)
 
 include(CTest)
