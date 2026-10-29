@@ -5,6 +5,7 @@ Walks the PE import table of every staged DLL and copies the ones this build pro
 dependency prefix. Windows system libraries are an allowlist that is never bundled; anything else
 that is neither staged nor a known system DLL fails the stage instead of shipping.
 """
+import os
 import pathlib
 import re
 import shutil
@@ -40,6 +41,15 @@ def imports(library):
 
 
 prefix_files = {p.name.lower(): p for p in prefix.glob("**/*.dll") if p.is_file()}
+# The MinGW toolchain's own runtime is not in the prefix. Only these names are taken from its bin directory, so an
+# unexpected toolchain DLL still fails the audit instead of shipping.
+MINGW_RUNTIME = {"libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll"}
+mingw_bin = os.environ.get("ARCHIVETUNE_MINGW_BIN")
+if mingw_bin:
+    for name in MINGW_RUNTIME:
+        candidate = pathlib.Path(mingw_bin) / name
+        if candidate.is_file():
+            prefix_files.setdefault(name, candidate)
 staged = set()
 queue = [p for p in destination.iterdir() if p.name.lower().endswith(".dll")]
 while queue:

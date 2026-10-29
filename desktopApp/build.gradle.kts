@@ -445,6 +445,10 @@ val addLinuxBrowserDebDepends = tasks.register("addLinuxBrowserDebDepends") {
             runHostTool("dpkg-deb", "--raw-extract", deb.absolutePath, tree.absolutePath)
             val control = tree.resolve("DEBIAN/control")
             control.writeText(withDependsFields(control.readText(), linuxBrowserDebDepends))
+            val desktopEntries = tree.walkTopDown()
+                .filter { it.isFile && it.extension == "desktop" && it.parentFile.name == "lib" }.toList()
+            check(desktopEntries.isNotEmpty()) { "${deb.name} carries no .desktop entry to register archivetune://" }
+            desktopEntries.forEach(::registerUriSchemeHandler)
             runHostTool("dpkg-deb", "--root-owner-group", "--build", tree.absolutePath, deb.absolutePath)
         }
     }
@@ -475,6 +479,23 @@ val addLinuxBrowserRpmRequires = tasks.register("addLinuxBrowserRpmRequires") {
         check(jpackage.isFile) { "jpackage was not found at $jpackage" }
         val work = layout.buildDirectory.dir("tmp/addLinuxBrowserRpmRequires").get().asFile
         work.deleteRecursively()
+        // A resource-dir file named <name>.desktop replaces jpackage's template.desktop; jpackage still fills in the
+        // upper-case placeholders, so only the %u argument and the scheme MimeType differ from its default entry.
+        val resources = layout.buildDirectory.dir("tmp/linuxDesktopResources").get().asFile
+        resources.mkdirs()
+        resources.resolve("$desktopPackageName.desktop").writeText(
+            listOf(
+                "[Desktop Entry]",
+                "Name=APPLICATION_NAME",
+                "Comment=APPLICATION_DESCRIPTION",
+                "Exec=APPLICATION_LAUNCHER %u",
+                "Icon=APPLICATION_ICON",
+                "Terminal=false",
+                "Type=Application",
+                "Categories=DEPLOY_BUNDLE_CATEGORY",
+                "MimeType=x-scheme-handler/archivetune;",
+            ).joinToString("\n", postfix = "\n"),
+        )
         runHostTool(
             jpackage.absolutePath,
             "--type", "rpm",
@@ -490,6 +511,7 @@ val addLinuxBrowserRpmRequires = tasks.register("addLinuxBrowserRpmRequires") {
             "--linux-app-category", "AudioVideo",
             "--linux-menu-group", "AudioVideo",
             "--linux-shortcut",
+            "--resource-dir", resources.absolutePath,
             // RPM Requires lists are whitespace-separated; the comma form is the Debian Depends syntax used for the .deb.
             "--linux-package-deps", linuxBrowserRpmRequires.joinToString(" "),
         )
@@ -509,21 +531,10 @@ tasks.matching { it.name == "packageRpm" }.configureEach {
     finalizedBy(addLinuxBrowserRpmRequires)
 }
 
-// jpackage's --linux-shortcut writes lib/<name>.desktop into the app image without a MimeType or an Exec argument
-// placeholder, so nothing registers archivetune:// for installed Linux packages. The edit runs inside
-// createDistributable itself — not a finalizedBy, which Gradle may run concurrently with packageDeb/packageRpm — so
-// the .deb, the .rpm rebuilt from this same image and the raw app image all carry the handler.
-tasks.matching { it.name == "createDistributable" }.configureEach {
-    // Only jpackage's Linux image carries a .desktop entry; macOS and Windows images have nothing to patch.
-    doLast {
-        if (!hostIsLinux) return@doLast
-        val appImage = layout.buildDirectory.dir("compose/binaries/main/app/$desktopPackageName").get().asFile
-        val desktopEntries = appImage.walkTopDown().filter { it.isFile && it.extension == "desktop" }.toList()
-        check(desktopEntries.isNotEmpty()) { "createDistributable wrote no .desktop entry under $appImage" }
-        desktopEntries.forEach(::registerUriSchemeHandler)
-    }
-}
-
+// jpackage writes the --linux-shortcut entry (lib/<package>-<name>.desktop) only while it builds a .deb or .rpm, never into
+// the app image, and without a MimeType or an Exec argument placeholder, so nothing would register archivetune:// for
+// installed Linux packages. addLinuxBrowserDebDepends patches the entry in the .deb it already unpacks, and
+// addLinuxBrowserRpmRequires hands jpackage an overriding template when it rebuilds the .rpm.
 // Exec gets the %u placeholder a scheme handler needs to receive the clicked URI; MimeType declares the scheme once.
 private fun registerUriSchemeHandler(file: File) {
     val lines = file.readLines().toMutableList()
