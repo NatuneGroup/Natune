@@ -269,27 +269,35 @@ private struct LyricText: View {
 
     var body: some View {
         if active && !spans.isEmpty {
-            spans.enumerated()
-                .reduce(Text(verbatim: "")) { partial, item in
-                    partial + Text(verbatim: item.element.text).customAttribute(LyricSpanAttribute(index: item.offset))
-                }
+            sweptText
                 .font(font)
                 .foregroundStyle(color)
-                .textRenderer(
-                    LyricSweepRenderer(
-                        starts: spans.map(\.startMs),
-                        ends: spans.map(\.endMs),
-                        positionMs: positionMs,
-                        idleAlpha: idleAlpha,
-                        rightToLeft: rightToLeft,
-                        lift: lift
-                    )
-                )
+                .textRenderer(renderer)
         } else {
             Text(verbatim: text)
                 .font(font)
                 .foregroundStyle(color.opacity(active ? 1 : idleAlpha))
         }
+    }
+
+    /// Each word carries its index, so the renderer can find its timing among the laid-out runs.
+    private var sweptText: Text {
+        var result = Text(verbatim: "")
+        for (index, span) in spans.enumerated() {
+            result = result + Text(verbatim: span.text).customAttribute(LyricSpanAttribute(index: index))
+        }
+        return result
+    }
+
+    private var renderer: LyricSweepRenderer {
+        LyricSweepRenderer(
+            starts: spans.map { $0.startMs },
+            ends: spans.map { $0.endMs },
+            positionMs: positionMs,
+            idleAlpha: idleAlpha,
+            rightToLeft: rightToLeft,
+            lift: lift
+        )
     }
 }
 
