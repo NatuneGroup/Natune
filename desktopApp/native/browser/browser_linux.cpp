@@ -11,7 +11,7 @@
  *
  * One GTK main loop runs on a thread this library owns. Every GTK, WebKit and cookie call happens on that loop, and
  * the JNI entry points only post work to it, so no GTK object is touched from a Java thread. Each attempt gets its
- * own ephemeral network session, so its cookies never reach the disk or another attempt.
+ * own ephemeral web context, so its cookies never reach the disk or another attempt.
  *
  * Origin policy is enforced here, not in Java. A navigation or response outside the origins the caller authorized
  * is ignored, new windows and downloads are refused, and cookies are read only for an authorized origin. The sign-in
@@ -69,7 +69,7 @@ struct Session {
     GtkWidget *window = nullptr;
     GtkWidget *finish = nullptr;
     WebKitWebView *view = nullptr;
-    WebKitNetworkSession *network = nullptr;
+    WebKitWebContext *context = nullptr;
     std::vector<std::string> origins;
     /* When set, a navigation to it is reported through onNavigate and cancelled, like shouldOverrideUrlLoading. */
     std::string capturePrefix;
@@ -77,7 +77,7 @@ struct Session {
     bool failed = false;
 
     ~Session() {
-        if (network) g_object_unref(network);
+        if (context) g_object_unref(context);
     }
 };
 
@@ -276,8 +276,9 @@ jlong createSession(const std::string &startUrl, const std::string &title, const
         session->origins = origins;
         session->capturePrefix = capturePrefix;
         session->callbacks = callbacks;
-        /* An ephemeral network session keeps cookies in memory only and never shares them with another attempt. */
-        session->network = webkit_network_session_new_ephemeral();
+        /* WebKitNetworkSession exists only in the webkitgtk-6.0 API; on 4.1 an ephemeral web context gives the same
+         * memory-only cookie store that no other attempt shares. */
+        session->context = webkit_web_context_new_ephemeral();
         session->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
         gtk_window_set_title(GTK_WINDOW(session->window), title.c_str());
         gtk_window_set_default_size(GTK_WINDOW(session->window), kWindowWidth, kWindowHeight);
@@ -286,7 +287,7 @@ jlong createSession(const std::string &startUrl, const std::string &title, const
         session->finish = gtk_button_new_with_label(finishText.c_str());
         gtk_box_pack_start(GTK_BOX(layout), session->finish, FALSE, FALSE, 0);
         session->view = WEBKIT_WEB_VIEW(
-            g_object_new(WEBKIT_TYPE_WEB_VIEW, "network-session", session->network, nullptr));
+            g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", session->context, nullptr));
         gtk_box_pack_start(GTK_BOX(layout), GTK_WIDGET(session->view), TRUE, TRUE, 0);
         gtk_container_add(GTK_CONTAINER(session->window), layout);
 
@@ -485,7 +486,8 @@ JNIEXPORT void JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_Na
             session->callbacks->notifyCookies(requestId, nullptr);
             return;
         }
-        WebKitCookieManager *manager = webkit_network_session_get_cookie_manager(session->network);
+        WebKitCookieManager *manager = webkit_website_data_manager_get_cookie_manager(
+            webkit_web_context_get_website_data_manager(session->context));
         auto *request = new CookieRequest{session->callbacks, requestId, WEBKIT_COOKIE_MANAGER(g_object_ref(manager))};
         const std::string uri = target + "/";
         webkit_cookie_manager_get_cookies(manager, uri.c_str(), nullptr, onCookiesReady, request);
