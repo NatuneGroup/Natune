@@ -116,7 +116,11 @@ internal fun podcastSponsorBlockConfig(ref: ContentRef, prefs: PreferenceSnapsho
     val defaults = SponsorBlockConfig(enabled = true)
     val categories = prefs[SponsorBlockCategoriesKey] ?: defaults.categories
     if (categories.isEmpty()) return null
-    val origin = prefs[SponsorBlockApiUrlKey]?.trim()?.trimEnd('/')?.takeIf(String::isNotBlank) ?: defaults.origin
+    val origin = prefs[SponsorBlockApiUrlKey]?.trim()?.takeIf(String::isNotBlank) ?: defaults.origin
     // URL parsing can throw an IllegalStateException as well as validation's IllegalArgumentException.
-    return try { defaults.copy(categories = categories, origin = origin) } catch (_: Exception) { null }
+    return try {
+        // Validate before removing the root slash: malformed values must not become a default origin.
+        val config = defaults.copy(categories = categories, origin = origin)
+        if (origin.endsWith('/')) config.copy(origin = origin.removeSuffix("/")) else config
+    } catch (_: Exception) { null }
 }
