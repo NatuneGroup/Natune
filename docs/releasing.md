@@ -190,10 +190,13 @@ until the orchestrator runs the candidate on Blacksmith.
 
 Linux x64 and arm64 use the same recipe; the scripts choose the OpenSSL target and
 the `linux-x64` or `linux-arm64` resource directory from the host architecture.
-All Linux packages register `archivetune://` with the desktop: the app image's
-`.desktop` entry gains `Exec … %u` and `MimeType=x-scheme-handler/archivetune;`
-inside `createDistributable` (jpackage's `--linux-shortcut` writes neither), and the
-AppImage's hand-written entry declares the same pair in the workflow.
+All Linux packages register `archivetune://` with the desktop. jpackage writes the
+`--linux-shortcut` entry only while it builds a .deb or .rpm, never into the app
+image, and without `%u` or a MimeType. `addLinuxBrowserDebDepends` adds
+`Exec … %u` and `MimeType=x-scheme-handler/archivetune;` to the entry in the .deb
+it already unpacks, `addLinuxBrowserRpmRequires` passes jpackage an overriding
+`Natune.desktop` template through `--resource-dir`, and the AppImage's
+hand-written entry declares the same pair in the workflow.
 
 ## Run by hand
 
