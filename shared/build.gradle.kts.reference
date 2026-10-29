@@ -11,7 +11,7 @@ kotlin {
     android {
         namespace = "moe.rukamori.archivetune.shared"
         compileSdk = 37
-        minSdk = 26
+        minSdk = 24
         androidResources.enable = true
         compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
     }

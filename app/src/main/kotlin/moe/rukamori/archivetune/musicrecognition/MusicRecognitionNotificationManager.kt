@@ -15,6 +15,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.annotation.StringRes
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -31,6 +32,8 @@ class MusicRecognitionNotificationManager
         @ApplicationContext private val context: Context,
     ) {
         fun createChannel() {
+            // Notification channels exist from API 26; below that the notifications post without one.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
             val channel =
                 NotificationChannel(
                     ChannelId,

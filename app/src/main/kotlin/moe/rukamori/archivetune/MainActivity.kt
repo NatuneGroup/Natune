@@ -37,6 +37,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -612,8 +613,7 @@ class MainActivity : ComponentActivity() {
      * else that needs to know). Safe to call from the main thread.
      */
     private fun isPipEligible(): Boolean {
-        // PiP requires API 26+ (O). The app's minSdk is 26, so this check
-        // is always true — kept for defensive clarity.
+        // Picture-in-picture is API 26+ (O); on older devices the activity never enters it.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
         if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
         val pipEnabled = dataStore.get(EnablePipModeKey, false)
@@ -631,6 +631,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Computes the [PictureInPictureParams] for the current playback. */
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun buildPipParams(): PictureInPictureParams =
         PictureInPictureParams
             .Builder()
@@ -639,7 +640,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (isPipEligible()) {
+        // isPipEligible() already requires O; the explicit check is what lets the API 26 calls below pass lint.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isPipEligible()) {
             try {
                 enterPictureInPictureMode(buildPipParams())
             } catch (e: IllegalStateException) {
@@ -653,6 +655,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
         newConfig: Configuration,
