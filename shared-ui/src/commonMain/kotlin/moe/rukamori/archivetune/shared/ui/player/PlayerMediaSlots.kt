@@ -17,13 +17,23 @@ class PlayerMediaSlots(
     val queue: @Composable (modifier: Modifier) -> Unit,
 )
 
-/** The per-song offset comes from the lyrics/session owner, never a second preference store. */
-fun PreferenceSnapshot.playerLyricsSettings(syncOffsetMs: Long, reducedMotion: Boolean): LyricsSurfaceSettings =
+/**
+ * The per-song offset comes from the lyrics/session owner, never a second preference store. [depthEffects] and
+ * [backgroundVocals] are host opt-ins; hosts that leave them off keep the flat look.
+ */
+fun PreferenceSnapshot.playerLyricsSettings(
+    syncOffsetMs: Long,
+    reducedMotion: Boolean,
+    depthEffects: Boolean = false,
+    backgroundVocals: Boolean = false,
+): LyricsSurfaceSettings =
     LyricsSurfaceSettings(
         mode = LyricsMode.fromStored(this[LyricsModeKey]),
         tapToSeek = this[LyricsClickKey, true],
         syncOffsetMs = syncOffsetMs,
         reduceMotion = reducedMotion || this[DisableAnimationsKey, false],
+        depthEffects = depthEffects,
+        backgroundVocals = backgroundVocals,
     )
 
 /**

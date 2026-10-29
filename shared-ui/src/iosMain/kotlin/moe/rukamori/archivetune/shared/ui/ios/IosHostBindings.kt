@@ -270,12 +270,19 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
     }
     val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    val reducedMotion = rememberIosReduceMotion()
+    val syncOffsetMs = rememberIosLyricsSyncOffsetMs()
     val lyrics = playerLyricsSlots(
         lines = document?.lines.orEmpty(),
         sessionKey = sessionKey,
         playback = graph.player.snapshot,
         romanization = romanization,
-        settings = preferences.playerLyricsSettings(syncOffsetMs = 0L, reducedMotion = false),
+        settings = preferences.playerLyricsSettings(
+            syncOffsetMs = syncOffsetMs,
+            reducedMotion = reducedMotion,
+            depthEffects = true,
+            backgroundVocals = true,
+        ),
         actions = actions,
         compactStyle = if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
         fullVisible = expanded && active,
