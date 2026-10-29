@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.ui.component
 
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -27,5 +28,13 @@ class MarqueePolicyTest {
         assertTrue(marqueeShouldAnimate(200, 100, true, true, 2))
         assertTrue(marqueeShouldAnimate(200, 100, true, true, Int.MAX_VALUE))
         assertFalse(marqueeShouldAnimate(200, 100, true, false, Int.MAX_VALUE))
+    }
+
+    @Test
+    fun zeroFadeWidthScrollsWithoutEdgeFade_otherwiseFadeOnlyWhileAnimating() {
+        assertTrue(marqueeFadesEdges(animate = true, fadeWidth = 24.dp))
+        assertFalse(marqueeFadesEdges(animate = false, fadeWidth = 24.dp))
+        assertFalse(marqueeFadesEdges(animate = true, fadeWidth = 0.dp))
+        assertFalse(marqueeFadesEdges(animate = false, fadeWidth = 0.dp))
     }
 }
