@@ -819,14 +819,14 @@ private fun QuickPicksSection(
                                     .padding(20.dp),
                         ) {
                             Text(
-                                text = song.song.title,
+                                text = song.effectiveTitle,
                                 style = MaterialTheme.typography.titleLargeEmphasized,
                                 color = Color.White,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                text = song.artists.joinToString { it.name },
+                                text = song.effectiveArtistNames.joinToString(),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = Color.White.copy(alpha = 0.78f),
                                 maxLines = 1,

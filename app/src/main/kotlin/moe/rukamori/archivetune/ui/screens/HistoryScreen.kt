@@ -1313,10 +1313,10 @@ private fun filterLocalEvents(
     return events
         .mapValues { (_, songs) ->
             songs.filter { event ->
-                event.song.song.title
+                event.song.effectiveTitle
                     .contains(query, ignoreCase = true) ||
-                    event.song.artists.any { artist ->
-                        artist.name.contains(query, ignoreCase = true)
+                    event.song.effectiveArtistNames.any { artistName ->
+                        artistName.contains(query, ignoreCase = true)
                     }
             }
         }.filterValues { it.isNotEmpty() }

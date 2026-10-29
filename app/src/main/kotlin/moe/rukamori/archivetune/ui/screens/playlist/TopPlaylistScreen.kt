@@ -251,8 +251,8 @@ fun TopPlaylistScreen(
             } else {
                 wrappedSongs.filter { wrapper ->
                     val song = wrapper.item
-                    song.song.title.contains(query.text, true) ||
-                        song.artists.any { it.name.contains(query.text, true) }
+                    song.effectiveTitle.contains(query.text, true) ||
+                        song.effectiveArtistNames.any { it.contains(query.text, true) }
                 }
             }
         }

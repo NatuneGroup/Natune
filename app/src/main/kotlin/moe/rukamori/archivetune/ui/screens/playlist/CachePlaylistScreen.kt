@@ -204,12 +204,12 @@ fun CachePlaylistScreen(
                     }
 
                     SongSortType.NAME -> {
-                        cachedSongs.sortedBy { it.song.title }
+                        cachedSongs.sortedBy { it.effectiveTitle }
                     }
 
                     SongSortType.ARTIST -> {
                         cachedSongs.sortedBy { song ->
-                            song.artists.joinToString(separator = "") { artist -> artist.name }
+                            song.effectiveArtistNames.joinToString(separator = "")
                         }
                     }
 

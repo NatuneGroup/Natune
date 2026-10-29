@@ -494,8 +494,8 @@ fun HomeFeedSongCard(
     val isActive = song.id == mediaMetadata?.id
     HomeFeedShelfCard(
         thumbnailUrl = song.song.thumbnailUrl,
-        title = song.song.title,
-        subtitle = song.artists.joinToString { it.name },
+        title = song.effectiveTitle,
+        subtitle = song.effectiveArtistNames.joinToString(),
         isActive = isActive,
         isPlaying = isPlaying,
         onClick = {
