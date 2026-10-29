@@ -228,6 +228,9 @@ class DesktopSessionGraph private constructor(
         report = { message -> desktopDiagnostic(message) },
     )
 
+    /** The `uploaded_songs` owner: YouTube Music upload, shelf browse and delete over the one settings sign-in. */
+    internal val uploads = DesktopYouTubeUploads(scope, settings, queue, { message -> report(message) })
+
     /** Search, albums and finite playlists over the same YouTube catalogue the queue router reads. */
     internal val catalogPages = CatalogPageOwners(youtubeContent, pageOwners)
 

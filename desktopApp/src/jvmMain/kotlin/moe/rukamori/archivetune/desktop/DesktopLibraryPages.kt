@@ -118,6 +118,7 @@ internal fun desktopGraphPage(
         ArchiveDestination.PODCASTS -> desktopPodcastsPage()
         ArchiveDestination.PODCAST -> desktopPodcastPage(route.arguments.getValue("browseId"))
         ArchiveDestination.LOCAL_SONGS -> desktopLocalSongsPage(graph, menu)
+        ArchiveDestination.UPLOADED_SONGS -> desktopUploadsPage(graph)
         ArchiveDestination.DOWNLOADS -> desktopDownloadsPage(graph)
         ArchiveDestination.STATISTICS -> desktopStatisticsPage(graph, menu, openRoute)
         ArchiveDestination.RECAP -> desktopRecapPage(graph, menu)
