@@ -162,7 +162,7 @@ import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
 import moe.rukamori.archivetune.ui.screens.settings.LyricsPosition
 import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
-import moe.rukamori.archivetune.ui.utils.smoothFadingEdge
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
@@ -810,7 +810,7 @@ fun Lyrics(
                         .asPaddingValues(),
                 modifier =
                     Modifier
-                        .smoothFadingEdge(vertical = 72.dp)
+                        .lyricsViewportFade()
                         .nestedScroll(
                             remember {
                                 var lastScrollTime = 0L
