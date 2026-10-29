@@ -82,6 +82,11 @@ internal class DesktopYouTubeUploads(
         }
     private val client = YouTubeUploadClient(http, session = ::uploadSession)
 
+    /** Releases the dedicated transfer client. Called from the graph's close, after the drivers stopped. */
+    fun close() {
+        http.close()
+    }
+
     private val pageMutex = Mutex()
     private var continuation: String? = null
     private var songs: List<YouTubeUploadedSong> = emptyList()

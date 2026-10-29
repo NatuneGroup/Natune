@@ -350,6 +350,7 @@ class DesktopSessionGraph private constructor(
         owner.close()
         locators.close()
         telegram.close()
+        uploads.close()
         http.close()
         player.close()
         settings.close()
