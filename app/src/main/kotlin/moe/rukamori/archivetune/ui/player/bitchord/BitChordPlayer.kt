@@ -1299,14 +1299,9 @@ fun BitChordPlayerContent(
                             onRemove = { index -> playerConnection.player.removeMediaItem(index) },
                             onMove = { from, to -> playerConnection.player.moveMediaItem(from, to) },
                             onClear = {
-                                // Keep the playing track, drop everything else.
-                                val size = playerConnection.player.mediaItemCount
-                                for (i in (size - 1) downTo (queueIndex + 1)) {
-                                    playerConnection.player.removeMediaItem(i)
-                                }
-                                for (i in (queueIndex - 1) downTo 0) {
-                                    playerConnection.player.removeMediaItem(i)
-                                }
+                                // The service-owned clear keeps the playing track, turns infinity off first
+                                // so the queue cannot refill itself, and keeps an in-memory undo ticket.
+                                playerConnection.service.clearQueueWithUndo()
                             },
                             modifier = Modifier.weight(1f),
                         )
