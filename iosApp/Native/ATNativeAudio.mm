@@ -75,6 +75,7 @@ static bool g_snapshot_taken = false; // Guarded by g_session_lock: the category
 static NSString *g_snapshot_category = nil;
 static NSString *g_snapshot_mode = nil;
 static AVAudioSessionCategoryOptions g_snapshot_options = (AVAudioSessionCategoryOptions)0;
+static AVAudioSessionRouteSharingPolicy g_snapshot_policy = AVAudioSessionRouteSharingPolicyDefault;
 static std::vector<std::shared_ptr<output_gate>> g_outputs; // Guarded by g_session_lock; changed on the main thread only.
 
 static AVAudioSessionCategoryOptions recording_options(void) {
@@ -102,6 +103,7 @@ static bool configure_playback_locked(NSError **error) {
     AVAudioSession *session = [AVAudioSession sharedInstance];
     if (g_recording_windows == 0 &&
         ![session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
+           routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
                       options:(AVAudioSessionCategoryOptions)0 error:error]) {
         return false;
     }
@@ -114,16 +116,19 @@ static void settle_session_locked(void) {
     NSError *error = nil;
     if (g_playback_claims > 0) {
         [session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
+          routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
                      options:(AVAudioSessionCategoryOptions)0 error:&error];
     } else if (g_snapshot_taken) {
         [session setCategory:g_snapshot_category ? g_snapshot_category : AVAudioSessionCategoryPlayback
                         mode:g_snapshot_mode ? g_snapshot_mode : AVAudioSessionModeDefault
+          routeSharingPolicy:g_snapshot_policy
                      options:g_snapshot_options error:&error];
     }
     g_snapshot_taken = false;
     g_snapshot_category = nil;
     g_snapshot_mode = nil;
     g_snapshot_options = (AVAudioSessionCategoryOptions)0;
+    g_snapshot_policy = AVAudioSessionRouteSharingPolicyDefault;
 }
 static void output_failure(at_audio_output *p) {
     p->running.store(false);
@@ -385,12 +390,14 @@ int at_audio_session_begin_recording(void) {
         g_snapshot_category = session.category;
         g_snapshot_mode = session.mode;
         g_snapshot_options = session.categoryOptions;
+        g_snapshot_policy = session.routeSharingPolicy;
         g_snapshot_taken = true;
     }
     ++g_recording_windows;
     NSError *error = nil;
     int status = 0;
     if (![session setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeDefault
+           routeSharingPolicy:AVAudioSessionRouteSharingPolicyDefault
                       options:recording_options() error:&error]) {
         status = 1;
     } else if (![session setActive:YES error:&error]) {
