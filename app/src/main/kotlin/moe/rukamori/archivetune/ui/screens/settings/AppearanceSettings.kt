@@ -10,12 +10,12 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import androidx.annotation.StringRes
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.mutableIntStateOf
 import moe.rukamori.archivetune.utils.playerVolumeVisibility
 import moe.rukamori.archivetune.utils.setCustomFont
 import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.RestartScopedSettings
 import moe.rukamori.archivetune.ui.component.RestartToApplyNotice
@@ -173,16 +173,32 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.asPaddingValues
 
-/** The three pages Appearance is split across. */
-enum class AppearanceSection { THEME, PLAYER, INTERFACE }
+/**
+ * The three sections of the Appearance page. Their old sub-page routes still resolve, and open the
+ * one page at the section's first heading.
+ */
+enum class AppearanceSection(val anchor: String) {
+    THEME("appearance_theme"),
+    PLAYER("appearance_player"),
+    INTERFACE("appearance_interface"),
+}
+
+/** One section's rows, built against the page's shared [PreferencePositions]. */
+private typealias AppearanceRows = LazyListScope.(PreferencePositions) -> Unit
 
 /**
- * Appearance itself: three links, nothing else. Every row that used to be here lives on one of the
- * sub-pages, and the settings search index points at whichever one owns it.
+ * Appearance is one scrolling page: the theme, player and interface rows follow each other under
+ * the same group headings the other settings pages use. Every section reads the page's single
+ * preference snapshot.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceSettings(navController: NavController, scrollTo: String? = null) {
+    val prefs = rememberPreferenceSnapshot()
+    val themeRows = appearanceThemeRows(navController, prefs)
+    val playerRows = appearancePlayerRows(navController, prefs)
+    val interfaceRows = appearanceInterfaceRows(navController, prefs)
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -219,119 +235,33 @@ fun AppearanceSettings(navController: NavController, scrollTo: String? = null) {
                 Modifier
                     .padding(top = innerPadding.calculateTopPadding())
                     .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                    // Measures the viewport rather than the scrolling content, so scrollToKey can
+                    // work in pure deltas.
                     .then(positions.containerModifier()),
         ) {
-            preferenceGroup {
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("appearance_theme"),
-                        title = { Text(stringResource(R.string.appearance_theme)) },
-                        description = stringResource(R.string.appearance_theme_desc),
-                        icon = { Icon(painterResource(R.drawable.palette), null) },
-                        onClick = { navController.navigate("settings/appearance/theme") },
-                    )
-                }
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("appearance_player"),
-                        title = { Text(stringResource(R.string.appearance_player)) },
-                        description = stringResource(R.string.appearance_player_desc),
-                        icon = { Icon(painterResource(R.drawable.play), null) },
-                        onClick = { navController.navigate("settings/appearance/player") },
-                    )
-                }
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("appearance_interface"),
-                        title = { Text(stringResource(R.string.appearance_interface)) },
-                        description = stringResource(R.string.appearance_interface_desc),
-                        icon = { Icon(painterResource(R.drawable.nav_bar), null) },
-                        onClick = { navController.navigate("settings/appearance/interface") },
-                    )
-                }
-            }
+            themeRows(positions)
+            playerRows(positions)
+            interfaceRows(positions)
         }
     }
 }
 
+/** The retired `settings/appearance/{theme,player,interface}` routes: the one page, at [section]. */
 @Composable
 fun AppearanceSectionSettings(
     navController: NavController,
     section: AppearanceSection,
     scrollTo: String? = null,
 ) {
-    // One composable per section, each collecting only the preferences its own rows show.
-    when (section) {
-        AppearanceSection.THEME -> AppearanceThemeSection(navController, scrollTo)
-        AppearanceSection.PLAYER -> AppearancePlayerSection(navController, scrollTo)
-        AppearanceSection.INTERFACE -> AppearanceInterfaceSection(navController, scrollTo)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AppearanceSectionScaffold(
-    navController: NavController,
-    @StringRes titleRes: Int,
-    scrollTo: String?,
-    content: LazyListScope.(PreferencePositions) -> Unit,
-) {
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            SettingsTopAppBar(
-                title = { Text(stringResource(titleRes)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = navController::navigateUp,
-                        onLongClick = navController::backToMain,
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.arrow_back),
-                            contentDescription = null,
-                        )
-                    }
-                },
-            )
-        },
-    ) { innerPadding ->
-        val playerAwareBottomPadding =
-            LocalPlayerAwareWindowInsets.current
-                .only(WindowInsetsSides.Bottom)
-                .asPaddingValues()
-                .calculateBottomPadding()
-        val topPadding = innerPadding.calculateTopPadding()
-        val listState = rememberLazyListState()
-        val positions = rememberPreferencePositions()
-
-        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
-
-        LazyColumn(
-            state = listState,
-            contentPadding =
-                PaddingValues(
-                    bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding,
-                ),
-            modifier =
-                Modifier
-                    .padding(top = topPadding)
-                    .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
-                    // Measures the viewport rather than the scrolling content, so scrollToKey can
-                    // work in pure deltas.
-                    .then(positions.containerModifier()),
-        ) {
-            content(positions)
-        }
-    }
+    AppearanceSettings(navController, scrollTo ?: section.anchor)
 }
 
 @Composable
-private fun AppearanceThemeSection(
+private fun appearanceThemeRows(
     navController: NavController,
-    scrollTo: String?,
-) {
+    prefs: PreferenceSnapshot,
+): AppearanceRows {
     val context = LocalContext.current
-    val prefs = rememberPreferenceSnapshot()
     val restartPrompt = LocalRestartPrompt.current
     val defaultDisableAnimations = remember(context) { context.isLowRamDevice() }
     val (wallpaperExtractionFailed) = prefs.state(WallpaperExtractionFailedKey, defaultValue = false)
@@ -419,15 +349,15 @@ private fun AppearanceThemeSection(
     val themeTitle = stringResource(R.string.theme)
     val liquidGlassTitle = stringResource(R.string.liquid_glass)
 
-    AppearanceSectionScaffold(navController, R.string.appearance_theme, scrollTo) { positions ->
+    return { positions ->
         // Liquid Glass gets a header of its own. The master switch used to be the first row
-        // under "Theme", the navigation bar's glass toggle is a page away under Interface, and
+        // under "Theme", the navigation bar's glass toggle is on its own page off Interface, and
         // the mini player's is a value buried in a background-style picker — three places, with
         // nothing to say they were one feature. The switch and a link to the navigation bar's
         // own glass options sit together here; the mini player's stays where it is, because it
         // is one choice among several backgrounds rather than a glass setting that wandered.
         preferenceGroup(
-            modifier = positions.modifierFor("liquid_glass"),
+            modifier = positions.modifierFor("liquid_glass", AppearanceSection.THEME.anchor),
             title = liquidGlassTitle,
         ) {
             item {
@@ -775,11 +705,10 @@ private fun AppearanceThemeSection(
 }
 
 @Composable
-private fun AppearancePlayerSection(
+private fun appearancePlayerRows(
     navController: NavController,
-    scrollTo: String?,
-) {
-    val prefs = rememberPreferenceSnapshot()
+    prefs: PreferenceSnapshot,
+): AppearanceRows {
     val (playerDesignStyle, onPlayerDesignStyleChange) =
         prefs.enumState(PlayerDesignStyleKey, defaultValue = PlayerDesignStyle.Default)
     val (appleMusicAnimatedArtwork, onAppleMusicAnimatedArtworkChange) =
@@ -937,8 +866,9 @@ private fun AppearancePlayerSection(
     val playerTitle = stringResource(R.string.player)
     val albumPageTitle = stringResource(R.string.album_page)
 
-    AppearanceSectionScaffold(navController, R.string.appearance_player, scrollTo) { positions ->
+    return { positions ->
         preferenceGroup(
+            modifier = positions.modifierFor(AppearanceSection.PLAYER.anchor),
             title = playerTitle,
         ) {
             item {
@@ -1419,11 +1349,10 @@ private fun AppearancePlayerSection(
 }
 
 @Composable
-private fun AppearanceInterfaceSection(
+private fun appearanceInterfaceRows(
     navController: NavController,
-    scrollTo: String?,
-) {
-    val prefs = rememberPreferenceSnapshot()
+    prefs: PreferenceSnapshot,
+): AppearanceRows {
     val restartPrompt = LocalRestartPrompt.current
     val (searchBarPosition, onSearchBarPositionChange) =
         prefs.enumState(SearchBarPositionKey, defaultValue = SearchBarPosition.TOP)
@@ -1483,12 +1412,12 @@ private fun AppearanceInterfaceSection(
     val miscTitle = stringResource(R.string.misc)
     val extrasTitle = stringResource(R.string.extras)
 
-    AppearanceSectionScaffold(navController, R.string.appearance_interface, scrollTo) { positions ->
+    return { positions ->
         // The three settings that decide what the Home tab shows were scattered through
         // "Misc" between tablet mode, the scrollbar toggle and the library chips. They are
         // one decision — which home you get — so they read as one group.
         preferenceGroup(
-            modifier = positions.modifierFor("home_screen"),
+            modifier = positions.modifierFor("home_screen", AppearanceSection.INTERFACE.anchor),
             title = homeTitle,
         ) {
             item {

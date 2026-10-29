@@ -1,31 +1,23 @@
 package moe.rukamori.archivetune.desktop
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import moe.rukamori.archivetune.desktop.integration.DesktopFilePickers
-import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
-import moe.rukamori.archivetune.shared.ui.settings.AppearanceThemeSettings
+import moe.rukamori.archivetune.shared.ui.settings.AppearanceRoute
+import moe.rukamori.archivetune.shared.ui.settings.AppearanceSectionRoutes
+import moe.rukamori.archivetune.shared.ui.settings.AppearanceSettings
 import moe.rukamori.archivetune.shared.ui.settings.DiscordExperimentalRoute
 import moe.rukamori.archivetune.shared.ui.settings.DiscordExperimentalSettings
 import moe.rukamori.archivetune.shared.ui.settings.PlaybackSettings
-import moe.rukamori.archivetune.shared.ui.settings.PlayerAppearanceSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsRow
 import moe.rukamori.archivetune.shared.ui.settings.appearanceExtrasSettingsRows
-import moe.rukamori.archivetune.shared.ui.settings.appearanceInterfaceSettingsRows
+import moe.rukamori.archivetune.shared.ui.settings.appearanceScrollTarget
 import moe.rukamori.archivetune.shared.ui.settings.lyricsAnimationSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.lyricsSettingsRows
 
@@ -51,30 +43,22 @@ internal fun DesktopGeneralSettingsPage(
     scrollTo: String?,
 ) {
     when (path) {
-        "settings/appearance" -> AppearanceHub(navigate)
-        "settings/appearance/theme" -> AppearanceThemeSettings(
+        AppearanceRoute, in AppearanceSectionRoutes.keys -> AppearanceSettings(
             controller = controller,
             systemDark = isSystemInDarkTheme(),
             lowRam = false,
             nativeDynamicColors = false,
             wallpaperPermissionNeeded = false,
+            blurSupported = DesktopOpticalCapabilities.blur,
             navigate = navigate,
             openWallpaperSettings = { },
             pickCustomFont = ::pickDesktopFont,
-            onFailure = onFailure,
-            scrollTo = scrollTo,
-        )
-        "settings/appearance/player" -> PlayerAppearanceSettings(
-            controller = controller,
-            blurSupported = DesktopOpticalCapabilities.blur,
-            navigate = navigate,
             chooseHomeScreens = unavailable,
+            arrangeLibraryChips = unavailable,
+            arrangePlaylistTags = unavailable,
             onFailure = onFailure,
-            scrollTo = scrollTo,
+            scrollTo = appearanceScrollTarget(path, scrollTo),
         )
-        "settings/appearance/interface" -> RowsPage(controller, scrollTo, onFailure) {
-            appearanceInterfaceSettingsRows(navigate, unavailable, unavailable)
-        }
         "settings/appearance/extras" -> RowsPage(controller, scrollTo, onFailure) { appearanceExtrasSettingsRows() }
         "settings/appearance/lyrics_animations" -> RowsPage(controller, scrollTo, onFailure) { lyricsAnimationSettingsRows() }
         "settings/player" -> PlaybackSettings(
@@ -108,25 +92,6 @@ private fun RowsPage(
         return
     }
     SettingsPage(rows(preferences), preferences, controller, scrollTo, onFailure = onFailure)
-}
-
-/** The baseline Appearance page: three entries, one per section. */
-@Composable
-private fun AppearanceHub(navigate: (String) -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        HubEntry("appearance_theme", "settings/appearance/theme", navigate)
-        HubEntry("appearance_player", "settings/appearance/player", navigate)
-        HubEntry("appearance_interface", "settings/appearance/interface", navigate)
-    }
-}
-
-@Composable
-private fun HubEntry(key: String, route: String, navigate: (String) -> Unit) {
-    ListItem(
-        headlineContent = { Text(DesktopStrings[key]) },
-        supportingContent = { Text(DesktopStrings["${key}_desc"]) },
-        modifier = Modifier.clickable { navigate(route) },
-    )
 }
 
 /** A custom font is one local font file, kept by its file URI and shown by its file name. */

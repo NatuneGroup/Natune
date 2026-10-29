@@ -10,13 +10,15 @@ The Player page carries three experimental audio-engine switches after `bit_perf
 
 Between `bit_perfect_usb` and the engines sits `usb_exclusive_audio` (`UsbExclusiveAudioKey`, off by default, search entry navigates only). It is sampled when the service starts: with it on, the standard sink gets `playback/dsp/UsbExclusiveAudioOutputProvider`, which opens an exclusive AAudio stream on the routed USB DAC and otherwise defers to a stock `AudioTrackAudioOutputProvider`; with it off the sink is built exactly as before. It and bit-perfect USB output, crossfade, automix and audio offload turn each other off (the provider re-checks the same switches live, so a stale combination still plays normally). The engines and float DSP stay usable: they run in the chain ahead of the output. The switch is disabled when `libarchivetune_dsp` fails to load. While engaged it publishes to `EngineRuntime`/`BitPerfectRuntime`, which shows the media-info pipeline row and the live chain pill's USB route; it never claims verified bit-perfect.
 
+Appearance (`settings/appearance`) is one scrolling page in three sections — Theme, Player and Interface — whose first groups carry the section anchors `appearance_theme`, `appearance_player` and `appearance_interface`. The former sub-page routes `settings/appearance/theme`, `/player` and `/interface` stay registered so old links and saved back stacks still open; each shows the same page scrolled to its section, or to its own `?scrollTo=` anchor when one is given. Search entries indexed under a section owner navigate to `settings/appearance` with the row's anchor. Extras, lyrics animations, navigation bar, AOD, icon, palette and theme creator remain separate pages.
+
 ## Spotify integration
 
 The Spotify group contains account login/logout, playlist visibility, playlist reload, and the opt-in `Sync Spotify listening history` switch. The switch exposes Spotify Recently Played in the History screen; it is intentionally passive and does not emulate Spotify playback.
 
 ## Apple Music experience status
 
-The experience is chosen with **Appearance → Theme → Interface style** (`interface_style`, legacy
+The experience is chosen with **Appearance → Theme section → Interface style** (`interface_style`, legacy
 anchor `apple_music_experience`), a two-way selector over `AppleMusicExperienceKey`: Material 3
 Expressive (the default, key unset or false) or Apple Music. Material 3 Expressive seeds the palette
 from purple instead of the wallpaper when no custom or album-art color applies. Nothing seeds the
@@ -63,7 +65,7 @@ Also shipped since this note was written:
   opens the ordinary lyrics sheet unless the experience is on; then it is Apple Music's anchored
   action list on a flat charcoal card. No live backdrop blur: recording one cost a full-screen layer
   every frame on every lyrics surface.
-- **Flamingo player** — `PlayerDesignStyle.FLAMINGO` (Appearance → Player), 4nx3b's album / lyrics /
+- **Flamingo player** — `PlayerDesignStyle.FLAMINGO` (Appearance → Player section), 4nx3b's album / lyrics /
   queue pager with its own floating-light backdrop. Its moving-blur option,
   `flamingo_background_effect`, renders only while it is the selected style. Its volume bar follows
   the shared `show_player_volume_bar` switch like every other layout that has a volume row (the old
