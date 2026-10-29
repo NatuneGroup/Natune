@@ -45,7 +45,6 @@
 package moe.rukamori.archivetune.ui.player.simpmusic
 
 import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
-import moe.rukamori.archivetune.ui.utils.smoothFadingEdge
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.ui.menu.AddToPlaylistDialog
@@ -1253,11 +1252,9 @@ private fun SimpMusicLyricsCard(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(300.dp)
-                        // Lines dissolve at the card's edges instead of being cut off at them,
-                        // which is what Spotify's card does and what this was missing. DstIn on
-                        // the box, so it masks at the card edge while the list scrolls under it.
-                        .smoothFadingEdge(vertical = 36.dp),
+                        // Every lyrics renderer fades the top and bottom of its own box, so the
+                        // lines dissolve at the card edges without a second mask stacked here.
+                        .height(300.dp),
             ) {
                 if (!renderLyrics) {
                     // Deliberately empty, and deliberately still 300dp: the height is what keeps
