@@ -286,13 +286,13 @@ fun SongListItem(
         val subtitle =
             remember(song, viewCountText) {
                 joinByBullet(
-                    song.artists.joinToString { it.name },
+                    song.effectiveArtistNames.joinToString(),
                     makeTimeString(song.song.duration * 1000L),
                     viewCountText,
                 )
             }
         ListItem(
-            title = song.song.title,
+            title = song.effectiveTitle,
             subtitle = subtitle,
             progressContent = { PodcastEpisodeProgress(song.song.id) },
             badges = badges,
@@ -351,7 +351,7 @@ fun SongGridItem(
 ) = GridItem(
     title = {
         Text(
-            text = song.song.title,
+            text = song.effectiveTitle,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -363,7 +363,7 @@ fun SongGridItem(
         val text =
             remember(song) {
                 joinByBullet(
-                    song.artists.joinToString { it.name },
+                    song.effectiveArtistNames.joinToString(),
                     makeTimeString(song.song.duration * 1000L),
                 )
             }
@@ -862,14 +862,15 @@ fun YouTubeListItem(
     badges: @Composable RowScope.() -> Unit = { YTItemBadges(item) },
 ) {
     val swipeEnabled = LocalItemPreferences.current.swipeToSongEnabled
+    val songOverride = (item as? SongItem)?.let { LocalSongMetadataOverrides.current[it.id] }
 
     val content: @Composable () -> Unit = {
         val subtitle =
-            remember(item, viewCountText) {
+            remember(item, viewCountText, songOverride) {
                 when (item) {
                     is SongItem -> {
                         joinByBullet(
-                            item.artists.joinToString { it.name },
+                            songOverride?.artistNameList()?.joinToString() ?: item.artists.joinToString { it.name },
                             makeTimeString(item.duration?.times(1000L)),
                             viewCountText,
                         )
@@ -893,7 +894,7 @@ fun YouTubeListItem(
                 }
             }
         ListItem(
-            title = item.title,
+            title = songOverride?.title ?: item.title,
             subtitle = subtitle,
             progressContent = if (item is EpisodeItem || (item is SongItem && item.isPodcast)) {
                 { PodcastEpisodeProgress(item.id) }
@@ -954,11 +955,12 @@ fun YouTubeGridItem(
 ) {
     val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
     val resolvedThumbnailRatio = thumbnailRatio ?: item.preferredThumbnailRatio(cropThumbnailToSquare)
+    val songOverride = (item as? SongItem)?.let { LocalSongMetadataOverrides.current[it.id] }
 
     GridItem(
         title = {
             Text(
-                text = item.title,
+                text = songOverride?.title ?: item.title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -969,9 +971,13 @@ fun YouTubeGridItem(
         },
         subtitle = {
             val subtitle =
-                remember(item) {
+                remember(item, songOverride) {
                     when (item) {
-                        is SongItem -> joinByBullet(item.artists.joinToString { it.name }, makeTimeString(item.duration?.times(1000L)))
+                        is SongItem ->
+                            joinByBullet(
+                                songOverride?.artistNameList()?.joinToString() ?: item.artists.joinToString { it.name },
+                                makeTimeString(item.duration?.times(1000L)),
+                            )
                         is AlbumItem -> joinByBullet(item.artists?.joinToString { it.name }, item.year?.toString())
                         is ArtistItem -> null
                         is PlaylistItem -> joinByBullet(item.author?.name, item.songCountText)

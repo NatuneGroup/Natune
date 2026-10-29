@@ -140,6 +140,8 @@ import moe.rukamori.archivetune.listentogether.TrackInfo
 import moe.rukamori.archivetune.listentogether.UserInfo
 import moe.rukamori.archivetune.ui.component.ExpressiveSettingGroup
 import moe.rukamori.archivetune.ui.component.IconButton
+import moe.rukamori.archivetune.songmetadata.SongMetadataOverrideCache
+import moe.rukamori.archivetune.songmetadata.resolveEffectiveSongMetadata
 import moe.rukamori.archivetune.ui.component.Material3SettingsItem
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -252,11 +254,12 @@ fun ListenTogetherScreen(
             onDismiss = { showSuggestSearch = false },
             onSuggest = { song ->
                 showSuggestSearch = false
+                val names = resolveEffectiveSongMetadata(song.title, song.artists.map { it.name }, SongMetadataOverrideCache.get(song.id))
                 listenTogetherManager.suggestTrack(
                     TrackInfo(
                         id = song.id,
-                        title = song.title,
-                        artist = song.artists.joinToString(", ") { it.name },
+                        title = names.title,
+                        artist = names.artistNames.joinToString(", "),
                         album = null,
                         duration = (song.duration ?: 0) * 1000L,
                         thumbnail = song.thumbnail,
@@ -1952,110 +1955,6 @@ private fun SuggestSongCard(
     }
 }
 
-@Composable
-private fun SuggestSongDialog(
-    onDismiss: () -> Unit,
-    onSuggest: (SongItem) -> Unit,
-) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<SongItem>>(emptyList()) }
-    var searching by remember { mutableStateOf(false) }
-
-    LaunchedEffect(query) {
-        if (query.length < 2) {
-            results = emptyList()
-            return@LaunchedEffect
-        }
-        delay(350L)
-        searching = true
-        results = emptyList()
-        val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                YouTube.search(query, YouTube.SearchFilter.FILTER_SONG, useAccountContext = false)
-                    .getOrNull()
-                    ?.items
-                    ?.filterIsInstance<SongItem>()
-                    .orEmpty()
-            }.getOrDefault(emptyList())
-        }
-        results = found
-        searching = false
-    }
-
-    DefaultDialog(
-        onDismiss = onDismiss,
-        title = {
-            Text(
-                text = stringResource(R.string.listen_together_suggest_song),
-                fontWeight = FontWeight.Bold
-            )
-        },
-    ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text(stringResource(R.string.search)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (searching) {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .size(32.dp)
-            )
-        } else if (query.length >= 2 && results.isEmpty()) {
-            Text(
-                text = stringResource(R.string.no_results_found),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-        } else {
-            results.take(8).forEach { song ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onSuggest(song) }
-                        .padding(vertical = 8.dp, horizontal = 4.dp)
-                ) {
-                    song.thumbnail.let { thumb ->
-                        Image(
-                            painter = rememberAsyncImagePainter(thumb),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = song.title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = song.artists.joinToString(", ") { it.name },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun CustomAvatarBitmap(userId: String?): Bitmap? {

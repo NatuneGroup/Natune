@@ -7,6 +7,7 @@ import moe.rukamori.archivetune.shared.domain.library.PlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.playlist.PlaylistSongOrder
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagNames
 import moe.rukamori.archivetune.shared.domain.repository.*
+import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 import kotlin.random.Random
 
 /**
@@ -22,7 +23,7 @@ data class LibraryItemRow(val provider: String, val kind: String, val mediaId: S
 
 /** The stored row for [item]. Its JSON is the occurrence form the library has always written for a saved item. */
 internal fun libraryItemRow(item: ContentItem, liked: Boolean, addedSeq: Long, likedSeq: Long): LibraryItemRow =
-    LibraryItemRow(item.ref.provider, item.ref.kind.name, item.ref.id, item.title,
+    LibraryItemRow(item.ref.provider, item.ref.kind.name, item.ref.id, item.canonicalSong().title,
         ContentJson.encode(ContentOccurrence(item.ref.id, item)).toString(), liked, addedSeq, likedSeq)
 
 /**
@@ -83,6 +84,9 @@ abstract class PortableLibraryDao {
             "ORDER BY provider, kind, mediaId",
     )
     abstract fun observeSongRows(likedOnly: Boolean): Flow<List<LibraryItemRow>>
+
+    @Query("SELECT * FROM library_item WHERE kind = 'SONG' AND (:likedOnly = 0 OR liked = 1) ORDER BY provider, kind, mediaId")
+    abstract suspend fun songRows(likedOnly: Boolean): List<LibraryItemRow>
 
     /**
      * The liked albums or artists of [kind]. Each is kept only while it is liked, as its own row, so no saved song is

@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.home
 
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -139,7 +141,7 @@ fun HomeScreen(
                                         Card(Modifier.weight(1f).clickable { actions.open(row) }) {
                                             Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 artwork(row.item, Modifier.size(48.dp))
-                                                Text(row.item.title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                                Text(effectiveSong(row.item).title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                 actions.more?.let { more ->
                                                     TextButton({ more(row) }) { Text(stringResource(Res.string.m4_more)) }
                                                 }

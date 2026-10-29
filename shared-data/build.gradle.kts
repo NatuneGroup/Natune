@@ -116,11 +116,17 @@ val legacyFixtureSources = layout.buildDirectory.dir("generated/legacy-serializa
 val prepareLegacyFixtureSources = tasks.register("prepareLegacySerializationTestSources") {
     val models = rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/models")
     val finite = rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/playback/queues/YouTubePlaylistQueue.kt")
-    inputs.files(models.resolve("PersistQueue.kt"), models.resolve("MediaMetadata.kt"), finite)
+    val metadataSources = listOf(
+        "songmetadata/SongMetadataOverrides.kt",
+        "db/entities/SongMetadataOverrideEntity.kt",
+        "db/SongMetadataOverrideSql.kt",
+    ).map { rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/$it") }
+    inputs.files(models.resolve("PersistQueue.kt"), models.resolve("MediaMetadata.kt"), finite, metadataSources)
     outputs.dir(legacyFixtureSources)
     doLast {
         val destination = legacyFixtureSources.get().asFile.apply { mkdirs() }
         listOf("PersistQueue.kt", "MediaMetadata.kt").forEach { models.resolve(it).copyTo(destination.resolve(it), overwrite = true) }
+        metadataSources.forEach { it.copyTo(destination.resolve(it.name), overwrite = true) }
         val source = finite.readText()
         val declarations = source.substringAfter("enum class FinitePlaylistPhase").substringBefore("/**")
         destination.resolve("FinitePlaylistSerialization.kt").writeText(

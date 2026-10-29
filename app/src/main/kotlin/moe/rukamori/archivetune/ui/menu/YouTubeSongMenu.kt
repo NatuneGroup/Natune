@@ -118,6 +118,7 @@ fun YouTubeSongMenu(
     // Set only where the caller knows the signed-in upload entity; the menu asks nothing itself.
     onDeleteUpload: (() -> Unit)? = null,
 ) {
+    val displayNames = moe.rukamori.archivetune.ui.component.effectiveSongMetadata(song.id, song.title, song.artists.map { it.name })
     val context = LocalContext.current
     val database = LocalDatabase.current
     val playerConnection = LocalPlayerConnection.current ?: return
@@ -248,7 +249,7 @@ fun YouTubeSongMenu(
         ListItem(
             headlineContent = {
                 Text(
-                    text = song.title,
+                    text = displayNames.title,
                     modifier = Modifier.basicMarquee(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -258,7 +259,7 @@ fun YouTubeSongMenu(
                 Text(
                     text =
                         joinByBullet(
-                            song.artists.joinToString { it.name },
+                            displayNames.artistNames.joinToString(),
                             song.duration?.let { makeTimeString(it * 1000L) },
                         ),
                 )
@@ -931,8 +932,8 @@ fun YouTubeSongMenu(
                     AcousticQualityMenuAction(
                         target = AcousticAuditTarget(
                             mediaId = song.id,
-                            title = song.title,
-                            artists = song.artists.joinToString { it.name },
+                            title = displayNames.title,
+                            artists = displayNames.artistNames.joinToString(),
                         ),
                         onDismiss = onDismiss,
                     )
@@ -951,8 +952,8 @@ fun YouTubeSongMenu(
                                 bottomSheetPageState.show {
                                     TrackInfoAndSpecs(
                                         trackId = song.id,
-                                        title = song.title,
-                                        artists = song.artists.joinToString { it.name },
+                                        title = displayNames.title,
+                                        artists = displayNames.artistNames.joinToString(),
                                         album = song.album?.name,
                                         artwork = song.thumbnail,
                                         durationMs = song.duration?.toLong()?.times(1_000L),

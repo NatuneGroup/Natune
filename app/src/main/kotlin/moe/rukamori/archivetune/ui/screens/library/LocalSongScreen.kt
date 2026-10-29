@@ -261,11 +261,11 @@ fun LocalSongScreen(
                     supportedSongs
                 } else {
                     supportedSongs.filter { song ->
-                        song.song.title.contains(normalizedQuery, ignoreCase = true) ||
+                        song.effectiveTitle.contains(normalizedQuery, ignoreCase = true) ||
                             song.song.albumName
                                 .orEmpty()
                                 .contains(normalizedQuery, ignoreCase = true) ||
-                            song.artists.any { artist -> artist.name.contains(normalizedQuery, ignoreCase = true) }
+                            song.effectiveArtistNames.any { artist -> artist.contains(normalizedQuery, ignoreCase = true) }
                     }
                 }
 
@@ -278,13 +278,13 @@ fun LocalSongScreen(
                     }
 
                     LocalSongSortType.NAME -> {
-                        filteredSongs.sortedWith(compareBy(collator) { song -> song.song.title })
+                        filteredSongs.sortedWith(compareBy(collator) { song -> song.effectiveTitle })
                     }
 
                     LocalSongSortType.ARTIST -> {
                         filteredSongs.sortedWith(
                             compareBy(collator) { song ->
-                                song.artists.joinToString(separator = "") { artist -> artist.name }
+                                song.effectiveArtistNames.joinToString(separator = "")
                             },
                         )
                     }

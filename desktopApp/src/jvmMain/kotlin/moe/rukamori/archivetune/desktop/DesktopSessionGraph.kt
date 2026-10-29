@@ -84,11 +84,9 @@ import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
-import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
-import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.YouTubeLocale
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
@@ -102,7 +100,6 @@ import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
-import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
 import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
@@ -523,7 +520,8 @@ class DesktopSessionGraph private constructor(
             )
             val tidalSessionRefresh = TidalSessionRefresh(tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value })
             val textOrder = deviceTextOrder()
-            val library = RoomLibraryRepository(database.library(), listens = database.listens())
+            val songMetadata = moe.rukamori.archivetune.shared.data.persistence.RoomSongMetadataRepository(database.songMetadataOverrides())
+            val library = RoomLibraryRepository(database.library(), listens = database.listens(), songMetadata = songMetadata)
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = { System.currentTimeMillis() })
             val blockedQueueArtists = artistBlocks.observeBlockedArtists().map { refs ->
                 refs.filter { it.provider == ContentProvider.YOUTUBE.id }.mapTo(HashSet()) { it.id }
@@ -634,6 +632,7 @@ class DesktopSessionGraph private constructor(
                 hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
                 blockedArtistIds = { queueArtistBlocks.value },
                 handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
+                songMetadata = songMetadata,
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
             try {
@@ -967,24 +966,6 @@ private fun JvmYouTubeBrowseTransport.applyPersistedSession(snapshot: Preference
         hl = snapshot?.get(ContentLanguageKey)?.takeIf { it != "system" }
             ?: device.language.takeIf { it.length == 2 }
             ?: "en",
-    )
-}
-
-internal fun repeatModeOf(preferences: PreferenceSnapshot?): QueueRepeatMode =
-    preferences?.get(RepeatModeKey)?.let { QueueRepeatMode.fromStoredValue(it) } ?: QueueRepeatMode.OFF
-
-private fun QueueState.metadataFor(occurrenceId: String?, repeat: QueueRepeatMode): DesktopMediaMetadata? {
-    val id = occurrenceId ?: currentOccurrenceId ?: return null
-    val occurrence = entries.firstOrNull { it.occurrenceId == id } ?: return null
-    val item = occurrence.item
-    return DesktopMediaMetadata(
-        occurrenceId = id,
-        title = item.title,
-        artists = item.artists.map { it.name },
-        album = item.album.orEmpty(),
-        artworkUri = item.artworkUri,
-        canNext = QueueAdvancePolicy.successor(repeat, playOrder, id) != null,
-        canPrevious = playOrder.indexOf(id) > 0,
     )
 }
 

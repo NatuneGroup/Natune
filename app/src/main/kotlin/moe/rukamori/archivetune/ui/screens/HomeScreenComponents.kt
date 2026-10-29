@@ -230,11 +230,12 @@ fun SpeedDialSection(
                             is Song -> {
                                 SongItem(
                                     id = localItem.id,
-                                    title = localItem.title,
+                                    title = localItem.effectiveTitle,
                                     artists =
-                                        localItem.artists.map {
+                                        localItem.effectiveArtistNames.map { name ->
+                                            val canonicalId = localItem.artists.firstOrNull { it.name == name }?.id
                                             moe.rukamori.archivetune.innertube.models
-                                                .Artist(name = it.name, id = it.id)
+                                                .Artist(name = name, id = canonicalId)
                                         },
                                     thumbnail = localItem.song.thumbnailUrl.orEmpty(),
                                     explicit = localItem.song.explicit,
@@ -885,7 +886,7 @@ fun SimilarRecommendationsTitle(
         }
     HomeSectionHeader(
         label = stringResource(R.string.similar_to),
-        title = recommendation.title.title,
+        title = (recommendation.title as? Song)?.effectiveTitle ?: recommendation.title.title,
         // Text-only header: the "Similar to" label plus the artist/album title is enough
         // context without a leading thumbnail, and it keeps these headers consistent with
         // the other text-only section headers on the home page.

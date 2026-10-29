@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.songmetadata.withSongMetadataOverrides
+import moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import org.jetbrains.compose.resources.stringResource
@@ -46,7 +48,11 @@ fun DownloadLibraryScreen(
     state: DownloadsUi, actions: DownloadActions, artwork: ContentArtwork,
     modifier: Modifier = Modifier, contentPadding: PaddingValues = LocalShellContentPadding.current,
 ) {
-    val sections = visibleDownloadSections(state)
+    val edits = LocalSongMetadataOverrides.current
+    fun project(sections: List<DownloadSectionUi>) = sections.map { section ->
+        section.copy(entries = section.entries.map { it.copy(item = it.item.withSongMetadataOverrides(edits)) })
+    }
+    val sections = visibleDownloadSections(state.copy(downloaded = project(state.downloaded), progress = project(state.progress)))
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         ManagementHeader(stringResource(Res.string.m4_downloads), actions.back)
         OutlinedTextField(state.query, actions.query, Modifier.fillMaxWidth().padding(horizontal = 16.dp),

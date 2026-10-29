@@ -297,6 +297,9 @@
     <string name="create_playlist">Create playlist</string>
     <string name="playlist_name">Playlist name</string>
     <string name="artist_name">Artist name</string>
+    <string name="edit_song_info">Edit song info</string>
+    <string name="reset_to_original">Reset to original</string>
+    <string name="song_artists_label">Artists (one per line)</string>
     <string name="duplicates">Duplicates</string>
     <string name="skip_duplicates">Skip duplicates</string>
     <string name="add_anyway">Add anyway</string>
