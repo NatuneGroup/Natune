@@ -187,6 +187,20 @@ internal object PortableStateMigrations {
     }
 
     /**
+     * The step from v8 to v9. It creates the podcast episode progress table; the columns match
+     * [PortablePodcastProgressRow], so the shape check passes and every episode starts without a saved position.
+     */
+    val V8_TO_V9: Migration = object : Migration(8, 9) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.exec(
+                "CREATE TABLE IF NOT EXISTS `portable_podcast_progress` (`episodeId` TEXT NOT NULL, " +
+                    "`positionMs` INTEGER NOT NULL, `durationMs` INTEGER, `finished` INTEGER NOT NULL, " +
+                    "`updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`episodeId`))",
+            )
+        }
+    }
+
+    /**
      * Writes the artist and album rows of every stored listen. Each occurrence is decoded the way the history reads it,
      * and [listenEntities] derives the rows, so an upgraded listen counts exactly as a new one does. A malformed
      * occurrence throws and aborts the upgrade, which keeps the old file intact, as the tag step does.
