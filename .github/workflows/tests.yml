@@ -12,6 +12,12 @@ on:
     branches:
       - dev
   workflow_dispatch:
+    inputs:
+      innertube_smoke:
+        description: Also run the live-network InnerTubeX smoke tests
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -71,15 +77,25 @@ jobs:
 
       - name: Run shared KMP module tests
         shell: bash
+        # This step is the verdict: every suite below must pass, so it carries no leniency flag and
+        # no task is dropped. The live-network YouTube smoke tests are the one opt-in suite
+        # (JvmInnerTubeXSmokeTest), because a network outage or a YouTube rate limit cannot fail an
+        # unrelated change; pass the innertube_smoke input on a manual dispatch to run them.
         run: |
           set -euo pipefail
-          ./gradlew --console=plain --stacktrace --continue \
+          ./gradlew --console=plain --stacktrace --continue --rerun \
             "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
             :shared-domain:jvmTest :shared-data:jvmTest :shared-ui:desktopTest
+        env:
+          INNERTUBE_SMOKE: ${{ inputs.innertube_smoke == true && '1' || '0' }}
 
       - name: Upload local test diagnostics
         if: always()
         uses: actions/upload-artifact@v7
+        # Artifact storage is metered per organization and can be exhausted independently of this
+        # run (observed on run 40919440710): the upload then fails with the results already in the
+        # logs, so it must not turn a green test leg red. The step still reports its own failure.
+        continue-on-error: true
         with:
           name: unit-test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -95,6 +111,8 @@ jobs:
       - name: Upload compact machine-readable test evidence
         if: always()
         uses: actions/upload-artifact@v7
+        # Same quota exposure as the step above; the JUnit XML is a convenience, not the verdict.
+        continue-on-error: true
         with:
           name: unit-test-machine-reports-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
