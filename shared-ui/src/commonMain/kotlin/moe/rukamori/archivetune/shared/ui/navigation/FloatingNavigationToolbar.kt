@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -649,6 +650,10 @@ fun FloatingNavigationToolbar(
                                         modifier =
                                             Modifier
                                                 .weight(1f)
+                                                // Same per-tab hook as the rail, the compact circles and the
+                                                // SukiSU bar: labels are resource strings, so the tag is how the
+                                                // shell contract test names the tab a bottom-bar tap selects.
+                                                .testTag("shell-tab-${tab.name}")
                                                 .onGloballyPositioned { coordinates ->
                                                     // Track the full item bounds (icon + spacing +
                                                     // label) so the Liquid Glass pill can size to
