@@ -85,7 +85,7 @@ internal fun desktopGraphPage(
         ArchiveDestination.ARTIST_SONGS -> desktopArtistSongsPage(graph, route, menu, openRoute, back)
         ArchiveDestination.ARTIST_ALBUMS -> desktopArtistAlbumsPage(graph, route, menu, openRoute, back)
         ArchiveDestination.ARTIST_ITEMS -> desktopArtistItemsPage(graph, route, menu, openRoute, back)
-        ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, spotify)
+        ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, spotify, openRoute)
         ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
             desktopSearchPage(graph, graph.catalogPages, spotify, route) { openRoute(ArchiveRoutes.musicRecognition()) }
         ArchiveDestination.ARTIST ->
@@ -129,12 +129,16 @@ internal fun desktopGraphPage(
 
 /** One Library section, from the shared page over the graph's owners or the Spotify catalog account. */
 @Composable
-private fun desktopLibraryPage(graph: DesktopSessionGraph, spotify: DesktopSpotifyAccounts): ArchiveGraphPage {
+private fun desktopLibraryPage(
+    graph: DesktopSessionGraph,
+    spotify: DesktopSpotifyAccounts,
+    openRoute: (String) -> Unit,
+): ArchiveGraphPage {
     val snapshot by graph.settings.snapshots.collectAsState()
     val stored = snapshot?.get(LibrarySourceKey).toEnum(LibraryDefaults.source)
     return when (stored.resolved(spotify.libraryAvailable())) {
-        LibrarySource.YTM -> hostLibraryPage(graph.pageOwners, DesktopStrings["library_top_mixes_unavailable"]) {}
-        LibrarySource.SPOTIFY -> desktopSpotifyLibraryPage(graph, spotify)
+        LibrarySource.YTM -> hostLibraryPage(graph.pageOwners, DesktopStrings["library_top_mixes_unavailable"], openRoute)
+        LibrarySource.SPOTIFY -> desktopSpotifyLibraryPage(graph, spotify, openRoute)
     }
 }
 
