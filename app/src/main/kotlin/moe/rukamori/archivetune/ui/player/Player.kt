@@ -191,6 +191,9 @@ import moe.rukamori.archivetune.constants.PlayerCustomContrastKey
 import moe.rukamori.archivetune.constants.PlayerCustomImageUriKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
+import moe.rukamori.archivetune.constants.presentsArtworkSwipe
+import moe.rukamori.archivetune.constants.presentsHiddenSleeve
+import moe.rukamori.archivetune.constants.presentsSleeveRadius
 import moe.rukamori.archivetune.constants.PoTokenGvsKey
 import moe.rukamori.archivetune.constants.PoTokenPlayerKey
 import moe.rukamori.archivetune.constants.QueuePeekHeight
@@ -761,9 +764,7 @@ fun BottomSheetPlayer(
 
     val (textButtonColor, iconButtonColor) =
         when (playerButtonsStyle) {
-            PlayerButtonsStyle.DEFAULT -> {
-                Pair(TextBackgroundColor, icBackgroundColor)
-            }
+            PlayerButtonsStyle.DEFAULT -> Pair(TextBackgroundColor, icBackgroundColor)
 
             PlayerButtonsStyle.SECONDARY -> {
                 Pair(
@@ -1148,9 +1149,9 @@ fun BottomSheetPlayer(
         LocalDeviceMusicVolumeController provides deviceMusicVolumeController,
         LocalPlayerPresentation provides PlayerPresentation(
             sharedBackground = playerDesignStyle.usesSharedBackground(storedPlayerBackground),
-            hideSleeve = playerDesignStyle.hasOrdinarySleeve && presentationPreferences[HidePlayerThumbnailKey, false],
-            sleeveRadius = presentationPreferences.current[ThumbnailCornerRadiusKey].takeIf { playerDesignStyle.hasOrdinarySleeve },
-            swipeArtwork = !playerDesignStyle.hasHorizontalArtworkSkip || presentationPreferences[moe.rukamori.archivetune.constants.SwipeThumbnailKey, true],
+            hideSleeve = playerDesignStyle.presentsHiddenSleeve && presentationPreferences[HidePlayerThumbnailKey, false],
+            sleeveRadius = presentationPreferences.current[ThumbnailCornerRadiusKey].takeIf { playerDesignStyle.presentsSleeveRadius },
+            swipeArtwork = !playerDesignStyle.presentsArtworkSwipe || presentationPreferences[moe.rukamori.archivetune.constants.SwipeThumbnailKey, true],
             showCodec = showCodecOnPlayer,
             showVolume = showPlayerVolumeBar,
         ),
@@ -2851,9 +2852,7 @@ fun BottomSheetPlayer(
 
         val (queueTextButtonColor, queueIconButtonColor) =
             when (playerButtonsStyle) {
-                PlayerButtonsStyle.DEFAULT -> {
-                    Pair(queueOnBackgroundColor, queueSurfaceColor)
-                }
+                PlayerButtonsStyle.DEFAULT -> Pair(queueOnBackgroundColor, queueSurfaceColor)
 
                 PlayerButtonsStyle.SECONDARY -> {
                     Pair(

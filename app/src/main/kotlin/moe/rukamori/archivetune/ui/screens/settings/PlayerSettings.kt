@@ -1058,12 +1058,12 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     }
                 }
 
-                // Swipe-to-change-song: belongs with the other queue/skip behaviours, including its
-                // sensitivity dialog.
+                // The mini player reads swipe-to-change-song under every style, so the row is annotated, never disabled.
                 item {
                     SwitchPreference(
                         modifier = positions.modifierFor("enable_swipe_thumbnail"),
                         title = { Text(stringResource(R.string.enable_swipe_thumbnail)) },
+                        description = selectedPlayerSettingNote(moe.rukamori.archivetune.constants.PlayerStyleSetting.SWIPE_THUMBNAIL),
                         icon = { Icon(painterResource(R.drawable.swipe), null) },
                         checked = swipeThumbnail,
                         onCheckedChange = onSwipeThumbnailChange,
