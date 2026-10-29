@@ -56,7 +56,7 @@ jobs:
               if [[ -d "$preferred" ]]; then candidate="$preferred"; break; fi
             done
             if [[ -z "$candidate" ]]; then
-              candidate="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1 || true)"
+              candidate="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' -print 2>/dev/null | sort -V | tail -n 1 || true)"
             fi
             if [[ -z "$candidate" ]]; then
               echo "::error::No Xcode 26 is installed on this runner; the selected Xcode is ${current:-none}."
