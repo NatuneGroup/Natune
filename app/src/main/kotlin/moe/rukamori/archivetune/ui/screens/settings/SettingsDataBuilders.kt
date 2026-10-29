@@ -8,13 +8,6 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import androidx.compose.ui.platform.LocalContext
-import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
-import moe.rukamori.archivetune.ui.component.navigationTreatmentKeys
-import moe.rukamori.archivetune.ui.component.setNavigationTreatment
-import moe.rukamori.archivetune.ui.component.setPlaybackOutputPreference
-import moe.rukamori.archivetune.utils.RestartScopedSettings
-import moe.rukamori.archivetune.utils.setFontPreference
 import moe.rukamori.archivetune.constants.TabletModeEnabledKey
 
 import android.content.ActivityNotFoundException
@@ -37,6 +30,7 @@ import moe.rukamori.archivetune.constants.AudioNormalizationKey
 import moe.rukamori.archivetune.constants.AudioOffload
 import moe.rukamori.archivetune.constants.AutoDownloadOnLikeKey
 import moe.rukamori.archivetune.constants.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.constants.AutoLoadMoreKey
 import moe.rukamori.archivetune.constants.AutoStartOnBluetoothKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
@@ -101,37 +95,7 @@ import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.constants.TranslateLyricsKey
 import moe.rukamori.archivetune.constants.UseLyricsV2Key
-import moe.rukamori.archivetune.constants.AppFontPreference
-import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.WakelockKey
-
-@Composable
-internal fun SearchResultSwitch(
-    key: androidx.datastore.preferences.core.Preferences.Key<Boolean>,
-    defaultValue: Boolean,
-    blurOverridden: Boolean = false,
-) {
-    ConflictAwareSearchSwitch(key, defaultValue, blurOverridden)
-}
-
-/**
- * "Use system font" drives the canonical [FontPreferenceKey], the key Appearance writes and
- * StartupSettings resolves; the legacy boolean is ignored once that key exists.
- */
-@Composable
-private fun SearchResultSystemFontSwitch() {
-    val prefs = LocalSettingsPreferenceSnapshot.current
-    val restartPrompt = LocalRestartPrompt.current
-    val fontPreference = RestartScopedSettings.from(prefs.current).fontPreference
-    Switch(
-        checked = fontPreference == AppFontPreference.SYSTEM,
-        onCheckedChange = { checked ->
-            restartPrompt.edit(prefs) {
-                setFontPreference(if (checked) AppFontPreference.SYSTEM else AppFontPreference.DEFAULT)
-            }
-        },
-    )
-}
 
 fun buildSettingsGroups(
     navController: NavController,
@@ -377,6 +341,7 @@ fun buildSettingsGroups(
                 SettingsChild("Canvas resolvers", "canvas_resolvers", listOf("canvas resolver", "canvas resolvers", "canvas endpoint", "canvas fallback", "spotify canvas resolver")),
                 SettingsChild("Tidal artwork fallback", "tidal_artwork_fallback", listOf("tidal artwork", "artwork fallback", "tidal cover", "hi-res artwork")) { SearchResultSwitch(TidalArtworkFallbackEnabledKey, false) },
                 SettingsChild("Persistent queue", "persistent_queue", listOf("queue", "persistent", "save queue", "resume")) { SearchResultSwitch(PersistentQueueKey, true) },
+                SettingsChild(context.getString(R.string.queue_infinite), "infinite_queue", listOf("queue", "infinite", "autoplay", "endless", "radio", "continuation")) { SearchResultSwitch(AutoLoadMoreKey, true) },
                 SettingsChild("Permanent shuffle", "permanent_shuffle", listOf("shuffle", "random", "permanent")) { SearchResultSwitch(PermanentShuffleKey, false) },
                 SettingsChild("Auto skip on error", "auto_skip_error", listOf("skip", "error", "auto skip", "failed")) { SearchResultSwitch(AutoSkipNextOnErrorKey, false) },
                 SettingsChild("Stop music on task clear", "stop_task_clear", listOf("stop", "task clear", "background", "close app")) { SearchResultSwitch(StopMusicOnTaskClearKey, false) },

@@ -12,7 +12,9 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import moe.rukamori.archivetune.shared.data.persistence.QueueCheckpointJson
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
@@ -24,9 +26,15 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentPage
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
+import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
+import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
+import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
 import moe.rukamori.archivetune.shared.domain.repository.QueueLocatorResolver
+import moe.rukamori.archivetune.shared.domain.repository.TypedContentRepository
 import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataOverride
 import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository
 
@@ -74,16 +82,22 @@ class PortableQueueOwnerMetadataTest {
         }
     }
 
-    private class Harness(background: CoroutineScope, songMetadata: SongMetadataRepository) {
+    private class Harness(
+        background: CoroutineScope,
+        songMetadata: SongMetadataRepository,
+        content: ContentRepositoryRouter = ContentRepositoryRouter(emptyList()),
+        autoLoadMore: Boolean = false,
+    ) {
         val port = FakePlaybackPort()
         val player = MusicPlayerController(port, background)
         val locators = RecordingLocators()
         val owner = PortableQueueOwner(
             player = player,
             scope = background,
-            content = ContentRepositoryRouter(emptyList()),
+            content = content,
             locators = locators,
             songMetadata = songMetadata,
+            autoLoadMoreEnabled = { autoLoadMore },
         )
     }
 
@@ -174,5 +188,99 @@ class PortableQueueOwnerMetadataTest {
         assertEquals(listOf("Provider title", "Provider title"), reset.entries.map { it.item.title })
         assertNull(reset.entries[0].item.canonicalSongMetadata)
         assertEquals(loadsBefore, h.port.commands.size)
+    }
+
+    @Test
+    fun queueEditingAndUndoApplyTheLatestEditOrResetWithoutReloadingPlayback() = scope.runTest {
+        val metadata = FakeSongMetadata(mapOf(songRef to edit))
+        val h = Harness(backgroundScope, metadata)
+        h.owner.withQueueAccess {
+            h.owner.replace(
+                listOf(
+                    ContentOccurrence("current", other),
+                    ContentOccurrence("first-copy", song, setVideoId = "set-a"),
+                    ContentOccurrence("second-copy", song, setVideoId = "set-b"),
+                ),
+                startOccurrenceId = "current",
+                playWhenReady = true,
+            )
+            h.owner.moveNext("second-copy")
+            assertEquals(listOf("current", "second-copy", "first-copy"), h.owner.state.value.playOrder)
+            assertTrue(h.owner.setShuffle(true))
+            h.owner.moveInPlayOrder("first-copy", "second-copy")
+        }
+        val loadsBefore = h.port.commands.size
+        val ticket = h.owner.withQueueAccess {
+            assertNotNull(h.owner.removeUndoable(setOf("first-copy")))
+        }
+        metadata.setOverride(songRef, SongMetadataOverride(title = "Newer title", updatedAtMs = 9L))
+        advanceUntilIdle()
+        h.owner.withQueueAccess { assertTrue(h.owner.undoRemoval(ticket)) }
+        assertEquals(
+            listOf("Newer title", "Newer title"),
+            h.owner.state.value.entries.filter { it.item.ref == songRef }.map { it.item.title },
+        )
+        assertEquals(
+            setOf("set-a", "set-b"),
+            h.owner.state.value.entries.filter { it.item.ref == songRef }.map { it.setVideoId }.toSet(),
+        )
+
+        val clearTicket = h.owner.withQueueAccess { assertNotNull(h.owner.clearUpcoming()) }
+        assertEquals(listOf("current"), h.owner.state.value.playOrder)
+        metadata.setOverride(songRef, null)
+        advanceUntilIdle()
+        h.owner.withQueueAccess { assertTrue(h.owner.undoRemoval(clearTicket)) }
+        val restored = h.owner.state.value
+        assertEquals("current", restored.currentOccurrenceId)
+        assertTrue(restored.shuffleEnabled)
+        assertEquals(3, restored.entries.size)
+        restored.entries.filter { it.item.ref == songRef }.forEach {
+            assertEquals("Provider title", it.item.title)
+            assertNull(it.item.canonicalSongMetadata)
+        }
+        assertEquals(loadsBefore, h.port.commands.size)
+    }
+
+    @Test
+    fun infiniteQueueAppendProjectsEditsButResolutionAndCheckpointsStayCanonical() = scope.runTest {
+        val metadata = FakeSongMetadata(mapOf(songRef to edit))
+        val radioRequests = mutableListOf<ContentRequest>()
+        val repository = object : TypedContentRepository {
+            override val provider = ContentProvider.YOUTUBE
+            override suspend fun page(request: ContentRequest, continuation: String?): ContentPage =
+                if (request.surface == ContentSurface.RADIO) {
+                    radioRequests += request
+                    ContentPage(listOf(ContentOccurrence("recommended", song, setVideoId = "radio-set")))
+                } else {
+                    ContentPage(listOf(ContentOccurrence("current", other)))
+                }
+            override suspend fun item(ref: ContentRef): ContentItem = error("Unused fixture")
+        }
+        val h = Harness(backgroundScope, metadata, ContentRepositoryRouter(listOf(repository)), autoLoadMore = true)
+        val collection = ContentRequest(
+            ContentProvider.YOUTUBE,
+            ContentSurface.PLAYLIST,
+            parent = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PLAYLIST, "playlist"),
+        )
+        h.owner.withQueueAccess {
+            h.owner.loadCollection(QueueLoadRequest(collection, QueueCollectionKind.FINITE))
+        }
+        val queue = h.owner.state.value
+        assertEquals(listOf("current", "recommended"), queue.playOrder)
+        assertEquals("current", queue.currentOccurrenceId)
+        assertEquals(collection, h.owner.queueSource.value)
+        assertEquals(other.ref.id, radioRequests.single().parent?.id)
+        assertEquals("Edited title", queue.entries.last().item.title)
+        assertEquals("radio-set", queue.entries.last().setVideoId)
+        assertEquals(listOf("Edited artist"), queue.entries.last().item.artists.map { it.name })
+        assertEquals(1, h.port.commands.size)
+
+        val checkpoint = h.owner.withQueueAccess { h.owner.capture() }
+        val persisted = QueueCheckpointJson.decode(QueueCheckpointJson.encode(checkpoint))
+        assertEquals(listOf("Other", "Provider title"), persisted.queue.entries.map { it.item.title })
+        h.owner.withQueueAccess { h.owner.select("recommended", 0L) }
+        assertEquals("Provider title", h.locators.items.last().title)
+        assertEquals(listOf("Provider artist"), h.locators.items.last().artists.map { it.name })
+        assertNull(h.locators.items.last().canonicalSongMetadata)
     }
 }

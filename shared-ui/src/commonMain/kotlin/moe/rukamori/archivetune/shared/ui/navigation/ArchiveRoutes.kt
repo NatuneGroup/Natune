@@ -10,7 +10,7 @@ enum class ArchiveDestination {
     ALBUM, ARTIST, PLAYLIST, SETTINGS, ACCOUNT, LOGIN, STATISTICS, RECAP, LISTEN_TOGETHER, LISTEN_TOGETHER_CHAT,
     TELEGRAM, TELEGRAM_BOTS, TELEGRAM_BROWSE, TELEGRAM_BOT_CHAT,
     MUSIC_RECOGNITION, MUSIC_RECOGNITION_DETAILS, ARTIST_SONGS, ARTIST_ALBUMS, ARTIST_ITEMS,
-    TRACK_INFO, MEDIA_INFO,
+    TRACK_INFO, MEDIA_INFO, UPLOADED_SONGS,
 }
 
 /** A decoded view of the original route, not a replacement persisted content/queue DTO. */
@@ -135,6 +135,7 @@ object ArchiveRoutes {
             path == listOf("podcasts") -> ArchiveDestination.PODCASTS
             path.firstOrNull() == "podcast" -> id(ArchiveDestination.PODCAST, "browseId")
             path == listOf("local_songs") -> ArchiveDestination.LOCAL_SONGS
+            path == listOf("uploaded_songs") -> ArchiveDestination.UPLOADED_SONGS
             path == listOf("auto_playlist", "downloaded") -> ArchiveDestination.DOWNLOADS
             path == listOf("history") -> ArchiveDestination.HISTORY
             path == listOf("library", "playlists") -> ArchiveDestination.PLAYLISTS

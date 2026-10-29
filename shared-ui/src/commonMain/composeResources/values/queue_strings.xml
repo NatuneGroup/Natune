@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="queue_infinite">Infinite queue</string>
+    <string name="queue_infinite_symbol" translatable="false">∞</string>
+    <string name="queue_infinite_description">Automatically add related music near the end of the queue. Repeat modes keep the current queue.</string>
+    <string name="queue_autoplay_off">Autoplay is off</string>
+    <string name="queue_title">Queue</string>
+    <string name="queue_empty">The queue is empty</string>
+    <string name="queue_save_playlist">Save queue as playlist</string>
+    <string name="queue_clear_upcoming">Clear queue except current song</string>
+    <string name="queue_jump_current">Jump to current song</string>
+    <string name="queue_lock_edits">Lock queue editing</string>
+    <string name="queue_unlock_edits">Unlock queue editing</string>
+    <string name="queue_source_title">Playing from %1$s</string>
+    <string name="queue_summary">%1$d tracks · %2$s total · %3$s remaining</string>
+    <string name="queue_unknown_duration">Unknown duration</string>
+    <string name="queue_selection_count">%1$d selected</string>
+    <string name="queue_select_tracks">Select tracks</string>
+    <string name="queue_select_all">Select all</string>
+    <string name="queue_clear_selection">Clear selection</string>
+    <string name="queue_remove">Remove from queue</string>
+    <string name="queue_removed">Removed from queue</string>
+    <string name="queue_undo">Undo</string>
+    <string name="queue_move_up">Move up</string>
+    <string name="queue_move_down">Move down</string>
+    <string name="queue_move_top">Move to top</string>
+    <string name="queue_move_next">Play next</string>
+    <string name="queue_actions">Queue actions</string>
+    <string name="queue_playlist_name">Playlist name</string>
+    <string name="queue_save">Save</string>
+    <string name="queue_cancel">Cancel</string>
+    <string name="queue_playlist_saved">Playlist saved</string>
+    <string name="queue_action_failed">The queue action could not be completed</string>
+    <string name="queue_source_youtube">YouTube</string>
+    <string name="queue_source_library">Library</string>
+</resources>
