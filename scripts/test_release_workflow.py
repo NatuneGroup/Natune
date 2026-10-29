@@ -36,6 +36,55 @@ def tool(directory, name, source):
     path.chmod(0o755)
 
 
+def step_blocks(workflow=WORKFLOW):
+    """Every named step with its own text, in file order."""
+    text = workflow.read_text()
+    positions = [(match.start(), match.group(1)) for match in re.finditer(r"(?m)^      - name: (.+)$", text)]
+    return [
+        (name, text[start:positions[index + 1][0] if index + 1 < len(positions) else len(text)])
+        for index, (start, name) in enumerate(positions)
+    ]
+
+
+def staging_tools(directory):
+    """A `gh` stand-in: records calls, serves staging tag refs, writes downloaded fixture assets."""
+    bin_dir = directory / "bin"
+    bin_dir.mkdir()
+    tool(bin_dir, "gh", """
+        #!/usr/bin/env python3
+        import json, os, sys
+        args = sys.argv[1:]
+        with open(os.environ["GH_CALLS"], "a") as calls:
+            calls.write(json.dumps(args) + "\\n")
+        if args[0] == "api":
+            for ref in [line for line in os.environ.get("STAGING_REFS", "").splitlines() if line]:
+                print(ref)
+            sys.exit(0)
+        if args[:2] == ["release", "view"]:
+            sys.exit(0 if os.environ.get("STAGING_RELEASE_EXISTS") == "1" else 1)
+        if args[:2] == ["release", "download"]:
+            target = args[args.index("--dir") + 1]
+            os.makedirs(target, exist_ok=True)
+            name = args[args.index("--pattern") + 1] if "--pattern" in args else "asset-" + args[2] + ".apk"
+            with open(os.path.join(target, name), "wb") as asset:
+                asset.write(b"staged release fixture")
+            sys.exit(0)
+        if args[:2] in (["release", "create"], ["release", "upload"], ["release", "delete"]):
+            sys.exit(0)
+        sys.exit("Unexpected GitHub command: " + repr(args))
+    """)
+    return str(bin_dir) + os.pathsep + os.environ["PATH"]
+
+
+def staging_step(name, directory, **overrides):
+    env = os.environ.copy()
+    env.update(overrides)
+    return subprocess.run(
+        ["bash", "-c", step_script(name)], cwd=directory, env=env,
+        capture_output=True, text=True, timeout=30,
+    )
+
+
 def bash_step(name, directory, **overrides):
     env = os.environ.copy()
     env.update({name: "" for name in SIGNING_NAMES})
@@ -185,6 +234,148 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_release_handoff_artifacts_expire_after_three_days(self):
         retention = re.findall(r"retention-days: (\d+)", WORKFLOW.read_text())
         self.assertEqual(["3"] * 4, retention)
+
+    def test_every_artifact_hand_off_has_a_staging_release_fallback(self):
+        blocks = step_blocks()
+        primaries = [
+            (index, name, body) for index, (name, body) in enumerate(blocks)
+            if "uses: actions/upload-artifact@" in body or "uses: actions/download-artifact@" in body
+        ]
+        self.assertEqual(6, len(primaries))
+        for index, name, body in primaries:
+            with self.subTest(step=name):
+                identifier = re.search(r"(?m)^        id: ([\w-]+)$", body)[1]
+                self.assertIn("continue-on-error: true", body)
+                later = [(other, text) for other, text in blocks[index + 1:] if f"steps.{identifier}.outcome" in text]
+                self.assertTrue(later, f"{name} has no fallback step")
+                fallback = later[0][1]
+                failure_guard = re.search(rf"(?m)^        if: .*steps\.{identifier}\.outcome == 'failure'", fallback)
+                if "upload-artifact" in body:
+                    # Nothing is duplicated into a release when the artifact upload worked.
+                    self.assertIsNotNone(failure_guard, f"{name} fallback is not guarded on the upload outcome")
+                    self.assertIn("gh release upload", fallback)
+                    self.assertIn("--prerelease", fallback)
+                    self.assertNotIn("inputs.publish", fallback)
+                else:
+                    self.assertTrue(
+                        failure_guard is not None
+                        or f"ARTIFACTS_OUTCOME: ${{{{ steps.{identifier}.outcome }}}}" in fallback,
+                        f"{name} has no guarded fallback",
+                    )
+                    self.assertIn("gh release download", fallback)
+        merge = dict(blocks)["Download build artifacts"]
+        self.assertIn("merge-multiple: true", merge)
+
+    def test_only_the_jobs_that_write_release_assets_get_contents_write(self):
+        workflow = WORKFLOW.read_text()
+        self.assertEqual(5, len(re.findall(r"(?m)^      contents: write$", workflow)))
+        self.assertNotIn("contents: read", workflow)
+
+    def test_android_upload_failure_parks_the_apk_on_a_prerelease_hand_off(self):
+        name = "Publish Android APK to a staging release when artifact upload fails"
+        for exists in (False, True):
+            with self.subTest(exists=exists), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = staging_tools(root)
+                (root / "release-assets").mkdir()
+                (root / "release-assets/app-gms-mobile-arm64-nightly.apk").write_bytes(b"unsigned APK fixture")
+                result = staging_step(name, root,
+                                      GITHUB_RUN_ID="40906373528", GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP",
+                                      GH_TOKEN="", GH_CALLS=str(root / "gh-calls"),
+                                      APK_NAME="app-gms-mobile-arm64-nightly.apk", VARIANT="gms-mobile-arm64",
+                                      CHANNEL="nightly", COMMIT_SHA="a" * 40,
+                                      STAGING_RELEASE_EXISTS="1" if exists else "0", PATH=path)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                tag = "staging-40906373528-android-gms-mobile-arm64"
+                self.assertEqual(["release", "view", tag], calls[0][:3])
+                creates = [args for args in calls if args[:2] == ["release", "create"]]
+                uploads = [args for args in calls if args[:2] == ["release", "upload"]]
+                self.assertEqual(1, len(uploads))
+                self.assertEqual(["release", "upload", tag], uploads[0][:3])
+                self.assertIn("release-assets/app-gms-mobile-arm64-nightly.apk", uploads[0])
+                self.assertIn("--clobber", uploads[0])
+                if exists:
+                    self.assertEqual([], creates)
+                else:
+                    self.assertEqual(1, len(creates))
+                    self.assertEqual(tag, creates[0][2])
+                    self.assertIn("--prerelease", creates[0])
+                    self.assertIn("--latest=false", creates[0])
+
+    def test_publish_restores_staging_assets_only_when_the_artifact_download_failed(self):
+        name = "Restore the staging release hand-off"
+        android = "refs/tags/staging-40906373528-android-gms-mobile-arm64"
+        ios = "refs/tags/staging-40906373528-ios"
+        cases = (
+            ("success", (), 0, ()),
+            ("failure", (), 1, ()),
+            ("failure", (android, ios), 0, ("staging-40906373528-android-gms-mobile-arm64", "staging-40906373528-ios")),
+            ("success", (ios,), 0, ("staging-40906373528-ios",)),
+        )
+        for outcome, refs, code, expected in cases:
+            with self.subTest(outcome=outcome, refs=refs), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = staging_tools(root)
+                result = staging_step(name, root, GITHUB_RUN_ID="40906373528",
+                                      GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP", GH_TOKEN="",
+                                      GH_CALLS=str(root / "gh-calls"), ARTIFACTS_OUTCOME=outcome,
+                                      STAGING_REFS="\n".join(refs), PATH=path)
+                self.assertEqual(code, result.returncode, result.stdout + result.stderr)
+                calls_path = root / "gh-calls"
+                calls = [json.loads(line) for line in calls_path.read_text().splitlines()] if calls_path.exists() else []
+                downloads = [args[2] for args in calls if args[:2] == ["release", "download"]]
+                self.assertEqual(list(expected), downloads)
+                staged = sorted(entry.name for entry in (root / "downloaded-artifacts").iterdir())
+                self.assertEqual([f"asset-{tag}.apk" for tag in expected], staged)
+                if code:
+                    self.assertIn("::error::", result.stdout)
+
+    def test_update_feed_manifest_falls_back_to_its_staging_release(self):
+        name = "Restore the update-feed manifest from its staging release"
+        for exists, code in ((False, 1), (True, 0)):
+            with self.subTest(exists=exists), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = staging_tools(root)
+                result = staging_step(name, root, GITHUB_RUN_ID="40906373528",
+                                      GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP", GH_TOKEN="",
+                                      GH_CALLS=str(root / "gh-calls"), MANIFEST="nightly.json",
+                                      STAGING_RELEASE_EXISTS="1" if exists else "0", PATH=path)
+                self.assertEqual(code, result.returncode, result.stdout + result.stderr)
+                if not exists:
+                    self.assertIn("::error::", result.stdout)
+                    continue
+                self.assertEqual({"nightly.json"}, {entry.name for entry in (root / "feed-artifact").iterdir()})
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                download = [args for args in calls if args[:2] == ["release", "download"]][0]
+                self.assertEqual("staging-40906373528-update-feed", download[2])
+                self.assertEqual("nightly.json", download[download.index("--pattern") + 1])
+
+    def test_published_release_removes_the_staging_hand_off_but_not_the_update_feed_one(self):
+        name = "Delete the staging release hand-off"
+        # --publish=false smoke runs never reach this step, so their staging releases stay downloadable.
+        self.assertIn("if: steps.publish.outputs.did_publish == 'true'", dict(step_blocks())[name])
+        refs = (
+            "refs/tags/staging-40906373528-android-gms-mobile-arm64",
+            "refs/tags/staging-40906373528-desktop-linux-x64",
+            "refs/tags/staging-40906373528-update-feed",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = staging_tools(root)
+            result = staging_step(name, root, GITHUB_RUN_ID="40906373528",
+                                  GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP", GH_TOKEN="",
+                                  GH_CALLS=str(root / "gh-calls"), STAGING_REFS="\n".join(refs), PATH=path)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+            deletes = [args for args in calls if args[:2] == ["release", "delete"]]
+            self.assertEqual([
+                "staging-40906373528-android-gms-mobile-arm64",
+                "staging-40906373528-desktop-linux-x64",
+            ], [args[2] for args in deletes])
+            for args in deletes:
+                self.assertIn("--cleanup-tag", args)
+                self.assertIn("--yes", args)
 
     def test_windows_packaging_uses_the_sdk_root_and_windows_launcher_layout(self):
         sdk = step_script("Download WebView2 SDK (Windows)")

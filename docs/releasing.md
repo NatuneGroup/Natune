@@ -68,6 +68,16 @@ The publisher expects 16 files for Nightly or 17 for Stable, including the ten
 non-Android assets. The Actions handoff artifacts (including the update-feed
 manifest) expire after three days; the published private release assets remain.
 
+Workflow-artifact storage is metered separately from release assets, so a full
+artifact quota must not break a run whose builds succeeded. Each build job tries
+`actions/upload-artifact` first; when that upload fails, the same file set is
+parked on a per-run prerelease tagged `staging-<run_id>-<job>` (for example
+`staging-40906373528-android-gms-mobile-arm64`) and the publish job restores the
+missing files from those tags with `gh release download`. The staging releases
+are deleted once the real release is published, and are left in place when
+`publish` is false so a smoke run stays downloadable. Clean any leftover
+`staging-*` prerelease up by hand when a run was abandoned before publishing.
+
 The workflows also publish `stable.json` and `nightly.json` to the fixed
 `update-feed` prerelease in this repository. The manifest links point to this
 repository's release assets. The app's current updater repository constants
