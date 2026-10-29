@@ -70,6 +70,30 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("key.provider, key.scope.name, key.name", credentials)
         self.assertNotIn("NSUserDefaults", credentials)
 
+    def test_now_playing_uses_change_projection_and_bounded_cancellable_artwork(self):
+        controls = (KOTLIN / "IosNowPlaying.kt").read_text()
+        self.assertIn("next.changesFrom(projection)", controls)
+        self.assertIn("if (!changes.publishInfo && !artworkChanged) return", controls)
+        self.assertIn("MPNowPlayingInfoMediaTypeAudio", controls)
+        self.assertIn("MPMediaItemPropertyArtwork", controls)
+        self.assertIn("MPMediaItemArtwork(boundsSize = image.size", controls)
+        self.assertIn("artworkLoad?.cancel()", controls)
+        self.assertIn("generation != artworkGeneration || key != artworkKey", controls)
+        artwork = (KOTLIN / "IosNowPlayingArtwork.kt").read_text()
+        self.assertIn("MAX_ARTWORK_BYTES.toULong() - bytes.length", artwork)
+        self.assertIn("ARTWORK_EDGE_PIXELS = 512", artwork)
+        self.assertIn("CGImageSourceCreateThumbnailAtIndex", artwork)
+        self.assertIn("continuation.invokeOnCancellation", artwork)
+        self.assertIn("session.invalidateAndCancel()", artwork)
+        self.assertIn("HTTPCookieStorage = null", artwork)
+
+    def test_long_form_playback_restores_the_previous_route_sharing_policy(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        self.assertEqual(2, audio.count("routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio"))
+        self.assertIn("g_snapshot_policy = session.routeSharingPolicy", audio)
+        self.assertIn("routeSharingPolicy:g_snapshot_policy", audio)
+        self.assertIn("routeSharingPolicy:AVAudioSessionRouteSharingPolicyDefault", audio)
+
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()
         self.assertIn("prefersEphemeralWebBrowserSession = true", auth)
