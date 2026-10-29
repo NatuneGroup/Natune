@@ -12,7 +12,7 @@ To ensure build stability and environment parity, the following hardware and sof
 
 * **IDE:** [Android Studio](https://developer.android.com/studio), with support for the checked-in Android Gradle Plugin; command-line builds are also supported.
 * **Java Runtime:** **JDK 21**.
-* **Android SDK:** compile SDK **37**, NDK **30.0.16248370** and the build tools selected by the project. Runtime minimum is Android 8.0/API 26.
+* **Android SDK:** compile SDK **37**, NDK **30.0.16248370** and the build tools selected by the project. Runtime minimum is Android 7.0/API 24.
 * **Gradle:** use the checked-in **9.6.1** wrapper, not a system Gradle installation.
 * **Version Control:** Git 2.40+.
 
@@ -69,7 +69,7 @@ Use the Gradle Wrapper with an explicit variant. GMS/FOSS, mobile/TV and ABI axe
 
 | Command | Output | Context |
 | --- | --- | --- |
-| `./gradlew assembleGmsMobileUniversalDebug` | Debug APK under `app/build/outputs/apk/` | Local development; install/launch the APK on an API 26+ device or emulator. |
+| `./gradlew assembleGmsMobileUniversalDebug` | Debug APK under `app/build/outputs/apk/` | Local development; install/launch the APK on an API 24+ device or emulator. |
 | `./gradlew lintGmsMobileUniversalDebug` | Android lint reports | Same universal GMS mobile variant as PR CI. |
 | `./gradlew :app:testGmsMobileUniversalDebugUnitTest` | Unit-test reports | Separate from APK assembly; also compiles `app/src/test`. |
 
