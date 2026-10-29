@@ -446,6 +446,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         SponsorBlockEnabledKey,
         SponsorBlockCategoriesKey,
         SponsorBlockApiUrlKey,
+        SponsorBlockPodcastsEnabledKey,
         StyleBeforeAppleMusicKey,
         SpotifyLibraryPlaylistsCacheKey,
         SpotifyRecentlyPlayedCacheKey,

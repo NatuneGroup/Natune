@@ -60,11 +60,12 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 
 private const val TAG = "MusicDatabase"
-private const val CURRENT_VERSION = 36
+private const val CURRENT_VERSION = 37
 
 class MusicDatabase(
     private val delegate: InternalDatabase,
 ) : DatabaseDao by delegate.dao {
+    val podcastProgress: PodcastProgressDao get() = delegate.podcastProgress
     val openHelper: SupportSQLiteOpenHelper
         get() = delegate.openHelper
 
@@ -128,6 +129,7 @@ class MusicDatabase(
         PlaylistTagMap::class,
         LibraryTopMixEntity::class,
         LibraryTopMixSongMap::class,
+        PodcastProgressEntity::class,
     ],
     views = [
         SortedSongArtistMap::class,
@@ -164,6 +166,7 @@ class MusicDatabase(
 @TypeConverters(Converters::class)
 abstract class InternalDatabase : RoomDatabase() {
     abstract val dao: DatabaseDao
+    abstract val podcastProgress: PodcastProgressDao
 
     companion object {
         const val DB_NAME = "song.db"
@@ -180,6 +183,7 @@ abstract class InternalDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2,
                         *universalMigrations,
+                        PodcastProgressMigration,
                     ).addCallback(DatabaseCallback())
                     .fallbackToDestructiveMigration()
                     .fallbackToDestructiveMigrationOnDowngrade()

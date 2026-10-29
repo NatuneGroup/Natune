@@ -36,7 +36,7 @@ data class MediaMetadata(
     val inLibrary: LocalDateTime? = null,
     val isMusicVideo: Boolean = false,
     // Podcast-episode marker (upstream 15.0.0 parity): episodes share the song
-    // shape but must skip lyrics, SponsorBlock, stats and crossfade paths.
+    // shape but must skip lyrics, stats and crossfade paths. SponsorBlock needs its separate podcast opt-in.
     // Default false keeps every existing constructor and copy() call intact.
     val isPodcast: Boolean = false,
     /** ISRC of the recording this item represents, when the source catalogue supplied one. */
@@ -180,6 +180,7 @@ fun SongItem.toMediaMetadata() =
             },
         explicit = explicit,
         setVideoId = setVideoId,
+        isPodcast = isPodcast,
         isMusicVideo =
             endpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType in
                 listOf(MUSIC_VIDEO_TYPE_OMV, MUSIC_VIDEO_TYPE_UGC),
