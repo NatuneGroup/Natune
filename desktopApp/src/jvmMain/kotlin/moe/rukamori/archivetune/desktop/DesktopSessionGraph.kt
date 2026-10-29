@@ -65,6 +65,7 @@ import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeCatalogueTransport
+import moe.rukamori.archivetune.shared.data.provider.KtorSponsorBlockRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
@@ -106,6 +107,7 @@ import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
+import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
@@ -639,6 +641,14 @@ class DesktopSessionGraph private constructor(
                 history = history,
                 preferences = vault.snapshots,
                 report = ::desktopDiagnostic,
+            )
+            // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
+            PodcastSponsorBlockDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                preferences = vault.snapshots,
+                repository = KtorSponsorBlockRepository(http),
             )
             val lastFm = DesktopLastFm(
                 scope = scope,

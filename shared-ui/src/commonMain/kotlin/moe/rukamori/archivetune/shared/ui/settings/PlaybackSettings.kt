@@ -79,6 +79,8 @@ fun playbackSettingsRows(
                         .intersect(categories.map { it.first }.toSet())
                 }))
         }
+        add(SettingsRow.Toggle("sponsor_block_podcasts", Res.string.m6_sponsor_block_podcasts,
+            SponsorBlockPodcastsEnabledKey, false))
     }
     add(SettingsRow.Choice("audio_quality", Res.string.m6_audio_quality, AudioQualityKey, "AUTO", listOf(
         SettingsRow.Option("HIGHEST", Res.string.m6_highest), SettingsRow.Option("HIGH", Res.string.m6_high),

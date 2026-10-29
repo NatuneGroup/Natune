@@ -37,6 +37,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalPkceClient
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeResolver
+import moe.rukamori.archivetune.shared.data.provider.KtorSponsorBlockRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
@@ -64,6 +65,7 @@ import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
+import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
@@ -322,6 +324,14 @@ internal class IosSessionGraph private constructor(
                 preferences = vault.snapshots,
                 report = report,
                 nowMs = ::iosNowMillis,
+            )
+            // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
+            PodcastSponsorBlockDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                preferences = vault.snapshots,
+                repository = KtorSponsorBlockRepository(http),
             )
             val lyrics = HostLyrics(
                 scope = scope,
