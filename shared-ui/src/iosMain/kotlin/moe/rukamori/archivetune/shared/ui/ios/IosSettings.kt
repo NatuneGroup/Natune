@@ -106,6 +106,7 @@ import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSByteCountFormatter
+import platform.Foundation.NSByteCountFormatterCountStyleFile
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
@@ -721,4 +722,4 @@ private fun IosLanguagePackSettingsPage(host: IosHost, controller: SettingsContr
 }
 
 /** The platform's locale-aware byte count, so the pack sizes read the way the rest of the system shows them. */
-private fun iosByteCountSize(bytes: Long): String = NSByteCountFormatter.stringFromByteCount(bytes)
+private fun iosByteCountSize(bytes: Long): String = NSByteCountFormatter.stringFromByteCount(bytes, NSByteCountFormatterCountStyleFile)

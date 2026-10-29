@@ -57,6 +57,7 @@ import moe.rukamori.archivetune.shared.ui.screens.commenttogether.CommentTogethe
 import org.jetbrains.compose.resources.getString
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
+import platform.Foundation.dateWithTimeIntervalSince1970
 import platform.Foundation.NSUUID
 
 /**
