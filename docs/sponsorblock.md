@@ -28,6 +28,8 @@ and a SponsorBlock lookup for them would be both meaningless and a leak.
   segment list must not break playback, and a 404 is a normal "nothing published".
 - `SponsorBlockPlaybackController.kt` — polls 200ms while playing, 750ms otherwise,
   and seeks out of a segment it is inside.
+- `PodcastSponsorBlockDriver.kt` (`shared-ui`) — the desktop and iOS path, podcast
+  episodes only.
 
 ## Behaviour worth keeping
 
@@ -38,6 +40,15 @@ and a SponsorBlock lookup for them would be both meaningless and a leak.
 - **Re-attaches on crossfade promotion.** `MusicService` builds a new session player
   and releases the old one there; a listener left on the old player goes deaf for the
   rest of the session.
+
+## Podcast episodes
+
+Episodes are skipped only when **Skip podcast segments** (`sponsor_block_podcasts_enabled`)
+is also on. It is off by default and has no effect while SponsorBlock itself is off. Only
+episodes that play from YouTube are looked up, through the same lookup songs use; other
+providers are never looked up. Android handles them in `SponsorBlockPlaybackController`.
+The shared desktop and iOS sessions handle them in `PodcastSponsorBlockDriver`, which skips
+podcast segments only, because songs are not skipped there yet.
 
 ## Defaults
 
