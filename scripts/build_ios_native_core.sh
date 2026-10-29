@@ -129,7 +129,8 @@ preflight() {
     local version
     XCODE_LINE="$(xcodebuild -version 2>/dev/null | tr '\n' ' ')" || die "xcodebuild cannot run; select a full Xcode with xcode-select"
     version="$(xcodebuild -version 2>/dev/null | awk 'NR == 1 { print $2 }')"
-    if [ "$version" != "$XCODE_EXPECTED" ]; then
+    # A patch release of the expected Xcode (26.4.1 for 26.4) ships the same SDK and toolchain.
+    if [ "$version" != "$XCODE_EXPECTED" ] && [ "${version#"$XCODE_EXPECTED".}" = "$version" ]; then
         if [ "${ARCHIVETUNE_ALLOW_OTHER_XCODE:-0}" != 1 ]; then
             die "Xcode $version is selected; the expected release is $XCODE_EXPECTED (set ARCHIVETUNE_ALLOW_OTHER_XCODE=1 to build an UNVERIFIED closure)"
         fi
