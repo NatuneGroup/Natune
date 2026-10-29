@@ -162,8 +162,9 @@ internal fun iosHostBindings(
 }
 
 /**
- * The Library, the local history, the playlist, the statistics, the year-in-music and the Listen Together routes the
- * owners answer. Every other destination keeps the host boundary. The key keeps each route's own page state apart.
+ * The Library, the local history, the playlist, the statistics, the year-in-music, the Listen Together and the Telegram
+ * browse and bots routes the owners answer. Every other destination keeps the host boundary, and so does a Telegram
+ * route while no client is signed in. The key keeps each route's own page state apart.
  */
 @Composable
 private fun iosGraphPage(
@@ -194,6 +195,8 @@ private fun iosGraphPage(
             ArchiveDestination.RECAP -> iosRecapPage(graph, route, openRoute)
             ArchiveDestination.LISTEN_TOGETHER -> iosListenTogetherPage(graph, host, back, openRoute)
             ArchiveDestination.LISTEN_TOGETHER_CHAT -> iosCommentTogetherPage(graph, host, back)
+            ArchiveDestination.TELEGRAM_BROWSE -> iosTelegramBrowsePage(graph, host, back)
+            ArchiveDestination.TELEGRAM_BOTS -> iosTelegramBotsPage(graph, host, back, openRoute)
             else -> ArchiveGraphPage.Host
         }
     }
