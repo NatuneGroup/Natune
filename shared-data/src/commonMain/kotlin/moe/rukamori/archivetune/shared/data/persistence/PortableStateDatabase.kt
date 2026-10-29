@@ -19,7 +19,8 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
  * Version 7 adds each download's byte count and the complete album track lists, by
  * [PortableStateMigrations.V6_TO_V7]. Version 8 adds the persisted download queue and local-media scan table, the
  * search history and video-id lookup tables, and the hidden flag on playlists, by
- * [PortableStateMigrations.V7_TO_V8].
+ * [PortableStateMigrations.V7_TO_V8]. Version 9 adds the podcast episode progress table, by
+ * [PortableStateMigrations.V8_TO_V9].
  */
 @Database(
     entities = [QueueCheckpointRow::class, LibraryItemRow::class, PortablePlaylistRow::class,
@@ -27,8 +28,8 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
         PortableListenEventRow::class, PortableListenEntityRow::class, PortableArtistBlockRow::class,
         PortableStoredSongRow::class, PortableAlbumCompleteRow::class, PortableAlbumTrackRow::class,
         PortableDownloadTaskRow::class, PortableLocalTrackRow::class,
-        PortableSearchHistoryRow::class, PortableSetVideoIdRow::class],
-    version = 8,
+        PortableSearchHistoryRow::class, PortableSetVideoIdRow::class, PortablePodcastProgressRow::class],
+    version = 9,
     exportSchema = true,
 )
 @ConstructedBy(PortableStateDatabaseConstructor::class)
@@ -43,6 +44,7 @@ abstract class PortableStateDatabase : RoomDatabase() {
     abstract fun localTracks(): PortableLocalTrackDao
     abstract fun searchHistory(): PortableSearchHistoryDao
     abstract fun setVideoIds(): PortableSetVideoIdDao
+    abstract fun podcastProgress(): PortablePodcastProgressDao
 }
 
 expect object PortableStateDatabaseConstructor : RoomDatabaseConstructor<PortableStateDatabase> {
@@ -63,6 +65,7 @@ fun RoomDatabase.Builder<PortableStateDatabase>.buildPortableStateDatabase(): Po
         PortableStateMigrations.V5_TO_V6,
         PortableStateMigrations.V6_TO_V7,
         PortableStateMigrations.V7_TO_V8,
+        PortableStateMigrations.V8_TO_V9,
     )
         .setDriver(portableStateDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
 
