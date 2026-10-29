@@ -32,9 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
+import moe.rukamori.archivetune.shared.ui.player.PlayerBackgroundStyle
 import moe.rukamori.archivetune.shared.ui.player.PlayerPanel
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
+import moe.rukamori.archivetune.shared.ui.player.resolveBackground
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.m5_lyrics
 import moe.rukamori.archivetune.shared.ui.resources.m5_more
@@ -59,9 +61,11 @@ private fun Modifier.bottomFade(heightFraction: Float = .5f): Modifier = drawWit
 @Composable
 internal fun ImmersivePlayer(c: PlayerRenderContext) {
     val white = v7Text
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // An explicit player background is drawn beneath this look; the black field and blurred cover would hide it.
+    val explicitBackground = c.preferences.style.resolveBackground(c.preferences.background) != PlayerBackgroundStyle.DEFAULT
+    Box(Modifier.fillMaxSize().then(if (explicitBackground) Modifier else Modifier.background(Color.Black))) {
         val id = c.state.playback?.occurrenceId
-        if (c.optical.artworkBlur) {
+        if (c.optical.artworkBlur && !explicitBackground) {
             c.slots.artwork(
                 id,
                 Modifier.fillMaxSize()

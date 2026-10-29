@@ -208,7 +208,7 @@ fun CurrentSongHeader(
                             },
                         ),
                     contentDescription = stringResource(R.string.action_like),
-                    modifier = Modifier.size(26.dp),
+                    modifier = Modifier.size(26.dp).playerControlMotion(PlayerControlKind.Like, liked),
                 )
             }
         }
@@ -326,7 +326,7 @@ fun CurrentSongHeader(
                 Icon(
                     painter = painterResource(R.drawable.shuffle),
                     contentDescription = stringResource(R.string.action_shuffle_on),
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(22.dp).playerControlMotion(PlayerControlKind.Shuffle, shuffleModeEnabled),
                 )
             }
 
@@ -355,7 +355,7 @@ fun CurrentSongHeader(
                             },
                         ),
                     contentDescription = null,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(22.dp).playerControlMotion(PlayerControlKind.Repeat, repeatMode),
                 )
             }
 
@@ -731,7 +731,7 @@ fun QueueCollapsedContentV2(
                     modifier =
                         Modifier
                             .size(iconSize)
-                            .alpha(if (repeatMode == Player.REPEAT_MODE_OFF) 0.5f else 1f),
+                            .alpha(if (repeatMode == Player.REPEAT_MODE_OFF) 0.5f else 1f).playerControlMotion(PlayerControlKind.Repeat, repeatMode),
                     tint = textBackgroundColor,
                 )
             }
@@ -1508,7 +1508,7 @@ fun QueueCollapsedContentV9(
                             stringResource(
                                 if (shuffleModeEnabled) R.string.action_shuffle_on else R.string.action_shuffle_off,
                             ),
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.size(26.dp).playerControlMotion(PlayerControlKind.Shuffle, shuffleModeEnabled),
                     )
                 }
 
@@ -1546,7 +1546,7 @@ fun QueueCollapsedContentV9(
                                     else -> R.string.repeat_mode_off
                                 },
                             ),
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.size(26.dp).playerControlMotion(PlayerControlKind.Repeat, repeatMode),
                     )
                 }
 

@@ -69,7 +69,7 @@ internal fun PlayerArtworkPager(c: PlayerRenderContext,modifier: Modifier=Modifi
         return
     }
     val enabled=c.preferences.swipeArtwork && c.state.repeat!=PlayerRepeat.ONE && ids.size>1
-    val hidden=!vertical && c.preferences.style.capabilities.ordinarySleeve && c.preferences.hideSleeve
+    val hidden=!vertical && c.preferences.sleeveHidden
     val frame=if(vertical) modifier.fillMaxSize() else modifier.aspectRatio(1f)
         .clip(RoundedCornerShape(c.preferences.sleeveRadius.dp))
         .graphicsLayer { alpha=if(hidden) 0f else 1f }

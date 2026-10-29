@@ -189,6 +189,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.navigation.NavController
+import moe.rukamori.archivetune.ui.player.PlayerControlKind
+import moe.rukamori.archivetune.ui.player.playerControlMotion
+import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 
 // ── Geometry & timing constants (verbatim from BitChord's NowPlayingScreen) ──
 
@@ -837,15 +840,15 @@ fun BitChordPlayerContent(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets(top = statusBarTop))
                 .navigationBarsPadding()
-                .pointerInput(Unit) {
+                .pointerInput(presentation.swipeArtwork) {
+                    if (!presentation.swipeArtwork) return@pointerInput
                     var total = 0f
                     detectHorizontalDragGestures(
                         onDragStart = { total = 0f },
                         onDragCancel = { swipeOffset = 0f },
                         onDragEnd = {
-                            // The same two buzzes the transport glyphs give, so
-                            // swiping the sleeve and tapping skip feel like one
-                            // gesture with two spellings.
+                            // The same two buzzes the transport glyphs give, so swiping
+                            // the sleeve and tapping skip feel like one gesture with two spellings.
                             when {
                                 total <= -swipeThreshold && canSkipNext -> {
                                     haptics.play(Haptic.SkipNext)
@@ -1227,6 +1230,7 @@ fun BitChordPlayerContent(
                         contentDescription = if (currentSongLiked) "Remove from Liked Music" else "Like",
                         onClick = { playerConnection.toggleLike() },
                         active = currentSongLiked,
+                        iconModifier = Modifier.playerControlMotion(PlayerControlKind.Like, currentSongLiked),
                         haptic = if (currentSongLiked) Haptic.ToggleOff else Haptic.ToggleOn,
                     )
                     Spacer(Modifier.width(8.dp))
@@ -1494,6 +1498,8 @@ fun BitChordPlayerContent(
             // which sit close enough together to read as one.
             Spacer(Modifier.height(10.dp + controlSpread / 3))
 
+            // Remembered outside the loading branch so the squash survives the spinner swap.
+            val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -1503,6 +1509,7 @@ fun BitChordPlayerContent(
                     positionProvider = positionProvider,
                     canSkipPrevious = canSkipPrevious,
                     onClick = { playerConnection.seekToPrevious() },
+                    motion = rememberPlayerControlMotion(PlayerControlKind.Previous),
                 )
                 // While the stream URL resolves and buffers, the play glyph
                 // would be a lie — show progress instead.
@@ -1523,6 +1530,7 @@ fun BitChordPlayerContent(
                         size = 72.dp,
                         onClick = onPlayPause,
                         haptic = if (isPlaying) Haptic.Pause else Haptic.Resume,
+                        motion = playPauseMotion,
                     )
                 }
                 TransportGlyph(
@@ -1532,6 +1540,7 @@ fun BitChordPlayerContent(
                     onClick = { playerConnection.seekToNext() },
                     enabled = canSkipNext,
                     haptic = Haptic.SkipNext,
+                    motion = rememberPlayerControlMotion(PlayerControlKind.Next),
                 )
             }
 
@@ -1609,6 +1618,7 @@ fun BitChordPlayerContent(
                             onClick = { playerConnection.player.shuffleModeEnabled = !shuffleEnabled },
                             highlighted = shuffleEnabled,
                             haptic = if (shuffleEnabled) Haptic.ToggleOff else Haptic.ToggleOn,
+                            iconModifier = Modifier.playerControlMotion(PlayerControlKind.Shuffle, shuffleEnabled),
                         )
                         PillDivider()
                         PillSegment(
@@ -1627,6 +1637,7 @@ fun BitChordPlayerContent(
                                 }
                             },
                             highlighted = repeatMode != Player.REPEAT_MODE_OFF,
+                            iconModifier = Modifier.playerControlMotion(PlayerControlKind.Repeat, repeatMode),
                             // Three states, so the buzz tracks the edges of the cycle.
                             haptic = when (repeatMode) {
                                 Player.REPEAT_MODE_OFF -> Haptic.ToggleOn
@@ -1712,92 +1723,6 @@ private suspend fun AwaitPointerEventScope.dragQueueIn(
     }
     onHold(false)
     onSettle(open)
-}
-
-/**
- * Translucent circular button used for the track menu and the like control.
- *
- * [active] brightens the disc rather than only the glyph: this sits on album
- * artwork of any colour, and a white icon on a white-ish sleeve has no tint
- * change left to make. The filled heart carries the state as a shape too.
- */
-@Composable
-private fun CircleGlyph(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    active: Boolean = false,
-    haptic: Haptic = Haptic.Tap,
-) {
-    val haptics = rememberHaptics()
-    val discAlpha by animateFloatAsState(
-        targetValue = if (active) 0.34f else 0.18f,
-        label = "glyphDisc",
-    )
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = discAlpha))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) {
-                haptics.play(haptic)
-                onClick()
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = Color.White,
-            modifier = Modifier.size(19.dp),
-        )
-    }
-}
-
-/**
- * Transport / bottom glyphs. The circular clip belongs on the touch target,
- * never on the [Icon] — clipping the icon itself shaves the corners off wide
- * glyphs like fast-forward and the queue list.
- */
-@Composable
-private fun TransportGlyph(
-    icon: ImageVector,
-    contentDescription: String,
-    size: Dp,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    haptic: Haptic = Haptic.Tap,
-) {
-    val haptics = rememberHaptics()
-    // Faded rather than hidden: the row keeps its shape at the ends of a queue.
-    val alpha by animateFloatAsState(
-        targetValue = if (enabled) 1f else 0.3f,
-        label = "transportAlpha",
-    )
-    Box(
-        modifier = Modifier
-            .size(size + 12.dp)
-            .clip(CircleShape)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                enabled = enabled,
-            ) {
-                haptics.play(haptic)
-                onClick()
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = Color.White.copy(alpha = alpha),
-            modifier = Modifier.size(size),
-        )
-    }
 }
 
 @Composable
@@ -1910,6 +1835,7 @@ private fun PillSegment(
     label: String? = null,
     highlighted: Boolean = false,
     haptic: Haptic = Haptic.Tap,
+    iconModifier: Modifier = Modifier,
 ) {
     val haptics = rememberHaptics()
     Box(
@@ -1933,7 +1859,7 @@ private fun PillSegment(
                 imageVector = icon,
                 contentDescription = null,
                 tint = tint,
-                modifier = Modifier.size(PILL_ICON_SIZE),
+                modifier = Modifier.size(PILL_ICON_SIZE).then(iconModifier),
             )
         } else if (label != null) {
             Text(
@@ -1941,6 +1867,7 @@ private fun PillSegment(
                 color = tint,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
+                modifier = iconModifier,
             )
         }
     }
@@ -2032,30 +1959,6 @@ private fun ScrubTime(label: () -> String) {
         text = label(),
         style = MaterialTheme.typography.labelMedium,
         color = Color.White.copy(alpha = 0.55f),
-    )
-}
-
-/**
- * The back glyph, in its own composable so its position read is scoped here.
- *
- * A value-returning @Composable would not have done: Compose does not make those restartable, so
- * the read would have landed in the caller and invalidated the whole player anyway.
- */
-@Composable
-private fun BitChordPreviousGlyph(
-    positionProvider: () -> Long,
-    canSkipPrevious: Boolean,
-    onClick: () -> Unit,
-) {
-    TransportGlyph(
-        icon = Icons.Rounded.FastRewind,
-        contentDescription = "Previous",
-        size = 48.dp,
-        onClick = onClick,
-        // Lit whenever back has something to do — either a track to step to, or enough elapsed for
-        // it to restart this one.
-        enabled = canSkipPrevious || positionProvider() > BACK_RESTARTS_AFTER_MS,
-        haptic = Haptic.SkipPrevious,
     )
 }
 
