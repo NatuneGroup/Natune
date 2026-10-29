@@ -91,7 +91,7 @@ internal class IosItemMenuState {
  * refuse the insert. Every queue command therefore gets its own occurrence of the same item.
  */
 internal fun ContentOccurrence.queuedEntry(): ContentOccurrence =
-    ContentOccurrence("queued:${NSUUID().UUIDString()}", item, setVideoId)
+    ContentOccurrence("queued:${NSUUID().UUIDString}", item, setVideoId)
 
 /**
  * The row menu as a dialog over the page it opened on. The navigation host does not key the route body, so the effect
