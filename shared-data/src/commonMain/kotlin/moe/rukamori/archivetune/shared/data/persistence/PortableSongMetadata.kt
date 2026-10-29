@@ -55,13 +55,21 @@ class RoomSongMetadataRepository(private val dao: PortableSongMetadataOverrideDa
 
     override suspend fun setOverride(song: ContentRef, metadata: SongMetadataOverride?) {
         require(song.kind == ContentKind.SONG)
-        require(metadata?.title == null || metadata.title.isNotBlank())
-        require(metadata?.artistNames == null || metadata.artistNames.isNotEmpty() && metadata.artistNames.all(String::isNotBlank))
-        val row = metadata?.takeIf { it.title != null || it.artistNames != null }?.let {
-            PortableSongMetadataOverrideRow(
-                song.provider, song.id, it.title,
-                it.artistNames?.let { names -> JsonArray(names.map(::JsonPrimitive)).toString() }, it.updatedAtMs,
-            )
+        val row = metadata?.let { edit ->
+            // Shared-domain properties cannot be smart cast here, so read them into locals first.
+            val title = edit.title
+            val artistNames = edit.artistNames
+            require(title == null || title.isNotBlank())
+            require(artistNames == null || (artistNames.isNotEmpty() && artistNames.all(String::isNotBlank)))
+            if (title != null || artistNames != null) {
+                PortableSongMetadataOverrideRow(
+                    song.provider, song.id, title,
+                    artistNames?.let { names -> JsonArray(names.map(::JsonPrimitive)).toString() },
+                    edit.updatedAtMs,
+                )
+            } else {
+                null
+            }
         }
         dao.set(song.provider, song.id, row)
     }
