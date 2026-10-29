@@ -27,6 +27,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +47,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.mutableLongStateOf
@@ -72,6 +75,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
@@ -80,9 +86,11 @@ import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.navigation.NavController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.QueueEditLockKey
+import moe.rukamori.archivetune.constants.AutoLoadMoreKey
 import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.toggleRepeatMode
@@ -122,6 +130,10 @@ fun AppleMusicQueueSheet(
     val localPlayer = playerConnection.localPlayer
 
     var locked by rememberPreference(QueueEditLockKey, defaultValue = true)
+    var infiniteQueueEnabled by rememberPreference(AutoLoadMoreKey, defaultValue = true)
+    val infiniteQueueLoading by playerConnection.service.infiniteQueueLoading.collectAsStateWithLifecycle()
+    val queueActionScope = rememberCoroutineScope()
+    val infiniteQueueLabel = stringResource(R.string.queue_infinite)
 
     // Sleep timer state — mirrors Queue.kt's sleep-timer block so the pill
     // shows the remaining time and toggles the timer correctly.
@@ -309,33 +321,30 @@ fun AppleMusicQueueSheet(
             val activeColor = adaptivePrimary.copy(alpha = 0.25f)
             val inactiveColor = adaptivePrimary.copy(alpha = 0.1f)
 
-            // Infinity pill — uses the Material "all_inclusive" (∞) drawable.
-            // Semantics: "infinite playback" — clicking it fetches radio /
-            // related songs via startRadioSeamlessly() and appends them to
-            // the queue so playback continues indefinitely. When the queue
-            // holds only the current song (the state a fresh search-and-play
-            // leaves), tapping ∞ populates it with related songs without
-            // interrupting playback.
-            // The pill is a one-shot action button (not a toggle), so it
-            // always uses the inactive color.
             Box(
                 modifier =
                     Modifier
                         .weight(1f)
                         .height(QueuePillHeight)
-                        .background(inactiveColor, pillShape)
+                        .background(if (infiniteQueueEnabled) activeColor else inactiveColor, pillShape)
                         .clip(pillShape)
-                        .clickable {
-                            mediaMetadata?.let { playerConnection.startRadio(it) }
+                        .semantics { contentDescription = infiniteQueueLabel }
+                        .toggleable(value = infiniteQueueEnabled, role = Role.Switch) { enabled ->
+                            infiniteQueueEnabled = enabled
+                            if (!enabled) playerConnection.service.onInfiniteQueueDisabled()
                         },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.all_inclusive),
-                    contentDescription = "Start radio",
-                    tint = adaptivePrimary,
-                    modifier = Modifier.size(24.dp),
-                )
+                if (infiniteQueueLoading) {
+                    CircularProgressIndicator(Modifier.size(24.dp), color = adaptivePrimary, strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        painter = painterResource(R.drawable.all_inclusive),
+                        contentDescription = stringResource(R.string.queue_infinite),
+                        tint = adaptivePrimary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
             // Repeat pill.
             Box(
@@ -422,12 +431,19 @@ fun AppleMusicQueueSheet(
                 IconButton(onClick = { locked = !locked }) {
                     Icon(
                         painter = painterResource(if (locked) R.drawable.lock else R.drawable.lock_open),
-                        contentDescription = if (locked) "Unlock Queue" else "Lock Queue",
+                        contentDescription = stringResource(if (locked) R.string.queue_unlock_edits else R.string.queue_lock_edits),
                         tint = adaptiveSecondary,
                     )
                 }
             }
         }
+
+        QueueExtrasBar(
+            onJumpToCurrent = { queueActionScope.launch { lazyListState.animateScrollToItem(0) } },
+            showInfinity = false,
+            contentColor = adaptivePrimary,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
 
         // Reorderable queue list.
         LazyColumn(

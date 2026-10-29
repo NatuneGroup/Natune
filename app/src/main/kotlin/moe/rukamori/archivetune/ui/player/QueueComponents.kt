@@ -67,6 +67,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -105,6 +107,8 @@ fun CurrentSongHeader(
     locked: Boolean,
     songCount: Int,
     queueDuration: Int,
+    queueTitle: String?,
+    queueRemainingMs: Long?,
     infiniteQueueEnabled: Boolean,
     infiniteQueueLoading: Boolean,
     backgroundColor: Color,
@@ -116,10 +120,13 @@ fun CurrentSongHeader(
     onShuffleClick: () -> Unit,
     onLockClick: () -> Unit,
     onInfiniteQueueClick: () -> Unit,
+    onSaveQueueClick: () -> Unit,
+    onJumpToCurrentClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
     val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
+    val infiniteQueueLabel = stringResource(R.string.queue_infinite)
 
     Column(
         modifier =
@@ -239,7 +246,7 @@ fun CurrentSongHeader(
                 ) {
                     Icon(
                         painter = painterResource(if (locked) R.drawable.lock else R.drawable.lock_open),
-                        contentDescription = null,
+                        contentDescription = stringResource(if (locked) R.string.queue_unlock_edits else R.string.queue_lock_edits),
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -284,6 +291,8 @@ fun CurrentSongHeader(
         }
 
         Spacer(modifier = Modifier.height(14.dp))
+
+        QueueHeaderDetails(queueTitle, queueRemainingMs, onBackgroundColor, onSaveQueueClick, onJumpToCurrentClick)
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -362,10 +371,9 @@ fun CurrentSongHeader(
             ToggleButton(
                 checked = infiniteQueueEnabled,
                 onCheckedChange = { onInfiniteQueueClick() },
-                modifier = Modifier.weight(1f).size(48.dp),
+                modifier = Modifier.weight(1f).size(48.dp).semantics { contentDescription = infiniteQueueLabel },
                 shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
                 colors = infiniteCheckedColors,
-                enabled = !infiniteQueueLoading,
             ) {
                 AnimatedContent(
                     targetState = infiniteQueueLoading,
@@ -379,7 +387,7 @@ fun CurrentSongHeader(
                     } else {
                         Icon(
                             painter = painterResource(R.drawable.all_inclusive),
-                            contentDescription = stringResource(R.string.similar_content),
+                            contentDescription = stringResource(R.string.queue_infinite),
                             modifier = Modifier.size(22.dp),
                         )
                     }
@@ -387,29 +395,7 @@ fun CurrentSongHeader(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Text(
-            text = stringResource(R.string.queue_continue_playing),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = onBackgroundColor,
-        )
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        Text(
-            text = stringResource(R.string.queue_autoplaying_similar),
-            style = MaterialTheme.typography.bodySmall,
-            color = onBackgroundColor.copy(alpha = 0.5f),
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        HorizontalDivider(
-            color = onBackgroundColor.copy(alpha = 0.08f),
-            thickness = 1.dp,
-        )
+        QueueAutoplayFooter(infiniteQueueEnabled, onBackgroundColor)
     }
 }
 

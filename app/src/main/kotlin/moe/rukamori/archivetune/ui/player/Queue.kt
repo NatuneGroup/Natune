@@ -156,6 +156,7 @@ fun Queue(
     val playerConnection = LocalPlayerConnection.current ?: return
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
+    val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
 
     val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
@@ -196,6 +197,7 @@ fun Queue(
     val database = LocalDatabase.current
     var showChoosePlaylistDialog by rememberSaveable { mutableStateOf(false) }
     var showCreateQueuePlaylistDialog by rememberSaveable { mutableStateOf(false) }
+    var queuePlaylistSnapshot by remember { mutableStateOf<List<MediaMetadata>?>(null) }
 
     AddToPlaylistDialog(
         isVisible = showChoosePlaylistDialog,
@@ -237,6 +239,7 @@ fun Queue(
     )
 
     if (showCreateQueuePlaylistDialog) {
+        val songs = queuePlaylistSnapshot ?: selectedSongs.toList()
         TextFieldDialog(
             icon = {
                 Icon(
@@ -247,45 +250,52 @@ fun Queue(
             title = { Text(text = stringResource(R.string.create_playlist)) },
             placeholder = { Text(text = stringResource(R.string.playlist_name)) },
             initialTextFieldValue = TextFieldValue(queueTitle ?: context.getString(R.string.queue)),
-            isInputValid = { it.trim().isNotEmpty() && selectedSongs.isNotEmpty() },
-            onDismiss = { showCreateQueuePlaylistDialog = false },
+            isInputValid = { it.trim().isNotEmpty() && songs.isNotEmpty() },
+            onDismiss = { showCreateQueuePlaylistDialog = false; queuePlaylistSnapshot = null },
             onDone = onDone@{ rawPlaylistName ->
                 val playlistName = rawPlaylistName.trim()
-                val songs = selectedSongs.toList()
                 if (playlistName.isEmpty() || songs.isEmpty()) return@onDone
 
                 coroutineScope.launch(Dispatchers.IO) {
-                    val playlist =
-                        PlaylistEntity(
-                            name = playlistName,
-                            bookmarkedAt = LocalDateTime.now(),
-                            isEditable = true,
-                        )
-
-                    database.withTransaction {
-                        insert(playlist)
-                        songs.forEachIndexed { index, song ->
-                            insert(song)
-                            insert(
-                                PlaylistSongMap(
-                                    playlistId = playlist.id,
-                                    songId = song.id,
-                                    position = index,
-                                    setVideoId = song.setVideoId,
-                                ),
+                    try {
+                        val playlist =
+                            PlaylistEntity(
+                                name = playlistName,
+                                bookmarkedAt = LocalDateTime.now(),
+                                isEditable = true,
                             )
-                        }
-                    }
 
-                    withContext(Dispatchers.Main) {
-                        val message =
-                            if (songs.size == 1) {
-                                context.getString(R.string.added_to_playlist, playlistName)
-                            } else {
-                                context.getString(R.string.added_n_songs_to_playlist, songs.size, playlistName)
+                        database.withTransaction {
+                            insert(playlist)
+                            songs.forEachIndexed { index, song ->
+                                insert(song)
+                                insert(
+                                    PlaylistSongMap(
+                                        playlistId = playlist.id,
+                                        songId = song.id,
+                                        position = index,
+                                        setVideoId = song.setVideoId,
+                                    ),
+                                )
                             }
-                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                        clearSelection()
+                        }
+
+                        withContext(Dispatchers.Main) {
+                            val message =
+                                if (songs.size == 1) {
+                                    context.getString(R.string.added_to_playlist, playlistName)
+                                } else {
+                                    context.getString(R.string.added_n_songs_to_playlist, songs.size, playlistName)
+                                }
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            clearSelection()
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, R.string.queue_save_failed, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             },
@@ -297,70 +307,40 @@ fun Queue(
         remember(currentWindowIndex, queueWindows) {
             queueWindows.getOrNull(currentWindowIndex)
         }
+    var queuePositionMs by remember { mutableStateOf(0L) }
+    LaunchedEffect(state.isCollapsed, currentWindowIndex, isPlaying) {
+        while (!state.isCollapsed && isActive) {
+            queuePositionMs = playerConnection.player.currentPosition.coerceAtLeast(0L)
+            delay(1_000L)
+        }
+    }
 
-    val onRemoveWithUndo: (Timeline.Window) -> Unit = { window ->
-        val index = window.firstPeriodIndex
-        playerConnection.player.removeMediaItem(index)
+    val showQueueUndo: (Long, Int, String?) -> Unit = { ticket, count, title ->
         dismissJob?.cancel()
         dismissJob =
             coroutineScope.launch {
                 val snackbarResult =
                     snackbarHostState.showSnackbar(
-                        message =
-                            context.getString(
-                                R.string.removed_song_from_queue,
-                                window.mediaItem.metadata?.title,
-                            ),
+                        message = if (count == 1) context.getString(R.string.removed_song_from_queue, title)
+                            else context.getString(R.string.removed_n_songs_from_queue, count),
                         actionLabel = context.getString(R.string.undo),
                         duration = SnackbarDuration.Short,
                     )
                 if (snackbarResult == SnackbarResult.ActionPerformed) {
-                    playerConnection.player.addMediaItem(window.mediaItem)
-                    playerConnection.player.moveMediaItem(
-                        playerConnection.player.mediaItemCount - 1,
-                        index,
-                    )
+                    playerConnection.service.undoQueueRemoval(ticket)
                 }
             }
     }
 
+    val onRemoveWithUndo: (Timeline.Window) -> Unit = { window ->
+        playerConnection.service.removeQueueItemsWithUndo(listOf(window))?.let {
+            showQueueUndo(it.ticket, it.count, window.mediaItem.metadata?.title)
+        }
+    }
+
     val onRemoveMultipleWithUndo: (List<Timeline.Window>) -> Unit = { windows ->
-        if (windows.isNotEmpty()) {
-            val sortedWindows = windows.sortedBy { it.firstPeriodIndex }
-            var i = 0
-            sortedWindows.forEach { window ->
-                playerConnection.player.removeMediaItem(window.firstPeriodIndex - i++)
-            }
-            dismissJob?.cancel()
-            dismissJob =
-                coroutineScope.launch {
-                    val snackbarResult =
-                        snackbarHostState.showSnackbar(
-                            message =
-                                if (windows.size == 1) {
-                                    context.getString(
-                                        R.string.removed_song_from_queue,
-                                        windows
-                                            .first()
-                                            .mediaItem.metadata
-                                            ?.title,
-                                    )
-                                } else {
-                                    context.getString(R.string.removed_n_songs_from_queue, windows.size)
-                                },
-                            actionLabel = context.getString(R.string.undo),
-                            duration = SnackbarDuration.Short,
-                        )
-                    if (snackbarResult == SnackbarResult.ActionPerformed) {
-                        sortedWindows.forEach { window ->
-                            playerConnection.player.addMediaItem(window.mediaItem)
-                            playerConnection.player.moveMediaItem(
-                                playerConnection.player.mediaItemCount - 1,
-                                window.firstPeriodIndex,
-                            )
-                        }
-                    }
-                }
+        playerConnection.service.removeQueueItemsWithUndo(windows)?.let {
+            showQueueUndo(it.ticket, it.count, windows.firstOrNull()?.mediaItem?.metadata?.title)
         }
     }
 
@@ -882,10 +862,16 @@ fun Queue(
                     liked = currentSongLiked,
                     isPlaying = isPlaying,
                     repeatMode = repeatMode,
-                    shuffleModeEnabled = playerConnection.player.shuffleModeEnabled,
+                    shuffleModeEnabled = shuffleModeEnabled,
                     locked = locked,
                     songCount = queueWindows.size,
                     queueDuration = queueLength,
+                    queueTitle = queueTitle,
+                    queueRemainingMs = queueWindows.drop(currentWindowIndex.coerceAtLeast(0)).takeIf { windows ->
+                        currentWindowIndex >= 0 && windows.all { (it.mediaItem.metadata?.duration ?: 0) > 0 }
+                    }?.let { windows ->
+                        (windows.sumOf { (it.mediaItem.metadata?.duration ?: 0) * 1_000L } - queuePositionMs).coerceAtLeast(0L)
+                    },
                     infiniteQueueEnabled = infiniteQueueEnabled,
                     infiniteQueueLoading = infiniteQueueLoading,
                     backgroundColor = backgroundColor,
@@ -915,24 +901,11 @@ fun Queue(
                         }
                     },
                     onClearQueueClick = {
-                        val windowsToRemove =
-                            if (currentWindowIndex in queueWindows.indices) {
-                                queueWindows.filterIndexed { index, _ -> index != currentWindowIndex }
-                            } else {
-                                emptyList()
-                            }
-
-                        if (windowsToRemove.isNotEmpty()) {
-                            onRemoveMultipleWithUndo(windowsToRemove)
-                            selection = false
-                            selectedSongs.clear()
-                            selectedItems.clear()
+                        infiniteQueueEnabled = false
+                        playerConnection.service.clearQueueWithUndo()?.let {
+                            showQueueUndo(it.ticket, it.count, null)
                         }
-
-                        if (infiniteQueueEnabled) {
-                            infiniteQueueEnabled = false
-                            playerConnection.service.onInfiniteQueueDisabled()
-                        }
+                        clearSelection()
                     },
                     onRepeatClick = { playerConnection.player.toggleRepeatMode() },
                     onShuffleClick = {
@@ -944,13 +917,18 @@ fun Queue(
                         locked = !locked
                     },
                     onInfiniteQueueClick = {
-                        val nextInfiniteQueueEnabled = !infiniteQueueEnabled
-                        infiniteQueueEnabled = nextInfiniteQueueEnabled
-                        if (nextInfiniteQueueEnabled) {
-                            playerConnection.service.onInfiniteQueueEnabled()
-                        } else {
-                            playerConnection.service.onInfiniteQueueDisabled()
-                        }
+                        val enabled = !infiniteQueueEnabled
+                        infiniteQueueEnabled = enabled
+                        if (!enabled) playerConnection.service.onInfiniteQueueDisabled()
+                    },
+                    onSaveQueueClick = {
+                        clearSelection()
+                        val songs = queueWindows.mapNotNull { it.mediaItem.metadata }
+                        queuePlaylistSnapshot = songs
+                        showCreateQueuePlaylistDialog = songs.isNotEmpty()
+                    },
+                    onJumpToCurrentClick = {
+                        scrollToCurrentRequested = true
                     },
                 )
 
