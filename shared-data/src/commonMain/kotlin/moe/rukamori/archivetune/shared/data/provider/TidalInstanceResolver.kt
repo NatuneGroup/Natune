@@ -578,8 +578,9 @@ class TidalInstanceResolver(
     }
 
     /**
-     * The candidate selection half of [resolveWithinAttempt], also used by the account path in
-     * `KtorTidalRepository` so signed-in manifests resolve against the same scored candidate list.
+     * The candidate selection half of [resolveWithinAttempt]. A numeric media id is the direct track;
+     * otherwise the scored search results plus any cached track. The signed-in path does not use this:
+     * it matches through its own bearer search, as the retained account resolver does.
      */
     internal suspend fun selectTracks(
         query: Query,
@@ -606,8 +607,6 @@ class TidalInstanceResolver(
                 cached?.let(::add)
             }.distinctBy { it.trackId }
         }
-
-    internal fun providerTrackOf(track: MatchedTrack): ProviderTrack = track.toProviderTrack()
 
     suspend fun invalidate(mediaId: String) {
         val prefix = "$mediaId::"
