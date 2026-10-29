@@ -48,7 +48,9 @@ fun LibraryScreen(
         headerActions()
         LazyColumn(Modifier.weight(1f), contentPadding = contentPadding) {
             if (filter == LibraryFilter.LIBRARY) mixHeader?.let { libraryMixHeader(it.state, it.actions, artwork) }
-            contentRows(state, actions, artwork)
+            if (filter != LibraryFilter.LIBRARY || mixHeader?.replacesRows != true) {
+                contentRows(state, actions, artwork)
+            }
         }
     }
 }
