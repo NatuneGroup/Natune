@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
+import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
@@ -65,6 +66,7 @@ import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
+import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
@@ -105,6 +107,7 @@ internal class IosSessionGraph private constructor(
     private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
+    private val progressDriver: PodcastProgressDriver,
     private val drivers: List<Job>,
     private val reportLine: (String) -> Unit,
 ) {
@@ -182,13 +185,14 @@ internal class IosSessionGraph private constructor(
         queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item
 
     /**
-     * Final shutdown. The open listen is finished first so its play time is kept, then the queue is checkpointed while
-     * the owner can still write, and only then are the database and the client released. The host's player, port and
-     * settings belong to the host, which closes them afterwards.
+     * Final shutdown. The open listen and podcast position are finished first so their play time and progress are kept,
+     * then the queue is checkpointed while the owner can still write, and only then are the database and the client
+     * released. The host's player, port and settings belong to the host, which closes them afterwards.
      */
     suspend fun close() = withContext(NonCancellable) {
         listenTogether.close()
         listenDriver.close()
+        progressDriver.close()
         lyrics.close()
         drivers.forEach { it.cancel() }
         checkpointNow(queue, reportLine)
@@ -325,6 +329,15 @@ internal class IosSessionGraph private constructor(
                 report = report,
                 nowMs = ::iosNowMillis,
             )
+            // Written from the same snapshots; close() flushes the open episode before the database is released.
+            val progressDriver = PodcastProgressDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                store = RoomPodcastProgressStore(database.podcastProgress()),
+                report = report,
+                nowMs = ::iosNowMillis,
+            )
             // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
             PodcastSponsorBlockDriver(
                 scope = scope,
@@ -425,6 +438,7 @@ internal class IosSessionGraph private constructor(
                 playbackPort = host.playbackPort,
                 database = database,
                 listenDriver = listenDriver,
+                progressDriver = progressDriver,
                 drivers = drivers,
                 reportLine = report,
             )
