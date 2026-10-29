@@ -73,9 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.constants.LibraryStyle
 import moe.rukamori.archivetune.ui.component.libraryStyle
-import moe.rukamori.archivetune.ui.component.rememberInterfaceStyle
 import moe.rukamori.archivetune.constants.HideSearchChromeWhileScrollingKey
-import moe.rukamori.archivetune.constants.InterfaceStyle
 import moe.rukamori.archivetune.constants.SearchBarPosition
 import moe.rukamori.archivetune.constants.SearchBarPositionKey
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -271,7 +269,6 @@ private fun appearanceThemeRows(
     val (darkMode, onDarkModeChange) = prefs.enumState(DarkModeKey, defaultValue = DarkMode.AUTO)
     val (liquidGlassEnabled, onLiquidGlassEnabledChange) =
         prefs.restartState(restartPrompt, LiquidGlassEnabledKey, defaultValue = false)
-    val (interfaceStyle, onInterfaceStyleChange) = rememberInterfaceStyle(prefs)
     val (pureBlack, onPureBlackChange) = prefs.state(PureBlackKey, defaultValue = false)
     val (disableBlur, onDisableBlurChange) = prefs.state(DisableBlurKey, defaultValue = false)
     val (disableAnimations, onDisableAnimationsChange) =
@@ -408,22 +405,7 @@ private fun appearanceThemeRows(
             modifier = positions.modifierFor("dynamic_theme"),
             title = themeTitle,
         ) {
-        item {
-            EnumListPreference(
-                modifier = positions.modifierFor("interface_style", "apple_music_experience"),
-                title = { Text(stringResource(R.string.interface_style)) },
-                description = stringResource(R.string.interface_style_desc),
-                icon = { Icon(painterResource(R.drawable.palette), null) },
-                selectedValue = interfaceStyle,
-                onValueSelected = onInterfaceStyleChange,
-                valueText = {
-                    when (it) {
-                        InterfaceStyle.MATERIAL_EXPRESSIVE -> stringResource(R.string.interface_style_material_expressive)
-                        InterfaceStyle.APPLE_MUSIC -> stringResource(R.string.apple_music_experience)
-                    }
-                },
-            )
-        }
+            independentAppleMusicPreferences(prefs, positions)
 
         item {
             SwitchPreference(
@@ -746,7 +728,6 @@ private fun appearancePlayerRows(
     val (liquidGlassEnabled) = prefs.state(LiquidGlassEnabledKey, defaultValue = false)
     val (disableBlur) = prefs.state(DisableBlurKey, defaultValue = false)
     val (libraryStyle, setLibraryStyle) = prefs.libraryStyle()
-    val (interfaceStyle) = rememberInterfaceStyle(prefs)
     val (albumCanvasEnabled, onAlbumCanvasEnabledChange) =
         prefs.state(AlbumCanvasEnabledKey, defaultValue = true)
     val (playerButtonsStyle, onPlayerButtonsStyleChange) =
@@ -1249,7 +1230,6 @@ private fun appearancePlayerRows(
                         CompactLayoutChoice.COMPACT -> stringResource(R.string.compact_layout)
                     }
                 },
-                isEnabled = interfaceStyle != InterfaceStyle.APPLE_MUSIC,
             )
         }
 

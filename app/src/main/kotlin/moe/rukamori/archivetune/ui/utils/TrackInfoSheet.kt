@@ -45,7 +45,7 @@ import kotlinx.coroutines.flow.flowOf
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicHeaders
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.playback.DecodedPcmFormat
 import moe.rukamori.archivetune.playback.AndroidAudioOutputFormat
@@ -86,7 +86,7 @@ fun TrackInfoAndSpecs(
     val reportedFormat by reportedFormatFlow.collectAsStateWithLifecycle(initialValue = null)
     val androidOutputFormat by androidOutputFlow.collectAsStateWithLifecycle(initialValue = null)
     val mediaInfo = rememberMediaInfo(trackId)
-    val (appleExperience) = rememberPreference(AppleMusicExperienceKey, defaultValue = false)
+    val appleExperience = rememberAppleMusicHeaders()
     var selectedTab by rememberSaveable(trackId) { mutableStateOf(TrackInfoTab.Overview) }
     val credits = remember(mediaInfo?.description, lyrics?.lyrics) {
         trackCreditsFromMetadata(mediaInfo?.description, lyrics?.lyrics)

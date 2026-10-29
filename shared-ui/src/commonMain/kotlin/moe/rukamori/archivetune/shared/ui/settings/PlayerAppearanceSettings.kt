@@ -31,7 +31,7 @@ fun playerAppearanceSettingsRows(
     navigate: (String) -> Unit,
     chooseHomeScreens: () -> Unit,
 ): List<SettingsRow> = buildList {
-    val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    val style = preferences.selectedPlayerDesignStyle()
     // Matches baseline PlayerDesignStyle and M5's published capabilities; Metrolist has native controls.
     val sharedControls = style in setOf(PlayerDesignStyle.V1, PlayerDesignStyle.V2, PlayerDesignStyle.V3,
         PlayerDesignStyle.V4, PlayerDesignStyle.V5, PlayerDesignStyle.V6, PlayerDesignStyle.V7, PlayerDesignStyle.V10)
@@ -92,8 +92,7 @@ fun playerAppearanceSettingsRows(
             this[MiniPlayerBackgroundStyleKey] =
                 if (it == "LIQUID_GLASS" && (!blurSupported || !this[LiquidGlassEnabledKey, false])) "THEME" else it
         }))
-    add(SettingsRow.Toggle("compact_mini_player", Res.string.m6_compact_player, CompactMiniPlayerKey, false,
-        enabled = preferences.interfaceStyle() != InterfaceStyle.APPLE_MUSIC))
+    add(SettingsRow.Toggle("compact_mini_player", Res.string.m6_compact_player, CompactMiniPlayerKey, false))
     add(SettingsRow.Toggle("hide_player_thumbnail", Res.string.m6_hide_thumbnail, HidePlayerThumbnailKey, false))
     add(SettingsRow.Decimal("thumbnail_corner_radius", Res.string.m6_thumbnail_radius, ThumbnailCornerRadiusKey, 16f, 0f..64f))
     add(SettingsRow.Toggle("crop_thumbnail_to_square", Res.string.m6_crop_square, CropThumbnailToSquareKey, false))

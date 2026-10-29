@@ -105,7 +105,7 @@ import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.WakelockKey
 
 @Composable
-private fun SearchResultSwitch(
+internal fun SearchResultSwitch(
     key: androidx.datastore.preferences.core.Preferences.Key<Boolean>,
     defaultValue: Boolean,
     blurOverridden: Boolean = false,
@@ -264,7 +264,7 @@ fun buildSettingsGroups(
                 SettingsChild("Theme creator", "theme_creator", listOf("theme creator", "create theme", "custom theme", "make theme")),
                 SettingsChild("Palette picker", "palette_picker", listOf("palette picker", "pick palette", "choose palette", "custom palette")),
                 SettingsChild("Extras", "extras", listOf("extras", "appearance extras", "home cards", "hide cards", "more appearance")),
-            ),
+            ) + independentAppleMusicSearchChildren(context),
         )
     // Appearance → Extras sub-page. Hidden from the main list (it is reached through
     // Appearance) but every toggle on it stays searchable.

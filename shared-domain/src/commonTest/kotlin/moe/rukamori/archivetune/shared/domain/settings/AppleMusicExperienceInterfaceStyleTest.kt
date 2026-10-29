@@ -6,9 +6,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Characterizes the Apple Music experience as one atomic edit. The experience switch, the library style and the player
- * style move together, and turning it off gives back only the player style the experience displaced, unless a style
- * was picked by hand while it was on.
+ * Presets remain atomic; individual choices never activate or lock the other surfaces.
  */
 class AppleMusicExperienceInterfaceStyleTest {
     @Test
@@ -114,20 +112,21 @@ class AppleMusicExperienceInterfaceStyleTest {
     }
 
     @Test
-    fun manualStyleWhileOnIsKeptAcrossReselectAndDisable() {
+    fun explicitlyReapplyingThePresetCoordinatesAMixedSelectionAndRemembersTheNewPlayer() {
         val editor = PreferenceSnapshot.of(PlayerDesignStyleKey to PlayerDesignStyle.SIMPMUSIC.name).toEditor()
         editor.applyInterfaceStyle(InterfaceStyle.APPLE_MUSIC)
         editor[PlayerDesignStyleKey] = PlayerDesignStyle.LOOPER.name
 
         editor.applyInterfaceStyle(InterfaceStyle.APPLE_MUSIC)
-        assertEquals(PlayerDesignStyle.LOOPER.name, editor[PlayerDesignStyleKey])
+        assertEquals(PlayerDesignStyle.APPLE_MUSIC.name, editor[PlayerDesignStyleKey])
+        assertEquals(PlayerDesignStyle.LOOPER.name, editor[StyleBeforeAppleMusicKey])
 
         editor.applyInterfaceStyle(InterfaceStyle.MATERIAL_EXPRESSIVE)
         assertEquals(PlayerDesignStyle.LOOPER.name, editor[PlayerDesignStyleKey])
     }
 
     @Test
-    fun interfaceStyleReadsTheExperienceSwitch() {
+    fun interfaceStyleUnderstandsAnUnmigratedLegacyExperience() {
         assertEquals(InterfaceStyle.MATERIAL_EXPRESSIVE, PreferenceSnapshot.EMPTY.interfaceStyle())
         assertEquals(
             InterfaceStyle.APPLE_MUSIC,
