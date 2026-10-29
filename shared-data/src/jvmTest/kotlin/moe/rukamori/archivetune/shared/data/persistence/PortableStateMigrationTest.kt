@@ -11,6 +11,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.repository.ContentKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
+import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataOverride
 
 /**
  * Rebuilds a database file from a committed schema export, seeds it, and opens it through Room so the
@@ -176,6 +183,58 @@ class PortableStateMigrationTest {
             }
         } finally {
             migrated.close()
+            Files.deleteIfExists(file)
+        }
+    }
+
+    @Test fun versionNineMigrationKeepsPodcastProgressAndRepeatedPlaylistSongs() = runBlocking<Unit> {
+        val file = Files.createTempFile("archivetune-v9", ".db")
+        val progress = PodcastProgress("youtube:episode", 12_000L, null, false, 11L)
+        val song = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, "song")
+        val edit = SongMetadataOverride("Edited title", listOf("Edited artist"), 13L)
+        try {
+            rebuildFromExport(9, file, listOf(
+                "INSERT INTO portable_playlist (id, title, tags, createdSeq, songSortType, songSortDescending) " +
+                    "VALUES ('keep-me', 'Seeded', '[]', 1, 'CUSTOM', 1)",
+                "INSERT INTO portable_podcast_progress (episodeId, positionMs, durationMs, finished, updatedAtMs) " +
+                    "VALUES ('youtube:episode', 12000, NULL, 0, 11)",
+            ) + (0..1).map { position ->
+                val json = ContentJson.encode(
+                    ContentOccurrence("occ-$position", ContentItem(song, "Provider title")),
+                ).toString()
+                "INSERT INTO portable_playlist_entry (playlistId, occurrenceId, position, json, addedSeq) " +
+                    "VALUES ('keep-me', 'occ-$position', $position, '$json', $position)"
+            })
+
+            val database = openPortableStateDatabase(file.toString())
+            try {
+                database.openNow()
+                assertEquals(progress, RoomPodcastProgressStore(database.podcastProgress()).read(progress.episodeId))
+                val entries = database.library().entries("keep-me", 10, 0).map {
+                    ContentJson.decode(Json.parseToJsonElement(it.json).jsonObject)
+                }
+                assertEquals(listOf("occ-0", "occ-1"), entries.map { it.occurrenceId })
+                assertEquals(listOf(song, song), entries.map { it.item.ref })
+                val metadata = RoomSongMetadataRepository(database.songMetadataOverrides())
+                assertTrue(metadata.overrides().isEmpty())
+                metadata.setOverride(song, edit)
+                assertEquals(mapOf(song to edit), metadata.overrides())
+            } finally {
+                database.close()
+            }
+
+            val reopened = openPortableStateDatabase(file.toString())
+            try {
+                assertEquals(progress, RoomPodcastProgressStore(reopened.podcastProgress()).read(progress.episodeId))
+                assertEquals(2, reopened.library().entries("keep-me", 10, 0).size)
+                assertEquals(
+                    mapOf(song to edit),
+                    RoomSongMetadataRepository(reopened.songMetadataOverrides()).overrides(),
+                )
+            } finally {
+                reopened.close()
+            }
+        } finally {
             Files.deleteIfExists(file)
         }
     }
