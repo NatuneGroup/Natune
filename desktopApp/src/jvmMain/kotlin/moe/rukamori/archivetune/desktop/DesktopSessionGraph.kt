@@ -52,6 +52,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepositor
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
+import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
@@ -107,6 +108,7 @@ import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
+import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
@@ -164,6 +166,7 @@ class DesktopSessionGraph private constructor(
     private val ordinarySettings: DesktopSettingsStore,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
+    private val progressDriver: PodcastProgressDriver,
     /** The one scrobbling owner: the signed Last.fm-compatible service, its pending queue and the playback driver. */
     internal val lastFm: DesktopLastFm,
     /** The one lyrics owner: the shared provider runtime following the player's current occurrence. */
@@ -333,12 +336,14 @@ class DesktopSessionGraph private constructor(
     }
 
     /**
-     * Final shutdown, after the window has stopped asking for work. The open listen is finished first so its play time
-     * is kept, then the queue is checkpointed while the owner can still write, and only then are the stores released.
+     * Final shutdown, after the window has stopped asking for work. The open listen and podcast position are finished
+     * first so their play time and progress are kept, then the queue is checkpointed while the owner can still write,
+     * and only then are the stores released.
      */
     suspend fun close() = withContext(NonCancellable) {
         listenTogether.close()
         listenDriver.close()
+        progressDriver.close()
         lastFm.close()
         lyricsSurface.close()
         japaneseLanguagePack?.close()
@@ -642,6 +647,14 @@ class DesktopSessionGraph private constructor(
                 preferences = vault.snapshots,
                 report = ::desktopDiagnostic,
             )
+            // Written from the same snapshots; close() flushes the open episode before the database is released.
+            val progressDriver = PodcastProgressDriver(
+                scope = scope,
+                player = player,
+                queue = queue.state,
+                store = RoomPodcastProgressStore(database.podcastProgress()),
+                report = ::desktopDiagnostic,
+            )
             // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
             PodcastSponsorBlockDriver(
                 scope = scope,
@@ -837,6 +850,7 @@ class DesktopSessionGraph private constructor(
                 ordinarySettings = ordinary,
                 database = database,
                 listenDriver = listenDriver,
+                progressDriver = progressDriver,
                 lastFm = lastFm,
                 lyrics = lyrics,
                 japaneseLanguagePack = pack,
