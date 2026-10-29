@@ -1675,6 +1675,9 @@ val SponsorBlockCategoriesKey = stringSetPreferencesKey("sponsor_block_categorie
 /** Origin of the SponsorBlock instance to ask; blank means the public one. */
 val SponsorBlockApiUrlKey = stringPreferencesKey("sponsor_block_api_url")
 
+/** Also skip marked segments in podcast episodes. Has effect only while [SponsorBlockEnabledKey] is on. */
+val SponsorBlockPodcastsEnabledKey = booleanPreferencesKey("sponsor_block_podcasts_enabled")
+
 
 /** The player design style [AppleMusicExperienceKey] displaced, so switching it off can restore it. */
 val StyleBeforeAppleMusicKey = stringPreferencesKey("style_before_apple_music")

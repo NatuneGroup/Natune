@@ -13,6 +13,7 @@ package moe.rukamori.archivetune.sponsorblock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import moe.rukamori.archivetune.extensions.metadata
+import moe.rukamori.archivetune.utils.isLocalMediaId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -104,12 +105,14 @@ class SponsorBlockPlaybackController
         private fun reload(mediaItem: MediaItem?) {
             segments = emptyList()
             skippedEndsMs.clear()
-            // Podcast episodes have no segments, on attach as much as on a transition.
-            if (mediaItem?.metadata?.isPodcast == true) return
             val id = mediaItem?.mediaId ?: return
+            // Local files are never looked up. Podcast episodes are looked up only when the user opted in,
+            // which the repository checks, so the controller never has to read preferences itself.
+            if (id.isLocalMediaId()) return
+            val podcast = mediaItem?.metadata?.isPodcast == true
             val scope = scope ?: return
             scope.launch {
-                val loaded = repository.segments(id)
+                val loaded = repository.segments(id, podcast = podcast)
                 // The track may have moved on while the lookup was in flight.
                 if (withContext(Dispatchers.Main) { player?.currentMediaItem?.mediaId } == id) {
                     segments = loaded
