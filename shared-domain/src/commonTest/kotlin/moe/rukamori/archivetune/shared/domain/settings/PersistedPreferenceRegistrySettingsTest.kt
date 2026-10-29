@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 class PersistedPreferenceRegistrySettingsTest {
     @Test
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
-        assertEquals(628, PersistedPreferenceKeys.size)
+        assertEquals(629, PersistedPreferenceKeys.size)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
     }
 
@@ -60,6 +60,8 @@ class PersistedPreferenceRegistrySettingsTest {
         assertEquals("library_source", LibrarySourceKey.name)
         assertEquals("libraryChipOrder", LibraryChipOrderKey.name)
         assertEquals("chipSortType", ChipSortTypeKey.name)
+        assertEquals("nativeIosInterface", NativeIosInterfaceKey.name)
+        assertEquals(PreferenceKind.BOOLEAN, NativeIosInterfaceKey.kind)
     }
 
     @Test
@@ -103,6 +105,7 @@ class PersistedPreferenceRegistrySettingsTest {
                 ChipSortTypeKey,
                 LibraryChipOrderKey,
                 LibrarySourceKey,
+                NativeIosInterfaceKey,
             )
 
         for (key in policyKeys) {

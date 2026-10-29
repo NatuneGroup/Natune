@@ -163,6 +163,7 @@ internal fun iosHostBindings(
         // The iOS root has no screen beneath it, so back at the root has nothing to pop.
         onBackAtRoot = { },
         podcastProgress = graph.podcastProgress.observeAll(),
+        nativeChrome = host.nativeChrome.shell,
     )
 }
 

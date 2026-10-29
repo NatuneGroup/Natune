@@ -53,6 +53,8 @@ class ArchiveTuneHostBindings(
     val onBackAtRoot: () -> Unit,
     val podcastProgress: Flow<List<PodcastProgress>> = flowOf(emptyList()),
     val songMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository? = null,
+    /** A tab bar and mini player the platform draws above the root, or null where the shell draws its own. */
+    val nativeChrome: NativeShellChrome? = null,
 )
 
 /** Host lifecycle is an input: losing UI visibility never pauses background audio. */
@@ -113,6 +115,11 @@ private fun ArchiveTuneLoadedRoot(
                 if (ArchiveRoutes.resolve(route) != null) navigation.open(route) else host.onFailure()
             }
         }
+        host.nativeChrome?.let { chrome ->
+            NativeChromeLink(chrome, navigation, current, playback?.playWhenReady == true, expanded,
+                expand = { expanded = true },
+                togglePlayback = { playing -> if (playing) host.queue.player.pause() else host.queue.player.play() })
+        }
         LaunchedEffect(host, navigation, interaction) {
             host.backRequests.collect {
                 when {
@@ -145,6 +152,7 @@ private fun ArchiveTuneLoadedRoot(
                     ArchiveTuneShell(navigation, preferences,
                         onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
                         television = television, contentModifier = pageSource,
+                        nativeChrome = host.nativeChrome,
                         miniPlayer = {
                             if (current != null) Row(
                                 Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { expanded = true }.padding(horizontal = 16.dp),
@@ -186,6 +194,50 @@ private fun ArchiveTuneLoadedRoot(
                 }
             }
         }
+}
+
+/**
+ * Mirrors the root's tab, song and player state to the platform chrome and applies its requests here, so
+ * [ShellNavigation] and the root's expanded state keep their single owners. The chrome hides while the player is open.
+ */
+@Composable
+private fun NativeChromeLink(
+    chrome: NativeShellChrome,
+    navigation: ShellNavigation,
+    current: ContentOccurrence?,
+    playing: Boolean,
+    expanded: Boolean,
+    expand: () -> Unit,
+    togglePlayback: (playing: Boolean) -> Unit,
+) {
+    val labels = NativeShellLabels(
+        home = stringResource(Res.string.m4_home),
+        search = stringResource(Res.string.m4_search),
+        library = stringResource(Res.string.m4_library),
+        play = stringResource(Res.string.integration_play),
+        pause = stringResource(Res.string.integration_pause),
+        expand = stringResource(Res.string.native_chrome_open_player),
+    )
+    val nowPlaying = current?.let {
+        NativeNowPlaying(it.occurrenceId, it.item.title, it.item.subtitle, it.item.artworkUri, playing)
+    }
+    val state = NativeShellState(visible = !expanded, selectedTab = navigation.selectedTab, nowPlaying = nowPlaying,
+        labels = labels)
+    SideEffect { chrome.publish(state) }
+    DisposableEffect(chrome) { onDispose { chrome.publish(NativeShellState()) } }
+    val latestCurrent by rememberUpdatedState(current)
+    val latestPlaying by rememberUpdatedState(playing)
+    val latestExpand by rememberUpdatedState(expand)
+    val latestToggle by rememberUpdatedState(togglePlayback)
+    LaunchedEffect(chrome, navigation) {
+        chrome.commands.collect { command ->
+            when (command) {
+                is NativeShellCommand.SelectTab -> navigation.select(command.tab)
+                NativeShellCommand.ExpandPlayer -> if (latestCurrent != null) latestExpand()
+                NativeShellCommand.TogglePlayback -> if (latestCurrent != null) latestToggle(latestPlaying)
+            }
+        }
+    }
 }
 
 /**
