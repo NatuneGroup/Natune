@@ -17,7 +17,7 @@ python3 scripts/update_toolchain_docs.py
 | Android Gradle plugin | `9.2.1` |
 | Kotlin | `2.4.21` |
 | Android compile SDK | `37` |
-| Android minimum SDK | `26` |
+| Android minimum SDK | `24` |
 | Android target SDK | `37` |
 | NDK | `30.0.16248370` |
 
