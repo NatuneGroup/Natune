@@ -514,7 +514,9 @@ tasks.matching { it.name == "packageRpm" }.configureEach {
 // createDistributable itself — not a finalizedBy, which Gradle may run concurrently with packageDeb/packageRpm — so
 // the .deb, the .rpm rebuilt from this same image and the raw app image all carry the handler.
 tasks.matching { it.name == "createDistributable" }.configureEach {
+    // Only jpackage's Linux image carries a .desktop entry; macOS and Windows images have nothing to patch.
     doLast {
+        if (!hostIsLinux) return@doLast
         val appImage = layout.buildDirectory.dir("compose/binaries/main/app/$desktopPackageName").get().asFile
         val desktopEntries = appImage.walkTopDown().filter { it.isFile && it.extension == "desktop" }.toList()
         check(desktopEntries.isNotEmpty()) { "createDistributable wrote no .desktop entry under $appImage" }

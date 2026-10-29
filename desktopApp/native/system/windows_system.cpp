@@ -23,7 +23,8 @@
 
 using namespace winrt;
 using namespace Windows::Media;
-using namespace Windows::Foundation;
+// A namespace-wide using would put winrt's IUnknown beside COM's and make IID_PPV_ARGS ambiguous.
+using winrt::Windows::Foundation::TimeSpan;
 constexpr UINT WM_UPDATE_MEDIA = WM_APP + 20;
 constexpr UINT WM_TRAY_EVENT = WM_APP + 21;
 constexpr UINT WM_UPDATE_ARTWORK = WM_APP + 22;
