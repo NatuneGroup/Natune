@@ -106,6 +106,7 @@ import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSByteCountFormatter
+import platform.Foundation.NSByteCountFormatterCountStyleFile
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
@@ -343,7 +344,7 @@ private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
     "settings/integration", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
-    "settings/lyrics/romanisation", "settings/ai_integration", "settings/about",
+    "settings/lyrics/romanisation", "settings/ai_integration", "settings/about", IosListenTogetherSettingsRoute,
 ) + IOS_GENERAL_SETTINGS_ROUTES
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
@@ -492,6 +493,14 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 onPoolAccountsChanged = { enabled -> owners.onPoolAccountsChanged(enabled) },
                 onOpenCrossServiceImport = { show(featureUnavailable) },
                 onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            IosListenTogetherSettingsRoute -> IosListenTogetherSettingsPage(
+                owner = owners.graph.listenTogether,
+                controller = owners.controller,
+                onNotice = onNotice,
+                onFailure = onFailure,
+                unavailable = { show(featureUnavailable) },
                 scrollTo = scrollTo,
             )
             "settings/misc" -> IosDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
@@ -713,4 +722,4 @@ private fun IosLanguagePackSettingsPage(host: IosHost, controller: SettingsContr
 }
 
 /** The platform's locale-aware byte count, so the pack sizes read the way the rest of the system shows them. */
-private fun iosByteCountSize(bytes: Long): String = NSByteCountFormatter.stringFromByteCount(bytes)
+private fun iosByteCountSize(bytes: Long): String = NSByteCountFormatter.stringFromByteCount(bytes, NSByteCountFormatterCountStyleFile)
