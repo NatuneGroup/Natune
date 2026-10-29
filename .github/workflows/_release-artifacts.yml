@@ -97,7 +97,8 @@ jobs:
     runs-on: blacksmith-8vcpu-ubuntu-2404
     if: inputs.build_android
     permissions:
-      contents: read
+      # Write only for the staging prerelease that carries the APK when artifact storage is full.
+      contents: write
     outputs:
       signing_status: ${{ steps.sign-apk.outputs.signing_status }}
     strategy:
@@ -250,19 +251,49 @@ jobs:
           echo "signing_status=signed" >> "$GITHUB_OUTPUT"
 
       - name: Upload Android APK
+        id: upload-apk
         uses: actions/upload-artifact@v7
+        # Artifact storage is metered per organization and can be exhausted independently of this
+        # build; the APK is then handed over through a release, whose assets are metered separately.
+        continue-on-error: true
         with:
           name: android-${{ inputs.channel }}-${{ matrix.variant }}
           path: release-assets/${{ steps.variant.outputs.apk_name }}
           if-no-files-found: error
           retention-days: 3
 
+      - name: Publish Android APK to a staging release when artifact upload fails
+        if: steps.upload-apk.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APK_NAME: ${{ steps.variant.outputs.apk_name }}
+          VARIANT: ${{ matrix.variant }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-android-${VARIANT}"
+          echo "::warning::Workflow-artifact upload failed; handing $APK_NAME over through release $STAGING_TAG."
+          # The tag carries the variant, so the parallel matrix legs never race on one release.
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Staging hand-off: $CHANNEL android $VARIANT (run $GITHUB_RUN_ID)" \
+              --notes "Temporary release-asset hand-off for workflow run $GITHUB_RUN_ID; removed once the $CHANNEL release is published."
+          fi
+          gh release upload "$STAGING_TAG" "release-assets/$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+
   desktop:
     name: Desktop ${{ matrix.platform }}-${{ matrix.arch }}
     if: inputs.build_desktop
     runs-on: ${{ matrix.runner }}
     permissions:
-      contents: read
+      # Write only for the staging prerelease that carries the installers when artifact storage is full.
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -615,19 +646,46 @@ jobs:
           cp "${DMGS[0]}" "release-assets/natune-desktop-macos-${ARCH}-${DISPLAY_VERSION}.dmg"
 
       - name: Upload desktop artifacts
+        id: upload-desktop
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: desktop-${{ inputs.channel }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: release-assets/*
           if-no-files-found: error
           retention-days: 3
 
+      - name: Publish desktop installers to a staging release when artifact upload fails
+        if: steps.upload-desktop.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-desktop-${PLATFORM}-${ARCH}"
+          echo "::warning::Workflow-artifact upload failed; handing the $PLATFORM-$ARCH installers over through release $STAGING_TAG."
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Staging hand-off: $CHANNEL desktop $PLATFORM-$ARCH (run $GITHUB_RUN_ID)" \
+              --notes "Temporary release-asset hand-off for workflow run $GITHUB_RUN_ID; removed once the $CHANNEL release is published."
+          fi
+          gh release upload "$STAGING_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+
   ios:
     name: Unsigned iOS IPA
     runs-on: blacksmith-6vcpu-macos-latest
     if: inputs.build_ios
     permissions:
-      contents: read
+      # Write only for the staging prerelease that carries the IPA when artifact storage is full.
+      contents: write
     env:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       PACKAGE_VERSION: ${{ inputs.package_version }}
@@ -724,12 +782,38 @@ jobs:
           )
 
       - name: Upload unsigned iOS IPA
+        id: upload-ipa
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: ios-${{ inputs.channel }}
           path: release-assets/natune-ios-${{ inputs.version_name }}.ipa
           if-no-files-found: error
           retention-days: 3
+
+      - name: Publish unsigned iOS IPA to a staging release when artifact upload fails
+        if: steps.upload-ipa.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-ios"
+          echo "::warning::Workflow-artifact upload failed; handing the iOS IPA over through release $STAGING_TAG."
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Staging hand-off: $CHANNEL ios (run $GITHUB_RUN_ID)" \
+              --notes "Temporary release-asset hand-off for workflow run $GITHUB_RUN_ID; removed once the $CHANNEL release is published."
+          fi
+          gh release upload "$STAGING_TAG" "release-assets/natune-ios-${VERSION_NAME}.ipa" \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
   publish-release:
     name: Publish ${{ inputs.channel }} release
@@ -755,10 +839,42 @@ jobs:
           persist-credentials: false
 
       - name: Download build artifacts
+        id: download-build-artifacts
         uses: actions/download-artifact@v8
+        # A full artifact quota fails this download as well; the staging releases hold the same sets.
+        continue-on-error: true
         with:
           pattern: "{android,desktop,ios}-${{ inputs.channel }}*"
           path: downloaded-artifacts
+          merge-multiple: true
+
+      - name: Restore the staging release hand-off
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACTS_OUTCOME: ${{ steps.download-build-artifacts.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p downloaded-artifacts
+          mapfile -t STAGING_TAGS < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/staging-${GITHUB_RUN_ID}-" \
+              --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' || true
+          )
+          if [[ "${#STAGING_TAGS[@]}" -eq 0 ]]; then
+            if [[ "$ARTIFACTS_OUTCOME" == "success" ]]; then
+              echo "Workflow artifacts are complete; run $GITHUB_RUN_ID left no staging release hand-off."
+              exit 0
+            fi
+            echo "::error::Neither workflow artifacts nor staging release assets are available for run $GITHUB_RUN_ID."
+            exit 1
+          fi
+          # Release assets are metered separately from artifact storage, so a leg whose artifact
+          # upload hit the quota is restored from its staging release. Existing files are kept as
+          # they arrived and only overwritten by an identical hand-off.
+          for STAGING_TAG in "${STAGING_TAGS[@]}"; do
+            echo "Restoring release assets from $STAGING_TAG."
+            gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-artifacts --clobber
+          done
 
       - name: Create release and update-feed manifest
         id: publish
@@ -887,13 +1003,62 @@ jobs:
           echo "did_publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload update-feed manifest for the next job
+        id: upload-update-feed
         if: steps.publish.outputs.did_publish == 'true'
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: update-feed-${{ inputs.channel }}
           path: ${{ inputs.channel }}.json
           if-no-files-found: error
           retention-days: 3
+
+      - name: Publish update-feed manifest to a staging release when artifact upload fails
+        if: steps.publish.outputs.did_publish == 'true' && steps.upload-update-feed.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANIFEST: ${{ inputs.channel }}.json
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-update-feed"
+          echo "::warning::Workflow-artifact upload failed; handing $MANIFEST over through release $STAGING_TAG."
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGING_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Staging hand-off: $CHANNEL update-feed (run $GITHUB_RUN_ID)" \
+              --notes "Temporary release-asset hand-off for workflow run $GITHUB_RUN_ID; removed once the $CHANNEL update-feed manifest is published."
+          fi
+          gh release upload "$STAGING_TAG" "$MANIFEST" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Delete the staging release hand-off
+        if: steps.publish.outputs.did_publish == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t STAGING_TAGS < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/staging-${GITHUB_RUN_ID}-" \
+              --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' || true
+          )
+          for STAGING_TAG in "${STAGING_TAGS[@]}"; do
+            # publish-update-feed still reads the manifest from its own staging release.
+            if [[ "$STAGING_TAG" == *-update-feed ]]; then
+              continue
+            fi
+            if gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
+              echo "Deleted staging release $STAGING_TAG."
+            else
+              echo "::warning::Could not delete staging release $STAGING_TAG; it stays prerelease-only."
+            fi
+          done
 
   publish-update-feed:
     name: Publish ${{ inputs.channel }} update-feed manifest
@@ -907,10 +1072,32 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Download update-feed manifest
+        id: download-update-feed
         uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
           name: update-feed-${{ inputs.channel }}
           path: feed-artifact
+
+      - name: Restore the update-feed manifest from its staging release
+        if: steps.download-update-feed.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANIFEST: ${{ inputs.channel }}.json
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-update-feed"
+          if ! gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Neither the workflow artifact nor staging release $STAGING_TAG holds the $MANIFEST manifest."
+            exit 1
+          fi
+          mkdir -p feed-artifact
+          gh release download "$STAGING_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir feed-artifact \
+            --pattern "$MANIFEST" \
+            --clobber
 
       - name: Publish current manifest to the fixed update-feed release
         shell: bash
@@ -962,3 +1149,16 @@ jobs:
           gh release upload update-feed "feed-artifact/${CHANNEL}.json" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+      - name: Delete the staging update-feed hand-off
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          STAGING_TAG="staging-${GITHUB_RUN_ID}-update-feed"
+          if gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes ||
+              echo "::warning::Could not delete staging release $STAGING_TAG."
+          fi
