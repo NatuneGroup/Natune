@@ -10,6 +10,7 @@ package moe.rukamori.archivetune.ui.utils
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -117,5 +118,9 @@ private fun softwarePixels(source: Bitmap): Bitmap? =
     if (source.config == Bitmap.Config.ARGB_8888) {
         source
     } else {
-        source.copy(Bitmap.Config.ARGB_8888, source.config != Bitmap.Config.HARDWARE)
+        source.copy(Bitmap.Config.ARGB_8888, !source.isHardwareConfig())
     }
+
+// Bitmap.Config.HARDWARE is API 26; no bitmap on an older device can carry that config.
+private fun Bitmap.isHardwareConfig(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && config == Bitmap.Config.HARDWARE
