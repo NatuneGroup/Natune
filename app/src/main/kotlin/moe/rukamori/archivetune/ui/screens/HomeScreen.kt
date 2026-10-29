@@ -427,8 +427,8 @@ private fun HomeContent(
                                     items(heroSongs, key = { "hero_${it.id}" }) { song ->
                                         BitChordHeroCard(
                                             artworkUrl = song.thumbnailUrl,
-                                            title = song.song.title,
-                                            subtitle = song.artists.joinToString { it.name },
+                                            title = song.effectiveTitle,
+                                            subtitle = song.effectiveArtistNames.joinToString(),
                                             isCurrent = mediaMetadata?.id == song.id,
                                             isPlaying = isPlaying,
                                             modifier = Modifier.width(bitChordHeroCardWidth(availableWidth)),
@@ -693,8 +693,8 @@ private fun BitChordSongShelf(
             items(distinct, key = { "song_${it.id}" }) { song ->
                 BitChordShelfCard(
                     artworkUrl = song.thumbnailUrl,
-                    title = song.song.title,
-                    subtitle = song.artists.joinToString { it.name },
+                    title = song.effectiveTitle,
+                    subtitle = song.effectiveArtistNames.joinToString(),
                     isCurrent = mediaMetadata?.id == song.id,
                     isPlaying = isPlaying,
                     onClick = {
@@ -744,7 +744,7 @@ private fun BitChordLocalItemShelf(
                 val isActive = mediaMetadata?.id == localItem.id
                 BitChordShelfCard(
                     artworkUrl = localItem.thumbnailUrl,
-                    title = localItem.title,
+                    title = if (localItem is Song) localItem.effectiveTitle else localItem.title,
                     subtitle =
                         when (localItem) {
                             is Song -> localItem.artists.joinToString { it.name }

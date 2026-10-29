@@ -491,14 +491,14 @@ fun LibraryMixScreen(
                                         }
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
-                                            text = song.song.title,
+                                            text = song.effectiveTitle,
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             color = MaterialTheme.colorScheme.onBackground,
                                         )
                                         Text(
-                                            text = song.artists.joinToString(", ") { it.name },
+                                            text = song.effectiveArtistNames.joinToString(", "),
                                             style = MaterialTheme.typography.bodySmall,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
