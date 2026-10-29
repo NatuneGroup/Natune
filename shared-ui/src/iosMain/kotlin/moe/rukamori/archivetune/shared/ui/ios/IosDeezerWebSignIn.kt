@@ -31,7 +31,7 @@ private val DEEZER_LOGIN_ORIGINS = setOf(
  * sheet behind the cookie-only port. The `arl` cookie is read only after the user taps Done, and the
  * verify + commit run through the same lifecycle the pasted-arl path uses.
  */
-class IosDeezerWebSignIn(private val graph: IosSessionGraph, private val browser: IosCookieOnlyBrowserAuth) {
+internal class IosDeezerWebSignIn(private val graph: IosSessionGraph, private val browser: IosCookieOnlyBrowserAuth) {
     private var generation = 0L
     val state = MutableStateFlow<ProviderSignInState>(ProviderSignInState.Idle)
 

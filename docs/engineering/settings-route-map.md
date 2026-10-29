@@ -44,27 +44,27 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/discord` | ✓ | — | — | |
 | `settings/discord/experimental` | ✓ | ✓ | ✓ | |
 | `settings/integration` | ✓ | ✓ | ✓ | pool/Spotify unconfigured → honest states |
-| `settings/integrations/listen_together` | ✓ | ✓ | — | desktop mounts |
+| `settings/integrations/listen_together` | ✓ | ✓ | ✓ | iOS: one owner over the session graph; custom member picture reports unavailable |
 | `settings/tidal` | ✓ | ✓ | ✓ | |
-| `settings/tidal/login` | ✓ | — | — | |
-| `settings/qobuz` | ✓ | — | — | |
-| `settings/qobuz/login` | ✓ | — | — | |
+| `settings/tidal/login` | ✓ | — | ✓ | iOS: mounted web sign-in page; reports unavailable without the `ARCHIVETUNE_*` TIDAL client settings |
+| `settings/qobuz` | ✓ | — | ✓ | iOS: mounted; token and instance health checks |
+| `settings/qobuz/login` | ✓ | — | ✓ | iOS: mounted; token verification and web-player secret candidates |
 | `settings/deezer` | ✓ | ✓ | ✓ | |
-| `settings/deezer/login` | ✓ | — | — | |
+| `settings/deezer/login` | ✓ | — | ✓ | iOS: mounted Deezer web sign-in page |
 | `settings/amazon` | ✓ | — | — | |
 | `settings/jiosaavn` | ✓ | — | — | |
 | `settings/qqmusic` | ✓ | ✓ | — | desktop mounts |
 | `settings/spotify_streaming` | ✓ | ✓ | — | desktop mounts |
 | `settings/applemusic` + `/login` | ✓ | — | — | |
-| `settings/telegram` | ✓ | ✓ | ✓ | iOS: one TDLib session page |
-| `settings/telegram/login` `/browse` `/bots` `/chat/{id}` | ✓ | login | — | desktop mounts login only |
+| `settings/telegram` | ✓ | ✓ | ✓ | iOS: one TDLib session page; the unbound boundary until the session exists |
+| `settings/telegram/login` `/browse` `/bots` `/chat/{id}` | ✓ | login | browse, bots | desktop mounts login only; iOS mounts browse and bots while the session exists, and login and bot chat stay on the boundary |
 | `settings/ai_integration` | ✓ | — | ✓ | real KtorAiTextService; "not configured" without provider |
 | `settings/lastfm` | ✓ | ✓ | — | desktop mounts (+dashboard route) |
 | `settings/lastfm/login` `/librefm-login` | ✓ | — | — | |
 | `settings/lastfm/dashboard` | ✓ | ✓ | — | desktop mounts |
 | `settings/misc` (developer) | ✓ | ✓ | ✓ | acoustic/discord-debug/nerd-stats sections unavailable on iOS |
 | `settings/logcat` | ✓ | ✓ | ✓ | DiagnosticLogScreen on all three |
-| `settings/update` | ✓ | — | — | no updater on desktop/iOS |
+| `settings/update` | ✓ | — | ✓ | no updater on desktop; iOS mounts the page with checks reported unavailable |
 | `settings/changelog?channel=` | ✓ | — | — | |
 | `settings/about` | ✓ | ✓ | ✓ | iOS: real GitHub contributors/translations fetch |
 | `settings/po_token` | ✓ | — | — | YouTube-only |

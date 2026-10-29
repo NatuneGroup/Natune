@@ -28,6 +28,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
+import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
@@ -96,6 +97,8 @@ internal class IosSessionGraph private constructor(
     val customArtwork: FileCustomArtworkRepository,
     val playbackPool: IosPlaybackPool,
     val artworkLoader: IosArtworkLoader,
+    /** The room, chat and settings owner over the one Listen Together engine, started and closed with the graph. */
+    val listenTogether: IosListenTogetherOwner,
     private val owner: PortableQueueOwner,
     private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
@@ -182,6 +185,7 @@ internal class IosSessionGraph private constructor(
      * settings belong to the host, which closes them afterwards.
      */
     suspend fun close() = withContext(NonCancellable) {
+        listenTogether.close()
         listenDriver.close()
         lyrics.close()
         drivers.forEach { it.cancel() }
@@ -289,12 +293,14 @@ internal class IosSessionGraph private constructor(
                 port = host.playbackPort,
                 preferences = { vault.snapshots.value },
             )
+            // One typed router serves the queue's resolution and the chat song picker, so both search the same sources.
+            val contentRouter = ContentRepositoryRouter(
+                listOf(TypedRoomLibraryRepository(library), YouTubeContentRepository(youtubeTransport, youtubeAccount)),
+            )
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
-                content = ContentRepositoryRouter(
-                    listOf(TypedRoomLibraryRepository(library), YouTubeContentRepository(youtubeTransport, youtubeAccount))
-                ),
+                content = contentRouter,
                 locators = locators,
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { iosRepeatMode(vault.snapshots.value) },
@@ -371,6 +377,22 @@ internal class IosSessionGraph private constructor(
                     }
                 },
             )
+            val listenTogether = IosListenTogetherOwner(
+                scope = scope,
+                settings = vault,
+                queue = queue,
+                content = contentRouter,
+                report = report,
+                engine = IosListenTogether(
+                    parentScope = scope,
+                    settings = vault,
+                    player = player,
+                    queue = queue,
+                    // The same finite clamp as the desktop host, before the one playback port.
+                    setVolume = { level -> if (level.isFinite()) host.playbackPort.setVolume(level.coerceIn(0f, 1f)) },
+                    report = report,
+                ),
+            )
             val graph = IosSessionGraph(
                 scope = scope,
                 settings = vault,
@@ -388,6 +410,7 @@ internal class IosSessionGraph private constructor(
                 customArtwork = FileCustomArtworkRepository(IosCustomArtworkFiles(), nowMillis = ::iosNowMillis),
                 playbackPool = playbackPool,
                 artworkLoader = IosArtworkLoader(http),
+                listenTogether = listenTogether,
                 owner = owner,
                 playbackPort = host.playbackPort,
                 database = database,
@@ -397,6 +420,7 @@ internal class IosSessionGraph private constructor(
             )
             lyrics.start()
             playbackPool.start()
+            listenTogether.start()
             return graph
         }
     }
