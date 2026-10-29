@@ -20,6 +20,11 @@ import moe.rukamori.archivetune.shared.domain.playlist.StoredPlaylistRow
 import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportLibrary
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
+import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataOverride
+import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository
+import moe.rukamori.archivetune.shared.domain.songmetadata.matchesSongSearch
+import moe.rukamori.archivetune.shared.domain.songmetadata.withSongMetadataOverride
+import moe.rukamori.archivetune.shared.domain.songmetadata.withSongMetadataOverrides
 
 /**
  * Local portable library only. Remote playlist adapters must commit remote removal before local removal. [listens] is
@@ -33,9 +38,18 @@ class RoomLibraryRepository(
     private val listens: ListeningEventDao? = null,
     private val storedSongs: PortableStoredSongDao? = null,
     private val albumTracks: PortableAlbumTrackDao? = null,
+    val songMetadata: SongMetadataRepository? = null,
 ) : PlaylistImportLibrary {
     init { require(pageSize in 1..1000) }
     suspend fun saveItems(items: List<ContentItem>) = dao.saveItems(items)
+    private fun metadataEdits(): Flow<Map<ContentRef, SongMetadataOverride>> =
+        songMetadata?.observeOverrides() ?: flowOf(emptyMap())
+
+    private suspend fun effective(item: ContentItem): ContentItem =
+        item.withSongMetadataOverride(songMetadata?.overrides()?.get(item.ref))
+
+    private fun effectivePages(pages: Flow<ContentPage>): Flow<ContentPage> =
+        combine(pages, metadataEdits()) { page, edits -> page.withSongMetadataOverrides(edits) }
     /** Deletes the local playlist [id], its songs list and its tags. An unknown id throws and changes nothing. */
     suspend fun deletePlaylist(id: String) = dao.deletePlaylist(id)
     suspend fun createPlaylist(id: String, title: String) {
@@ -102,13 +116,14 @@ class RoomLibraryRepository(
             dao.observeEntries(playlistId),
             playTimeTotals(),
             blocked,
-        ) { rows, entries, totals, blockedSet ->
+            metadataEdits(),
+        ) { rows, entries, totals, blockedSet, edits ->
             val row = rows.firstOrNull()
             if (row == null) {
                 ContentPage(emptyList())
             } else {
                 val stored = entries
-                    .map { StoredPlaylistRow(decode(it.json), it.position, it.addedSeq) }
+                    .map { StoredPlaylistRow(decode(it.json).withSongMetadataOverrides(edits), it.position, it.addedSeq) }
                     .filterNot { it.occurrence.item.hasBlockedArtist(blockedSet) }
                 PlaylistSongOrder.ordered(stored, row.songSort(), collation, totals)
                     ?.let { ContentPage(it.map(StoredPlaylistRow::occurrence)) }
@@ -306,19 +321,21 @@ class RoomLibraryRepository(
         } else {
             flowOf(emptyList<PortableStoredSongRow>())
         }
+        val blockedAndEdits = combine(blocked, metadataEdits()) { blocks, edits -> blocks to edits }
         return combine(
             index.observeListed(origin),
             downloads,
             dao.observeSongRows(false),
             playTimeTotals(),
-            blocked,
-        ) { stored, downloaded, saved, totals, blockedSet ->
+            blockedAndEdits,
+        ) { stored, downloaded, saved, totals, (blockedSet, edits) ->
             val downloadedSongs = downloaded.mapTo(HashSet()) { storedRef(it) }
             val artwork = artworkOf(saved)
             val songs = stored
                 .filterNot { origin == StoredSongOrigin.CACHE && storedRef(it) in downloadedSongs }
                 .mapNotNull { row ->
                     val occurrence = decode(row.json).let { it.copy(item = it.item.withArtwork(artwork)) }
+                        .withSongMetadataOverrides(edits)
                     if (occurrence.item.hasBlockedArtist(blockedSet)) null else LibrarySong(occurrence, row.storedAtMs)
                 }
             orderedSongs(songs, sort, collation, totals)?.let { ContentPage(it.map(LibrarySong::occurrence)) }
@@ -356,9 +373,9 @@ class RoomLibraryRepository(
         collation: Comparator<String>,
         blocked: Flow<Set<ContentRef>>,
     ): Flow<ContentPage?> =
-        combine(dao.observeSongRows(liked), playTimeTotals(), blocked) { rows, totals, blockedSet ->
+        combine(dao.observeSongRows(liked), playTimeTotals(), blocked, metadataEdits()) { rows, totals, blockedSet, edits ->
             val songs = rows.mapNotNull { row ->
-                val occurrence = decode(row.json)
+                val occurrence = decode(row.json).withSongMetadataOverrides(edits)
                 if (occurrence.item.hasBlockedArtist(blockedSet)) {
                     null
                 } else {
@@ -405,7 +422,7 @@ class RoomLibraryRepository(
         LibrarySortState(songSortType.toEnum(PlaylistSongSortType.CUSTOM), songSortDescending)
 
     override suspend fun findSong(mediaId: String, provider: String?): ContentItem? =
-        dao.songByMediaId(mediaId, provider)?.let { decode(it.json).item }
+        dao.songByMediaId(mediaId, provider)?.let { effective(decode(it.json).item) }
 
     override suspend fun createImportedPlaylist(id: String, title: String, occurrences: List<ContentOccurrence>, tags: Set<String>) {
         require(id.isNotBlank() && title.isNotBlank())
@@ -421,7 +438,7 @@ class RoomLibraryRepository(
     override suspend fun item(ref: ContentRef): ContentItem =
         if (ref.provider == "local" && ref.kind == ContentKind.PLAYLIST)
             playlistOccurrence(requireNotNull(dao.playlist(ref.id))).item
-        else decode(requireNotNull(dao.item(ref.provider, ref.kind.name, ref.id)).json).item
+        else effective(decode(requireNotNull(dao.item(ref.provider, ref.kind.name, ref.id)).json).item)
 
     override suspend fun page(query: ContentQuery, continuation: String?): ContentPage {
         val identity = queryIdentity(query)
@@ -430,9 +447,14 @@ class RoomLibraryRepository(
             requireNotNull(continuation.substringAfterLast(':').toIntOrNull()).also { require(it >= 0 && it <= 1_000_000) }
         }
         val entries = when(query.surface) {
-            SONGS, LIKED -> dao.items(query.text.orEmpty(), query.surface == LIKED, pageSize + 1, offset).map { decode(it.json) }
+            SONGS, LIKED -> searchSongs(
+                dao.songRows(query.surface == LIKED), query.text.orEmpty(), songMetadata?.overrides().orEmpty(),
+            ).drop(offset).take(pageSize + 1)
             PLAYLISTS -> dao.playlists(query.text.orEmpty(), pageSize + 1, offset).map(::playlistOccurrence)
-            PLAYLIST_ITEMS -> dao.entries(playlistId(query), pageSize + 1, offset).map { decode(it.json) }
+            PLAYLIST_ITEMS -> {
+                val edits = songMetadata?.overrides().orEmpty()
+                dao.entries(playlistId(query), pageSize + 1, offset).map { decode(it.json).withSongMetadataOverrides(edits) }
+            }
             else -> throw IllegalArgumentException("Unsupported local library surface")
         }
         return ContentPage(entries.take(pageSize),
@@ -440,11 +462,21 @@ class RoomLibraryRepository(
     }
 
     override fun observe(query: ContentQuery): Flow<ContentPage> = when(query.surface) {
-        SONGS, LIKED -> dao.observeItems(query.text.orEmpty(), query.surface == LIKED).map { rows -> ContentPage(rows.map { decode(it.json) }) }
+        SONGS, LIKED -> combine(dao.observeSongRows(query.surface == LIKED), metadataEdits()) { rows, edits ->
+            ContentPage(searchSongs(rows, query.text.orEmpty(), edits))
+        }
         PLAYLISTS -> dao.observePlaylists(query.text.orEmpty()).map { rows -> ContentPage(rows.map(::playlistOccurrence)) }
-        PLAYLIST_ITEMS -> dao.observeEntries(playlistId(query)).map { rows -> ContentPage(rows.map { decode(it.json) }) }
+        PLAYLIST_ITEMS -> effectivePages(dao.observeEntries(playlistId(query)).map { rows -> ContentPage(rows.map { decode(it.json) }) })
         else -> throw IllegalArgumentException("Unsupported local library surface")
     }
+
+    private fun searchSongs(
+        rows: List<LibraryItemRow>,
+        query: String,
+        edits: Map<ContentRef, SongMetadataOverride>,
+    ): List<ContentOccurrence> = rows.map { decode(it.json).withSongMetadataOverrides(edits) }
+        .filter { it.item.matchesSongSearch(query) }
+        .sortedWith(compareBy({ it.item.title }, { it.item.ref.provider }, { it.item.ref.id }))
 
     private fun playlistId(query: ContentQuery): String {
         require(query.text.isNullOrEmpty()) { "Playlist entry text search is not supported" }

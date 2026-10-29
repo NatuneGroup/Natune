@@ -246,13 +246,15 @@ fun HistoryScreen(
         }
     val selectionCount = selectedSongs.size
 
+    val songMetadataOverrides = moe.rukamori.archivetune.ui.component.LocalSongMetadataOverrides.current
     val filteredRemoteSections =
-        remember(remoteHistoryState, searchQuery) {
+        remember(remoteHistoryState, searchQuery, songMetadataOverrides) {
             when (remoteHistoryState) {
                 is RemoteHistoryUiState.Success -> {
                     filterRemoteSections(
                         (remoteHistoryState as RemoteHistoryUiState.Success).page.sections.orEmpty(),
                         searchQuery,
+                        songMetadataOverrides,
                     )
                 }
 
@@ -1302,44 +1304,6 @@ private fun HistoryToolbarAction(
             overflow = TextOverflow.Ellipsis,
         )
     }
-}
-
-private fun filterLocalEvents(
-    events: Map<DateAgo, List<EventWithSong>>,
-    query: String,
-): Map<DateAgo, List<EventWithSong>> {
-    if (query.isBlank()) return events
-
-    return events
-        .mapValues { (_, songs) ->
-            songs.filter { event ->
-                event.song.effectiveTitle
-                    .contains(query, ignoreCase = true) ||
-                    event.song.effectiveArtistNames.any { artistName ->
-                        artistName.contains(query, ignoreCase = true)
-                    }
-            }
-        }.filterValues { it.isNotEmpty() }
-}
-
-private fun filterRemoteSections(
-    sections: List<HistoryPage.HistorySection>,
-    query: String,
-): List<HistoryPage.HistorySection> {
-    if (query.isBlank()) return sections
-
-    return sections
-        .map { section ->
-            section.copy(
-                songs =
-                    section.songs.filter { song ->
-                        song.title.contains(query, ignoreCase = true) ||
-                            song.artists.any { artist ->
-                                artist.name.contains(query, ignoreCase = true)
-                            }
-                    },
-            )
-        }.filter { it.songs.isNotEmpty() }
 }
 
 private const val HISTORY_LOAD_MORE_THRESHOLD = 12

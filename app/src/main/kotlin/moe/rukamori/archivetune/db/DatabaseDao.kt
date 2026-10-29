@@ -1291,31 +1291,21 @@ interface DatabaseDao {
      * without an override is matched on its canonical title and artist links.
      */
     @Transaction
-    @Query(
-        "SELECT * FROM song WHERE inLibrary IS NOT NULL AND (" +
-            "COALESCE((SELECT o.title FROM song_metadata_override o WHERE o.songId = song.id), song.title) LIKE '%' || :query || '%' " +
-            "OR CASE WHEN EXISTS(SELECT 1 FROM song_metadata_override o WHERE o.songId = song.id AND o.artistNames IS NOT NULL) " +
-            "THEN EXISTS(SELECT 1 FROM song_metadata_override o WHERE o.songId = song.id AND o.artistNames LIKE '%' || :query || '%') " +
-            "ELSE EXISTS(SELECT 1 FROM song_artist_map m JOIN artist a ON a.id = m.artistId WHERE m.songId = song.id AND a.name LIKE '%' || :query || '%') END" +
-            ") LIMIT :previewSize",
-    )
+    @Query(SongMetadataOverrideSql.SEARCH_SONGS)
     fun searchSongs(
         query: String,
         previewSize: Int = Int.MAX_VALUE,
     ): Flow<List<Song>>
 
-    @Query(
-        "SELECT COUNT(1) FROM song WHERE inLibrary IS NOT NULL AND (" +
-            "COALESCE((SELECT o.title FROM song_metadata_override o WHERE o.songId = song.id), song.title) LIKE '%' || :query || '%' " +
-            "OR CASE WHEN EXISTS(SELECT 1 FROM song_metadata_override o WHERE o.songId = song.id AND o.artistNames IS NOT NULL) " +
-            "THEN EXISTS(SELECT 1 FROM song_metadata_override o WHERE o.songId = song.id AND o.artistNames LIKE '%' || :query || '%') " +
-            "ELSE EXISTS(SELECT 1 FROM song_artist_map m JOIN artist a ON a.id = m.artistId WHERE m.songId = song.id AND a.name LIKE '%' || :query || '%') END" +
-            ")",
-    )
+    @Query(SongMetadataOverrideSql.SEARCH_SONGS_COUNT)
     suspend fun searchSongsCount(query: String): Int
 
     @Query("SELECT * FROM song_metadata_override")
     fun observeSongMetadataOverrides(): Flow<List<SongMetadataOverrideEntity>>
+
+    @Transaction
+    @Query("SELECT * FROM song WHERE id IN (SELECT songId FROM song_metadata_override)")
+    fun observeEditedSongs(): Flow<List<Song>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertSongMetadataOverride(metadataOverride: SongMetadataOverrideEntity)
@@ -1630,7 +1620,7 @@ interface DatabaseDao {
             )
         }
 
-        mediaMetadata.artists.forEachIndexed { index, artist ->
+        mediaMetadata.canonicalMetadata().artists.forEachIndexed { index, artist ->
             val artistId = artist.id ?: artistByName(artist.name)?.id ?: ArtistEntity.generateArtistId()
 
             insert(
@@ -1710,7 +1700,7 @@ interface DatabaseDao {
             song.song.copy(
                 // Canonical title always follows the provider. A user edit lives in
                 // song_metadata_override, which this refresh never reads or writes.
-                title = mediaMetadata.title,
+                title = mediaMetadata.canonicalTitle ?: mediaMetadata.title,
                 duration = mediaMetadata.duration,
                 thumbnailUrl = mediaMetadata.thumbnailUrl,
                 albumId = mediaMetadata.album?.id,
@@ -1720,7 +1710,7 @@ interface DatabaseDao {
             ),
         )
         songArtistMap(song.id).forEach(::delete)
-        mediaMetadata.artists.forEachIndexed { index, artist ->
+        mediaMetadata.canonicalMetadata().artists.forEachIndexed { index, artist ->
             val artistId = artist.id ?: artistByName(artist.name)?.id ?: ArtistEntity.generateArtistId()
 
             insert(

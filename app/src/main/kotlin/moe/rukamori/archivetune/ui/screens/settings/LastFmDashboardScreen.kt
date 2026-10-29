@@ -303,80 +303,6 @@ private var dashboardSnapshot: LastFmDashboardSnapshot? = null
 private fun <T> Result<T>.orPreviousSuccess(previous: Result<T>?): Result<T> =
     if (isFailure && previous?.isSuccess == true) previous else this
 
-/**
- * Process-wide cache of YouTube search results keyed by "<title>::<artist>". Last.fm tracks don't
- * carry YouTube video IDs, so every playback action on a Last.fm track needs to round-trip through
- * a YouTube song search first.
- */
-private val ytSearchCache = ConcurrentHashMap<String, SongItem?>()
-
-/**
- * Searches YouTube Music for a Last.fm track by "<title> <artist>" query and returns the first
- * SongItem result, or null if no match. Results are cached in [ytSearchCache] to avoid re-searching
- * for the same track.
- */
-private suspend fun searchYtForLastFmTrack(title: String, artist: String?): SongItem? {
-    if (title.isBlank()) return null
-    val cacheKey = "${title.trim().lowercase()}::${artist?.trim()?.lowercase().orEmpty()}"
-    ytSearchCache[cacheKey]?.let {
-        Timber.d("searchYt cache hit: %s → %s", cacheKey, it?.id ?: "null-cached")
-        return it
-    }
-    val term = listOfNotNull(artist?.takeIf(String::isNotBlank), title).joinToString(" ")
-    Timber.d("searchYt query: \"%s\" (key=%s)", term, cacheKey)
-    val searchResult = YouTube.search(term, YouTube.SearchFilter.FILTER_SONG).getOrNull()
-    if (searchResult == null) {
-        Timber.w("searchYt no result for: \"%s\"", term)
-        ytSearchCache[cacheKey] = null
-        return null
-    }
-    val first = findFirstSongItem(searchResult)
-    if (first == null) {
-        Timber.w("searchYt no SongItem in results for: \"%s\"", term)
-    } else {
-        Timber.d("searchYt resolved: \"%s\" → videoId=%s thumb=%s", term, first.id, first.thumbnail)
-    }
-    ytSearchCache[cacheKey] = first
-    return first
-}
-
-/** Extracts the first SongItem from a SearchResult's items list. */
-private fun findFirstSongItem(result: SearchResult): SongItem? {
-    for (item in result.items) {
-        if (item is SongItem) return item
-    }
-    return null
-}
-
-/** Lightweight track reference carried across the bottom-sheet boundary. */
-private data class LastFmTrackRef(
-    val title: String,
-    val artist: String?,
-    val url: String?,
-    val image: List<UserImage>?,
-    val playCount: Int?,
-    val isNowPlaying: Boolean,
-) {
-    fun artworkKey(): String = "${title.trim().lowercase()}::${artist.orEmpty().trim().lowercase()}"
-}
-
-private fun RecentTrack.toRef(playCount: Int? = null): LastFmTrackRef = LastFmTrackRef(
-    title = name.orEmpty(),
-    artist = artist?.text,
-    url = url,
-    image = image,
-    playCount = playCount,
-    isNowPlaying = isNowPlaying,
-)
-
-private fun TopTrack.toRef(): LastFmTrackRef = LastFmTrackRef(
-    title = name.orEmpty(),
-    artist = artist?.text,
-    url = url,
-    image = image,
-    playCount = playcount,
-    isNowPlaying = false,
-)
 
 // ── Recent-track dedup ──────────────────────────────────────────────────────
 
@@ -430,6 +356,11 @@ fun LastFmDashboardScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val playerConnection = LocalPlayerConnection.current
+    val database = LocalDatabase.current
+    val overrides = moe.rukamori.archivetune.ui.component.LocalSongMetadataOverrides.current
+    val editedSongs by remember(database) { database.observeEditedSongs() }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val songIds = remember(editedSongs) { moe.rukamori.archivetune.scrobbling.editedLastFmSongIds(editedSongs) }
 
     var userInfo by remember { mutableStateOf<Result<UserInfo>?>(null) }
     var recentTracks by remember { mutableStateOf<Result<List<RecentTrack>>?>(null) }
@@ -605,18 +536,18 @@ fun LastFmDashboardScreen(
         // Scrobble-search filter: case-insensitive substring match on title or
         // artist text. Empty query = no filtering (return the original list).
         val q = searchQuery.trim()
-        val recentFiltered = remember(recent, q) {
+        val recentFiltered = remember(recent, q, searchVisible, songIds, overrides) {
             if (q.isBlank() || !searchVisible) recent
             else recent.filter { e ->
-                e.track.name?.contains(q, ignoreCase = true) == true ||
-                    e.track.artist?.text?.contains(q, ignoreCase = true) == true
+                val names = e.track.toRef(songIds = songIds).effectiveNames(overrides)
+                names.title.contains(q, ignoreCase = true) || names.artistNames.any { it.contains(q, ignoreCase = true) }
             }
         }
-        val topFiltered = remember(top, q) {
+        val topFiltered = remember(top, q, searchVisible, songIds, overrides) {
             if (q.isBlank() || !searchVisible) top
             else top.filter { t ->
-                t.name?.contains(q, ignoreCase = true) == true ||
-                    t.artist?.text?.contains(q, ignoreCase = true) == true
+                val names = t.toRef(songIds).effectiveNames(overrides)
+                names.title.contains(q, ignoreCase = true) || names.artistNames.any { it.contains(q, ignoreCase = true) }
             }
         }
         val artistsFiltered = remember(artists, q) {
@@ -794,9 +725,9 @@ fun LastFmDashboardScreen(
                                     key = { "recent_${it.track.name}_${it.track.date?.uts ?: it.track.attr?.nowplaying ?: ""}" },
                                 ) { entry ->
                                     DashboardTrackRow(
-                                        track = entry.track.toRef(playCount = entry.playCount),
+                                        track = entry.track.toRef(playCount = entry.playCount, songIds = songIds),
                                         fallbackArtworkUrl = recentArtworkByTrack[entry.track.trackArtworkKey()],
-                                        onOverflow = { overflowTrack = entry.track.toRef(playCount = entry.playCount) },
+                                        onOverflow = { overflowTrack = entry.track.toRef(playCount = entry.playCount, songIds = songIds) },
                                         theme = theme,
                                     )
                                 }
@@ -818,10 +749,10 @@ fun LastFmDashboardScreen(
                                     key = { "top_${it.index}_${it.value.name}" },
                                 ) { (index, track) ->
                                     DashboardTrackRow(
-                                        track = track.toRef(),
+                                        track = track.toRef(songIds),
                                         rank = index + 1,
                                         fallbackArtworkUrl = recentArtworkByTrack[track.trackArtworkKey()],
-                                        onOverflow = { overflowTrack = track.toRef() },
+                                        onOverflow = { overflowTrack = track.toRef(songIds) },
                                         theme = theme,
                                     )
                                 }
@@ -928,7 +859,7 @@ fun LastFmDashboardScreen(
                     // the picked playlist's playlist_map / playlist_song
                     // join tables via the standard LocalDatabase path.
                     Timber.d("AddToPlaylist onGetSong for title=%s artist=%s", track.title, track.artist.orEmpty())
-                    val song = searchYtForLastFmTrack(track.title, track.artist)
+                    val song = track.resolveMetadata(database)
                     if (song == null) {
                         Timber.w("No YouTube match for Last.fm track (add-to-playlist): %s - %s", track.artist.orEmpty(), track.title)
                     }
@@ -1438,6 +1369,7 @@ private fun DashboardTrackRow(
     onOverflow: () -> Unit,
     theme: DashboardTheme,
 ) {
+    val names = track.effectiveNames(moe.rukamori.archivetune.ui.component.LocalSongMetadataOverrides.current)
     // Per-row artwork resolution. Seed from the Last.fm image array via [bestArtwork], the
     // parent's pre-resolved map, then the process-wide [CachedArtworkStore]. Only if all three miss
     // do we kick off a YouTube search in a `LaunchedEffect(track.artworkKey())`, which runs only
@@ -1538,7 +1470,7 @@ private fun DashboardTrackRow(
             }
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = track.title,
+                    text = names.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -1547,7 +1479,7 @@ private fun DashboardTrackRow(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = track.artist.orEmpty(),
+                    text = names.artistNames.joinToString(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = trackArtistColor,
                     maxLines = 1,
@@ -1844,6 +1776,8 @@ private fun TrackOverflowSheet(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val playerConnection = LocalPlayerConnection.current
+    val database = LocalDatabase.current
+    val names = track.effectiveNames(moe.rukamori.archivetune.ui.component.LocalSongMetadataOverrides.current)
     var loadingAction by remember { mutableStateOf<String?>(null) }
     var genre by remember(track.artworkKey()) { mutableStateOf<String?>(null) }
 
@@ -1878,10 +1812,10 @@ private fun TrackOverflowSheet(
         // Kick off a background YT search to (1) populate the banner image
         // and (2) prime the cache so the user's first action is instant.
         val song = withContext(Dispatchers.IO) {
-            searchYtForLastFmTrack(track.title, track.artist)
+            track.resolveMetadata(database)
         }
-        if (!song?.thumbnail.isNullOrBlank()) {
-            bannerArtworkUrl = song!!.thumbnail
+        if (!song?.thumbnailUrl.isNullOrBlank()) {
+            bannerArtworkUrl = song!!.thumbnailUrl
         }
     }
 
@@ -1890,7 +1824,7 @@ private fun TrackOverflowSheet(
     // [playerConnection], and Timber logging so failures don't disappear silently. Calling
     // `playerConnection?.playNext(...)` directly no-ops when the player service isn't bound,
     // so the user taps and sees nothing happen; this surfaces it as a toast.
-    fun runWithYtSearch(action: String, onFound: (SongItem) -> Unit) {
+    fun runWithYtSearch(action: String, onFound: (moe.rukamori.archivetune.models.MediaMetadata) -> Unit) {
         if (loadingAction != null) return
         if (playerConnection == null) {
             Timber.w("playerConnection is null in TrackOverflowSheet action=%s", action)
@@ -1905,7 +1839,7 @@ private fun TrackOverflowSheet(
             loadingAction = action
             try {
                 val song = withContext(Dispatchers.IO) {
-                    searchYtForLastFmTrack(track.title, track.artist)
+                    track.resolveMetadata(database)
                 }
                 if (song == null) {
                     Timber.w("No YT match for Last.fm track action=%s title=%s artist=%s", action, track.title, track.artist.orEmpty())
@@ -1949,7 +1883,7 @@ private fun TrackOverflowSheet(
         Surface(
             onClick = {
                 runWithYtSearch("mix") { song ->
-                    playerConnection?.playQueue(YouTubeQueue.radio(song.toMediaMetadata()))
+                    playerConnection?.playQueue(YouTubeQueue.radio(song))
                 }
             },
             shape = RoundedCornerShape(20.dp),
@@ -2000,7 +1934,7 @@ private fun TrackOverflowSheet(
                         color = theme.statsHeroNumberText,
                     )
                     Text(
-                        text = listOfNotNull(track.artist, track.title).joinToString(" - "),
+                        text = listOf(names.artistNames.joinToString(), names.title).filter(String::isNotBlank).joinToString(" - "),
                         style = MaterialTheme.typography.bodySmall,
                         color = theme.statsHeroLabelText,
                         maxLines = 1,
@@ -2050,7 +1984,7 @@ private fun TrackOverflowSheet(
             enabled = loadingAction == null,
             onClick = {
                 runWithYtSearch("play") { song ->
-                    playerConnection?.playQueue(YouTubeQueue.radio(song.toMediaMetadata()))
+                    playerConnection?.playQueue(YouTubeQueue.radio(song))
                 }
             },
             theme = theme,
@@ -2124,7 +2058,7 @@ private fun TrackOverflowSheet(
             loading = false,
             enabled = loadingAction == null,
             onClick = {
-                val label = listOfNotNull(track.artist, track.title)
+                val label = listOf(names.artistNames.joinToString(), names.title)
                     .joinToString(" - ")
                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("Last.fm Track", label))
@@ -2257,11 +2191,8 @@ private fun EmptyHint(text: String, theme: DashboardTheme) {
 private fun bestArtwork(images: List<UserImage>?): String? =
     LastFmArtworkNormalizer.bestImageUrl(images)
 
-private fun RecentTrack.trackArtworkKey(): String = "${name.orEmpty().trim().lowercase()}::${artist?.text.orEmpty().trim().lowercase()}"
-
-private fun TopTrack.trackArtworkKey(): String = "${name.orEmpty().trim().lowercase()}::${artist?.text.orEmpty().trim().lowercase()}"
-
 private fun List<RecentTrackWithCount>.associateArtworkByTrack(): Map<String, String> =
+
     mapNotNull { entry -> bestArtwork(entry.track.image)?.let { entry.track.trackArtworkKey() to it } }.toMap()
 
 private data class ArtworkLookup(

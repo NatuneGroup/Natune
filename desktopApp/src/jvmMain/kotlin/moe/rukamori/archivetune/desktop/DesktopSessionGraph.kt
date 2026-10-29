@@ -516,7 +516,8 @@ class DesktopSessionGraph private constructor(
             )
             val tidalSessionRefresh = TidalSessionRefresh(tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value })
             val textOrder = deviceTextOrder()
-            val library = RoomLibraryRepository(database.library(), listens = database.listens())
+            val songMetadata = moe.rukamori.archivetune.shared.data.persistence.RoomSongMetadataRepository(database.songMetadataOverrides())
+            val library = RoomLibraryRepository(database.library(), listens = database.listens(), songMetadata = songMetadata)
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = { System.currentTimeMillis() })
             val history = RoomListeningHistory(
                 database.listens(),
@@ -618,6 +619,7 @@ class DesktopSessionGraph private constructor(
                 repeatMode = { repeatModeOf(vault.snapshots.value) },
                 autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
                 handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
+                songMetadata = songMetadata,
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
             try {

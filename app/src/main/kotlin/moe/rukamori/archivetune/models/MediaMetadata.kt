@@ -47,6 +47,9 @@ data class MediaMetadata(
     // can show "suggested by X". Additive defaulted field: existing constructors,
     // copy() calls and componentN order are unaffected.
     val suggestedBy: String? = null,
+    /** Display edits must not become provider lookup names or canonical database writes. */
+    val canonicalTitle: String? = null,
+    val canonicalArtists: List<Artist>? = null,
 ) : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -71,10 +74,19 @@ data class MediaMetadata(
         }
     }
 
+    fun canonicalMetadata(): MediaMetadata =
+        if (canonicalTitle == null && canonicalArtists == null) this
+        else copy(
+            title = canonicalTitle ?: title,
+            artists = canonicalArtists ?: artists,
+            canonicalTitle = null,
+            canonicalArtists = null,
+        )
+
     fun toSongEntity() =
         SongEntity(
             id = id,
-            title = title,
+            title = canonicalTitle ?: title,
             duration = duration,
             thumbnailUrl = thumbnailUrl,
             albumId = album?.id,

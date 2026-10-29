@@ -1,11 +1,8 @@
 package moe.rukamori.archivetune.songmetadata
 
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
-import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.SONG_METADATA_ARTIST_SEPARATOR
 import moe.rukamori.archivetune.db.entities.SongMetadataOverrideEntity
 import moe.rukamori.archivetune.models.MediaMetadata
@@ -62,24 +59,33 @@ fun buildSongMetadataOverride(
  * thumbnail, so its page can still be opened; an artist that was renamed has no canonical page to open.
  */
 fun MediaMetadata.withSongMetadataOverride(override: SongMetadataOverrideEntity?): MediaMetadata {
-    if (override == null) return this
+    val canonical = canonicalMetadata()
+    if (override == null) return canonical
     val overriddenNames = override.artistNameList()
-    return copy(
-        title = override.title ?: title,
+    return canonical.copy(
+        title = override.title ?: canonical.title,
         artists =
             overriddenNames?.map { name ->
-                val canonical = artists.firstOrNull { it.name == name }
+                val artist = canonical.artists.firstOrNull { it.name == name }
                 MediaMetadata.Artist(
-                    id = canonical?.id,
+                    id = artist?.id,
                     name = name,
-                    thumbnailUrl = canonical?.thumbnailUrl,
+                    thumbnailUrl = artist?.thumbnailUrl,
                 )
-            } ?: artists,
+            } ?: canonical.artists,
+        canonicalTitle = canonical.title,
+        canonicalArtists = canonical.artists,
     )
 }
 
-fun MusicDatabase.observeSongMetadataOverrideMap(): Flow<Map<String, SongMetadataOverrideEntity>> =
-    observeSongMetadataOverrides().map { rows -> rows.associateBy { it.songId } }
+/** Copy names onto an occurrence without replacing its setVideoId, attribution or other playback fields. */
+fun MediaMetadata.withEffectiveSongNames(effective: MediaMetadata): MediaMetadata =
+    copy(
+        title = effective.title,
+        artists = effective.artists,
+        canonicalTitle = effective.canonicalTitle,
+        canonicalArtists = effective.canonicalArtists,
+    )
 
 /**
  * Process-wide copy of the override table for code that creates MediaItems without a database handle,

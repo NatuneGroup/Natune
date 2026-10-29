@@ -419,6 +419,7 @@ private object SchemaTools {
             val db = fileHelper.writableDatabase
 
             reconcileDatabase(db = db, expectedDb = expected)
+            moveLegacyTitleOverrides(db)
             if (identityHash != null) {
                 updateIdentityHash(db = db, identityHash = identityHash)
             }
@@ -434,11 +435,8 @@ private object SchemaTools {
      * canonical row can follow the provider again without losing what the user typed.
      */
     fun moveLegacyTitleOverrides(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            "INSERT OR IGNORE INTO song_metadata_override (songId, title, artistNames, updatedAt) " +
-                "SELECT id, title, NULL, 0 FROM song WHERE titleOverride = 1",
-        )
-        db.execSQL("UPDATE song SET titleOverride = 0 WHERE titleOverride = 1")
+        db.execSQL(SongMetadataOverrideSql.MOVE_LEGACY_TITLES)
+        db.execSQL(SongMetadataOverrideSql.CLEAR_LEGACY_TITLE_FLAG)
     }
 
     fun reconcileDatabase(

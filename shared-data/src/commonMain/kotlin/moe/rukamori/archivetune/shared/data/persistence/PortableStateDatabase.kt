@@ -20,7 +20,7 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
  * [PortableStateMigrations.V6_TO_V7]. Version 8 adds the persisted download queue and local-media scan table, the
  * search history and video-id lookup tables, and the hidden flag on playlists, by
  * [PortableStateMigrations.V7_TO_V8]. Version 9 adds the podcast episode progress table, by
- * [PortableStateMigrations.V8_TO_V9].
+ * [PortableStateMigrations.V8_TO_V9]. Version 10 adds per-song display edits by [SongMetadataOverrideMigration].
  */
 @Database(
     entities = [QueueCheckpointRow::class, LibraryItemRow::class, PortablePlaylistRow::class,
@@ -28,8 +28,9 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
         PortableListenEventRow::class, PortableListenEntityRow::class, PortableArtistBlockRow::class,
         PortableStoredSongRow::class, PortableAlbumCompleteRow::class, PortableAlbumTrackRow::class,
         PortableDownloadTaskRow::class, PortableLocalTrackRow::class,
-        PortableSearchHistoryRow::class, PortableSetVideoIdRow::class, PortablePodcastProgressRow::class],
-    version = 9,
+        PortableSearchHistoryRow::class, PortableSetVideoIdRow::class, PortablePodcastProgressRow::class,
+        PortableSongMetadataOverrideRow::class],
+    version = 10,
     exportSchema = true,
 )
 @ConstructedBy(PortableStateDatabaseConstructor::class)
@@ -45,6 +46,7 @@ abstract class PortableStateDatabase : RoomDatabase() {
     abstract fun searchHistory(): PortableSearchHistoryDao
     abstract fun setVideoIds(): PortableSetVideoIdDao
     abstract fun podcastProgress(): PortablePodcastProgressDao
+    abstract fun songMetadataOverrides(): PortableSongMetadataOverrideDao
 }
 
 expect object PortableStateDatabaseConstructor : RoomDatabaseConstructor<PortableStateDatabase> {
@@ -66,6 +68,7 @@ fun RoomDatabase.Builder<PortableStateDatabase>.buildPortableStateDatabase(): Po
         PortableStateMigrations.V6_TO_V7,
         PortableStateMigrations.V7_TO_V8,
         PortableStateMigrations.V8_TO_V9,
+        SongMetadataOverrideMigration,
     )
         .setDriver(portableStateDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
 

@@ -22,6 +22,7 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.songmetadata.SongMetadataOverrideCache
 import moe.rukamori.archivetune.songmetadata.withSongMetadataOverride
+import moe.rukamori.archivetune.songmetadata.withEffectiveSongNames
 import moe.rukamori.archivetune.ui.utils.YTThumbQuality
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.buildYTThumbnailUrl
@@ -34,6 +35,21 @@ const val ExtraIsPodcast = "moe.rukamori.archivetune.extra.IS_PODCAST"
 
 val MediaItem.metadata: MediaMetadata?
     get() = localConfiguration?.tag as? MediaMetadata
+
+/** Updates presentation only, retaining the occurrence's URI, cache key, extras and playback configuration. */
+fun MediaItem.withEffectiveSongMetadata(effective: MediaMetadata): MediaItem {
+    val names = effective.artists.joinToString { it.name }
+    val tag = (metadata ?: effective).withEffectiveSongNames(effective)
+    return buildUpon()
+        .setTag(tag)
+        .setMediaMetadata(
+            mediaMetadata.buildUpon()
+                .setTitle(effective.title)
+                .setSubtitle(names)
+                .setArtist(names)
+                .build(),
+        ).build()
+}
 
 private fun String?.toNotificationArtworkUri() =
     this

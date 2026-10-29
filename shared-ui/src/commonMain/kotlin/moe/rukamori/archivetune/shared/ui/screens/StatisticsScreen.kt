@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.setValue
 
@@ -187,8 +188,9 @@ internal fun StatisticsRankRow(
     artwork: ContentArtwork,
     formatDuration: (Long) -> String,
 ) {
-    ListItem(headlineContent = { Text(rank.item.title) },
-        supportingContent = { Text(rank.item.subtitle + "\n" + stringResource(Res.string.m4_stats_rank_detail,
+    val display = effectiveSong(rank.item)
+    ListItem(headlineContent = { Text(display.title) },
+        supportingContent = { Text(display.subtitle + "\n" + stringResource(Res.string.m4_stats_rank_detail,
             rank.playCount, formatDuration(rank.playTimeMs))) },
         leadingContent = { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text((index + 1).toString()); artwork(rank.item, Modifier.size(48.dp))

@@ -160,6 +160,7 @@ class DownloadUtil
         private val saavnAudioQuality by enumPreference(context, SaavnAudioQualityKey, SaavnAudioQuality.QUALITY_320)
         private val deezerAudioQuality by enumPreference(context, DeezerAudioQualityKey, DeezerAudioQuality.FLAC)
         private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val metadataTitles = DownloadMetadataTitles(database, downloadScope)
         private val songUrlCache = ConcurrentHashMap<String, AuthScopedCacheValue>()
 
         /** Download worker pool. */
@@ -882,20 +883,6 @@ class DownloadUtil
             DownloadSource.AUTO, DownloadSource.YOUTUBE_MUSIC -> null
         }
 
-        /**
-         * Headers a resolved stream URL cannot be fetched without.
-         *
-         * Only the Qobuz backup mirror needs one today: `mlc-ytify.kouzu.in` rate-limits any
-         * request that arrives without `x-request-source`, and that applies to the byte fetch as
-         * much as to the resolve call. Every other source serves plain authenticated-by-URL CDN
-         * links, so the map stays empty for them.
-         */
-        private fun requiredHeadersFor(uri: String): Map<String, String> =
-            if (runCatching { uri.toUri().host }.getOrNull()?.endsWith("kouzu.in") == true) {
-                mapOf("x-request-source" to "muzo")
-            } else {
-                emptyMap()
-            }
 
         /** The stream a download settled on, with the source whose cache-key prefix holds it. */
         private data class ResolvedDownload(

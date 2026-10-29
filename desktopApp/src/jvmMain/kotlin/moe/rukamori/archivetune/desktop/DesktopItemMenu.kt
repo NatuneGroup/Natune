@@ -323,6 +323,7 @@ private fun DesktopSongMenu(
         editablePlaylists = editablePlaylists,
         onDismiss = menu::dismiss,
         onFailure = menu::failed,
+        songMetadata = graph.library.songMetadata,
     )
 }
 

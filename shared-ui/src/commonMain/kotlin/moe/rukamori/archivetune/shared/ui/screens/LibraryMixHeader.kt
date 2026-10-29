@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.screens
 
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -259,13 +261,13 @@ private fun RecentlyPlayedRail(recent: List<ContentOccurrence>, play: (ContentOc
                     artwork(song.item, Modifier.size(110.dp).clip(RoundedCornerShape(28.dp)))
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        song.item.title,
+                        effectiveSong(song.item).title,
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        song.item.subtitle,
+                        effectiveSong(song.item).subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -350,7 +352,7 @@ private fun LibraryMixRailItem(
     open: (ContentOccurrence) -> Unit,
     artwork: ContentArtwork,
 ) {
-    val item = occurrence.item
+    val item = effectiveSong(occurrence.item)
     if (item.ref.kind == ContentKind.ARTIST) {
         Column(
             modifier = Modifier.width(80.dp).clickable { open(occurrence) },

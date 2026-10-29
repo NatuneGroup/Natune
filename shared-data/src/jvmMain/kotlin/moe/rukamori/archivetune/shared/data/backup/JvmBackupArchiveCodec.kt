@@ -119,22 +119,46 @@ class JvmBackupArchiveCodec {
             files.forEach { (name, bytes) -> Files.write(scratch.resolve(name), bytes) }
             val connection = BundledSQLiteDriver().open(scratch.resolve("song.db").toString())
             try {
-                val expectedIdentity = connection.prepare("PRAGMA user_version").use { statement ->
+                val version = connection.prepare("PRAGMA user_version").use { statement ->
                     require(statement.step()) { "Android library has no schema version" }
-                    // Public Room identities from the retained Android schema exports, not credentials.
-                    when (statement.getLong(0)) {
-                        36L -> "7f6fc454b3f0d77468bc4ae9d5a71c3f"
-                        37L -> "ea9228eb769d7cdde2b6a9a6a4532182"
-                        else -> throw IllegalArgumentException("Unsupported Android library schema")
-                    }
+                    statement.getLong(0)
+                }
+                // Public Room identities from the retained Android schema exports, not credentials. The newest
+                // retained schema has no hand-invented identity, so its exact shape is checked below instead.
+                val expectedIdentity = when (version) {
+                    36L -> "7f6fc454b3f0d77468bc4ae9d5a71c3f"
+                    37L -> "ea9228eb769d7cdde2b6a9a6a4532182"
+                    LegacySongDbImport.ANDROID_SCHEMA_VERSION.toLong() -> null
+                    else -> throw IllegalArgumentException("Unsupported Android library schema")
                 }
                 connection.prepare("PRAGMA integrity_check").use { statement ->
                     require(statement.step() && statement.getText(0) == "ok" && !statement.step()) { "Corrupt SQLite snapshot" }
                 }
                 connection.prepare("SELECT identity_hash FROM room_master_table WHERE id = 42").use { statement ->
-                    require(statement.step() && statement.getText(0) == expectedIdentity) {
+                    require(statement.step() && statement.getText(0).isNotBlank()) {
                         "SQLite snapshot does not match the retained Android schema"
                     }
+                    if (expectedIdentity != null) require(statement.getText(0) == expectedIdentity) {
+                        "SQLite snapshot does not match the retained Android schema"
+                    }
+                }
+                if (expectedIdentity == null) {
+                    // The additive metadata migration has no hand-invented Room identity hash.
+                    // Validate its exact column/primary-key shape; the importer also reads the
+                    // canonical source columns before it can commit a portable file.
+                    val columns = connection.prepare("PRAGMA table_info(`song_metadata_override`)").use { statement ->
+                        buildList {
+                            while (statement.step()) add(
+                                listOf(statement.getText(1), statement.getText(2), statement.getLong(3).toString(), statement.getLong(5).toString()),
+                            )
+                        }
+                    }
+                    require(columns == listOf(
+                        listOf("songId", "TEXT", "1", "1"),
+                        listOf("title", "TEXT", "0", "0"),
+                        listOf("artistNames", "TEXT", "0", "0"),
+                        listOf("updatedAt", "INTEGER", "1", "0"),
+                    )) { "Unexpected song metadata override schema" }
                 }
             } finally { connection.close() }
         } catch (failure: Exception) {
