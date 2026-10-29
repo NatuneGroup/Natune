@@ -203,10 +203,20 @@ jobs:
           APK_NAME: ${{ steps.variant.outputs.apk_name }}
         run: |
           set -euo pipefail
-          mapfile -t APKS < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          APK_ROOT=app/build/outputs/apk
+          # List what the assemble step actually left behind before asserting, so a miss names its own cause.
+          if [[ ! -d "$APK_ROOT" ]]; then
+            echo "::error::$APK_ROOT does not exist after the assemble task."
+            find app/build -maxdepth 4 -type d -print 2>/dev/null | sort || true
+            exit 1
+          fi
+          echo "APK files under $APK_ROOT:"
+          find "$APK_ROOT" -type f -name '*.apk' -print | sort
+          # Only .apk files count, so the listing files and metadata AGP writes beside the APK cannot inflate it.
+          mapfile -t APKS < <(find "$APK_ROOT" -type f -name '*.apk' | sort)
           if [[ "${#APKS[@]}" -ne 1 ]]; then
             echo "::error::Expected exactly one release APK, found ${#APKS[@]}."
-            find app/build/outputs/apk -maxdepth 8 -type f -print || true
+            find "$APK_ROOT" -maxdepth 8 -type f -print || true
             exit 1
           fi
           mkdir -p release-assets
@@ -230,11 +240,32 @@ jobs:
             exit 0
           fi
 
-          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -n 1)"
-          if [[ -z "$BUILD_TOOLS" || ! -x "$BUILD_TOOLS/apksigner" || ! -x "$BUILD_TOOLS/zipalign" ]]; then
+          # ANDROID_HOME is not exported by every runner image; the SDK locations below cover the rest.
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$SDK_ROOT" || ! -d "$SDK_ROOT/build-tools" ]]; then
+            for candidate in /usr/local/lib/android/sdk "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+              if [[ -d "$candidate/build-tools" ]]; then
+                SDK_ROOT="$candidate"
+                break
+              fi
+            done
+          fi
+          echo "Android SDK root: ${SDK_ROOT:-<none found>}"
+          # The highest version that actually carries both tools: a partially installed directory must not win.
+          BUILD_TOOLS=""
+          if [[ -n "$SDK_ROOT" && -d "$SDK_ROOT/build-tools" ]]; then
+            echo "Installed build-tools: $(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tr '\n' ' ')"
+            while IFS= read -r candidate; do
+              if [[ -x "$candidate/apksigner" && -x "$candidate/zipalign" ]]; then
+                BUILD_TOOLS="$candidate"
+              fi
+            done < <(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V)
+          fi
+          if [[ -z "$BUILD_TOOLS" ]]; then
             echo "::error::Android build-tools do not contain apksigner and zipalign."
             exit 1
           fi
+          echo "Using build-tools: $BUILD_TOOLS"
           KEYSTORE_FILE="$(mktemp)"
           ALIGNED_APK="$RUNNER_TEMP/aligned-$APK_NAME"
           trap 'rm -f "$KEYSTORE_FILE" "$ALIGNED_APK"' EXIT
@@ -742,6 +773,14 @@ jobs:
           key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts') }}
           restore-keys: |
             konan-${{ runner.os }}-${{ runner.arch }}-
+
+      # The native closure verifies the FFmpeg tarball against the release key, exactly as the desktop
+      # macOS legs do, so both jobs install the same gpg instead of trusting the image.
+      - name: Install the FFmpeg release-key prerequisites (macOS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v gpg >/dev/null 2>&1 || brew install gnupg
 
       - name: Build the iOS native dependency closure
         shell: bash
