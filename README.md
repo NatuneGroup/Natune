@@ -85,6 +85,7 @@ KMP desktop run and shared-module verification commands are listed in the port-s
 - **ArchiveTune** by Rukamori: [ArchiveTune](https://github.com/rukamori/ArchiveTune), the original project this fork builds on.
 - **SimpMusic** by [maxrave-dev](https://github.com/maxrave-dev/SimpMusic) for the lyrics API provider.
 - **4nx3b ArchiveTune** for the upstream base and the Bini, Genius, LRCRed, and Megalobiz lyrics providers.
+- **SukiSU-Ultra** (GPL-3.0), [compose-miuix-ui](https://github.com/compose-miuix-ui/miuix) (Apache-2.0) and [Kyant backdrop](https://github.com/Kyant0/AndroidLiquidGlass) (Apache-2.0) for the liquid glass navigation bar, the About page background and the glass rendering library.
 - **Tryptify** and [tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) for the audio engine used by the DSP chain, parametric/AutoEq, USB output, and pitch/time stretch.
 - **Clash-Projects LastWave-Native** for the native audio engine, bit-perfect USB output, and Last.fm dashboard.
 - **Marcelo Silva** for the formerly vendored decent-usb-audio-driver (MIT); its license and attribution are retained.

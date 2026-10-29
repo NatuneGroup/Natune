@@ -169,6 +169,21 @@ Predictive (the default; sheets, pages and menus follow the back gesture) or Ori
 liquid glass bar is a `NavigationBarStyle` (`SUKISU`) rendered inside the normal nav-bar container,
 so compact mode and hide-on-scroll keep working.
 
+## Liquid Glass customisation
+
+`settings/appearance/liquid_glass` (`LIQUID_GLASS_SETTINGS_ROUTE`; entry row in Appearance; search
+parent `liquid_glass_settings` with row anchors `glass_intensity`, `glass_refraction_height`,
+`glass_refraction_amount`, `glass_blur_radius`, `glass_tint_opacity`, `glass_shadow_depth`,
+`glass_depth_3d`, `glass_chromatic_aberration`, `glass_backdrop_vibrancy`,
+`glass_adaptive_luminance`, `glass_reset`) tunes the liquid glass material. Keys and defaults:
+`liquidGlassIntensity` `STANDARD` (Subtle / Standard / Vivid), `liquidGlassRefractionHeight` 0.30,
+`liquidGlassRefractionAmount` 0.75, `liquidGlassBlurRadius` 0.65, `liquidGlassTintOpacity` 1.40
+(range 0–2), `liquidGlassShadowDepth` 0.45, and `liquidGlassDepth3D`,
+`liquidGlassChromaticAberration`, `liquidGlassBackdropVibrancy`, `liquidGlassAdaptiveLuminance`
+(all on). They are live, not restart-scoped: one root collector (`rememberLiquidGlassTuning`)
+provides `LocalLiquidGlassTuning`. Rows are disabled with a reason when Liquid Glass is off, the
+device lacks support, or blur is disabled. Reset restores every default.
+
 ## Restart-to-apply settings
 
 UI scale, font and custom font, tablet mode, the Liquid Glass master switch, the liquid-glass nav
