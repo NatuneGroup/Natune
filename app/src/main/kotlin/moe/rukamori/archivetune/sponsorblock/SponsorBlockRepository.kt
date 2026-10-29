@@ -28,6 +28,7 @@ import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.constants.SponsorBlockApiUrlKey
 import moe.rukamori.archivetune.constants.SponsorBlockCategoriesKey
 import moe.rukamori.archivetune.constants.SponsorBlockEnabledKey
+import moe.rukamori.archivetune.constants.SponsorBlockPodcastsEnabledKey
 import moe.rukamori.archivetune.utils.dataStore
 import timber.log.Timber
 import java.security.MessageDigest
@@ -79,18 +80,24 @@ class SponsorBlockRepository
                 enabled = preferences[SponsorBlockEnabledKey] ?: false,
                 categories = categories,
                 apiUrl = normalizeSponsorBlockApiUrl(preferences[SponsorBlockApiUrlKey]) ?: SPONSORBLOCK_DEFAULT_API_URL,
+                podcastsEnabled = preferences[SponsorBlockPodcastsEnabledKey] ?: false,
             )
         }
 
         /**
          * Segments for [videoId], or an empty list when the feature is off, the id is not a YouTube
-         * one, or the lookup fails. Never throws: a segment list is an enhancement, and playback
-         * must not depend on a third-party service answering.
+         * one, the item is a podcast episode while podcast skipping is off, or the lookup fails. Never
+         * throws: a segment list is an enhancement, and playback must not depend on a third-party
+         * service answering.
          */
-        suspend fun segments(videoId: String): List<SponsorBlockSegment> {
+        suspend fun segments(
+            videoId: String,
+            podcast: Boolean = false,
+        ): List<SponsorBlockSegment> {
             if (!YOUTUBE_ID.matches(videoId)) return emptyList()
             val settings = settings()
             if (!settings.enabled || settings.categories.isEmpty()) return emptyList()
+            if (podcast && !settings.podcastsEnabled) return emptyList()
 
             val key = "${settings.apiUrl}|${settings.categories.sortedBy { it.apiName }.joinToString(",") { it.apiName }}|$videoId"
             synchronized(cache) { cache[key] }?.let { return it }
@@ -170,6 +177,7 @@ data class SponsorBlockSettings(
     val enabled: Boolean,
     val categories: Set<SponsorBlockCategory>,
     val apiUrl: String,
+    val podcastsEnabled: Boolean = false,
 )
 
 @kotlinx.serialization.Serializable

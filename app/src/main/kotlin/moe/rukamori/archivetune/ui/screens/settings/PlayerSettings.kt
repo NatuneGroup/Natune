@@ -91,6 +91,7 @@ import moe.rukamori.archivetune.constants.SeekExtraSeconds
 import moe.rukamori.archivetune.constants.SkipSilenceKey
 import moe.rukamori.archivetune.constants.SponsorBlockCategoriesKey
 import moe.rukamori.archivetune.constants.SponsorBlockEnabledKey
+import moe.rukamori.archivetune.constants.SponsorBlockPodcastsEnabledKey
 import moe.rukamori.archivetune.sponsorblock.SponsorBlockCategory
 import moe.rukamori.archivetune.constants.PreferredArtworkProvider
 import moe.rukamori.archivetune.constants.SpotifyCanvasKey
@@ -149,6 +150,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         )
     val (sponsorBlockEnabled, onSponsorBlockEnabledChange) =
         prefs.state(SponsorBlockEnabledKey, defaultValue = false)
+    val (sponsorBlockPodcasts, onSponsorBlockPodcastsChange) =
+        prefs.state(SponsorBlockPodcastsEnabledKey, defaultValue = false)
     val (sponsorBlockCategories, onSponsorBlockCategoriesRawChange) =
         prefs.state(
             SponsorBlockCategoriesKey,
@@ -614,6 +617,20 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             checked = sponsorBlockEnabled,
                             onCheckedChange = onSponsorBlockEnabledChange,
                         )
+                    }
+                }
+
+                if (sponsorBlockEnabled) {
+                    item {
+                        Column(modifier = positions.modifierFor("sponsor_block_podcasts")) {
+                            SwitchPreference(
+                                title = { Text(stringResource(R.string.sponsor_block_podcasts)) },
+                                description = stringResource(R.string.sponsor_block_podcasts_description),
+                                icon = { Icon(painterResource(R.drawable.fast_forward), null) },
+                                checked = sponsorBlockPodcasts,
+                                onCheckedChange = onSponsorBlockPodcastsChange,
+                            )
+                        }
                     }
                 }
 
