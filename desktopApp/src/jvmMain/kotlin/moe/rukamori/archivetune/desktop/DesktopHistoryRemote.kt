@@ -77,6 +77,8 @@ internal class DesktopYouTubeHistoryPager(
     },
     report = graph::report,
     isCurrentAccount = isCurrentAccount,
+    // The provider rows stay canonical; this only layers the signed-in host's song edits onto what is shown.
+    overrides = graph.library.songMetadata?.observeOverrides(),
 )
 
 private fun historyAccountGuard(graph: DesktopSessionGraph): () -> Boolean {

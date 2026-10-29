@@ -20,6 +20,9 @@ import moe.rukamori.archivetune.innertube.models.WatchEndpoint.WatchEndpointMusi
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_UGC
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.models.toMediaMetadata
+import moe.rukamori.archivetune.songmetadata.SongMetadataOverrideCache
+import moe.rukamori.archivetune.songmetadata.withSongMetadataOverride
+import moe.rukamori.archivetune.songmetadata.withEffectiveSongNames
 import moe.rukamori.archivetune.ui.utils.YTThumbQuality
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.buildYTThumbnailUrl
@@ -32,6 +35,21 @@ const val ExtraIsPodcast = "moe.rukamori.archivetune.extra.IS_PODCAST"
 
 val MediaItem.metadata: MediaMetadata?
     get() = localConfiguration?.tag as? MediaMetadata
+
+/** Updates presentation only, retaining the occurrence's URI, cache key, extras and playback configuration. */
+fun MediaItem.withEffectiveSongMetadata(effective: MediaMetadata): MediaItem {
+    val names = effective.artists.joinToString { it.name }
+    val tag = (metadata ?: effective).withEffectiveSongNames(effective)
+    return buildUpon()
+        .setTag(tag)
+        .setMediaMetadata(
+            mediaMetadata.buildUpon()
+                .setTitle(effective.title)
+                .setSubtitle(names)
+                .setArtist(names)
+                .build(),
+        ).build()
+}
 
 private fun String?.toNotificationArtworkUri() =
     this
@@ -59,9 +77,9 @@ fun Song.toMediaItem() =
         .setMediaMetadata(
             androidx.media3.common.MediaMetadata
                 .Builder()
-                .setTitle(song.title)
-                .setSubtitle(artists.joinToString { it.name })
-                .setArtist(artists.joinToString { it.name })
+                .setTitle(effectiveTitle)
+                .setSubtitle(effectiveArtistNames.joinToString())
+                .setArtist(effectiveArtistNames.joinToString())
                 .setArtworkUri(
                     if (song.isMusicVideo) {
                         buildYTThumbnailUrl(song.id, YTThumbQuality.HQ).toUri()
@@ -76,19 +94,20 @@ fun Song.toMediaItem() =
                 .build(),
         ).build()
 
-fun SongItem.toMediaItem() =
-    MediaItem
+fun SongItem.toMediaItem(): MediaItem {
+    val metadata = toMediaMetadata().withSongMetadataOverride(SongMetadataOverrideCache.get(id))
+    return MediaItem
         .Builder()
         .setMediaId(id)
         .setUri(id)
         .setCacheKeyIfRemote(id)
-        .setTag(toMediaMetadata())
+        .setTag(metadata)
         .setMediaMetadata(
             androidx.media3.common.MediaMetadata
                 .Builder()
-                .setTitle(title)
-                .setSubtitle(artists.joinToString { it.name })
-                .setArtist(artists.joinToString { it.name })
+                .setTitle(metadata.title)
+                .setSubtitle(metadata.artists.joinToString { it.name })
+                .setArtist(metadata.artists.joinToString { it.name })
                 .setArtworkUri(
                     if (isMusicVideo()) {
                         buildYTThumbnailUrl(id, YTThumbQuality.HQ).toUri()
@@ -101,22 +120,24 @@ fun SongItem.toMediaItem() =
                 .setExtras(Bundle().apply { putBoolean(ExtraIsMusicVideo, isMusicVideo()) })
                 .build(),
         ).build()
+}
 
 fun EpisodeItem.toMediaItem() = toMediaMetadata().toMediaItem()
 
-fun MediaMetadata.toMediaItem() =
-    MediaItem
+fun MediaMetadata.toMediaItem(): MediaItem {
+    val effective = withSongMetadataOverride(SongMetadataOverrideCache.get(id))
+    return MediaItem
         .Builder()
         .setMediaId(id)
         .setUri(id)
         .setCacheKeyIfRemote(id)
-        .setTag(this)
+        .setTag(effective)
         .setMediaMetadata(
             androidx.media3.common.MediaMetadata
                 .Builder()
-                .setTitle(title)
-                .setSubtitle(artists.joinToString { it.name })
-                .setArtist(artists.joinToString { it.name })
+                .setTitle(effective.title)
+                .setSubtitle(effective.artists.joinToString { it.name })
+                .setArtist(effective.artists.joinToString { it.name })
                 .setArtworkUri(
                     if (isMusicVideo) {
                         buildYTThumbnailUrl(id, YTThumbQuality.HQ).toUri()
@@ -132,6 +153,7 @@ fun MediaMetadata.toMediaItem() =
                 })
                 .build(),
         ).build()
+}
 
 private fun SongItem.isMusicVideo(): Boolean {
     val musicVideoType = endpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType

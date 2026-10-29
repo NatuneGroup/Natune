@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.songmetadata.withSongMetadataOverrides
+import moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import org.jetbrains.compose.resources.stringResource
@@ -44,9 +46,13 @@ fun HistoryScreen(
     modifier: Modifier = Modifier, contentPadding: PaddingValues = LocalShellContentPadding.current,
 ) {
     var removal by remember(state.source) { mutableStateOf<Set<Long>?>(null) }
-    val sections = remember(state.sections, state.query) {
+    val edits = LocalSongMetadataOverrides.current
+    val sections = remember(state.sections, state.query, edits) {
         val query = state.query.trim()
-        (if (query.isEmpty()) state.sections else state.sections.map { section -> section.copy(events = section.events.filter {
+        val effectiveSections = state.sections.map { section ->
+            section.copy(events = section.events.map { it.copy(row = it.row.withSongMetadataOverrides(edits)) })
+        }
+        (if (query.isEmpty()) effectiveSections else effectiveSections.map { section -> section.copy(events = section.events.filter {
             it.row.item.title.contains(query, true) || it.row.item.subtitle.contains(query, true)
         }) }).filter { it.events.isNotEmpty() }
     }

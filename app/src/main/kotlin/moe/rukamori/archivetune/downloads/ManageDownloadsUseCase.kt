@@ -244,8 +244,8 @@ class ManageDownloadsUseCase
                     val song = songsById[songId]
                     buildEntry(
                         id = "song:$songId",
-                        title = song?.song?.title ?: download.requestTitle(),
-                        supportingText = song?.artists?.joinToString { it.name }?.ifBlank { null },
+                        title = song?.effectiveTitle ?: download.requestTitle(),
+                        supportingText = song?.effectiveArtistNames?.joinToString()?.ifBlank { null },
                         thumbnailUrl = song?.song?.thumbnailUrl,
                         destinationRoute = null,
                         playbackMetadata =

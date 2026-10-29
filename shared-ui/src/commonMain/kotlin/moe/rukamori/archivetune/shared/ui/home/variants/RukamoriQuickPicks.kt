@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.home.variants
 
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -155,7 +157,7 @@ private fun CarouselItemScope.RukamoriQuickPickHero(
     onLongClick: (() -> Unit)?,
     modifier: Modifier,
 ) {
-    val item = occurrence.item
+    val item = effectiveSong(occurrence.item)
     val shape = MaterialTheme.shapes.extraLarge
     Box(
         modifier =
@@ -273,7 +275,7 @@ private fun RukamoriQuickPickRow(
     onMenu: () -> Unit,
     modifier: Modifier,
 ) {
-    val item = occurrence.item
+    val item = effectiveSong(occurrence.item)
     ListItem(
         headlineContent = {
             Text(

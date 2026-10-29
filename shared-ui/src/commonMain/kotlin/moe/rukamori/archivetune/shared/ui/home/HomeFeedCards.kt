@@ -30,6 +30,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
+import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import org.jetbrains.compose.resources.painterResource
 
 /**
@@ -52,6 +53,7 @@ fun HomeFeedShelfCard(
     thumbnailAspectRatio: Float = 1f,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val display = effectiveSong(item)
     val isCircular = item.ref.kind == ContentKind.ARTIST
     val shape: Shape = if (isCircular) CircleShape else RoundedCornerShape(HomeShelfCardCorner)
     val isWideFrame = !isCircular && abs(thumbnailAspectRatio - 1f) > 0.001f
@@ -83,7 +85,7 @@ fun HomeFeedShelfCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = item.title,
+                text = display.title,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.W600,
                 letterSpacing = (-0.2).sp,
@@ -103,7 +105,7 @@ fun HomeFeedShelfCard(
             trailing?.invoke()
         }
         Text(
-            text = item.subtitle,
+            text = display.subtitle,
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

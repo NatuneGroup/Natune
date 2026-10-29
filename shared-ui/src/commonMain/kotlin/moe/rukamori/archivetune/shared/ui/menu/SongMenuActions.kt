@@ -1,6 +1,10 @@
 package moe.rukamori.archivetune.shared.ui.menu
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
@@ -176,6 +180,18 @@ fun SongOverflowMenu(
     editablePlaylists: List<ContentItem>,
     onDismiss: () -> Unit,
     onFailure: () -> Unit,
-) = OccurrenceOverflowMenu(
-    identity, expanded, listOf(selected), actions, library, editablePlaylists, onDismiss, onFailure,
-)
+    songMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository? = null,
+) {
+    var editing by remember(identity) { mutableStateOf(false) }
+    val canEdit = songMetadata != null && selected.item.ref.kind == moe.rukamori.archivetune.shared.domain.repository.ContentKind.SONG
+    if (editing && songMetadata != null) {
+        BoundEditSongInfoDialog(selected.item, songMetadata, onDismiss, onFailure)
+    } else {
+        val menuActions = if (canEdit) actions + OverflowAction(
+            "edit_song_info", Res.string.song_metadata_edit, dismissOnSuccess = false,
+        ) { editing = true } else actions
+        OccurrenceOverflowMenu(
+            identity, expanded, listOf(selected), menuActions, library, editablePlaylists, onDismiss, onFailure,
+        )
+    }
+}

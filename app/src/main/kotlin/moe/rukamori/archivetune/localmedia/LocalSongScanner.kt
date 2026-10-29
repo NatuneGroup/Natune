@@ -196,8 +196,10 @@ class LocalSongScanner
                         upsert(
                             SongEntity(
                                 id = track.id,
-                                title = if (existingSong?.titleOverride == true) existingSong.title else track.title,
-                                titleOverride = existingSong?.titleOverride ?: false,
+                                // Canonical title follows the file tags. A user edit is kept in
+                                // song_metadata_override, so the scan never has to preserve it here.
+                                title = track.title,
+                                titleOverride = false,
                                 duration = track.durationSeconds,
                                 thumbnailUrl = track.thumbnailUrl,
                                 albumId = track.albumId,

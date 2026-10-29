@@ -300,6 +300,7 @@ import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
+import moe.rukamori.archivetune.songmetadata.observeSongMetadataOverrideMap
 import moe.rukamori.archivetune.ui.component.AutoResizeText
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
@@ -2416,6 +2417,11 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                    // Keyed on the database so the Room subscription is not restarted on every recomposition.
+                    val songMetadataOverrides by remember(database) {
+                        database.observeSongMetadataOverrideMap()
+                    }.collectAsStateWithLifecycle(initialValue = emptyMap())
+
                     CompositionLocalProvider(
                         moe.rukamori.archivetune.ui.component.LocalRestartPrompt provides restartPrompt,
                         LocalHapticFeedback provides customHaptic,
@@ -2426,6 +2432,7 @@ class MainActivity : ComponentActivity() {
                         moe.rukamori.archivetune.ui.component.LocalBackAnimationStyle provides backAnimationStyle,
                         moe.rukamori.archivetune.LocalHideScrollbar provides hideScrollbar,
                         LocalDatabase provides database,
+                        moe.rukamori.archivetune.ui.component.LocalSongMetadataOverrides provides songMetadataOverrides,
                         LocalDensity provides scaledDensity,
                         LocalContentColor provides if (pureBlack) Color.White else contentColorFor(MaterialTheme.colorScheme.surface),
                         LocalPlayerConnection provides playerConnection,

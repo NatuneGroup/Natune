@@ -65,6 +65,9 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.listentogether.TrackInfo
+import moe.rukamori.archivetune.ui.component.effectiveSongMetadata
+import moe.rukamori.archivetune.songmetadata.SongMetadataOverrideCache
+import moe.rukamori.archivetune.songmetadata.resolveEffectiveSongMetadata
 
 /** Debounce window for the picker's search field. */
 private const val SONG_PICKER_DEBOUNCE_MS = 400L
@@ -265,6 +268,7 @@ private fun SongPickerRow(
     song: SongItem,
     onPick: () -> Unit,
 ) {
+    val names = effectiveSongMetadata(song.id, song.title, song.artists.map { it.name })
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier =
@@ -286,14 +290,14 @@ private fun SongPickerRow(
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = song.title,
+                text = names.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = song.artists.joinToString { it.name },
+                text = names.artistNames.joinToString(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -319,12 +323,14 @@ private fun SongPickerRow(
 }
 
 /** Maps an innertube search result onto the chat wire model for song cards. */
-private fun SongItem.toTrackInfo(): TrackInfo =
-    TrackInfo(
+private fun SongItem.toTrackInfo(): TrackInfo {
+    val names = resolveEffectiveSongMetadata(title, artists.map { it.name }, SongMetadataOverrideCache.get(id))
+    return TrackInfo(
         id = id,
-        title = title,
-        artist = artists.joinToString { it.name },
+        title = names.title,
+        artist = names.artistNames.joinToString(),
         album = album?.name,
         duration = (duration ?: 0) * 1000L,
         thumbnail = thumbnail,
     )
+}

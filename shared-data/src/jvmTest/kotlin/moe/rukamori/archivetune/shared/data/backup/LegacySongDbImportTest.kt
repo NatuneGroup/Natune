@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import moe.rukamori.archivetune.shared.data.persistence.LegacySongDbImport
 import moe.rukamori.archivetune.shared.data.persistence.PORTABLE_STATE_SCHEMA_VERSION
 import moe.rukamori.archivetune.shared.data.persistence.inspectPortableStateFile
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 
 /**
  * The schema-36 rich fixture carries one of every row kind the importer maps: a liked song, a bookmarked and a
@@ -217,6 +218,136 @@ class LegacySongDbImportTest {
         }
     }
 
+    @Test fun schema38OverridesKeepProviderIdentityAndEffectiveWins() {
+        val (target, outcome) = convert(syntheticSongDb38())
+        try {
+            assertEquals(2, outcome.librarySongs)
+            assertEquals(0, outcome.droppedEntries)
+            assertEquals(PORTABLE_STATE_SCHEMA_VERSION, inspectPortableStateFile(target))
+            val connection = BundledSQLiteDriver().open(target.toString())
+            try {
+                connection.prepare(
+                    "SELECT provider, songId, title, artistNamesJson, updatedAtMs " +
+                        "FROM portable_song_metadata_override ORDER BY songId",
+                ).use {
+                    fun row(provider: String, songId: String, title: String?, artists: String?, updatedAt: Long) {
+                        assertTrue(it.step(), "Missing override row for $songId")
+                        assertEquals(provider, it.getText(0))
+                        assertEquals(songId, it.getText(1))
+                        if (title == null) assertTrue(it.isNull(2)) else assertEquals(title, it.getText(2))
+                        if (artists == null) assertTrue(it.isNull(3)) else assertEquals(artists, it.getText(3))
+                        assertEquals(updatedAt, it.getLong(4))
+                    }
+                    // A 38 override row beats the pre-38 titleOverride move for the same song.
+                    row(ContentProvider.YOUTUBE.id, "both", "Effective Both", null, 77L)
+                    row(ContentProvider.YOUTUBE.id, "edited", "Edited title", "[\"Edited artist\",\"Second artist\"]", 42L)
+                    row(ContentProvider.YOUTUBE.id, "legacy-only", "Legacy Title", null, 0L)
+                    // Provider identity comes from the song row's isLocal flag, never a name guess.
+                    row(ContentProvider.LOCAL.id, "local-edited", null, "[\"Local Artist\"]", 9L)
+                    // The unknown-song row and the all-blank row are not imported.
+                    assertFalse(it.step())
+                }
+            } finally {
+                connection.close()
+            }
+        } finally {
+            target.parent.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun archiveWithSchema38DatabaseRunsCodecValidationThenImports() = runBlocking<Unit> {
+        val archive = zip("song.db" to syntheticSongDb38(), "settings.xml" to minimalSettings())
+        assertTrue(AndroidBackupArchive.recognizes(archive))
+        val scratch = Files.createTempDirectory("archivetune-android-import-38")
+        try {
+            val converted = AndroidBackupArchive.convert(archive, scratch)
+            assertFalse(converted.isEmpty)
+            assertEquals(PORTABLE_STATE_SCHEMA_VERSION, inspectPortableStateFile(converted.database!!))
+            val connection = BundledSQLiteDriver().open(converted.database!!.toString())
+            try {
+                connection.prepare("SELECT title FROM portable_song_metadata_override WHERE songId = 'edited'").use {
+                    assertTrue(it.step())
+                    assertEquals("Edited title", it.getText(0))
+                }
+            } finally {
+                connection.close()
+            }
+        } finally {
+            scratch.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun archiveWithWronglyShapedOverrideTableIsRejected() = runBlocking<Unit> {
+        val archive = zip("song.db" to syntheticSongDb38(validOverrideTable = false), "settings.xml" to minimalSettings())
+        val scratch = Files.createTempDirectory("archivetune-android-invalid-38")
+        try {
+            assertFailsWith<IllegalArgumentException> {
+                AndroidBackupArchive.convert(archive, scratch)
+            }
+        } finally {
+            scratch.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * A synthetic schema-38 `song.db` built with the exact override-table SQL the Android migration ships, so
+     * no binary fixture had to change. Carries an edited, a local, a legacy-title and a doubly-edited song plus
+     * a ghost and an all-blank override row.
+     */
+    private fun syntheticSongDb38(validOverrideTable: Boolean = true): ByteArray {
+        val file = Files.createTempFile("archivetune-song38", ".db")
+        val connection = BundledSQLiteDriver().open(file.toString())
+        try {
+            connection.exec(
+                "CREATE TABLE song (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, duration INTEGER NOT NULL DEFAULT 0, " +
+                    "thumbnailUrl TEXT, albumId TEXT, albumName TEXT, explicit INTEGER NOT NULL DEFAULT 0, " +
+                    "liked INTEGER NOT NULL DEFAULT 0, likedDate INTEGER, inLibrary INTEGER, " +
+                    "isLocal INTEGER NOT NULL DEFAULT 0, titleOverride INTEGER NOT NULL DEFAULT 0)",
+            )
+            connection.exec(
+                "INSERT INTO song (id, title, duration, inLibrary, isLocal, titleOverride) VALUES " +
+                    "('edited', 'Provider title', 180, 1700000000000, 0, 0), " +
+                    "('local-edited', 'Local file title', 200, NULL, 1, 0), " +
+                    "('legacy-only', 'Legacy Title', 190, 1700000000001, 0, 1), " +
+                    "('both', 'Legacy Both', 170, NULL, 0, 1)",
+            )
+            if (validOverrideTable) {
+                connection.exec(
+                    "CREATE TABLE song_metadata_override (songId TEXT PRIMARY KEY NOT NULL, title TEXT, " +
+                        "artistNames TEXT, updatedAt INTEGER NOT NULL)",
+                )
+                connection.exec(
+                    "INSERT INTO song_metadata_override (songId, title, artistNames, updatedAt) VALUES " +
+                        "('edited', 'Edited title', 'Edited artist\nSecond artist', 42), " +
+                        "('local-edited', NULL, 'Local Artist', 9), " +
+                        "('both', 'Effective Both', NULL, 77), " +
+                        "('ghost', 'Ghost title', NULL, 1), " +
+                        "('blank', '  ', '', 3)",
+                )
+            } else {
+                connection.exec(
+                    "CREATE TABLE song_metadata_override (songId TEXT PRIMARY KEY NOT NULL, title TEXT, " +
+                        "updatedAt INTEGER NOT NULL)",
+                )
+            }
+            connection.exec("CREATE TABLE room_master_table (id INTEGER PRIMARY KEY, identity_hash TEXT)")
+            connection.exec("INSERT INTO room_master_table VALUES (42, 'synthetic-38')")
+            connection.exec("PRAGMA user_version = 38")
+        } finally {
+            connection.close()
+        }
+        return Files.readAllBytes(file).also { Files.deleteIfExists(file) }
+    }
+
+    private fun minimalSettings(): ByteArray =
+        ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+            "<ArchiveTuneBackup><Settings>" +
+            "<string name=\"playerDesignStyle\" value=\"FLAMINGO\"/>" +
+            "</Settings></ArchiveTuneBackup>").toByteArray()
+
+    private fun SQLiteConnection.exec(sql: String) {
+        prepare(sql).use { it.step() }
+    }
     private fun zip(vararg entries: Pair<String, ByteArray>): ByteArray =
         ByteArrayOutputStream().also { output ->
             ZipOutputStream(output).use { zip ->

@@ -41,6 +41,8 @@ import moe.rukamori.archivetune.shared.domain.queue.ShuffleOrder
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuePlayOrder
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuePolicy
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
+import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository
+import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -98,6 +100,7 @@ class PortableQueueOwner(
     albumCompletion: AlbumCompletionIndex? = null,
     /** Blends songs into each other. Absent, every song ends before its successor loads, as before. */
     private val handoffEngine: QueueHandoffEngine? = null,
+    private val songMetadata: SongMetadataRepository? = null,
     /** Durable host preference changes also cancel an in-flight append when the queue UI is closed. */
     autoLoadMoreChanges: Flow<Boolean> = emptyFlow(),
     monotonicTimeMs: () -> Long = queueMonotonicClock(),
@@ -105,10 +108,13 @@ class PortableQueueOwner(
     private val lock = Mutex()
     private val finitePlaylists = FinitePlaylistLoader(content, albumCompletion)
     private var inside = false
-    private val published = MutableStateFlow(
-        QueueState(revision = 0L, entries = emptyList(), currentOccurrenceId = null, playOrder = emptyList()),
-    )
-    override val state: StateFlow<QueueState> = published.asStateFlow()
+    private val publication = QueueMetadataProjection(songMetadata)
+    override val state: StateFlow<QueueState> = publication.state
+    private var currentState: QueueState
+        get() = publication.current
+        set(value) {
+            publication.current = value
+        }
     private val source = MutableStateFlow<ContentRequest?>(null)
     override val queueSource: StateFlow<ContentRequest?> = source.asStateFlow()
 
@@ -133,7 +139,7 @@ class PortableQueueOwner(
         scope = scope,
         access = { operation -> withQueueAccess { operation() } },
         state = state,
-        commit = { published.value = it; revalidateHandoff() },
+        commit = { currentState = it; revalidateHandoff() },
         content = content,
         filter = { it.filterPlaybackContent() },
         enabled = autoLoadMoreEnabled,
@@ -164,6 +170,10 @@ class PortableQueueOwner(
     val handoff: StateFlow<QueueHandoffState?> = publishedHandoff.asStateFlow()
 
     // Declared after every field it reads, because the watchers may start before the constructor returns.
+    private val metadataWatcher: Job? = publication.watch(scope) {
+        // Same queue, order, revision and audible engine; only its metadata projection changes.
+        withQueueAccess { currentState = currentState }
+    }
     private val endWatcher: Job = scope.launch {
         player.snapshot.collect { snapshot -> onSnapshot(snapshot) }
     }
@@ -187,6 +197,7 @@ class PortableQueueOwner(
 
     /** Stops watching the player for ends and failures. The owner must not be used afterwards. */
     fun close() {
+        metadataWatcher?.cancel()
         endWatcher.cancel()
         failureWatcher.cancel()
         infinitePreferenceWatcher.cancel()
@@ -208,6 +219,7 @@ class PortableQueueOwner(
 
     override suspend fun <T> withQueueAccess(operation: suspend () -> T): T = lock.withLock {
         check(!inside) { "Queue access is not reentrant" }
+        publication.initializeNow()
         inside = true
         try {
             operation()
@@ -261,8 +273,8 @@ class PortableQueueOwner(
         removals.reset()
         infinite.reset(radio = !finite)
         source.value = collection
-        published.value = QueueState(
-            revision = published.value.revision + 1,
+        currentState = QueueState(
+            revision = currentState.revision + 1,
             entries = loaded,
             currentOccurrenceId = current.occurrenceId,
             playOrder = order.map { loaded[it].occurrenceId },
@@ -282,11 +294,11 @@ class PortableQueueOwner(
         val start = entries.firstOrNull { it.occurrenceId == startOccurrenceId }
             ?: throw IllegalArgumentException("Start occurrence is not in the replacement queue")
         val playRequest = requestFor(start)
-        val queue = published.value
+        val queue = currentState
         removals.reset()
         infinite.reset(staticQueue = true)
         source.value = null
-        published.value = QueueState(
+        currentState = QueueState(
             revision = queue.revision + 1,
             entries = entries,
             currentOccurrenceId = start.occurrenceId,
@@ -308,7 +320,7 @@ class PortableQueueOwner(
     override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind) {
         requireInside()
         if (entries.isEmpty()) return
-        val queue = published.value
+        val queue = currentState
         requireNewOccurrences(queue.entries, entries)
         val currentIndex = queue.currentOccurrenceId?.let { id ->
             queue.entries.indexOfFirst { it.occurrenceId == id }.takeIf { it >= 0 }
@@ -353,7 +365,7 @@ class PortableQueueOwner(
         // An empty queue has no current song. The first song becomes current paused, as Media3 prepares it.
         val becomesCurrent = if (queue.currentOccurrenceId == null) nextOrder.first() else null
         val playRequest = becomesCurrent?.let { id -> requestFor(timeline.first { it.occurrenceId == id }) }
-        published.value = queue.copy(
+        currentState = queue.copy(
             revision = queue.revision + 1,
             entries = timeline.toList(),
             currentOccurrenceId = queue.currentOccurrenceId ?: becomesCurrent,
@@ -365,7 +377,7 @@ class PortableQueueOwner(
 
     override suspend fun remove(occurrenceIds: Set<String>) {
         requireInside()
-        val queue = published.value
+        val queue = currentState
         if (queue.entries.none { it.occurrenceId in occurrenceIds }) return
         val entries = queue.entries.filterNot { it.occurrenceId in occurrenceIds }
         val playOrder = queue.playOrder.filterNot { it in occurrenceIds }
@@ -381,7 +393,7 @@ class PortableQueueOwner(
         } else {
             null
         }
-        published.value = queue.copy(
+        currentState = queue.copy(
             revision = queue.revision + 1,
             entries = entries,
             currentOccurrenceId = successor,
@@ -405,20 +417,20 @@ class PortableQueueOwner(
 
     override suspend fun removeUndoable(occurrenceIds: Set<String>): Long? {
         requireInside()
-        val ticket = removals.remember(published.value, occurrenceIds) ?: return null
+        val ticket = removals.remember(currentState, occurrenceIds) ?: return null
         remove(occurrenceIds)
         return ticket
     }
 
     override suspend fun undoRemoval(ticket: Long): Boolean {
         requireInside()
-        val previous = published.value
+        val previous = currentState
         val restored = removals.restore(ticket, previous) ?: return false
         val newCurrent = restored.currentOccurrenceId
         val request = if (previous.currentOccurrenceId == null && newCurrent != null) {
             requestFor(restored.entries.first { it.occurrenceId == newCurrent })
         } else null
-        published.value = restored
+        currentState = restored
         if (request != null) startPrepared(request, 0L, playWhenReady = false) else revalidateHandoff()
         return true
     }
@@ -427,11 +439,11 @@ class PortableQueueOwner(
         requireInside()
         check(!autoLoadMoreEnabled()) { "Disable infinite queue before clearing it" }
         infinite.reset(staticQueue = true)
-        val ticket = removeUndoable(published.value.entries
-            .filterNot { it.occurrenceId == published.value.currentOccurrenceId }
+        val ticket = removeUndoable(currentState.entries
+            .filterNot { it.occurrenceId == currentState.currentOccurrenceId }
             .mapTo(HashSet()) { it.occurrenceId })
-        val queue = published.value
-        published.value = queue.copy(revision = queue.revision + 1, tail = null, phase = FinitePlaylistPhase.UNKNOWN)
+        val queue = currentState
+        currentState = queue.copy(revision = queue.revision + 1, tail = null, phase = FinitePlaylistPhase.UNKNOWN)
         return ticket
     }
 
@@ -442,13 +454,13 @@ class PortableQueueOwner(
 
     override suspend fun moveNext(occurrenceId: String) {
         requireInside()
-        published.value = QueueEditPolicy.moveNext(published.value, occurrenceId)
+        currentState = QueueEditPolicy.moveNext(currentState, occurrenceId)
         revalidateHandoff()
     }
 
     override suspend fun moveInPlayOrder(occurrenceId: String, beforeOccurrenceId: String?) {
         requireInside()
-        published.value = QueueEditPolicy.moveInPlayOrder(published.value, occurrenceId, beforeOccurrenceId)
+        currentState = QueueEditPolicy.moveInPlayOrder(currentState, occurrenceId, beforeOccurrenceId)
         revalidateHandoff()
     }
 
@@ -458,14 +470,14 @@ class PortableQueueOwner(
      */
     override suspend fun move(occurrenceId: String, beforeOccurrenceId: String?) {
         requireInside()
-        published.value = QueueEditPolicy.moveInTimeline(published.value, occurrenceId, beforeOccurrenceId)
+        currentState = QueueEditPolicy.moveInTimeline(currentState, occurrenceId, beforeOccurrenceId)
         revalidateHandoff()
     }
 
     /** Shuffle edits only the loaded play order, never finite source completeness or the current song. */
     override suspend fun setShuffle(enabled: Boolean): Boolean {
         requireInside()
-        published.value = QueueEditPolicy.shuffle(published.value, enabled, random) ?: return false
+        currentState = QueueEditPolicy.shuffle(currentState, enabled, random) ?: return false
         revalidateHandoff()
         return true
     }
@@ -478,7 +490,7 @@ class PortableQueueOwner(
      */
     override suspend fun startRadioSeamlessly(): Boolean {
         requireInside()
-        val queue = published.value
+        val queue = currentState
         val currentId = queue.currentOccurrenceId ?: return false
         val currentIndex =
             queue.entries.indexOfFirst { it.occurrenceId == currentId }.takeIf { it >= 0 } ?: return false
@@ -493,7 +505,7 @@ class PortableQueueOwner(
         ) { it.item.ref }.filter { knownOccurrences.add(it.occurrenceId) }
         val tail = QueueTail(collection = collection, continuation = page.continuation, kind = QueueCollectionKind.RADIO)
         if (radioItems.isEmpty()) {
-            published.value = queue.copy(revision = queue.revision + 1, phase = FinitePlaylistPhase.UNKNOWN, tail = tail)
+            currentState = queue.copy(revision = queue.revision + 1, phase = FinitePlaylistPhase.UNKNOWN, tail = tail)
             infinite.reset(radio = true)
             removals.reset()
             source.value = collection
@@ -510,7 +522,7 @@ class PortableQueueOwner(
         } else {
             order.addAll(order.indexOf(currentId) + 1, radioIds)
         }
-        published.value = queue.copy(
+        currentState = queue.copy(
             revision = queue.revision + 1,
             entries = kept + radioItems,
             playOrder = order.toList(),
@@ -527,11 +539,11 @@ class PortableQueueOwner(
     override suspend fun select(occurrenceId: String, positionMs: Long) {
         requireInside()
         require(positionMs >= 0) { "Position must not be negative" }
-        val queue = published.value
+        val queue = currentState
         val target = queue.entries.firstOrNull { it.occurrenceId == occurrenceId }
             ?: throw IllegalArgumentException("Occurrence is not in the queue")
         val playRequest = requestFor(target)
-        published.value = queue.copy(revision = queue.revision + 1, currentOccurrenceId = occurrenceId)
+        currentState = queue.copy(revision = queue.revision + 1, currentOccurrenceId = occurrenceId)
         startPrepared(playRequest, positionMs, playWhenReady = true)
         infinite.consider()
     }
@@ -542,7 +554,7 @@ class PortableQueueOwner(
      */
     override suspend fun capture(): QueueCheckpoint {
         requireInside()
-        val queue = published.value
+        val queue = currentState
         val current = queue.currentOccurrenceId
         val position = if (current != null && player.snapshot.value?.occurrenceId == current) {
             player.positionMs()?.coerceAtLeast(0L) ?: 0L
@@ -562,7 +574,7 @@ class PortableQueueOwner(
         // An unknown legacy checkpoint is not proof of a completed finite source.
         infinite.reset(radio = queue.tail?.kind == QueueCollectionKind.RADIO)
         source.value = queue.tail?.collection
-        published.value = queue
+        currentState = queue
         if (playRequest == null) {
             failureScore = 0
             forgetHandoff()
@@ -574,8 +586,8 @@ class PortableQueueOwner(
 
     override suspend fun raiseRevisionTo(floor: Long) {
         requireInside()
-        val queue = published.value
-        if (queue.revision < floor) published.value = queue.copy(revision = floor)
+        val queue = currentState
+        if (queue.revision < floor) currentState = queue.copy(revision = floor)
     }
 
     private fun onSnapshot(snapshot: PlaybackSnapshot?) {
@@ -644,11 +656,11 @@ class PortableQueueOwner(
     /** Makes the audible successor current without loading it again, since the engine is already playing it. */
     private fun adoptHandoff(handoff: ArmedHandoff) {
         if (armed.compareAndSet(handoff, null)) publishedHandoff.value = null
-        val queue = published.value
+        val queue = currentState
         val incoming = handoff.state.toOccurrenceId
         if (queue.currentOccurrenceId != handoff.state.fromOccurrenceId) return
         if (queue.entries.none { it.occurrenceId == incoming }) return
-        published.value = queue.copy(revision = queue.revision + 1, currentOccurrenceId = incoming)
+        currentState = queue.copy(revision = queue.revision + 1, currentOccurrenceId = incoming)
     }
 
     /**
@@ -691,11 +703,11 @@ class PortableQueueOwner(
         key: HandoffKey,
         durationMs: Long,
     ): Pair<ContentOccurrence, Long>? {
-        val queue = published.value
+        val queue = currentState
         if (queue.currentOccurrenceId != key.occurrenceId || armed.value != null) return null
         // Repeat-one and a one-song repeat-all reload the same occurrence, which a second deck cannot carry.
         val nextId = nextAfter(queue, key.occurrenceId)?.takeIf { it != key.occurrenceId } ?: return null
-        val entries = published.value.entries
+        val entries = currentState.entries
         val current = entries.firstOrNull { it.occurrenceId == key.occurrenceId } ?: return null
         val next = entries.firstOrNull { it.occurrenceId == nextId } ?: return null
         val overlapMs = engine.overlapMs(current, next, durationMs)?.takeIf { it >= 0L } ?: return null
@@ -705,7 +717,7 @@ class PortableQueueOwner(
     private fun armedStillWanted(engine: QueueHandoffEngine, key: HandoffKey, durationMs: Long): Boolean {
         val pending = armed.value ?: return true
         if (pending.state.fromOccurrenceId != key.occurrenceId) return true
-        val entries = published.value.entries
+        val entries = currentState.entries
         val current = entries.firstOrNull { it.occurrenceId == pending.state.fromOccurrenceId } ?: return false
         val next = entries.firstOrNull { it.occurrenceId == pending.state.toOccurrenceId } ?: return false
         val overlapMs = engine.overlapMs(current, next, durationMs) ?: return false
@@ -742,7 +754,7 @@ class PortableQueueOwner(
      */
     private fun revalidateHandoff() {
         val pending = armed.value ?: return
-        val queue = published.value
+        val queue = currentState
         val from = pending.state.fromOccurrenceId
         if (queue.currentOccurrenceId == from &&
             QueueAdvancePolicy.successor(repeatMode(), queue.playOrder, from) == pending.state.toOccurrenceId
@@ -764,7 +776,7 @@ class PortableQueueOwner(
      * rather than extending a radio tail, because a repeating queue keeps its own songs.
      */
     private suspend fun advanceAfterEnd(ended: String) {
-        val queue = published.value
+        val queue = currentState
         if (queue.currentOccurrenceId != ended) return
         val next = nextAfter(queue, ended) ?: return
         select(next, 0L)
@@ -786,7 +798,7 @@ class PortableQueueOwner(
             } else {
                 infinite.replenish()
             }
-            next = QueueAdvancePolicy.successor(mode, published.value.playOrder, id)
+            next = QueueAdvancePolicy.successor(mode, currentState.playOrder, id)
         }
         return next
     }
@@ -797,7 +809,7 @@ class PortableQueueOwner(
      * occurrence that is no longer current is stale and is ignored.
      */
     private suspend fun skipAfterFailure(failed: String) {
-        val queue = published.value
+        val queue = currentState
         if (queue.currentOccurrenceId != failed) return
         failureScore += QueueAdvancePolicy.FAILURE_SCORE_STEP
         val next =
@@ -828,7 +840,7 @@ class PortableQueueOwner(
      * page are dropped, never repeated, exactly as `onAutoLoadMore` appends a `nextPage`.
      */
     private suspend fun extendTail() {
-        val queue = published.value
+        val queue = currentState
         val tail = queue.tail ?: return
         val token = tail.continuation ?: return
         val page = content.page(tail.collection, token)
@@ -839,7 +851,7 @@ class PortableQueueOwner(
         for (item in page.items.filterPlaybackContent()) {
             if (known.add(item.occurrenceId)) fresh += item
         }
-        published.value = queue.copy(
+        currentState = queue.copy(
             revision = queue.revision + 1,
             entries = queue.entries + fresh,
             playOrder = queue.playOrder + fresh.map { it.occurrenceId },
@@ -853,7 +865,7 @@ class PortableQueueOwner(
      * stops and the failure goes out with the engine's, rather than the queue command failing with nothing shown.
      */
     private suspend fun requestFor(occurrence: ContentOccurrence): Prepared = try {
-        Prepared.Ready(PlaybackRequest(occurrence.occurrenceId, occurrence.item.ref.id, locators.locate(occurrence)))
+        Prepared.Ready(PlaybackRequest(occurrence.occurrenceId, occurrence.item.ref.id, locators.locate(occurrence.copy(item = occurrence.item.canonicalSong()))))
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {
@@ -920,7 +932,7 @@ class PortableQueueOwner(
         return filter { occurrence ->
             (!explicit || !occurrence.item.explicit) &&
                 (!video || !occurrence.item.isVideo) &&
-                occurrence.item.artists.none { it.id != null && it.id in blocked }
+                occurrence.item.canonicalSong().artists.none { it.id != null && it.id in blocked }
         }
     }
 
@@ -949,30 +961,6 @@ class PortableQueueOwner(
         return queue.playOrder.drop(position + 1)
             .takeWhile { queue.manualKinds.containsKey(it) }
             .map { queue.manualKinds.getValue(it) }
-    }
-
-    private fun successorAfterRemoval(playOrder: List<String>, current: String, removed: Set<String>): String? {
-        val position = playOrder.indexOf(current)
-        if (position < 0) return null
-        return playOrder.drop(position + 1).firstOrNull { it !in removed }
-            ?: playOrder.take(position).lastOrNull { it !in removed }
-    }
-
-    private fun startIndexOf(entries: List<ContentOccurrence>, start: QueueStart?): Int {
-        if (start == null) return 0
-        val occurrenceId = start.occurrenceId
-        if (occurrenceId != null) {
-            return entries.indexOfFirst { it.occurrenceId == occurrenceId }
-                .takeIf { it >= 0 }
-                ?: throw IllegalArgumentException("Start occurrence is not in the collection")
-        }
-        val sameSong = entries.withIndex().filter { it.value.item.ref == start.item }
-        if (sameSong.isEmpty()) throw IllegalArgumentException("Start item is not in the collection")
-        val setVideoId = start.setVideoId
-        if (setVideoId != null) {
-            sameSong.firstOrNull { it.value.setVideoId == setVideoId }?.let { return it.index }
-        }
-        return sameSong.first().index
     }
 
     private fun requireUnique(entries: List<ContentOccurrence>) {

@@ -72,7 +72,7 @@ class ExoDownloadService :
         val hasKnownProgress = activeDownloads.any { it.getPercentDownloaded() != C.PERCENTAGE_UNSET.toFloat() }
         val contentText =
             if (downloads.size == 1) {
-                Util.fromUtf8Bytes(downloads[0].request.data)
+                downloadUtil.metadataTitles.title(downloads[0])
             } else {
                 resources.getQuantityString(R.plurals.n_song, downloads.size, downloads.size)
             }
@@ -121,7 +121,8 @@ class ExoDownloadService :
                         context,
                         R.drawable.error,
                         null,
-                        Util.fromUtf8Bytes(download.request.data),
+                        moe.rukamori.archivetune.songmetadata.SongMetadataOverrideCache.get(download.request.id)?.title
+                            ?: Util.fromUtf8Bytes(download.request.data),
                     )
                 NotificationUtil.setNotification(context, nextNotificationId++, notification)
             }
