@@ -1460,11 +1460,6 @@ val CompactBottomPillsKey = booleanPreferencesKey("compactBottomPills")
 // the Liquid Glass master switch (glass when it is on); on keeps them in solid theme colours.
 val CompactControlsStockColorKey = booleanPreferencesKey("compactControlsStockColor")
 
-enum class InterfaceStyle {
-    MATERIAL_EXPRESSIVE,
-    APPLE_MUSIC,
-}
-
 enum class SearchBarPosition {
     TOP,
     BOTTOM,
@@ -1658,8 +1653,8 @@ val ShowSpotifyPlaylistsKey = booleanPreferencesKey("show_spotify_playlists")
 val LibrarySourceKey = stringPreferencesKey("library_source")
 
 /**
- * The Apple Music Experience: the iOS-inspired hero on playlist, album and library detail pages —
- * a big left-aligned title with pink accent pills, in place of the artwork backdrop.
+ * Last explicitly applied preset, retained for legacy backups. Surface preferences own rendering;
+ * this flag must never force individual settings after their one-time migration.
  */
 val AppleMusicExperienceKey = booleanPreferencesKey("apple_music_experience")
 

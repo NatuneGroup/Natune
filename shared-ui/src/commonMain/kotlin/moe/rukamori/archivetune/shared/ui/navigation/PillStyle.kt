@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.lerp
 import moe.rukamori.archivetune.shared.domain.settings.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.shared.domain.settings.NavigationBarCompactBehavior
 import moe.rukamori.archivetune.shared.domain.settings.NavigationBarStyle
-import moe.rukamori.archivetune.shared.domain.settings.AppleMusicExperienceKey
+import moe.rukamori.archivetune.shared.domain.settings.selectedNavigationBarStyle
 import moe.rukamori.archivetune.shared.domain.settings.CompactBottomPillsKey
 import moe.rukamori.archivetune.shared.domain.settings.CompactControlsStockColorKey
 import moe.rukamori.archivetune.shared.domain.settings.HideNavigationBarLabelsKey
@@ -215,17 +215,9 @@ fun PreferenceSnapshot.navigationBarCompactBehavior(): NavigationBarCompactBehav
             }
     }
 
-/**
- * When the Apple Music experience switch is on, the stored style is overridden to APPLE_MUSIC — the
- * same atomic edit the baseline MainActivity applies; SUKISU stays selectable on its own.
- */
+/** The selected bar only; applying a preset never locks out a later individual choice. */
 fun PreferenceSnapshot.navigationPillStyle(): NavigationBarStyle =
-    if (this[AppleMusicExperienceKey, false]) {
-        NavigationBarStyle.APPLE_MUSIC
-    } else {
-        this[NavigationBarStyleKey]?.let { runCatching { NavigationBarStyle.valueOf(it) }.getOrNull() }
-            ?: NavigationBarStyle.DEFAULT
-    }
+    selectedNavigationBarStyle()
 
 /** The glow strength for the bar, gated by the stock-colours opt-out the same way the baseline does. */
 fun PreferenceSnapshot.navigationBarGlowStrength(): Float =

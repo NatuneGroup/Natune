@@ -74,8 +74,14 @@ internal fun ThemeChoicePage(
         title = { Text(stringResource(Res.string.m6_interface_style)) },
         text = { Column {
             InterfaceStyle.entries.forEach { style ->
-                TextButton(onClick = { attempt { controller.interfaceStyle(style); choosingInterface = false } }) {
-                    Text(stringResource(if (style == InterfaceStyle.APPLE_MUSIC) Res.string.m6_apple_music else Res.string.m6_material_expressive))
+                TextButton(enabled = style != InterfaceStyle.CUSTOM,
+                    onClick = { attempt { controller.interfaceStyle(style); choosingInterface = false } }) {
+                    RadioButton(selected = preferences.interfaceStyle() == style, onClick = null)
+                    Text(stringResource(when (style) {
+                        InterfaceStyle.APPLE_MUSIC -> Res.string.m6_apple_music
+                        InterfaceStyle.MATERIAL_EXPRESSIVE -> Res.string.m6_material_expressive
+                        InterfaceStyle.CUSTOM -> Res.string.m6_interface_custom_mixed
+                    }))
                 }
             }
         } },

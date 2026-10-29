@@ -101,7 +101,7 @@ public fun MediaDetailHero(
     canvasVisible: Boolean = true,
     useBlurredPlayButton: Boolean = false,
 ) {
-    // The Apple Music Experience swaps every one of these headers at once. Seven screens call
+    // The independent Apple Music headers option swaps these headers. Seven screens call
     // MediaDetailHero — playlists local and online, albums, top/auto/cache playlists, Spotify
     // playlists — so the switch belongs here rather than repeated at each of them, and a screen
     // added later gets it for free.
@@ -110,7 +110,7 @@ public fun MediaDetailHero(
     // the plain page surface with pink accent pills, so the thumbnail, canvas video, description
     // and metadata block below it have nowhere to sit and are deliberately dropped rather than
     // wedged in.
-    if (rememberAppleMusicExperience()) {
+    if (rememberAppleMusicHeaders()) {
         AppleMusicPlaylistHero(
             sectionLabel = null,
             title = title,
