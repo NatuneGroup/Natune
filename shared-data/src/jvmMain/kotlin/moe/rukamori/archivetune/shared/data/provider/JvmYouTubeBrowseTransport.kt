@@ -121,12 +121,7 @@ class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTranspor
         return libraryPage(browseId, continuation)
     }
 
-    override suspend fun history(continuation: String?): YouTubeEntryPage {
-        // The history browse is one response with no further page, so a token for it is foreign and is refused.
-        if (continuation != null) throw UnsupportedContentOperation()
-        val page = YouTube.musicHistory().getOrThrow()
-        return YouTubeEntryPage(page.sections.orEmpty().flatMap { section -> section.songs.map { it.toSongEntry() } })
-    }
+    override suspend fun history(continuation: String?): YouTubeEntryPage = CoreYouTubeHistory.page(continuation).entriesPage()
 
     override suspend fun likeSong(videoId: String, liked: Boolean) {
         YouTube.likeVideo(videoId, liked).getOrThrow()

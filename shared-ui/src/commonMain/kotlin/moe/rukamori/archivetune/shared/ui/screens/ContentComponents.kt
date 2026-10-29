@@ -37,7 +37,12 @@ fun ContentRow(
 ) {
     ListItem(
         headlineContent = { Text(occurrence.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text(occurrence.item.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
+            Column {
+                Text(occurrence.item.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                PodcastEpisodeProgress(occurrence.item.ref)
+            }
+        },
         leadingContent = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ordinal?.let { Text(it.toString(), style = MaterialTheme.typography.labelMedium) }

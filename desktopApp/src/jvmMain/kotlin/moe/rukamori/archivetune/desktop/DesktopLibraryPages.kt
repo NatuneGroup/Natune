@@ -29,6 +29,8 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.repository.QueueStart
 import moe.rukamori.archivetune.shared.domain.settings.LibrarySourceKey
+import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
+import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistEditLockKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistSortDescendingKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistSortTypeKey
@@ -152,9 +154,13 @@ private fun desktopHistoryPage(
     // DateFormat is not thread-safe. It formats only while the page composes, on the window's UI thread.
     val format = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
     val snapshot by graph.settings.snapshots.collectAsState()
+    val youtubePager = remember(graph, snapshot?.get(InnerTubeCookieKey), snapshot?.get(DataSyncIdKey)) {
+        DesktopYouTubeHistoryPager(graph)
+    }
+    val spotifyPager = remember(graph, spotify) { DesktopSpotifyHistoryPager(graph, spotify) }
     val remote = buildList {
-        if (snapshot.youTubeSignIn() != null) add(DesktopYouTubeHistoryPager(graph))
-        if (spotify.historyAvailable()) add(DesktopSpotifyHistoryPager(graph, spotify))
+        if (snapshot.youTubeSignIn() != null) add(youtubePager)
+        if (spotify.historyAvailable()) add(spotifyPager)
     }
     return hostHistoryPage(
         owners = graph.pageOwners,

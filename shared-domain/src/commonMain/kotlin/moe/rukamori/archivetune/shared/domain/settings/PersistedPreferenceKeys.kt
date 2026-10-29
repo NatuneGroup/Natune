@@ -461,6 +461,7 @@ val NavigationStyleBeforeAppleMusicKey = StringPreferenceKey("navigation_style_b
 val SponsorBlockEnabledKey = BooleanPreferenceKey("sponsor_block_enabled")
 val SponsorBlockCategoriesKey = StringSetPreferenceKey("sponsor_block_categories")
 val SponsorBlockApiUrlKey = StringPreferenceKey("sponsor_block_api_url")
+val SponsorBlockPodcastsEnabledKey = BooleanPreferenceKey("sponsor_block_podcasts_enabled")
 val StyleBeforeAppleMusicKey = StringPreferenceKey("style_before_apple_music")
 val SpotifyLibraryPlaylistsCacheKey = StringPreferenceKey("spotify_library_playlists_cache")
 val SpotifyRecentlyPlayedCacheKey = StringPreferenceKey("spotify_recently_played_cache")

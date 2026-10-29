@@ -362,10 +362,21 @@ class IosYouTubeBrowseTransport(
         return shelfPage(browseId, continuation)
     }
 
-    override suspend fun history(continuation: String?): YouTubeEntryPage {
-        // The history browse is one response with no further page, so a token for it is foreign and is refused.
-        if (continuation != null) throw UnsupportedContentOperation()
-        return shelfPage("FEmusic_history", continuation = null)
+    override suspend fun history(continuation: String?): YouTubeEntryPage = historySections(continuation).entriesPage()
+
+    suspend fun historySections(continuation: String? = null): YouTubeHistoryPage {
+        val session = innerTube.sessionSnapshot()
+        val response = innerTube.browse(
+            BROWSE_CLIENT,
+            browseId = if (continuation == null) "FEmusic_history" else null,
+            continuation = continuation,
+            setLogin = true,
+        ).body<JsonObject>()
+        val current = innerTube.sessionSnapshot()
+        if (session.cookie != current.cookie || session.dataSyncId != current.dataSyncId || session.authUser != current.authUser) {
+            throw moe.rukamori.archivetune.shared.domain.repository.ContentAccountChanged()
+        }
+        return parseYouTubeHistoryPage(response, ::historyEntry)
     }
 
     override suspend fun likeSong(videoId: String, liked: Boolean) {

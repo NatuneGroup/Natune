@@ -21,13 +21,17 @@ data class SponsorBlockConfig(val enabled: Boolean, val categories: Set<String> 
 }
 data class SkipSegment(val category: String, val startMs: Long, val endMs: Long)
 
+fun interface SponsorBlockSegmentSource {
+    suspend fun segments(videoId: String, config: SponsorBlockConfig): List<SkipSegment>
+}
+
 /** Privacy-preserving hash-prefix protocol; feature failures never block playback, cancellation does. */
-class KtorSponsorBlockRepository(private val client: HttpClient) {
+class KtorSponsorBlockRepository(private val client: HttpClient) : SponsorBlockSegmentSource {
     private data class Key(val id: String, val origin: String, val categories: Set<String>)
     private val mutex = Mutex()
     private val cache = linkedMapOf<Key, List<SkipSegment>>()
 
-    suspend fun segments(videoId: String, config: SponsorBlockConfig): List<SkipSegment> {
+    override suspend fun segments(videoId: String, config: SponsorBlockConfig): List<SkipSegment> {
         if (!config.enabled || config.categories.isEmpty() || !YOUTUBE_ID.matches(videoId)) return emptyList()
         val key = Key(videoId, config.origin, config.categories.toSet())
         mutex.withLock { cache.remove(key)?.let { cache[key] = it; return it } }

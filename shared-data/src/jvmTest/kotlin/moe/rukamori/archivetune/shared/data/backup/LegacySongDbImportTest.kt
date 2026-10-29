@@ -147,6 +147,62 @@ class LegacySongDbImportTest {
         }
     }
 
+    @Test fun schemaThirtySevenArchivePreservesEpisodeBookmarksAndPlayedMarkersOutsideTheLibrary() = runBlocking<Unit> {
+        val source = Files.createTempFile("archivetune-schema37", ".db")
+        val scratch = Files.createTempDirectory("archivetune-progress-import")
+        try {
+            Files.write(source, fixture("schema36-rich-song.db"))
+            val connection = BundledSQLiteDriver().open(source.toString())
+            try {
+                connection.prepare(
+                    "CREATE TABLE podcast_progress (episodeId TEXT NOT NULL, positionMs INTEGER NOT NULL, " +
+                        "durationMs INTEGER, finished INTEGER NOT NULL, updatedAtMs INTEGER NOT NULL, PRIMARY KEY(episodeId))",
+                ).use { it.step() }
+                connection.prepare(
+                    "INSERT INTO podcast_progress VALUES ('youtube:unfinished', 12000, 600000, 0, 1000), " +
+                        "('youtube:played', 0, NULL, 1, 2000)",
+                ).use { it.step() }
+                connection.prepare("PRAGMA user_version = 37").use { it.step() }
+                // Public identity of app/schemas/...InternalDatabase/37.json.
+                connection.prepare(
+                    "UPDATE room_master_table SET identity_hash = 'ea9228eb769d7cdde2b6a9a6a4532182' WHERE id = 42",
+                ).use { it.step() }
+            } finally { connection.close() }
+            val bytes = Files.readAllBytes(source)
+            val archive = zip("song.db" to bytes)
+            val codec = JvmBackupArchiveCodec()
+            val prepared = codec.prepare(archive, setOf(moe.rukamori.archivetune.shared.data.persistence.BackupCategory.LIBRARY))
+            assertContentEquals(bytes, prepared.libraryFiles.getValue("song.db"))
+            val converted = AndroidBackupArchive.convert(archive, scratch)
+            val restored = BundledSQLiteDriver().open(converted.database!!.toString())
+            try {
+                restored.prepare(
+                    "SELECT episodeId, positionMs, durationMs, finished, updatedAtMs FROM portable_podcast_progress ORDER BY episodeId",
+                ).use {
+                    assertTrue(it.step())
+                    assertEquals("youtube:played", it.getText(0))
+                    assertEquals(0L, it.getLong(1))
+                    assertTrue(it.isNull(2))
+                    assertEquals(1L, it.getLong(3))
+                    assertEquals(2000L, it.getLong(4))
+                    assertTrue(it.step())
+                    assertEquals("youtube:unfinished", it.getText(0))
+                    assertEquals(12000L, it.getLong(1))
+                    assertEquals(600000L, it.getLong(2))
+                    assertEquals(0L, it.getLong(3))
+                    assertFalse(it.step())
+                }
+                restored.prepare("SELECT COUNT(*) FROM portable_playlist_entry").use {
+                    assertTrue(it.step())
+                    assertEquals(2L, it.getLong(0))
+                }
+            } finally { restored.close() }
+        } finally {
+            Files.deleteIfExists(source)
+            scratch.toFile().deleteRecursively()
+        }
+    }
+
     @Test fun foreignAndDesktopArchivesAreNotRecognized() = runBlocking<Unit> {
         assertFalse(AndroidBackupArchive.recognizes(zip("random.txt" to byteArrayOf(1, 2, 3))))
         assertFalse(AndroidBackupArchive.recognizes(zip("backup.json" to "{}".toByteArray())))

@@ -68,6 +68,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.TopAppBarDefaults
@@ -117,7 +118,6 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.HistorySource
-import moe.rukamori.archivetune.constants.InnerTubeCookieKey
 import moe.rukamori.archivetune.constants.SpotifyHistorySyncEnabledKey
 import moe.rukamori.archivetune.db.entities.EventWithSong
 import moe.rukamori.archivetune.extensions.metadata
@@ -170,8 +170,15 @@ fun HistoryScreen(
     val isLoadingMoreEvents by viewModel.isLoadingMoreEvents.collectAsStateWithLifecycle()
     val canLoadMoreEvents by viewModel.canLoadMoreEvents.collectAsStateWithLifecycle()
     val remoteHistoryState by viewModel.remoteHistoryState.collectAsStateWithLifecycle()
+    val remoteContinuation by viewModel.remoteContinuation.collectAsStateWithLifecycle()
+    val remoteLoading by viewModel.remoteLoading.collectAsStateWithLifecycle()
+    val remoteLoadFailed by viewModel.remoteLoadFailed.collectAsStateWithLifecycle()
+    val remotePagingUnavailable by viewModel.remotePagingUnavailable.collectAsStateWithLifecycle()
+    val remoteShuffling by viewModel.remoteShuffling.collectAsStateWithLifecycle()
 
-    val innerTubeCookie by rememberPreference(InnerTubeCookieKey, "")
+    val accountAuth by YouTube.authStateFlow.collectAsStateWithLifecycle()
+    val innerTubeCookie = accountAuth.cookie
+    val historyAccount = innerTubeCookie to accountAuth.dataSyncId
     val isLoggedIn =
         remember(innerTubeCookie) {
             hasYouTubeLoginCookie(innerTubeCookie)
@@ -409,8 +416,14 @@ fun HistoryScreen(
                         isPlaying = isPlaying,
                         activeMediaId = mediaMetadata?.id,
                         navController = navController,
-                        onRetry = viewModel::fetchRemoteHistory,
-                        onSongMenu = { song ->
+                        onRetry = viewModel::retryRemoteHistory,
+                        continuation = remoteContinuation,
+                        loadingMore = remoteLoading,
+                        loadMoreFailed = remoteLoadFailed,
+                        paginationUnavailable = remotePagingUnavailable,
+                        onLoadMore = viewModel::loadMoreRemoteHistory,
+                        onSongMenu = menu@{ song ->
+                            if (!viewModel.remoteAccountIsCurrent(historyAccount.first, historyAccount.second)) return@menu
                             menuState.show {
                                 YouTubeSongMenu(
                                     song = song,
@@ -419,12 +432,16 @@ fun HistoryScreen(
                                 )
                             }
                         },
-                        onSongClick = { song ->
+                        onSongClick = click@{ song ->
+                            if (!viewModel.remoteAccountIsCurrent(historyAccount.first, historyAccount.second)) return@click
                             if (song.id == mediaMetadata?.id) {
                                 playerConnection.player.togglePlayPause()
                             } else {
                                 playerConnection.playQueue(
-                                    YouTubeQueue.radio(song.toMediaMetadata()),
+                                    if (song.isPodcast) ListQueue(
+                                        title = song.title,
+                                        items = listOf(song.toMediaItem()),
+                                    ) else YouTubeQueue.radio(song.toMediaMetadata()),
                                 )
                             }
                         },
@@ -532,16 +549,16 @@ fun HistoryScreen(
     }
 
     // A. When screen opens + user is logged in → fetch remote history in background
-    LaunchedEffect("prefetch", isLoggedIn) {
+    LaunchedEffect("prefetch", innerTubeCookie, accountAuth.dataSyncId) {
         if (!isLoggedIn) return@LaunchedEffect
-        if (remoteHistoryState is RemoteHistoryUiState.Success) return@LaunchedEffect
         delay(1_000) // wait for screen
+        if (viewModel.remoteHistoryState.value is RemoteHistoryUiState.Success) return@LaunchedEffect
 
         viewModel.fetchRemoteHistorySilent()
     }
 
     // B. When playback sync happens → retry with backoff
-    LaunchedEffect("sync", isLoggedIn) {
+    LaunchedEffect("sync", innerTubeCookie, accountAuth.dataSyncId) {
         YouTube.historySyncEvent.collect {
             if (!isLoggedIn) return@collect
 
@@ -632,17 +649,21 @@ fun HistoryScreen(
         floatingActionButton = {
             HideOnScrollFAB(
                 visible = historySource != HistorySource.SPOTIFY &&
-                    !showSearchBar && selectionCount == 0 && currentVisibleCount > 0,
+                    !showSearchBar && selectionCount == 0 && currentVisibleCount > 0 &&
+                    (historySource != HistorySource.REMOTE ||
+                        (!remoteLoading && !remoteShuffling && !remoteLoadFailed && !remotePagingUnavailable)),
                 lazyListState = activeListState,
                 icon = R.drawable.shuffle,
                 label = stringResource(R.string.shuffle),
                 onClick = {
-                    if (historySource == HistorySource.REMOTE) {
-                        if (remoteVisibleSongs.isNotEmpty()) {
+                    if (historySource == HistorySource.REMOTE &&
+                        viewModel.remoteAccountIsCurrent(historyAccount.first, historyAccount.second)
+                    ) {
+                        viewModel.shuffleRemoteHistory(searchQuery) { songs ->
                             playerConnection.playQueue(
                                 ListQueue(
                                     title = context.getString(R.string.history),
-                                    items = remoteVisibleSongs.map { it.toMediaItem() }.shuffled(),
+                                    items = songs.map { it.toMediaItem() },
                                 ),
                             )
                         }
@@ -913,139 +934,6 @@ private fun LocalHistoryFeed(
 }
 
 @Composable
-private fun RemoteHistoryFeed(
-    listState: LazyListState,
-    topPadding: Dp,
-    headerContent: @Composable () -> Unit,
-    remoteHistoryState: RemoteHistoryUiState,
-    filteredSections: List<HistoryPage.HistorySection>,
-    isPlaying: Boolean,
-    activeMediaId: String?,
-    navController: NavController,
-    onRetry: () -> Unit,
-    onSongMenu: (moe.rukamori.archivetune.innertube.models.SongItem) -> Unit,
-    onSongClick: (moe.rukamori.archivetune.innertube.models.SongItem) -> Unit,
-) {
-    LazyColumn(
-        state = listState,
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .widthIn(max = 840.dp)
-                .padding(top = topPadding)
-                .windowInsetsPadding(
-                    LocalPlayerAwareWindowInsets.current.only(
-                        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-                    ),
-                ),
-        contentPadding = PaddingValues(bottom = 112.dp),
-    ) {
-        item("history_overview") {
-            headerContent()
-        }
-
-        when (remoteHistoryState) {
-            RemoteHistoryUiState.Loading -> {
-                item("remote_history_loading") {
-                    HistoryStateCard(
-                        title = stringResource(R.string.history_remote_loading),
-                        description = stringResource(R.string.history_remote_summary),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        loading = true,
-                    )
-                }
-            }
-
-            RemoteHistoryUiState.Empty -> {
-                item("remote_history_empty") {
-                    HistoryStateCard(
-                        title = stringResource(R.string.history_remote_empty_title),
-                        description = stringResource(R.string.history_remote_empty_desc),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        icon = R.drawable.history,
-                    )
-                }
-            }
-
-            RemoteHistoryUiState.Error -> {
-                item("remote_history_error") {
-                    HistoryStateCard(
-                        title = stringResource(R.string.history_remote_error_title),
-                        description = stringResource(R.string.history_remote_error_desc),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        actionLabel = stringResource(R.string.retry),
-                        onActionClick = onRetry,
-                        icon = R.drawable.history,
-                    )
-                }
-            }
-
-            is RemoteHistoryUiState.Success -> {
-                if (filteredSections.isEmpty()) {
-                    item("remote_history_search_empty") {
-                        HistoryStateCard(
-                            title = stringResource(R.string.history_no_results_title),
-                            description = stringResource(R.string.history_no_results_desc),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            icon = R.drawable.search,
-                        )
-                    }
-                } else {
-                    filteredSections.forEach { section ->
-                        stickyHeader(key = "header_${section.title}") {
-                            HistorySectionHeader(
-                                title = section.title,
-                                songCount = section.songs.size,
-                            )
-                        }
-
-                        itemsIndexed(
-                            items = section.songs,
-                            key = { _, song -> "${section.title}_${song.id}" },
-                            contentType = { _, _ -> "remote_history_song" },
-                        ) { index, song ->
-                            val isActive = song.id == activeMediaId
-                            HistorySongGroupItem(
-                                index = index,
-                                lastIndex = section.songs.lastIndex,
-                                isActive = isActive,
-                                modifier = Modifier.animateItem(),
-                            ) { containerColor ->
-                                YouTubeListItem(
-                                    item = song,
-                                    isActive = isActive,
-                                    isPlaying = isPlaying,
-                                    swipeContentBackgroundColor = containerColor,
-                                    showActiveContainer = false,
-                                    trailingContent = {
-                                        androidx.compose.material3.IconButton(
-                                            onClick = { onSongMenu(song) },
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.more_vert),
-                                                contentDescription = null,
-                                            )
-                                        }
-                                    },
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .combinedClickable(
-                                                onClick = { onSongClick(song) },
-                                                onLongClick = { onSongMenu(song) },
-                                            ),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun HistorySourceDock(
     visibleSongCount: Int,
     availableSources: List<HistorySource>,
@@ -1121,7 +1009,7 @@ private fun HistorySourceDock(
 }
 
 @Composable
-private fun HistorySongGroupItem(
+internal fun HistorySongGroupItem(
     index: Int,
     lastIndex: Int,
     modifier: Modifier = Modifier,
@@ -1183,7 +1071,7 @@ private fun HistorySongGroupItem(
 }
 
 @Composable
-private fun HistorySectionHeader(
+internal fun HistorySectionHeader(
     title: String,
     songCount: Int,
 ) {
@@ -1266,7 +1154,7 @@ private fun HistorySourceSelector(
 }
 
 @Composable
-private fun HistoryStateCard(
+internal fun HistoryStateCard(
     title: String,
     description: String,
     modifier: Modifier = Modifier,

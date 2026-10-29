@@ -1620,6 +1620,8 @@
     <string name="library_style_apple_music">Apple Music</string>
     <string name="sponsor_block">SponsorBlock</string>
     <string name="sponsor_block_description">Skip stretches the SponsorBlock community has marked on YouTube tracks. Lookups are sent by hashed ID, so the server is never told which track is playing.</string>
+    <string name="sponsor_block_podcasts">Skip podcast segments</string>
+    <string name="sponsor_block_podcasts_description">Also skip the segments the community has marked in podcast episodes. Uses the same lookup as songs.</string>
     <string name="sponsor_block_categories">Segments to skip</string>
     <string name="sponsor_block_category_sponsor">Sponsor</string>
     <string name="sponsor_block_category_selfpromo">Unpaid or self promotion</string>
