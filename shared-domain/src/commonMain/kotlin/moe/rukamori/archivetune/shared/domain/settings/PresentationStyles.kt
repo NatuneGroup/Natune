@@ -38,10 +38,11 @@ enum class PlayerDesignStyle {
     }
 }
 
-/** Which presentation the app shows: the Material 3 Expressive default, or the Apple Music experience. */
+/** Preset status, derived from the independently selected surfaces. CUSTOM is not an apply action. */
 enum class InterfaceStyle {
     MATERIAL_EXPRESSIVE,
     APPLE_MUSIC,
+    CUSTOM,
 }
 
 /**

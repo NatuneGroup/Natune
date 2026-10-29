@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.ui.component.navigationTreatmentKeys
 import moe.rukamori.archivetune.ui.component.setNavigationTreatment
 import moe.rukamori.archivetune.ui.component.setPlaybackOutputPreference
 import moe.rukamori.archivetune.utils.RestartScopedSettings
+import moe.rukamori.archivetune.utils.setFontPreference
 import moe.rukamori.archivetune.constants.TabletModeEnabledKey
 
 import android.content.ActivityNotFoundException
@@ -105,30 +106,12 @@ import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.WakelockKey
 
 @Composable
-private fun SearchResultSwitch(
+internal fun SearchResultSwitch(
     key: androidx.datastore.preferences.core.Preferences.Key<Boolean>,
     defaultValue: Boolean,
     blurOverridden: Boolean = false,
 ) {
-    val prefs = LocalSettingsPreferenceSnapshot.current
-    val restartPrompt = LocalRestartPrompt.current
-    val context = LocalContext.current
-    val (checked, setValue) = prefs.state(key, defaultValue)
-    val onCheckedChange: (Boolean) -> Unit = { enabled ->
-        when (key) {
-            in navigationTreatmentKeys -> setNavigationTreatment(restartPrompt, prefs, key, enabled)
-            LiquidGlassEnabledKey, TabletModeEnabledKey -> restartPrompt.edit(prefs) { this[key] = enabled }
-            CrossfadeEnabledKey, AudioOffload ->
-                setPlaybackOutputPreference(restartPrompt, prefs, context, key, enabled)
-            else -> setValue(enabled)
-        }
-    }
-    val blurDisabled = blurOverridden && prefs[DisableBlurKey, false]
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        enabled = !blurDisabled,
-    )
+    ConflictAwareSearchSwitch(key, defaultValue, blurOverridden)
 }
 
 /**
@@ -144,7 +127,7 @@ private fun SearchResultSystemFontSwitch() {
         checked = fontPreference == AppFontPreference.SYSTEM,
         onCheckedChange = { checked ->
             restartPrompt.edit(prefs) {
-                this[FontPreferenceKey] = (if (checked) AppFontPreference.SYSTEM else AppFontPreference.DEFAULT).name
+                setFontPreference(if (checked) AppFontPreference.SYSTEM else AppFontPreference.DEFAULT)
             }
         },
     )
@@ -264,7 +247,7 @@ fun buildSettingsGroups(
                 SettingsChild("Theme creator", "theme_creator", listOf("theme creator", "create theme", "custom theme", "make theme")),
                 SettingsChild("Palette picker", "palette_picker", listOf("palette picker", "pick palette", "choose palette", "custom palette")),
                 SettingsChild("Extras", "extras", listOf("extras", "appearance extras", "home cards", "hide cards", "more appearance")),
-            ),
+            ) + independentAppleMusicSearchChildren(context),
         )
     // Appearance → Extras sub-page. Hidden from the main list (it is reached through
     // Appearance) but every toggle on it stays searchable.
@@ -563,7 +546,7 @@ fun buildSettingsGroups(
                 SettingsChild("Lyrics provider", "lyrics_provider", listOf("lyrics provider", "source", "lrclib", "kugou", "netease", "musixmatch", "paxsenix", "betterlyrics", "portato", "youlyplus", "unison", "simpmusic", "megalobiz")),
                 SettingsChild("Lyrics mode", "lyrics_mode", listOf("lyrics mode", "lyrics style", "lyrics display mode", "karaoke mode")),
                 SettingsChild("Show lyrics", "show_lyrics", listOf("show lyrics", "display lyrics", "lyrics toggle", "lyrics show")) { SearchResultSwitch(ShowLyricsKey, false) },
-                SettingsChild("Use lyrics V2", "use_lyrics_v2", listOf("lyrics v2", "new lyrics", "lyrics engine")) { SearchResultSwitch(UseLyricsV2Key, true) },
+                SettingsChild("Use lyrics V2", "use_lyrics_v2", listOf("lyrics v2", "new lyrics", "lyrics engine")),
                 SettingsChild("Translate lyrics", "translate_lyrics", listOf("translate", "translation", "lyrics translation")) { SearchResultSwitch(TranslateLyricsKey, false) },
                 SettingsChild("Enable translator", "enable_translator", listOf("translator", "translation engine", "lyrics translator")) { SearchResultSwitch(EnableTranslatorKey, false) },
                 SettingsChild("Lyrics font size", "lyrics_font_size", listOf("font size", "lyrics size", "text size", "lyrics text size")),

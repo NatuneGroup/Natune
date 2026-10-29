@@ -12,6 +12,22 @@ import kotlin.test.*
 
 @OptIn(ExperimentalTestApi::class)
 class AppearanceSettingsTest {
+    @Test fun individualAppleControlsNeverApplyThePresetAndReportMixedStatus() {
+        val rows = appearanceThemeSettingsRows(PreferenceSnapshot.EMPTY, false, false, false, false, {}, {}, {}, {}, {})
+        listOf("apple_music_headers", "apple_music_menus", "apple_music_search_bar", "apple_music_palette").forEach { anchor ->
+            val toggle = rows.single { it.anchor == anchor } as SettingsRow.Toggle
+            val editor = PreferenceSnapshot.EMPTY.toEditor()
+            toggle.write(editor, true)
+            val result = editor.snapshot()
+            assertEquals(setOf(toggle.key), result.keys)
+            assertEquals(InterfaceStyle.CUSTOM, result.interfaceStyle())
+            assertNull(result[AppleMusicExperienceKey])
+        }
+        val preset = PreferenceSnapshot.EMPTY.toEditor().apply { applyInterfaceStyle(InterfaceStyle.APPLE_MUSIC) }
+        val playerRows = playerAppearanceSettingsRows(preset.snapshot(), true, {}, {})
+        assertTrue(playerRows.single { it.anchor == "compact_mini_player" }.enabled)
+    }
+
     @Test fun aodControlsKeepAllWireShapesAndHideOnlyTheTimeLabelChild() {
         val defaults = aodSettingsRows(PreferenceSnapshot.EMPTY)
         assertEquals(25, defaults.size)

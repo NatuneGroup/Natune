@@ -59,6 +59,7 @@ class JvmTransactionalRestore(
         val merged = before.keys.associateWith { before[it]!! }.toMutableMap()
         prepared.settings.keys.forEach { merged[it] = prepared.settings[it]!! }
         val replacement = PreferenceSnapshot.of(*merged.entries.map { it.key to it.value }.toTypedArray())
+            .toEditor().apply { normalizeRestoredSettings(prepared.settings.keys.map { it.name }.toSet()) }.snapshot()
         val work = Files.createTempDirectory(databaseRoot, ".restore-")
         try {
             if (library) DB_FILES.forEach { name ->

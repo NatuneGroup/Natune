@@ -94,6 +94,7 @@ fun PodcastScreen(
                             Text(episode.row.item.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             listOfNotNull(episode.dateText, episode.durationText).filter { it.isNotBlank() }
                                 .takeIf { it.isNotEmpty() }?.let { Text(it.joinToString("  •  ")) }
+                            PodcastEpisodeProgress(episode.row.item.ref)
                             episode.description?.takeIf { it.isNotBlank() }?.let {
                                 Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                             }
@@ -164,7 +165,12 @@ fun PodcastBrowseScreen(
         }
         LazyColumn(Modifier.weight(1f), state = list, contentPadding = contentPadding) {
             items(rows, key = { it.occurrenceId }) { row ->
-                ListItem(headlineContent = { Text(row.item.title) }, supportingContent = { Text(row.item.subtitle) },
+                ListItem(headlineContent = { Text(row.item.title) }, supportingContent = {
+                    Column {
+                        Text(row.item.subtitle)
+                        PodcastEpisodeProgress(row.item.ref)
+                    }
+                },
                     leadingContent = { artwork(row.item, Modifier.size(72.dp)) },
                     trailingContent = state.subscriptions[row.item.ref]?.let { subscription -> {
                         SubscriptionButton(subscription, { requireNotNull(actions.subscribe)(row.item.ref, it) },

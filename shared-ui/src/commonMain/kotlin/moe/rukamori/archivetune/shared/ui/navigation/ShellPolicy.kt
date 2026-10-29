@@ -14,8 +14,8 @@ fun shellLayout(
     topLevel: Boolean = true,
 ): ShellLayout {
     if (searchActive) return ShellLayout.Hidden
-    // The coordinated experience cannot be broken by a saved compact/rail selection.
-    if (preferences.interfaceStyle() == InterfaceStyle.APPLE_MUSIC) return ShellLayout.CompactRow
+    // The Apple Music bar itself owns its one-row geometry, not the preset indicator.
+    if (preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC) return ShellLayout.CompactRow
     if (television) return ShellLayout.TvRail
     if (widthDp >= 840f || preferences[TabletModeEnabledKey, false]) return ShellLayout.Rail
     val behavior = preferences.navigationBarCompactBehavior()

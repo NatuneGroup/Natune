@@ -79,7 +79,6 @@ import moe.rukamori.archivetune.ui.component.PillFrostOverlayAlpha
 import moe.rukamori.archivetune.ui.component.PillRole
 import moe.rukamori.archivetune.ui.component.liquidGlassEligible
 import moe.rukamori.archivetune.ui.component.liquidGlass
-import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.component.rememberPillStyle
 import moe.rukamori.archivetune.ui.component.rememberPreSFrostedBitmap
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
@@ -134,8 +133,7 @@ private fun NewMiniPlayer(
         defaultValue = MiniPlayerBackgroundStyle.THEME,
     )
     val compactMiniPlayerPreference by rememberPreference(CompactMiniPlayerKey, defaultValue = false)
-    val appleMusicExperience = rememberAppleMusicExperience()
-    val compactMiniPlayer = compactMiniPlayerPreference && !appleMusicExperience
+    val compactMiniPlayer = compactMiniPlayerPreference
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     // Keep the previous valid palette while the next artwork loads; replace only on success.
     var gradientColors by remember {
@@ -243,7 +241,7 @@ private fun NewMiniPlayer(
     val pill = rememberPillStyle()
     // Next to an Apple Music tab bar the mini player drops its accent and artwork-derived colours so
     // it does not compete with the bar's accent. The artwork itself stays in colour.
-    val grayscale = appleMusicExperience || pill.navigationStyle == NavigationBarStyle.APPLE_MUSIC
+    val grayscale = pill.navigationStyle == NavigationBarStyle.APPLE_MUSIC
     val backgroundPalette =
         remember(gradientColors, grayscale) {
             MiniPlayerBackgroundPalette.from(

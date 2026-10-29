@@ -48,7 +48,9 @@ import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
 import moe.rukamori.archivetune.constants.NavigationBarWidthKey
 import moe.rukamori.archivetune.constants.CompactBottomPillsKey
 import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
-import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
+import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.selectedNavigationBarStyle
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -209,16 +211,11 @@ fun PreferenceSnapshot.navigationBarCompactBehavior(): Pair<NavigationBarCompact
 
 /** [rememberNavigationPillStyle] read from a page's [PreferenceSnapshot]. */
 fun PreferenceSnapshot.navigationPillStyle(): NavigationBarStyle =
-    if (this[AppleMusicExperienceKey, false]) {
-        NavigationBarStyle.APPLE_MUSIC
-    } else {
-        enumState(NavigationBarStyleKey, defaultValue = NavigationBarStyle.DEFAULT).value
-    }
+    NavigationBarStyle.valueOf(current.sharedSnapshot().selectedNavigationBarStyle().name)
 
 @Composable
 fun rememberNavigationPillStyle(): NavigationBarStyle {
-    val (stored) = rememberEnumPreference(NavigationBarStyleKey, defaultValue = NavigationBarStyle.DEFAULT)
-    return if (rememberAppleMusicExperience()) NavigationBarStyle.APPLE_MUSIC else stored
+    return rememberPreferenceSnapshot().navigationPillStyle()
 }
 
 /** Resolves the style from the stored preferences, for surfaces that are not handed it by the shell. */

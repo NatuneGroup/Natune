@@ -92,7 +92,7 @@ fun PlayerPreferences.sleeveRadiusOr(native: Float): Float =
     if (style.honors(PlayerStyleSetting.CORNER_RADIUS)) sleeveRadius else native
 
 fun PreferenceSnapshot.playerPreferences(): PlayerPreferences {
-    val style = this[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    val style = selectedPlayerDesignStyle()
     fun bounded(value: Float?, default: Float, range: ClosedFloatingPointRange<Float>) =
         value?.takeIf { it.isFinite() }?.coerceIn(range) ?: default
     return PlayerPreferences(

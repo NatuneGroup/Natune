@@ -113,7 +113,8 @@ fun internetSettingsRows(
             add(SettingsRow.Text("dns_custom_url", Res.string.m6_dns_custom, InlineCustomDnsUrlKey, default = "https://",
                 valid = { it.startsWith("https://") && validLyricsEndpoint(it) }))
     }
-    add(SettingsRow.Toggle("proxy_settings", Res.string.m6_proxy_enable, ProxyEnabledKey, false))
+    add(SettingsRow.Toggle("proxy_settings", Res.string.m6_proxy_enable, ProxyEnabledKey, false,
+        description = Res.string.m6_proxy_rotation_precedence.takeIf { preferences[IpRotationEnabledKey, false] }))
     if (preferences[ProxyEnabledKey, false]) {
         add(SettingsRow.Choice("proxy_type", Res.string.m6_proxy_type, ProxyTypeKey, "HTTP", listOf(
             SettingsRow.Option("HTTP", Res.string.m6_proxy_http), SettingsRow.Option("SOCKS", Res.string.m6_proxy_socks))))

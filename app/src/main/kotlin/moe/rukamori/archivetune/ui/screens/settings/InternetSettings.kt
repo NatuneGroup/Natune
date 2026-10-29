@@ -315,7 +315,9 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                     // App.kt applies every proxy preference as it is written, so these handlers only store.
                     SwitchPreference(
                         title = { Text(stringResource(R.string.enable_proxy)) },
-                        description = stringResource(R.string.proxy_enable_desc),
+                        description = stringResource(
+                            if (ipRotationEnabled) R.string.settings_proxy_rotation_precedence else R.string.proxy_enable_desc,
+                        ),
                         icon = { Icon(painterResource(R.drawable.wifi_proxy), null) },
                         checked = proxyEnabled,
                         onCheckedChange = onProxyEnabledChange,

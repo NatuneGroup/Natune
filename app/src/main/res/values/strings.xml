@@ -1606,7 +1606,7 @@
     <string name="lyrics_mode_simpmusic">SimpMusic</string>
     <string name="apple_music_experience">Apple Music Experience</string>
     <string name="interface_style">Interface style</string>
-    <string name="interface_style_desc">Material 3 Expressive uses tonal surfaces, rounded shapes and spring motion. Apple Music switches the player, bottom bar, library and page headers to Apple Music\u2019s look; switching back restores your previous player style.</string>
+    <string name="interface_style_desc">Apply a coordinated preset, then customize each part independently. Custom / mixed means the individual choices differ. Material 3 Expressive restores the previous player and tab bar where they have not been changed manually.</string>
     <string name="interface_style_material_expressive">Material 3 Expressive</string>
     <string name="search_bar_position">Search bar position</string>
     <string name="search_bar_position_desc">Where the search field sits on the Search tab</string>
@@ -1620,6 +1620,8 @@
     <string name="library_style_apple_music">Apple Music</string>
     <string name="sponsor_block">SponsorBlock</string>
     <string name="sponsor_block_description">Skip stretches the SponsorBlock community has marked on YouTube tracks. Lookups are sent by hashed ID, so the server is never told which track is playing.</string>
+    <string name="sponsor_block_podcasts">Skip podcast segments</string>
+    <string name="sponsor_block_podcasts_description">Also skip the segments the community has marked in podcast episodes. Uses the same lookup as songs.</string>
     <string name="sponsor_block_categories">Segments to skip</string>
     <string name="sponsor_block_category_sponsor">Sponsor</string>
     <string name="sponsor_block_category_selfpromo">Unpaid or self promotion</string>

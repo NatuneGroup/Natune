@@ -14,13 +14,6 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.common.collect.ImmutableList
@@ -49,6 +42,7 @@ import moe.rukamori.archivetune.backup.ScheduledBackupFrequency
 import moe.rukamori.archivetune.backup.ScheduledBackupSettings
 import moe.rukamori.archivetune.backup.UpdateScheduledBackupUseCase
 import moe.rukamori.archivetune.backup.isBackupFontEntry
+import moe.rukamori.archivetune.backup.restoreSettingsFromXml
 import moe.rukamori.archivetune.db.InternalDatabase
 import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.ArtistEntity
@@ -65,14 +59,11 @@ import moe.rukamori.archivetune.playback.MusicService.Companion.PERSISTENT_QUEUE
 import moe.rukamori.archivetune.playlistexport.ExportPlaylistAsCsvUseCase
 import moe.rukamori.archivetune.playlistexport.ExportablePlaylist
 import moe.rukamori.archivetune.playlistexport.ObserveExportablePlaylistsUseCase
-import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.reportException
-import org.xmlpull.v1.XmlPullParser
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.io.PushbackReader
 import java.io.Reader
-import java.io.StringReader
 import java.time.LocalDate
 import java.time.format.FormatStyle
 import java.util.Locale
@@ -955,111 +946,6 @@ class BackupRestoreViewModel
                     _backupRestoreProgress.value = null
                 }
                 }
-            }
-        }
-
-        private suspend fun restoreSettingsFromXml(
-            context: Context,
-            inputStream: java.io.InputStream,
-            excludedKeyNames: Set<String> = emptySet(),
-        ) {
-            val content = inputStream.readBytes().toString(Charsets.UTF_8)
-            if (content.isBlank()) return
-
-            val parser = android.util.Xml.newPullParser()
-            parser.setInput(StringReader(content))
-
-            var eventType = parser.eventType
-            val booleans = LinkedHashMap<String, Boolean>()
-            val ints = LinkedHashMap<String, Int>()
-            val longs = LinkedHashMap<String, Long>()
-            val floats = LinkedHashMap<String, Float>()
-            val strings = LinkedHashMap<String, String>()
-            val stringSets = LinkedHashMap<String, Set<String>>()
-
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                if (eventType == XmlPullParser.START_TAG) {
-                    val name = parser.name
-                    val keyName = parser.getAttributeValue(null, "name")
-
-                    if (keyName != null && keyName !in excludedKeyNames) {
-                        when (name) {
-                            "boolean" -> {
-                                val value = parser.getAttributeValue(null, "value")?.toBoolean()
-                                if (value != null) {
-                                    booleans[keyName] = value
-                                }
-                            }
-
-                            "int" -> {
-                                val value = parser.getAttributeValue(null, "value")?.toIntOrNull()
-                                if (value != null) {
-                                    ints[keyName] = value
-                                }
-                            }
-
-                            "long" -> {
-                                val value = parser.getAttributeValue(null, "value")?.toLongOrNull()
-                                if (value != null) {
-                                    longs[keyName] = value
-                                }
-                            }
-
-                            "float" -> {
-                                val value = parser.getAttributeValue(null, "value")?.toFloatOrNull()
-                                if (value != null) {
-                                    floats[keyName] = value
-                                }
-                            }
-
-                            "string" -> {
-                                val value = parser.getAttributeValue(null, "value")
-                                if (value != null) {
-                                    strings[keyName] = value
-                                }
-                            }
-
-                            "string-set" -> {
-                                val values = LinkedHashSet<String>()
-                                while (true) {
-                                    val next = parser.next()
-                                    if (next == XmlPullParser.START_TAG && parser.name == "item") {
-                                        values.add(parser.nextText())
-                                        continue
-                                    }
-                                    if (next == XmlPullParser.END_TAG && parser.name == "string-set") {
-                                        break
-                                    }
-                                    if (next == XmlPullParser.END_DOCUMENT) {
-                                        break
-                                    }
-                                }
-                                stringSets[keyName] = values
-                            }
-                        }
-                    }
-                }
-                eventType = parser.next()
-            }
-
-            if (
-                booleans.isEmpty() &&
-                ints.isEmpty() &&
-                longs.isEmpty() &&
-                floats.isEmpty() &&
-                strings.isEmpty() &&
-                stringSets.isEmpty()
-            ) {
-                return
-            }
-
-            context.dataStore.edit { prefs ->
-                booleans.forEach { (k, v) -> prefs[booleanPreferencesKey(k)] = v }
-                ints.forEach { (k, v) -> prefs[intPreferencesKey(k)] = v }
-                longs.forEach { (k, v) -> prefs[longPreferencesKey(k)] = v }
-                floats.forEach { (k, v) -> prefs[floatPreferencesKey(k)] = v }
-                strings.forEach { (k, v) -> prefs[stringPreferencesKey(k)] = v }
-                stringSets.forEach { (k, v) -> prefs[stringSetPreferencesKey(k)] = v }
             }
         }
 
