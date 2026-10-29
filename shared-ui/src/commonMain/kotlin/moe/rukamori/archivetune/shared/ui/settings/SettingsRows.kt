@@ -20,7 +20,10 @@ sealed class SettingsRow(
         val descriptionFor: ((Boolean) -> StringResource)? = null,
     ) : SettingsRow(anchor, title, description, enabled)
 
-    data class Option(val value: String, val label: StringResource)
+    data class Option(
+        val value: String, val label: StringResource, val enabled: Boolean = true,
+        val description: StringResource? = null,
+    )
     data class IntOption(val value: Int, val label: StringResource)
     class IntChoice(
         anchor: String, title: StringResource, val key: IntPreferenceKey, val default: Int,
@@ -32,8 +35,10 @@ sealed class SettingsRow(
     class Choice(
         anchor: String, title: StringResource, val key: StringPreferenceKey, val default: String,
         val options: List<Option>, enabled: Boolean = true,
+        description: StringResource? = null,
+        val read: (PreferenceSnapshot) -> String = { it[key, default] },
         val write: PreferenceEditor.(String) -> Unit = { this[key] = it },
-    ) : SettingsRow(anchor, title, enabled = enabled) {
+    ) : SettingsRow(anchor, title, description, enabled) {
         init { require(options.isNotEmpty() && options.map { it.value }.distinct().size == options.size) }
     }
 

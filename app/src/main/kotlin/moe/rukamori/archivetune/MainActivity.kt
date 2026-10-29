@@ -956,7 +956,6 @@ class MainActivity : ComponentActivity() {
             // Restart-scoped: swapping the typography live remeasures every text node in the app.
             val fontPreference = StartupSettings.fontPreference
             val customFontUri = StartupSettings.customFontUri
-            val legacyUseSystemFont by rememberPreference(UseSystemFontKey, defaultValue = false)
             val isSystemInDarkTheme = isSystemInDarkTheme()
             val useDarkTheme =
                 remember(darkTheme, isSystemInDarkTheme) {
@@ -1053,14 +1052,6 @@ class MainActivity : ComponentActivity() {
 
             var themeColor by rememberSaveable(stateSaver = ColorSaver) {
                 mutableStateOf(DefaultThemeColor)
-            }
-
-            LaunchedEffect(legacyUseSystemFont) {
-                if (!legacyUseSystemFont) return@LaunchedEffect
-                val preferences = dataStore.data.first()
-                if (preferences[FontPreferenceKey] == null) {
-                    dataStore.edit { it[FontPreferenceKey] = AppFontPreference.SYSTEM.name }
-                }
             }
 
             LaunchedEffect(playerConnection, enableDynamicTheme, isSystemInDarkTheme, customThemeColor) {

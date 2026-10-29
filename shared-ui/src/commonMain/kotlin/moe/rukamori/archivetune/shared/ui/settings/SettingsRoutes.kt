@@ -13,7 +13,8 @@ fun settingsSearchRoute(parentKey: String, scrollKey: String?): String? {
     val supportsScroll = owner !in setOf(
         "developer_options", "about", "po_token", "account", "logcat", "listen_together", "canvas", "android_auto",
     )
-    return if (!supportsScroll || scrollKey.isNullOrBlank()) route else "$route?scrollTo=$scrollKey"
+    val target = if (owner == "lyrics" && scrollKey == "use_lyrics_v2") "lyrics_mode" else scrollKey
+    return if (!supportsScroll || target.isNullOrBlank()) route else "$route?scrollTo=$target"
 }
 
 private val routes = mapOf(

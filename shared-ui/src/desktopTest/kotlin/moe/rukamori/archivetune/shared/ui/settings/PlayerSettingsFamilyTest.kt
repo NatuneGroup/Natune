@@ -56,7 +56,7 @@ class PlayerSettingsFamilyTest {
         assertEquals("FLAMINGO", after[PlayerDesignStyleKey])
         assertNull(after[FlamingoShowVolumeBarKey])
         assertEquals(true, after[ShowPlayerVolumeBarKey])
-        assertFalse(appearance(after).single { it.anchor == "compact_mini_player" }.enabled)
+        assertTrue(appearance(after).single { it.anchor == "compact_mini_player" }.enabled)
     }
 
     @Test fun playbackEnginesHistoryAndSponsorHandlersMatchActualBaselinePolicies() {
@@ -79,7 +79,8 @@ class PlayerSettingsFamilyTest {
         rows = playback(snapshot, active = true)
         listOf("tryptify_engine", "lastwave_engine", "float_dsp").forEach {
             val row = rows.single { row -> row.anchor == it } as SettingsRow.Toggle
-            assertFalse(row.enabled); assertFalse(row.read(snapshot))
+            assertFalse(row.enabled)
+            assertEquals(it == "tryptify_engine", row.read(snapshot))
         }
         assertEquals(true, snapshot[TryptifyAudioProcessingKey])
         assertFalse(rows.single { it.anchor == "bit_perfect_usb" }.enabled)
@@ -150,7 +151,7 @@ class PlayerSettingsFamilyTest {
                         releases++; active = false
                     }, {}, {}, {}, { error("Unexpected storage failure") }, anchor)
                 } }
-                onNodeWithTag("toggle:tryptify_engine").assertIsNotEnabled().assertIsOff()
+                onNodeWithTag("toggle:tryptify_engine").assertIsNotEnabled().assertIsOn()
                 runOnIdle { anchor = "crossfade" }
                 onNodeWithTag("toggle:crossfade").performClick()
                 waitUntil { releases == 1 }

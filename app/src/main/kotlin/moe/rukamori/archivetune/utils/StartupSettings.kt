@@ -22,6 +22,8 @@ import moe.rukamori.archivetune.constants.TabletModeEnabledKey
 import moe.rukamori.archivetune.constants.UiScaleFactorKey
 import moe.rukamori.archivetune.constants.UseSystemFontKey
 import moe.rukamori.archivetune.extensions.toEnum
+import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.selectedNavigationTreatment
 
 /**
  * Settings whose live application relayouts or re-records the whole app: the UI scale overrides
@@ -58,15 +60,16 @@ data class RestartScopedSettings(
 
         fun from(preferences: Preferences?): RestartScopedSettings {
             if (preferences == null) return Defaults
+            val treatment = preferences.sharedSnapshot().selectedNavigationTreatment()?.name
             return RestartScopedSettings(
                 uiScale = (preferences[UiScaleFactorKey] ?: 1.0f).coerceIn(UI_SCALE_MIN, UI_SCALE_MAX),
                 fontPreference = resolveFontPreference(preferences[FontPreferenceKey], preferences[UseSystemFontKey]),
                 customFontUri = preferences[CustomFontUriKey].orEmpty(),
                 tabletModeEnabled = preferences[TabletModeEnabledKey] ?: false,
                 liquidGlassEnabled = preferences[LiquidGlassEnabledKey] ?: false,
-                liquidGlassNavBarEnabled = preferences[LiquidGlassNavBarEnabledKey] ?: false,
-                navigationBarFrostedBlur = preferences[NavigationBarFrostedBlurKey] ?: false,
-                navigationBarTintFrostedBlur = preferences[NavigationBarTintFrostedBlurKey] ?: false,
+                liquidGlassNavBarEnabled = treatment == LiquidGlassNavBarEnabledKey.name,
+                navigationBarFrostedBlur = treatment == NavigationBarFrostedBlurKey.name,
+                navigationBarTintFrostedBlur = treatment == NavigationBarTintFrostedBlurKey.name,
             )
         }
 

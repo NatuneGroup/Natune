@@ -29,10 +29,11 @@ fun AppearanceThemeSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    customFontPickerSupported: Boolean = true,
 ) {
-    ThemeChoicePage(controller, pickCustomFont, onFailure, scrollTo, modifier) { preferences, chooseInterface, chooseFont, pickFont ->
+    ThemeChoicePage(controller, pickCustomFont, onFailure, scrollTo, modifier, customFontPickerSupported) { preferences, chooseInterface, chooseFont, pickFont ->
         appearanceThemeSettingsRows(preferences, systemDark, lowRam, nativeDynamicColors, wallpaperPermissionNeeded,
-            navigate, openWallpaperSettings, chooseInterface, chooseFont, pickFont)
+            navigate, openWallpaperSettings, chooseInterface, chooseFont, pickFont, customFontPickerSupported)
     }
 }
 
@@ -47,6 +48,7 @@ internal fun ThemeChoicePage(
     onFailure: () -> Unit,
     scrollTo: String?,
     modifier: Modifier,
+    customFontPickerSupported: Boolean = true,
     rows: (preferences: PreferenceSnapshot, chooseInterface: () -> Unit, chooseFont: () -> Unit, pickFont: () -> Unit) -> List<SettingsRow>,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
@@ -93,9 +95,9 @@ internal fun ThemeChoicePage(
         title = { Text(stringResource(Res.string.m6_font)) },
         text = { Column {
             AppFontPreference.entries.forEach { font ->
-                TextButton(onClick = { attempt {
+                TextButton(enabled = font != AppFontPreference.CUSTOM || customFontPickerSupported, onClick = { attempt {
                     if (font == AppFontPreference.CUSTOM && preferences[CustomFontUriKey].isNullOrBlank()) selectCustomFont()
-                    else controller.edit { this[FontPreferenceKey] = font.name; this[UseSystemFontKey] = null }
+                    else controller.edit { setFontPreference(font) }
                     choosingFont = false
                 } }) {
                     Text(stringResource(when (font) {
@@ -105,6 +107,7 @@ internal fun ThemeChoicePage(
                     }))
                 }
             }
+            if (!customFontPickerSupported) Text(stringResource(Res.string.m6_custom_font_picker_unavailable))
         } },
         confirmButton = {},
         dismissButton = { TextButton(onClick = { choosingFont = false }) { Text(stringResource(Res.string.m6_cancel)) } },

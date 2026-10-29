@@ -14,6 +14,16 @@ import androidx.datastore.preferences.core.MutablePreferences
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
+import moe.rukamori.archivetune.utils.RestartScopedSettings
+import moe.rukamori.archivetune.utils.SnapshotPreferenceState
+import moe.rukamori.archivetune.utils.applySharedPreferenceEdit
+import moe.rukamori.archivetune.utils.setFontPreference
+import moe.rukamori.archivetune.shared.domain.settings.BooleanPreferenceKey
+import moe.rukamori.archivetune.shared.domain.settings.applyNavigationTreatment
+import moe.rukamori.archivetune.shared.domain.settings.setPlaybackOutputPreference
+import moe.rukamori.archivetune.shared.domain.settings.SettingsChange
+import moe.rukamori.archivetune.shared.domain.settings.needsBitPerfectSinkRelease
+import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
 import moe.rukamori.archivetune.viewmodels.RestartPromptViewModel
 
 val navigationTreatmentKeys = setOf(
@@ -21,9 +31,14 @@ val navigationTreatmentKeys = setOf(
 )
 
 internal fun MutablePreferences.applyNavigationTreatment(key: Preferences.Key<Boolean>, enabled: Boolean) {
-    this[key] = enabled
-    if (enabled) navigationTreatmentKeys.filterNot { it == key }.forEach { this[it] = false }
+    applySharedPreferenceEdit { applyNavigationTreatment(BooleanPreferenceKey(key.name), enabled) }
 }
+
+fun PreferenceSnapshot.canonicalFontState(controller: RestartPromptViewModel): androidx.compose.runtime.MutableState<AppFontPreference> =
+    SnapshotPreferenceState(
+        read = { RestartScopedSettings.from(current).fontPreference },
+        write = { font -> controller.edit(this) { setFontPreference(font) } },
+    )
 
 fun setNavigationTreatment(
     controller: RestartPromptViewModel,
@@ -45,39 +60,13 @@ fun setPlaybackOutputPreference(
     enabled: Boolean,
 ) {
     controller.edit(preferences, onCommitted = { result ->
-        if ((enabled || key == BitPerfectUsbOutputKey) &&
-            result.after[BitPerfectUsbOutputKey] != true && BitPerfectUsbOutput.sinkActive
+        if (SettingsChange(result.before.sharedSnapshot(), result.after.sharedSnapshot()).needsBitPerfectSinkRelease() &&
+            BitPerfectUsbOutput.sinkActive
         ) {
             // Preserve immediate DAC release, but never release it on a failed save.
             BitPerfectUsbOutput.setEnabled(context, false)
         }
     }) {
-        this[key] = enabled
-        if (enabled) {
-            when (key) {
-                CrossfadeEnabledKey, AutomixEnabledKey -> {
-                    this[AudioOffload] = false
-                    this[if (key == CrossfadeEnabledKey) AutomixEnabledKey else CrossfadeEnabledKey] = false
-                    this[BitPerfectUsbOutputKey] = false
-                    this[UsbExclusiveAudioKey] = false
-                }
-                AudioOffload -> {
-                    this[SkipSilenceKey] = false
-                    this[CrossfadeEnabledKey] = false
-                    this[AutomixEnabledKey] = false
-                    this[BitPerfectUsbOutputKey] = false
-                    this[UsbExclusiveAudioKey] = false
-                    this[TryptifyAudioProcessingKey] = false
-                    this[LastwaveAudioProcessingKey] = false
-                    this[FloatDspEnabledKey] = false
-                }
-                BitPerfectUsbOutputKey, UsbExclusiveAudioKey -> {
-                    this[AudioOffload] = false
-                    this[CrossfadeEnabledKey] = false
-                    this[AutomixEnabledKey] = false
-                    this[if (key == BitPerfectUsbOutputKey) UsbExclusiveAudioKey else BitPerfectUsbOutputKey] = false
-                }
-            }
-        }
+        applySharedPreferenceEdit { setPlaybackOutputPreference(BooleanPreferenceKey(key.name), enabled) }
     }
 }
