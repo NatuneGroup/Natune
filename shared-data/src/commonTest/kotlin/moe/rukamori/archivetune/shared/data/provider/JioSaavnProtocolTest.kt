@@ -9,7 +9,7 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.source.*
 
 class JioSaavnProtocolTest {
-    @Test fun directDetailsUseRetainedWireMetadataAndQualityWithoutForgedIpHeaders() = runTest {
+    @Test fun directDetailsUseRetainedWireMetadataQualityAndClientIpHeader() = runTest {
         var pro = false
         var decodes = 0
         val client = HttpClient(MockEngine) { engine {
@@ -19,7 +19,8 @@ class JioSaavnProtocolTest {
                 assertEquals("7", it.url.parameters["pids"])
                 assertEquals("android", it.url.parameters["ctx"])
                 assertEquals("explicit_content=1", it.headers[HttpHeaders.Cookie])
-                assertNull(it.headers["X-Forwarded-For"])
+                // SaavnService.kt sets this client-IP header on every JioSaavn request; the port keeps it.
+                assertEquals("49.36.0.1", it.headers["X-Forwarded-For"])
                 respond("""{"songs":[{"id":"7","title":"Song","explicit_content":"1","image":"https://images.invalid/150x150","more_info":{"album":"Album","duration":"180","encrypted_media_url":"fixture-ciphertext","rights":{"code":"${if (pro) 1 else 0}"},"artistMap":{"primary_artists":[{"name":"Artist"}]}}}]}""")
             }
         } }
