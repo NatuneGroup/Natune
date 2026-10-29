@@ -98,7 +98,9 @@ internal object YouTubeUploadAuth {
         for (part in cookie.split(';')) {
             val separator = part.indexOf('=')
             if (separator <= 0) continue
-            values.putIfAbsent(part.substring(0, separator).trim(), part.substring(separator + 1).trim())
+            // The first occurrence of a cookie name wins, as it does upstream; putIfAbsent is JVM-only.
+            val name = part.substring(0, separator).trim()
+            if (name !in values) values[name] = part.substring(separator + 1).trim()
         }
         return LOGIN_COOKIES.firstNotNullOfOrNull { name -> values[name]?.takeIf(String::isNotBlank) }
     }
