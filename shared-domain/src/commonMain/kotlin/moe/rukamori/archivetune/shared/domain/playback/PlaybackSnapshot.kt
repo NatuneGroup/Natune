@@ -30,6 +30,8 @@ enum class PlaybackOutputRoute {
  * @property bufferedPositionMs Media position up to which audio is decoded and ready, or null while
  *   the engine does not know. Buffering and progress UI read it; it never moves the clock.
  * @property isEnded True once the engine has output the final sample of the current occurrence.
+ * @property outputLatencyMs Platform-reported output/presentation delay in wall-clock milliseconds, or null when
+ *   unavailable. This estimate can offset lyrics; it never changes canonical media positions or seek targets.
  */
 data class PlaybackSnapshot(
     val occurrenceId: String,
@@ -47,6 +49,7 @@ data class PlaybackSnapshot(
     val outputRoute: PlaybackOutputRoute,
     val bufferedPositionMs: Long? = null,
     val isEnded: Boolean = false,
+    val outputLatencyMs: Long? = null,
 ) {
     init {
         require(playbackSpeed.isFinite() && playbackSpeed > 0f) {
@@ -57,6 +60,9 @@ data class PlaybackSnapshot(
         }
         require(bufferedPositionMs == null || bufferedPositionMs >= 0L) {
             "bufferedPositionMs must be null or non-negative, was $bufferedPositionMs"
+        }
+        require(outputLatencyMs == null || outputLatencyMs >= 0L) {
+            "outputLatencyMs must be null or non-negative, was $outputLatencyMs"
         }
     }
 }

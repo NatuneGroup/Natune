@@ -27,7 +27,7 @@
 # and -lc++. closure.txt beside lib/ records the pins, toolchain, source commit and archive SHA-256 values.
 #
 # Prerequisites:
-#   - An Apple Silicon Mac with full Xcode installed and selected by xcode-select, not only the Command Line
+#   - An Apple Silicon Mac with full Xcode selected by DEVELOPER_DIR or xcode-select, not only the Command Line
 #     Tools. The expected release is Xcode 26.4, the Kotlin 2.4.20-2.4.21 compatibility-matrix candidate.
 #     ARCHIVETUNE_XCODE_VERSION names another exact release. ARCHIVETUNE_ALLOW_OTHER_XCODE=1 builds with a
 #     different release and marks the output UNVERIFIED.
@@ -61,7 +61,8 @@ SOURCE_ROOT="$REPO/desktopApp/native"
 WORK="${ARCHIVETUNE_IOS_NATIVE_BUILD:-$REPO/shared-data/build/ios-native-work}"
 DOWNLOADS="$WORK/downloads"
 JOBS="${ARCHIVETUNE_NATIVE_JOBS:-3}"
-XCODE_EXPECTED="${ARCHIVETUNE_XCODE_VERSION:-26.4}"
+# Keep the default in step with the release job's setup-xcode selection; never silently accept runner "latest".
+readonly XCODE_EXPECTED="${ARCHIVETUNE_XCODE_VERSION:-26.4}"
 # Must equal IPHONEOS_DEPLOYMENT_TARGET in iosApp/Configuration/Native.xcconfig.
 DEPLOYMENT_TARGET=16.0
 

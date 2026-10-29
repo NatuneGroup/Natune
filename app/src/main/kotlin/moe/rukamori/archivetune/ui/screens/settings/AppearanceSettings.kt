@@ -353,12 +353,9 @@ private fun appearanceThemeRows(
     val liquidGlassTitle = stringResource(R.string.liquid_glass)
 
     return { positions ->
-        // Liquid Glass gets a header of its own. The master switch used to be the first row
-        // under "Theme", the navigation bar's glass toggle is on its own page off Interface, and
-        // the mini player's is a value buried in a background-style picker — three places, with
-        // nothing to say they were one feature. The switch and a link to the navigation bar's
-        // own glass options sit together here; the mini player's stays where it is, because it
-        // is one choice among several backgrounds rather than a glass setting that wandered.
+        // Liquid Glass gets a header of its own: the master switch, its tuning page and a link to
+        // the navigation bar's glass options sit together. The mini player's stays in its
+        // background-style picker, because it is one choice among several backgrounds.
         preferenceGroup(
             modifier = positions.modifierFor("liquid_glass", AppearanceSection.THEME.anchor),
             title = liquidGlassTitle,
@@ -405,6 +402,7 @@ private fun appearanceThemeRows(
                     },
                 )
             }
+            item { LiquidGlassCustomisationEntry(navController, positions) }
         }
 
         preferenceGroup(

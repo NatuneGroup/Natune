@@ -48,6 +48,14 @@ class PlaybackSnapshotTest {
     }
 
     @Test
+    fun outputLatencyMayBeUnknownOrZeroButNeverNegative() {
+        assertNull(snapshot().outputLatencyMs)
+        assertEquals(0L, snapshot().copy(outputLatencyMs = 0L).outputLatencyMs)
+        assertEquals(2_000L, snapshot().copy(outputLatencyMs = 2_000L).outputLatencyMs)
+        assertFailsWith<IllegalArgumentException> { snapshot().copy(outputLatencyMs = -1L) }
+    }
+
+    @Test
     fun playbackGenerationOrdersBeforeDiscontinuityAndTime() {
         val newerSession = snapshot(playbackGeneration = 2L, discontinuityGeneration = 0L, sampleMonotonicNanos = 1L)
         val olderSession = snapshot(playbackGeneration = 1L, discontinuityGeneration = 9L, sampleMonotonicNanos = 9L)

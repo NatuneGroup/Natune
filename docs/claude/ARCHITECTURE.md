@@ -149,9 +149,35 @@ the standard no-stream error.
 No new provider may bypass `resolveMultiSourceDataSpec`, replace the source priority contract, or
 introduce a REST/WS path to koiverse domains.
 
+## iOS native interface (local source; validation pending)
+
+On iOS 26 and later the Swift app draws the system Liquid Glass tab bar and mini player
+(`iosApp/ArchiveTune/NativeChrome.swift`) in a SwiftUI layer above the single
+`ComposeUIViewController`, rather than splitting the app into per-tab controllers. The glass
+then samples the real Compose pages beneath it, only the bar and mini player take touches, and
+the safe areas stay with the one Compose root. Kotlin keeps ownership: `NativeShellChrome`
+(shared-ui `navigation/`) publishes tab, song and play state and receives tab, expand and
+play/pause requests, which the root applies through `ShellNavigation` and the queue player.
+While it is active the shell skips its own bottom bar and mini player in the bottom layouts and
+reserves the inset Swift reports; rail layouts keep the shared chrome. The same releases host a
+SwiftUI lyric view for the Enhanced look through `UIKitViewController`
+(`ios/IosNativeLyricsSurface.kt`): rows come from `LyricsRenderRows` and the position from the
+shared `LyricsClock` (`NativeLyricsTimeline`, read by Swift once per frame), including one
+output-latency subtraction, so neither a parser nor a clock exists in Swift. The "Native iOS interface" setting (`NativeIosInterfaceKey`,
+default on, iOS appearance page only) turns both off; iOS 16 to 25 keep the Compose shell and
+renderer unchanged. The bridges are plain Kotlin callbacks with a cancel handle
+(`IosSubscription`), without SKIE. No device QA is claimed.
+
 ## Performance
 
 SpatialFlow's player (a second Media3 player, 50–60 s buffering, a 250 ms progress loop and a simpler linear crossfade handoff) is a useful comparison, not a source to copy wholesale: this fork already has stronger readiness, generation, cache, codec, audio-route and promotion safeguards, so measure before borrowing anything. Before changing buffer sizes or adding audio processors, measure transition latency, resolver calls, cache hit rate, decoder state, dropped frames, CPU, radio use, and thermal status. Low-end validation must cover crossfade, canvas/artwork, lyrics, and audio offload independently.
+
+Liquid glass reads the app-wide backdrop through a throttled layer (`ThrottledLayerBackdrop`,
+32 ms, with a trailing record so the last frame is never stale); blur and refraction need Android 12,
+runtime shaders Android 13, and older devices fall back to the plain surfaces. The About page's
+SukiSU background (`SukisuAboutBackground`) runs its frame and colour loops only while its entry is
+RESUMED, motion is allowed (`LocalAnimationsDisabled`, `LocalAnimationScale` above 0) and the header
+is on screen; otherwise it draws one still frame.
 
 ## Data and privacy
 

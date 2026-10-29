@@ -21,7 +21,8 @@ data class LyricsWordTiming(
  * A lyric row as the renderers draw it. [text] is the source line, and the word sweep follows it. [phonetic]
  * is the row's reading, drawn beneath the line, or null when no reading applies. [timeMs] stays canonical and
  * is what seeking uses. [scanStartMs] and [scanEndMs] bound the span in which the row is active, on the same
- * timeline, so lead and sync offsets belong to the feed position and never to the rows.
+ * timeline, so lead and sync offsets belong to the feed position and never to the rows. [background] holds trailing
+ * background vocals split out of [text] with their own [backgroundWords], and is null unless the host asked for it.
  */
 data class LyricsRenderRow(
     val index: Int,
@@ -37,6 +38,8 @@ data class LyricsRenderRow(
     val isSynced: Boolean,
     val isSecondVoice: Boolean,
     val isRtl: Boolean,
+    val background: String? = null,
+    val backgroundWords: List<LyricsWordTiming>? = null,
 )
 
 /** Builds render rows from canonical lines and the phonetics a presentation supplies for them. */
@@ -51,11 +54,14 @@ object LyricsRenderRows {
 
     /**
      * [phonetics] is aligned to [lines] by index, and a missing entry means no reading. Unsynced text, where no
-     * line has a time and no line has words, never becomes active and never seeks.
+     * line has a time and no line has words, never becomes active and never seeks. With [splitBackground], background
+     * vocals that trail the lead words leave the row text for [LyricsRenderRow.background]; background words placed
+     * anywhere else stay inline, because moving them would break the lead word ranges.
      */
     fun build(
         lines: List<LyricsLine>,
         phonetics: List<LyricsPhonetics?> = emptyList(),
+        splitBackground: Boolean = false,
     ): List<LyricsRenderRow> {
         val synced = lines.any { it.time > 0L || it.words != null }
         val nextStarts = nextDistinctStarts(lines)
@@ -67,8 +73,9 @@ object LyricsRenderRows {
             val reading = phonetics.getOrNull(index)
                 ?.let { timedLyricsPresentation(line, it).text }
                 ?.takeIf { it.isNotBlank() && it != line.text }
+            val split = if (splitBackground) splitTrailingBackground(line, sourceRanges) else null
             val (scanStart, scanEnd) = if (synced) {
-                scanSpan(line, words, nextStarts[index])
+                scanSpan(line, if (split == null) words else words.orEmpty() + split.words, nextStarts[index])
             } else {
                 0L to 0L
             }
@@ -77,7 +84,7 @@ object LyricsRenderRows {
                 timeMs = line.time,
                 scanStartMs = scanStart,
                 scanEndMs = scanEnd,
-                text = line.text,
+                text = split?.lead ?: line.text,
                 phonetic = reading,
                 translation = line.providerTranslationText?.takeIf { it.isNotBlank() },
                 words = words,
@@ -86,8 +93,38 @@ object LyricsRenderRows {
                 isSynced = synced,
                 isSecondVoice = line.agent != null && line.agent != PRIMARY_AGENT,
                 isRtl = UnicodeBidi.isRtlText(line.text),
+                background = split?.background,
+                backgroundWords = split?.words,
             )
         }
+    }
+
+    private class BackgroundSplit(val lead: String, val background: String, val words: List<LyricsWordTiming>)
+
+    /**
+     * Splits background vocals off the end of [line]'s text. They must start after the last located lead word, so
+     * every lead range still points into the shortened text. Returns null when there is nothing to split or the
+     * background text cannot be found there.
+     */
+    private fun splitTrailingBackground(line: LyricsLine, leadRanges: List<IntRange?>): BackgroundSplit? {
+        val backing = line.words?.filter { it.isBackground }.orEmpty()
+        if (backing.isEmpty()) return null
+        val text = line.text
+        val leadEnd = leadRanges.lastOrNull { it != null }?.let { it.last + 1 } ?: 0
+        val first = backing.first().text.trim()
+        if (first.isEmpty()) return null
+        val start = text.indexOf(first, leadEnd)
+        if (start <= 0) return null
+        val lead = text.substring(0, start).trimEnd()
+        val background = text.substring(start).trim()
+        if (lead.isBlank() || background.isBlank()) return null
+        var offset = 0
+        val ranges = backing.map { word ->
+            val fragment = word.text.trim()
+            val at = if (fragment.isEmpty()) -1 else background.indexOf(fragment, offset)
+            if (at < 0) null else (at until at + fragment.length).also { offset = it.last + 1 }
+        }
+        return BackgroundSplit(lead, background, wordTimings(backing, ranges))
     }
 
     /** One active-span scanner for a row list. Rows that are not synced have empty spans and never match. */

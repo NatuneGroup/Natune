@@ -67,10 +67,12 @@ media-info glyphs). Each copied file keeps the header comment
 
 | Project | Author | What this repository takes from it |
 | --- | --- | --- |
-| [YumaPlayer](https://github.com/MuwMx/YumaPlayer) | [MuwMx](https://github.com/MuwMx) | The opening animation (`ui/component/splash/*`), the Spotify integration (catalog, home feed, playlist queue, profile cache), the glass surfaces (`GlassSurface`, `GlassScaffold`) and the shared Spotify home layout. |
-| [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | Navigation-bar and pill appearance work, the BitChord navigation bar (`ui/component/BitChordNavBar.kt`), player-style refinements, the playlist UI, several performance fixes (frosted-backdrop gating, activity-level refresh rate, menu z-order) and the media info screen. |
+| [YumaPlayer](https://github.com/MuwMx/YumaPlayer) | [MuwMx](https://github.com/MuwMx) | The opening animation (`ui/component/splash/*`), the Spotify integration (catalog, home feed, playlist queue, profile cache), the glass surfaces (`GlassSurface`, `GlassScaffold`), the settings glass cards (`ui/theme/YumaModifiers.kt`) and the shared Spotify home layout. |
+| [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | Navigation-bar and pill appearance work, the BitChord navigation bar (`ui/component/BitChordNavBar.kt`), player-style refinements, the playlist UI, several performance fixes (frosted-backdrop gating, activity-level refresh rate, menu z-order), the media info screen, and the SukiSU liquid glass port: the Liquid Glass customisation page and tuning keys, the throttled glass backdrop and the About page background. |
 | [BitChord](https://github.com/kushagrasinghx/BitChord) | kushagrasinghx | The floating bottom bar whose glyph set, glass edge, stretch-squash selection pill and drag gesture the navigation bar reproduces; the BitChord home presentation and the lyrics HTTP and payload layer, re-implemented in the shared modules. | The automix analysis pipeline in `shared-domain/.../automix/` (compact feature analysis, cache policy, transition models) derives from the same port, which itself derives from Orchard (AGPL-3.0-or-later, combined into this GPL-3.0-or-later work per AGPLv3 section 13). |
-| [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) · SukiSU-Ultra · compose-miuix-ui | Kyant0; SukiSU-Ultra and compose-miuix-ui authors | Apache-2.0. The inner shadow and drag-to-slide animation of the liquid glass navigation pill, reached through SukiSU-Ultra's adaptations. |
+| [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) | SukiSU-Ultra authors | GPL-3.0. The SukiSU liquid glass navigation bar, the About page's moving background (`ui/screens/settings/about/SukisuAboutBackground.kt`) and the frosted About card tints, reached through 4nx3b/ArchiveTune's port. |
+| [compose-miuix-ui](https://github.com/compose-miuix-ui/miuix) | compose-miuix-ui authors | Apache-2.0. The blob-field background shader and its light and dark colour presets, which SukiSU-Ultra's About background mirrors. |
+| [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (Kyant backdrop) | Kyant0 | Apache-2.0. The `com.kyant.backdrop` library behind every liquid glass surface, used unmodified; the inner shadow and drag-to-slide animation of the liquid glass navigation pill follow it through SukiSU-Ultra's adaptations. |
 | [adam-adrian/ArchiveTune](https://github.com/adam-adrian/ArchiveTune) | adam-adrian | The Editorial (V10) player adaptations. |
 | [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics) | amll-dev | Tuning constants and mappings, not code: `ui/component/LyricsScrollSpring.kt` (interval-adaptive scroll spring policy) and `ui/component/LyricsEmphasize.kt` (per-character last-word emphasis). Upstream is AGPL-3.0-only; no AGPL source was copied. Both files state the provenance in their headers. |
 
@@ -133,6 +135,12 @@ their approaches were followed.
   them with `fetchEntitiesForRecentlyPlayed`. The parsing in `SpotifyPlayContexts.kt` is
   written from the live response shape; no source was copied (the repository publishes
   no licence).
+- [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)
+  (AGPL-3.0-only): the look the iOS native lyric view (`iosApp/ArchiveTune/SystemLyrics.swift`)
+  and the shared depth and background-vocal rows aim for, distance blur and a separate
+  smaller background line. Only the behaviour was studied; no AGPL source was copied, and
+  the Swift and Kotlin are written fresh on Apple's SwiftUI `TextRenderer` and Liquid
+  Glass APIs.
 - [NewPipe / InnerTube](https://github.com/TeamNewPipe/NewPipeExtractor): the InnerTube
   request lineage behind `core`.
 - [MetrolistGroup/innertubex](https://github.com/MetrolistGroup/innertubex) and
