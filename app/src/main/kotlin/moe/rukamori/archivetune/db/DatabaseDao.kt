@@ -55,6 +55,7 @@ import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.db.entities.SongAlbumMap
 import moe.rukamori.archivetune.db.entities.SongArtistMap
 import moe.rukamori.archivetune.db.entities.SongEntity
+import moe.rukamori.archivetune.db.entities.SongMetadataOverrideEntity
 import moe.rukamori.archivetune.db.entities.SongWithStats
 import moe.rukamori.archivetune.db.entities.TagEntity
 import moe.rukamori.archivetune.extensions.reversed
@@ -1285,15 +1286,55 @@ interface DatabaseDao {
         }
     }
 
+    /**
+     * Matches what the user sees, so an edited title or artist is findable by its new name. A song
+     * without an override is matched on its canonical title and artist links.
+     */
     @Transaction
-    @Query("SELECT * FROM song WHERE title LIKE '%' || :query || '%' AND inLibrary IS NOT NULL LIMIT :previewSize")
+    @Query(
+        "SELECT * FROM song WHERE inLibrary IS NOT NULL AND (" +
+            "COALESCE((SELECT o.title FROM song_metadata_override o WHERE o.songId = song.id), song.title) LIKE '%' || :query || '%' " +
+            "OR CASE WHEN EXISTS(SELECT 1 FROM song_metadata_override o WHERE o.songId = song.id AND o.artistNames IS NOT NULL) " +
+            "THEN EXISTS(SELECT 1 FROM song_metadata_override o WHERE o.songId = song.id AND o.artistNames LIKE '%' || :query || '%') " +
+            "ELSE EXISTS(SELECT 1 FROM song_artist_map m JOIN artist a ON a.id = m.artistId WHERE m.songId = song.id AND a.name LIKE '%' || :query || '%') END" +
+            ") LIMIT :previewSize",
+    )
     fun searchSongs(
         query: String,
         previewSize: Int = Int.MAX_VALUE,
     ): Flow<List<Song>>
 
-    @Query("SELECT COUNT(1) FROM song WHERE title LIKE '%' || :query || '%' AND inLibrary IS NOT NULL")
+    @Query(
+        "SELECT COUNT(1) FROM song WHERE inLibrary IS NOT NULL AND (" +
+            "COALESCE((SELECT o.title FROM song_metadata_override o WHERE o.songId = song.id), song.title) LIKE '%' || :query || '%' " +
+            "OR CASE WHEN EXISTS(SELECT 1 FROM song_metadata_override o WHERE o.songId = song.id AND o.artistNames IS NOT NULL) " +
+            "THEN EXISTS(SELECT 1 FROM song_metadata_override o WHERE o.songId = song.id AND o.artistNames LIKE '%' || :query || '%') " +
+            "ELSE EXISTS(SELECT 1 FROM song_artist_map m JOIN artist a ON a.id = m.artistId WHERE m.songId = song.id AND a.name LIKE '%' || :query || '%') END" +
+            ")",
+    )
     suspend fun searchSongsCount(query: String): Int
+
+    @Query("SELECT * FROM song_metadata_override")
+    fun observeSongMetadataOverrides(): Flow<List<SongMetadataOverrideEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun insertSongMetadataOverride(metadataOverride: SongMetadataOverrideEntity)
+
+    @Query("DELETE FROM song_metadata_override WHERE songId = :songId")
+    fun deleteSongMetadataOverride(songId: String)
+
+    /**
+     * Replaces the override for one song in a single transaction. Passing null restores the canonical
+     * metadata, so saving and resetting share one path and cannot leave a half-written row behind.
+     */
+    @Transaction
+    fun setSongMetadataOverride(
+        songId: String,
+        metadataOverride: SongMetadataOverrideEntity?,
+    ) {
+        deleteSongMetadataOverride(songId)
+        metadataOverride?.let { insertSongMetadataOverride(it) }
+    }
 
     @Transaction
     @SuppressWarnings(RoomWarnings.QUERY_MISMATCH)
@@ -1667,7 +1708,9 @@ interface DatabaseDao {
     ) {
         update(
             song.song.copy(
-                title = if (song.song.titleOverride) song.song.title else mediaMetadata.title,
+                // Canonical title always follows the provider. A user edit lives in
+                // song_metadata_override, which this refresh never reads or writes.
+                title = mediaMetadata.title,
                 duration = mediaMetadata.duration,
                 thumbnailUrl = mediaMetadata.thumbnailUrl,
                 albumId = mediaMetadata.album?.id,
