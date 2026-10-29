@@ -313,6 +313,7 @@ import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.RelatedSongMap
 import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.db.entities.SongEntity
+import moe.rukamori.archivetune.db.entities.SongMetadataOverrideEntity
 import moe.rukamori.archivetune.db.entities.evidenceSurvivesRedeclaration
 import moe.rukamori.archivetune.di.DownloadCache
 import moe.rukamori.archivetune.di.PlayerCache
@@ -368,6 +369,9 @@ import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
 import moe.rukamori.archivetune.models.PlaybackPersistenceCodec
 import moe.rukamori.archivetune.models.PersistQueue
 import moe.rukamori.archivetune.models.toMediaMetadata
+import moe.rukamori.archivetune.songmetadata.SongMetadataOverrideCache
+import moe.rukamori.archivetune.songmetadata.observeSongMetadataOverrideMap
+import moe.rukamori.archivetune.songmetadata.withSongMetadataOverride
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
@@ -1483,6 +1487,12 @@ class MusicService :
         scope.launch {
             currentMediaMetadata.collect { metadata ->
                 updateSessionActivityAlbumLink(metadata)
+            }
+        }
+
+        scope.launch {
+            database.observeSongMetadataOverrideMap().collect { overrides ->
+                onSongMetadataOverridesChanged(overrides)
             }
         }
 
@@ -7292,13 +7302,85 @@ class MusicService :
             }
     }
 
-    /** Commits catalog metadata without changing the playable media URI or source cache key. */
+    /**
+     * Keeps the override cache and the queued items in step with the table. The first emission covers
+     * a queue restored at startup, so overrides apply there too; later emissions only touch songs
+     * whose override changed.
+     */
+    private var lastSongMetadataOverrides: Map<String, SongMetadataOverrideEntity> = emptyMap()
+
+    private fun onSongMetadataOverridesChanged(overrides: Map<String, SongMetadataOverrideEntity>) {
+        val previous = lastSongMetadataOverrides
+        lastSongMetadataOverrides = overrides
+        SongMetadataOverrideCache.replaceAll(overrides)
+        val changedIds = (previous.keys + overrides.keys).filter { previous[it] != overrides[it] }
+        if (changedIds.isEmpty()) return
+        ioScope.launch {
+            // Reads the canonical row with its current override, so a reset reverts the queue too.
+            val refreshed =
+                changedIds.mapNotNull { songId ->
+                    runCatching { database.getSongById(songId) }.getOrNull()
+                }
+            scope.launch {
+                refreshed.forEach { song -> replaceQueuedSongMetadata(song.id, song.toMediaMetadata()) }
+            }
+        }
+    }
+
+    /**
+     * Swaps one queued item for a copy that carries the effective metadata. The media id, URI and
+     * cache key stay as they were, so an edit changes what is shown without changing what is played.
+     */
+    private fun replaceQueuedSongMetadata(
+        mediaId: String,
+        effective: MediaMetadata,
+    ) {
+        if (currentMediaMetadata.value?.id == mediaId) {
+            currentMediaMetadata.value =
+                currentMediaMetadata.value?.copy(title = effective.title, artists = effective.artists)
+        }
+        val index =
+            (0 until player.mediaItemCount).firstOrNull {
+                player.getMediaItemAt(it).mediaId == mediaId
+            } ?: return
+        val item = player.getMediaItemAt(index)
+        val names = effective.artists.joinToString { it.name }
+        val platformMetadata =
+            item.mediaMetadata
+                .buildUpon()
+                .setTitle(effective.title)
+                .setSubtitle(names)
+                .setArtist(names)
+                .build()
+        val tag = (item.metadata ?: effective).copy(title = effective.title, artists = effective.artists)
+        val updated =
+            item
+                .buildUpon()
+                .setTag(tag)
+                .setMediaMetadata(platformMetadata)
+                .build()
+        val isCurrentItem = index == player.currentMediaItemIndex
+        val positionMs = player.currentPosition
+        runCatching { player.replaceMediaItem(index, updated) }
+            .onSuccess {
+                // Replacing the current item can restart it from zero; resume where the listener was.
+                if (isCurrentItem && player.currentPosition + 1_000L < positionMs) player.seekTo(positionMs)
+            }.onFailure {
+                Timber.tag(TAG).w(it, "metadata: failed to apply song edit mediaId=%s", mediaId)
+            }
+    }
+
+    /**
+     * Commits catalog metadata without changing the playable media URI or source cache key. The queue
+     * keeps the catalog copy so a later reset can restore it; what is shown is the copy plus any edit.
+     */
     private fun commitResolvedMetadata(
         mediaId: String,
         resolved: MediaMetadata,
     ) {
+        val effective = resolved.withSongMetadataOverride(SongMetadataOverrideCache.get(mediaId))
         if (currentMediaMetadata.value?.id == mediaId) {
-            currentMediaMetadata.value = resolved
+            currentMediaMetadata.value = effective
         }
         queuedMetadataByMediaId[mediaId] = resolved
         val index =
@@ -7309,17 +7391,17 @@ class MusicService :
         val platformMetadata =
             item.mediaMetadata
                 .buildUpon()
-                .setTitle(resolved.title)
-                .setSubtitle(resolved.artists.joinToString { it.name })
-                .setArtist(resolved.artists.joinToString { it.name })
-                .setAlbumTitle(resolved.album?.title)
+                .setTitle(effective.title)
+                .setSubtitle(effective.artists.joinToString { it.name })
+                .setArtist(effective.artists.joinToString { it.name })
+                .setAlbumTitle(effective.album?.title)
                 .apply {
-                    resolved.thumbnailUrl?.toUri()?.let(::setArtworkUri)
+                    effective.thumbnailUrl?.toUri()?.let(::setArtworkUri)
                 }.build()
         val updated =
             item
                 .buildUpon()
-                .setTag(resolved)
+                .setTag(effective)
                 .setMediaMetadata(platformMetadata)
                 .build()
         runCatching { player.replaceMediaItem(index, updated) }
@@ -12400,7 +12482,7 @@ class MusicService :
                         val endMs = System.currentTimeMillis()
                         val startMs = endMs - playbackStats.totalPlayTimeMs
                         try {
-                            ListenBrainzManager.submitFinished(this@MusicService, lbToken, song, startMs, endMs)
+                            ListenBrainzManager.submitFinished(this@MusicService, lbToken, song.withEffectiveNames(), startMs, endMs)
                         } catch (ie: Exception) {
                             Timber.tag("MusicService").v(ie, "ListenBrainz finished submit failed")
                         }
@@ -12431,7 +12513,7 @@ class MusicService :
                 else -> dbSong.withPresenceMetadata(metadataSong)
             }
 
-        return song.withResolvedPresenceDuration(durationMs)
+        return song?.withEffectiveNames().withResolvedPresenceDuration(durationMs)
     }
 
     private fun Song.withPresenceMetadata(metadataSong: Song): Song {
