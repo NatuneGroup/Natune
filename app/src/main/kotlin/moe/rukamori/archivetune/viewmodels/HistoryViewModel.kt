@@ -13,17 +13,26 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.HistorySource
 import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.EventWithSong
+import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.pages.HistoryPage
+import moe.rukamori.archivetune.kmp.data.AndroidYouTubeHistory
+import moe.rukamori.archivetune.shared.data.provider.HistoryPageAccumulator
+import moe.rukamori.archivetune.shared.data.provider.HistoryBrowsePage
+import moe.rukamori.archivetune.shared.data.provider.YouTubeHistoryRoutingUnavailable
+import moe.rukamori.archivetune.shared.domain.repository.ContentAccountChanged
 import moe.rukamori.archivetune.utils.reportException
-import timber.log.Timber
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -42,6 +51,17 @@ class HistoryViewModel
         val events = MutableStateFlow<Map<DateAgo, List<EventWithSong>>>(emptyMap())
         val isLoadingMoreEvents = MutableStateFlow(false)
         val canLoadMoreEvents = MutableStateFlow(true)
+        val remoteContinuation = MutableStateFlow<String?>(null)
+        val remoteLoading = MutableStateFlow(false)
+        val remoteLoadFailed = MutableStateFlow(false)
+        val remotePagingUnavailable = MutableStateFlow(false)
+        val remoteShuffling = MutableStateFlow(false)
+        private val remotePages = HistoryPageAccumulator<SongItem> { it.id }
+        private var remoteJob: Job? = null
+        private var remoteShuffleJob: Job? = null
+        private var remoteShuffleGeneration = 0L
+        private var remoteGeneration = 0L
+        private var remoteAccount = currentRemoteAccount()
 
         private val today = LocalDate.now()
         private val thisMonday = today.with(DayOfWeek.MONDAY)
@@ -49,6 +69,33 @@ class HistoryViewModel
 
         init {
             loadMoreEvents()
+            viewModelScope.launch {
+                YouTube.authStateFlow.map { it.cookie to it.dataSyncId }.distinctUntilChanged().collect {
+                    if (it != remoteAccount) resetRemoteAccount(it)
+                }
+            }
+        }
+
+        private fun currentRemoteAccount() = YouTube.currentPlaybackAuthState().let { it.cookie to it.dataSyncId }
+
+        fun remoteAccountIsCurrent(cookie: String?, dataSyncId: String?): Boolean {
+            val expected = cookie to dataSyncId
+            return remoteAccount == expected && currentRemoteAccount() == expected
+        }
+
+        private fun resetRemoteAccount(account: Pair<String?, String?>) {
+            remoteShuffleJob?.cancel()
+            remoteShuffleGeneration++
+            remoteShuffling.value = false
+            remoteJob?.cancel()
+            remoteGeneration++
+            remoteAccount = account
+            remotePages.replace(HistoryBrowsePage(emptyList()))
+            remoteContinuation.value = null
+            remoteLoading.value = false
+            remoteLoadFailed.value = false
+            remotePagingUnavailable.value = false
+            _remoteHistoryState.value = RemoteHistoryUiState.Loading
         }
 
         fun loadMoreEvents() {
@@ -73,57 +120,106 @@ class HistoryViewModel
         }
 
         fun fetchRemoteHistory() {
-            _remoteHistoryState.value = RemoteHistoryUiState.Loading
-            viewModelScope.launch(Dispatchers.IO) {
-                YouTube
-                    .musicHistory()
-                    .onSuccess {
-                        _remoteHistoryState.value = it.toRemoteUiState()
-                    }.onFailure {
-                        _remoteHistoryState.value = RemoteHistoryUiState.Error
-                        reportException(it)
-                    }
-            }
+            if (remoteShuffling.value) return
+            requestRemote(reset = true)
         }
 
-        /** Fetches remote history without transitioning the UI to a Loading state. */
-        suspend fun fetchRemoteHistorySilent() {
-            val snapshot = _remoteHistoryState.value
+        fun loadMoreRemoteHistory() {
+            if (remoteShuffling.value) return
+            if (remoteContinuation.value != null && !remoteLoadFailed.value) requestRemote(reset = false)
+        }
 
-            if (snapshot is RemoteHistoryUiState.Error) {
-                fetchRemoteHistory()
+        fun retryRemoteHistory() {
+            if (remoteShuffling.value) return
+            requestRemote(reset = remotePagingUnavailable.value || _remoteHistoryState.value !is RemoteHistoryUiState.Success)
+        }
+
+        /** A silent refresh keeps cached sections visible on failure. All pager mutations run on Main. */
+        suspend fun fetchRemoteHistorySilent() = withContext(Dispatchers.Main.immediate) {
+            if (remoteShuffling.value) return@withContext
+            requestRemote(reset = true, silent = true)?.join()
+        }
+
+        /** Refuse an unknown/failed tail instead of calling a loaded prefix "shuffle all". */
+        fun shuffleRemoteHistory(query: String, play: (List<SongItem>) -> Unit) {
+            if (remoteLoading.value || remoteShuffling.value || remoteLoadFailed.value) return
+            val account = currentRemoteAccount()
+            if (account != remoteAccount) {
+                resetRemoteAccount(account)
                 return
             }
-
-            withContext(Dispatchers.IO) {
+            val shuffleGeneration = ++remoteShuffleGeneration
+            remoteShuffling.value = true
+            remoteShuffleJob = viewModelScope.launch {
                 try {
-                    val page = YouTube.musicHistory().getOrThrow()
-                    _remoteHistoryState.value = page.toRemoteUiState()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Timber.tag("History").w(e, "Silent remote history fetch failed")
-                    when (snapshot) {
-                        is RemoteHistoryUiState.Success -> {
-                            // Keep cached data; don't disrupt the user
-                        }
-
-                        is RemoteHistoryUiState.Loading,
-                        is RemoteHistoryUiState.Empty,
-                        -> {
-                            _remoteHistoryState.value = RemoteHistoryUiState.Error
-                        }
+                    if (remotePagingUnavailable.value) throw YouTubeHistoryRoutingUnavailable()
+                    var count = 0
+                    while (remoteContinuation.value != null && count++ < 100) {
+                        val request = requestRemote(reset = false) ?: error("History page could not start")
+                        request.join()
+                        ensureActive()
+                        if (request.isCancelled) throw CancellationException("History paging was superseded")
+                        if (remoteLoadFailed.value) return@launch
                     }
+                    check(remoteContinuation.value == null) { "History shuffle page bound reached" }
+                    if (currentRemoteAccount() != account) throw ContentAccountChanged()
+                    val rows = remotePages.page.sections.flatMap { it.entries }.filter { item ->
+                        query.isBlank() || item.title.contains(query, ignoreCase = true) ||
+                            item.artists.any { it.name.contains(query, ignoreCase = true) }
+                    }
+                    if (rows.isNotEmpty()) play(rows.shuffled())
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    remoteLoadFailed.value = true
+                    if (failure is YouTubeHistoryRoutingUnavailable) remotePagingUnavailable.value = true
+                    reportException(failure)
+                } finally {
+                    if (shuffleGeneration == remoteShuffleGeneration) remoteShuffling.value = false
                 }
             }
         }
 
-        private fun HistoryPage.toRemoteUiState(): RemoteHistoryUiState =
-            if (sections?.any { it.songs.isNotEmpty() } == true) {
-                RemoteHistoryUiState.Success(this)
-            } else {
-                RemoteHistoryUiState.Empty
-            }
+        private fun requestRemote(reset: Boolean, silent: Boolean = false): Job? {
+            val account = currentRemoteAccount()
+            if (account != remoteAccount) resetRemoteAccount(account)
+            if (!reset && (remoteLoading.value || remoteContinuation.value == null)) return null
+            remoteJob?.cancel()
+            val generation = ++remoteGeneration
+            val before = _remoteHistoryState.value
+            if (reset && !silent) _remoteHistoryState.value = RemoteHistoryUiState.Loading
+            remoteLoading.value = true
+            remoteLoadFailed.value = false
+            return viewModelScope.launch {
+                try {
+                    val token = if (reset) null else remoteContinuation.value
+                    val next = withContext(Dispatchers.IO) { AndroidYouTubeHistory.page(token) }
+                    ensureActive()
+                    if (currentRemoteAccount() != account) throw ContentAccountChanged()
+                    if (generation != remoteGeneration) return@launch
+                    if (reset) remotePages.replace(next) else remotePages.append(requireNotNull(token), next)
+                    remoteContinuation.value = remotePages.page.continuation
+                    remotePagingUnavailable.value = remotePages.page.paginationUnavailable
+                    val sections = remotePages.page.sections.map { HistoryPage.HistorySection(it.title, it.entries) }
+                    _remoteHistoryState.value = if (sections.isNotEmpty() || remoteContinuation.value != null) {
+                        RemoteHistoryUiState.Success(HistoryPage(sections))
+                    } else RemoteHistoryUiState.Empty
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (generation == remoteGeneration) {
+                        remoteLoadFailed.value = true
+                        if (e is YouTubeHistoryRoutingUnavailable) remotePagingUnavailable.value = true
+                        if (before !is RemoteHistoryUiState.Success || (reset && !silent)) {
+                            _remoteHistoryState.value = RemoteHistoryUiState.Error
+                        }
+                    }
+                    reportException(e)
+                } finally {
+                    if (generation == remoteGeneration) remoteLoading.value = false
+                }
+            }.also { remoteJob = it }
+        }
 
         /**
          * Non-suspend wrapper for call sites that are not already in a coroutine

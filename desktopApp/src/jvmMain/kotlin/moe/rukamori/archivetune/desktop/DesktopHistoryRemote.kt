@@ -12,6 +12,10 @@ import java.time.temporal.TemporalAdjusters
 import java.time.DayOfWeek
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.innertube.PlaybackAuthState
+import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
+import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
@@ -22,6 +26,7 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueStart
 import moe.rukamori.archivetune.shared.ui.screens.HistoryEventUi
 import moe.rukamori.archivetune.shared.ui.screens.HistorySectionUi
 import moe.rukamori.archivetune.shared.ui.host.RemoteHistoryPager
+import moe.rukamori.archivetune.shared.ui.host.YouTubeHistoryPager
 import moe.rukamori.archivetune.shared.ui.screens.HistorySource
 import moe.rukamori.archivetune.spotify.playedAtMillis
 
@@ -31,115 +36,60 @@ import moe.rukamori.archivetune.spotify.playedAtMillis
  * fields, so a slow account never blocks the local feed.
  */
 
-private const val COLLECTION_YT_HISTORY = "history:youtube"
-
-/**
- * The YouTube Music account history: the provider's own sections of recently played songs, loaded on first select
- * and re-read on retry. The endpoint answers one response without a continuation, so there is nothing to page.
- */
+/** Dated account history, paged by the same owner as iOS. Song taps retain the baseline's watch radio. */
 internal class DesktopYouTubeHistoryPager(
-    private val graph: DesktopSessionGraph,
-) : RemoteHistoryPager {
-    override val source = HistorySource.REMOTE
-    override val playable = true
-    override val rowMenu = true
-    override var sections by mutableStateOf<List<HistorySectionUi>>(emptyList())
-    override var query = ""
-        set(value) {
-            field = value
-            rebuild()
-        }
-    override var loading by mutableStateOf(false)
-    override var failed by mutableStateOf(false)
-    override var canLoadMore by mutableStateOf(false)
-    override var busy by mutableStateOf(false)
-
-    /** The provider's own sections, newest first; rows hold only song entries. */
-    private var raw: List<moe.rukamori.archivetune.shared.data.provider.YouTubeHistorySection> = emptyList()
-    private var initialized = false
-
-    override fun loadOnce() {
-        if (initialized || loading) return
-        reload()
-    }
-
-    override fun reload() {
-        if (loading) return
-        loading = true
-        failed = false
-        graph.scope.launch {
-            val read = graph.catalogue.historySections()
-            raw = read
-            rebuild()
-        }.invokeOnCompletion { failure ->
-            loading = false
-            initialized = true
-            if (failure != null && failure !is CancellationException) failed = true
-        }
-    }
-
-    override fun loadMore() {}
-
-    /** Rebuilds the shown sections from the held ones, honoring the search box's filter like the baseline. */
-    private fun rebuild() {
-        sections = raw.mapNotNull { section ->
-            val rows = section.entries
-                .filter { it.kind == ContentKind.SONG }
-                .filter {
-                    query.isBlank() ||
-                        it.title.contains(query, ignoreCase = true) ||
-                        it.subtitle.contains(query, ignoreCase = true)
-                }
-            if (rows.isEmpty()) return@mapNotNull null
-            HistorySectionUi(
-                key = "yt:${section.title}",
-                dateLabel = section.title,
-                events = rows.mapIndexed { index, entry ->
-                    HistoryEventUi(null, entry.toCatalogueOccurrence(COLLECTION_YT_HISTORY, index), "")
-                },
-            )
-        }
-    }
-
-    /**
-     * A tapped row starts that song's watch radio, exactly as the baseline plays a remote-history song — the
-     * provider owns the continuation, so the loaded prefix is never handed to the queue.
-     */
-    override fun activate(event: HistoryEventUi, sectionKey: String) {
-        val ref = event.row.item.ref
-        if (ref.kind != ContentKind.SONG) return
+    graph: DesktopSessionGraph,
+    isCurrentAccount: () -> Boolean = historyAccountGuard(graph),
+) : RemoteHistoryPager by YouTubeHistoryPager(
+    scope = graph.scope,
+    fetch = { graph.catalogue.historySections(it) },
+    play = { row ->
         graph.scope.launch {
             try {
-                graph.queue.load(
-                    QueueLoadRequest(
-                        collection = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.ARTIST, text = ref.id),
-                        kind = QueueCollectionKind.RADIO,
-                        start = QueueStart(ref, event.row.occurrenceId, event.row.setVideoId),
-                        playWhenReady = true,
-                    ),
-                )
+                if (!isCurrentAccount()) return@launch
+                val ref = row.item.ref
+                if (ref.kind == ContentKind.EPISODE) {
+                    graph.queue.replace(listOf(row), row.occurrenceId, playWhenReady = true)
+                } else {
+                    graph.queue.load(QueueLoadRequest(
+                        ContentRequest(ContentProvider.YOUTUBE, ContentSurface.ARTIST, text = ref.id),
+                        QueueCollectionKind.RADIO, QueueStart(ref, row.occurrenceId, row.setVideoId), playWhenReady = true,
+                    ))
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                graph.report("the song's radio could not be started")
+                graph.report("the history item could not be played")
             }
         }
-    }
-
-    /** Every loaded row in the search filter's set, shuffled — the baseline's ListQueue shuffle of what it fetched. */
-    override fun shuffle(query: String) {
-        val rows = sections.flatMap { it.events }.map { it.row }
-        if (rows.isEmpty()) return
-        val shuffled = rows.shuffled()
+    },
+    playShuffled = { rows ->
         graph.scope.launch {
             try {
-                graph.queue.replace(shuffled, shuffled.first().occurrenceId, playWhenReady = true)
+                if (!isCurrentAccount()) return@launch
+                graph.queue.replace(rows, rows.first().occurrenceId, playWhenReady = true)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 graph.report("the history shuffle could not be played")
             }
         }
+    },
+    report = graph::report,
+    isCurrentAccount = isCurrentAccount,
+)
+
+private fun historyAccountGuard(graph: DesktopSessionGraph): () -> Boolean {
+    fun stored() = PlaybackAuthState(
+        cookie = graph.settings.snapshots.value?.get(InnerTubeCookieKey),
+        dataSyncId = graph.settings.snapshots.value?.get(DataSyncIdKey),
+    ).normalized()
+    val expected = stored()
+    return {
+        val current = stored()
+        val applied = YouTube.currentPlaybackAuthState()
+        expected.hasLoginCookie && current.cookie == expected.cookie && current.dataSyncId == expected.dataSyncId &&
+            applied.cookie == expected.cookie && applied.dataSyncId == expected.dataSyncId
     }
 }
 
