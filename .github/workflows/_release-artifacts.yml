@@ -692,6 +692,34 @@ jobs:
           restore-keys: |
             konan-${{ runner.os }}-${{ runner.arch }}-
 
+      # The app's iOS 26 views need the Xcode 26 SDK. The native closure expects 26.4, so any other 26 release
+      # builds an explicitly UNVERIFIED closure rather than failing the release.
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(xcodebuild -version 2>/dev/null | awk 'NR == 1 { print $2 }' || true)"
+          if [[ "$current" != "26.4" ]]; then
+            candidate=""
+            for preferred in /Applications/Xcode_26.4.app /Applications/Xcode_26.4.0.app; do
+              if [[ -d "$preferred" ]]; then candidate="$preferred"; break; fi
+            done
+            if [[ -z "$candidate" ]]; then
+              candidate="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1 || true)"
+            fi
+            if [[ -z "$candidate" ]]; then
+              echo "::error::No Xcode 26 is installed on this runner; the selected Xcode is ${current:-none}."
+              exit 1
+            fi
+            sudo xcode-select -s "$candidate/Contents/Developer"
+          fi
+          selected="$(xcodebuild -version | awk 'NR == 1 { print $2 }')"
+          xcodebuild -version
+          if [[ "$selected" != "26.4" ]]; then
+            echo "::warning::Xcode $selected is selected instead of 26.4; the native closure is marked UNVERIFIED."
+            echo "ARCHIVETUNE_ALLOW_OTHER_XCODE=1" >> "$GITHUB_ENV"
+          fi
+
       - name: Build the iOS native dependency closure
         shell: bash
         run: bash scripts/build_ios_native_core.sh
