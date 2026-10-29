@@ -795,6 +795,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The Release framework link runs Kotlin/Native inside the Gradle JVM and exhausts the project's 4 GiB heap.
+          # The user-home file outranks gradle.properties, so only this job gets the larger heap.
+          mkdir -p "$HOME/.gradle"
+          echo 'org.gradle.jvmargs=-Xmx10g -Dfile.encoding=UTF-8 -Djava.awt.headless=true -XX:+UseParallelGC' >> "$HOME/.gradle/gradle.properties"
           DERIVED_DATA="$RUNNER_TEMP/NatuneDerivedData"
           xcodebuild \
             -project iosApp/ArchiveTune.xcodeproj \
