@@ -124,7 +124,7 @@ class NativeReleasePackagingTest(unittest.TestCase):
                 with self.assertRaises(subprocess.CalledProcessError):
                     module.stage("x64", root)
 
-    def test_native_deps_minGW_zlib_uses_the_install_target_and_reports_failures(self):
+    def test_native_deps_mingw_zlib_uses_the_install_target_and_reports_failures(self):
         script = DEPS.read_text()
         # install builds libz.a, zlib1.dll and libz.dll.a; the default target would also build the examples.
         self.assertIn('"$MAKE_TOOL" -f win32/Makefile.gcc -j"$JOBS" install', script)
