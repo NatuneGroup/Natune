@@ -147,5 +147,5 @@ class HistoryPageAccumulator<T>(private val entryKey: (T) -> String) {
     }
 }
 
-private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+// JsonObject.obj comes from ProviderWire; the narrower helper below stays file-local.
 private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
