@@ -37,13 +37,14 @@ def tool(directory, name, source):
 
 
 def step_blocks(workflow=WORKFLOW):
-    """Every named step with its own text, in file order."""
+    """Every named step with its own text, in file order; a step ends at the next step or job."""
     text = workflow.read_text()
     positions = [(match.start(), match.group(1)) for match in re.finditer(r"(?m)^      - name: (.+)$", text)]
-    return [
-        (name, text[start:positions[index + 1][0] if index + 1 < len(positions) else len(text)])
-        for index, (start, name) in enumerate(positions)
-    ]
+    blocks = []
+    for index, (start, name) in enumerate(positions):
+        end = positions[index + 1][0] if index + 1 < len(positions) else len(text)
+        blocks.append((name, re.split(r"(?m)^  [a-z][a-z-]*:\n", text[start:end], maxsplit=1)[0]))
+    return blocks
 
 
 def staging_tools(directory):
@@ -196,6 +197,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
             apk.write_bytes(b"unsigned APK fixture")
             build_tools = root / "sdk/build-tools"
             (build_tools / "35.0.0").mkdir(parents=True)
+            (build_tools / "34.0.0").mkdir(parents=True)
             tool(build_tools / "34.0.0", "zipalign", """
                 #!/usr/bin/env python3
                 import os, sys

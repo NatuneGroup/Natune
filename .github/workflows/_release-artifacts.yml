@@ -241,8 +241,9 @@ jobs:
           fi
 
           # ANDROID_HOME is not exported by every runner image; the SDK locations below cover the rest.
+          # A configured root is authoritative: an incomplete one fails here instead of resolving to another SDK.
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          if [[ -z "$SDK_ROOT" || ! -d "$SDK_ROOT/build-tools" ]]; then
+          if [[ -z "$SDK_ROOT" ]]; then
             for candidate in /usr/local/lib/android/sdk "$HOME/Android/Sdk" "$HOME/android-sdk"; do
               if [[ -d "$candidate/build-tools" ]]; then
                 SDK_ROOT="$candidate"
