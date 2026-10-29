@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.podcast.PodcastScreenState
 import moe.rukamori.archivetune.podcast.PodcastUiState
 import moe.rukamori.archivetune.ui.component.MediaDetailHero
 import moe.rukamori.archivetune.ui.component.MediaDetailStatePanel
+import moe.rukamori.archivetune.ui.component.PodcastEpisodeProgress
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.viewmodels.PodcastViewModel
@@ -313,6 +314,7 @@ private fun PodcastEpisodeRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                PodcastEpisodeProgress(episode.id, showRemaining = true)
                 episode.description?.takeIf(String::isNotBlank)?.let { description ->
                     Text(
                         text = description,

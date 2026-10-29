@@ -93,9 +93,6 @@ data class YouTubeArtistDetail(
     val radio: YouTubeWatchTarget? = null,
 )
 
-/** One dated section of an account history feed (the provider supplies the date label itself). */
-data class YouTubeHistorySection(val title: String, val entries: List<YouTubeEntry>)
-
 /**
  * The desktop catalogue transport. The core client is an object shared with [JvmYouTubeBrowseTransport], so
  * the session that transport applies (cookie, visitor data, login-for-browse) covers these reads as well.
@@ -220,10 +217,7 @@ class JvmYouTubeCatalogueTransport {
         YouTube.newReleaseAlbums().getOrThrow().map { it.toRelease() }
 
     /** The account's YouTube listen history sections; a signed-out or failed read throws. */
-    suspend fun historySections(): List<YouTubeHistorySection> =
-        YouTube.musicHistory().getOrThrow().sections.orEmpty().map { section ->
-            YouTubeHistorySection(section.title, section.songs.map { it.toSongCatalogueEntry() })
-        }
+    suspend fun historySections(continuation: String? = null): YouTubeHistoryPage = CoreYouTubeHistory.page(continuation)
 }
 
 /**

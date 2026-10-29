@@ -86,6 +86,7 @@ fun hostHistoryPage(
         canLoadMore = if (local) pager.continuation != null else activeRemote?.canLoadMore ?: false,
         busy = if (local) pager.busy else activeRemote?.busy ?: false,
         rowMenu = local || activeRemote?.rowMenu == true,
+        paginationUnavailable = !local && activeRemote?.paginationUnavailable == true,
     )
     val actions = HistoryActions(
         source = { source = it },
@@ -106,7 +107,7 @@ fun hostHistoryPage(
             local -> {
                 { pager.shuffle() }
             }
-            activeRemote?.playable == true -> {
+            activeRemote?.playable == true && !activeRemote.paginationUnavailable -> {
                 { activeRemote.shuffle(activeRemote.query) }
             }
             else -> null
@@ -123,6 +124,7 @@ fun hostHistoryPage(
  * can be queued; a read-only source hides shuffle and navigates instead of playing.
  */
 interface RemoteHistoryPager {
+    val paginationUnavailable: Boolean get() = false
     val source: HistorySource
     val playable: Boolean
     /** Whether rows open the host's generic item menu; provider-native rows may suppress it. */

@@ -13,9 +13,11 @@ package moe.rukamori.archivetune.sponsorblock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import moe.rukamori.archivetune.extensions.metadata
+import moe.rukamori.archivetune.utils.isLocalMediaId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +41,9 @@ class SponsorBlockPlaybackController
     ) {
         private var player: Player? = null
         private var watcher: Job? = null
+        private var settingsWatcher: Job? = null
+        private var lookup: Job? = null
+        private var generation = 0L
         private var scope: CoroutineScope? = null
         @Volatile private var segments: List<SponsorBlockSegment> = emptyList()
         private val skippedEndsMs = mutableSetOf<Long>()
@@ -58,7 +63,11 @@ class SponsorBlockPlaybackController
             this.player = player
             this.scope = scope
             player.addListener(listener)
-            reload(player.currentMediaItem)
+            settingsWatcher = scope.launch {
+                repository.observeSettings().distinctUntilChanged().collect {
+                    withContext(Dispatchers.Main.immediate) { reload(this@SponsorBlockPlaybackController.player?.currentMediaItem) }
+                }
+            }
             watcher =
                 scope.launch {
                     while (isActive) {
@@ -81,6 +90,11 @@ class SponsorBlockPlaybackController
         fun detach() {
             watcher?.cancel()
             watcher = null
+            settingsWatcher?.cancel()
+            settingsWatcher = null
+            lookup?.cancel()
+            lookup = null
+            generation++
             player?.removeListener(listener)
             player = null
             scope = null
@@ -89,30 +103,39 @@ class SponsorBlockPlaybackController
         }
 
         private fun skipIfInsideSegment(player: Player) {
+            if (this.player !== player || !player.isPlaying || !player.isCurrentMediaItemSeekable) return
             val position = player.currentPosition
             val segment =
                 segments.firstOrNull { position >= it.startMs && position < it.endMs - SKIP_TAIL_MS } ?: return
-            if (!skippedEndsMs.add(segment.endMs)) return
             val duration = player.duration
             // Landing past the end of a track would end it early; a segment that runs to the finish
             // is left to play out instead.
             if (duration > 0 && segment.endMs >= duration - SKIP_TAIL_MS) return
+            if (!skippedEndsMs.add(segment.endMs)) return
             Timber.tag(TAG).d("Skipping %s: %dms -> %dms", segment.category.apiName, position, segment.endMs)
             player.seekTo(segment.endMs)
         }
 
         private fun reload(mediaItem: MediaItem?) {
+            lookup?.cancel()
+            lookup = null
+            val request = ++generation
             segments = emptyList()
             skippedEndsMs.clear()
-            // Podcast episodes have no segments, on attach as much as on a transition.
-            if (mediaItem?.metadata?.isPodcast == true) return
             val id = mediaItem?.mediaId ?: return
+            // Local files are never looked up. Podcast episodes are looked up only when the user opted in,
+            // which the repository checks, so the controller never has to read preferences itself.
+            if (id.isLocalMediaId()) return
+            val podcast = mediaItem.metadata?.isPodcast == true
             val scope = scope ?: return
-            scope.launch {
-                val loaded = repository.segments(id)
-                // The track may have moved on while the lookup was in flight.
-                if (withContext(Dispatchers.Main) { player?.currentMediaItem?.mediaId } == id) {
-                    segments = loaded
+            val attached = player
+            lookup = scope.launch {
+                val loaded = repository.segments(id, podcast = podcast)
+                withContext(Dispatchers.Main.immediate) {
+                    // Both a settings edit and a player promotion invalidate a late lookup for the same id.
+                    if (generation == request && player === attached && player?.currentMediaItem?.mediaId == id) {
+                        segments = loaded
+                    }
                 }
             }
         }

@@ -112,7 +112,6 @@ import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.GridThumbnailCornerRadius
 import moe.rukamori.archivetune.constants.GridThumbnailHeight
-import moe.rukamori.archivetune.constants.ListItemHeight
 import moe.rukamori.archivetune.constants.ListThumbnailSize
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadius
 import moe.rukamori.archivetune.db.entities.Album
@@ -143,122 +142,6 @@ import moe.rukamori.archivetune.utils.reportException
 import kotlin.math.roundToInt
 
 const val ActiveBoxAlpha = 0.6f
-
-@Composable
-inline fun ListItem(
-    modifier: Modifier = Modifier,
-    title: String,
-    noinline subtitle: (@Composable RowScope.() -> Unit)? = null,
-    thumbnailContent: @Composable () -> Unit,
-    crossinline trailingContent: @Composable RowScope.() -> Unit = {},
-    isActive: Boolean = false,
-    showActiveContainer: Boolean = true,
-    textColorOverride: Color? = null,
-) {
-    val titleColor =
-        textColorOverride ?: if (isActive) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        }
-    val subtitleContentColor =
-        textColorOverride?.copy(alpha = 0.7f) ?: if (isActive) {
-            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        }
-    val trailingContentColor =
-        textColorOverride ?: if (isActive) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        }
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier =
-            modifier
-                .focusable()
-                .height(ListItemHeight)
-                .padding(horizontal = 8.dp)
-                .then(
-                    if (isActive && showActiveContainer) {
-                        Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.secondaryContainer)
-                    } else {
-                        Modifier
-                    },
-                ),
-    ) {
-        Box(Modifier.padding(8.dp), contentAlignment = Alignment.Center) { thumbnailContent() }
-        Column(
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .padding(horizontal = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = titleColor,
-            )
-            if (subtitle != null) {
-                CompositionLocalProvider(LocalContentColor provides subtitleContentColor) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) { subtitle() }
-                }
-            }
-        }
-        CompositionLocalProvider(LocalContentColor provides trailingContentColor) {
-            trailingContent()
-        }
-    }
-}
-
-@Composable
-fun ListItem(
-    modifier: Modifier = Modifier,
-    title: String,
-    subtitle: String?,
-    badges: @Composable RowScope.() -> Unit = {},
-    thumbnailContent: @Composable () -> Unit,
-    trailingContent: @Composable RowScope.() -> Unit = {},
-    isActive: Boolean = false,
-    showActiveContainer: Boolean = true,
-) = ListItem(
-    title = title,
-    modifier = modifier,
-    isActive = isActive,
-    showActiveContainer = showActiveContainer,
-    subtitle = {
-        badges()
-        if (!subtitle.isNullOrEmpty()) {
-            Text(
-                text = subtitle,
-                color =
-                    if (isActive) {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(
-                            alpha = 0.7f,
-                        )
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    },
-    thumbnailContent = thumbnailContent,
-    trailingContent = trailingContent,
-)
 
 @Composable
 fun GridItem(
@@ -411,6 +294,7 @@ fun SongListItem(
         ListItem(
             title = song.song.title,
             subtitle = subtitle,
+            progressContent = { PodcastEpisodeProgress(song.song.id) },
             badges = badges,
             thumbnailContent = {
                 ItemThumbnail(
@@ -483,13 +367,16 @@ fun SongGridItem(
                     makeTimeString(song.song.duration * 1000L),
                 )
             }
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            PodcastEpisodeProgress(song.song.id)
+        }
     },
     badges = badges,
     thumbnailContent = {
@@ -893,6 +780,9 @@ fun MediaMetadataListItem(
 ) {
     ListItem(
         title = mediaMetadata.title,
+        progressContent = if (mediaMetadata.isPodcast) {
+            { PodcastEpisodeProgress(mediaMetadata.id) }
+        } else null,
         subtitle = {
             val text =
                 remember(mediaMetadata) {
@@ -1005,6 +895,9 @@ fun YouTubeListItem(
         ListItem(
             title = item.title,
             subtitle = subtitle,
+            progressContent = if (item is EpisodeItem || (item is SongItem && item.isPodcast)) {
+                { PodcastEpisodeProgress(item.id) }
+            } else null,
             badges = badges,
             thumbnailContent = {
                 ItemThumbnail(
@@ -1086,14 +979,17 @@ fun YouTubeGridItem(
                         is EpisodeItem -> joinByBullet(item.podcast?.name, item.dateText, item.durationText)
                     }
                 }
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Column {
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (item is EpisodeItem || (item is SongItem && item.isPodcast)) PodcastEpisodeProgress(item.id)
             }
         },
         badges = badges,

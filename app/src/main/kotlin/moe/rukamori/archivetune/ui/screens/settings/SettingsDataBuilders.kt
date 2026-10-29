@@ -8,8 +8,6 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
-import moe.rukamori.archivetune.utils.RestartScopedSettings
 import moe.rukamori.archivetune.constants.TabletModeEnabledKey
 
 import android.content.ActivityNotFoundException
@@ -97,28 +95,7 @@ import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.constants.TranslateLyricsKey
 import moe.rukamori.archivetune.constants.UseLyricsV2Key
-import moe.rukamori.archivetune.constants.AppFontPreference
-import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.WakelockKey
-
-/**
- * "Use system font" drives the canonical [FontPreferenceKey], the key Appearance writes and
- * StartupSettings resolves; the legacy boolean is ignored once that key exists.
- */
-@Composable
-private fun SearchResultSystemFontSwitch() {
-    val prefs = LocalSettingsPreferenceSnapshot.current
-    val restartPrompt = LocalRestartPrompt.current
-    val fontPreference = RestartScopedSettings.from(prefs.current).fontPreference
-    Switch(
-        checked = fontPreference == AppFontPreference.SYSTEM,
-        onCheckedChange = { checked ->
-            restartPrompt.edit(prefs) {
-                this[FontPreferenceKey] = (if (checked) AppFontPreference.SYSTEM else AppFontPreference.DEFAULT).name
-            }
-        },
-    )
-}
 
 fun buildSettingsGroups(
     navController: NavController,
@@ -234,7 +211,7 @@ fun buildSettingsGroups(
                 SettingsChild("Theme creator", "theme_creator", listOf("theme creator", "create theme", "custom theme", "make theme")),
                 SettingsChild("Palette picker", "palette_picker", listOf("palette picker", "pick palette", "choose palette", "custom palette")),
                 SettingsChild("Extras", "extras", listOf("extras", "appearance extras", "home cards", "hide cards", "more appearance")),
-            ),
+            ) + independentAppleMusicSearchChildren(context),
         )
     // Appearance → Extras sub-page. Hidden from the main list (it is reached through
     // Appearance) but every toggle on it stays searchable.
@@ -534,7 +511,7 @@ fun buildSettingsGroups(
                 SettingsChild("Lyrics provider", "lyrics_provider", listOf("lyrics provider", "source", "lrclib", "kugou", "netease", "musixmatch", "paxsenix", "betterlyrics", "portato", "youlyplus", "unison", "simpmusic", "megalobiz")),
                 SettingsChild("Lyrics mode", "lyrics_mode", listOf("lyrics mode", "lyrics style", "lyrics display mode", "karaoke mode")),
                 SettingsChild("Show lyrics", "show_lyrics", listOf("show lyrics", "display lyrics", "lyrics toggle", "lyrics show")) { SearchResultSwitch(ShowLyricsKey, false) },
-                SettingsChild("Use lyrics V2", "use_lyrics_v2", listOf("lyrics v2", "new lyrics", "lyrics engine")) { SearchResultSwitch(UseLyricsV2Key, true) },
+                SettingsChild("Use lyrics V2", "use_lyrics_v2", listOf("lyrics v2", "new lyrics", "lyrics engine")),
                 SettingsChild("Translate lyrics", "translate_lyrics", listOf("translate", "translation", "lyrics translation")) { SearchResultSwitch(TranslateLyricsKey, false) },
                 SettingsChild("Enable translator", "enable_translator", listOf("translator", "translation engine", "lyrics translator")) { SearchResultSwitch(EnableTranslatorKey, false) },
                 SettingsChild("Lyrics font size", "lyrics_font_size", listOf("font size", "lyrics size", "text size", "lyrics text size")),

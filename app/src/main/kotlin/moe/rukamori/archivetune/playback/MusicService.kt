@@ -372,7 +372,6 @@ import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.appendableQueuePage
-import moe.rukamori.archivetune.sponsorblock.SponsorBlockPlaybackController
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
 import moe.rukamori.archivetune.playback.queues.PlaylistActionTicket
@@ -488,7 +487,7 @@ class MusicService :
     lateinit var listenTogetherManager: moe.rukamori.archivetune.listentogether.ListenTogetherManager
 
     @Inject
-    lateinit var sponsorBlockPlaybackController: SponsorBlockPlaybackController
+    lateinit var playbackSessionObservers: PlaybackSessionObservers
 
     @Inject
     lateinit var audioEngineHost: moe.rukamori.archivetune.playback.dsp.AudioEngineHost
@@ -1401,7 +1400,7 @@ class MusicService :
         }
         // ioScope, not scope: the lookup is network plus a JSON parse, and the controller hops to
         // the main thread itself for every player read.
-        sponsorBlockPlaybackController.attach(player, ioScope)
+        playbackSessionObservers.attach(player, ioScope)
 
         // The single authoritative artwork resolver. Every artwork source decision flows
         // through here so the player, notification and palette extractor can never diverge.
@@ -1519,21 +1518,10 @@ class MusicService :
             val prefs = dataStore.data.first()
             val repeatMode = prefs[RepeatModeKey] ?: REPEAT_MODE_OFF
             val volume = (prefs[PlayerVolumeKey] ?: 1f).coerceIn(0f, 1f)
-            val offload = prefs[AudioOffload] ?: false
-            val crossfadePrefEnabled = prefs[CrossfadeEnabledKey] ?: false
-            val automixPrefEnabled = prefs[AutomixEnabledKey] ?: false
-            val authenticityPrefEnabled = prefs[RejectSuspectedUpscaledAudioKey] ?: false
             withContext(Dispatchers.Main) {
                 player.repeatMode = repeatMode
                 playerVolume.value = volume
-                updateAudioOffload(
-                    resolveAudioOffloadEnabled(
-                        requested = offload,
-                        crossfadeEnabled = crossfadePrefEnabled,
-                        automixEnabled = automixPrefEnabled,
-                        authenticityRejectionEnabled = authenticityPrefEnabled,
-                    ),
-                )
+                updateAudioOffload(prefs.effectiveAudioOffloadEnabled(bitPerfectOutputActive))
             }
         }
 
@@ -1657,7 +1645,8 @@ class MusicService :
             }
 
         dataStore.data
-            .map { it[SkipSilenceKey] ?: false }
+            .map { it[SkipSilenceKey] == true && !bitPerfectOutputActive &&
+                !it.effectiveAudioOffloadEnabled(bitPerfectOutputActive) }
             .distinctUntilChanged()
             .collectLatest(scope) { enabled ->
                 skipSilencePreferenceEnabled = enabled
@@ -1702,34 +1691,10 @@ class MusicService :
                 }
             }
 
-        combine(
-            dataStore.data.map { it[AudioOffload] ?: false },
-            dataStore.data.map { it[CrossfadeEnabledKey] ?: false },
-            dataStore.data.map { it[AutomixEnabledKey] ?: false },
-            dataStore.data.map { it[RejectSuspectedUpscaledAudioKey] ?: false },
-        ) { offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled ->
-            listOf(offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled)
-        }.distinctUntilChanged()
-            .collectLatest(scope) { (offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled) ->
-                // Offload is incompatible with both blending engines: automix
-                // exercises the same two-player + processor-chain path crossfade
-                // does, plus its own filter riding.
-                val effectiveOffload =
-                    resolveAudioOffloadEnabled(
-                        requested = offloadEnabled,
-                        crossfadeEnabled = crossfadeEnabled,
-                        automixEnabled = automixEnabled,
-                        authenticityRejectionEnabled = authenticityRejectionEnabled,
-                    )
-                updateAudioOffload(effectiveOffload)
-                if (effectiveOffload) {
-                    val skipSilenceEnabled = dataStore.get(SkipSilenceKey, false)
-                    if (skipSilenceEnabled) {
-                        dataStore.edit { it[SkipSilenceKey] = false }
-                        localPlayer.skipSilenceEnabled = false
-                    }
-                }
-            }
+        dataStore.data
+            .map { it.effectiveAudioOffloadEnabled(bitPerfectOutputActive) }
+            .distinctUntilChanged()
+            .collectLatest(scope) { updateAudioOffload(it) }
 
         dataStore.data
             .map { prefs ->
@@ -1839,7 +1804,8 @@ class MusicService :
             dataStore.data
                 // Bit-perfect output hands volume to the DAC path; a per-track gain there would
                 // just move the user's volume around, so normalization sits out.
-                .map { (it[AudioNormalizationKey] ?: true) && !bitPerfectOutputActive }
+                .map { moe.rukamori.archivetune.shared.domain.settings.audioNormalizationApplies(
+                    it[AudioNormalizationKey] ?: true, bitPerfectOutputActive) }
                 .distinctUntilChanged(),
         ) { mediaId, format, normalizeAudio ->
             normalizeAudio to resolveAudioNormalizationFactor(mediaId, format, normalizeAudio)
@@ -4444,7 +4410,7 @@ class MusicService :
             player.addListener(sleepTimer)
             // Promotion builds a new session player and releases the old one, so anything holding a
             // listener on it has to be moved across or it goes deaf for the rest of the session.
-            sponsorBlockPlaybackController.attach(player, ioScope)
+            playbackSessionObservers.attach(player, ioScope)
             castPlaybackRepository.releasePlayer(oldSessionPlayer)
 
             // 3. Listeners/analytics that were attached to the old local player.
@@ -11270,7 +11236,8 @@ class MusicService :
         audioNormalizationFactorCache[mediaId] = resolvedNormalizationFactor
         scope.launch {
             if (currentMediaMetadata.value?.id == mediaId &&
-                dataStore.get(AudioNormalizationKey, true)
+                moe.rukamori.archivetune.shared.domain.settings.audioNormalizationApplies(
+                    dataStore.get(AudioNormalizationKey, true), bitPerfectOutputActive)
             ) {
                 normalizeFactor.value = resolvedNormalizationFactor
             }
@@ -12767,7 +12734,7 @@ class MusicService :
         binder.release()
         runCatching { listenTogetherManager.onMusicServiceDestroyed(this) }
         equalizerPlaybackController.detach(this)
-        sponsorBlockPlaybackController.detach()
+        playbackSessionObservers.detach()
         musicHapticsEngine?.release()
         musicHapticsEngine = null
         spotifyReportJob?.cancel()

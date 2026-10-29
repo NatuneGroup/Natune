@@ -67,6 +67,7 @@
     <string name="m6_skip_silence">Skip silence</string>
     <string name="m6_audio_normalization">Audio normalization</string>
     <string name="m6_sponsorblock">SponsorBlock</string>
+    <string name="m6_sponsor_block_podcasts">Skip podcast segments</string>
     <string name="m6_sponsor">Sponsors</string>
     <string name="m6_selfpromo">Self-promotion</string>
     <string name="m6_interaction">Interaction reminders</string>

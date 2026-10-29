@@ -138,7 +138,7 @@ import moe.rukamori.archivetune.viewmodels.SearchDiscoveryViewModel
 import moe.rukamori.archivetune.viewmodels.SearchHistoryViewModel
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
-import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicSearchBar
 import moe.rukamori.archivetune.ui.component.rememberPillStyle
 
 private val SearchHorizontalPadding = 24.dp
@@ -170,7 +170,7 @@ fun SearchScreen(
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val recentSearches by historyViewModel.recentSearches.collectAsStateWithLifecycle()
     val lazyListState = listState ?: rememberLazyListState()
-    val appleMusicStyle = rememberAppleMusicExperience()
+    val appleMusicStyle = rememberAppleMusicSearchBar()
     val pill = rememberPillStyle()
     val bottomSearchChromeSpace =
         (if (appleMusicStyle) AppleSearchBarHeight else ExpressiveSearchBarHeight) + BottomSearchPillMargin * 2

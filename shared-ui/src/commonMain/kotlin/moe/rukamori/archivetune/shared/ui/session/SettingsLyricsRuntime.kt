@@ -55,6 +55,7 @@ class SettingsLyricsRuntime(
                         providers,
                         { name -> name in config.available && config.enabled[name] != false },
                         this, { config.wordSync }, networkAvailable, reportFailure,
+                        isAvailable = { name -> name in config.available },
                     )
                     val preload = LyricsPreloadManager(helper, this, nextCount = config.preloadCount)
                     val runtime = Runtime(helper)
