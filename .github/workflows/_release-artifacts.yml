@@ -96,7 +96,6 @@ jobs:
     name: Android ${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     if: inputs.build_android
-    runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read
     outputs:
@@ -298,7 +297,6 @@ jobs:
         include:
           - platform: windows
             arch: x64
-            runner: blacksmith-2vcpu-windows-2025
             jdk_arch: x64
             runner: blacksmith-32vcpu-windows-2025
           - platform: linux
@@ -313,12 +311,10 @@ jobs:
             runner: blacksmith-8vcpu-ubuntu-2404-arm
           - platform: macos
             arch: x64
-            runner: blacksmith-6vcpu-macos-latest
             jdk_arch: x64
             runner: blacksmith-6vcpu-macos-latest
           - platform: macos
             arch: arm64
-            runner: blacksmith-6vcpu-macos-latest
             jdk_arch: aarch64
             runner: blacksmith-6vcpu-macos-latest
     env:
@@ -398,8 +394,6 @@ jobs:
           set -euo pipefail
           command -v gpg >/dev/null 2>&1 || brew install gnupg
 
-      - name: Build host native dependencies (Linux and macOS)
-        if: matrix.platform != 'windows'
       - name: Set up MSYS2 MinGW toolchain (Windows)
         if: matrix.platform == 'windows'
         uses: msys2/setup-msys2@v2
@@ -430,11 +424,6 @@ jobs:
         shell: msys2 {0}
         run: bash desktopApp/native/scripts/build-native-deps.sh
 
-      - name: Build host native dependencies (Windows)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File desktopApp/native/scripts/build-native-deps.ps1
-
       - name: Build host native dependencies
         if: matrix.platform != 'windows'
         shell: bash
@@ -450,11 +439,6 @@ jobs:
 
       - name: Build TDLight native library (Windows)
         if: matrix.platform == 'windows'
-        shell: pwsh
-        env:
-          TDLIGHT_OPENSSL_PREFIX: ${{ github.workspace }}/desktopApp/build/native/openssl-static
-          TDLIGHT_ZLIB_PREFIX: ${{ github.workspace }}/desktopApp/build/native/zlib-static
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File desktopApp/tdlight-jvm/native/build-tdjni.ps1
         shell: msys2 {0}
         # MinGW TDLib consumes the deps script's static OpenSSL prefix; the MSVC ps1 recipe is kept
         # for hosts that produce a MSVC-built static prefix, which this workflow does not create.
@@ -651,7 +635,6 @@ jobs:
     name: Unsigned iOS IPA
     runs-on: blacksmith-6vcpu-macos-latest
     if: inputs.build_ios
-    runs-on: blacksmith-6vcpu-macos-latest
     permissions:
       contents: read
     env:
