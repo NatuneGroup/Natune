@@ -174,7 +174,8 @@ class UploadedSongsViewModel @Inject constructor(
                 uploads.rememberUploadedVideoIds(page.songs.map { it.videoId })
                 continuation = page.continuation
                 _hasMore.value = page.continuation != null
-                _songs.value = if (reset) page.songs else (_songs.value + page.songs).distinctBy { it.videoId }
+                // A duplicate key would crash the lazy list, so every page is de-duplicated before it is shown.
+                _songs.value = (if (reset) page.songs else _songs.value + page.songs).distinctBy { it.videoId }
                 _failure.value = null
             } catch (cancellation: CancellationException) {
                 throw cancellation
