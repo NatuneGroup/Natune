@@ -142,6 +142,7 @@ fun LyricsFullscreenRenderer(
                 modifier = Modifier
                     .widthIn(max = profile.maxWidthDp.dp)
                     .fillMaxSize()
+                    .lyricsViewportFade()
                     .testTag(LYRICS_LIST_TAG)
                     .onSizeChanged { rowWidthPx = (it.width - horizontalPaddingPx).coerceAtLeast(0) },
                 contentPadding = PaddingValues(vertical = 160.dp, horizontal = LYRICS_ROW_PADDING),

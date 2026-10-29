@@ -106,6 +106,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.player.LocalLyricsScrollListener
 import moe.rukamori.archivetune.utils.rememberPreference
 
@@ -366,7 +367,7 @@ fun SimpMusicLyrics(
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(top = topPad, bottom = bottomPad, start = 24.dp, end = 24.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().lyricsViewportFade(),
         ) {
             itemsIndexed(entries) { index, entry ->
                 SimpMusicLyricsLine(
