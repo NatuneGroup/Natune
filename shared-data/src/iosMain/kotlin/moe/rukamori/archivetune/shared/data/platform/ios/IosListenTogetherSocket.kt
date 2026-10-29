@@ -106,6 +106,15 @@ class IosListenTogetherSocketFactory(
             if (terminated) return
             current.receiveMessageWithCompletionHandler { message, error ->
                 if (error != null) {
+                    // The server's close frame is a normal close; the read error that follows only reports the transport.
+                    // With no session delegate, the task's recorded close code is the signal, so the owner gets onClosed
+                    // the way a delegate's didCloseWithCode would deliver it, as Android's OkHttp listener does.
+                    val serverCode = current.closeCode.toInt()
+                    if (serverCode != 0 && !terminated) {
+                        terminated = true
+                        listener.onClosed(serverCode, current.closeReason?.toByteArray()?.decodeToString().orEmpty())
+                        return@receiveMessageWithCompletionHandler
+                    }
                     val code = error.code.toInt()
                     // A deliberate cancel/close reports NSURLErrorCancelled; it is not a failure outcome.
                     if (code.toLong() != NSURLErrorCancelled) fail(IosListenTogetherSocketException(error.localizedDescription ?: "websocket read failed"))
