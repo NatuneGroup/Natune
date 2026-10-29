@@ -298,30 +298,30 @@ internal data class YouTubeContinuation(val requestKey: String, val offset: Int,
 private fun String.escapeField(): String = replace("%", "%25").replace("|", "%7C")
 
 private fun ContentRequest.toBrowse(): YouTubeBrowse {
-    val browseSection = section
-    // RADIO keeps its own watch-next route below; every other section is a provider browse or watch endpoint.
-    if (browseSection != null && surface != ContentSurface.RADIO) {
-        val playlistId = browseSection.id.takeIf(String::isNotBlank)
-        // Radio and mix ids are endless watch queues; the video id comes from the request text when the
-        // endpoint named a song, else it is encoded in the RDAMVM playlist id.
-        if (browseSection.id.startsWith("RDAMVM")) {
-            return YouTubeBrowse.Watch(browseSection.id.removePrefix("RDAMVM"), playlistId, browseSection.params)
+    val section = section
+    // A song-seeded watch names its video id in the request text; blank text names none.
+    val textSeed = text?.trim()?.takeIf(String::isNotEmpty)
+    if (section != null && surface != ContentSurface.RADIO) {
+        val playlistId = section.id.takeIf(String::isNotBlank)
+        // Radio and mix ids are endless watch queues. The video id is the request text when the endpoint named a
+        // song, else the one encoded in the RDAMVM playlist id.
+        if (section.id.startsWith("RDAMVM")) {
+            val videoId = section.id.removePrefix("RDAMVM").takeIf(String::isNotBlank)
+            return YouTubeBrowse.Watch(videoId, playlistId, section.params)
         }
         if (surface == ContentSurface.ARTIST) {
-            return if (text != null || playlistId?.startsWith("RD") == true) {
-                YouTubeBrowse.Watch(text, playlistId, browseSection.params)
+            return if (textSeed != null || playlistId?.startsWith("RD") == true) {
+                YouTubeBrowse.Watch(textSeed, playlistId, section.params)
             } else {
-                YouTubeBrowse.ArtistItems(browseSection.id, browseSection.params)
+                YouTubeBrowse.ArtistItems(section.id, section.params)
             }
         }
-        if (playlistId?.startsWith("RD") == true) {
-            return YouTubeBrowse.Watch(null, playlistId, browseSection.params)
-        }
-        return YouTubeBrowse.Section(browseSection.id, browseSection.params)
+        if (playlistId?.startsWith("RD") == true) return YouTubeBrowse.Watch(null, playlistId, section.params)
+        return YouTubeBrowse.Section(section.id, section.params)
     }
-    if (surface == ContentSurface.ARTIST && text != null) {
+    if (surface == ContentSurface.ARTIST && textSeed != null) {
         // A video-id-only watch endpoint, e.g. playing one provider song without a radio id.
-        return YouTubeBrowse.Watch(text, null, null)
+        return YouTubeBrowse.Watch(textSeed, null, null)
     }
     return when (surface) {
         ContentSurface.PLAYLIST -> {
