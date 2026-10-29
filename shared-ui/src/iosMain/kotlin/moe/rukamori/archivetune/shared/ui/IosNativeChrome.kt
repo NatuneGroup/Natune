@@ -1,7 +1,6 @@
 package moe.rukamori.archivetune.shared.ui
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.ui.navigation.NativeShellChrome
 import moe.rukamori.archivetune.shared.ui.navigation.NativeShellCommand
@@ -9,9 +8,9 @@ import moe.rukamori.archivetune.shared.ui.navigation.NativeShellState
 import moe.rukamori.archivetune.shared.ui.navigation.ShellTab
 
 /** One subscription Swift holds. Cancelling it stops the callbacks; the host's own close also ends it. */
-class IosSubscription internal constructor(private val job: Job) {
+class IosSubscription internal constructor(private val onCancel: () -> Unit) {
     fun cancel() {
-        job.cancel()
+        onCancel()
     }
 }
 
@@ -56,8 +55,10 @@ class IosNativeChrome internal constructor(private val scope: CoroutineScope) {
     }
 
     /** Delivers the current state at once and then every change, on the main thread. */
-    fun observe(listener: (IosChromeState) -> Unit): IosSubscription =
-        IosSubscription(scope.launch { shell.state.collect { listener(it.toIos()) } })
+    fun observe(listener: (IosChromeState) -> Unit): IosSubscription {
+        val job = scope.launch { shell.state.collect { listener(it.toIos()) } }
+        return IosSubscription { job.cancel() }
+    }
 
     fun selectTab(index: Int) {
         ShellTab.entries.getOrNull(index)?.let { shell.send(NativeShellCommand.SelectTab(it)) }

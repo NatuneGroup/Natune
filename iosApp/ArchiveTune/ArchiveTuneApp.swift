@@ -65,6 +65,10 @@ final class ArchiveTuneSession {
         ) { [weak self] _ in
             self?.shutdown()
         })
+        if #available(iOS 26.0, *) {
+            // The Kotlin player still picks the Compose renderer for every other look and when the setting is off.
+            host.setNativeLyricsFactory { lyrics in SystemLyrics.makeController(lyrics) }
+        }
     }
 
     /// Re-presents the single controller for a new representable. A previous representable that has not been
