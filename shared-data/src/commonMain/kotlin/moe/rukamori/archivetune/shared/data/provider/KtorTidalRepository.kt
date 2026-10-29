@@ -78,9 +78,10 @@ class KtorTidalRepository(
             durationMs = request.target.durationMs,
         )
         if (!access.bearer.isNullOrBlank()) {
-            // Account path: official playbackinfopostpaywall manifest on the same scored candidate.
-            val track = instanceResolver.selectTracks(query).firstOrNull()
-                ?.let(instanceResolver::providerTrackOf) ?: return null
+            // Account path: the retained direct-id or bearer-search match, then the official
+            // playbackinfopostpaywall manifest. A trusted direct id must stay trusted, and the HTTP
+            // timeout must stay ProviderRequestTimeout so the attempt reports TIMEOUT, not NO_MATCH.
+            val track = match(request) ?: return null
             val root = http.json("$api/tracks/${pathId(track.item.ref.id)}/playbackinfopostpaywall",
                 mapOf("audioquality" to quality, "playbackmode" to "STREAM", "assetpresentation" to "FULL"),
                 mapOf("Authorization" to "Bearer ${access.bearer}")).jsonObject
