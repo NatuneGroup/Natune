@@ -61,6 +61,7 @@ import kotlin.math.abs
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerPanel
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
+import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
 import moe.rukamori.archivetune.shared.ui.player.PlayerRepeat
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
 import moe.rukamori.archivetune.shared.ui.resources.Res
@@ -222,7 +223,7 @@ private fun V10Artwork(c: PlayerRenderContext, playing: Boolean, modifier: Modif
     Box(
         modifier
             .aspectRatio(1f)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (c.preferences.sleeveHidden) 0f else 1f }
             .clip(RoundedPolygonShape(path))
             .playerSeekDoubleTap(c),
     ) {

@@ -85,7 +85,10 @@ fun BottomSheetPlayer(
         val forceDark=presentation.style.capabilities.monochrome ||
             presentation.style.resolveBackground(presentation.background)!=PlayerBackgroundStyle.DEFAULT
         MaterialTheme(colorScheme=if(forceDark) darkColorScheme() else MaterialTheme.colorScheme) {
-            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+            CompositionLocalProvider(
+                LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                LocalPlayerControlMotion provides PlayerControlMotionEnvironment(c.motionActive, state.repeat),
+            ) {
                 Box(Modifier.fillMaxSize().testTag("player-${presentation.style.name}-${if(landscape) "landscape" else "portrait"}")) {
                     PlayerBackground(c)
                     if(interaction.fullscreenLyrics) {

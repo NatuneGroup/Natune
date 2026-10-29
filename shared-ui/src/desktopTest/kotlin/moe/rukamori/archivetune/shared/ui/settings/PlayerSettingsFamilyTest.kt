@@ -7,6 +7,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runComposeUiTest
 import kotlinx.coroutines.runBlocking
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.resources.*
 import kotlin.test.*
 import androidx.compose.runtime.setValue
 
@@ -26,11 +27,14 @@ class PlayerSettingsFamilyTest {
             val preferences = PreferenceSnapshot.of(PlayerDesignStyleKey to style.name, TikTokMainLyricsEnabledKey to true,
                 AppleMusicPauseScaleKey to false, FlamingoBackgroundEffectKey to true, ShowPlayerVolumeBarKey to false)
             val rows = appearance(preferences)
-            assertEquals(style.name in setOf("V1","V2","V3","V4","V5","V6","V7","V10"),
-                rows.single { it.anchor == "player_buttons_style" }.enabled, style.name)
+            val buttons = rows.single { it.anchor == "player_buttons_style" }
+            assertEquals(style.name in setOf("V1","V2","V3","V4","V6"), buttons.enabled, style.name)
+            assertEquals(if (buttons.enabled) null else Res.string.m6_player_setting_not_used, buttons.description, style.name)
+            assertEquals(buttons.enabled, rows.single { it.anchor == "player_slider_style" }.enabled, style.name)
             assertEquals(style.name in setOf("V7","V8","BITCHORD","APPLE_MUSIC","FLAMINGO"),
                 rows.single { it.anchor == "show_player_volume_bar" }.enabled, style.name)
-            assertEquals(style.name !in setOf("V8","V9"), rows.single { it.anchor == "player_background_style" }.enabled)
+            assertEquals(style.name !in setOf("V5","V8","V9"), rows.single { it.anchor == "player_background_style" }.enabled)
+            assertEquals(style.name !in setOf("V5","V7","TIKTOK"), rows.single { it.anchor == "hide_player_thumbnail" }.enabled, style.name)
             assertEquals(style == PlayerDesignStyle.TIKTOK, rows.any { it.anchor == "tiktok_main_lyrics" })
             assertEquals(style == PlayerDesignStyle.APPLE_MUSIC, rows.any { it.anchor == "apple_music_pause_scale" })
             assertEquals(style == PlayerDesignStyle.METROLIST_KMP, rows.any { it.anchor == "metrolist_presentation" })

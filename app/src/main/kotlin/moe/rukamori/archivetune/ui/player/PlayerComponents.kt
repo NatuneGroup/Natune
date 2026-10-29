@@ -378,6 +378,7 @@ fun PlayerTopActions(
     context: Context,
     currentSongLiked: Boolean,
 ) {
+    val likeMotion = rememberPlayerControlMotion(PlayerControlKind.Like, currentSongLiked)
     when (playerDesignStyle) {
         PlayerDesignStyle.V2 -> {
             val shareShape =
@@ -445,7 +446,7 @@ fun PlayerTopActions(
                         modifier =
                             Modifier
                                 .align(Alignment.Center)
-                                .size(24.dp),
+                                .size(24.dp).then(likeMotion.modifier),
                     )
                 }
             }
@@ -497,7 +498,7 @@ fun PlayerTopActions(
                             } else {
                                 textBackgroundColor.copy(alpha = 0.7f)
                             },
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(20.dp).then(likeMotion.modifier),
                     )
                 }
             }
@@ -560,7 +561,7 @@ fun PlayerTopActions(
                                 } else {
                                     textBackgroundColor
                                 },
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(22.dp).then(likeMotion.modifier),
                         )
                     }
                 }
@@ -694,7 +695,7 @@ fun PlayerTopActions(
                                 } else {
                                     textBackgroundColor
                                 },
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(20.dp).then(likeMotion.modifier),
                         )
                     }
                 }
@@ -961,6 +962,12 @@ fun PlayerPlaybackControls(
             ),
         label = "cinematicPlayPauseCorner",
     )
+    val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+    val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+    val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
+    val shuffleMotion = rememberPlayerControlMotion(PlayerControlKind.Shuffle, shuffleModeEnabled)
+    val repeatMotion = rememberPlayerControlMotion(PlayerControlKind.Repeat, repeatMode)
+    val likeMotion = rememberPlayerControlMotion(PlayerControlKind.Like, currentSongLiked)
 
     when (playerDesignStyle) {
         PlayerDesignStyle.V2 -> {
@@ -981,6 +988,7 @@ fun PlayerPlaybackControls(
                     FilledTonalIconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            previousMotion.tap()
                             playerConnection.seekToPrevious()
                         },
                         enabled = canSkipPrevious,
@@ -997,7 +1005,7 @@ fun PlayerPlaybackControls(
                         Icon(
                             painter = painterResource(R.drawable.player_skip_previous),
                             contentDescription = null,
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(32.dp).then(previousMotion.modifier),
                         )
                     }
 
@@ -1024,18 +1032,7 @@ fun PlayerPlaybackControls(
                                 color = iconButtonColor,
                             )
                         } else {
-                            Icon(
-                                painter =
-                                    painterResource(
-                                        when {
-                                            playbackState == STATE_ENDED -> R.drawable.player_replay
-                                            isPlaying -> R.drawable.player_pause
-                                            else -> R.drawable.player_play
-                                        },
-                                    ),
-                                contentDescription = null,
-                                modifier = Modifier.size(42.dp),
-                            )
+                            PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 42.dp)
                         }
                     }
 
@@ -1044,6 +1041,7 @@ fun PlayerPlaybackControls(
                     FilledTonalIconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            nextMotion.tap()
                             playerConnection.seekToNext()
                         },
                         enabled = canSkipNext,
@@ -1060,7 +1058,7 @@ fun PlayerPlaybackControls(
                         Icon(
                             painter = painterResource(R.drawable.player_skip_next),
                             contentDescription = null,
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(32.dp).then(nextMotion.modifier),
                         )
                     }
                 }
@@ -1098,7 +1096,7 @@ fun PlayerPlaybackControls(
                                 textBackgroundColor.copy(
                                     alpha = if (shuffleModeEnabled) 1f else 0.4f,
                                 ),
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(22.dp).then(shuffleMotion.modifier),
                         )
                     }
 
@@ -1110,6 +1108,7 @@ fun PlayerPlaybackControls(
                                 .background(textBackgroundColor.copy(alpha = 0.08f))
                                 .clickable(enabled = canSkipPrevious) {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    previousMotion.tap()
                                     playerConnection.seekToPrevious()
                                 },
                         contentAlignment = Alignment.Center,
@@ -1118,7 +1117,7 @@ fun PlayerPlaybackControls(
                             painter = painterResource(R.drawable.player_skip_previous),
                             contentDescription = null,
                             tint = textBackgroundColor.copy(alpha = if (canSkipPrevious) 0.9f else 0.4f),
-                            modifier = Modifier.size(26.dp),
+                            modifier = Modifier.size(26.dp).then(previousMotion.modifier),
                         )
                     }
 
@@ -1140,19 +1139,7 @@ fun PlayerPlaybackControls(
                                 color = icBackgroundColor,
                             )
                         } else {
-                            Icon(
-                                painter =
-                                    painterResource(
-                                        when {
-                                            playbackState == STATE_ENDED -> R.drawable.player_replay
-                                            isPlaying -> R.drawable.player_pause
-                                            else -> R.drawable.player_play
-                                        },
-                                    ),
-                                contentDescription = null,
-                                tint = icBackgroundColor,
-                                modifier = Modifier.size(34.dp),
-                            )
+                            PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 34.dp, tint = icBackgroundColor)
                         }
                     }
 
@@ -1164,6 +1151,7 @@ fun PlayerPlaybackControls(
                                 .background(textBackgroundColor.copy(alpha = 0.08f))
                                 .clickable(enabled = canSkipNext) {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    nextMotion.tap()
                                     playerConnection.seekToNext()
                                 },
                         contentAlignment = Alignment.Center,
@@ -1172,7 +1160,7 @@ fun PlayerPlaybackControls(
                             painter = painterResource(R.drawable.player_skip_next),
                             contentDescription = null,
                             tint = textBackgroundColor.copy(alpha = if (canSkipNext) 0.9f else 0.4f),
-                            modifier = Modifier.size(26.dp),
+                            modifier = Modifier.size(26.dp).then(nextMotion.modifier),
                         )
                     }
 
@@ -1201,7 +1189,7 @@ fun PlayerPlaybackControls(
                                 textBackgroundColor.copy(
                                     alpha = if (repeatMode == Player.REPEAT_MODE_OFF) 0.4f else 1f,
                                 ),
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(22.dp).then(repeatMotion.modifier),
                         )
                     }
                 }
@@ -1267,7 +1255,7 @@ fun PlayerPlaybackControls(
                                         textBackgroundColor.copy(
                                             alpha = if (shuffleModeEnabled) 1f else 0.6f,
                                         ),
-                                    modifier = Modifier.size(smallIcon),
+                                    modifier = Modifier.size(smallIcon).then(shuffleMotion.modifier),
                                 )
                             }
                         }
@@ -1277,6 +1265,7 @@ fun PlayerPlaybackControls(
                         Surface(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                previousMotion.tap()
                                 playerConnection.seekToPrevious()
                             },
                             enabled = canSkipPrevious,
@@ -1295,7 +1284,7 @@ fun PlayerPlaybackControls(
                                         textBackgroundColor.copy(
                                             alpha = if (canSkipPrevious) 1f else 0.4f,
                                         ),
-                                    modifier = Modifier.size(largeIcon),
+                                    modifier = Modifier.size(largeIcon).then(previousMotion.modifier),
                                 )
                             }
                         }
@@ -1323,19 +1312,7 @@ fun PlayerPlaybackControls(
                                     color = icBackgroundColor,
                                 )
                             } else {
-                                Icon(
-                                    painter =
-                                        painterResource(
-                                            when {
-                                                playbackState == STATE_ENDED -> R.drawable.player_replay
-                                                isPlaying -> R.drawable.player_pause
-                                                else -> R.drawable.player_play
-                                            },
-                                        ),
-                                    contentDescription = null,
-                                    tint = icBackgroundColor,
-                                    modifier = Modifier.size(44.dp),
-                                )
+                                PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 44.dp, tint = icBackgroundColor)
                             }
                         }
                     }
@@ -1347,6 +1324,7 @@ fun PlayerPlaybackControls(
                         Surface(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                nextMotion.tap()
                                 playerConnection.seekToNext()
                             },
                             enabled = canSkipNext,
@@ -1365,7 +1343,7 @@ fun PlayerPlaybackControls(
                                         textBackgroundColor.copy(
                                             alpha = if (canSkipNext) 1f else 0.4f,
                                         ),
-                                    modifier = Modifier.size(largeIcon),
+                                    modifier = Modifier.size(largeIcon).then(nextMotion.modifier),
                                 )
                             }
                         }
@@ -1401,7 +1379,7 @@ fun PlayerPlaybackControls(
                                         textBackgroundColor.copy(
                                             alpha = if (repeatMode == Player.REPEAT_MODE_OFF) 0.6f else 1f,
                                         ),
-                                    modifier = Modifier.size(smallIcon),
+                                    modifier = Modifier.size(smallIcon).then(repeatMotion.modifier),
                                 )
                             }
                         }
@@ -1432,7 +1410,7 @@ fun PlayerPlaybackControls(
                                 .size(32.dp)
                                 .padding(4.dp)
                                 .align(Alignment.Center)
-                                .alpha(if (repeatMode == Player.REPEAT_MODE_OFF) 0.5f else 1f),
+                                .alpha(if (repeatMode == Player.REPEAT_MODE_OFF) 0.5f else 1f).then(repeatMotion.modifier),
                         onClick = {
                             performClickHaptic(view, enableHapticFeedback)
                             playerConnection.player.toggleRepeatMode()
@@ -1448,9 +1426,10 @@ fun PlayerPlaybackControls(
                         modifier =
                             Modifier
                                 .size(32.dp)
-                                .align(Alignment.Center),
+                                .align(Alignment.Center).then(previousMotion.modifier),
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            previousMotion.tap()
                             playerConnection.seekToPrevious()
                         },
                     )
@@ -1478,25 +1457,9 @@ fun PlayerPlaybackControls(
                             color = iconButtonColor,
                         )
                     } else {
-                        Image(
-                            painter =
-                                painterResource(
-                                    if (playbackState ==
-                                        STATE_ENDED
-                                    ) {
-                                        R.drawable.player_replay
-                                    } else if (isPlaying) {
-                                        R.drawable.player_pause
-                                    } else {
-                                        R.drawable.player_play
-                                    },
-                                ),
-                            contentDescription = null,
-                            colorFilter = ColorFilter.tint(iconButtonColor),
-                            modifier =
-                                Modifier
-                                    .align(Alignment.Center)
-                                    .size(36.dp),
+                        PlayerPlayPauseIcon(
+                            playbackState == STATE_ENDED, isPlaying, playPauseMotion, 36.dp,
+                            Modifier.align(Alignment.Center), tint = iconButtonColor,
                         )
                     }
                 }
@@ -1511,9 +1474,10 @@ fun PlayerPlaybackControls(
                         modifier =
                             Modifier
                                 .size(32.dp)
-                                .align(Alignment.Center),
+                                .align(Alignment.Center).then(nextMotion.modifier),
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            nextMotion.tap()
                             playerConnection.seekToNext()
                         },
                     )
@@ -1527,7 +1491,7 @@ fun PlayerPlaybackControls(
                             Modifier
                                 .size(32.dp)
                                 .padding(4.dp)
-                                .align(Alignment.Center),
+                                .align(Alignment.Center).then(likeMotion.modifier),
                         onClick = playerConnection::toggleLike,
                     )
                 }
@@ -1558,6 +1522,7 @@ fun PlayerPlaybackControls(
                         Surface(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                previousMotion.tap()
                                 playerConnection.seekToPrevious()
                             },
                             enabled = canSkipPrevious,
@@ -1585,7 +1550,7 @@ fun PlayerPlaybackControls(
                                         MaterialTheme.colorScheme.onSecondaryContainer.copy(
                                             alpha = if (canSkipPrevious) 1f else 0.4f,
                                         ),
-                                    modifier = Modifier.size(28.dp),
+                                    modifier = Modifier.size(28.dp).then(previousMotion.modifier),
                                 )
                             }
                         }
@@ -1613,19 +1578,7 @@ fun PlayerPlaybackControls(
                                         color = iconButtonColor,
                                     )
                                 } else {
-                                    Icon(
-                                        painter =
-                                            painterResource(
-                                                when {
-                                                    playbackState == STATE_ENDED -> R.drawable.player_replay
-                                                    isPlaying -> R.drawable.player_pause
-                                                    else -> R.drawable.player_play
-                                                },
-                                            ),
-                                        contentDescription = null,
-                                        tint = iconButtonColor,
-                                        modifier = Modifier.size(44.dp),
-                                    )
+                                    PlayerPlayPauseIcon(playbackState == STATE_ENDED, isPlaying, playPauseMotion, 44.dp, tint = iconButtonColor)
                                 }
                             }
                         }
@@ -1635,6 +1588,7 @@ fun PlayerPlaybackControls(
                         Surface(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                nextMotion.tap()
                                 playerConnection.seekToNext()
                             },
                             enabled = canSkipNext,
@@ -1662,7 +1616,7 @@ fun PlayerPlaybackControls(
                                         MaterialTheme.colorScheme.onSecondaryContainer.copy(
                                             alpha = if (canSkipNext) 1f else 0.4f,
                                         ),
-                                    modifier = Modifier.size(28.dp),
+                                    modifier = Modifier.size(28.dp).then(nextMotion.modifier),
                                 )
                             }
                         }
@@ -1703,7 +1657,7 @@ fun PlayerPlaybackControls(
                                     } else {
                                         textBackgroundColor.copy(alpha = 0.5f)
                                     },
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(20.dp).then(shuffleMotion.modifier),
                             )
                         }
                     }
@@ -1743,7 +1697,7 @@ fun PlayerPlaybackControls(
                                     } else {
                                         textBackgroundColor.copy(alpha = 0.5f)
                                     },
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(20.dp).then(repeatMotion.modifier),
                             )
                         }
                     }
@@ -2515,7 +2469,7 @@ private fun V8Artwork(
             Modifier
                 .aspectRatio(1f)
                 .size(size)
-                .clip(RoundedCornerShape(8.dp))
+                .ordinarySleeve(!showVideo && LocalPlayerPresentation.current.hideSleeve).clip(RoundedCornerShape(LocalPlayerPresentation.current.radius(8.dp)))
                 .background(if (showVideo) Color.Black else Color.White.copy(alpha = 0.08f)),
     ) {
         if (!showVideo) {
@@ -2606,6 +2560,7 @@ private fun V8MetadataActions(
                 containerColor = foreground.copy(alpha = 0.16f),
                 iconSize = 26.dp,
                 onClick = onToggleLike,
+                iconModifier = Modifier.playerControlMotion(PlayerControlKind.Like, liked),
             )
         }
     }
@@ -2619,6 +2574,7 @@ private fun V8ActionButton(
     containerColor: Color,
     iconSize: androidx.compose.ui.unit.Dp,
     onClick: () -> Unit,
+    iconModifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
@@ -2634,7 +2590,7 @@ private fun V8ActionButton(
                 painter = painterResource(iconRes),
                 contentDescription = contentDescription,
                 tint = foreground,
-                modifier = Modifier.size(iconSize),
+                modifier = Modifier.size(iconSize).then(iconModifier),
             )
         }
     }
@@ -2685,7 +2641,7 @@ private fun V8PlaybackProgress(
                 )
             }
 
-            if (currentFormat != null) {
+            if (currentFormat != null && LocalPlayerPresentation.current.showCodec) {
                 V8QualityChip(
                     currentFormat = currentFormat,
                     foreground = foreground,
@@ -2761,6 +2717,9 @@ private fun V8TransportControls(
     onNextClick: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
+    val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+    val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+    val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -2774,8 +2733,10 @@ private fun V8TransportControls(
             enabled = canSkipPrevious,
             touchSize = 64.dp,
             iconSize = 44.dp,
+            iconModifier = previousMotion.modifier,
             onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                previousMotion.tap()
                 onPreviousClick()
             },
         )
@@ -2799,23 +2760,9 @@ private fun V8TransportControls(
                         color = foreground,
                     )
                 } else {
-                    Icon(
-                        painter =
-                            painterResource(
-                                when {
-                                    playbackState == STATE_ENDED -> R.drawable.player_replay
-                                    isPlaying -> R.drawable.player_pause
-                                    else -> R.drawable.player_play
-                                },
-                            ),
-                        contentDescription =
-                            if (isPlaying) {
-                                stringResource(R.string.widget_pause)
-                            } else {
-                                stringResource(R.string.play)
-                            },
-                        tint = foreground,
-                        modifier = Modifier.size(52.dp),
+                    PlayerPlayPauseIcon(
+                        playbackState == STATE_ENDED, isPlaying, playPauseMotion, 52.dp, tint = foreground,
+                        contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
                     )
                 }
             }
@@ -2828,8 +2775,10 @@ private fun V8TransportControls(
             enabled = canSkipNext,
             touchSize = 64.dp,
             iconSize = 44.dp,
+            iconModifier = nextMotion.modifier,
             onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                nextMotion.tap()
                 onNextClick()
             },
         )
@@ -2845,6 +2794,7 @@ private fun V8TransportButton(
     touchSize: androidx.compose.ui.unit.Dp,
     iconSize: androidx.compose.ui.unit.Dp,
     onClick: () -> Unit,
+    iconModifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
@@ -2861,7 +2811,7 @@ private fun V8TransportButton(
                 painter = painterResource(iconRes),
                 contentDescription = contentDescription,
                 tint = foreground.copy(alpha = if (enabled) 1f else 0.4f),
-                modifier = Modifier.size(iconSize),
+                modifier = Modifier.size(iconSize).then(iconModifier),
             )
         }
     }
@@ -3456,7 +3406,7 @@ private fun V9Artwork(
             Modifier
                 .aspectRatio(1f)
                 .size(size)
-                .clip(RoundedCornerShape(30.dp))
+                .ordinarySleeve(!showVideo && LocalPlayerPresentation.current.hideSleeve).clip(RoundedCornerShape(LocalPlayerPresentation.current.radius(30.dp)))
                 .background(if (showVideo) Color.Black else placeholderColor),
     ) {
         if (!showVideo) {
@@ -3635,6 +3585,9 @@ private fun V9TransportControls(
             ),
         label = "v9PlayPauseCorner",
     )
+    val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+    val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+    val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -3648,8 +3601,10 @@ private fun V9TransportControls(
             containerColor = containerColor,
             iconColor = iconColor,
             modifier = Modifier.weight(1f),
+            iconModifier = previousMotion.modifier,
             onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                previousMotion.tap()
                 onPreviousClick()
             },
         )
@@ -3697,7 +3652,7 @@ private fun V9TransportControls(
                                     stringResource(R.string.play)
                                 },
                             tint = primaryIconColor,
-                            modifier = Modifier.size(42.dp),
+                            modifier = Modifier.size(42.dp).then(playPauseMotion.modifier),
                         )
                     }
                 }
@@ -3711,8 +3666,10 @@ private fun V9TransportControls(
             containerColor = containerColor,
             iconColor = iconColor,
             modifier = Modifier.weight(1f),
+            iconModifier = nextMotion.modifier,
             onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                nextMotion.tap()
                 onNextClick()
             },
         )
@@ -3727,6 +3684,7 @@ private fun V9TransportButton(
     containerColor: Color,
     iconColor: Color,
     modifier: Modifier = Modifier,
+    iconModifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -3744,7 +3702,7 @@ private fun V9TransportButton(
                 painter = painterResource(iconRes),
                 contentDescription = contentDescription,
                 tint = iconColor.copy(alpha = if (enabled) 0.88f else 0.36f),
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(34.dp).then(iconModifier),
             )
         }
     }

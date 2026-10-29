@@ -30,7 +30,7 @@ kotlin {
         val androidTarget = (this as ExtensionAware).extensions.getByName("androidLibrary") as KotlinMultiplatformAndroidLibraryExtension
         androidTarget.namespace = "moe.rukamori.archivetune.shared.ui"
         androidTarget.compileSdk = 37
-        androidTarget.minSdk = 26
+        androidTarget.minSdk = 24
         // Required on the KMP-AL plugin or composeResources never reach the AAR assets and
         // the app crashes with MissingResourceException on launch.
         androidTarget.androidResources.enable = true

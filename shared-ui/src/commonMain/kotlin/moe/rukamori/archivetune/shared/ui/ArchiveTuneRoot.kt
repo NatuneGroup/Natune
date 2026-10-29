@@ -140,9 +140,14 @@ private fun ArchiveTuneLoadedRoot(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(current.item.title, Modifier.weight(1f), maxLines = 1)
+                                val playing = playback?.playWhenReady == true
+                                val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, playing, policy.motion)
                                 TextButton(onClick = {
-                                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
-                                }) { Text(stringResource(if (playback?.playWhenReady == true) Res.string.integration_pause else Res.string.integration_play)) }
+                                    if (playing) host.queue.player.pause() else host.queue.player.play()
+                                }) {
+                                    Text(stringResource(if (playing) Res.string.integration_pause else Res.string.integration_play),
+                                        playMotion.modifier)
+                                }
                             }
                         },
                     ) {

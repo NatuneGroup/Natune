@@ -191,6 +191,12 @@ fun V10PlayerContent(
     val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val liked = currentSong?.song?.liked == true
     val onToggleLike = playerConnection::toggleLike
+    val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+    val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+    val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
+    val shuffleMotion = rememberPlayerControlMotion(PlayerControlKind.Shuffle, shuffleModeEnabled)
+    val repeatMotion = rememberPlayerControlMotion(PlayerControlKind.Repeat, repeatMode)
+    val likeMotion = rememberPlayerControlMotion(PlayerControlKind.Like, liked)
 
     // The two-tone contract: field + accent, nothing else.
     // textBackgroundColor = accent (text/icon color), textButtonColor = field (fill color)
@@ -396,6 +402,7 @@ fun V10PlayerContent(
                                 label = "EditorialPlayWord"
                             ) { playing ->
                                 Text(
+                                    modifier = playPauseMotion.modifier,
                                     text = if (playing) "PAUSE" else "PLAY",
                                     style = MaterialTheme.typography.headlineSmall.copy(
                                         fontWeight = FontWeight.Medium,
@@ -409,13 +416,14 @@ fun V10PlayerContent(
                 EditorialCircleButton(
                     onClick = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        nextMotion.tap()
                         playerConnection.seekToNext()
                     },
                     accent = accent,
                     field = field,
                     size = 80.dp
                 ) {
-                    Icon(painter = painterResource(R.drawable.skip_next), contentDescription = "Next", modifier = Modifier.size(34.dp))
+                    Icon(painter = painterResource(R.drawable.skip_next), contentDescription = "Next", modifier = Modifier.size(34.dp).then(nextMotion.modifier))
                 }
             }
 
@@ -430,13 +438,14 @@ fun V10PlayerContent(
                 EditorialCircleButton(
                     onClick = {
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        previousMotion.tap()
                         playerConnection.seekToPrevious()
                     },
                     accent = accent,
                     field = field,
                     size = 80.dp
                 ) {
-                    Icon(painter = painterResource(R.drawable.skip_previous), contentDescription = "Previous", modifier = Modifier.size(34.dp))
+                    Icon(painter = painterResource(R.drawable.skip_previous), contentDescription = "Previous", modifier = Modifier.size(34.dp).then(previousMotion.modifier))
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -537,7 +546,7 @@ fun V10PlayerContent(
                     Icon(
                         painter = painterResource(if (liked) R.drawable.favorite else R.drawable.favorite_border),
                         contentDescription = "Like",
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp).then(likeMotion.modifier)
                     )
                 }
                 EditorialChip(
@@ -550,7 +559,7 @@ fun V10PlayerContent(
                     accent = accent,
                     field = field
                 ) {
-                    Icon(painter = painterResource(R.drawable.shuffle), contentDescription = "Shuffle", modifier = Modifier.size(20.dp))
+                    Icon(painter = painterResource(R.drawable.shuffle), contentDescription = "Shuffle", modifier = Modifier.size(20.dp).then(shuffleMotion.modifier))
                 }
                 EditorialChip(
                     checked = repeatMode != Player.REPEAT_MODE_OFF,
@@ -565,7 +574,7 @@ fun V10PlayerContent(
                     Icon(
                         painter = painterResource(if (repeatMode == Player.REPEAT_MODE_ONE) R.drawable.repeat_one else R.drawable.repeat),
                         contentDescription = "Repeat",
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp).then(repeatMotion.modifier)
                     )
                 }
                 EditorialChip(
@@ -667,6 +676,7 @@ private fun EditorialDieCutArt(
                     scaleX = artScale
                     scaleY = artScale
                 }
+                .ordinarySleeve(LocalPlayerPresentation.current.hideSleeve)
                 .clip(dieCutShape)
                 .background(accent)
                 .playerSeekDoubleTap(),

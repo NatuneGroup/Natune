@@ -22,7 +22,7 @@ kotlin {
         val androidTarget = (this as ExtensionAware).extensions.getByName("androidLibrary") as KotlinMultiplatformAndroidLibraryExtension
         androidTarget.namespace = "moe.rukamori.archivetune.shared.domain"
         androidTarget.compileSdk = 37
-        androidTarget.minSdk = 26
+        androidTarget.minSdk = 24
     }
 
     sourceSets {

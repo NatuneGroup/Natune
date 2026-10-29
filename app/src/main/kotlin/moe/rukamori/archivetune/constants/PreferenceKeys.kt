@@ -1374,7 +1374,7 @@ enum class PlayerDesignStyle(
         get() = nativeBackground != null && nativeBackground != PlayerBackgroundStyle.DEFAULT
 
     companion object {
-        private val SharedTransportStyles = setOf(V1, V2, V3, V4, V5, V6, V7, V10)
+        private val SharedTransportStyles = setOf(V1, V2, V3, V4, V6)
         private val VolumeRowStyles = setOf(V7, V8, BITCHORD, APPLE_MUSIC, FLAMINGO)
         private val OrdinarySleeveStyles = setOf(BITCHORD, SIMPMUSIC, SPATIALFLOW, LOOPER, FLAMINGO, APPLE_MUSIC)
         private val HorizontalArtworkSkipStyles = setOf(SIMPMUSIC, SPATIALFLOW, LOOPER)

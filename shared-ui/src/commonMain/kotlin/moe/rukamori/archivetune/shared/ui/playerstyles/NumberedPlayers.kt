@@ -59,6 +59,8 @@ import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.ui.player.ActionButton
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerArtworkPager
+import moe.rukamori.archivetune.shared.ui.player.PlayerControlCrossfade
+import moe.rukamori.archivetune.shared.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.shared.ui.player.PlayerBackgroundStyle
 import moe.rukamori.archivetune.shared.ui.player.capabilities
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
@@ -68,7 +70,10 @@ import moe.rukamori.archivetune.shared.ui.player.PlayerRepeat
 import moe.rukamori.archivetune.shared.ui.player.PlayerSeek
 import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
 import moe.rukamori.archivetune.shared.ui.player.playerTime
+import moe.rukamori.archivetune.shared.ui.player.rememberPlayerControlMotion
 import moe.rukamori.archivetune.shared.ui.player.resolveBackground
+import moe.rukamori.archivetune.shared.ui.player.sleeveHidden
+import moe.rukamori.archivetune.shared.ui.player.sleeveRadiusOr
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.m5_collapse
 import moe.rukamori.archivetune.shared.ui.resources.m5_like
@@ -87,9 +92,8 @@ internal fun PlayerSleeve(
     radius: Float = 16f,
     canvasAllowed: Boolean = true,
 ) {
-    val ordinary=c.preferences.style.capabilities.ordinarySleeve
-    val hidden=ordinary && c.preferences.hideSleeve
-    val r=if(ordinary) c.preferences.sleeveRadius else radius
+    val hidden=c.preferences.sleeveHidden
+    val r=c.preferences.sleeveRadiusOr(radius)
     Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(r.dp)).graphicsLayer { alpha=if(hidden) 0f else 1f }
         .testTag("player-sleeve")) {
         if(canvasAllowed && c.state.canvasAvailable && c.preferences.style.capabilities.artworkCanvas) {
@@ -150,7 +154,7 @@ private fun NumberedArtwork(c: PlayerRenderContext, textColor: Color, modifier: 
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         PlayingFromHeader(c, textColor, Modifier.padding(vertical = 4.dp))
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (c.optical.artworkBlur && !(c.preferences.hideSleeve && c.preferences.style.capabilities.ordinarySleeve)) {
+            if (c.optical.artworkBlur && !c.preferences.sleeveHidden) {
                 c.slots.artwork(
                     c.state.playback?.occurrenceId,
                     Modifier.fillMaxSize().graphicsLayer { alpha = .6f }.blur(36.dp),
@@ -411,15 +415,18 @@ internal fun NumberedTransport(c: PlayerRenderContext) {
                         modifier = Modifier.size(width = 88.dp, height = 80.dp),
                     ) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            val symbol = when {
+                                playback?.isEnded == true -> PlayerSymbol.REPLAY
+                                playing -> PlayerSymbol.PAUSE
+                                else -> PlayerSymbol.PLAY
+                            }
+                            val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, symbol, c.motionActive)
                             if (playback?.isBuffering == true) {
                                 CircularProgressIndicator(Modifier.size(40.dp), color = buttonIcon)
                             } else {
-                                val symbol = when {
-                                    playback?.isEnded == true -> PlayerSymbol.REPLAY
-                                    playing -> PlayerSymbol.PAUSE
-                                    else -> PlayerSymbol.PLAY
+                                PlayerControlCrossfade(symbol, c.motionActive, Modifier.size(44.dp).then(playMotion.modifier)) {
+                                    Canvas(Modifier.size(44.dp)) { drawGlyphFor(it, buttonIcon) }
                                 }
-                                Canvas(Modifier.size(44.dp)) { drawGlyphFor(symbol, buttonIcon) }
                             }
                         }
                     }

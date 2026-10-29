@@ -256,18 +256,21 @@ class SystemAudioEqController @Inject constructor(
 
     private fun ensureChannel(manager: NotificationManager) {
         if (channelReady) return
-        manager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                "System-wide EQ",
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = "Shown while the system-wide equalizer is applied to all audio."
-                setShowBadge(false)
-                enableVibration(false)
-                setSound(null, null)
-            },
-        )
+        // Notification channels exist from API 26; below that the notification posts without one.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "System-wide EQ",
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply {
+                    description = "Shown while the system-wide equalizer is applied to all audio."
+                    setShowBadge(false)
+                    enableVibration(false)
+                    setSound(null, null)
+                },
+            )
+        }
         channelReady = true
     }
 

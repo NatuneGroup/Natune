@@ -4,6 +4,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.player.PlayerStyleSetting
+import moe.rukamori.archivetune.shared.ui.player.honors
 import moe.rukamori.archivetune.shared.ui.resources.*
 import androidx.compose.runtime.getValue
 
@@ -32,11 +34,9 @@ fun playerAppearanceSettingsRows(
     chooseHomeScreens: () -> Unit,
 ): List<SettingsRow> = buildList {
     val style = preferences.selectedPlayerDesignStyle()
-    // Matches baseline PlayerDesignStyle and M5's published capabilities; Metrolist has native controls.
-    val sharedControls = style in setOf(PlayerDesignStyle.V1, PlayerDesignStyle.V2, PlayerDesignStyle.V3,
-        PlayerDesignStyle.V4, PlayerDesignStyle.V5, PlayerDesignStyle.V6, PlayerDesignStyle.V7, PlayerDesignStyle.V10)
-    val volume = style in setOf(PlayerDesignStyle.V7, PlayerDesignStyle.V8, PlayerDesignStyle.BITCHORD,
-        PlayerDesignStyle.APPLE_MUSIC, PlayerDesignStyle.FLAMINGO)
+    // The same per-style answers the players render from; Metrolist has native controls.
+    fun note(setting: PlayerStyleSetting) = if (style.honors(setting)) null else Res.string.m6_player_setting_not_used
+    val volume = style.honors(PlayerStyleSetting.VOLUME_BAR)
     val background = preferences[PlayerBackgroundStyleKey, "DEFAULT"]
     add(SettingsRow.Action("home_screens", Res.string.m6_home_screens, chooseHomeScreens))
     add(SettingsRow.Choice("library_style", Res.string.m6_library_style, LibraryStyleKey, preferences.libraryStyle().name, listOf(
@@ -66,8 +66,8 @@ fun playerAppearanceSettingsRows(
             SettingsRow.Option("CUSTOM", Res.string.m6_custom), SettingsRow.Option("BLUR", Res.string.m6_blur),
             SettingsRow.Option("COLORING", Res.string.m6_coloring), SettingsRow.Option("BLUR_GRADIENT", Res.string.m6_blur_gradient),
             SettingsRow.Option("GLOW", Res.string.m6_glow), SettingsRow.Option("GLOW_ANIMATED", Res.string.m6_glow_animated),
-        ), enabled = style != PlayerDesignStyle.V8 && style != PlayerDesignStyle.V9,
-        write = { setPlayerBackgroundStyle(it) }))
+        ), enabled = style.honors(PlayerStyleSetting.BACKGROUND),
+        write = { setPlayerBackgroundStyle(it) }, description = note(PlayerStyleSetting.BACKGROUND)))
     add(SettingsRow.Choice("lyrics_background_style", Res.string.m6_lyrics_background, LyricsBackgroundStyleKey, "DEFAULT",
         listOf(SettingsRow.Option("DEFAULT", Res.string.m6_default), SettingsRow.Option("FOLLOW_THEME", Res.string.m6_follow_theme),
             SettingsRow.Option("COLORING", Res.string.m6_coloring), SettingsRow.Option("MOVING_BLUR", Res.string.m6_moving_blur)) +
@@ -100,15 +100,18 @@ fun playerAppearanceSettingsRows(
                     this[LiquidGlassEnabledKey, false]) == null) this[MiniPlayerBackgroundStyleKey] = it
         }))
     add(SettingsRow.Toggle("compact_mini_player", Res.string.m6_compact_player, CompactMiniPlayerKey, false))
-    add(SettingsRow.Toggle("hide_player_thumbnail", Res.string.m6_hide_thumbnail, HidePlayerThumbnailKey, false))
-    add(SettingsRow.Decimal("thumbnail_corner_radius", Res.string.m6_thumbnail_radius, ThumbnailCornerRadiusKey, 16f, 0f..64f))
+    add(SettingsRow.Toggle("hide_player_thumbnail", Res.string.m6_hide_thumbnail, HidePlayerThumbnailKey, false,
+        description = note(PlayerStyleSetting.HIDE_THUMBNAIL), enabled = style.honors(PlayerStyleSetting.HIDE_THUMBNAIL)))
+    add(SettingsRow.Decimal("thumbnail_corner_radius", Res.string.m6_thumbnail_radius, ThumbnailCornerRadiusKey, 16f, 0f..64f,
+        enabled = style.honors(PlayerStyleSetting.CORNER_RADIUS), description = note(PlayerStyleSetting.CORNER_RADIUS)))
     add(SettingsRow.Toggle("crop_thumbnail_to_square", Res.string.m6_crop_square, CropThumbnailToSquareKey, false))
     add(SettingsRow.Action("aod_customize", Res.string.m6_aod_settings, { navigate("settings/appearance/aod_customized") }))
     add(SettingsRow.Choice("player_buttons_style", Res.string.m6_player_buttons, PlayerButtonsStyleKey, "DEFAULT",
         listOf(SettingsRow.Option("DEFAULT", Res.string.m6_default), SettingsRow.Option("SECONDARY", Res.string.m6_secondary)),
-        enabled = sharedControls))
+        enabled = style.honors(PlayerStyleSetting.BUTTONS_STYLE), description = note(PlayerStyleSetting.BUTTONS_STYLE)))
     add(SettingsRow.Choice("player_slider_style", Res.string.m6_slider_style, SliderStyleKey, "Standard",
-        playbackSliderOptions(), enabled = sharedControls))
+        playbackSliderOptions(), enabled = style.honors(PlayerStyleSetting.SLIDER_STYLE),
+        description = note(PlayerStyleSetting.SLIDER_STYLE)))
     add(SettingsRow.Toggle("album_canvas_enabled", Res.string.m6_album_canvas, AlbumCanvasEnabledKey, true))
 }
 
