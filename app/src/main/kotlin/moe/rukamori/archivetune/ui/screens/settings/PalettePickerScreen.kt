@@ -1140,7 +1140,7 @@ fun ThemeCreatorScreen(navController: NavController) {
                 val importedPalette = ThemeSeedPaletteCodec.decodeFromJson(text)
                 if (importedPalette != null) {
                     val name = ThemeSeedPaletteCodec.extractNameFromJsonOrNull(text)
-                    setDynamicThemeEnabled(false)
+                    // The custom palette owner already disables the dynamic and startup-random sources in that edit.
                     setCustomThemeValue(ThemeSeedPaletteCodec.encodeForPreference(importedPalette, name))
                     Toast.makeText(context, context.getString(R.string.theme_import_success), Toast.LENGTH_SHORT).show()
                 } else {
