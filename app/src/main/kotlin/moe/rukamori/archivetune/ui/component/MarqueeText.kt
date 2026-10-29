@@ -39,7 +39,7 @@ import moe.rukamori.archivetune.ui.utils.fadingEdge
 
 /**
  * One line of text that scrolls sideways when it does not fit, with a soft fade at both edges while
- * it is scrolling.
+ * it is scrolling. A [fadeWidth] of zero scrolls without the fade.
  */
 @Composable
 fun MarqueeText(
@@ -63,7 +63,7 @@ fun MarqueeText(
 
     Box(
         modifier =
-            (if (animate) modifier.fadingEdge(horizontal = fadeWidth) else modifier)
+            (if (marqueeFadesEdges(animate, fadeWidth)) modifier.fadingEdge(horizontal = fadeWidth) else modifier)
                 .clipToBounds()
                 .onSizeChanged { viewportWidth = it.width },
     ) {
@@ -104,6 +104,8 @@ internal fun marqueeShouldAnimate(
     motionAllowed: Boolean,
     iterations: Int,
 ): Boolean = enabled && motionAllowed && iterations > 0 && viewportWidth > 0 && contentWidth > viewportWidth
+
+internal fun marqueeFadesEdges(animate: Boolean, fadeWidth: Dp): Boolean = animate && fadeWidth > 0.dp
 
 /** [MarqueeText] for plain text, which is most of them. */
 @Composable
