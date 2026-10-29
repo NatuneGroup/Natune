@@ -75,18 +75,27 @@ class SourceProviderProtocolTest {
         } finally { client.close() }
     }
     @Test fun tidalNewDialectRejectsPreviewBeforeFetchingManifestUri() = runTest {
-        var calls = 0
+        val urls = mutableListOf<String>()
         val client = HttpClient(MockEngine) { engine {
             dispatcher = StandardTestDispatcher(testScheduler)
             addHandler {
-                calls++
-                if (calls == 1) respond("""{"items":[$tidalTrack],"total":1}""")
-                else respond("""{"data":{"data":{"attributes":{"trackPresentation":"PREVIEW","formats":["FLAC"],"uri":"https://audio.invalid/preview"}}}}""")
+                urls += it.url.toString()
+                when {
+                    it.url.encodedPath.endsWith("/search") -> respond("""{"items":[$tidalLosslessTrack],"total":1}""")
+                    it.url.encodedPath.endsWith("/trackManifests/") -> respond("""{"data":{"data":{"attributes":{"trackPresentation":"PREVIEW","previewReason":"fixture","formats":["FLAC"],"uri":"https://audio.invalid/preview"}}}}""")
+                    else -> respond("""{"data":{"assetPresentation":"PREVIEW"}}""")
+                }
             }
         } }
         try {
-            assertNull(KtorTidalRepository(client, TidalAccess("public"), "https://instance.invalid").resolve(request()))
-            assertEquals(2, calls)
+            // A PREVIEW is a per-quality failure the caller must see, not a silent no-match; the manifest
+            // URI it names is never fetched.
+            val failure = assertFailsWith<TidalInstanceResolver.TidalAudioResolutionException> {
+                KtorTidalRepository(client, TidalAccess("public"), "https://instance.invalid").resolve(request())
+            }
+            assertTrue(failure.message.orEmpty().contains("PREVIEW"))
+            assertTrue(urls.any { it.contains("/trackManifests/") })
+            assertTrue(urls.none { it.contains("audio.invalid") })
         } finally { client.close() }
     }
     @Test fun qobuzExactSignatureHeadersAndActualSampleRateArePreserved() = runTest {
