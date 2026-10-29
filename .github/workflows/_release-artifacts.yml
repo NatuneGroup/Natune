@@ -93,7 +93,7 @@ env:
 
 jobs:
   android:
-    name: Android ${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
+    name: Android ${{ matrix.variant }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     if: inputs.build_android
     permissions:
@@ -103,42 +103,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        variant:
+          - gms-mobile-arm64
+          - gms-mobile-armeabi
+          - gms-mobile-x86_64
+          - gms-mobile-universal
+          - foss-mobile-universal
+          - gms-tv-universal
+        # Matching an existing row adds nothing; only Stable gets the seventh, x86 APK.
         include:
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: arm64
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: armeabi
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: x86
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: x86_64
-          - distribution: gms
-            distribution_name: Gms
-            device: mobile
-            device_name: Mobile
-            abi: universal
-          - distribution: foss
-            distribution_name: Foss
-            device: mobile
-            device_name: Mobile
-            abi: universal
-          - distribution: gms
-            distribution_name: Gms
-            device: tv
-            device_name: Tv
-            abi: universal
+          - variant: ${{ inputs.channel == 'stable' && 'gms-mobile-x86' || 'gms-mobile-arm64' }}
     env:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
@@ -184,14 +158,13 @@ jobs:
           java-version: '21'
           distribution: temurin
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-37
-            build-tools;35.0.0
-            ndk;30.0.16248370
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          SDK_DIR="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f | sort -V | tail -n1)"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-37.0" "build-tools;35.0.0" "ndk;30.0.16248370"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -203,13 +176,12 @@ jobs:
         shell: bash
         env:
           CHANNEL: ${{ inputs.channel }}
-          DISTRIBUTION: ${{ matrix.distribution }}
-          DISTRIBUTION_NAME: ${{ matrix.distribution_name }}
-          DEVICE: ${{ matrix.device }}
-          DEVICE_NAME: ${{ matrix.device_name }}
-          ABI: ${{ matrix.abi }}
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
+          IFS=- read -r DISTRIBUTION DEVICE ABI <<< "$VARIANT"
+          DISTRIBUTION_NAME="${DISTRIBUTION^}"
+          DEVICE_NAME="${DEVICE^}"
           ABI_CAP="$(tr '[:lower:]' '[:upper:]' <<< "${ABI:0:1}")${ABI:1}"
           CHANNEL_SUFFIX=release
           if [[ "$CHANNEL" == nightly ]]; then
@@ -280,10 +252,10 @@ jobs:
       - name: Upload Android APK
         uses: actions/upload-artifact@v7
         with:
-          name: android-${{ inputs.channel }}-${{ matrix.distribution }}-${{ matrix.device }}-${{ matrix.abi }}
+          name: android-${{ inputs.channel }}-${{ matrix.variant }}
           path: release-assets/${{ steps.variant.outputs.apk_name }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   desktop:
     name: Desktop ${{ matrix.platform }}-${{ matrix.arch }}
@@ -385,7 +357,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev gperf
 
       - name: Install native build prerequisites (macOS)
         if: matrix.platform == 'macos'
@@ -403,14 +375,26 @@ jobs:
           path-type: inherit
           install: >-
             mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gperf
+            mingw-w64-x86_64-pkgconf
             make
             tar
             curl
             gnupg
+            perl
             python
             binutils
             pkgconf
             diffutils
+
+      - name: Locate MinGW tools for the Gradle packaging steps
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          echo "ARCHIVETUNE_MINGW_BIN=$(cygpath -w /mingw64/bin)" >> "$GITHUB_ENV"
+          echo "ARCHIVETUNE_MSYS_BIN=$(cygpath -w /usr/bin)" >> "$GITHUB_ENV"
 
       - name: Install Rosetta 2 (macOS x64 leg)
         if: matrix.platform == 'macos' && matrix.arch == 'x64'
@@ -444,7 +428,8 @@ jobs:
         # for hosts that produce a MSVC-built static prefix, which this workflow does not create.
         run: |
           set -euo pipefail
-          TDLIGHT_OPENSSL_PREFIX="$GITHUB_WORKSPACE/desktopApp/build/native/openssl-static" \
+          TDLIGHT_OPENSSL_PREFIX="$PWD/desktopApp/build/native/openssl-static" \
+          TDLIGHT_ZLIB_PREFIX="$PWD/desktopApp/build/native/prefix" \
             bash desktopApp/tdlight-jvm/native/build-tdjni.sh
 
       - name: Build TDLight native library (Linux and macOS)
@@ -471,16 +456,17 @@ jobs:
             -Uri 'https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.4258.31' `
             -OutFile $archive
           Expand-Archive -Path $archive -DestinationPath $sdkRoot
-          $sdk = Join-Path $sdkRoot 'build\native'
-          if (-not (Test-Path $sdk)) {
+          if (-not (Test-Path (Join-Path $sdkRoot 'build\native\include\WebView2.h'))) {
             throw "WebView2 SDK was not found under $sdkRoot"
           }
-          "WEBVIEW2_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEBVIEW2_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build native engine before packaging (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          # Keep the host CMake first (the OS/browser adapters use its native generator).
+          $env:PATH += ";$env:ARCHIVETUNE_MINGW_BIN;$env:ARCHIVETUNE_MSYS_BIN"
           ./gradlew.bat :desktopApp:buildNativeEngine --no-daemon --max-workers=2 `
             "-PdesktopPackageVersion=$env:PACKAGE_VERSION" `
             "-PdesktopDisplayVersion=$env:DISPLAY_VERSION"
@@ -498,6 +484,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          $env:PATH += ";$env:ARCHIVETUNE_MINGW_BIN;$env:ARCHIVETUNE_MSYS_BIN"
           ./gradlew.bat :desktopApp:createDistributable :desktopApp:packageMsi --no-daemon --max-workers=2 `
             "-PdesktopPackageVersion=$env:PACKAGE_VERSION" `
             "-PdesktopDisplayVersion=$env:DISPLAY_VERSION" `
@@ -533,7 +520,7 @@ jobs:
           Copy-Item $msi.FullName (Join-Path $out "natune-desktop-windows-x64-$env:DISPLAY_VERSION.msi")
 
           $appImage = Join-Path $env:GITHUB_WORKSPACE 'desktopApp/build/compose/binaries/main/app/Natune'
-          if (-not (Test-Path (Join-Path $appImage 'bin/Natune.exe'))) { throw "Desktop app image is missing: $appImage" }
+          if (-not (Test-Path (Join-Path $appImage 'Natune.exe'))) { throw "Desktop app image is missing: $appImage" }
           $exeDir = Join-Path $env:RUNNER_TEMP 'natune-exe'
           New-Item -ItemType Directory -Force -Path $exeDir | Out-Null
           & (Join-Path $env:JAVA_HOME 'bin/jpackage.exe') `
@@ -616,7 +603,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          mapfile -t DMGS < <(find desktopApp/build/compose/binaries -type f -name '*.dmg' | sort)
+          # macOS still ships Bash 3.2, which has no mapfile builtin.
+          DMGS=()
+          while IFS= read -r -d '' dmg; do
+            DMGS+=("$dmg")
+          done < <(find desktopApp/build/compose/binaries -type f -name '*.dmg' -print0)
           if [[ "${#DMGS[@]}" -ne 1 ]]; then
             echo "::error::Expected one DMG package, found ${#DMGS[@]}."
             exit 1
@@ -629,7 +620,7 @@ jobs:
           name: desktop-${{ inputs.channel }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: release-assets/*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   ios:
     name: Unsigned iOS IPA
@@ -641,6 +632,8 @@ jobs:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       PACKAGE_VERSION: ${{ inputs.package_version }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
+      # Match the selected Blacksmith Xcode explicitly; do not bypass the producer's version gate.
+      ARCHIVETUNE_XCODE_VERSION: '26.6'
       ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
       ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
       ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
@@ -694,7 +687,7 @@ jobs:
 
       - name: Build the iOS native dependency closure
         shell: bash
-        run: bash scripts/build_ios_native_core.sh
+        run: bash scripts/build_ios_native_core.sh iphoneos
 
       - name: Build unsigned device app and create IPA
         shell: bash
@@ -736,7 +729,7 @@ jobs:
           name: ios-${{ inputs.channel }}
           path: release-assets/natune-ios-${{ inputs.version_name }}.ipa
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   publish-release:
     name: Publish ${{ inputs.channel }} release
@@ -764,6 +757,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
+          pattern: "{android,desktop,ios}-${{ inputs.channel }}*"
           path: downloaded-artifacts
 
       - name: Create release and update-feed manifest
@@ -782,10 +776,14 @@ jobs:
 
           TARGET_BRANCH=main
           APK_SUFFIX=release
+          EXPECTED_APKS=7
           if [[ "$CHANNEL" == nightly ]]; then
             TARGET_BRANCH=dev
             APK_SUFFIX=nightly
+            EXPECTED_APKS=6
           fi
+          # Three Windows, four Linux, two macOS installers and one IPA.
+          EXPECTED_ASSETS=$((EXPECTED_APKS + 10))
 
           CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_BRANCH" --jq '.sha')"
           if [[ "$CURRENT_SHA" != "$COMMIT_SHA" ]]; then
@@ -796,8 +794,8 @@ jobs:
 
           mapfile -d '' RELEASE_FILES < <(find downloaded-artifacts -type f -print0 | sort -z)
           mapfile -d '' APK_FILES < <(find downloaded-artifacts -type f -name "app-*-${APK_SUFFIX}.apk" -print0 | sort -z)
-          if [[ "${#RELEASE_FILES[@]}" -ne 17 || "${#APK_FILES[@]}" -ne 7 ]]; then
-            echo "::error::Expected 17 release assets including 7 $APK_SUFFIX APKs; found ${#RELEASE_FILES[@]} files and ${#APK_FILES[@]} APKs."
+          if [[ "${#RELEASE_FILES[@]}" -ne "$EXPECTED_ASSETS" || "${#APK_FILES[@]}" -ne "$EXPECTED_APKS" ]]; then
+            echo "::error::Expected $EXPECTED_ASSETS release assets including $EXPECTED_APKS $APK_SUFFIX APKs; found ${#RELEASE_FILES[@]} files and ${#APK_FILES[@]} APKs."
             find downloaded-artifacts -type f -print || true
             exit 1
           fi
@@ -895,7 +893,7 @@ jobs:
           name: update-feed-${{ inputs.channel }}
           path: ${{ inputs.channel }}.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   publish-update-feed:
     name: Publish ${{ inputs.channel }} update-feed manifest

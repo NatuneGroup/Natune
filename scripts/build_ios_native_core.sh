@@ -142,7 +142,9 @@ fetch() {
     local url="$1" dest="$2" sha="$3"
     if [ ! -f "$dest" ]; then
         log "downloading $(basename "$dest")"
-        curl -fsSL -o "$dest.part" "$url"
+        curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 300 \
+            --connect-timeout 30 --max-time 180 -o "$dest.part" "$url"
         mv "$dest.part" "$dest"
     fi
     if [ "$(sha256_of "$dest")" != "$sha" ]; then
