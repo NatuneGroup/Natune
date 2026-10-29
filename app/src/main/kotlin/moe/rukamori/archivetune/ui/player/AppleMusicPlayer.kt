@@ -1807,7 +1807,7 @@ private fun AppleMusicControlsColumn(
                     color = Color.White.copy(alpha = 0.55f),
                 )
             }
-            if (currentFormat != null) {
+            if (currentFormat != null && LocalPlayerPresentation.current.showCodec) {
                 AppleMusicQualityChip(
                     currentFormat = currentFormat,
                     onClick = onQualityChipClick,

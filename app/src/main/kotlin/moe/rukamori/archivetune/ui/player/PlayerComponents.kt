@@ -2469,7 +2469,7 @@ private fun V8Artwork(
             Modifier
                 .aspectRatio(1f)
                 .size(size)
-                .clip(RoundedCornerShape(8.dp))
+                .ordinarySleeve(!showVideo && LocalPlayerPresentation.current.hideSleeve).clip(RoundedCornerShape(LocalPlayerPresentation.current.radius(8.dp)))
                 .background(if (showVideo) Color.Black else Color.White.copy(alpha = 0.08f)),
     ) {
         if (!showVideo) {
@@ -2641,7 +2641,7 @@ private fun V8PlaybackProgress(
                 )
             }
 
-            if (currentFormat != null) {
+            if (currentFormat != null && LocalPlayerPresentation.current.showCodec) {
                 V8QualityChip(
                     currentFormat = currentFormat,
                     foreground = foreground,
@@ -3406,7 +3406,7 @@ private fun V9Artwork(
             Modifier
                 .aspectRatio(1f)
                 .size(size)
-                .clip(RoundedCornerShape(30.dp))
+                .ordinarySleeve(!showVideo && LocalPlayerPresentation.current.hideSleeve).clip(RoundedCornerShape(LocalPlayerPresentation.current.radius(30.dp)))
                 .background(if (showVideo) Color.Black else placeholderColor),
     ) {
         if (!showVideo) {

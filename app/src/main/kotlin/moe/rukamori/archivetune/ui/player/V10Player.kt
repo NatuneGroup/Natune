@@ -676,6 +676,7 @@ private fun EditorialDieCutArt(
                     scaleX = artScale
                     scaleY = artScale
                 }
+                .ordinarySleeve(LocalPlayerPresentation.current.hideSleeve)
                 .clip(dieCutShape)
                 .background(accent)
                 .playerSeekDoubleTap(),
