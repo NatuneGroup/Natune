@@ -9,7 +9,7 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
 
 /**
- * New portable state file, NEVER opened over Android's schema-36 song.db. Version 2 adds the tag catalog and the
+ * New portable state file, NEVER opened over the legacy Android song.db. Version 2 adds the tag catalog and the
  * playlist assignments, moved from the v1 JSON column by [PortableStateMigrations.V1_TO_V2]. Version 3 adds each
  * playlist's own song order and each entry's creation sequence, by [PortableStateMigrations.V2_TO_V3]. Version 4 adds
  * the local listening events that history, statistics and PLAY_TIME order read, by [PortableStateMigrations.V3_TO_V4].

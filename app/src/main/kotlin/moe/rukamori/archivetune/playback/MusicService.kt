@@ -372,7 +372,6 @@ import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.appendableQueuePage
-import moe.rukamori.archivetune.sponsorblock.SponsorBlockPlaybackController
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
 import moe.rukamori.archivetune.playback.queues.PlaylistActionTicket
@@ -488,7 +487,7 @@ class MusicService :
     lateinit var listenTogetherManager: moe.rukamori.archivetune.listentogether.ListenTogetherManager
 
     @Inject
-    lateinit var sponsorBlockPlaybackController: SponsorBlockPlaybackController
+    lateinit var playbackSessionObservers: PlaybackSessionObservers
 
     @Inject
     lateinit var audioEngineHost: moe.rukamori.archivetune.playback.dsp.AudioEngineHost
@@ -1371,7 +1370,7 @@ class MusicService :
         }
         // ioScope, not scope: the lookup is network plus a JSON parse, and the controller hops to
         // the main thread itself for every player read.
-        sponsorBlockPlaybackController.attach(player, ioScope)
+        playbackSessionObservers.attach(player, ioScope)
 
         // The single authoritative artwork resolver. Every artwork source decision flows
         // through here so the player, notification and palette extractor can never diverge.
@@ -4403,7 +4402,7 @@ class MusicService :
             player.addListener(sleepTimer)
             // Promotion builds a new session player and releases the old one, so anything holding a
             // listener on it has to be moved across or it goes deaf for the rest of the session.
-            sponsorBlockPlaybackController.attach(player, ioScope)
+            playbackSessionObservers.attach(player, ioScope)
             castPlaybackRepository.releasePlayer(oldSessionPlayer)
 
             // 3. Listeners/analytics that were attached to the old local player.
@@ -12812,7 +12811,7 @@ class MusicService :
         binder.release()
         runCatching { listenTogetherManager.onMusicServiceDestroyed(this) }
         equalizerPlaybackController.detach(this)
-        sponsorBlockPlaybackController.detach()
+        playbackSessionObservers.detach()
         musicHapticsEngine?.release()
         musicHapticsEngine = null
         spotifyReportJob?.cancel()

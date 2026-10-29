@@ -10,8 +10,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.repository.*
+import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.navigation.*
@@ -48,6 +50,7 @@ class ArchiveTuneHostBindings(
     val openExternal: (String) -> Unit,
     val onFailure: () -> Unit,
     val onBackAtRoot: () -> Unit,
+    val podcastProgress: Flow<List<PodcastProgress>> = flowOf(emptyList()),
 )
 
 /** Host lifecycle is an input: losing UI visibility never pauses background audio. */
@@ -65,7 +68,11 @@ fun ArchiveTuneRoot(
         if (preferences == null) {
             ArchiveTuneTheme { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         } else {
-            ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television)
+            val progress by host.podcastProgress.collectAsState(emptyList())
+            val byEpisode = remember(progress) { progress.associateBy { it.episodeId } }
+            CompositionLocalProvider(LocalPodcastProgress provides byEpisode) {
+                ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television)
+            }
         }
     }
 }

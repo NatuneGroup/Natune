@@ -23,6 +23,7 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowse
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeEntry
 import moe.rukamori.archivetune.shared.data.provider.YouTubeEntryPage
+import moe.rukamori.archivetune.shared.data.provider.YouTubeHistoryRoutingUnavailable
 import moe.rukamori.archivetune.shared.data.provider.YouTubeListing
 import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -143,10 +144,9 @@ class AndroidYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTran
     }
 
     override suspend fun history(continuation: String?): YouTubeEntryPage {
-        // The history browse is one response with no further page, so a token for it is foreign and is refused.
-        if (continuation != null) throw UnsupportedContentOperation()
-        val page = YouTube.musicHistory().getOrThrow()
-        return YouTubeEntryPage(page.sections.orEmpty().flatMap { section -> section.songs.map { it.toSongEntry() } })
+        val page = AndroidYouTubeHistory.page(continuation)
+        if (page.paginationUnavailable) throw YouTubeHistoryRoutingUnavailable()
+        return YouTubeEntryPage(page.sections.flatMap { section -> section.entries.map { it.toSongEntry() } }, page.continuation)
     }
 
     override suspend fun likeSong(videoId: String, liked: Boolean) {

@@ -216,6 +216,7 @@ class DesktopSessionGraph private constructor(
     internal val news: DesktopNewsRepository,
     private val drivers: List<Job>,
 ) {
+    internal val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
     /** The playlist tag catalog and assignments, in the same portable file as the playlists. */
     internal val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
 

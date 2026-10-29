@@ -17,7 +17,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 
 /**
- * Imports an Android `song.db` backup file (the schema-36 Room database) into the portable state database the desktop
+ * Imports an Android `song.db` backup file (up to Room schema 37) into the portable state database the desktop
  * and iOS hosts keep. Every table the baseline persists is mapped, so a restored archive loses nothing the portable
  * schema can express:
  *
@@ -32,6 +32,8 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
  *   and album credit rows, so history, statistics and PLAY_TIME order see the plays the baseline recorded.
  * - `tag` and `playlist_tag_map` keep tag ids, names, colours and assignments. `search_history` and `set_video_id`
  *   map one to one onto the v8 tables.
+ * - `podcast_progress` bookmarks and played markers map to `portable_podcast_progress`, including episodes that
+ *   have never been saved to the library.
  *
  * Provider reads (`format`, `lyrics`, `related_song_map`, the remote endpoint params on playlists and albums, the
  * generated `library_top_mix` content and `playCount`, which this fork never writes and which the statistics derive
@@ -43,7 +45,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
  * never leaves a partial database behind.
  */
 object LegacySongDbImport {
-    const val ANDROID_SCHEMA_VERSION = 36
+    const val ANDROID_SCHEMA_VERSION = 37
 
     /** Number of source rows the importer wrote and could not write. */
     data class Outcome(
@@ -59,6 +61,7 @@ object LegacySongDbImport {
         val searches: Int,
         val setVideoIds: Int,
         val droppedEntries: Int,
+        val podcastProgress: Int = 0,
     )
 
     /**
@@ -106,6 +109,7 @@ object LegacySongDbImport {
         val assignments: List<PortablePlaylistTagRow>,
         val searches: List<String>,
         val setVideoIds: List<PortableSetVideoIdRow>,
+        val podcastProgress: List<PortablePodcastProgressRow>,
         val droppedEntries: Int,
     ) {
         val outcome = Outcome(
@@ -114,6 +118,7 @@ object LegacySongDbImport {
             playlists = playlists.size, playlistEntries = entries.values.sumOf { it.size },
             listenEvents = listens.size, tags = tags.size, tagAssignments = assignments.size,
             searches = searches.size, setVideoIds = setVideoIds.size, droppedEntries = droppedEntries,
+            podcastProgress = podcastProgress.size,
         )
     }
 
@@ -409,8 +414,25 @@ object LegacySongDbImport {
                 }
             }
 
+            val progress = ArrayList<PortablePodcastProgressRow>()
+            if (connection.tableExists("podcast_progress")) {
+                connection.prepare(
+                    "SELECT episodeId, positionMs, durationMs, finished, updatedAtMs FROM podcast_progress",
+                ).use { statement ->
+                    while (statement.step()) {
+                        progress += PortablePodcastProgressRow(
+                            episodeId = statement.getText(0),
+                            positionMs = statement.getLong(1),
+                            durationMs = if (statement.isNull(2)) null else statement.getLong(2),
+                            finished = statement.getLong(3) != 0L,
+                            updatedAtMs = statement.getLong(4),
+                        )
+                    }
+                }
+            }
+
             return Source(songs, likedAlbums, bookmarkedArtists, blockedArtists, playlists, entries, listens,
-                tags, assignments, searches, setVideoIds, droppedEntries)
+                tags, assignments, searches, setVideoIds, progress, droppedEntries)
         } finally {
             connection.close()
         }
@@ -461,6 +483,8 @@ object LegacySongDbImport {
         }
         val setVideoIds = database.setVideoIds()
         for (row in source.setVideoIds) setVideoIds.put(row)
+        val progress = database.podcastProgress()
+        for (row in source.podcastProgress) progress.put(row)
     }
 
     private fun SQLiteConnection.tableExists(name: String): Boolean =

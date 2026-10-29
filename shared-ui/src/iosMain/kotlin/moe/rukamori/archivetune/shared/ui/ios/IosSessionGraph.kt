@@ -92,6 +92,7 @@ internal class IosSessionGraph private constructor(
     val http: HttpClient,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
+    val youtubeTransport: IosYouTubeBrowseTransport,
     internal val library: RoomLibraryRepository,
     val libraryContent: LibraryContentOwner,
     val pageOwners: LibraryPageOwners,
@@ -111,6 +112,7 @@ internal class IosSessionGraph private constructor(
     private val drivers: List<Job>,
     private val reportLine: (String) -> Unit,
 ) {
+    val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
     /** The crossfade or automix blend armed into the next song. iOS connects no blend engine, so it stays null. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 
@@ -426,6 +428,7 @@ internal class IosSessionGraph private constructor(
                 player = player,
                 queue = queue,
                 library = library,
+                youtubeTransport = youtubeTransport,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
                 history = history,

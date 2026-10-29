@@ -158,6 +158,7 @@ internal fun iosHostBindings(
         onFailure = { graph.report("a host request could not be completed") },
         // The iOS root has no screen beneath it, so back at the root has nothing to pop.
         onBackAtRoot = { },
+        podcastProgress = graph.podcastProgress.observeAll(),
     )
 }
 
@@ -182,13 +183,7 @@ private fun iosGraphPage(
                 hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
             ArchiveDestination.PLAYLIST ->
                 hostPlaylistPage(graph.pageOwners, route) { menu.open(it) }
-            ArchiveDestination.HISTORY -> hostHistoryPage(
-                owners = graph.pageOwners,
-                offsetMsAt = ::iosOffsetMsAt,
-                nowMs = ::iosNowMillis,
-                formatTime = ::iosDiagnosticTime,
-                more = { menu.open(it) },
-            )
+            ArchiveDestination.HISTORY -> iosHistoryPage(graph, menu)
             ArchiveDestination.MUSIC_RECOGNITION -> iosRecognitionPage(mount = recognition, route)
             ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> iosRecognitionDetailsPage(recognition, route)
             ArchiveDestination.STATISTICS -> iosStatisticsPage(graph, openRoute)
