@@ -86,6 +86,9 @@ import moe.rukamori.archivetune.ui.player.label
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
+import moe.rukamori.archivetune.ui.player.PlayerControlCrossfade
+import moe.rukamori.archivetune.ui.player.PlayerControlKind
+import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 
 private val ImmersiveContentColor = Color.White
 private val ImmersiveSecondaryContentColor = Color.White.copy(alpha = 0.7f)
@@ -670,13 +673,16 @@ private fun TransportControls(
     canSkipNext: Boolean,
     onAction: (ImmersivePlayerAction) -> Unit,
 ) {
+    val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+    val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+    val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
     Row(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
     ) {
         IconButton(
-            onClick = { onAction(ImmersivePlayerAction.SkipPrevious) },
+            onClick = previousMotion.onClick { onAction(ImmersivePlayerAction.SkipPrevious) },
             enabled = canSkipPrevious,
             modifier = Modifier.size(72.dp),
         ) {
@@ -684,7 +690,7 @@ private fun TransportControls(
                 painter = painterResource(R.drawable.skip_previous),
                 contentDescription = stringResource(R.string.widget_previous),
                 tint = ImmersiveContentColor.copy(alpha = if (canSkipPrevious) 1f else 0.35f),
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(56.dp).then(previousMotion.modifier),
             )
         }
         IconButton(
@@ -698,16 +704,18 @@ private fun TransportControls(
                     modifier = Modifier.size(52.dp),
                 )
             } else {
-                Icon(
-                    painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
-                    contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
-                    tint = ImmersiveContentColor,
-                    modifier = Modifier.size(68.dp),
-                )
+                PlayerControlCrossfade(if (isPlaying) R.drawable.pause else R.drawable.play) { playGlyph ->
+                    Icon(
+                        painter = painterResource(playGlyph),
+                        contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
+                        tint = ImmersiveContentColor,
+                        modifier = Modifier.size(68.dp).then(playPauseMotion.modifier),
+                    )
+                }
             }
         }
         IconButton(
-            onClick = { onAction(ImmersivePlayerAction.SkipNext) },
+            onClick = nextMotion.onClick { onAction(ImmersivePlayerAction.SkipNext) },
             enabled = canSkipNext,
             modifier = Modifier.size(72.dp),
         ) {
@@ -715,7 +723,7 @@ private fun TransportControls(
                 painter = painterResource(R.drawable.skip_next),
                 contentDescription = stringResource(R.string.next),
                 tint = ImmersiveContentColor.copy(alpha = if (canSkipNext) 1f else 0.35f),
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(56.dp).then(nextMotion.modifier),
             )
         }
     }

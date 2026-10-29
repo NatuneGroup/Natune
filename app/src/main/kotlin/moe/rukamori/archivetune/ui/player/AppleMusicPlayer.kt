@@ -159,8 +159,6 @@ import moe.rukamori.archivetune.constants.LyricsModeKey
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.ui.menu.LyricsMenu
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.Rect
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.menu.rememberCastPlayerMenuAction
@@ -175,7 +173,6 @@ import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
 import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
 
 private val AppleMusicContentPadding = 28.dp
-private val AppleMusicChipSize = 30.dp
 private val AppleMusicTransportIconSize = 48.dp
 private val AppleMusicPlayPauseIconSize = 80.dp
 
@@ -1760,6 +1757,7 @@ private fun AppleMusicControlsColumn(
             Spacer(Modifier.width(12.dp))
             AppleMusicChip(
                 iconRes = if (currentSongLiked) R.drawable.player_star_filled else R.drawable.player_star,
+                iconModifier = Modifier.playerControlMotion(PlayerControlKind.Like, currentSongLiked),
                 tint = Color.White,
                 contentDescription = null,
                 onClick = playerConnection::toggleLike,
@@ -1843,6 +1841,10 @@ private fun AppleMusicControlsColumn(
     val playPauseIconSize =
         if (veryCompactHeight) 67.dp else if (compactHeight) 73.dp else AppleMusicPlayPauseIconSize
 
+    val playPauseMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, isPlaying)
+    val previousMotion = rememberPlayerControlMotion(PlayerControlKind.Previous)
+    val nextMotion = rememberPlayerControlMotion(PlayerControlKind.Next)
+
     // Bare transport glyphs.
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1855,6 +1857,7 @@ private fun AppleMusicControlsColumn(
             mirrored = false,
             iconSize = transportIconSize,
             onClick = playerConnection::seekToPrevious,
+            motion = previousMotion,
         )
         // Center slot MUST keep the same outer Box size (iconSize + 20.dp) in both
         // the loading and playing states — otherwise SpaceEvenly redistributes the
@@ -1880,6 +1883,7 @@ private fun AppleMusicControlsColumn(
                     mirrored = false,
                     iconSize = playPauseIconSize,
                     onClick = onPlayPauseClick,
+                    motion = playPauseMotion,
                 )
             }
         }
@@ -1889,6 +1893,7 @@ private fun AppleMusicControlsColumn(
             mirrored = false,
             iconSize = transportIconSize,
             onClick = playerConnection::seekToNext,
+            motion = nextMotion,
         )
     }
 
@@ -2027,6 +2032,7 @@ private fun AppleMusicLandscapeTitleBlock(
         Spacer(Modifier.width(12.dp))
         AppleMusicChip(
             iconRes = if (currentSongLiked) R.drawable.player_star_filled else R.drawable.player_star,
+            iconModifier = Modifier.playerControlMotion(PlayerControlKind.Like, currentSongLiked),
             tint = Color.White,
             contentDescription = null,
             onClick = onToggleLike,
@@ -2043,45 +2049,13 @@ private fun AppleMusicLandscapeTitleBlock(
 }
 
 @Composable
-private fun AppleMusicChip(
-    iconRes: Int,
-    tint: Color,
-    contentDescription: String?,
-    onClick: () -> Unit,
-    onPositioned: ((Rect) -> Unit)? = null,
-) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier =
-            Modifier
-                .size(AppleMusicChipSize)
-                .let { base ->
-                    if (onPositioned != null) {
-                        base.onGloballyPositioned { coords -> onPositioned(coords.boundsInRoot()) }
-                    } else {
-                        base
-                    }
-                }
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.14f))
-                .clickable(onClick = onClick),
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(18.dp),
-        )
-    }
-}
-
-@Composable
 private fun AppleMusicTransportButton(
     iconRes: Int,
     enabled: Boolean,
     mirrored: Boolean,
     iconSize: Dp,
     onClick: () -> Unit,
+    motion: PlayerControlMotion? = null,
 ) {
     Box(
         contentAlignment = Alignment.Center,
@@ -2093,18 +2067,24 @@ private fun AppleMusicTransportButton(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = ripple(bounded = false, radius = iconSize / 2 + 10.dp),
                     enabled = enabled,
-                    onClick = onClick,
+                    onClick = {
+                        motion?.tap()
+                        onClick()
+                    },
                 ),
     ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            tint = Color.White.copy(alpha = if (enabled) 1f else 0.4f),
-            modifier =
-                Modifier
-                    .size(iconSize)
-                    .graphicsLayer { if (mirrored) scaleX = -1f },
-        )
+        PlayerControlCrossfade(iconRes) { glyph ->
+            Icon(
+                painter = painterResource(glyph),
+                contentDescription = null,
+                tint = Color.White.copy(alpha = if (enabled) 1f else 0.4f),
+                modifier =
+                    Modifier
+                        .size(iconSize)
+                        .then(motion?.modifier ?: Modifier)
+                        .graphicsLayer { if (mirrored) scaleX = -1f },
+            )
+        }
     }
 }
 
@@ -2282,6 +2262,7 @@ private fun SharedTransitionScope.AppleMusicMiniHeader(
         }
         AppleMusicChip(
             iconRes = if (currentSongLiked) R.drawable.player_star_filled else R.drawable.player_star,
+            iconModifier = Modifier.playerControlMotion(PlayerControlKind.Like, currentSongLiked),
             tint = Color.White,
             contentDescription = null,
             onClick = onToggleLike,
