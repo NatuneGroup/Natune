@@ -82,7 +82,7 @@ private fun historyDuration(text: String): Int? {
     return seconds.toInt()
 }
 
-private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+// JsonObject.obj comes from ProviderWire; the narrower helpers below stay file-local.
 private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 private fun JsonObject.runs(): List<JsonObject> = (this["runs"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
 private fun JsonObject.text(): String = string("simpleText") ?: runs().joinToString("") { it.string("text").orEmpty() }
