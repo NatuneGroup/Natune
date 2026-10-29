@@ -102,6 +102,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.ui.player.QueueExtrasBar
 import moe.rukamori.archivetune.models.MediaMetadata
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
@@ -227,6 +228,7 @@ fun SlidingQueueDrawer(
         Box(modifier = Modifier.fillMaxSize()) {
             val boxScope = this
             val lazyListState = rememberLazyListState()
+            val queueActionScope = androidx.compose.runtime.rememberCoroutineScope()
 
             val dragDropState =
                 rememberDragDropState(lazyListState = lazyListState) { from, to ->
@@ -304,6 +306,16 @@ fun SlidingQueueDrawer(
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+
+                QueueExtrasBar(
+                    onJumpToCurrent = {
+                        if (currentSongIndex in queue.indices) queueActionScope.launch {
+                            lazyListState.animateScrollToItem(currentSongIndex)
+                        }
+                    },
+                    active = isQueueExpanded,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
 
                 LazyColumn(
                     state = lazyListState,

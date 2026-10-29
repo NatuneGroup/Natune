@@ -11,6 +11,7 @@
 package moe.rukamori.archivetune.sponsorblock
 
 import android.content.Context
+import androidx.datastore.preferences.core.Preferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -32,6 +33,7 @@ import moe.rukamori.archivetune.constants.SponsorBlockApiUrlKey
 import moe.rukamori.archivetune.constants.SponsorBlockCategoriesKey
 import moe.rukamori.archivetune.constants.SponsorBlockEnabledKey
 import moe.rukamori.archivetune.constants.SponsorBlockPodcastsEnabledKey
+import moe.rukamori.archivetune.uploads.YouTubeUploadedVideoIdsKey
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.shared.domain.playback.SponsorBlockPlaybackPolicy
@@ -76,13 +78,15 @@ class SponsorBlockRepository
 
         suspend fun settings(): SponsorBlockSettings = observeSettings().first()
 
-        fun observeSettings(): Flow<SponsorBlockSettings> = context.dataStore.data.map { preferences ->
+        fun observeSettings(): Flow<SponsorBlockSettings> = context.dataStore.data.map { settingsFrom(it) }
+
+        private fun settingsFrom(preferences: Preferences): SponsorBlockSettings {
             val categories =
                 preferences[SponsorBlockCategoriesKey]
                     ?.mapNotNull(SponsorBlockCategory::fromApiName)
                     ?.toSet()
                     ?: SponsorBlockCategory.Defaults
-            SponsorBlockSettings(
+            return SponsorBlockSettings(
                 enabled = preferences[SponsorBlockEnabledKey] ?: false,
                 categories = categories,
                 apiUrl = normalizeSponsorBlockApiUrl(preferences[SponsorBlockApiUrlKey]) ?: SPONSORBLOCK_DEFAULT_API_URL,
@@ -92,16 +96,21 @@ class SponsorBlockRepository
 
         /**
          * Segments for [videoId], or an empty list when the feature is off, the id is not a YouTube
-         * one, the item is a podcast episode while podcast skipping is off, or the lookup fails. Never
-         * fails playback: a segment list is an enhancement. Coroutine cancellation still propagates,
-         * so disabling a setting can stop an in-flight lookup.
+         * one, the id is one of the account's own uploads, the item is a podcast episode while
+         * podcast skipping is off, or the lookup fails. Never fails playback: a segment list is an
+         * enhancement. Coroutine cancellation still propagates, so disabling a setting can stop an
+         * in-flight lookup.
          */
         suspend fun segments(
             videoId: String,
             podcast: Boolean = false,
         ): List<SponsorBlockSegment> {
             if (!YOUTUBE_ID.matches(videoId)) return emptyList()
-            val settings = settings()
+            // One snapshot for both gates: an upload exists only in the signed-in account, so no
+            // public segment database can know it.
+            val preferences = context.dataStore.data.first()
+            if (videoId in preferences[YouTubeUploadedVideoIdsKey].orEmpty()) return emptyList()
+            val settings = settingsFrom(preferences)
             if (settings.categories.isEmpty() || !SponsorBlockPlaybackPolicy.allowsLookup(
                     videoId, settings.enabled, settings.podcastsEnabled, podcast, videoId.isLocalMediaId(),
                 )) return emptyList()

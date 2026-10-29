@@ -78,7 +78,10 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
+import moe.rukamori.archivetune.shared.ui.screens.UploadsActions
+import moe.rukamori.archivetune.shared.ui.screens.UploadsUi
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
+import moe.rukamori.archivetune.shared.ui.queue.PlaybackQueuePanel
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSettings
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSlots
 import moe.rukamori.archivetune.shared.ui.resources.*
@@ -192,6 +195,13 @@ private fun iosGraphPage(
             ArchiveDestination.LISTEN_TOGETHER_CHAT -> iosCommentTogetherPage(graph, host, back)
             ArchiveDestination.TELEGRAM_BROWSE -> iosTelegramBrowsePage(graph, host, back)
             ArchiveDestination.TELEGRAM_BOTS -> iosTelegramBotsPage(graph, host, back, openRoute)
+            // Uploads need the picker and transfer transport this host does not have yet; the shared
+            // screen says so instead of showing an empty library or a dead button.
+            ArchiveDestination.UPLOADED_SONGS ->
+                ArchiveGraphPage.Uploads(
+                    state = UploadsUi(available = false),
+                    actions = UploadsActions(back = {}, upload = {}, delete = {}, play = { _, _ -> }, retry = {}, loadMore = {}),
+                )
             else -> ArchiveGraphPage.Host
         }
     }
@@ -406,71 +416,12 @@ private fun iosStatsDuration(durationMs: Long): String {
 /** The short weekday name for a statistics slot, where Sunday is 0. */
 private fun iosWeekdayName(index: Int): String = iosWeekdays.getOrElse(index) { index.toString() }
 
-/**
- * The player's queue panel: the one queue in play order, the current song marked. A row plays its song, the current
- * row pauses or resumes, and a row can be removed. Every command runs through the queue owner.
- */
+/** Artwork remains native; queue controls and commands are shared with desktop. */
 @Composable
 private fun IosQueuePanel(graph: IosSessionGraph, modifier: Modifier) {
-    val queue by graph.queue.state.collectAsState()
-    val rows = remember(queue.entries, queue.playOrder) {
-        val byId = queue.entries.associateBy { it.occurrenceId }
-        queue.playOrder.mapNotNull { byId[it] }
-    }
-    if (rows.isEmpty()) {
-        Box(modifier.padding(16.dp), contentAlignment = Alignment.Center) {
-            Text(stringResource(Res.string.ios_queue_empty), style = MaterialTheme.typography.bodyMedium)
-        }
-        return
-    }
-    val removeLabel = stringResource(Res.string.ios_queue_remove)
-    val colors = MaterialTheme.colorScheme
-    LazyColumn(modifier) {
-        items(rows, key = { it.occurrenceId }) { entry ->
-            val current = entry.occurrenceId == queue.currentOccurrenceId
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(if (current) colors.secondaryContainer else Color.Transparent)
-                    .clickable {
-                        if (current) {
-                            if (graph.player.snapshot.value?.playWhenReady == true) graph.player.pause() else graph.player.play()
-                        } else {
-                            queueCommand(graph, "the song was not played") { graph.queue.select(entry.occurrenceId, 0L) }
-                        }
-                    }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IosRemoteArtwork(entry.item.artworkUri, graph.artworkLoader, Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)))
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(
-                        entry.item.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
-                        color = if (current) colors.onSecondaryContainer else colors.onSurface,
-                    )
-                    val artists = entry.item.artists.joinToString(", ") { it.name }.ifEmpty { entry.item.subtitle }
-                    if (artists.isNotEmpty()) {
-                        Text(
-                            artists,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = colors.onSurfaceVariant,
-                        )
-                    }
-                }
-                // The shared icon set is not part of this panel, so the action draws a plain glyph and names itself.
-                IconButton(
-                    onClick = { queueCommand(graph, "the song was not removed") { graph.queue.remove(setOf(entry.occurrenceId)) } },
-                    modifier = Modifier.semantics { contentDescription = removeLabel },
-                ) {
-                    Text("\u2715", style = MaterialTheme.typography.titleMedium)
-                }
-            }
-        }
+    PlaybackQueuePanel(queue = graph.queue, edits = graph.queue, settings = graph.settings,
+        library = graph.library, modifier = modifier) { entry, imageModifier ->
+        IosRemoteArtwork(entry.item.artworkUri, graph.artworkLoader, imageModifier)
     }
 }
 

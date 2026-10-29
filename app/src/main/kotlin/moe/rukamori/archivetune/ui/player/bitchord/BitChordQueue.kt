@@ -18,9 +18,8 @@
  * Adaptations for ArchiveTune (documented inline):
  *  - BitChord's `Song` model is replaced by a lightweight [BitChordQueueSong]
  *    mapped from ArchiveTune's ExoPlayer timeline windows.
- *  - BitChord's AutoPlay queue section (fromAutoplay / autoplaySectionStart)
- *    is omitted: ArchiveTune has no autoplay engine, so the queue is a single
- *    section with the same rows, drag-to-reorder, edge auto-scroll and Clear.
+ *  - The queue remains a single section. Recommendations and the infinity
+ *    preference are owned by ArchiveTune's playback service, not by these rows.
  *
  * Belongs exclusively to the Bitchord player style; not shared with any other
  * player style, per the self-containment rule for player styles.
@@ -87,6 +86,8 @@ import coil3.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.abs
+import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.ui.player.QueueExtrasBar
 
 /** One row of the inline queue, mapped from an ExoPlayer timeline window. */
 internal data class BitChordQueueSong(
@@ -117,6 +118,7 @@ internal fun InlineQueue(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    val queueActionScope = androidx.compose.runtime.rememberCoroutineScope()
     val keepScroll = remember(listState) { keepScrollInList(listState) }
 
     // A song can be queued twice, so the id alone isn't always a unique key
@@ -174,6 +176,12 @@ internal fun InlineQueue(
             )
         }
         Spacer(Modifier.height(4.dp))
+        QueueExtrasBar(
+            onJumpToCurrent = {
+                if (currentIndex in queue.indices) queueActionScope.launch { listState.animateScrollToItem(currentIndex) }
+            },
+            contentColor = Color.White,
+        )
         LazyColumn(
             state = listState,
             modifier = Modifier

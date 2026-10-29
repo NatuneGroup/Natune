@@ -2770,6 +2770,7 @@ private fun FlamingoPlayingList(
     val scope = rememberCoroutineScope()
     val localPlayer = playerConnection.localPlayer
     val density = LocalDensity.current
+    val queueListState = rememberLazyListState(initialFirstVisibleItemIndex = (currentWindowIndex + 1).coerceAtLeast(0))
 
     Spacer(modifier = Modifier.height(12.dp))
 
@@ -2792,26 +2793,10 @@ private fun FlamingoPlayingList(
                 .height(65.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) {
-                Text(
-                    text = stringResource(id = R.string.flamingo_queue_header_title),
-                    fontSize = 16.5.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    text = stringResource(id = R.string.flamingo_queue_header_count, upNextCount),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .padding(top = 2.dp)
-                        .overlayEffect()
-                        .alpha(0.35f),
-                )
-            }
+            FlamingoQueueHeading(
+                upNextCount, Modifier.fillMaxWidth().weight(1f),
+                Modifier.padding(top = 2.dp).overlayEffect().alpha(0.35f),
+            )
 
             Row(
                 modifier = Modifier
@@ -2915,6 +2900,16 @@ private fun FlamingoPlayingList(
             }
         }
 
+        moe.rukamori.archivetune.ui.player.QueueExtrasBar(
+            onJumpToCurrent = {
+                if (currentWindowIndex in queueWindows.indices) scope.launch {
+                    queueListState.animateScrollToItem(currentWindowIndex + 1)
+                }
+            },
+            contentColor = Color.White,
+            modifier = Modifier.padding(horizontal = 30.dp),
+        )
+
         if (queueWindows.isEmpty()) {
             Column(
                 Modifier.fillMaxSize(),
@@ -2959,10 +2954,7 @@ private fun FlamingoPlayingList(
             val currentWindow = queueWindows.getOrNull(currentWindowIndex)
             val currentDisplayIndex = 1 + historyWindows.size
 
-            val state = rememberLazyListState(
-                initialFirstVisibleItemIndex = currentDisplayIndex,
-                initialFirstVisibleItemScrollOffset = 0,
-            )
+            val state = queueListState
 
             // Seeded from the queue at composition so the up-next rows exist on the first
             // frame; the LaunchedEffect below re-syncs it while the page stays composed.
