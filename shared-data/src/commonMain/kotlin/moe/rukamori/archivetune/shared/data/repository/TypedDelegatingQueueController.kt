@@ -5,6 +5,7 @@ import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
+import moe.rukamori.archivetune.shared.domain.repository.QueueEditingCommands
 import moe.rukamori.archivetune.shared.domain.repository.TypedQueueOwnerPort
 
 /**
@@ -18,7 +19,7 @@ import moe.rukamori.archivetune.shared.domain.repository.TypedQueueOwnerPort
 class TypedDelegatingQueueController(
     private val owner: TypedQueueOwnerPort,
     private val checkpoints: QueueCheckpointStore,
-) : ContinuationQueueController {
+) : ContinuationQueueController, QueueEditingCommands {
     override val player get() = owner.player
     override val state get() = owner.state
 
@@ -34,7 +35,21 @@ class TypedDelegatingQueueController(
         owner.withQueueAccess { owner.select(occurrenceId, positionMs) }
 
     /** Shuffle is not a [ContinuationQueueController] command, so the host reaches it here, inside the owner's lock. */
-    suspend fun setShuffle(enabled: Boolean): Boolean = owner.withQueueAccess { owner.setShuffle(enabled) }
+    override suspend fun setShuffle(enabled: Boolean): Boolean = owner.withQueueAccess { owner.setShuffle(enabled) }
+
+    private val edits: QueueEditingCommands
+        get() = owner as? QueueEditingCommands ?: error("Queue owner does not support queue editing")
+
+    override val infiniteQueueLoading get() = edits.infiniteQueueLoading
+    override val queueSource get() = edits.queueSource
+    override suspend fun moveInPlayOrder(occurrenceId: String, beforeOccurrenceId: String?) =
+        owner.withQueueAccess { edits.moveInPlayOrder(occurrenceId, beforeOccurrenceId) }
+    override suspend fun moveNext(occurrenceId: String) = owner.withQueueAccess { edits.moveNext(occurrenceId) }
+    override suspend fun removeUndoable(occurrenceIds: Set<String>): Long? =
+        owner.withQueueAccess { edits.removeUndoable(occurrenceIds) }
+    override suspend fun undoRemoval(ticket: Long): Boolean = owner.withQueueAccess { edits.undoRemoval(ticket) }
+    override suspend fun clearUpcoming(): Long? = owner.withQueueAccess { edits.clearUpcoming() }
+    override suspend fun refreshInfiniteQueue() = owner.withQueueAccess { edits.refreshInfiniteQueue() }
 
     /** "Start radio" on the song playing now. False when it cannot seed a watch-next queue. */
     suspend fun startRadioSeamlessly(): Boolean = owner.withQueueAccess { owner.startRadioSeamlessly() }

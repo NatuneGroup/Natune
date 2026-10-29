@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.constants.AudioQualityKey
 import moe.rukamori.archivetune.constants.RejectSuspectedUpscaledAudioKey
 import moe.rukamori.archivetune.constants.AudioOffload
 import moe.rukamori.archivetune.constants.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.constants.AutoLoadMoreKey
 import moe.rukamori.archivetune.constants.AutoStartOnBluetoothKey
 import moe.rukamori.archivetune.constants.CanvasResolverEndpointsKey
 import moe.rukamori.archivetune.constants.CrossfadeDurationKey
@@ -151,6 +152,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
             PermanentShuffleKey,
             defaultValue = false,
         )
+    val (infiniteQueue, onInfiniteQueueChange) = prefs.state(AutoLoadMoreKey, defaultValue = true)
     val (sponsorBlockEnabled, onSponsorBlockEnabledChange) =
         prefs.state(SponsorBlockEnabledKey, defaultValue = false)
     val (sponsorBlockPodcasts, onSponsorBlockPodcastsChange) =
@@ -995,13 +997,11 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 title = queueTitle,
             ) {
                 item {
-                    SwitchPreference(
-                        title = { Text(stringResource(R.string.persistent_queue)) },
-                        description = stringResource(R.string.persistent_queue_desc),
-                        icon = { Icon(painterResource(R.drawable.queue_music), null) },
-                        checked = persistentQueue,
-                        onCheckedChange = onPersistentQueueChange,
-                    )
+                    QueuePersistencePreference(persistentQueue, onPersistentQueueChange)
+                }
+
+                item {
+                    InfiniteQueuePreference(infiniteQueue, onInfiniteQueueChange, positions.modifierFor("infinite_queue"))
                 }
 
                 item {

@@ -115,6 +115,8 @@ fun YouTubeSongMenu(
     song: SongItem,
     navController: NavController,
     onDismiss: () -> Unit,
+    // Set only where the caller knows the signed-in upload entity; the menu asks nothing itself.
+    onDeleteUpload: (() -> Unit)? = null,
 ) {
     val displayNames = moe.rukamori.archivetune.ui.component.effectiveSongMetadata(song.id, song.title, song.artists.map { it.name })
     val context = LocalContext.current
@@ -960,6 +962,35 @@ fun YouTubeSongMenu(
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
+
+                    if (onDeleteUpload != null) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 56.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    text = stringResource(R.string.delete_upload),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(R.drawable.delete),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            modifier =
+                                Modifier.clickable {
+                                    onDismiss()
+                                    onDeleteUpload()
+                                },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+                    }
                 }
             }
         }
