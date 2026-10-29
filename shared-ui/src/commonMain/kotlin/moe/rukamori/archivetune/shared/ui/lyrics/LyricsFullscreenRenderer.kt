@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +45,10 @@ data class LyricsSurfaceSettings(
     val tapToSeek: Boolean = true,
     val syncOffsetMs: Long = 0L,
     val reduceMotion: Boolean = false,
+    /** Rows away from the sung line shrink, fade and soften with distance. Hosts opt in; the default look is flat. */
+    val depthEffects: Boolean = false,
+    /** Trailing background vocals move to their own smaller line beneath the lead. Hosts opt in. */
+    val backgroundVocals: Boolean = false,
 )
 
 /** Host callbacks. The renderer never seeks, shares or writes anything on its own. */
@@ -74,7 +79,9 @@ fun LyricsFullscreenRenderer(
     val snapshot by playback.collectAsState()
     val presentation by romanization.presentation.collectAsState()
     val phonetics = if (presentation.sessionKey == sessionKey) presentation.phonetics else emptyList()
-    val rows = remember(lines, phonetics) { LyricsRenderRows.build(lines, phonetics) }
+    val rows = remember(lines, phonetics, settings.backgroundVocals) {
+        LyricsRenderRows.build(lines, phonetics, splitBackground = settings.backgroundVocals)
+    }
     val profile = remember(settings.mode) { LyricsModeProfile.of(settings.mode) }
     val palette = lyricsPalette(profile)
     val styles = remember(profile) { LyricsRowStyles(profile) }
@@ -88,6 +95,8 @@ fun LyricsFullscreenRenderer(
     val primary = activeRows.lastOrNull() ?: -1
 
     val scrollOwner = rememberLyricsScrollOwner()
+    // A listener reading ahead sees every row sharp, as Apple Music does while the list is dragged.
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
     LyricsAutoFollow(
         owner = scrollOwner,
         listState = listState,
@@ -149,6 +158,12 @@ fun LyricsFullscreenRenderer(
             ) {
                 items(rows, key = { it.index }) { row ->
                     val alignment = alignments[row.index]
+                    val depth = if (settings.depthEffects && !dragged) {
+                        LyricsDepth.of(LyricsDepth.distance(row.index, primary, row.index in activeRows),
+                            reduceMotion = settings.reduceMotion)
+                    } else {
+                        LyricsDepth.Flat
+                    }
                     LyricsRowItem(
                         row = row,
                         alignment = alignment,
@@ -161,6 +176,8 @@ fun LyricsFullscreenRenderer(
                         shapes = shapes,
                         minSweepMs = profile.minSweepMs,
                         reduceMotion = settings.reduceMotion,
+                        depth = depth,
+                        depthEnabled = settings.depthEffects,
                         onTap = {
                             when (LyricsTapPolicy.onTap(row, selection.isActive, settings.tapToSeek)) {
                                 is LyricsTapAction.Seek -> actions.onSeek(row.timeMs)
