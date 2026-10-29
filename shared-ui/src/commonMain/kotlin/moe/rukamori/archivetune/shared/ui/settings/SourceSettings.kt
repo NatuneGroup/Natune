@@ -155,7 +155,7 @@ fun sourceSettingsRows(
     add(SettingsRow.Toggle("auto_choose_playback_client", Res.string.m6_auto_client, AutoChoosePlaybackClientKey, true))
     add(SettingsRow.Choice("player_stream_client", Res.string.m6_playback_client, PlayerStreamClientKey, "WEB_REMIX",
         listOf("ANDROID_VR" to Res.string.m6_client_android_vr, "WEB_REMIX" to Res.string.m6_client_web_remix,
-            "HI_RES_LOSSLESS" to Res.string.m6_hi_res, "IOS" to Res.string.m6_client_ios,
+            "IOS" to Res.string.m6_client_ios,
             "TVHTML5" to Res.string.m6_client_tv, "ANDROID_MUSIC" to Res.string.m6_client_android_music)
             .map { SettingsRow.Option(it.first, it.second) }, enabled = !preferences[AutoChoosePlaybackClientKey, true]))
     add(SettingsRow.Toggle("tidal_enable", Res.string.m6_source_tidal, TidalEnabledKey, true))

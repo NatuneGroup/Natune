@@ -15,6 +15,7 @@ fun appearanceThemeSettingsRows(
     chooseInterface: () -> Unit,
     chooseFont: () -> Unit,
     pickCustomFont: () -> Unit,
+    customFontPickerSupported: Boolean = true,
 ): List<SettingsRow> = buildList {
     val blur = !preferences[DisableBlurKey, false]
     val dynamic = preferences[DynamicThemeKey, true]
@@ -34,10 +35,12 @@ fun appearanceThemeSettingsRows(
         description = Res.string.m6_apple_music_independent_desc, read = { it.appleMusicSearchBar() }))
     add(SettingsRow.Toggle("apple_music_palette", Res.string.m6_apple_music_palette, AppleMusicPaletteKey, false,
         description = Res.string.m6_apple_music_palette_desc, read = { it.appleMusicPalette() }))
-    add(SettingsRow.Toggle("dynamic_theme", Res.string.m6_dynamic_theme, DynamicThemeKey, true))
+    add(SettingsRow.Toggle("dynamic_theme", Res.string.m6_dynamic_theme, DynamicThemeKey, true,
+        description = Res.string.m6_palette_sources_exclusive, write = { setDynamicTheme(it) }))
     if (dynamic && !nativeDynamicColors && wallpaperPermissionNeeded)
         add(SettingsRow.Action("wallpaper_permission", Res.string.m6_wallpaper_permission, openWallpaperSettings))
-    if (!dynamic) add(SettingsRow.Toggle("random_theme_on_startup", Res.string.m6_random_theme, RandomThemeOnStartupKey, false))
+    if (!dynamic) add(SettingsRow.Toggle("random_theme_on_startup", Res.string.m6_random_theme, RandomThemeOnStartupKey, false,
+        description = Res.string.m6_palette_sources_exclusive, write = { setRandomThemeOnStartup(it) }))
     if (!dynamic || !nativeDynamicColors)
         add(SettingsRow.Action("palette_picker", Res.string.m6_palette, { navigate("settings/appearance/palette_picker") }))
     add(SettingsRow.Action("app_icon", Res.string.m6_app_icon, { navigate("settings/appearance/icon") }))
@@ -59,7 +62,9 @@ fun appearanceThemeSettingsRows(
         enabled = blur && preferences[BackdropEnabledKey, true]))
     add(SettingsRow.Action("font_preference", Res.string.m6_font, chooseFont))
     val font = RestartScopedSettings.resolveFontPreference(preferences[FontPreferenceKey], preferences[UseSystemFontKey])
-    if (font == AppFontPreference.CUSTOM) add(SettingsRow.Action("custom_font", Res.string.m6_custom_font, pickCustomFont))
+    if (font == AppFontPreference.CUSTOM) add(SettingsRow.Action("custom_font", Res.string.m6_custom_font, pickCustomFont,
+        enabled = customFontPickerSupported,
+        description = Res.string.m6_custom_font_picker_unavailable.takeUnless { customFontPickerSupported }))
 }
 
 fun appearanceInterfaceSettingsRows(

@@ -35,11 +35,6 @@ fun StorageSettings(
     var clearing by remember { mutableStateOf<SettingsCacheKind?>(null) }
     var picking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val trimmerAvailable = preferences[MaxImageCacheSizeKey, 512] != 0 || preferences[MaxSongCacheSizeKey, 1024] != 0
-    LaunchedEffect(trimmerAvailable, preferences[SmartTrimmerKey]) {
-        if (!trimmerAvailable && preferences[SmartTrimmerKey, false])
-            controller.edit { if (this[MaxImageCacheSizeKey, 512] == 0 && this[MaxSongCacheSizeKey, 1024] == 0) this[SmartTrimmerKey] = false }
-    }
     Column(modifier) {
         currentStorageLabel?.let { Text(it) }
         usedBytes.forEach { (kind, bytes) ->
@@ -77,8 +72,7 @@ fun storageSettingsRows(
 ): List<SettingsRow> = buildList {
     fun capacity(anchor: String, title: StringResource, key: IntPreferenceKey, default: Int, canvas: Boolean = false) {
         add(SettingsRow.IntChoice(anchor, title, key, default, cacheCapacityOptions(canvas), write = { selected ->
-            this[key] = selected
-            if (this[MaxSongCacheSizeKey, 1024] == 0 && this[MaxImageCacheSizeKey, 512] == 0) this[SmartTrimmerKey] = false
+            setCacheCapacity(key, selected)
         }))
     }
     add(SettingsRow.Action("storage_folder", Res.string.m6_storage_folder, pickFolder, enabled = !storageBusy))
@@ -90,7 +84,9 @@ fun storageSettingsRows(
     add(SettingsRow.Action("clear_canvas_cache", Res.string.m6_clear_canvas_cache, { clear(SettingsCacheKind.CANVAS) }))
     add(SettingsRow.Action("clear_lyrics_cache", Res.string.m6_clear_lyrics_cache, { clear(SettingsCacheKind.LYRICS) }))
     add(SettingsRow.Toggle("smart_trimmer", Res.string.m6_smart_trimmer, SmartTrimmerKey, false,
-        enabled = preferences[MaxSongCacheSizeKey, 1024] != 0 || preferences[MaxImageCacheSizeKey, 512] != 0))
+        enabled = preferences.smartTrimmerAvailable(),
+        description = Res.string.m6_caches_required.takeUnless { preferences.smartTrimmerAvailable() },
+        write = { setSmartTrimmer(it) }))
 }
 
 private fun SettingsCacheKind.title(): StringResource = when (this) {

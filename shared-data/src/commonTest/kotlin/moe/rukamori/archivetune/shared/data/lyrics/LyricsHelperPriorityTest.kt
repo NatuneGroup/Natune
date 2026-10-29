@@ -104,9 +104,8 @@ class LyricsHelperPriorityTest {
         }
 
     @Test
-    fun prioritizedSweepSkipsDisabledWordCapableProviders() =
+    fun prioritizedSweepMatchesAndroidAndIgnoresFallbackSwitches() =
         runTest {
-            // Deliberate deviation: Android sweeps all three regardless of the per-provider switch.
             val disabled = answering("BetterLyrics", WORD_SYNCED_TTML)
             val helper =
                 helperOf(
@@ -116,9 +115,34 @@ class LyricsHelperPriorityTest {
                     isEnabled = { it != "BetterLyrics" },
                 )
 
-            assertEquals("YouLyPlus", helper.getLyricsWithProvider(request()).providerName)
-            assertEquals(0, disabled.calls)
+            assertEquals("BetterLyrics", helper.getLyricsWithProvider(request()).providerName)
+            assertEquals(1, disabled.calls)
         }
+
+    @Test
+    fun prioritizedSweepNeverCallsAProviderUnavailableOnThisHost() = runTest {
+        val unavailable = answering("BetterLyrics", WORD_SYNCED_TTML)
+        val helper = helperOf(
+            listOf(unavailable, answering("YouLyPlus", WORD_SYNCED_TTML)), backgroundScope,
+            prioritizeWordSynced = true, isAvailable = { it != "BetterLyrics" },
+        )
+        assertEquals("YouLyPlus", helper.getLyricsWithProvider(request()).providerName)
+        assertEquals(0, unavailable.calls)
+    }
+
+    @Test
+    fun failedSweepStillHonorsSwitchesForOrdinaryAndManualFallback() = runTest {
+        val disabled = answering("BetterLyrics", PLAIN_TEXT)
+        val enabled = answering("LrcLib", PLAIN_TEXT)
+        val helper = helperOf(listOf(disabled, enabled), backgroundScope,
+            prioritizeWordSynced = true, isEnabled = { it != "BetterLyrics" })
+        assertEquals("LrcLib", helper.getLyricsWithProvider(request()).providerName)
+        assertEquals(1, disabled.calls) // Preliminary sweep only.
+        val manualProviders = mutableListOf<String>()
+        helper.getAllLyrics(request("manual")) { manualProviders += it.providerName }
+        assertEquals(listOf("LrcLib"), manualProviders)
+        assertEquals(1, disabled.calls)
+    }
 
     @Test
     fun preferredProviderOnlyUsesTheFirstEnabledProviderInListOrder() =

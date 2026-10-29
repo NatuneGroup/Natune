@@ -110,8 +110,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.CustomThemeColorKey
-import moe.rukamori.archivetune.constants.DynamicThemeKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.svg.DynamicSVGImage
 import moe.rukamori.archivetune.ui.svg.PALETTE
@@ -121,7 +119,8 @@ import moe.rukamori.archivetune.ui.theme.ThemeSeedPalette
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPaletteCodec
 import moe.rukamori.archivetune.ui.theme.palette.TonalPalettes
 import moe.rukamori.archivetune.ui.utils.backToMain
-import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.customThemeColorState
 import androidx.compose.foundation.layout.asPaddingValues
 
 private enum class SeedRole {
@@ -947,10 +946,7 @@ fun PalettePickerScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val (customThemeColor, onCustomThemeColorChange) =
-        rememberPreference(
-            CustomThemeColorKey,
-            defaultValue = ThemePalettes.Default.id,
-        )
+        rememberPreferenceSnapshot().customThemeColorState(ThemePalettes.Default.id)
 
     val selectedPalette =
         remember(customThemeColor) {
@@ -1070,15 +1066,7 @@ fun ThemeCreatorScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
 
     val (customThemeValue, setCustomThemeValue) =
-        rememberPreference(
-            key = CustomThemeColorKey,
-            defaultValue = ThemePalettes.Default.id,
-        )
-    val (_, setDynamicThemeEnabled) =
-        rememberPreference(
-            key = DynamicThemeKey,
-            defaultValue = true,
-        )
+        rememberPreferenceSnapshot().customThemeColorState(ThemePalettes.Default.id)
 
     val seedFromPrefs =
         remember(customThemeValue) {
@@ -1109,7 +1097,6 @@ fun ThemeCreatorScreen(navController: NavController) {
     var importErrorText by rememberSaveable { mutableStateOf("") }
 
     fun applyThemeToPrefs() {
-        setDynamicThemeEnabled(false)
         setCustomThemeValue(ThemeSeedPaletteCodec.encodeForPreference(currentPalette, themeName.takeIf { it.isNotBlank() }))
         Toast.makeText(context, context.getString(R.string.theme_applied), Toast.LENGTH_SHORT).show()
     }

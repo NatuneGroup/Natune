@@ -7,4 +7,22 @@
     <string name="m6_apple_music_palette">Apple Music default accent</string>
     <string name="m6_apple_music_independent_desc">Changes only this part of the interface, not the other Apple Music options.</string>
     <string name="m6_apple_music_palette_desc">Default accent only. Wallpaper, artwork and custom palettes still take priority.</string>
+    <string name="m6_palette_sources_exclusive">Dynamic, random-on-startup and fixed palettes are alternative color sources. Selecting one turns the others off.</string>
+    <string name="m6_processing_bypassed_bit_perfect">Unavailable while bit-perfect USB output is selected or its sink is still active. Your saved choice is kept.</string>
+    <string name="m6_processing_unavailable_offload">Turn off audio offload to use silence skipping.</string>
+    <string name="m6_offload_unavailable_authenticity">Suspected-upscale rejection needs decoded PCM. Turn it off before enabling audio offload.</string>
+    <string name="m6_offload_exclusions">Enabling offload turns off crossfade, automix, USB output modes and DSP engines.</string>
+    <string name="m6_transition_exclusions">Enabling this turns off the other transition mode, audio offload and USB output modes.</string>
+    <string name="m6_usb_exclusions">Enabling this turns off the other USB mode, audio offload, crossfade and automix.</string>
+    <string name="m6_video_required">Enable video playback to use picture-in-picture.</string>
+    <string name="m6_crossfade_required">Enable crossfade to use this option.</string>
+    <string name="m6_caches_required">Enable the song or image cache to use smart trimming. Downloaded songs are separate.</string>
+    <string name="m6_custom_lyrics_background">Lyrics use the custom player background. Choose another player background to change this option.</string>
+    <string name="m6_liquid_glass_required">Enable Liquid Glass effects and restart to use this material.</string>
+    <string name="m6_material_unsupported">This material requires supported backdrop blur (Android 12 or newer on Android).</string>
+    <string name="m6_blur_disabled">Enable blur effects to use this material. Your saved choice is kept.</string>
+    <string name="m6_word_sync_fallback">First tries BetterLyrics, YouLyPlus and Unison in a fixed order, regardless of their switches. Provider switches and priority below still control fallback and manual provider search.</string>
+    <string name="m6_proxy_rotation_precedence">Active IP rotation takes priority over the manual proxy for YouTube API requests. Other clients keep the manual proxy; stream bypass applies only to media streams.</string>
+    <string name="m6_lyrics_tuning_unavailable">These V2 effects are currently applied only by the Android renderer. This host keeps your saved tuning but does not apply it yet.</string>
+    <string name="m6_custom_font_picker_unavailable">Custom-font picking is not available on this host. Your saved font selection is kept.</string>
 </resources>

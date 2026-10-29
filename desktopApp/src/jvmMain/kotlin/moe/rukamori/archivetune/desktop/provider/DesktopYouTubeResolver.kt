@@ -20,9 +20,8 @@ import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.TerminalPlaybackAuthentication
 import moe.rukamori.archivetune.shared.domain.settings.AllowAgeRestrictedKey
 import moe.rukamori.archivetune.shared.domain.settings.AudioQualityKey
-import moe.rukamori.archivetune.shared.domain.settings.AutoChoosePlaybackClientKey
-import moe.rukamori.archivetune.shared.domain.settings.PlayerStreamClientKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.manualPlaybackClient
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.source.YouTubeFallbackTier
@@ -249,8 +248,7 @@ internal class DesktopYouTubeResolver(
     }
 
     private fun preferredClient(snapshot: PreferenceSnapshot?): DesktopYouTubeClient {
-        if (snapshot?.get(AutoChoosePlaybackClientKey) ?: true) return DesktopYouTubeClients.MAIN_CLIENT
-        return when (snapshot?.get(PlayerStreamClientKey)?.uppercase(Locale.US)) {
+        return when (snapshot?.manualPlaybackClient()?.uppercase(Locale.US)) {
             "ANDROID_VR" -> DesktopYouTubeClients.ANDROID_VR_1_65_10
             "IOS" -> DesktopYouTubeClients.IOS
             "TVHTML5" -> DesktopYouTubeClients.TVHTML5

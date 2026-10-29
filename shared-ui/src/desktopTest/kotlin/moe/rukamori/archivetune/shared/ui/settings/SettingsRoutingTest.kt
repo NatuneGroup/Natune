@@ -22,11 +22,16 @@ class SettingsRoutingTest {
         assertFalse(japanese(true, true).enabled)
     }
 
-    @Test fun wordSyncDisablesProviderControlsWithoutChangingPreferences() {
+    @Test fun wordSyncKeepsFallbackAndManualProviderControlsUsable() {
         val prefs = PreferenceSnapshot.of(PrioritizeWordSyncedLyricsKey to true, EnableLrcLibKey to false)
         val rows = lyricsProviderSettingsRows(prefs, {}, {}, {})
         assertTrue(rows.single { it.anchor == "prioritize_word_synced_lyrics" }.enabled)
-        assertTrue(rows.filterNot { it.anchor == "prioritize_word_synced_lyrics" }.none { it.enabled })
+        assertTrue(rows.all { it.enabled })
+        assertNotNull(rows.single { it.anchor == "prioritize_word_synced_lyrics" }.description)
         assertFalse(prefs[EnableLrcLibKey, true])
+    }
+
+    @Test fun legacyV2SearchAnchorOpensTheCanonicalRendererChoice() {
+        assertEquals("settings/lyrics?scrollTo=lyrics_mode", settingsSearchRoute("lyrics", "use_lyrics_v2"))
     }
 }
