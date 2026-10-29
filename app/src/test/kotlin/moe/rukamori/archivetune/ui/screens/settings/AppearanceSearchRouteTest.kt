@@ -44,4 +44,13 @@ class AppearanceSearchRouteTest {
             searchableSettingsRoute("appearance", "show_home_category_chips"),
         )
     }
+
+    @Test
+    fun `liquid glass tuning rows open the customisation page at their anchor`() {
+        assertEquals(
+            "settings/appearance/liquid_glass?scrollTo=glass_blur_radius",
+            searchableSettingsRoute(LIQUID_GLASS_SETTINGS_SEARCH_KEY, "glass_blur_radius"),
+        )
+        assertEquals(LIQUID_GLASS_SETTINGS_ROUTE, searchableSettingsRoute(LIQUID_GLASS_SETTINGS_SEARCH_KEY, null))
+    }
 }
