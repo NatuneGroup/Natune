@@ -85,8 +85,18 @@ internal fun PlayerIcon(
         containerColor != null -> MaterialTheme.colorScheme.onPrimaryContainer
         else -> LocalContentColor.current
     }
+    val kind = symbol.controlKind()
+    val environment = LocalPlayerControlMotion.current
+    val motion = kind?.let { controlKind ->
+        rememberPlayerControlMotion(controlKind, when (controlKind) {
+            PlayerControlKind.PlayPause -> symbol
+            PlayerControlKind.Repeat -> if (selected == false) PlayerRepeat.OFF else environment.repeat
+            PlayerControlKind.Shuffle, PlayerControlKind.Like -> selected
+            PlayerControlKind.Next, PlayerControlKind.Previous -> null
+        }, environment.active)
+    }
     IconButton(
-        onClick = onClick, enabled = enabled,
+        onClick = if (motion == null) onClick else { { motion.tap(); onClick() } }, enabled = enabled,
         modifier = modifier.size(width ?: size, size).then(
             if (containerColor != null) Modifier.background(containerColor, shape) else Modifier,
         ).semantics {
@@ -95,84 +105,104 @@ internal fun PlayerIcon(
             if (stateLabel != null) stateDescription = stateLabel
         },
     ) {
-        Canvas(Modifier.size(iconSize)) {
-            val c = color.copy(alpha = if (enabled) 1f else .38f)
-            val w = this.size.width
-            val h = this.size.height
-            val stroke = Stroke(w * .085f, cap = StrokeCap.Round)
-            fun line(x: Float, y: Float, x2: Float, y2: Float) =
-                drawLine(c, Offset(w * x, h * y), Offset(w * x2, h * y2), w * .085f, StrokeCap.Round)
-            when (symbol) {
-                PlayerSymbol.PLAY, PlayerSymbol.NEXT, PlayerSymbol.PREVIOUS -> {
-                    val reverse = symbol == PlayerSymbol.PREVIOUS
-                    val path = Path().apply {
-                        if (reverse) { moveTo(w * .7f, h * .2f); lineTo(w * .25f, h * .5f); lineTo(w * .7f, h * .8f) }
-                        else { moveTo(w * .3f, h * .2f); lineTo(w * .8f, h * .5f); lineTo(w * .3f, h * .8f) }
-                        close()
-                    }
-                    drawPath(path, c)
-                    if (symbol == PlayerSymbol.NEXT) line(.87f, .2f, .87f, .8f)
-                    if (reverse) line(.15f, .2f, .15f, .8f)
-                }
-                PlayerSymbol.PAUSE -> { line(.33f, .2f, .33f, .8f); line(.67f, .2f, .67f, .8f) }
-                PlayerSymbol.MORE -> for (x in listOf(.2f, .5f, .8f)) drawCircle(c, w * .06f, Offset(w * x, h * .5f))
-                PlayerSymbol.HEART -> {
-                    val path = Path().apply {
-                        moveTo(w * .5f, h * .85f)
-                        cubicTo(-w * .2f, h * .4f, w * .1f, -h * .1f, w * .5f, h * .3f)
-                        cubicTo(w * .9f, -h * .1f, w * 1.2f, h * .4f, w * .5f, h * .85f)
-                    }
-                    drawPath(path, c, style = if (selected == true) androidx.compose.ui.graphics.drawscope.Fill else stroke)
-                }
-                PlayerSymbol.DOWN -> { line(.2f, .35f, .5f, .65f); line(.5f, .65f, .8f, .35f) }
-                PlayerSymbol.BACK -> { line(.65f, .2f, .35f, .5f); line(.35f, .5f, .65f, .8f) }
-                PlayerSymbol.SHUFFLE -> { line(.15f, .2f, .85f, .8f); line(.15f, .8f, .85f, .2f); line(.65f, .2f, .85f, .2f) }
-                PlayerSymbol.REPEAT, PlayerSymbol.REPLAY -> {
-                    drawArc(c, 40f, 290f, false, Offset(w * .15f, h * .15f), Size(w * .7f, h * .7f), style = stroke)
-                    line(.8f, .15f, .8f, .4f)
-                }
-                PlayerSymbol.SHARE -> { line(.2f, .5f, .8f, .2f); line(.2f, .5f, .8f, .8f)
-                    for ((x,y) in listOf(.2f to .5f, .8f to .2f, .8f to .8f)) drawCircle(c, w * .1f, Offset(w*x,h*y)) }
-                PlayerSymbol.SLEEP -> { drawCircle(c, w * .32f, center = Offset(w*.5f,h*.5f), style=stroke); line(.5f,.3f,.5f,.5f); line(.5f,.5f,.65f,.6f) }
-                PlayerSymbol.EXPAND -> { line(.2f,.4f,.2f,.2f); line(.2f,.2f,.4f,.2f); line(.8f,.6f,.8f,.8f); line(.8f,.8f,.6f,.8f) }
-                PlayerSymbol.LYRICS, PlayerSymbol.QUEUE -> for (y in listOf(.25f,.5f,.75f)) line(.2f,y,if(symbol==PlayerSymbol.LYRICS && y==.75f) .6f else .8f,y)
-                PlayerSymbol.OUTPUT -> {
-                    drawRoundRect(c,Offset(w*.18f,h*.3f),Size(w*.64f,h*.36f),CornerRadius(w*.04f),style=stroke)
-                    drawArc(c,215f,110f,true,Offset(w*.28f,h*.62f),Size(w*.44f,h*.44f),style=Stroke(w*.07f,cap=StrokeCap.Round))
-                }
-                PlayerSymbol.STAR -> {
-                    val cx=w*.5f; val cy=h*.52f; val outer=w*.4f; val inner=outer*.42f
-                    val path=Path()
-                    for(i in 0 until 10) {
-                        val ang=(-90.0+i*36.0)*PI/180.0
-                        val rad=if(i%2==0) outer else inner
-                        val px=cx+(cos(ang)*rad).toFloat(); val py=cy+(sin(ang)*rad).toFloat()
-                        if(i==0) path.moveTo(px,py) else path.lineTo(px,py)
-                    }
-                    path.close()
-                    drawPath(path,c,style=if(selected==true) androidx.compose.ui.graphics.drawscope.Fill else stroke)
-                }
-                PlayerSymbol.VOLUME_LOW, PlayerSymbol.VOLUME_UP -> {
-                    val cone=Path().apply {
-                        moveTo(w*.14f,h*.4f); lineTo(w*.38f,h*.4f); lineTo(w*.66f,h*.16f)
-                        lineTo(w*.66f,h*.84f); lineTo(w*.38f,h*.6f); lineTo(w*.14f,h*.6f); close()
-                    }
-                    drawPath(cone,c)
-                    drawArc(c,-70f,140f,true,Offset(w*.55f,h*.32f),Size(w*.28f,h*.36f),style=stroke)
-                    if(symbol==PlayerSymbol.VOLUME_UP)
-                        drawArc(c,-70f,140f,true,Offset(w*.62f,h*.2f),Size(w*.34f,h*.6f),style=stroke)
-                }
-                PlayerSymbol.ADD -> { line(.28f,.5f,.72f,.5f); line(.5f,.28f,.5f,.72f) }
-                PlayerSymbol.BEDTIME -> {
-                    val crescent=Path().apply {
-                        addOval(androidx.compose.ui.geometry.Rect(Offset(w*.14f,h*.14f),Size(w*.68f,h*.68f)))
-                        addOval(androidx.compose.ui.geometry.Rect(Offset(w*.38f,h*.06f),Size(w*.62f,h*.62f)))
-                        fillType=PathFillType.EvenOdd
-                    }
-                    drawPath(crescent,c)
-                }
-                PlayerSymbol.CLOSE_X -> { line(.26f,.26f,.74f,.74f); line(.74f,.26f,.26f,.74f) }
+        val glyphModifier = Modifier.size(iconSize).then(motion?.modifier ?: Modifier)
+        if (kind == PlayerControlKind.PlayPause) {
+            PlayerControlCrossfade(symbol, environment.active, glyphModifier) {
+                PlayerGlyph(it, color, enabled, selected, Modifier.size(iconSize))
             }
+        } else PlayerGlyph(symbol, color, enabled, selected, glyphModifier)
+    }
+}
+
+private fun PlayerSymbol.controlKind(): PlayerControlKind? = when (this) {
+    PlayerSymbol.PLAY, PlayerSymbol.PAUSE, PlayerSymbol.REPLAY -> PlayerControlKind.PlayPause
+    PlayerSymbol.NEXT -> PlayerControlKind.Next
+    PlayerSymbol.PREVIOUS -> PlayerControlKind.Previous
+    PlayerSymbol.SHUFFLE -> PlayerControlKind.Shuffle
+    PlayerSymbol.REPEAT -> PlayerControlKind.Repeat
+    PlayerSymbol.HEART -> PlayerControlKind.Like
+    else -> null
+}
+
+@Composable
+private fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, selected: Boolean?, modifier: Modifier) {
+    Canvas(modifier) {
+        val c = color.copy(alpha = if (enabled) 1f else .38f)
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = Stroke(w * .085f, cap = StrokeCap.Round)
+        fun line(x: Float, y: Float, x2: Float, y2: Float) =
+            drawLine(c, Offset(w * x, h * y), Offset(w * x2, h * y2), w * .085f, StrokeCap.Round)
+        when (symbol) {
+            PlayerSymbol.PLAY, PlayerSymbol.NEXT, PlayerSymbol.PREVIOUS -> {
+                val reverse = symbol == PlayerSymbol.PREVIOUS
+                val path = Path().apply {
+                    if (reverse) { moveTo(w * .7f, h * .2f); lineTo(w * .25f, h * .5f); lineTo(w * .7f, h * .8f) }
+                    else { moveTo(w * .3f, h * .2f); lineTo(w * .8f, h * .5f); lineTo(w * .3f, h * .8f) }
+                    close()
+                }
+                drawPath(path, c)
+                if (symbol == PlayerSymbol.NEXT) line(.87f, .2f, .87f, .8f)
+                if (reverse) line(.15f, .2f, .15f, .8f)
+            }
+            PlayerSymbol.PAUSE -> { line(.33f, .2f, .33f, .8f); line(.67f, .2f, .67f, .8f) }
+            PlayerSymbol.MORE -> for (x in listOf(.2f, .5f, .8f)) drawCircle(c, w * .06f, Offset(w * x, h * .5f))
+            PlayerSymbol.HEART -> {
+                val path = Path().apply {
+                    moveTo(w * .5f, h * .85f)
+                    cubicTo(-w * .2f, h * .4f, w * .1f, -h * .1f, w * .5f, h * .3f)
+                    cubicTo(w * .9f, -h * .1f, w * 1.2f, h * .4f, w * .5f, h * .85f)
+                }
+                drawPath(path, c, style = if (selected == true) androidx.compose.ui.graphics.drawscope.Fill else stroke)
+            }
+            PlayerSymbol.DOWN -> { line(.2f, .35f, .5f, .65f); line(.5f, .65f, .8f, .35f) }
+            PlayerSymbol.BACK -> { line(.65f, .2f, .35f, .5f); line(.35f, .5f, .65f, .8f) }
+            PlayerSymbol.SHUFFLE -> { line(.15f, .2f, .85f, .8f); line(.15f, .8f, .85f, .2f); line(.65f, .2f, .85f, .2f) }
+            PlayerSymbol.REPEAT, PlayerSymbol.REPLAY -> {
+                drawArc(c, 40f, 290f, false, Offset(w * .15f, h * .15f), Size(w * .7f, h * .7f), style = stroke)
+                line(.8f, .15f, .8f, .4f)
+            }
+            PlayerSymbol.SHARE -> { line(.2f, .5f, .8f, .2f); line(.2f, .5f, .8f, .8f)
+                for ((x,y) in listOf(.2f to .5f, .8f to .2f, .8f to .8f)) drawCircle(c, w * .1f, Offset(w*x,h*y)) }
+            PlayerSymbol.SLEEP -> { drawCircle(c, w * .32f, center = Offset(w*.5f,h*.5f), style=stroke); line(.5f,.3f,.5f,.5f); line(.5f,.5f,.65f,.6f) }
+            PlayerSymbol.EXPAND -> { line(.2f,.4f,.2f,.2f); line(.2f,.2f,.4f,.2f); line(.8f,.6f,.8f,.8f); line(.8f,.8f,.6f,.8f) }
+            PlayerSymbol.LYRICS, PlayerSymbol.QUEUE -> for (y in listOf(.25f,.5f,.75f)) line(.2f,y,if(symbol==PlayerSymbol.LYRICS && y==.75f) .6f else .8f,y)
+            PlayerSymbol.OUTPUT -> {
+                drawRoundRect(c,Offset(w*.18f,h*.3f),Size(w*.64f,h*.36f),CornerRadius(w*.04f),style=stroke)
+                drawArc(c,215f,110f,true,Offset(w*.28f,h*.62f),Size(w*.44f,h*.44f),style=Stroke(w*.07f,cap=StrokeCap.Round))
+            }
+            PlayerSymbol.STAR -> {
+                val cx=w*.5f; val cy=h*.52f; val outer=w*.4f; val inner=outer*.42f
+                val path=Path()
+                for(i in 0 until 10) {
+                    val ang=(-90.0+i*36.0)*PI/180.0
+                    val rad=if(i%2==0) outer else inner
+                    val px=cx+(cos(ang)*rad).toFloat(); val py=cy+(sin(ang)*rad).toFloat()
+                    if(i==0) path.moveTo(px,py) else path.lineTo(px,py)
+                }
+                path.close()
+                drawPath(path,c,style=if(selected==true) androidx.compose.ui.graphics.drawscope.Fill else stroke)
+            }
+            PlayerSymbol.VOLUME_LOW, PlayerSymbol.VOLUME_UP -> {
+                val cone=Path().apply {
+                    moveTo(w*.14f,h*.4f); lineTo(w*.38f,h*.4f); lineTo(w*.66f,h*.16f)
+                    lineTo(w*.66f,h*.84f); lineTo(w*.38f,h*.6f); lineTo(w*.14f,h*.6f); close()
+                }
+                drawPath(cone,c)
+                drawArc(c,-70f,140f,true,Offset(w*.55f,h*.32f),Size(w*.28f,h*.36f),style=stroke)
+                if(symbol==PlayerSymbol.VOLUME_UP)
+                    drawArc(c,-70f,140f,true,Offset(w*.62f,h*.2f),Size(w*.34f,h*.6f),style=stroke)
+            }
+            PlayerSymbol.ADD -> { line(.28f,.5f,.72f,.5f); line(.5f,.28f,.5f,.72f) }
+            PlayerSymbol.BEDTIME -> {
+                val crescent=Path().apply {
+                    addOval(androidx.compose.ui.geometry.Rect(Offset(w*.14f,h*.14f),Size(w*.68f,h*.68f)))
+                    addOval(androidx.compose.ui.geometry.Rect(Offset(w*.38f,h*.06f),Size(w*.62f,h*.62f)))
+                    fillType=PathFillType.EvenOdd
+                }
+                drawPath(crescent,c)
+            }
+            PlayerSymbol.CLOSE_X -> { line(.26f,.26f,.74f,.74f); line(.74f,.26f,.26f,.74f) }
         }
     }
 }
