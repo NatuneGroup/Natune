@@ -607,8 +607,6 @@ class TidalInstanceResolver(
             }.distinctBy { it.trackId }
         }
 
-    internal fun providerTrackOf(track: MatchedTrack): ProviderTrack = track.toProviderTrack()
-
     suspend fun invalidate(mediaId: String) {
         val prefix = "$mediaId::"
         stateMutex.withLock {
