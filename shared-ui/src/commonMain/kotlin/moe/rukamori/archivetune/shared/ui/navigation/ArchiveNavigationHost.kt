@@ -168,6 +168,12 @@ fun ArchiveNavigationHost(
                 LocalSongsScreen(binding.state, LocalSongsActions(back, a.query, a.sort, a.requestPermission, a.scan,
                     a.minimumDuration, a.pickFolder, a.removeFolder, a.play, a.retry, a.more), artwork)
             }
+            is ArchiveGraphPage.Uploads -> {
+                require(route.destination == ArchiveDestination.UPLOADED_SONGS)
+                val a = binding.actions
+                UploadedSongsScreen(binding.state,
+                    UploadsActions(back, a.upload, a.delete, a.play, a.retry, a.loadMore), artwork)
+            }
             is ArchiveGraphPage.Downloads -> {
                 require(route.destination == ArchiveDestination.DOWNLOADS)
                 val a = binding.actions
@@ -376,6 +382,7 @@ private fun ArchiveEntryLinks(navigation: ShellNavigation, myTopSize: Int? = nul
                 "charts_screen" to Res.string.m4_charts, "new_release" to Res.string.m4_new_releases,
                 "podcasts" to Res.string.m4_podcasts, "news" to Res.string.m4_news,
                 "local_songs" to Res.string.m4_local_songs, "auto_playlist/downloaded" to Res.string.m4_downloads,
+                "uploaded_songs" to Res.string.uploads_title,
                 "history" to Res.string.m4_history, "library/playlists" to Res.string.m4_playlists, myTop,
                 "library/tags" to Res.string.m4_manage_tags, "stats" to Res.string.m4_statistics,
                 "year_in_music" to Res.string.m4_year_in_music, "listen_together" to Res.string.m4_listen_together,

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The signed-in account's YouTube Music uploads: the shelf, the transfers and the confirmed delete. -->
+    <string name="uploads_title">Uploads</string>
+    <string name="uploads_on_account">On your YouTube Music account</string>
+    <string name="uploads_empty">Songs you upload to YouTube Music appear here.</string>
+    <string name="uploads_upload_file">Upload file</string>
+    <string name="uploads_sign_in_required">Sign in to YouTube Music to see your uploads.</string>
+    <string name="uploads_unavailable_platform">Uploads are not available on this device yet.</string>
+    <string name="uploads_task_queued">Queued</string>
+    <string name="uploads_task_uploading">Uploading… %1$d%%</string>
+    <string name="uploads_task_processing">Processing on YouTube Music…</string>
+    <string name="uploads_task_accepted">Accepted — the song appears once processing finishes.</string>
+    <string name="uploads_task_already">Already in your library.</string>
+    <string name="uploads_failure_unsupported">This file type is not supported. Choose an MP3, M4A, FLAC, OGG or WMA file.</string>
+    <string name="uploads_failure_empty">The file is empty.</string>
+    <string name="uploads_failure_too_large">The file is too large. The limit is 300 MB.</string>
+    <string name="uploads_failure_http">YouTube Music refused the request. Try again later.</string>
+    <string name="uploads_failure_read">The file could not be read.</string>
+    <string name="uploads_failure_delete">The upload could not be deleted. Try again.</string>
+    <string name="uploads_failure_unknown">Something went wrong. Try again.</string>
+    <string name="uploads_delete">Delete upload</string>
+    <string name="uploads_delete_confirm">Delete</string>
+    <string name="uploads_delete_title">Delete this upload?</string>
+    <string name="uploads_delete_message">%1$s will be removed from your YouTube Music library. This cannot be undone.</string>
+    <string name="uploads_load_more">Load more</string>
+</resources>
