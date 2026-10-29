@@ -167,9 +167,8 @@ internal object PortableStateMigrations {
                     "`albumArtistName` TEXT, `albumYear` INTEGER, `durationMs` INTEGER, `year` INTEGER, " +
                     "`trackNumber` INTEGER, `artworkUri` TEXT, `lyricsText` TEXT, PRIMARY KEY(`id`))",
             )
-            connection.exec(
-                "CREATE INDEX IF NOT EXISTS `index_portable_local_track_path` ON `portable_local_track` (`path`)",
-            )
+            // The entity declares no index and Room compares indices, so none is created here. Scans read every
+            // row through tracks(), so no lookup depends on one.
             connection.exec(
                 "CREATE TABLE IF NOT EXISTS `portable_search_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT " +
                     "NOT NULL, `query` TEXT NOT NULL)",
