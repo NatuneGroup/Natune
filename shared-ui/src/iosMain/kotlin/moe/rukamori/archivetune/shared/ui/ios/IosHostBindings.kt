@@ -35,7 +35,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
@@ -122,6 +121,12 @@ internal fun iosHostBindings(
     val itemMenu = IosItemMenuState()
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
+    // Back requests a page answers itself, such as a chat's back port. The root pops the stack for them, as the gesture does.
+    val backChannel = Channel<Unit>(capacity = BACK_REQUEST_CAPACITY)
+    // Built once per bindings value. A page keys its remembered owner on these, so a fresh lambda per page call would
+    // rebuild the owner on every root recomposition.
+    val openOwnRoute: (String) -> Unit = { target -> ownRoutes.trySend(target) }
+    val goBack: () -> Unit = { backChannel.trySend(Unit) }
     return ArchiveTuneHostBindings(
         queue = graph.queue,
         settings = graph.settings,
@@ -129,8 +134,8 @@ internal fun iosHostBindings(
         // `archivetune://` links the Swift app session hands in merge with the host's own route opens. The system back
         // gesture is handled by the shell itself.
         routes = merge(iosLaunchRoutes(host, graph), ownRoutes.receiveAsFlow()),
-        backRequests = emptyFlow(),
-        page = { route -> iosGraphPage(graph, itemMenu, recognition, route) { target -> ownRoutes.trySend(target) } },
+        backRequests = backChannel.receiveAsFlow(),
+        page = { route -> iosGraphPage(graph, host, itemMenu, recognition, route, openOwnRoute, goBack) },
         artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         formatNewsDate = ::iosDiagnosticTime,
@@ -157,16 +162,18 @@ internal fun iosHostBindings(
 }
 
 /**
- * The Library, the local history, the playlist, the statistics and the year-in-music routes the owners answer. Every other
- * destination keeps the host boundary. The key keeps each route's own page state apart.
+ * The Library, the local history, the playlist, the statistics, the year-in-music and the Listen Together routes the
+ * owners answer. Every other destination keeps the host boundary. The key keeps each route's own page state apart.
  */
 @Composable
 private fun iosGraphPage(
     graph: IosSessionGraph,
+    host: IosHost,
     menu: IosItemMenuState,
     recognition: IosRecognitionMount,
     route: ArchiveRoute,
     openRoute: (String) -> Unit,
+    back: () -> Unit,
 ): ArchiveGraphPage =
     key(route.value) {
         when (route.destination) {
@@ -185,6 +192,8 @@ private fun iosGraphPage(
             ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> iosRecognitionDetailsPage(recognition, route)
             ArchiveDestination.STATISTICS -> iosStatisticsPage(graph, openRoute)
             ArchiveDestination.RECAP -> iosRecapPage(graph, route, openRoute)
+            ArchiveDestination.LISTEN_TOGETHER -> iosListenTogetherPage(graph, host, back, openRoute)
+            ArchiveDestination.LISTEN_TOGETHER_CHAT -> iosCommentTogetherPage(graph, host, back)
             else -> ArchiveGraphPage.Host
         }
     }
@@ -279,6 +288,9 @@ private const val NO_LYRICS_SESSION = "ios-no-lyrics"
 
 /** Routes this host opens itself. The bound keeps a burst of taps from growing memory, and the root drains them promptly. */
 private const val OWN_ROUTE_CAPACITY = 4
+
+/** Back requests a page sends itself, bounded the same way as the routes; the root drains them as it does the gesture. */
+private const val BACK_REQUEST_CAPACITY = 4
 
 /** Milliseconds in one civil day. The range labels count civil days from the device clock. */
 private const val DAY_MS = 86_400_000L
