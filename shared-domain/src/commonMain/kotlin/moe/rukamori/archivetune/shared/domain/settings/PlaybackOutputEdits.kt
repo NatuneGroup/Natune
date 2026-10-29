@@ -1,8 +1,13 @@
 package moe.rukamori.archivetune.shared.domain.settings
 
+val playbackOutputPreferenceKeys = setOf(CrossfadeEnabledKey, AutomixEnabledKey, AudioOffload, BitPerfectUsbOutputKey, UsbExclusiveAudioKey)
+val audioProcessingPreferenceKeys = setOf(TryptifyAudioProcessingKey, LastwaveAudioProcessingKey, FloatDspEnabledKey)
+
 /** Baseline RestartPreferenceActions: output choices and their exclusions commit together. */
 fun PreferenceEditor.setPlaybackOutputPreference(key: BooleanPreferenceKey, enabled: Boolean) {
-    require(key in setOf(CrossfadeEnabledKey, AutomixEnabledKey, AudioOffload, BitPerfectUsbOutputKey, UsbExclusiveAudioKey))
+    require(key in playbackOutputPreferenceKeys)
+    // Also guard a stale dialog/search action. Never silently turn off the user's rejection policy.
+    if (key == AudioOffload && enabled && this[RejectSuspectedUpscaledAudioKey, false]) return
     this[key] = enabled
     if (!enabled) return
     when (key) {
@@ -30,6 +35,33 @@ fun PreferenceEditor.setPlaybackOutputPreference(key: BooleanPreferenceKey, enab
         }
     }
 }
+
+/** Live DSP engines share one atomic owner with direct rows and search. Preset contents are untouched. */
+fun PreferenceEditor.setAudioProcessingPreference(key: BooleanPreferenceKey, enabled: Boolean) {
+    require(key in audioProcessingPreferenceKeys)
+    if (enabled && snapshot().bitPerfectOutputSelected()) return
+    this[key] = enabled
+    if (enabled) {
+        this[AudioOffload] = false
+        if (key == TryptifyAudioProcessingKey) this[LastwaveAudioProcessingKey] = false
+        if (key == LastwaveAudioProcessingKey) this[TryptifyAudioProcessingKey] = false
+    }
+}
+
+fun PreferenceEditor.setAuthenticityRejection(enabled: Boolean) {
+    this[RejectSuspectedUpscaledAudioKey] = enabled
+    if (enabled) this[AudioOffload] = false
+}
+
+fun PreferenceEditor.setPcmProcessingPreference(key: BooleanPreferenceKey, enabled: Boolean) {
+    require(key == SkipSilenceKey || key == AudioNormalizationKey)
+    if (enabled && (snapshot().bitPerfectOutputSelected() || key == SkipSilenceKey && this[AudioOffload, false])) return
+    this[key] = enabled
+}
+
+/** Native latched sink state must be checked in addition to this persisted selection. */
+fun PreferenceSnapshot.bitPerfectOutputSelected(): Boolean =
+    this[BitPerfectUsbOutputKey, false] && !this[CrossfadeEnabledKey, false] && !this[AutomixEnabledKey, false]
 
 /** The caller additionally checks the actual active native sink, after persistence succeeds. */
 fun SettingsChange.needsBitPerfectSinkRelease(): Boolean =

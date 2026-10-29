@@ -226,7 +226,7 @@ internal fun PlaybackSourceSections(
     val (autoChoosePlaybackClient, onAutoChoosePlaybackClientChange) =
         rememberPreference(AutoChoosePlaybackClientKey, true)
     val playerStreamClients =
-        remember { PlayerStreamClient.entries }
+        remember { PlayerStreamClient.entries.filterNot { it == PlayerStreamClient.HI_RES_LOSSLESS } }
     val selectedPlayerStreamClient =
         if (playerStreamClient in playerStreamClients) playerStreamClient
         else PlayerStreamClient.WEB_REMIX

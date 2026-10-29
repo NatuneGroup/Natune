@@ -9,7 +9,7 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
 
 /**
- * New portable state file, NEVER opened over Android's schema-36 song.db. Version 2 adds the tag catalog and the
+ * New portable state file, NEVER opened over the legacy Android song.db. Version 2 adds the tag catalog and the
  * playlist assignments, moved from the v1 JSON column by [PortableStateMigrations.V1_TO_V2]. Version 3 adds each
  * playlist's own song order and each entry's creation sequence, by [PortableStateMigrations.V2_TO_V3]. Version 4 adds
  * the local listening events that history, statistics and PLAY_TIME order read, by [PortableStateMigrations.V3_TO_V4].
@@ -19,7 +19,8 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
  * Version 7 adds each download's byte count and the complete album track lists, by
  * [PortableStateMigrations.V6_TO_V7]. Version 8 adds the persisted download queue and local-media scan table, the
  * search history and video-id lookup tables, and the hidden flag on playlists, by
- * [PortableStateMigrations.V7_TO_V8].
+ * [PortableStateMigrations.V7_TO_V8]. Version 9 adds the podcast episode progress table, by
+ * [PortableStateMigrations.V8_TO_V9].
  */
 @Database(
     entities = [QueueCheckpointRow::class, LibraryItemRow::class, PortablePlaylistRow::class,
@@ -27,8 +28,8 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
         PortableListenEventRow::class, PortableListenEntityRow::class, PortableArtistBlockRow::class,
         PortableStoredSongRow::class, PortableAlbumCompleteRow::class, PortableAlbumTrackRow::class,
         PortableDownloadTaskRow::class, PortableLocalTrackRow::class,
-        PortableSearchHistoryRow::class, PortableSetVideoIdRow::class],
-    version = 8,
+        PortableSearchHistoryRow::class, PortableSetVideoIdRow::class, PortablePodcastProgressRow::class],
+    version = 9,
     exportSchema = true,
 )
 @ConstructedBy(PortableStateDatabaseConstructor::class)
@@ -43,6 +44,7 @@ abstract class PortableStateDatabase : RoomDatabase() {
     abstract fun localTracks(): PortableLocalTrackDao
     abstract fun searchHistory(): PortableSearchHistoryDao
     abstract fun setVideoIds(): PortableSetVideoIdDao
+    abstract fun podcastProgress(): PortablePodcastProgressDao
 }
 
 expect object PortableStateDatabaseConstructor : RoomDatabaseConstructor<PortableStateDatabase> {
@@ -63,6 +65,7 @@ fun RoomDatabase.Builder<PortableStateDatabase>.buildPortableStateDatabase(): Po
         PortableStateMigrations.V5_TO_V6,
         PortableStateMigrations.V6_TO_V7,
         PortableStateMigrations.V7_TO_V8,
+        PortableStateMigrations.V8_TO_V9,
     )
         .setDriver(portableStateDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
 

@@ -119,6 +119,7 @@ internal fun desktopHostBindings(
         onFailure = { graph.report("a host request could not be completed") },
         // The desktop root has no screen beneath it, so back at the root has nothing to pop.
         onBackAtRoot = { },
+        podcastProgress = graph.podcastProgress.observeAll(),
     )
 }
 

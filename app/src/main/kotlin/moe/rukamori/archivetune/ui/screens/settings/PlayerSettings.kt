@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.produceState
 import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.conflictAwareState
 import moe.rukamori.archivetune.ui.component.preferenceGroup
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.background
@@ -92,6 +93,7 @@ import moe.rukamori.archivetune.constants.SeekExtraSeconds
 import moe.rukamori.archivetune.constants.SkipSilenceKey
 import moe.rukamori.archivetune.constants.SponsorBlockCategoriesKey
 import moe.rukamori.archivetune.constants.SponsorBlockEnabledKey
+import moe.rukamori.archivetune.constants.SponsorBlockPodcastsEnabledKey
 import moe.rukamori.archivetune.sponsorblock.SponsorBlockCategory
 import moe.rukamori.archivetune.constants.PreferredArtworkProvider
 import moe.rukamori.archivetune.constants.SpotifyCanvasKey
@@ -114,6 +116,8 @@ import moe.rukamori.archivetune.constants.UsbExclusiveAudioKey
 import moe.rukamori.archivetune.constants.QueueAddAfterManualKey
 import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
+import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.bitPerfectOutputSelected
 import moe.rukamori.archivetune.playback.dsp.EngineRuntime
 import moe.rukamori.archivetune.playback.dsp.FloatDsp
 import moe.rukamori.archivetune.playback.dsp.UsbExclusiveAudioOutputProvider
@@ -151,6 +155,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     val (infiniteQueue, onInfiniteQueueChange) = prefs.state(AutoLoadMoreKey, defaultValue = true)
     val (sponsorBlockEnabled, onSponsorBlockEnabledChange) =
         prefs.state(SponsorBlockEnabledKey, defaultValue = false)
+    val (sponsorBlockPodcasts, onSponsorBlockPodcastsChange) =
+        prefs.state(SponsorBlockPodcastsEnabledKey, defaultValue = false)
     val (sponsorBlockCategories, onSponsorBlockCategoriesRawChange) =
         prefs.state(
             SponsorBlockCategoriesKey,
@@ -164,20 +170,20 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
             onSponsorBlockCategoriesRawChange(parsed.map { it.apiName }.toSet())
         } }
     val (skipSilence, onSkipSilenceChange) =
-        prefs.state(
+        prefs.conflictAwareState(
             SkipSilenceKey,
             defaultValue = false,
         )
     val (audioNormalization, onAudioNormalizationChange) =
-        prefs.state(
+        prefs.conflictAwareState(
             AudioNormalizationKey,
             defaultValue = true,
         )
     val (audioQuality, onAudioQualityChange) =
         prefs.enumState(AudioQualityKey, AudioQuality.AUTO)
     val (rejectSuspectedUpscaledAudio, onRejectSuspectedUpscaledAudioChange) =
-        prefs.state(RejectSuspectedUpscaledAudioKey, defaultValue = false)
-    val (audioOffload, onAudioOffloadChange) =
+        prefs.conflictAwareState(RejectSuspectedUpscaledAudioKey, defaultValue = false)
+    val (audioOffload) =
         prefs.state(
             AudioOffload,
             defaultValue = false,
@@ -194,13 +200,13 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     val bitPerfectStatus by BitPerfectUsbOutput.status.collectAsState()
     val bitPerfectContext = LocalContext.current
     val (tryptifyEngine, onTryptifyEngineChange) =
-        prefs.state(TryptifyAudioProcessingKey, defaultValue = false)
+        prefs.conflictAwareState(TryptifyAudioProcessingKey, defaultValue = false)
     val (lastwaveEngine, onLastwaveEngineChange) =
-        prefs.state(LastwaveAudioProcessingKey, defaultValue = false)
+        prefs.conflictAwareState(LastwaveAudioProcessingKey, defaultValue = false)
     val (floatDsp, onFloatDspChange) =
-        prefs.state(FloatDspEnabledKey, defaultValue = false)
+        prefs.conflictAwareState(FloatDspEnabledKey, defaultValue = false)
     // The engines ride the standard sink only; the bit-perfect sink skips every processor.
-    val audioEnginesBlocked = bitPerfectUsb || BitPerfectUsbOutput.sinkActive
+    val audioEnginesBlocked = prefs.current.sharedSnapshot().bitPerfectOutputSelected() || BitPerfectUsbOutput.sinkActive
     val (usbExclusive) =
         prefs.state(UsbExclusiveAudioKey, defaultValue = false)
     // FloatDsp.available loads libarchivetune_dsp on first touch; never on the main thread.
@@ -481,7 +487,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     Column(modifier = positions.modifierFor("enable_pip_mode")) {
                         SwitchPreference(
                             title = { Text(stringResource(R.string.enable_pip_mode)) },
-                            description = stringResource(R.string.enable_pip_mode_desc),
+                            description = stringResource(if (enableVideoPlayback)
+                                R.string.enable_pip_mode_desc else R.string.settings_video_required),
                             icon = { Icon(painterResource(R.drawable.player_pip), null) },
                             checked = enablePipMode,
                             onCheckedChange = onEnablePipModeChange,
@@ -510,7 +517,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     Column(modifier = positions.modifierFor("crossfade")) {
                         SwitchPreference(
                             title = { Text(stringResource(R.string.audio_crossfade_title)) },
-                            description = stringResource(R.string.audio_crossfade_description),
+                            description = stringResource(R.string.audio_crossfade_description) + "\n" +
+                                stringResource(R.string.settings_transition_exclusions),
                             icon = { Icon(painterResource(R.drawable.animation), null) },
                             checked = crossfadeEnabled,
                             onCheckedChange = { enabled ->
@@ -528,7 +536,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             title = { Text(stringResource(R.string.automix_title)) },
                             description =
                                 stringResource(
-                                    if (automixEnabled) R.string.automix_enabled_subtitle else R.string.automix_disabled_subtitle,
+                                    if (automixEnabled) R.string.automix_enabled_subtitle else R.string.settings_transition_exclusions,
                                 ),
                             icon = { Icon(painterResource(R.drawable.auto_awesome), null) },
                             checked = automixEnabled,
@@ -575,7 +583,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                         SwitchPreference(
                             modifier = positions.modifierFor("crossfade_gapless_title"),
                             title = { Text(stringResource(R.string.crossfade_gapless_title)) },
-                            description = stringResource(R.string.crossfade_gapless_description),
+                            description = stringResource(if (crossfadeEnabled)
+                                R.string.crossfade_gapless_description else R.string.settings_crossfade_required),
                             icon = { Icon(painterResource(R.drawable.fast_forward), null) },
                             checked = crossfadeGapless,
                             onCheckedChange = onCrossfadeGaplessChange,
@@ -588,10 +597,15 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     Column(modifier = positions.modifierFor("skip_silence")) {
                         SwitchPreference(
                             title = { Text(stringResource(R.string.skip_silence)) },
+                            description = when {
+                                audioEnginesBlocked -> stringResource(R.string.settings_processing_bypassed_bit_perfect)
+                                audioOffload -> stringResource(R.string.settings_processing_unavailable_offload)
+                                else -> null
+                            },
                             icon = { Icon(painterResource(R.drawable.fast_forward), null) },
                             checked = skipSilence,
                             onCheckedChange = onSkipSilenceChange,
-                            isEnabled = !audioOffload,
+                            isEnabled = !audioOffload && !audioEnginesBlocked,
                         )
                     }
                 }
@@ -600,9 +614,12 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     Column(modifier = positions.modifierFor("audio_normalization")) {
                         SwitchPreference(
                             title = { Text(stringResource(R.string.audio_normalization)) },
+                            description = if (audioEnginesBlocked)
+                                stringResource(R.string.settings_processing_bypassed_bit_perfect) else null,
                             icon = { Icon(painterResource(R.drawable.volume_up), null) },
                             checked = audioNormalization,
                             onCheckedChange = onAudioNormalizationChange,
+                            isEnabled = !audioEnginesBlocked,
                         )
                     }
                 }
@@ -616,6 +633,20 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             checked = sponsorBlockEnabled,
                             onCheckedChange = onSponsorBlockEnabledChange,
                         )
+                    }
+                }
+
+                if (sponsorBlockEnabled) {
+                    item {
+                        Column(modifier = positions.modifierFor("sponsor_block_podcasts")) {
+                            SwitchPreference(
+                                title = { Text(stringResource(R.string.sponsor_block_podcasts)) },
+                                description = stringResource(R.string.sponsor_block_podcasts_description),
+                                icon = { Icon(painterResource(R.drawable.fast_forward), null) },
+                                checked = sponsorBlockPodcasts,
+                                onCheckedChange = onSponsorBlockPodcastsChange,
+                            )
+                        }
                     }
                 }
 
@@ -664,19 +695,23 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 item {
                     SwitchPreference(
                         title = { Text(stringResource(R.string.audio_authenticity_skip_upscaled_title)) },
-                        description = stringResource(R.string.audio_authenticity_skip_upscaled_description),
+                        description = stringResource(if (audioEnginesBlocked) R.string.settings_processing_bypassed_bit_perfect
+                            else R.string.audio_authenticity_skip_upscaled_description),
                         icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
                         checked = rejectSuspectedUpscaledAudio,
                         onCheckedChange = onRejectSuspectedUpscaledAudioChange,
+                        isEnabled = !audioEnginesBlocked,
                     )
                 }
 
                 item {
                     SwitchPreference(
                         title = { Text(stringResource(R.string.audio_offload)) },
-                        description = stringResource(R.string.audio_offload_desc),
+                        description = stringResource(if (rejectSuspectedUpscaledAudio)
+                            R.string.settings_offload_unavailable_authenticity else R.string.settings_offload_exclusions),
                         icon = { Icon(painterResource(R.drawable.speed), null) },
                         checked = audioOffload,
+                        isEnabled = !rejectSuspectedUpscaledAudio,
                         onCheckedChange = { enabled ->
                             setPlaybackOutputPreference(
                                 restartPrompt, prefs, bitPerfectContext, AudioOffload, enabled,
@@ -687,33 +722,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
 
                 item {
                     Column(modifier = positions.modifierFor("bit_perfect_usb")) {
-                        val bitPerfectDescription =
-                            when {
-                                !BitPerfectUsbOutput.isPlatformSupported ->
-                                    stringResource(R.string.bit_perfect_usb_unsupported)
-                                !bitPerfectUsb -> stringResource(R.string.bit_perfect_usb_desc)
-                                !BitPerfectUsbOutput.sinkActive ->
-                                    stringResource(R.string.bit_perfect_usb_restart)
-                                else ->
-                                    when (val status = bitPerfectStatus) {
-                                        is BitPerfectUsbOutput.Status.Active ->
-                                            stringResource(
-                                                R.string.bit_perfect_usb_active,
-                                                status.deviceName.ifBlank { stringResource(R.string.bit_perfect_usb_default_device) },
-                                                status.format,
-                                            )
-                                        is BitPerfectUsbOutput.Status.Fallback ->
-                                            stringResource(R.string.bit_perfect_usb_fallback, status.reason)
-                                        is BitPerfectUsbOutput.Status.Ready ->
-                                            stringResource(
-                                                R.string.bit_perfect_usb_ready,
-                                                status.deviceName.ifBlank { stringResource(R.string.bit_perfect_usb_default_device) },
-                                            )
-                                        BitPerfectUsbOutput.Status.NoDevice ->
-                                            stringResource(R.string.bit_perfect_usb_no_device)
-                                        else -> stringResource(R.string.bit_perfect_usb_desc)
-                                    }
-                            }
+                        val bitPerfectDescription = bitPerfectOutputDescription(bitPerfectUsb, bitPerfectStatus)
                         SwitchPreference(
                             title = { Text(stringResource(R.string.bit_perfect_usb_title)) },
                             description = bitPerfectDescription,
@@ -766,21 +775,14 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             title = { Text(stringResource(R.string.tryptify_audio_processing_title)) },
                             description =
                                 if (audioEnginesBlocked) {
-                                    stringResource(R.string.audio_engines_unavailable_bit_perfect)
+                                    stringResource(R.string.settings_processing_bypassed_bit_perfect)
                                 } else {
                                     stringResource(R.string.tryptify_audio_processing_desc)
                                 },
                             icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                            checked = tryptifyEngine && !audioEnginesBlocked,
+                            checked = tryptifyEngine,
                             isEnabled = !audioEnginesBlocked,
-                            onCheckedChange = { enabled ->
-                                onTryptifyEngineChange(enabled)
-                                if (enabled) {
-                                    onLastwaveEngineChange(false)
-                                    // Offloaded playback never reaches the audio processors.
-                                    onAudioOffloadChange(false)
-                                }
-                            },
+                            onCheckedChange = onTryptifyEngineChange,
                         )
                     }
                 }
@@ -791,20 +793,14 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             title = { Text(stringResource(R.string.lastwave_audio_processing_title)) },
                             description =
                                 if (audioEnginesBlocked) {
-                                    stringResource(R.string.audio_engines_unavailable_bit_perfect)
+                                    stringResource(R.string.settings_processing_bypassed_bit_perfect)
                                 } else {
                                     stringResource(R.string.lastwave_audio_processing_desc)
                                 },
                             icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                            checked = lastwaveEngine && !tryptifyEngine && !audioEnginesBlocked,
+                            checked = lastwaveEngine && !tryptifyEngine,
                             isEnabled = !audioEnginesBlocked,
-                            onCheckedChange = { enabled ->
-                                onLastwaveEngineChange(enabled)
-                                if (enabled) {
-                                    onTryptifyEngineChange(false)
-                                    onAudioOffloadChange(false)
-                                }
-                            },
+                            onCheckedChange = onLastwaveEngineChange,
                         )
                     }
                 }
@@ -815,17 +811,14 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             title = { Text(stringResource(R.string.float_dsp_title)) },
                             description =
                                 if (audioEnginesBlocked) {
-                                    stringResource(R.string.audio_engines_unavailable_bit_perfect)
+                                    stringResource(R.string.settings_processing_bypassed_bit_perfect)
                                 } else {
                                     stringResource(R.string.float_dsp_desc)
                                 },
                             icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                            checked = floatDsp && !audioEnginesBlocked,
+                            checked = floatDsp,
                             isEnabled = !audioEnginesBlocked,
-                            onCheckedChange = { enabled ->
-                                onFloatDspChange(enabled)
-                                if (enabled) onAudioOffloadChange(false)
-                            },
+                            onCheckedChange = onFloatDspChange,
                         )
                     }
                 }

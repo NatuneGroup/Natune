@@ -81,6 +81,48 @@ the login or pager implementation. Primary/manual client, terminal auth errors,
 YTPlayerUtils → InnerTubeX → NewPipe → Echo and direct-audio guards remain intact.
 Focused tests, independent review and remote compilation/execution remain pending.
 
+## Podcast history and progress (local source; validation pending)
+
+Android History and the shared desktop/iOS History page retain dated songs and podcast
+episodes from the signed-in YouTube archive. Near-tail reads and explicit Load more use
+the returned browse cursor; overlapping entries merge within a date, not across dates.
+Failures retain the loaded archive and require retry, and an account change invalidates
+old pages/actions. Songs retain their existing radio entry point; an episode tap queues
+that episode without silently starting radio. Shuffle reads the remaining archive first,
+bounded to 100 additional pages, and never starts playback from a failed/unknown prefix.
+
+The Android/JVM adapters use core's public lower-level browse API, with a private client
+and the current auth, locale, static proxy credentials and DNS. Core and its gitlink are
+unchanged. Core's rotating-proxy selector is internal: while rotation is active, the
+existing routed first-page request remains available, with a visible paging-unavailable
+notice and retry; complete-history shuffle is unavailable. No completed archive is
+claimed for that limited page. Full paging with rotation needs an approved public core
+continuation/routing API. iOS uses its existing native InnerTube session with explicit
+authenticated browse, without changing anonymous browse settings.
+
+`PodcastProgressRecorder` consumes actual engine samples only. Provider-qualified episode
+bookmarks write every five seconds of monotonic observation time and on pause, seek,
+transition and stop. A seekable new occurrence resumes once; a played episode replays
+from zero. Natural end, at least 95 percent, or the final 30 seconds mark an episode
+played and reset its stored position. Unknown duration stays unknown. FIFO reads/writes
+prevent a slow bookmark read or repeated episode from overwriting newer progress.
+`PlaybackSessionObservers` moves Android progress and SponsorBlock listeners together
+on player promotion. Episode rows observe persisted progress, showing a thin indicator,
+Played, and remaining time where available.
+
+Android adds only `podcast_progress` in schema 36 → 37; unsaved episodes need no library
+row or foreign key. Portable schema 8 → 9 retains `portable_podcast_progress`. Whole-DB
+backups include these tables, and desktop's schema-37 Android archive importer preserves
+bookmarks alongside existing library/playlist occurrences. SponsorBlock's independent
+podcast opt-in is documented in [SponsorBlock](../sponsorblock.md).
+
+Focused parser, paging/account, progress/policy, row-recomposition, portable migration/
+snapshot, and Android archive-import tests are authored but unrun locally. Android's
+migration test checks the additive SQL contract, not a real Android Room upgrade.
+Schema exports were prepared without running KSP: CI must confirm generated identities
+for Android 37 and portable 9, including the new portable identity assertion. Build,
+test, device/account/audio and upgrade/restore validation remain unverified.
+
 ## Sources
 
 The shared `audiosource` contract resolves Tidal, Qobuz (plus its backup), Deezer, Apple Music,

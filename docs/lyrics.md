@@ -11,6 +11,23 @@ Word-level timing only exists where the provider supplies it (TTML and the
 rich-sync providers). Everything else is line-synced, and a renderer must degrade
 to whole-line highlighting rather than pretending.
 
+## Provider and animation setting dependencies
+
+Prioritize word-synced lyrics first tries BetterLyrics, YouLyPlus and Unison in that fixed
+order, regardless of their user switches. Provider switches and priority still control the
+ordinary fallback and manual provider search; they remain editable while word-sync priority
+is on. The shared helper follows this Android policy, with actual host/provider availability
+checked separately from the user toggle. Portato is not part of the fixed sweep.
+
+`LyricsModeKey` is the canonical renderer selection; the old `use_lyrics_v2` search anchor
+navigates to that selector rather than editing an ignored boolean. Android's tuning page
+applies to V2, not Enhanced, Spotify-style Enhanced or the SimpMusic renderer. It stays reachable
+but disables unavailable controls with a reason. App/system reduced motion disables bounce,
+glow, interlude and last-word/LRC bounce effects without changing saved values; V2 adaptive
+scroll, soft reveal and fill-width settings remain editable. The shared renderer does not yet
+read these Android V2 tuning preferences, so shared tuning rows are explicitly unavailable
+and keep the values rather than advertising an unimplemented effect.
+
 ## Language and AI follow-up (implemented and source-reviewed)
 
 Preserve raw Unicode, semantic ZWJ/ZWNJ, combining marks and source spacing. Korean

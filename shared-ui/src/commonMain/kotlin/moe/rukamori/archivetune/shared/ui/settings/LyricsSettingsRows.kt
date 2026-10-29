@@ -18,16 +18,17 @@ fun lyricsSettingsRows(navigate: (String) -> Unit): List<SettingsRow> = listOf(
     SettingsRow.Number("preload_queue_lyrics", Res.string.m6_lyrics_preload, QueueLyricsPreloadCountKey, 3, 0..10),
 )
 
-/** Actual page gating: word-sync override disables toggles without clearing stored choices. */
+/** Word-sync is a preliminary sweep, not an override of the fallback or manual provider controls. */
 fun lyricsProviderSettingsRows(
     preferences: PreferenceSnapshot,
     showOrder: () -> Unit,
     showStats: () -> Unit,
     checkEndpoints: () -> Unit,
 ): List<SettingsRow> = buildList {
-    val enabled = !preferences[PrioritizeWordSyncedLyricsKey, false]
+    val enabled = true
     add(SettingsRow.Action("lyrics_provider_order", Res.string.m6_provider_order, showOrder, enabled))
-    add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, false))
+    add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, false,
+        description = Res.string.m6_word_sync_fallback))
     LyricsProviderPreference.entries.filter { !it.name.startsWith("PAXSENIX_") }.forEach { provider ->
         provider.key?.let { add(SettingsRow.Toggle(provider.anchor(), provider.label(), it, provider.defaultEnabled, enabled = enabled)) }
         if (provider == LyricsProviderPreference.LYPRIO && preferences[EnableLyprioLyricsKey, false]) {

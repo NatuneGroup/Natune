@@ -29,9 +29,9 @@ class AndroidHostParityTest {
     }
 
     @Test
-    fun `interface styles stay exactly Material Expressive and Apple Music`() {
+    fun `interface presets retain their names and add an honest mixed indicator`() {
         assertEquals(
-            listOf("MATERIAL_EXPRESSIVE", "APPLE_MUSIC"),
+            listOf("MATERIAL_EXPRESSIVE", "APPLE_MUSIC", "CUSTOM"),
             InterfaceStyle.entries.map { it.name },
         )
     }

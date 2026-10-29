@@ -65,7 +65,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
 import moe.rukamori.archivetune.constants.CompactBottomPillsKey
 import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
@@ -122,7 +121,6 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
         prefs.state(CompactControlsStockColorKey, defaultValue = false)
     val (navigationBarCompactBehavior, onNavigationBarCompactBehaviorChange) =
         prefs.navigationBarCompactBehavior()
-    val appleMusicExperience = prefs[AppleMusicExperienceKey, false]
     val (navigationBarFrostedBlur) =
         prefs.state(NavigationBarFrostedBlurKey, defaultValue = false)
     val (navigationBarTintFrostedBlur) =
@@ -227,11 +225,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         EnumListPreference(
                             title = { Text(stringResource(R.string.navigation_bar_style)) },
                             icon = { Icon(painterResource(R.drawable.nav_bar), null) },
-                            // The Apple Music Experience owns the tab bar while it is on; show the bar it
-                            // applies and leave the stored choice untouched for when it is turned off.
-                            selectedValue = if (appleMusicExperience) NavigationBarStyle.APPLE_MUSIC else navigationBarStyle,
+                            selectedValue = navigationBarStyle,
                             onValueSelected = onNavigationBarStyleChange,
-                            isEnabled = !appleMusicExperience,
                             valueText = {
                                 when (it) {
                                     NavigationBarStyle.DEFAULT ->
@@ -265,8 +260,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                             }
                         },
                         isEnabled =
-                            !appleMusicExperience &&
-                                navigationBarStyle != NavigationBarStyle.YUMA_PLAYER &&
+                            navigationBarStyle != NavigationBarStyle.YUMA_PLAYER &&
                                 navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
                     )
                 }
@@ -280,7 +274,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         selectedValue = navigationBarCompactBehavior,
                         onValueSelected = onNavigationBarCompactBehaviorChange,
                         // The Apple Music bar is always the one-row layout; the stored choice is kept for other styles.
-                        isEnabled = !appleMusicExperience && navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
+                        isEnabled = navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
                         valueText = {
                             when (it) {
                                 NavigationBarCompactBehavior.ADAPTIVE ->

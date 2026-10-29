@@ -35,16 +35,16 @@ data class RestartScopedSettings(
         /** Reads the restart-scoped values from a stored snapshot. A missing snapshot reads as [Defaults]. */
         fun from(snapshot: PreferenceSnapshot?): RestartScopedSettings {
             if (snapshot == null) return Defaults
+            val treatment = snapshot.selectedNavigationTreatment()
             return RestartScopedSettings(
                 uiScale = snapshot[UiScaleFactorKey, Defaults.uiScale].coerceIn(UI_SCALE_MIN, UI_SCALE_MAX),
                 fontPreference = resolveFontPreference(snapshot[FontPreferenceKey], snapshot[UseSystemFontKey]),
                 customFontUri = snapshot[CustomFontUriKey].orEmpty(),
                 tabletModeEnabled = snapshot[TabletModeEnabledKey, Defaults.tabletModeEnabled],
                 liquidGlassEnabled = snapshot[LiquidGlassEnabledKey, Defaults.liquidGlassEnabled],
-                liquidGlassNavBarEnabled = snapshot[LiquidGlassNavBarEnabledKey, Defaults.liquidGlassNavBarEnabled],
-                navigationBarFrostedBlur = snapshot[NavigationBarFrostedBlurKey, Defaults.navigationBarFrostedBlur],
-                navigationBarTintFrostedBlur =
-                    snapshot[NavigationBarTintFrostedBlurKey, Defaults.navigationBarTintFrostedBlur],
+                liquidGlassNavBarEnabled = treatment == LiquidGlassNavBarEnabledKey,
+                navigationBarFrostedBlur = treatment == NavigationBarFrostedBlurKey,
+                navigationBarTintFrostedBlur = treatment == NavigationBarTintFrostedBlurKey,
             )
         }
 
@@ -104,5 +104,5 @@ fun PreferenceEditor.setCustomFont(
 ) {
     this[CustomFontUriKey] = uri
     this[CustomFontNameKey] = name
-    this[FontPreferenceKey] = AppFontPreference.CUSTOM.name
+    setFontPreference(AppFontPreference.CUSTOM)
 }

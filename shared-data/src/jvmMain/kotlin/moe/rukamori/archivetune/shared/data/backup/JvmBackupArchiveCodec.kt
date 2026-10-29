@@ -119,15 +119,20 @@ class JvmBackupArchiveCodec {
             files.forEach { (name, bytes) -> Files.write(scratch.resolve(name), bytes) }
             val connection = BundledSQLiteDriver().open(scratch.resolve("song.db").toString())
             try {
-                connection.prepare("PRAGMA user_version").use { statement ->
-                    require(statement.step() && statement.getLong(0) == 36L) { "Expected Android library schema 36" }
+                val expectedIdentity = connection.prepare("PRAGMA user_version").use { statement ->
+                    require(statement.step()) { "Android library has no schema version" }
+                    // Public Room identities from the retained Android schema exports, not credentials.
+                    when (statement.getLong(0)) {
+                        36L -> "7f6fc454b3f0d77468bc4ae9d5a71c3f"
+                        37L -> "ea9228eb769d7cdde2b6a9a6a4532182"
+                        else -> throw IllegalArgumentException("Unsupported Android library schema")
+                    }
                 }
                 connection.prepare("PRAGMA integrity_check").use { statement ->
                     require(statement.step() && statement.getText(0) == "ok" && !statement.step()) { "Corrupt SQLite snapshot" }
                 }
                 connection.prepare("SELECT identity_hash FROM room_master_table WHERE id = 42").use { statement ->
-                    // Public Room identity from app/schemas/...InternalDatabase/36.json, not a credential.
-                    require(statement.step() && statement.getText(0) == "7f6fc454b3f0d77468bc4ae9d5a71c3f") {
+                    require(statement.step() && statement.getText(0) == expectedIdentity) {
                         "SQLite snapshot does not match the retained Android schema"
                     }
                 }

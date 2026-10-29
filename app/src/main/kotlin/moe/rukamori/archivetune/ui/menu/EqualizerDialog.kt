@@ -108,6 +108,7 @@ fun EqualizerDialog(
     openSystemEqualizer: () -> Unit,
     viewModel: EqualizerViewModel = hiltViewModel(),
 ) {
+    if (BitPerfectProcessingNotice(R.string.equalizer, onDismiss)) return
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }

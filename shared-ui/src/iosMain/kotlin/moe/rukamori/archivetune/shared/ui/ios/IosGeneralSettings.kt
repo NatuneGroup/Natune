@@ -56,6 +56,7 @@ internal fun IosGeneralSettingsPage(
             openWallpaperSettings = { },
             // The file picker returns a security-scoped bookmark rather than a font name the theme row needs.
             pickCustomFont = { null },
+            customFontPickerSupported = false,
             chooseHomeScreens = unavailable,
             arrangeLibraryChips = unavailable,
             arrangePlaylistTags = unavailable,

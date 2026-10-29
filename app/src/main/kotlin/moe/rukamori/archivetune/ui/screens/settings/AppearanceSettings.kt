@@ -14,6 +14,10 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.mutableIntStateOf
 import moe.rukamori.archivetune.utils.playerVolumeVisibility
 import moe.rukamori.archivetune.utils.setCustomFont
+import moe.rukamori.archivetune.utils.conflictAwareState
+import moe.rukamori.archivetune.utils.setPlayerBackgroundStyle
+import moe.rukamori.archivetune.utils.PreferenceStore
+import moe.rukamori.archivetune.ui.component.canonicalFontState
 import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.StartupSettings
@@ -73,9 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.constants.LibraryStyle
 import moe.rukamori.archivetune.ui.component.libraryStyle
-import moe.rukamori.archivetune.ui.component.rememberInterfaceStyle
 import moe.rukamori.archivetune.constants.HideSearchChromeWhileScrollingKey
-import moe.rukamori.archivetune.constants.InterfaceStyle
 import moe.rukamori.archivetune.constants.SearchBarPosition
 import moe.rukamori.archivetune.constants.SearchBarPositionKey
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -267,13 +269,12 @@ private fun appearanceThemeRows(
     val restartPrompt = LocalRestartPrompt.current
     val defaultDisableAnimations = remember(context) { context.isLowRamDevice() }
     val (wallpaperExtractionFailed) = prefs.state(WallpaperExtractionFailedKey, defaultValue = false)
-    val (dynamicTheme, onDynamicThemeChange) = prefs.state(DynamicThemeKey, defaultValue = true)
+    val (dynamicTheme, onDynamicThemeChange) = prefs.conflictAwareState(DynamicThemeKey, defaultValue = true)
     val (randomThemeOnStartup, onRandomThemeOnStartupChange) =
-        prefs.state(RandomThemeOnStartupKey, defaultValue = false)
+        prefs.conflictAwareState(RandomThemeOnStartupKey, defaultValue = false)
     val (darkMode, onDarkModeChange) = prefs.enumState(DarkModeKey, defaultValue = DarkMode.AUTO)
     val (liquidGlassEnabled, onLiquidGlassEnabledChange) =
         prefs.restartState(restartPrompt, LiquidGlassEnabledKey, defaultValue = false)
-    val (interfaceStyle, onInterfaceStyleChange) = rememberInterfaceStyle(prefs)
     val (pureBlack, onPureBlackChange) = prefs.state(PureBlackKey, defaultValue = false)
     val (disableBlur, onDisableBlurChange) = prefs.state(DisableBlurKey, defaultValue = false)
     val (disableAnimations, onDisableAnimationsChange) =
@@ -286,7 +287,7 @@ private fun appearanceThemeRows(
     val (backdropEnabled, onBackdropEnabledChange) = prefs.state(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount, onBackdropBlurAmountChange) = prefs.state(BackdropBlurAmountKey, defaultValue = 60)
     val (fontPreference, onFontPreferenceChange) =
-        prefs.restartEnumState(restartPrompt, FontPreferenceKey, defaultValue = AppFontPreference.DEFAULT)
+        prefs.canonicalFontState(restartPrompt)
     val customFontUri = prefs[CustomFontUriKey, ""]
     val customFontName = prefs[CustomFontNameKey, ""]
     val pendingRestart = StartupSettings.pending(prefs.current)
@@ -410,22 +411,7 @@ private fun appearanceThemeRows(
             modifier = positions.modifierFor("dynamic_theme"),
             title = themeTitle,
         ) {
-        item {
-            EnumListPreference(
-                modifier = positions.modifierFor("interface_style", "apple_music_experience"),
-                title = { Text(stringResource(R.string.interface_style)) },
-                description = stringResource(R.string.interface_style_desc),
-                icon = { Icon(painterResource(R.drawable.palette), null) },
-                selectedValue = interfaceStyle,
-                onValueSelected = onInterfaceStyleChange,
-                valueText = {
-                    when (it) {
-                        InterfaceStyle.MATERIAL_EXPRESSIVE -> stringResource(R.string.interface_style_material_expressive)
-                        InterfaceStyle.APPLE_MUSIC -> stringResource(R.string.apple_music_experience)
-                    }
-                },
-            )
-        }
+            independentAppleMusicPreferences(prefs, positions)
 
         item {
             SwitchPreference(
@@ -433,6 +419,7 @@ private fun appearanceThemeRows(
                 icon = { Icon(painterResource(R.drawable.palette), null) },
                 checked = dynamicTheme,
                 onCheckedChange = onDynamicThemeChange,
+                description = stringResource(R.string.settings_palette_sources_exclusive),
             )
         }
 
@@ -457,7 +444,7 @@ private fun appearanceThemeRows(
             SwitchPreference(
                 modifier = positions.modifierFor("random_theme_on_startup"),
                 title = { Text(stringResource(R.string.random_theme_on_startup)) },
-                description = stringResource(R.string.random_theme_on_startup_desc),
+                description = stringResource(R.string.settings_palette_sources_exclusive),
                 icon = { Icon(painterResource(R.drawable.shuffle), null) },
                 checked = randomThemeOnStartup,
                 onCheckedChange = onRandomThemeOnStartupChange,
@@ -738,7 +725,7 @@ private fun appearancePlayerRows(
         prefs.state(CropThumbnailToSquareKey, defaultValue = false)
     val (thumbnailCornerRadius, onThumbnailCornerRadiusChange) =
         prefs.state(ThumbnailCornerRadiusKey, defaultValue = 16f)
-    val (playerBackground, onPlayerBackgroundChange) =
+    val (playerBackground) =
         prefs.enumState(PlayerBackgroundStyleKey, defaultValue = PlayerBackgroundStyle.DEFAULT)
     val (configuredLyricsBackground, onLyricsBackgroundChange) =
         prefs.enumState(LyricsBackgroundStyleKey, defaultValue = LyricsBackgroundStyle.DEFAULT)
@@ -748,7 +735,6 @@ private fun appearancePlayerRows(
     val (liquidGlassEnabled) = prefs.state(LiquidGlassEnabledKey, defaultValue = false)
     val (disableBlur) = prefs.state(DisableBlurKey, defaultValue = false)
     val (libraryStyle, setLibraryStyle) = prefs.libraryStyle()
-    val (interfaceStyle) = rememberInterfaceStyle(prefs)
     val (albumCanvasEnabled, onAlbumCanvasEnabledChange) =
         prefs.state(AlbumCanvasEnabledKey, defaultValue = true)
     val (playerButtonsStyle, onPlayerButtonsStyleChange) =
@@ -1034,16 +1020,7 @@ private fun appearancePlayerRows(
                     icon = { Icon(painterResource(R.drawable.gradient), null) },
                     selectedValue = playerBackground,
                     onValueSelected = { selectedBackground ->
-                        onPlayerBackgroundChange(selectedBackground)
-                        when {
-                            selectedBackground == PlayerBackgroundStyle.CUSTOM -> {
-                                onLyricsBackgroundChange(LyricsBackgroundStyle.CUSTOM)
-                            }
-
-                            configuredLyricsBackground == LyricsBackgroundStyle.CUSTOM -> {
-                                onLyricsBackgroundChange(LyricsBackgroundStyle.DEFAULT)
-                            }
-                        }
+                        PreferenceStore.launchEdit(prefs.dataStore) { setPlayerBackgroundStyle(selectedBackground) }
                     },
                     isEnabled = isPlayerStyleCustomizationEnabled,
                     valueText = {
@@ -1072,6 +1049,8 @@ private fun appearancePlayerRows(
                     values = availableLyricsBackgroundStyles,
                     onValueSelected = onLyricsBackgroundChange,
                     isEnabled = playerBackground != PlayerBackgroundStyle.CUSTOM,
+                    description = if (playerBackground == PlayerBackgroundStyle.CUSTOM)
+                        stringResource(R.string.settings_custom_lyrics_background) else null,
                     valueText = {
                         when (it) {
                             LyricsBackgroundStyle.DEFAULT -> stringResource(R.string.lyrics_background_default)
@@ -1109,98 +1088,7 @@ private fun appearancePlayerRows(
 
         item {
             Column(modifier = positions.modifierFor("mini_player_background_style")) {
-                EnumListPreference(
-                    title = { Text(stringResource(R.string.mini_player_background_style)) },
-                    icon = { Icon(painterResource(R.drawable.gradient), null) },
-                    selectedValue = miniPlayerBackground,
-                    onValueSelected = { newStyle ->
-                        // Guard the LIQUID_GLASS style: only commit it when the master
-                        // Liquid Glass toggle is on AND we're on Android 12+. Otherwise
-                        // silently downgrade to THEME so the picker still closes but no
-                        // unsupported state is persisted. The user sees the warning below
-                        // telling them why their selection didn't apply.
-                        val canUseLiquidGlass =
-                            liquidGlassEnabled &&
-                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                        val effective =
-                            if (newStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS &&
-                                !canUseLiquidGlass
-                            ) {
-                                MiniPlayerBackgroundStyle.THEME
-                            } else {
-                                newStyle
-                            }
-                        onMiniPlayerBackgroundChange(effective)
-                    },
-                    valueText = {
-                        when (it) {
-                            MiniPlayerBackgroundStyle.THEME -> stringResource(R.string.follow_theme)
-                            MiniPlayerBackgroundStyle.GRADIENT -> stringResource(R.string.gradient)
-                            MiniPlayerBackgroundStyle.GLOW -> stringResource(R.string.glow)
-                            MiniPlayerBackgroundStyle.FROSTED -> stringResource(R.string.frosted_blur)
-                            MiniPlayerBackgroundStyle.LIQUID_GLASS -> stringResource(R.string.liquid_glass)
-                        }
-                    },
-                    isValueEnabled = { style ->
-                        !disableBlur ||
-                            (
-                                style != MiniPlayerBackgroundStyle.FROSTED &&
-                                    style != MiniPlayerBackgroundStyle.LIQUID_GLASS
-                            )
-                    },
-                    valueDescription = { style ->
-                        if (disableBlur &&
-                            (
-                                style == MiniPlayerBackgroundStyle.FROSTED ||
-                                    style == MiniPlayerBackgroundStyle.LIQUID_GLASS
-                            )
-                        ) {
-                            stringResource(R.string.blur_setting_overridden)
-                        } else {
-                            ""
-                        }
-                    },
-                )
-                // Pre-Android 12 warning: frosted mini player uses RenderEffect (API 31+).
-                // On pre-S the FROSTED style is silently downgraded to THEME — surface a
-                // warning so users on older devices know why their selection isn't applying.
-                if (disableBlur &&
-                    (
-                        miniPlayerBackground == MiniPlayerBackgroundStyle.FROSTED ||
-                            miniPlayerBackground == MiniPlayerBackgroundStyle.LIQUID_GLASS
-                    )
-                ) {
-                    Text(
-                        text = stringResource(R.string.blur_setting_overridden),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
-                    )
-                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
-                    miniPlayerBackground == MiniPlayerBackgroundStyle.FROSTED
-                ) {
-                    Text(
-                        text = stringResource(R.string.frosted_mini_player_unsupported),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
-                    )
-                }
-                // Liquid Glass mini player requires the master Liquid Glass toggle
-                // (Appearance → Liquid Glass effects) AND Android 12+. If the user
-                // somehow has LIQUID_GLASS selected but the master toggle is off (e.g.
-                // they turned the master off after selecting LIQUID_GLASS), surface a
-                // hint that the master toggle needs to be on for the style to apply.
-                if (!disableBlur && miniPlayerBackground == MiniPlayerBackgroundStyle.LIQUID_GLASS &&
-                    (!liquidGlassEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
-                ) {
-                    Text(
-                        text = stringResource(R.string.liquid_glass_mini_player_unsupported),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
-                    )
-                }
+                MiniPlayerMaterialPreference(miniPlayerBackground, onMiniPlayerBackgroundChange, disableBlur, liquidGlassEnabled)
             }
         }
 
@@ -1218,7 +1106,6 @@ private fun appearancePlayerRows(
                         CompactLayoutChoice.COMPACT -> stringResource(R.string.compact_layout)
                     }
                 },
-                isEnabled = interfaceStyle != InterfaceStyle.APPLE_MUSIC,
             )
         }
 

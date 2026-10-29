@@ -32,8 +32,8 @@ fun MenuHeaderCard(
 ) {
     // Apple Music's action sheets do not put the track on a raised card. The header sits directly
     // on the sheet with a hairline under it, and the actions read as a plain list below — so under
-    // the Apple Music Experience the card is simply not drawn.
-    if (rememberAppleMusicExperience()) {
+    // the Apple Music header option the card is simply not drawn.
+    if (rememberAppleMusicHeaders()) {
         Column(modifier = modifier.fillMaxWidth()) {
             content()
             HorizontalDivider(
