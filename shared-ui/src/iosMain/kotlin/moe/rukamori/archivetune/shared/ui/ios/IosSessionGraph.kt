@@ -14,8 +14,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -54,6 +57,9 @@ import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
+import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
+import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
@@ -258,6 +264,10 @@ internal class IosSessionGraph private constructor(
             )
             val library = RoomLibraryRepository(database.library(), listens = database.listens())
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
+            val blockedQueueArtists = artistBlocks.observeBlockedArtists().map { refs ->
+                refs.filter { it.provider == ContentProvider.YOUTUBE.id }.mapTo(HashSet()) { it.id }
+            }
+            val queueArtistBlocks = blockedQueueArtists.stateIn(scope, SharingStarted.Eagerly, blockedQueueArtists.first())
             val history = RoomListeningHistory(database.listens(), offsetMsAt = ::iosOffsetMsAt)
             val player = host.player
             val playbackPool = IosPlaybackPool(
@@ -305,6 +315,11 @@ internal class IosSessionGraph private constructor(
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { iosRepeatMode(vault.snapshots.value) },
                 autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+                autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
+                autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
+                hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
+                hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
+                blockedArtistIds = { queueArtistBlocks.value },
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
             try {

@@ -6,6 +6,14 @@ Settings search uses parent routes and `?scrollTo=` anchors. Preserve both when 
 
 Important Integration anchors include `external_sources`, `spotify`, `music_sources`, `use_pool_accounts`, `lastfm_scrobbling`, `lastfm_account`, `listenbrainz`, and `cross_service_import`.
 
+Player → Queue exposes **Infinite queue** at `infinite_queue`, also searchable by
+autoplay/endless/radio. It reuses `AutoLoadMoreKey` (`autoLoadMore`, default true),
+not a migrated/new key. Queue-sheet infinity controls and shared desktop/iOS
+Playback settings write that same live preference. Turning it off cancels pending
+recommendations even with the queue UI closed; repeat modes suppress recommendations
+without changing the saved infinity choice. Clear-except-current turns infinity off.
+No restart is required. Implementation and focused tests await CI/runtime validation.
+
 The Player page carries three experimental audio-engine switches after `bit_perfect_usb`: `tryptify_engine` (`TryptifyAudioProcessingKey`), `lastwave_engine` (`LastwaveAudioProcessingKey`) and `float_dsp` (`FloatDspEnabledKey`), all off by default. Tryptify and LastWave exclude each other, turning any of them on turns audio offload off, and all three are disabled while bit-perfect USB output is on (that sink skips every processor). Their search entries navigate only and carry no inline switch, so the exclusivity stays on the settings page. `playback/dsp/AudioEngineHost` reads them; with all three off the per-sink router is inactive and Media3 skips it.
 
 Between `bit_perfect_usb` and the engines sits `usb_exclusive_audio` (`UsbExclusiveAudioKey`, off by default, search entry navigates only). It is sampled when the service starts: with it on, the standard sink gets `playback/dsp/UsbExclusiveAudioOutputProvider`, which opens an exclusive AAudio stream on the routed USB DAC and otherwise defers to a stock `AudioTrackAudioOutputProvider`; with it off the sink is built exactly as before. It and bit-perfect USB output, crossfade, automix and audio offload turn each other off (the provider re-checks the same switches live, so a stale combination still plays normally). The engines and float DSP stay usable: they run in the chain ahead of the output. The switch is disabled when `libarchivetune_dsp` fails to load. While engaged it publishes to `EngineRuntime`/`BitPerfectRuntime`, which shows the media-info pipeline row and the live chain pill's USB route; it never claims verified bit-perfect.

@@ -90,6 +90,9 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.YouTubeLocale
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
+import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
+import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
+import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentCountryKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentLanguageKey
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
@@ -514,6 +517,10 @@ class DesktopSessionGraph private constructor(
             val textOrder = deviceTextOrder()
             val library = RoomLibraryRepository(database.library(), listens = database.listens())
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = { System.currentTimeMillis() })
+            val blockedQueueArtists = artistBlocks.observeBlockedArtists().map { refs ->
+                refs.filter { it.provider == ContentProvider.YOUTUBE.id }.mapTo(HashSet()) { it.id }
+            }
+            val queueArtistBlocks = blockedQueueArtists.stateIn(scope, SharingStarted.Eagerly, blockedQueueArtists.first())
             val history = RoomListeningHistory(
                 database.listens(),
                 offsetMsAt = { epochMs -> TimeZone.getDefault().getOffset(epochMs).toLong() },
@@ -613,6 +620,11 @@ class DesktopSessionGraph private constructor(
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { repeatModeOf(vault.snapshots.value) },
                 autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+                autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
+                autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
+                hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
+                hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
+                blockedArtistIds = { queueArtistBlocks.value },
                 handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
