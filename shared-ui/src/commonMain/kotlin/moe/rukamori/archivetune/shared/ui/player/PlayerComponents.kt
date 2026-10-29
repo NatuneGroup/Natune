@@ -209,6 +209,11 @@ private fun PlayerGlyph(symbol: PlayerSymbol, color: Color, enabled: Boolean, se
 
 @Composable
 internal fun ActionButton(action: PlayerAction, c: PlayerRenderContext, modifier: Modifier = Modifier, secondary: Boolean = false) {
+    val outputButton = c.slots.outputButton
+    if (action == PlayerAction.OUTPUT && outputButton != null) {
+        outputButton(modifier.size(48.dp), LocalContentColor.current, true)
+        return
+    }
     val selected = when(action) {
         PlayerAction.SHUFFLE -> c.state.shuffle
         PlayerAction.REPEAT -> c.state.repeat != PlayerRepeat.OFF

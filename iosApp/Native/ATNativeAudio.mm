@@ -10,6 +10,7 @@
 #import <QuartzCore/QuartzCore.h>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -75,13 +76,15 @@ static bool g_snapshot_taken = false; // Guarded by g_session_lock: the category
 static NSString *g_snapshot_category = nil;
 static NSString *g_snapshot_mode = nil;
 static AVAudioSessionCategoryOptions g_snapshot_options = (AVAudioSessionCategoryOptions)0;
+static AVAudioSessionRouteSharingPolicy g_snapshot_policy = AVAudioSessionRouteSharingPolicyDefault;
 static std::vector<std::shared_ptr<output_gate>> g_outputs; // Guarded by g_session_lock; changed on the main thread only.
 
 static AVAudioSessionCategoryOptions recording_options(void) {
-    // A2DP stays available beside the headset input, so a playback route does not fall back to HFP or the speaker.
+    // Keep external output choices during recognition; AirPlay must be opted into explicitly for play-and-record.
     return (AVAudioSessionCategoryOptions)(AVAudioSessionCategoryOptionDefaultToSpeaker |
                                            AVAudioSessionCategoryOptionAllowBluetooth |
-                                           AVAudioSessionCategoryOptionAllowBluetoothA2DP);
+                                           AVAudioSessionCategoryOptionAllowBluetoothA2DP |
+                                           AVAudioSessionCategoryOptionAllowAirPlay);
 }
 static void claim_playback_locked(at_audio_output *p) {
     if (p->playback_claimed) return;
@@ -102,6 +105,7 @@ static bool configure_playback_locked(NSError **error) {
     AVAudioSession *session = [AVAudioSession sharedInstance];
     if (g_recording_windows == 0 &&
         ![session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
+           routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
                       options:(AVAudioSessionCategoryOptions)0 error:error]) {
         return false;
     }
@@ -114,16 +118,19 @@ static void settle_session_locked(void) {
     NSError *error = nil;
     if (g_playback_claims > 0) {
         [session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
+          routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
                      options:(AVAudioSessionCategoryOptions)0 error:&error];
     } else if (g_snapshot_taken) {
         [session setCategory:g_snapshot_category ? g_snapshot_category : AVAudioSessionCategoryPlayback
                         mode:g_snapshot_mode ? g_snapshot_mode : AVAudioSessionModeDefault
+          routeSharingPolicy:g_snapshot_policy
                      options:g_snapshot_options error:&error];
     }
     g_snapshot_taken = false;
     g_snapshot_category = nil;
     g_snapshot_mode = nil;
     g_snapshot_options = (AVAudioSessionCategoryOptions)0;
+    g_snapshot_policy = AVAudioSessionRouteSharingPolicyDefault;
 }
 static void output_failure(at_audio_output *p) {
     p->running.store(false);
@@ -239,8 +246,9 @@ at_audio_output *at_audio_create(char *error, size_t error_len) {
         std::lock_guard<std::mutex> guard(gate->mutex);
         at_audio_output *output = gate->output;
         if (!output) return;
-        if ([note.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue] ==
-            AVAudioSessionRouteChangeReasonOldDeviceUnavailable) at_audio_pause(output);
+        const NSUInteger reason = [note.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue];
+        // AirPlay selection/category/configuration changes are not removal. Actual removal (e.g. unplug) pauses.
+        if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) at_audio_pause(output);
     }];
     p->reset = [center addObserverForName:AVAudioSessionMediaServicesWereResetNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *) {
@@ -360,7 +368,7 @@ void at_audio_snapshot(at_audio_output *p, ae_snapshot *snapshot) {
     require_main();
     ae_engine_snapshot(p->core, snapshot);
     // Core counters count PCM consumed by the output callback, not a timer. A dead graph must not
-    // retain its last advancing bit. Physical DAC presentation latency remains unmeasured.
+    // retain its last advancing bit. Reported route latency stays separate from these media counters.
     if (!p->running.load() || !p->consuming.load() || p->interrupted.load() ||
         CACurrentMediaTime() - p->last_render.load() > 0.15) snapshot->flags &= ~AE_FLAG_ADVANCING;
     snapshot->error_sequence += p->output_error;
@@ -368,6 +376,16 @@ void at_audio_snapshot(at_audio_output *p, ae_snapshot *snapshot) {
         snapshot->error_code = AE_ERROR_OUTPUT;
         snapshot->flags &= ~AE_FLAG_ADVANCING;
     }
+}
+double at_audio_output_latency(at_audio_output *p) {
+    require_main();
+    if (!p || !p->graph) return -1.0;
+    const double session = [AVAudioSession sharedInstance].outputLatency;
+    const double presentation = p->graph.outputNode.presentationLatency;
+    double latency = -1.0;
+    if (std::isfinite(session) && session >= 0.0) latency = session;
+    if (std::isfinite(presentation) && presentation >= 0.0) latency = std::max(latency, presentation);
+    return latency;
 }
 size_t at_audio_last_error(at_audio_output *p, char *buffer, size_t length) {
     require_main();
@@ -385,12 +403,14 @@ int at_audio_session_begin_recording(void) {
         g_snapshot_category = session.category;
         g_snapshot_mode = session.mode;
         g_snapshot_options = session.categoryOptions;
+        g_snapshot_policy = session.routeSharingPolicy;
         g_snapshot_taken = true;
     }
     ++g_recording_windows;
     NSError *error = nil;
     int status = 0;
     if (![session setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeDefault
+           routeSharingPolicy:AVAudioSessionRouteSharingPolicyDefault
                       options:recording_options() error:&error]) {
         status = 1;
     } else if (![session setActive:YES error:&error]) {
