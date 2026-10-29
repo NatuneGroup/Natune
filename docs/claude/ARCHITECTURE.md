@@ -33,6 +33,38 @@ per operation, including selected-occurrence resolution. Ambiguous empty termina
 envelopes fail incomplete; only explicit numeric-zero initial counts prove empty.
 No live envelope test or fixed 80-track server limit is established.
 
+## Infinite queue and queue editing (local source; validation pending)
+
+`MusicService` owns Android recommendation work through `AndroidInfiniteQueue`;
+`PortableQueueOwner` owns the same feature through `PortableInfiniteQueue`. Both
+use `InfiniteQueuePolicy`: seed with at most three songs remaining, page a radio
+tail with at most five, counting the current song in actual shuffle/play order.
+Only confirmed-exhausted finite membership may seed radio. Finite paging remains
+independent of the infinity setting; unknown/failed legacy tails do not prove
+exhaustion. A consumed radio tail keeps its provenance with a null continuation,
+so a checkpointed exhausted radio may reseed from its current song while an
+unknown legacy finite queue never seeds. Deliberate repeated playlist/manual
+occurrences remain intact.
+
+The existing `AutoLoadMoreKey` (`autoLoadMore`, default true) gates requests and
+their commits. Off/repeat changes invalidate in-flight work, including late
+responses; recommendations are filtered and deduplicated against the live queue.
+Each attempt has a 15-second bound and at most three recommendation pages.
+Empty/failing attempts back off 30/60/120/240/300 seconds using monotonic time;
+preference toggles do not reset that cooldown. Playback/queue events reconsider
+loading, not an unconditional retry timer. Appending never skips a playing last
+song; an ended queue advances only with its existing playback intent preserved.
+
+Android's default and custom queue sheets expose the persisted toggle and queue
+save/clear/jump actions without replacing their transports. Desktop/iOS bind the
+common queue panel to their existing checkpointed facade, settings and transactional
+library. Queue editing and undo use occurrence identities, preserve the current
+song and live additions, and invalidate stale undo on replacement. Undo/loading/source
+labels are runtime state; saved queue formats, database schemas and legacy readers
+are unchanged. Portable collection titles remain limited by available request
+metadata (the provider page has no collection-title field). These changes and the
+focused tests still need exact-head CI and device/host interaction validation.
+
 ## YouTube login ownership (local source; validation pending)
 
 Login-only official Music install recognition makes one owned fixed same-WebView
