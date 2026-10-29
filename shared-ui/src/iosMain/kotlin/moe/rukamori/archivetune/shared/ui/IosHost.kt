@@ -29,6 +29,7 @@ import moe.rukamori.archivetune.shared.domain.presence.ListenerPresencePolicy
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
+import moe.rukamori.archivetune.shared.domain.settings.NativeIosInterfaceKey
 import moe.rukamori.archivetune.shared.ui.ios.IosMountedRoot
 import moe.rukamori.archivetune.shared.ui.ios.IosSessionGraph
 import moe.rukamori.archivetune.shared.ui.settings.IosSettingsOpenState
@@ -52,6 +53,9 @@ internal sealed interface IosSessionState {
  */
 class IosHost {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /** The system tab bar and mini player the Swift app draws above the root on iOS 26 and later. */
+    val nativeChrome = IosNativeChrome(scope)
     internal val playbackPort = IosPlaybackPort()
     private val sessionState = MutableStateFlow<IosSessionState>(IosSessionState.Opening)
 
@@ -383,6 +387,11 @@ class IosHost {
             return
         }
         graph = opening
+        scope.launch {
+            opening.settings.snapshots.collect { snapshot ->
+                nativeChrome.setEnabled(snapshot != null && snapshot[NativeIosInterfaceKey, true])
+            }
+        }
         installPlaybackRetry(opening::retryAfterFailure)
         installSystemControls(
             metadata = opening::metadata,

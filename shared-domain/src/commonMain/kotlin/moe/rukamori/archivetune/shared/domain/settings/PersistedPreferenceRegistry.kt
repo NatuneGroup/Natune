@@ -641,4 +641,5 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         InlineCanaryReleasesFingerprintKey,
         InlineUsbExclusiveBitPerfectEnabledKey,
         InlineMultichannelDownmixEnabledKey,
+        NativeIosInterfaceKey,
     )
