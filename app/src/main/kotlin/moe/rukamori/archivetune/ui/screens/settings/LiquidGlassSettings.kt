@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package moe.rukamori.archivetune.ui.screens.settings
 
 import android.os.Build
@@ -61,6 +59,7 @@ import kotlin.math.roundToInt
 const val LIQUID_GLASS_SETTINGS_ROUTE = "settings/appearance/liquid_glass"
 
 /** The Appearance row that opens [LiquidGlassSettings]; kept here so the tuning page owns its own entry. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiquidGlassCustomisationEntry(navController: NavController, positions: PreferencePositions) {
     PreferenceEntry(
@@ -72,6 +71,7 @@ fun LiquidGlassCustomisationEntry(navController: NavController, positions: Prefe
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiquidGlassSettings(navController: NavController, scrollTo: String? = null) {
     val prefs = rememberPreferenceSnapshot()
@@ -297,6 +297,7 @@ fun LiquidGlassSettings(navController: NavController, scrollTo: String? = null) 
  * A percentage slider that writes once when the drag ends. Every glass surface on screen re-reads
  * the tuning, so writing on each drag frame would re-run DataStore and every glass node per frame.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GlassPercentSlider(
     title: String,
