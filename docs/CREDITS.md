@@ -133,6 +133,12 @@ their approaches were followed.
   them with `fetchEntitiesForRecentlyPlayed`. The parsing in `SpotifyPlayContexts.kt` is
   written from the live response shape; no source was copied (the repository publishes
   no licence).
+- [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)
+  (AGPL-3.0-only): the look the iOS native lyric view (`iosApp/ArchiveTune/SystemLyrics.swift`)
+  and the shared depth and background-vocal rows aim for, distance blur and a separate
+  smaller background line. Only the behaviour was studied; no AGPL source was copied, and
+  the Swift and Kotlin are written fresh on Apple's SwiftUI `TextRenderer` and Liquid
+  Glass APIs.
 - [NewPipe / InnerTube](https://github.com/TeamNewPipe/NewPipeExtractor): the InnerTube
   request lineage behind `core`.
 - [MetrolistGroup/innertubex](https://github.com/MetrolistGroup/innertubex) and

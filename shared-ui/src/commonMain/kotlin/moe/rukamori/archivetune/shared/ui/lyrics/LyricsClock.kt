@@ -31,7 +31,7 @@ internal class LyricsClock {
     /** Counts discontinuity resets. A change tells the scroll owner to jump rather than animate. */
     val discontinuities: MutableIntState = mutableIntStateOf(0)
 
-    fun accept(snapshot: PlaybackSnapshot, nowNanos: Long) {
+    fun accept(snapshot: PlaybackSnapshot, nowNanos: Long): LyricsAnchorChange {
         val change = smooth.accept(snapshot, nowNanos)
         if (change != LyricsAnchorChange.STALE) {
             outputDelayMs = ((snapshot.outputLatencyMs ?: 0L).toDouble() * snapshot.playbackSpeed).roundToLong()
@@ -40,6 +40,7 @@ internal class LyricsClock {
             discontinuities.intValue += 1
         }
         publish(smooth.advance(nowNanos))
+        return change
     }
 
     fun advance(nowNanos: Long) {

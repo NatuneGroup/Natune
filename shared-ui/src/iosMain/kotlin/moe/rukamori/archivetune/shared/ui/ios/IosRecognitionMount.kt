@@ -108,7 +108,8 @@ internal fun iosRecognitionPage(mount: IosRecognitionMount, route: ArchiveRoute)
     val owner = mount.owner()
     DisposableEffect(owner) { onDispose { owner.cancel() } }
     val state by owner.state.collectAsState()
-    val ui = remember(state) { state.toMusicRecognitionUi(mount.formatter, reducedMotion = false) }
+    val reducedMotion = rememberIosReduceMotion()
+    val ui = remember(state, reducedMotion) { state.toMusicRecognitionUi(mount.formatter, reducedMotion = reducedMotion) }
     val actions = remember(owner) {
         owner.toMusicRecognitionActions(back = {}, search = {}, openUri = {}, openDetails = {})
     }

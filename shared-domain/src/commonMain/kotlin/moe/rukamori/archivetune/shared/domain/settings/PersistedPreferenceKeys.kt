@@ -672,3 +672,5 @@ val InlineCanaryReleasesFingerprintKey = StringPreferenceKey("canary_releases_fi
 // tf/monochrome/android/data/preferences/PreferencesManager.kt
 val InlineUsbExclusiveBitPerfectEnabledKey = BooleanPreferenceKey("usb_exclusive_bit_perfect_enabled")
 val InlineMultichannelDownmixEnabledKey = BooleanPreferenceKey("multichannel_downmix_enabled")
+// iOS host only: the system tab bar, mini player and lyrics on iOS 26 and later. Android never reads it.
+val NativeIosInterfaceKey = BooleanPreferenceKey("nativeIosInterface")
