@@ -56,6 +56,18 @@ class IosHost {
 
     /** The system tab bar and mini player the Swift app draws above the root on iOS 26 and later. */
     val nativeChrome = IosNativeChrome(scope)
+    private val nativeLyricsViews = MutableStateFlow<IosNativeLyricsViewFactory?>(null)
+
+    /** The native Enhanced lyric view, or null while the Compose renderer draws every look. */
+    internal val nativeLyricsFactory: StateFlow<IosNativeLyricsViewFactory?> = nativeLyricsViews.asStateFlow()
+
+    /**
+     * Called by the Swift app on iOS 26 and later with a builder for the native lyric view. Passing null hands the
+     * Enhanced look back to the Compose renderer. The "Native iOS interface" setting still decides which one shows.
+     */
+    fun setNativeLyricsFactory(factory: IosNativeLyricsViewFactory?) {
+        nativeLyricsViews.value = factory
+    }
     internal val playbackPort = IosPlaybackPort()
     private val sessionState = MutableStateFlow<IosSessionState>(IosSessionState.Opening)
 
