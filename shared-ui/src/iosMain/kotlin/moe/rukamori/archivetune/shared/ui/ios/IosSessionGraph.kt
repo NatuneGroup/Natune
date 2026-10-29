@@ -90,6 +90,8 @@ internal class IosSessionGraph private constructor(
     internal val library: RoomLibraryRepository,
     val libraryContent: LibraryContentOwner,
     val pageOwners: LibraryPageOwners,
+    /** The one listening history the library, the listen driver and the statistics pages read and write. */
+    val history: RoomListeningHistory,
     val lyrics: HostLyrics,
     val customArtwork: FileCustomArtworkRepository,
     val playbackPool: IosPlaybackPool,
@@ -381,6 +383,7 @@ internal class IosSessionGraph private constructor(
                 library = library,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
+                history = history,
                 lyrics = lyrics,
                 customArtwork = FileCustomArtworkRepository(IosCustomArtworkFiles(), nowMillis = ::iosNowMillis),
                 playbackPool = playbackPool,
