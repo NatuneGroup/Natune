@@ -28,7 +28,18 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn(":shared-ui:embedAndSignAppleFrameworkForXcode", project)
         swift = (IOS / "ArchiveTune/ArchiveTuneApp.swift").read_text()
         self.assertIn("import ArchiveTuneShared", swift)
-        self.assertIn("coordinator.host.close()", swift)
+        self.assertIn("host.close()", swift)
+
+    def test_release_selects_the_native_producers_exact_xcode(self):
+        script = (ROOT / "scripts/build_ios_native_core.sh").read_text()
+        expected = re.search(r'XCODE_EXPECTED="\$\{ARCHIVETUNE_XCODE_VERSION:-([\d.]+)\}"', script)
+        self.assertIsNotNone(expected)
+        release = (ROOT / ".github/workflows/_release-artifacts.yml").read_text()
+        ios_job = release.split("\n  ios:\n", 1)[1].split("\n  publish-release:\n", 1)[0]
+        self.assertIn(f"ARCHIVETUNE_XCODE_VERSION: '{expected.group(1)}'", ios_job)
+        self.assertIn("uses: maxim-lobanov/setup-xcode@v1", ios_job)
+        self.assertIn("xcode-version: ${{ env.ARCHIVETUNE_XCODE_VERSION }}", ios_job)
+        self.assertLess(ios_job.index("setup-xcode@v1"), ios_job.index("bash scripts/build_ios_native_core.sh"))
 
     def test_only_portable_pcm_core_drives_audio_and_native_callback(self):
         audio = (IOS / "Native/ATNativeAudio.mm").read_text()

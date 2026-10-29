@@ -57,7 +57,10 @@ Paths below are relative to the repository. Every row retains the unverified App
    programs), OpenSSL 3.5.9, libxml2 2.15.4 and zlib 1.3.2. The pins match
    `desktopApp/native/scripts/build-native-deps.sh`. `closure.txt` beside `lib/` records the pins,
    toolchain and SHA-256 of every archive. Prerequisites: an Apple Silicon Mac with Xcode 26.4
-   selected (`ARCHIVETUNE_ALLOW_OTHER_XCODE=1` builds another release and marks it UNVERIFIED),
+   selected (`ARCHIVETUNE_ALLOW_OTHER_XCODE=1` builds another release and marks it UNVERIFIED).
+   The iOS release job explicitly selects Xcode 26.4 with `maxim-lobanov/setup-xcode` and passes the
+   same expected version to the producer; runner availability is not established by this source pin.
+   It also requires
    the iphoneos and iphonesimulator SDKs, gpg, pkg-config, GNU make and a space-free repository
    path. The script refuses every host except macOS. No archive has been built, so the closure is
    **UNVERIFIED**. `Native.xcconfig` links `-lavfilter` and the other archives in the order the
