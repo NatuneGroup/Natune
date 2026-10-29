@@ -18,17 +18,24 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.ui.screens.settings.SettingsAnimations
 import moe.rukamori.archivetune.ui.screens.settings.SettingsDimensions
@@ -79,6 +86,37 @@ fun Modifier.glassBorder(
         this
     }
 
+/**
+ * A live backdrop the Yuma glass panes blur instead of filling with [YumaColorScheme.glassBackground].
+ * Null everywhere except under a screen that draws its own moving background, such as About.
+ */
+val LocalYumaGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+private val FrostedDarkTint = Color(0x4DA9A9A9)
+private val FrostedDarkShade = Color(0x1A9C9C9C)
+private val FrostedLightTint = Color(0x340034F9)
+private val FrostedLightShade = Color(0xB3FFFFFF)
+
+private fun Modifier.frostedPane(
+    backdrop: Backdrop,
+    shape: Shape,
+    isDark: Boolean,
+): Modifier =
+    drawBackdrop(
+        backdrop = backdrop,
+        shape = { shape },
+        effects = { blur(60f) },
+        onDrawSurface = {
+            if (isDark) {
+                drawRect(FrostedDarkTint, blendMode = BlendMode.Luminosity)
+                drawRect(FrostedDarkShade, blendMode = BlendMode.Darken)
+            } else {
+                drawRect(FrostedLightTint, blendMode = BlendMode.Overlay)
+                drawRect(FrostedLightShade, blendMode = BlendMode.Overlay)
+            }
+        },
+    ).clip(shape)
+
 @Composable
 fun Modifier.yumaGlassCard(
     shape: Shape = RoundedCornerShape(SettingsDimensions.GlassCornerRadius),
@@ -90,8 +128,14 @@ fun Modifier.yumaGlassCard(
     bottomAlpha: Float? = null,
 ): Modifier {
     val (defaultTop, defaultBottom) = yumaSegmentAlphas(position)
-    return clip(shape)
-        .background(backgroundColor, shape)
+    val glassBackdrop = LocalYumaGlassBackdrop.current
+    val pane =
+        if (glassBackdrop != null) {
+            frostedPane(glassBackdrop, shape, MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+        } else {
+            clip(shape).background(backgroundColor, shape)
+        }
+    return pane
         .glassBorder(
             shape = shape,
             strokeWidth = strokeWidth,

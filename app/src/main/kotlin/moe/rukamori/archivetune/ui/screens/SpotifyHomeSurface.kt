@@ -20,14 +20,14 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
-import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.Backdrop
 import moe.rukamori.archivetune.ui.component.LiquidGlassRole
 import moe.rukamori.archivetune.ui.component.liquidGlassMaterial
 import moe.rukamori.archivetune.ui.component.layerBackdrop
 import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 
-private val LocalSpotifyHomeBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
+private val LocalSpotifyHomeBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 @Composable
 internal fun SpotifyHomeLayout(

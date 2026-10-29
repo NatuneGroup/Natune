@@ -203,9 +203,9 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.Backdrop
+import moe.rukamori.archivetune.ui.component.layerBackdrop
+import moe.rukamori.archivetune.ui.component.rememberThrottledLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
@@ -1654,12 +1654,7 @@ class MainActivity : ComponentActivity() {
                         liquidGlassEnabled &&
                             !disableBlur &&
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                    val liquidGlassBackdrop: LayerBackdrop? =
-                        if (liquidGlassActive) {
-                            rememberLayerBackdrop()
-                        } else {
-                            null
-                        }
+                    val liquidGlassBackdrop: Backdrop? = if (liquidGlassActive) rememberThrottledLayerBackdrop() else null
 
                     val bottomNavigationBarHeightState =
                         animateDpAsState(
@@ -2448,6 +2443,7 @@ class MainActivity : ComponentActivity() {
                         moe.rukamori.archivetune.ui.component.LocalMenuState provides menuState,
                         LocalNavigationBarBackdrop provides navBarFrostedBackdrop,
                         LocalLiquidGlassBackdrop provides liquidGlassBackdrop,
+                        moe.rukamori.archivetune.ui.component.LocalLiquidGlassTuning provides moe.rukamori.archivetune.ui.component.rememberLiquidGlassTuning(),
                         moe.rukamori.archivetune.ui.player.LocalIsInPipMode provides isInPictureInPictureModeState,
                         moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen provides isPlayerLyricsFullScreen,
                         LocalItemPreferences provides itemPreferences,
@@ -3431,6 +3427,7 @@ class MainActivity : ComponentActivity() {
                                                         alpha = 1f - bottomUiCompactFractionState.value * 0.9f
                                                     },
                                         ) {
+                                            moe.rukamori.archivetune.ui.component.GlassPipelinePrewarm(liquidGlassBackdrop, liquidGlassActive, Modifier.align(Alignment.TopCenter))
                                             if (isSukisuNavBar) {
                                                 // The SukiSU liquid glass bar renders in this same
                                                 // container (slide/hide, compact fade, insets), with the

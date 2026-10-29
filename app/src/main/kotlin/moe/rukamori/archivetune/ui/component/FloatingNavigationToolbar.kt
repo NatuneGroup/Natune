@@ -116,7 +116,7 @@ import moe.rukamori.archivetune.constants.NavigationBarLabelSpacingKey
 import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.utils.rememberPreference
-import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.Backdrop
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
@@ -165,7 +165,7 @@ fun FloatingNavigationToolbar(
     tintFrostedBlur: Boolean = false,
     frostedBackdrop: NavigationBarBackdrop? = null,
     liquidGlass: Boolean = false,
-    liquidGlassBackdrop: LayerBackdrop? = null,
+    liquidGlassBackdrop: Backdrop? = null,
     glowStrength: Float = 0f,
     isSelected: (Screens) -> Boolean,
     // The click handler works out the selection itself at click time (it owns the pending-tab
