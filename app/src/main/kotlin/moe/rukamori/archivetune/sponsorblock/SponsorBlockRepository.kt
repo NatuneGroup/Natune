@@ -28,6 +28,7 @@ import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.constants.SponsorBlockApiUrlKey
 import moe.rukamori.archivetune.constants.SponsorBlockCategoriesKey
 import moe.rukamori.archivetune.constants.SponsorBlockEnabledKey
+import moe.rukamori.archivetune.uploads.YouTubeUploadedVideoIdsKey
 import moe.rukamori.archivetune.utils.dataStore
 import timber.log.Timber
 import java.security.MessageDigest
@@ -89,6 +90,8 @@ class SponsorBlockRepository
          */
         suspend fun segments(videoId: String): List<SponsorBlockSegment> {
             if (!YOUTUBE_ID.matches(videoId)) return emptyList()
+            // An upload exists only in the signed-in account, so no public segment database can know it.
+            if (videoId in context.dataStore.data.first()[YouTubeUploadedVideoIdsKey].orEmpty()) return emptyList()
             val settings = settings()
             if (!settings.enabled || settings.categories.isEmpty()) return emptyList()
 
