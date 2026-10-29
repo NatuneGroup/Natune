@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.playback.SystemMonotonicClock
+import kotlin.math.roundToLong
 
 /**
  * The one lyric clock of a surface. It feeds [LyricsSmoothPosition] from playback snapshots and, while the frame
@@ -22,6 +23,7 @@ internal class LyricsClock {
     private val smooth = LyricsSmoothPosition()
     private var syncOffsetMs = 0L
     private var leadMs = 0L
+    private var outputDelayMs = 0L
 
     /** The lyric feed position in milliseconds: playback position with the sync offset, lead and visual tuning. */
     val feedMs: MutableLongState = mutableLongStateOf(0L)
@@ -30,7 +32,11 @@ internal class LyricsClock {
     val discontinuities: MutableIntState = mutableIntStateOf(0)
 
     fun accept(snapshot: PlaybackSnapshot, nowNanos: Long) {
-        if (smooth.accept(snapshot, nowNanos) == LyricsAnchorChange.RESET) {
+        val change = smooth.accept(snapshot, nowNanos)
+        if (change != LyricsAnchorChange.STALE) {
+            outputDelayMs = ((snapshot.outputLatencyMs ?: 0L).toDouble() * snapshot.playbackSpeed).roundToLong()
+        }
+        if (change == LyricsAnchorChange.RESET) {
             discontinuities.intValue += 1
         }
         publish(smooth.advance(nowNanos))
@@ -47,7 +53,9 @@ internal class LyricsClock {
     }
 
     private fun publish(positionMs: Long) {
-        feedMs.longValue = LyricsFeedTiming.feedMs(positionMs, syncOffsetMs, leadMs)
+        // Output delay is wall time; convert it at the media rate without changing row timestamps or tap-to-seek.
+        val feed = LyricsFeedTiming.feedMs(positionMs, syncOffsetMs, leadMs)
+        feedMs.longValue = if (feed < Long.MIN_VALUE + outputDelayMs) Long.MIN_VALUE else feed - outputDelayMs
     }
 }
 

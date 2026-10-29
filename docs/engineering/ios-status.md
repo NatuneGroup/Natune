@@ -45,6 +45,28 @@ first recording window snapshots the prior sharing policy as well as category/mo
 the last release restores that policy, or long-form playback when a playback claim remains.
 Route sharing, interruptions and other apps' audio interaction still require device verification.
 
+`createIosAudioRoutePicker()` returns an `AVRoutePickerView` as a `UIView` through the existing
+`ArchiveTuneShared` framework. The iOS player supplies it through the optional `outputButton`
+slot; the existing Apple Music player's device button hosts it with `UIKitView`. Native taps and
+VoiceOver traverse the OS control; video devices are not prioritized. AVKit is linked explicitly.
+No `AVPlayer` or second audio owner is created. Other hosts keep their existing output action.
+Routing AVAudioEngine through this picker still requires an AirPlay receiver and a physical device.
+
+Recognition opts into AirPlay alongside the existing speaker/Bluetooth/A2DP choices while its
+play-and-record window is open. Only `OldDeviceUnavailable` pauses output (including headphone
+unplug); category, override, new-device and route-configuration changes do not request a pause.
+An actual AirPlay receiver removal can still pause, and receiver-switch notification sequences
+need device verification.
+
+`at_audio_output_latency` reads the larger of `AVAudioSession.outputLatency` and the output node's
+`presentationLatency`, not their sum, since the estimates overlap. The iOS adapter publishes the
+nonnegative estimate as optional `PlaybackSnapshot.outputLatencyMs`. Invalid estimates stay unknown.
+The lyric clock subtracts this wall-time delay at the playback speed in addition to the existing
+user offset/lead/tuning; row timestamps, tap-to-seek, queue positions and `PlaybackClock` are unchanged.
+This is OS-reported latency, not a physical DAC measurement or proof that AirPlay network buffering
+is fully included. Pure projection/cache-key, latency conversion/clock and output-slot regressions
+are authored but unrun; Apple compilation and device sync remain unverified.
+
 ## Host/build integration
 
 1. Present in source: `shared-ui/build.gradle.kts` declares the static `ArchiveTuneShared`

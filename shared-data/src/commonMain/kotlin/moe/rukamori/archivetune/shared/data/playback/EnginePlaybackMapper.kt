@@ -42,7 +42,11 @@ class EnginePlaybackMapper(
      * Snapshot for [state] observed at [sampleMonotonicNanos], or null when no session is active or
      * the read belongs to another load.
      */
-    fun observe(state: EnginePlaybackState, sampleMonotonicNanos: Long): PlaybackSnapshot? {
+    fun observe(
+        state: EnginePlaybackState,
+        sampleMonotonicNanos: Long,
+        outputLatencyMs: Long? = null,
+    ): PlaybackSnapshot? {
         if (request == null || state.loadGeneration != engineLoadGeneration) {
             return null
         }
@@ -62,7 +66,9 @@ class EnginePlaybackMapper(
             isEnded = state.isEnded,
             outputRoute = PlaybackOutputRoute.LOCAL,
         )
-        return tracker.observe(observation, sampleMonotonicNanos).also { lastSnapshot = it }
+        val snapshot = tracker.observe(observation, sampleMonotonicNanos)
+        return (if (outputLatencyMs == null) snapshot else snapshot.copy(outputLatencyMs = outputLatencyMs))
+            .also { lastSnapshot = it }
     }
 
     /**

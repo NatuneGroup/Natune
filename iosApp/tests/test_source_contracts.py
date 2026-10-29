@@ -8,6 +8,8 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 IOS = ROOT / "iosApp"
 KOTLIN = ROOT / "shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios"
+UI_IOS = ROOT / "shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/ios"
+UI_COMMON = ROOT / "shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui"
 
 
 class IosSourceContractsTest(unittest.TestCase):
@@ -93,6 +95,42 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("g_snapshot_policy = session.routeSharingPolicy", audio)
         self.assertIn("routeSharingPolicy:g_snapshot_policy", audio)
         self.assertIn("routeSharingPolicy:AVAudioSessionRouteSharingPolicyDefault", audio)
+
+    def test_airplay_picker_is_a_native_control_in_the_ios_output_slot(self):
+        picker = (UI_IOS / "IosAudioRoutePicker.kt").read_text()
+        self.assertIn("fun createIosAudioRoutePicker(): UIView", picker)
+        self.assertIn("AVRoutePickerView(frame", picker)
+        self.assertIn("prioritizesVideoDevices = false", picker)
+        self.assertIn("factory = ::createIosAudioRoutePicker", picker)
+        self.assertIn("UIKitInteropInteractionMode.NonCooperative", picker)
+        self.assertIn("isNativeAccessibilityEnabled = true", picker)
+        bindings = (UI_IOS / "IosHostBindings.kt").read_text()
+        self.assertIn("outputButton = { modifier, tint, enabled -> IosAudioRoutePicker(modifier, tint, enabled) }", bindings)
+        style = (UI_COMMON / "playerstyles/PlayerStyleParts.kt").read_text()
+        self.assertIn("if (action == PlayerAction.OUTPUT && outputButton != null)", style)
+        self.assertIn("outputButton = base.outputButton", (UI_COMMON / "player/PlayerHandoffArtwork.kt").read_text())
+        self.assertIn("-framework AVKit", (IOS / "Configuration/Native.xcconfig").read_text())
+
+    def test_recognition_allows_airplay_and_only_device_removal_pauses(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        options = audio.split("recording_options(void)", 1)[1].split("\n}", 1)[0]
+        self.assertIn("AVAudioSessionCategoryOptionAllowAirPlay", options)
+        self.assertIn("AVAudioSessionCategoryOptionAllowBluetoothA2DP", options)
+        route = audio.split("p->route =", 1)[1].split("}];", 1)[0]
+        self.assertIn("if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) at_audio_pause(output)", route)
+        self.assertEqual(1, route.count("at_audio_pause(output)"))
+
+    def test_reported_latency_reaches_only_the_lyric_offset(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        latency = audio.split("double at_audio_output_latency(", 1)[1].split("\n}", 1)[0]
+        self.assertIn("[AVAudioSession sharedInstance].outputLatency", latency)
+        self.assertIn("p->graph.outputNode.presentationLatency", latency)
+        self.assertIn("std::max(latency, presentation)", latency)
+        adapter = (KOTLIN / "IosPlaybackPort.kt").read_text()
+        self.assertIn("outputLatencyMillis(at_audio_output_latency(native))", adapter)
+        clock = (UI_COMMON / "lyrics/LyricsClock.kt").read_text()
+        self.assertIn("feed - outputDelayMs", clock)
+        self.assertIn("change != LyricsAnchorChange.STALE", clock)
 
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()

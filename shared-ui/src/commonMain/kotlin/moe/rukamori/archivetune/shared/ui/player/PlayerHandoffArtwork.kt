@@ -86,6 +86,7 @@ internal fun PlayerSlots.withHandoff(display: PlayerHandoffDisplay): PlayerSlots
         lyrics = base.lyrics,
         compactLyrics = base.compactLyrics,
         queue = base.queue,
+        outputButton = base.outputButton,
     )
 }
 
