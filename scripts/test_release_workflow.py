@@ -149,6 +149,101 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 self.assertEqual("signing_status=unsigned\n", output.read_text())
                 self.assertEqual(b"unsigned APK fixture", apk.read_bytes())
 
+    def test_stage_apk_lists_the_single_release_apk_before_copying_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            release = root / "app/build/outputs/apk/gmsMobileUniversal/release"
+            release.mkdir(parents=True)
+            (release / "app-gmsMobileUniversal-release.apk").write_bytes(b"release APK fixture")
+            # AGP writes its listing metadata beside the APK; it must not count as a second APK.
+            (release / "output-metadata.json").write_text("{}")
+            result = bash_step("Stage APK", root, APK_NAME="app-gms-mobile-universal-nightly.apk",
+                               GITHUB_OUTPUT=str(root / "output"))
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("app-gmsMobileUniversal-release.apk", result.stdout)
+            self.assertIn("APK files under app/build/outputs/apk:", result.stdout)
+            staged = root / "release-assets/app-gms-mobile-universal-nightly.apk"
+            self.assertEqual(b"release APK fixture", staged.read_bytes())
+
+    def test_stage_apk_names_every_candidate_when_the_count_is_wrong(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            release = root / "app/build/outputs/apk/gmsMobileUniversal/release"
+            release.mkdir(parents=True)
+            for name in ("app-gmsMobileUniversal-release.apk", "app-gmsMobileUniversal-release-unsigned.apk"):
+                (release / name).write_bytes(b"release APK fixture")
+            result = bash_step("Stage APK", root, APK_NAME="app-gms-mobile-universal-nightly.apk",
+                               GITHUB_OUTPUT=str(root / "output"))
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("Expected exactly one release APK, found 2.", result.stdout)
+            self.assertIn("app-gmsMobileUniversal-release-unsigned.apk", result.stdout)
+            self.assertFalse((root / "release-assets").exists())
+
+    def test_stage_apk_fails_with_the_build_tree_when_no_apk_directory_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "app/build/outputs").mkdir(parents=True)
+            result = bash_step("Stage APK", root, APK_NAME="app-gms-mobile-universal-nightly.apk",
+                               GITHUB_OUTPUT=str(root / "output"))
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("app/build/outputs/apk does not exist", result.stdout)
+
+    def test_signing_uses_build_tools_that_actually_contain_both_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            apk = root / "release-assets/fixture.apk"
+            apk.parent.mkdir()
+            apk.write_bytes(b"unsigned APK fixture")
+            build_tools = root / "sdk/build-tools"
+            (build_tools / "35.0.0").mkdir(parents=True)
+            tool(build_tools / "34.0.0", "zipalign", """
+                #!/usr/bin/env python3
+                import os, sys
+                with open(os.environ["TOOL_CALLS"], "a") as calls:
+                    calls.write("zipalign " + " ".join(sys.argv[1:]) + "\\n")
+                open(sys.argv[-1], "wb").write(b"aligned APK fixture")
+            """)
+            tool(build_tools / "34.0.0", "apksigner", """
+                #!/usr/bin/env python3
+                import os, sys
+                with open(os.environ["TOOL_CALLS"], "a") as calls:
+                    calls.write("apksigner " + " ".join(sys.argv[1:]) + "\\n")
+                open(sys.argv[-1], "ab").write(b" signed")
+            """)
+            temporary = root / "tmp"
+            temporary.mkdir()
+            output = root / "output"
+            result = bash_step("Sign APK when the historical keystore is configured", root,
+                               APK_NAME=apk.name, GITHUB_OUTPUT=str(output),
+                               ANDROID_HOME=str(root / "sdk"), RUNNER_TEMP=str(temporary),
+                               TOOL_CALLS=str(root / "tool-calls"), KEYSTORE="a2V5c3RvcmU=",
+                               KEY_ALIAS="alias", KEYSTORE_PASSWORD="store", KEY_PASSWORD="key")
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("signing_status=signed\n", output.read_text())
+            self.assertIn("Using build-tools: " + str(build_tools / "34.0.0"), result.stdout)
+            calls = (root / "tool-calls").read_text().splitlines()
+            self.assertEqual(["zipalign", "apksigner"], [call.split(" ", 1)[0] for call in calls])
+            self.assertEqual(b"aligned APK fixture signed", apk.read_bytes())
+
+    def test_signing_reports_the_sdk_root_when_build_tools_cannot_be_found(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            apk = root / "release-assets/fixture.apk"
+            apk.parent.mkdir()
+            apk.write_bytes(b"unsigned APK fixture")
+            temporary = root / "tmp"
+            temporary.mkdir()
+            result = bash_step("Sign APK when the historical keystore is configured", root,
+                               APK_NAME=apk.name, GITHUB_OUTPUT=str(root / "output"),
+                               ANDROID_HOME=str(root / "missing-sdk"), HOME=str(root / "home"),
+                               RUNNER_TEMP=str(temporary),
+                               KEYSTORE="a2V5c3RvcmU=", KEY_ALIAS="alias",
+                               KEYSTORE_PASSWORD="store", KEY_PASSWORD="key")
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("Android SDK root: ", result.stdout)
+            self.assertIn("Android build-tools do not contain apksigner and zipalign.", result.stdout)
+            self.assertEqual(b"unsigned APK fixture", apk.read_bytes())
+
     def publish_fixture(self, directory, channel, *, missing=False, stale=False):
         root = Path(directory)
         assets = root / "downloaded-artifacts"
