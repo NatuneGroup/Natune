@@ -19,6 +19,8 @@ class SourceProviderProtocolTest {
     private fun request(source: AudioSourceType? = null, id: String = "7") =
         AudioResolveRequest("media", target, source?.let { mapOf(it to id) }.orEmpty())
     private val tidalTrack = """{"id":7,"title":"Song","duration":180,"artists":[{"name":"Artist"}],"album":{"title":"Album","cover":"a-b"},"isrc":"FIXTURE","explicit":true}"""
+    /** A lossless-tagged search hit: the resolver then requests the `/trackManifests/` dialect before `/track/`. */
+    private val tidalLosslessTrack = """{"id":7,"title":"Song","duration":180,"artists":[{"name":"Artist"}],"album":{"title":"Album","cover":"a-b"},"isrc":"FIXTURE","explicit":true,"audioQuality":"LOSSLESS"}"""
     private val qobuzTrack = """{"id":7,"title":"Song","duration":180,"performer":{"name":"Artist"},"album":{"title":"Album","image":{"large":"https://images.invalid/a"}}}"""
     private val deezerTrack = """{"id":7,"title":"Song","duration":180,"artist":{"name":"Artist"},"album":{"title":"Album","cover_big":"https://images.invalid/a"}}"""
 
@@ -48,13 +50,15 @@ class SourceProviderProtocolTest {
     }
     @Test fun tidalNewDialect404UsesOldDialectAndRetainsDashAsManifestNotProgressive() = runTest {
         val paths = mutableListOf<String>()
-        val mpd = """<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"><Period/></MPD>"""
+        // A BaseURL-only MPD is one full file; a document with no segment element is refused, not played.
+        val mpd = """<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"><Period><AdaptationSet><Representation mimeType="audio/mp4" codecs="flac"><BaseURL>https://audio.invalid/full.flac</BaseURL></Representation></AdaptationSet></Period></MPD>"""
         val client = HttpClient(MockEngine) { engine {
             dispatcher = StandardTestDispatcher(testScheduler)
             addHandler {
                 paths += it.url.encodedPath
                 when {
-                    it.url.encodedPath.endsWith("/search/") -> respond("""{"data":{"items":[$tidalTrack],"total":1}}""")
+                    // The instance search has no trailing slash (retained `addPathSegment("search")`); the track dialect does.
+                    it.url.encodedPath.endsWith("/search") -> respond("""{"data":{"items":[$tidalLosslessTrack],"total":1}}""")
                     it.url.encodedPath.endsWith("/trackManifests/") -> {
                         assertEquals("FLAC", it.url.parameters["formats"])
                         assertEquals("false", it.url.parameters["adaptive"])
@@ -67,7 +71,7 @@ class SourceProviderProtocolTest {
         try {
             val audio = KtorTidalRepository(client, TidalAccess("public"), "https://instance.invalid").resolve(request())
             assertEquals(mpd, assertIs<PreparedAudio.TidalManifest>(audio).manifestText)
-            assertEquals(listOf("/search/", "/trackManifests/", "/track/"), paths)
+            assertEquals(listOf("/search", "/trackManifests/", "/track/"), paths)
         } finally { client.close() }
     }
     @Test fun tidalNewDialectRejectsPreviewBeforeFetchingManifestUri() = runTest {
