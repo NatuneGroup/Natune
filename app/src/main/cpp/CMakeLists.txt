@@ -198,5 +198,9 @@ target_include_directories(archivetune_dsp PRIVATE
 )
 target_compile_options(archivetune_dsp PRIVATE -O3 -fvisibility=hidden -fexceptions)
 find_library(log-lib-dsp log)
-target_link_libraries(archivetune_dsp ${log-lib-dsp} aaudio)
+# AAudio is loaded with dlopen (native/dsp/aaudio_output.cpp) rather than linked:
+# libaaudio.so does not exist below Android 8.0, so a link-time dependency would
+# stop the whole float DSP library from loading on minSdk 24-25 devices.
+find_library(dl-lib-dsp dl)
+target_link_libraries(archivetune_dsp ${log-lib-dsp} ${dl-lib-dsp})
 target_link_options(archivetune_dsp PRIVATE "-Wl,-z,max-page-size=16384")

@@ -56,9 +56,13 @@ object ComposeToImage {
 
     private fun ensureSoftwareBitmap(bitmap: Bitmap): Bitmap {
         val config = bitmap.config
-        if (config != Bitmap.Config.HARDWARE && config != null) return bitmap
+        if (config != null && !bitmap.isHardwareConfig()) return bitmap
         return runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: bitmap
     }
+
+    // Bitmap.Config.HARDWARE is API 26; no bitmap on an older device can carry that config.
+    private fun Bitmap.isHardwareConfig(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && config == Bitmap.Config.HARDWARE
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
     private suspend fun pixelCopyViewBitmap(view: View): Bitmap? {
