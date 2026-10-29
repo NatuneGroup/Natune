@@ -84,11 +84,19 @@ backups include these tables, and desktop's schema-37 Android archive importer p
 bookmarks alongside existing library/playlist occurrences. SponsorBlock's independent
 podcast opt-in is documented in [SponsorBlock](../sponsorblock.md).
 
+Song title/artist edits add `song_metadata_override` beside the canonical `song` row in
+Android schema 37 → 38, and `portable_song_metadata_override` in portable schema 9 → 10.
+The edit is display-only: an effective item keeps the provider title and credits beside the
+override, so provider refresh, persistence, audio lookup and scrobble identity stay
+canonical, and a reset restores the provider names. Pre-38 `titleOverride` titles move into
+the table during the upgrade and the flag is cleared.
+
 Focused parser, paging/account, progress/policy, row-recomposition, portable migration/
 snapshot, and Android archive-import tests are authored but unrun locally. Android's
 migration test checks the additive SQL contract, not a real Android Room upgrade.
 Schema exports were prepared without running KSP: CI must confirm generated identities
-for Android 37 and portable 9, including the new portable identity assertion. Build,
+for Android 38 and portable 10, including the new portable identity assertion, and those
+two exports still need committing once a build emits them. Build,
 test, device/account/audio and upgrade/restore validation remain unverified.
 
 ## Sources
