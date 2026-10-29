@@ -434,6 +434,28 @@ fun LibraryMixScreen(
                     }
                 }
 
+                // 2b. Uploads shortcut. It is not hidden with the others because it is the only route to the account's uploads.
+                item(key = "uploads_shortcut") {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = 24.dp, end = 24.dp, top = 12.dp),
+                    ) {
+                        ShortcutCard(
+                            title = stringResource(R.string.uploads),
+                            countText = stringResource(R.string.uploads_on_account),
+                            iconRes = R.drawable.cloud,
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+                            iconColor = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.weight(1f),
+                            onClick = { navController.navigate("uploaded_songs") },
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+
                 // 3. Recently Played Horizontal Row
                 if (recentSongs.isNotEmpty()) {
                     item(key = "recently_played") {
