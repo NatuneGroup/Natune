@@ -1333,7 +1333,6 @@ ae_engine *ae_engine_create(const ae_config *config, char *error, size_t error_l
     pthread_condattr_init(&attributes);
 #if !defined(__APPLE__)
     /* Darwin has no pthread_condattr_setclock; its waits go through the relative _np variant above. */
-||||||| parent of 6c005b1 (fix(desktopApp): guard Apple-only native code for macOS builds)
     pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
 #endif
     pthread_mutex_init(&e->mutex, NULL);
