@@ -140,6 +140,8 @@ import moe.rukamori.archivetune.constants.PlayerButtonsStyle
 import moe.rukamori.archivetune.constants.PlayerButtonsStyleKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
+import moe.rukamori.archivetune.constants.PlayerStyleSetting
+import moe.rukamori.archivetune.constants.honors
 import moe.rukamori.archivetune.constants.PureBlackKey
 import moe.rukamori.archivetune.constants.RandomThemeOnStartupKey
 import moe.rukamori.archivetune.constants.SliderStyle
@@ -780,7 +782,7 @@ private fun appearancePlayerRows(
     val lyricsBackground = configuredLyricsBackground.resolveFor(playerBackground)
     // Same source of truth the player renders from, so the picker can never offer a backdrop the
     // player will discard — or hide one it would have honoured.
-    val isPlayerStyleCustomizationEnabled = playerDesignStyle.supportsBackgroundChoice
+    val isPlayerStyleCustomizationEnabled = playerDesignStyle.honors(PlayerStyleSetting.BACKGROUND)
     val isVolumeBarSupported =
         playerDesignStyle.hasVolumeRow
 
@@ -916,35 +918,7 @@ private fun appearancePlayerRows(
                         icon = { Icon(painterResource(R.drawable.palette), null) },
                         selectedValue = playerDesignStyle,
                         onValueSelected = onPlayerDesignStyleChange,
-                        valueText = {
-                            when (it) {
-                                PlayerDesignStyle.V1 -> stringResource(R.string.player_design_v1)
-                                PlayerDesignStyle.V2 -> stringResource(R.string.player_design_v2)
-                                PlayerDesignStyle.V3 -> stringResource(R.string.player_design_v3)
-                                PlayerDesignStyle.V4 -> stringResource(R.string.player_design_v4)
-                                PlayerDesignStyle.V5 -> stringResource(R.string.player_design_v5)
-                                PlayerDesignStyle.V6 -> stringResource(R.string.player_design_v6)
-                                PlayerDesignStyle.V7 -> stringResource(R.string.player_design_v7)
-                                PlayerDesignStyle.V8 -> stringResource(R.string.player_design_v8)
-                                PlayerDesignStyle.V9 -> stringResource(R.string.player_design_v9)
-                                PlayerDesignStyle.APPLE_MUSIC ->
-                                    stringResource(R.string.player_design_apple_music)
-                                PlayerDesignStyle.V10 ->
-                                    stringResource(R.string.player_design_v10)
-                                PlayerDesignStyle.BITCHORD ->
-                                    stringResource(R.string.player_design_bitchord)
-                                PlayerDesignStyle.TIKTOK ->
-                                    stringResource(R.string.player_design_tiktok)
-                                PlayerDesignStyle.SIMPMUSIC ->
-                                    stringResource(R.string.player_design_simpmusic)
-                                PlayerDesignStyle.SPATIALFLOW ->
-                                    stringResource(R.string.player_design_spatialflow)
-                                PlayerDesignStyle.LOOPER ->
-                                    stringResource(R.string.player_design_looper)
-                                PlayerDesignStyle.FLAMINGO ->
-                                    stringResource(R.string.player_design_flamingo)
-                            }
-                        },
+                        valueText = { playerDesignStyleLabel(it) },
                     )
                 }
         }
@@ -1056,12 +1030,7 @@ private fun appearancePlayerRows(
             Column(modifier = positions.modifierFor("player_background_style")) {
                 EnumListPreference(
                     title = { Text(stringResource(R.string.player_background_style)) },
-                    description =
-                        if (isPlayerStyleCustomizationEnabled) {
-                            null
-                        } else {
-                            stringResource(R.string.player_background_style_v8_v9_desc)
-                        },
+                    description = playerSettingNote(playerDesignStyle, PlayerStyleSetting.BACKGROUND),
                     icon = { Icon(painterResource(R.drawable.gradient), null) },
                     selectedValue = playerBackground,
                     onValueSelected = { selectedBackground ->
@@ -1257,10 +1226,13 @@ private fun appearancePlayerRows(
             SwitchPreference(
                 modifier = positions.modifierFor("hide_player_thumbnail"),
                 title = { Text(stringResource(R.string.hide_player_thumbnail)) },
-                description = stringResource(R.string.hide_player_thumbnail_desc),
+                description =
+                    playerSettingNote(playerDesignStyle, PlayerStyleSetting.HIDE_THUMBNAIL)
+                        ?: stringResource(R.string.hide_player_thumbnail_desc),
                 icon = { Icon(painterResource(R.drawable.hide_image), null) },
                 checked = hidePlayerThumbnail,
                 onCheckedChange = onHidePlayerThumbnailChange,
+                isEnabled = playerDesignStyle.honors(PlayerStyleSetting.HIDE_THUMBNAIL),
             )
         }
 
@@ -1268,6 +1240,8 @@ private fun appearancePlayerRows(
             ThumbnailCornerRadiusSelectorButton(
                 thumbnailCornerRadius = thumbnailCornerRadius,
                 onThumbnailCornerRadiusChange = onThumbnailCornerRadiusChange,
+                isEnabled = playerDesignStyle.honors(PlayerStyleSetting.CORNER_RADIUS),
+                note = playerSettingNote(playerDesignStyle, PlayerStyleSetting.CORNER_RADIUS),
             )
         }
 
@@ -1295,12 +1269,7 @@ private fun appearancePlayerRows(
             Column(modifier = positions.modifierFor("player_buttons_style")) {
                 EnumListPreference(
                     title = { Text(stringResource(R.string.player_buttons_style)) },
-                    description =
-                        if (playerDesignStyle.supportsSharedButtons) {
-                            null
-                        } else {
-                            stringResource(R.string.player_native_controls_description)
-                        },
+                    description = playerSettingNote(playerDesignStyle, PlayerStyleSetting.BUTTONS_STYLE),
                     icon = { Icon(painterResource(R.drawable.palette), null) },
                     selectedValue = playerButtonsStyle,
                     onValueSelected = onPlayerButtonsStyleChange,
@@ -1319,7 +1288,7 @@ private fun appearancePlayerRows(
             Column(modifier = positions.modifierFor("player_slider_style")) {
                 PreferenceEntry(
                     title = { Text(stringResource(R.string.player_slider_style)) },
-                    description = if (playerDesignStyle.supportsSharedSeekStyle) sliderStyleLabel(sliderStyle) else stringResource(R.string.player_native_controls_description),
+                    description = playerSettingNote(playerDesignStyle, PlayerStyleSetting.SLIDER_STYLE) ?: sliderStyleLabel(sliderStyle),
                     icon = { Icon(painterResource(R.drawable.sliders), null) },
                     onClick = {
                         showSliderOptionDialog = true

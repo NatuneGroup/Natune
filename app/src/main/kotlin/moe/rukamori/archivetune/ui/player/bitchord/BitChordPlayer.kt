@@ -840,15 +840,15 @@ fun BitChordPlayerContent(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets(top = statusBarTop))
                 .navigationBarsPadding()
-                .pointerInput(Unit) {
+                .pointerInput(presentation.swipeArtwork) {
+                    if (!presentation.swipeArtwork) return@pointerInput
                     var total = 0f
                     detectHorizontalDragGestures(
                         onDragStart = { total = 0f },
                         onDragCancel = { swipeOffset = 0f },
                         onDragEnd = {
-                            // The same two buzzes the transport glyphs give, so
-                            // swiping the sleeve and tapping skip feel like one
-                            // gesture with two spellings.
+                            // The same two buzzes the transport glyphs give, so swiping
+                            // the sleeve and tapping skip feel like one gesture with two spellings.
                             when {
                                 total <= -swipeThreshold && canSkipNext -> {
                                     haptics.play(Haptic.SkipNext)

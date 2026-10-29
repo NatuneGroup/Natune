@@ -1189,8 +1189,7 @@ fun FlamingoPlayerContent(
 
                 if (landscape) {
                     val landscapeSwipeModifier =
-                        Modifier
-
+                        if (!LocalPlayerPresentation.current.swipeArtwork) Modifier else Modifier
                             .pointerInput(playerConnection) {
                                 val swipeThresholdPx = 72.dp.toPx()
                                 var accumulatedDrag = 0f

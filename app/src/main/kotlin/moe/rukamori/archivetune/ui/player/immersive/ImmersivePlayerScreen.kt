@@ -83,6 +83,7 @@ import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.canvas.CanvasVideo
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
 import moe.rukamori.archivetune.ui.player.label
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
@@ -181,7 +182,9 @@ private fun ImmersivePlayerContent(
             }
         }
     }
-    BoxWithConstraints(modifier = modifier.background(Color.Black)) {
+    // An explicit player background is drawn beneath this screen; the black field would cover it.
+    val sharedBackground = LocalPlayerPresentation.current.sharedBackground
+    BoxWithConstraints(modifier = if (sharedBackground) modifier else modifier.background(Color.Black)) {
         val landscape = maxWidth > maxHeight
         if (landscape) {
             ImmersiveLandscape(
@@ -424,7 +427,9 @@ private fun ImmersiveBackdrop(
                 )
             }
 
-        Box(
+        // With an explicit player background the full-bleed blurred cover steps aside, and only the stage artwork
+        // fades into the chosen backdrop.
+        if (!LocalPlayerPresentation.current.sharedBackground) Box(
             modifier =
                 Modifier
                     .fillMaxSize()
