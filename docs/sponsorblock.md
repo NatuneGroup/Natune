@@ -57,6 +57,11 @@ the current gates. Late responses cannot re-enable skipping after a settings edi
 player promotion. A seek requires an advancing, seekable player, and an end-of-episode
 segment is not marked skipped when it is left to play out.
 
+An unset or blank API origin keeps the public default. An invalid stored origin refuses
+lookup instead of selecting another server, including when a URL parser could infer a
+host from an incomplete `https:` value. An explicitly empty category selection also
+refuses lookup. These gates apply before cache hits; stored preferences are not rewritten.
+
 The shared domain gate and portable request-configuration tests cover these policy
 boundaries without an advancing synthetic playback engine. They are authored, not
 locally executed; CI and real playback verification remain required.

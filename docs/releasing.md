@@ -53,8 +53,8 @@ the trusted floor.
 
 - Android stable: `app-gms-mobile-{arm64,armeabi,x86,x86_64,universal}-release.apk`,
   `app-foss-mobile-universal-release.apk`, and `app-gms-tv-universal-release.apk`.
-- Android nightly: the same seven variants with `-nightly.apk` names for the
-  in-app updater.
+- Android nightly: six variants, excluding the Stable-only GMS mobile x86 APK,
+  with `-nightly.apk` names for the in-app updater.
 - Windows x64: MSI, EXE installer, and portable ZIP.
 - Linux x64 and arm64: DEB and AppImage.
 - macOS x64 and arm64: DMG.
@@ -64,6 +64,19 @@ Non-Android release assets use
 `natune-<platform>-<arch>-<version>.<ext>` (the iOS name is
 `natune-ios-<version>.ipa`). If any Android signing secret is missing, the APKs
 are published unsigned and the release notes identify that state.
+The publisher expects 16 files for Nightly or 17 for Stable, including the ten
+non-Android assets. The Actions handoff artifacts (including the update-feed
+manifest) expire after three days; the published private release assets remain.
+
+Workflow-artifact storage is metered separately from release assets, so a full
+artifact quota must not break a run whose builds succeeded. Each build job tries
+`actions/upload-artifact` first; when that upload fails, the same file set is
+parked on a per-run prerelease tagged `staging-<run_id>-<job>` (for example
+`staging-40906373528-android-gms-mobile-arm64`) and the publish job restores the
+missing files from those tags with `gh release download`. The staging releases
+are deleted once the real release is published, and are left in place when
+`publish` is false so a smoke run stays downloadable. Clean any leftover
+`staging-*` prerelease up by hand when a run was abandoned before publishing.
 
 The workflows also publish `stable.json` and `nightly.json` to the fixed
 `update-feed` prerelease in this repository. The manifest links point to this
@@ -121,10 +134,10 @@ feature not configured:
 These are build-time client values and are extractable from shipped binaries;
 they must not be server-administrator credentials.
 
-## Native build prerequisites still open
+## Native build prerequisites and validation
 
-The release matrix publishes only when every platform job succeeds. These host
-recipes are not complete yet, so the matching jobs fail until they are added:
+The release matrix publishes only when every platform job succeeds. Workflow and
+recipe changes still require an exact-head Blacksmith packaging run:
 
 - Windows x64: `desktopApp/native/scripts/build-native-deps.sh` now also builds
   under MSYS2 MinGW-w64 (`mingw64` OpenSSL target, w32threads for FFmpeg).
@@ -132,17 +145,48 @@ recipes are not complete yet, so the matching jobs fail until they are added:
   refuses anything outside the system-DLL allowlist. The engine builds with MinGW
   (`MinGW Makefiles` generator, statically linked libgcc/winpthreads) while
   `archivetune_system` and `archivetune_browser` stay MSVC with the static CRT, so
-  no vcruntime/msvcp DLL is needed. The static OpenSSL prefix `build-tdjni.ps1`
-  reads through `TDLIGHT_OPENSSL_PREFIX` comes from the same deps run
-  (`openssl-static`, produced for every host).
+  no vcruntime/msvcp DLL is needed for those adapters. Release TDLight also uses
+  MSYS2 MinGW through `build-tdjni.sh`, with `TDLIGHT_OPENSSL_PREFIX` pointing at
+  `build/native/openssl-static` and `TDLIGHT_ZLIB_PREFIX` at `build/native/prefix`.
+  The latter contains both zlib's DLL/import library and its static `libz.a`.
+  Do not feed these MinGW archives to the separate MSVC PowerShell recipe.
+  zlib uses upstream's `win32/Makefile.gcc install` recipe (which builds
+  `libz.a`, `zlib1.dll`, `libz.dll.a` and `zlib.pc` without the example programs)
+  and every dependency build runs under the MSYS build of `make`, whose recipes
+  are POSIX. A failing dependency prints the end of its own log, so a red leg
+  names its cause instead of only an exit status.
+  Downloads retry bounded connection/TLS failures without changing checksum or
+  FFmpeg signature verification. The WebView2 SDK argument is the extracted
+  package root, not its `build/native` child.
 - macOS: `stage-macos-package.py` installs the engine, stages the FFmpeg closure
   as `@rpath/<name>` dylibs with an `@loader_path` rpath and audits `otool -L`
   output, so `-PdesktopNativeDirectory` is no longer needed on any host. The x64
   leg runs on an arm64 runner through a x64 JDK under Rosetta 2; the dependency
-  closure and tdjni build under `arch -x86_64`.
-- Linux arm64 runs on the `blacksmith-8vcpu-ubuntu-2404-arm` label; if the
-  organisation has no ARM pool the leg waits and must be relabelled.
-- iOS: `scripts/build_ios_native_core.sh` has not run on a Mac yet.
+  closure and tdjni build under `arch -x86_64`. CMake and the stager also receive
+  the packaging JVM architecture explicitly, the stager prints the `lipo`
+  architecture it audits, and `lipo` takes the file before `-verify_arch`, so it
+  rejects mismatched dylibs instead of reading the path as an architecture flag.
+  The browser install task owns only its library output, so Gradle cannot clean
+  the playback engine and media closure as stale browser outputs.
+- Linux x64 and arm64 install `gperf` for TDLib source generation. The arm64 leg
+  uses `blacksmith-8vcpu-ubuntu-2404-arm`.
+- iOS release CI explicitly expects the runner's Xcode 26.6 and builds only the
+  `iphoneos` native closure. It retains the producer's strict version check
+  rather than allowing an arbitrary/unverified Xcode, and keeps code signing
+  disabled for the IPA. The job installs gpg like the desktop macOS legs, and the
+  producer verifies the FFmpeg tarball against the pinned release fingerprint
+  inside a short-lived temporary `GNUPGHOME` (macOS caps unix socket paths, so the
+  keyring cannot live under the deep work tree) and prints the gpg log on failure.
+  This is not yet a successful device-link/package result.
+
+Nightly preparation runs `scripts.test_release_workflow` and
+`scripts.test_native_release_packaging` with Python's standard-library unittest.
+These use fixture files and fake SDK/GitHub/native tools to cover argument
+boundaries, six/seven-variant inventories, missing signing secrets, private
+manifest URLs, stale-head refusal, download integrity and native staging.
+They do not compile an APK, native library or JVM code, contact GitHub, or prove
+runtime behavior. New regression tests and packaging changes are unexecuted
+until the orchestrator runs the candidate on Blacksmith.
 
 Linux x64 and arm64 use the same recipe; the scripts choose the OpenSSL target and
 the `linux-x64` or `linux-arm64` resource directory from the host architecture.

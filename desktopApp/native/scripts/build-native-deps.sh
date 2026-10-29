@@ -47,6 +47,13 @@ fi
 # through winpthreads, which its own link line pulls in statically.
 FFMPEG_THREADS="--enable-pthreads"
 case "$(uname -s)" in MINGW64* | MSYS*) FFMPEG_THREADS="--enable-w32threads" ;; esac
+# The recipes below are POSIX recipes: they shell out to sh tools such as test, sed and mkdir. MSYS2 also
+# ships a native mingw32-make that runs recipes through cmd.exe, so name the MSYS build of make explicitly
+# on Windows hosts instead of accepting whatever the PATH order resolves.
+MAKE_TOOL=make
+case "$(uname -s)" in
+    MINGW64* | MSYS*) if [ -x /usr/bin/make ]; then MAKE_TOOL=/usr/bin/make; fi ;;
+esac
 
 sha256_check() {
     local actual
@@ -79,11 +86,22 @@ MINIAUDIO_LICENSE_SHA256=457f1b500e0adf6bc059edddfa78a2f62012e7c3bb43476c20e0bd2
 
 log() { printf '[native-deps] %s\n' "$*"; }
 
+# Dependency output is captured in a log file, so a silent non-zero status would otherwise be the whole
+# diagnostic CI gets. Print what failed and the end of the log that explains it.
+fail_log() {
+    log "last 60 lines of $1:"
+    tail -n 60 "$1" >&2 || true
+    log "that step failed; the closure above is incomplete"
+    exit 1
+}
+
 fetch() {
     local url="$1" dest="$2" sha="$3"
     if [ ! -f "$dest" ]; then
         log "downloading $(basename "$dest")"
-        curl -fsSL -o "$dest.part" "$url"
+        curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 300 \
+            --connect-timeout 30 --max-time 180 -o "$dest.part" "$url"
         mv "$dest.part" "$dest"
     fi
     if ! sha256_check "$sha" "$dest"; then
@@ -102,13 +120,17 @@ verify_ffmpeg_signature() {
     fi
     mkdir -p "$gnupg"
     chmod 700 "$gnupg"
-    GNUPGHOME="$gnupg" gpg --batch --import "$DOWNLOADS/ffmpeg-devel.asc" >"$LOGS/ffmpeg-signature.log" 2>&1
+    if ! GNUPGHOME="$gnupg" gpg --batch --yes --no-tty --import "$DOWNLOADS/ffmpeg-devel.asc" \
+        >"$LOGS/ffmpeg-signature.log" 2>&1; then
+        log "gpg could not import the FFmpeg release key, so the tarball stays unverified"
+        fail_log "$LOGS/ffmpeg-signature.log"
+    fi
     if GNUPGHOME="$gnupg" gpg --batch --status-fd 1 --verify "$tarball.asc" "$tarball" \
         2>>"$LOGS/ffmpeg-signature.log" | grep -q "^\[GNUPG:\] VALIDSIG .* $FFMPEG_SIGNING_FPR\$"; then
         log "FFmpeg $FFMPEG_VERSION signature verified against $FFMPEG_SIGNING_FPR"
     else
         log "FFmpeg signature verification FAILED; see $LOGS/ffmpeg-signature.log"
-        exit 1
+        fail_log "$LOGS/ffmpeg-signature.log"
     fi
 }
 
@@ -126,8 +148,21 @@ build_zlib() {
     stamp_done zlib && return 0
     log "building zlib $ZLIB_VERSION"
     unpack "$DOWNLOADS/zlib-$ZLIB_VERSION.tar.gz" "zlib-$ZLIB_VERSION"
-    (cd "$SRC/zlib-$ZLIB_VERSION" && ./configure --prefix="$PREFIX" --shared && make -j"$JOBS" && make install) \
-        >"$LOGS/zlib.log" 2>&1
+    if [ "$OPENSSL_TARGET" = mingw64 ]; then
+        # The Unix configure recipe names ELF .so files even on MinGW; use upstream's DLL/import-library
+        # recipe. Its install target builds libz.a, zlib1.dll and libz.dll.a (the default target would also
+        # build the four example programs) and writes the zlib.pc that FFmpeg's configure reads.
+        if ! (cd "$SRC/zlib-$ZLIB_VERSION" && "$MAKE_TOOL" -f win32/Makefile.gcc -j"$JOBS" install SHARED_MODE=1 \
+                BINARY_PATH="$PREFIX/bin" INCLUDE_PATH="$PREFIX/include" LIBRARY_PATH="$PREFIX/lib") \
+            >"$LOGS/zlib.log" 2>&1; then
+            fail_log "$LOGS/zlib.log"
+        fi
+    else
+        if ! (cd "$SRC/zlib-$ZLIB_VERSION" && ./configure --prefix="$PREFIX" --shared && \
+                "$MAKE_TOOL" -j"$JOBS" && "$MAKE_TOOL" install) >"$LOGS/zlib.log" 2>&1; then
+            fail_log "$LOGS/zlib.log"
+        fi
+    fi
     stamp_set zlib
 }
 
@@ -135,8 +170,11 @@ build_openssl() {
     stamp_done openssl && return 0
     log "building OpenSSL $OPENSSL_VERSION"
     unpack "$DOWNLOADS/openssl-$OPENSSL_VERSION.tar.gz" "openssl-$OPENSSL_VERSION"
-    (cd "$SRC/openssl-$OPENSSL_VERSION" && ./Configure "$OPENSSL_TARGET" --prefix="$PREFIX" --libdir=lib \
-        shared no-tests no-docs && make -j"$JOBS" && make install_sw) >"$LOGS/openssl.log" 2>&1
+    if ! (cd "$SRC/openssl-$OPENSSL_VERSION" && ./Configure "$OPENSSL_TARGET" --prefix="$PREFIX" --libdir=lib \
+            shared no-tests no-docs && "$MAKE_TOOL" -j"$JOBS" && "$MAKE_TOOL" install_sw) \
+        >"$LOGS/openssl.log" 2>&1; then
+        fail_log "$LOGS/openssl.log"
+    fi
     stamp_set openssl
 }
 
@@ -147,8 +185,11 @@ build_static_openssl() {
     rm -rf "$tree"
     mkdir -p "$tree"
     tar -xf "$DOWNLOADS/openssl-$OPENSSL_VERSION.tar.gz" -C "$tree"
-    (cd "$tree/openssl-$OPENSSL_VERSION" && ./Configure "$OPENSSL_TARGET" --prefix="$STATIC_OPENSSL_PREFIX" \
-        --libdir=lib no-shared no-tests no-docs && make -j"$JOBS" && make install_sw) >"$LOGS/openssl-static.log" 2>&1
+    if ! (cd "$tree/openssl-$OPENSSL_VERSION" && ./Configure "$OPENSSL_TARGET" --prefix="$STATIC_OPENSSL_PREFIX" \
+            --libdir=lib no-shared no-tests no-docs && "$MAKE_TOOL" -j"$JOBS" && "$MAKE_TOOL" install_sw) \
+        >"$LOGS/openssl-static.log" 2>&1; then
+        fail_log "$LOGS/openssl-static.log"
+    fi
     stamp_set openssl-static
 }
 
@@ -156,10 +197,12 @@ build_libxml2() {
     stamp_done libxml2 && return 0
     log "building libxml2 $LIBXML2_VERSION (HTTP, FTP, Python and ICU loading disabled)"
     unpack "$DOWNLOADS/libxml2-$LIBXML2_VERSION.tar.xz" "libxml2-$LIBXML2_VERSION"
-    (cd "$SRC/libxml2-$LIBXML2_VERSION" && PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" ./configure \
-        --prefix="$PREFIX" --enable-shared --disable-static --with-zlib="$PREFIX" \
-        --without-python --without-lzma --without-http --without-ftp --without-icu --without-debug \
-        && make -j"$JOBS" && make install) >"$LOGS/libxml2.log" 2>&1
+    if ! (cd "$SRC/libxml2-$LIBXML2_VERSION" && PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" ./configure \
+            --prefix="$PREFIX" --enable-shared --disable-static --with-zlib="$PREFIX" \
+            --without-python --without-lzma --without-http --without-ftp --without-icu --without-debug \
+            && "$MAKE_TOOL" -j"$JOBS" && "$MAKE_TOOL" install) >"$LOGS/libxml2.log" 2>&1; then
+        fail_log "$LOGS/libxml2.log"
+    fi
     stamp_set libxml2
 }
 
@@ -167,12 +210,14 @@ build_ffmpeg() {
     stamp_done ffmpeg && return 0
     log "building FFmpeg $FFMPEG_VERSION shared libraries (version 3 license set, no nonfree code)"
     unpack "$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz" "ffmpeg-$FFMPEG_VERSION"
-    (cd "$SRC/ffmpeg-$FFMPEG_VERSION" && PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" ./configure \
-        --prefix="$PREFIX" --enable-shared --disable-static --disable-programs --disable-doc \
-        --disable-debug --disable-autodetect --enable-version3 $FFMPEG_THREADS \
-        --enable-libxml2 --enable-openssl --enable-zlib --disable-x86asm \
-        --extra-cflags="-I$PREFIX/include" --extra-ldflags="$FFMPEG_EXTRA_LDFLAGS" \
-        && make -j"$JOBS" && make install) >"$LOGS/ffmpeg.log" 2>&1
+    if ! (cd "$SRC/ffmpeg-$FFMPEG_VERSION" && PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" ./configure \
+            --prefix="$PREFIX" --enable-shared --disable-static --disable-programs --disable-doc \
+            --disable-debug --disable-autodetect --enable-version3 $FFMPEG_THREADS \
+            --enable-libxml2 --enable-openssl --enable-zlib --disable-x86asm \
+            --extra-cflags="-I$PREFIX/include" --extra-ldflags="$FFMPEG_EXTRA_LDFLAGS" \
+            && "$MAKE_TOOL" -j"$JOBS" && "$MAKE_TOOL" install) >"$LOGS/ffmpeg.log" 2>&1; then
+        fail_log "$LOGS/ffmpeg.log"
+    fi
     stamp_set ffmpeg
 }
 
@@ -215,4 +260,6 @@ main() {
     log "miniaudio: $SRC/miniaudio-$MINIAUDIO_VERSION/miniaudio.h"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

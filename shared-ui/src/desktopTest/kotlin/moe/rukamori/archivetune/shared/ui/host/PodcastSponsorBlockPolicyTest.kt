@@ -52,9 +52,25 @@ class PodcastSponsorBlockPolicyTest {
     @Test fun emptyCategoriesAndInvalidPersistedOriginsRefuseLookup() {
         val noCategories = preferences().toEditor().apply { this[SponsorBlockCategoriesKey] = emptySet() }.snapshot()
         assertNull(podcastSponsorBlockConfig(episode, noCategories))
-        for (origin in listOf("http://segments.example.test", "https://", "https://segments.example.test/api")) {
+        for (origin in listOf(
+            "http://segments.example.test", "https:", "https:/", "https://", "https:///", "https://:443",
+            "/", "//", "https://segments.example.test/api", "https://segments.example.test//",
+            "https://segments.example.test?q=x", "https://segments.example.test#fragment",
+        )) {
             val invalid = preferences().toEditor().apply { this[SponsorBlockApiUrlKey] = origin }.snapshot()
-            assertNull(podcastSponsorBlockConfig(episode, invalid))
+            assertNull(podcastSponsorBlockConfig(episode, invalid), origin)
+        }
+    }
+
+    @Test fun blankOriginsKeepThePublicDefaultAndValidCustomOriginsNormalizeOnlyTheRootSlash() {
+        val defaults = assertNotNull(podcastSponsorBlockConfig(episode, preferences()))
+        for (origin in listOf("", " ", "\t")) {
+            val blank = preferences().toEditor().apply { this[SponsorBlockApiUrlKey] = origin }.snapshot()
+            assertEquals(defaults, podcastSponsorBlockConfig(episode, blank))
+        }
+        for (origin in listOf("https://segments.example.test:8443", "https://[2001:db8::1]:8443")) {
+            val custom = preferences().toEditor().apply { this[SponsorBlockApiUrlKey] = " $origin/ " }.snapshot()
+            assertEquals(origin, assertNotNull(podcastSponsorBlockConfig(episode, custom)).origin)
         }
     }
 

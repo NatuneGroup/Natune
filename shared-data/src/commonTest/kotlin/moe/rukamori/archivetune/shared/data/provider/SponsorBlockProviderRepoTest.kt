@@ -53,8 +53,22 @@ class SponsorBlockProviderRepoTest {
             assertTrue(KtorSponsorBlockRepository(client).segments("abcdefghijk", SponsorBlockConfig(true)).isEmpty())
         } finally { client.close() }
     }
-    @Test fun originValidationRejectsCredentialsAndUnexpectedPaths() {
-        for (url in listOf("http://example.com", "https://user:pass@example.com", "https://example.com/path", "https://example.com?q=x"))
-            assertFailsWith<IllegalArgumentException> { SponsorBlockConfig(true, origin = url) }
+    @Test fun originValidationRejectsMissingAuthoritiesCredentialsAndUnexpectedPaths() {
+        for (url in listOf(
+            "http://example.com", "https:", "https:/", "https://", "https:///", "https:///example.com",
+            "https://:443", "/", "//example.com", "https://user:pass@example.com", "https://@example.com",
+            "https://example.com/path", "https://example.com//", "https://example.com?q=x", "https://example.com#fragment",
+        )) {
+            assertFailsWith<IllegalArgumentException>(url) { SponsorBlockConfig(true, origin = url) }
+        }
+    }
+
+    @Test fun validHttpsOriginsKeepCustomHostsPortsAndIpv6() {
+        for (origin in listOf(
+            "https://segments.example.test", "https://segments.example.test/",
+            "https://segments.example.test:8443", "https://[2001:db8::1]:8443",
+        )) {
+            assertEquals(origin, SponsorBlockConfig(true, origin = origin).origin)
+        }
     }
 }

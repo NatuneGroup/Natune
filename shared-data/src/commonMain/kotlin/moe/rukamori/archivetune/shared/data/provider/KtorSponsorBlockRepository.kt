@@ -13,6 +13,10 @@ import moe.rukamori.archivetune.shared.domain.platform.ContentDigest
 data class SponsorBlockConfig(val enabled: Boolean, val categories: Set<String> = setOf("music_offtopic"),
     val origin: String = "https://sponsor.ajay.app") {
     init {
+        // Ktor supplies a default host for incomplete URLs such as "https:".
+        require(origin.startsWith("https://", ignoreCase = true))
+        val authority = origin.substring("https://".length).substringBefore('/').substringBefore('?').substringBefore('#')
+        require(authority.isNotBlank() && !authority.startsWith(':') && '@' !in authority)
         val url = Url(origin)
         require(url.protocol == URLProtocol.HTTPS && url.host.isNotBlank() && url.user.isNullOrEmpty() &&
             url.password.isNullOrEmpty() && url.parameters.isEmpty() && url.fragment.isEmpty() &&

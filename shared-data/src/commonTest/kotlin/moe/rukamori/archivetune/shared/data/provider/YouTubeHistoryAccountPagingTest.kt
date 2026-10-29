@@ -46,7 +46,7 @@ class YouTubeHistoryAccountPagingTest {
         val first = fixture.repository.page(history)
         fixture.accepted = fixture.accepted.copy(generation = 2L)
         assertFailsWith<ContentAccountChanged> { fixture.repository.page(history, first.continuation) }
-        assertEquals(listOf(null), fixture.calls)
+        assertEquals(listOf<String?>(null), fixture.calls)
     }
 
     @Test fun anAccountSwitchDuringTheReadDiscardsItsPage() = runTest {

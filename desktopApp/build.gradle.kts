@@ -244,6 +244,20 @@ val nativePrefix = nativeRoot.map { it.dir("prefix") }
 val nativeMiniaudioDir = nativeRoot.map { it.dir("src/miniaudio-0.11.25") }
 val nativeEngineBuildDir = nativeRoot.map { it.dir("engine-build") }
 val nativeEngineLibrary = nativeEngineBuildDir.map { it.file(System.mapLibraryName("archivetune_engine")) }
+val hostIsLinux = System.getProperty("os.name").startsWith("Linux")
+val hostIsWindows = System.getProperty("os.name").startsWith("Windows")
+val hostIsMacos = !hostIsLinux && !hostIsWindows
+val hostArch = if (System.getProperty("os.arch") in listOf("aarch64", "arm64")) "arm64" else "x64"
+val hostNativeName = when {
+    hostIsLinux -> "linux-$hostArch"
+    hostIsWindows -> "windows-$hostArch"
+    else -> "macos-$hostArch"
+}
+val hostNativeDirectory = layout.buildDirectory.dir("distribution-resources/$hostNativeName/native")
+// Homebrew CMake/Python may be arm64 even when the packaging JDK runs under Rosetta.
+val nativeArchitectureArguments = if (hostIsMacos) {
+    listOf("-DCMAKE_OSX_ARCHITECTURES=${if (hostArch == "x64") "x86_64" else "arm64"}")
+} else emptyList()
 
 val configureNativeEngine = tasks.register<Exec>("configureNativeEngine") {
     group = "build"
@@ -264,17 +278,17 @@ val configureNativeEngine = tasks.register<Exec>("configureNativeEngine") {
     if (System.getProperty("os.name").startsWith("Windows")) {
         engineArguments += listOf("-G", "MinGW Makefiles")
     }
+    engineArguments += nativeArchitectureArguments
     commandLine(*engineArguments.toTypedArray())
 }
 
-val hostIsLinux = System.getProperty("os.name").startsWith("Linux")
 val nativeSystemBuildDir = nativeRoot.map { it.dir("system-build") }
 val configureNativeSystem = tasks.register<Exec>("configureNativeSystem") {
     onlyIf { !hostIsLinux }
     inputs.dir(file("native/system"))
     outputs.file(nativeSystemBuildDir.map { it.file("CMakeCache.txt") })
-    commandLine("cmake", "-S", file("native/system").absolutePath, "-B", nativeSystemBuildDir.get().asFile.absolutePath,
-        "-DCMAKE_BUILD_TYPE=Release")
+    commandLine(listOf("cmake", "-S", file("native/system").absolutePath, "-B", nativeSystemBuildDir.get().asFile.absolutePath,
+        "-DCMAKE_BUILD_TYPE=Release") + nativeArchitectureArguments)
 }
 val buildNativeSystem = tasks.register<Exec>("buildNativeSystem") {
     dependsOn(configureNativeSystem)
@@ -288,13 +302,6 @@ val buildNativeSystem = tasks.register<Exec>("buildNativeSystem") {
 // on macOS. The playback engine never links it. A full desktop package requires it, because a package without it would
 // silently drop native cookie sign-in. The package prerequisites are recorded in native/browser/CMakeLists.txt.
 val nativeBrowserBuildDir = nativeRoot.map { it.dir("browser-build") }
-val hostArch = if (System.getProperty("os.arch") in listOf("aarch64", "arm64")) "arm64" else "x64"
-val hostNativeName = when {
-    hostIsLinux -> "linux-$hostArch"
-    System.getProperty("os.name").startsWith("Windows") -> "windows-$hostArch"
-    else -> "macos-$hostArch"
-}
-val hostNativeDirectory = layout.buildDirectory.dir("distribution-resources/$hostNativeName/native")
 val webView2Sdk = providers.gradleProperty("desktopWebView2Sdk").orNull
 val configureNativeBrowser = tasks.register<Exec>("configureNativeBrowser") {
     group = "build"
@@ -313,7 +320,7 @@ val configureNativeBrowser = tasks.register<Exec>("configureNativeBrowser") {
     val arguments = listOf(
         "cmake", "-S", file("native/browser").absolutePath,
         "-B", nativeBrowserBuildDir.get().asFile.absolutePath, "-DCMAKE_BUILD_TYPE=Release",
-    ) + webView2Arguments
+    ) + nativeArchitectureArguments + webView2Arguments
     commandLine(*arguments.toTypedArray())
 }
 val buildNativeBrowser = tasks.register<Exec>("buildNativeBrowser") {
@@ -333,12 +340,11 @@ val installNativeBrowser = tasks.register<Exec>("installNativeBrowser") {
     // The host scripts also write this directory, so the install runs after them, never beside them.
     mustRunAfter("stageLinuxNativeResources", "stageMacosNativeResources", "stageWindowsNativeResources")
     inputs.dir(nativeBrowserBuildDir)
-    outputs.dir(hostNativeDirectory)
+    // Owning the shared directory lets Gradle's stale-output cleanup delete the already staged engine/FFmpeg closure.
+    outputs.file(hostNativeDirectory.map { it.file(System.mapLibraryName("archivetune_browser")) })
     commandLine("cmake", "--install", nativeBrowserBuildDir.get().asFile.absolutePath, "--config", "Release",
         "--prefix", hostNativeDirectory.get().asFile.absolutePath)
 }
-val hostIsWindows = System.getProperty("os.name").startsWith("Windows")
-val hostIsMacos = !hostIsLinux && !hostIsWindows
 val desktopNativeDirectoryOverride = providers.gradleProperty("desktopNativeDirectory")
 val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") {
     group = "distribution"
@@ -366,7 +372,7 @@ val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") 
             // closure audit; what remains here is the OS adapter the engine never links.
             val engineName = System.mapLibraryName("archivetune_engine")
             check(hostNativeDirectory.get().asFile.resolve(engineName).isFile) {
-                "Host playback engine missing; run the host's stage-*-package.py first."
+                "Host playback engine missing at ${hostNativeDirectory.get().asFile.resolve(engineName)}; run the host's stage-*-package.py first."
             }
             val systemName = System.mapLibraryName("archivetune_system")
             val system = nativeSystemBuildDir.get().asFile.walkTopDown().firstOrNull { it.name == systemName && it.isFile }
@@ -380,11 +386,10 @@ val stageDesktopNativeResources = tasks.register("stageDesktopNativeResources") 
         val tdlightStage = layout.buildDirectory.dir("tdlight-jvm/stage").get().asFile
         val tdlightLibrary = tdlightStage.resolve("$hostNativeName/native/${System.mapLibraryName("tdjni")}")
         check(tdlightLibrary.isFile) {
-            // Each host has one recipe: build-tdjni.sh for Linux and macOS, build-tdjni.ps1 for Windows x64. No arm64
-            // Windows recipe exists, so that host is named as uncovered rather than sent to a recipe that refuses it.
+            // Release CI uses build-tdjni.sh on every host, including MSYS2 MinGW on Windows x64.
             when (hostNativeName) {
-                "windows-x64" -> "Missing $tdlightLibrary; run powershell -ExecutionPolicy Bypass -File desktopApp/tdlight-jvm/native/build-tdjni.ps1 first."
-                "linux-x64", "linux-arm64", "macos-arm64", "macos-x64" -> "Missing $tdlightLibrary; run bash desktopApp/tdlight-jvm/native/build-tdjni.sh first."
+                "windows-x64", "linux-x64", "linux-arm64", "macos-arm64", "macos-x64" ->
+                    "Missing $tdlightLibrary; run bash desktopApp/tdlight-jvm/native/build-tdjni.sh first (MSYS2 MINGW64 on Windows)."
                 else -> "Missing $tdlightLibrary; no TDLight recipe covers $hostNativeName."
             }
         }
@@ -406,7 +411,7 @@ tasks.register<Exec>("stageLinuxNativeResources") {
 tasks.register<Exec>("stageMacosNativeResources") {
     dependsOn("buildNativeEngine")
     onlyIf { hostIsMacos }
-    commandLine("python3", file("native/scripts/stage-macos-package.py").absolutePath)
+    commandLine("python3", file("native/scripts/stage-macos-package.py").absolutePath, "--arch", hostArch)
 }
 tasks.register<Exec>("stageWindowsNativeResources") {
     dependsOn("buildNativeEngine")
