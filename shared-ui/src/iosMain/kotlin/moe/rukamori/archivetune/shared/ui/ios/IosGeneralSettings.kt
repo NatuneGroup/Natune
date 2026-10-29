@@ -28,7 +28,10 @@ import moe.rukamori.archivetune.shared.ui.settings.PlaybackSettings
 import moe.rukamori.archivetune.shared.ui.settings.PlayerAppearanceSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
+import moe.rukamori.archivetune.shared.ui.settings.SettingsRoutes
 import moe.rukamori.archivetune.shared.ui.settings.SettingsRow
+import moe.rukamori.archivetune.shared.ui.settings.YtDlpRuntimeSettings
+import moe.rukamori.archivetune.shared.ui.settings.YtDlpRuntimeStatus
 import moe.rukamori.archivetune.shared.ui.settings.appearanceExtrasSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.appearanceInterfaceSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.lyricsAnimationSettingsRows
@@ -40,6 +43,7 @@ internal val IOS_GENERAL_SETTINGS_ROUTES = setOf(
     "settings/appearance", "settings/appearance/theme", "settings/appearance/player", "settings/appearance/interface",
     "settings/appearance/extras", "settings/appearance/lyrics_animations", "settings/player", "settings/lyrics",
     DiscordExperimentalRoute,
+    SettingsRoutes.YTDLP,
 )
 
 /**
@@ -97,6 +101,10 @@ internal fun IosGeneralSettingsPage(
         )
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
         DiscordExperimentalRoute -> DiscordExperimentalSettings(controller, onFailure, scrollTo)
+        // This host ships no Python or yt-dlp runtime, so both checks report absent rather than probing a missing binary.
+        SettingsRoutes.YTDLP -> YtDlpRuntimeSettings(
+            readRuntime = { YtDlpRuntimeStatus(pythonAvailable = false, scriptAvailable = false) },
+        )
     }
 }
 

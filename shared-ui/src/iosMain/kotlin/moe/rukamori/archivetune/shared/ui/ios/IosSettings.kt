@@ -4,8 +4,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -17,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -37,10 +40,12 @@ import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
 import moe.rukamori.archivetune.shared.data.provider.TidalRefreshResult
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCookieOnlyBrowserAuth
 import moe.rukamori.archivetune.shared.data.provider.verifyDeezerArl
+import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
+import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceState
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
-import moe.rukamori.archivetune.shared.data.provider.TidalAccountDeviceLink
 import moe.rukamori.archivetune.shared.domain.settings.QobuzTokenEntry
 import moe.rukamori.archivetune.shared.domain.settings.SourceHealth
 import moe.rukamori.archivetune.shared.domain.settings.SourceHealthStatus
@@ -55,16 +60,26 @@ import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.ui.IosHost
+import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.presence.ListenerPresenceSection
 import moe.rukamori.archivetune.shared.ui.resources.*
-import moe.rukamori.archivetune.shared.ui.resources.ios_logs_copied
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_change_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
+import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
+import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings
+import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
+import moe.rukamori.archivetune.shared.ui.settings.DeveloperSettings
+import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
+import moe.rukamori.archivetune.shared.ui.settings.LanguagePackSettings
+import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
+import moe.rukamori.archivetune.shared.ui.settings.LyricsRomanisationSettings
+import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
+import moe.rukamori.archivetune.shared.ui.settings.japanesePackUiState
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
@@ -90,13 +105,14 @@ import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import org.jetbrains.compose.resources.stringResource
+import platform.Foundation.NSByteCountFormatter
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
  * TIDAL account endpoints. The device link shows when this build carries a TIDAL device client, and a pasted refresh
  * token is always verified with TIDAL.
  */
-internal class IosSettingsOwners(private val graph: IosSessionGraph, browser: IosCookieOnlyBrowserAuth) {
+internal class IosSettingsOwners(internal val graph: IosSessionGraph, browser: IosCookieOnlyBrowserAuth) {
     val deezerWeb = IosDeezerWebSignIn(graph, browser)
     val controller = SettingsController(
         graph.settings,
@@ -105,6 +121,10 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph, browser: Io
         bitPerfectSupported = false,
     )
     val accounts = graph.accountLifecycle
+
+    /** Lazy so the AI service is built only when its page opens; it shares the graph's HTTP engine and scope. */
+    val aiActions by lazy { AiSettingsActions(graph.scope, controller, KtorAiTextService(graph.http)) }
+
     val tidalInstanceHealth = MutableStateFlow<Map<String, TidalInstanceHealth>>(emptyMap())
 
     /** The device-link flow when this build carries a TIDAL device client, else the row stays disabled. */
@@ -144,9 +164,6 @@ internal class IosSettingsOwners(private val graph: IosSessionGraph, browser: Io
 
     suspend fun verifyDeezer(arl: String): DeezerArlAccount? =
         verifyDeezerArl(graph.http, arl)?.let { DeezerArlAccount(it.name, it.lossless, it.userId) }
-
-    val tidalDeviceLink: TidalDeviceLink? =
-        if (graph.tidalAuth.deviceSignInAvailable) TidalAccountDeviceLink(graph.tidalAuth) else null
 
     val tidalWebState = MutableStateFlow<ProviderSignInState>(ProviderSignInState.Idle)
     private var tidalWebGeneration = 0L
@@ -325,7 +342,9 @@ internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.subst
 private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
-)
+    "settings/integration", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
+    "settings/lyrics/romanisation", "settings/ai_integration", "settings/about",
+) + IOS_GENERAL_SETTINGS_ROUTES
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
 @Composable
@@ -336,7 +355,6 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
     val navigate: (String) -> Unit = { target -> navigation.open(target) }
     val changeFailed = stringResource(Res.string.ios_settings_change_failed)
     val featureUnavailable = stringResource(Res.string.ios_settings_feature_unavailable)
-    val logsCopied = stringResource(Res.string.ios_logs_copied)
     fun show(message: String) {
         scope.launch { snackbar.showSnackbar(message) }
     }
@@ -460,6 +478,61 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 onFailure = onFailure,
                 scrollTo = scrollTo,
             )
+            "settings/integration" -> IntegrationSettings(
+                controller = owners.controller,
+                poolConfigured = owners.poolConfigured,
+                // No catalog or streaming Spotify sign-in exists on this host yet, so its rows report that honestly.
+                spotifyAccount = SpotifyCatalogAccountState(),
+                spotifyError = null,
+                navigate = navigate,
+                onConnectSpotify = { show(featureUnavailable) },
+                onReloadSpotifyPlaylists = { },
+                onLogoutSpotify = { },
+                onDismissSpotifyError = { },
+                onPoolAccountsChanged = { enabled -> owners.onPoolAccountsChanged(enabled) },
+                onOpenCrossServiceImport = { show(featureUnavailable) },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/misc" -> IosDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
+            "settings/language_packs" -> IosLanguagePackSettingsPage(host, owners.controller, onFailure)
+            "settings/lyrics/providers" -> LyricsProviderSettings(
+                controller = owners.controller,
+                readStats = { preferences ->
+                    PaxsenixDiagnostics(owners.graph.http, paxsenixSettingsOf(preferences)).getStats().getOrThrow()
+                },
+                checkEndpoints = { preferences ->
+                    PaxsenixDiagnostics(owners.graph.http, paxsenixSettingsOf(preferences)).checkProviderPaths()
+                },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+            "settings/lyrics/romanisation" -> {
+                // Until the host has a pack manager there is no state flow; the page then treats the pack as not installed.
+                val pack by host.japaneseLanguagePack.collectAsState()
+                LyricsRomanisationSettings(
+                    controller = owners.controller,
+                    japanesePack = pack?.state,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
+            "settings/ai_integration" -> AiIntegrationSettings(
+                controller = owners.controller,
+                actions = owners.aiActions,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+                onOpenApiKeyPortal = { uri -> openIosUri(uri, host::report) },
+            )
+            "settings/about" -> IosAboutPage(owners.graph, owners.controller, navigation)
+            in IOS_GENERAL_SETTINGS_ROUTES -> IosGeneralSettingsPage(
+                path = route.value.substringBefore('?'),
+                controller = owners.controller,
+                navigate = navigate,
+                onFailure = onFailure,
+                unavailable = { show(featureUnavailable) },
+                scrollTo = scrollTo,
+            )
             "settings/logcat" -> {
                 val store = host.diagnostics
                 if (store == null) {
@@ -472,16 +545,14 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                         actions = DiagnosticLogActions(
                             back = { navigation.back() },
                             copyToClipboard = ::copyToIosClipboard,
-                            // No share sheet is connected yet, so Share copies the visible lines and says so.
-                            share = { text ->
-                                copyToIosClipboard(text)
-                                show(logsCopied)
-                            },
-                            // A file export needs the document picker, which is not connected. The page is told nothing
-                            // was written, and the user is told why.
+                            share = { text -> iosShareText(host, text) },
+                            // A real document, so Save to Files and AirDrop carry the report rather than a copied string.
                             export = {
-                                show(featureUnavailable)
-                                null
+                                iosExportTextFile(
+                                    host,
+                                    "natune-log-${Clock.System.now().toEpochMilliseconds()}.txt",
+                                    iosDiagnosticReport(host),
+                                )
                             },
                         ),
                     )
@@ -569,3 +640,77 @@ private fun IosListenerPresenceSection(store: ListenerPresenceStore, report: (St
         onResetId = { change { store.resetId() } },
     )
 }
+
+/**
+ * Settings > Misc on this host. The acoustic audit, Discord debug and nerd-stats sections need owners this host does not
+ * connect, so each reports itself unavailable rather than showing an empty block.
+ */
+@Composable
+private fun IosDeveloperSettingsPage(
+    controller: SettingsController,
+    navigate: (String) -> Unit,
+    onFailure: () -> Unit,
+    scrollTo: String?,
+) {
+    DeveloperSettings(
+        controller = controller,
+        navigate = navigate,
+        playerAvailable = true,
+        acousticQualitySection = { IosUnavailablePanel() },
+        discordDebugSection = { IosUnavailablePanel() },
+        nerdStatsSection = { IosUnavailablePanel() },
+        resumed = true,
+        onFailure = onFailure,
+        scrollTo = scrollTo,
+    )
+}
+
+@Composable
+private fun IosUnavailablePanel() {
+    Text(
+        stringResource(Res.string.ios_settings_feature_unavailable),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+/** Settings > Language packs over the host's Japanese pack manager; the SpatialFlow add-on is not offered on iOS. */
+@Composable
+private fun IosLanguagePackSettingsPage(host: IosHost, controller: SettingsController, onFailure: () -> Unit) {
+    val pack by host.japaneseLanguagePack.collectAsState()
+    val manager = pack
+    if (manager == null) {
+        IosUnboundSurface(Modifier.fillMaxSize())
+        return
+    }
+    val packState by manager.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    fun hostAction(block: suspend JapaneseLanguagePackManager.() -> Unit) {
+        scope.launch {
+            try {
+                manager.block()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                host.report("language pack change failed: ${failure::class.simpleName}")
+                onFailure()
+            }
+        }
+    }
+    LanguagePackSettings(
+        controller = controller,
+        japanese = japanesePackUiState(packState),
+        spatialFlowFont = AddonDownloadUiState.Unavailable,
+        formatSize = ::iosByteCountSize,
+        onInstallJapanese = { hostAction { install() } },
+        onCancelJapanese = { hostAction { cancel() } },
+        onRemoveJapanese = { hostAction { remove() } },
+        onInstallSpatialFlowFont = { },
+        onRemoveSpatialFlowFont = { },
+        onFailure = onFailure,
+    )
+}
+
+/** The platform's locale-aware byte count, so the pack sizes read the way the rest of the system shows them. */
+private fun iosByteCountSize(bytes: Long): String = NSByteCountFormatter.stringFromByteCount(bytes)
