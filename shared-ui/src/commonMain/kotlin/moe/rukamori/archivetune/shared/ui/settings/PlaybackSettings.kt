@@ -130,6 +130,8 @@ fun playbackSettingsRows(
         enabled = preferences[TidalEnabledKey, true]))
     add(SettingsRow.Action("artwork_priority", Res.string.m6_artwork_priority, arrangeArtworkProviders))
     add(SettingsRow.Toggle("persistent_queue", Res.string.m6_persistent_queue, PersistentQueueKey, true))
+    add(SettingsRow.Toggle("infinite_queue", Res.string.queue_infinite, AutoLoadMoreKey, true,
+        description = Res.string.queue_infinite_description))
     add(SettingsRow.Toggle("permanent_shuffle", Res.string.m6_permanent_shuffle, PermanentShuffleKey, false))
     add(SettingsRow.Toggle("swipe_up_queue", Res.string.m6_swipe_queue, SwipeUpToOpenQueueKey, true))
     add(SettingsRow.Toggle("queue_after_manual", Res.string.m6_queue_manual, QueueAddAfterManualKey, true))

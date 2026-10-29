@@ -157,6 +157,8 @@ private fun libraryMixHeader(
             cached = snapshot?.get(HideCachedCardKey) != true,
             localFiles = snapshot?.get(HideLocalFilesCardKey) != true,
             myTopSize = myTopSize,
+            // No hide preference exists for this card; a host without uploads answers the route with its boundary.
+            uploads = true,
         ),
         recent = recent,
         topMixes = if (snapshot?.get(HideAiMixKey) == true) null else LibraryTopMixesUi.Message(topMixesUnavailable),

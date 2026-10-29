@@ -57,6 +57,8 @@ data class LibraryShortcutsUi(
     val myTopSize: Int?,
     val likedDetail: String? = null,
     val likedRoute: String = "auto_playlist/liked",
+    /** The uploads card has no hide preference; it is the only route to the account's uploads shelf. */
+    val uploads: Boolean = false,
 )
 
 /**
@@ -112,7 +114,7 @@ fun LazyListScope.libraryMixHeader(
     artwork: ContentArtwork,
 ) {
     val shortcuts = state.shortcuts
-    if (shortcuts.liked || shortcuts.offline || shortcuts.cached || shortcuts.localFiles || shortcuts.myTopSize != null) {
+    if (shortcuts.liked || shortcuts.offline || shortcuts.cached || shortcuts.localFiles || shortcuts.myTopSize != null || shortcuts.uploads) {
         item(key = "library-mix-shortcuts", contentType = "library-mix-shortcuts") {
             LibraryShortcutGrid(shortcuts, actions.openRoute)
         }
@@ -205,6 +207,20 @@ private fun LibraryShortcutGrid(state: LibraryShortcutsUi, open: (String) -> Uni
                         tag = "my-top",
                         modifier = modifier,
                     ) { open("top_playlist/$size") }
+                }
+                Spacer(Modifier.weight(1f))
+            }
+        }
+        if (state.uploads) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ShortcutSlot(true) { modifier ->
+                    ShortcutCard(
+                        title = stringResource(Res.string.uploads_title),
+                        detail = stringResource(Res.string.uploads_on_account),
+                        accent = colors.tertiary,
+                        tag = "uploads",
+                        modifier = modifier,
+                    ) { open("uploaded_songs") }
                 }
                 Spacer(Modifier.weight(1f))
             }

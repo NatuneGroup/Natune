@@ -41,8 +41,8 @@ import moe.rukamori.archivetune.shared.domain.repository.radioQueueRequest
 /**
  * The watch-next seeding rules `MusicService.startRadioSeamlessly` / `onInfiniteQueueEnabled` have on Android,
  * replayed against [PortableQueueOwner]: only a confirmed-complete finite queue under AutoLoadMore with repeat off
- * seeds radio; an unknown or consumed tail never does; every appended page is hidden-content-filtered and
- * deduplicated by media id.
+ * seeds radio near its end. Explicit radio lineage may reseed, but an unknown legacy finite queue never does.
+ * Every recommendation page is hidden-content-filtered and deduplicated by media id.
  */
 class RadioQueueSeedingTest {
     // Unconfined so engine-snapshot collectors resume inline during advanceUntilIdle; a StandardTestDispatcher
@@ -128,7 +128,8 @@ class RadioQueueSeedingTest {
         advanceUntilIdle()
         val grown = h.owner.state.value
         assertEquals(listOf("p1", "p2", "r1", "r2", "r3"), grown.entries.map { it.occurrenceId })
-        assertNull(grown.tail)
+        assertEquals(QueueCollectionKind.RADIO, grown.tail?.kind)
+        assertNull(grown.tail?.continuation)
 
         h.endNow("r3")
         advanceUntilIdle()
@@ -172,7 +173,7 @@ class RadioQueueSeedingTest {
     }
 
     @Test
-    fun unknownTailPagesButNeverSeedsAgain() = scope.runTest {
+    fun explicitRadioTailPagesAndCanReseedAfterItIsConsumed() = scope.runTest {
         val h = Harness(backgroundScope)
         h.youtube.radioPages += page(song("r1"), continuation = "rc1")
         h.youtube.radioPages += page(song("r2"))
@@ -186,7 +187,8 @@ class RadioQueueSeedingTest {
         advanceUntilIdle()
         val paged = h.owner.state.value
         assertEquals(listOf("r1", "r2"), paged.entries.map { it.occurrenceId })
-        assertNull(paged.tail)
+        assertEquals(QueueCollectionKind.RADIO, paged.tail?.kind)
+        assertNull(paged.tail?.continuation)
 
         // The consumed radio tail re-seeds from the current song; with no page left the queue simply ends.
         h.endNow("r2")
@@ -230,7 +232,8 @@ class RadioQueueSeedingTest {
         val queue = h.owner.state.value
         assertEquals(listOf("p1", "p2"), queue.entries.map { it.occurrenceId })
         assertEquals("p1", queue.currentOccurrenceId)
-        assertNull(queue.tail)
+        assertEquals(QueueCollectionKind.RADIO, queue.tail?.kind)
+        assertNull(queue.tail?.continuation)
     }
 
     @Test
