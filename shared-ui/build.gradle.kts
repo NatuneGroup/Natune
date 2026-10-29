@@ -45,7 +45,7 @@ kotlin {
                 implementation(libs.compose.multiplatform.foundation)
                 api(libs.compose.multiplatform.material3)
                 implementation(libs.compose.multiplatform.ui)
-                implementation(libs.compose.multiplatform.components.resources)
+                api(libs.compose.multiplatform.components.resources)
                 implementation(libs.compose.multiplatform.runtime.saveable)
                 api(libs.liquid.glass)
                 api(libs.haze)
