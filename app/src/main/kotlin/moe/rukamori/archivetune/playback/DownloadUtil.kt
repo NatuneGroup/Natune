@@ -160,7 +160,7 @@ class DownloadUtil
         private val saavnAudioQuality by enumPreference(context, SaavnAudioQualityKey, SaavnAudioQuality.QUALITY_320)
         private val deezerAudioQuality by enumPreference(context, DeezerAudioQualityKey, DeezerAudioQuality.FLAC)
         private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val metadataTitles = DownloadMetadataTitles(database, downloadScope)
+        internal val metadataTitles = DownloadMetadataTitles(database, downloadScope)
         private val songUrlCache = ConcurrentHashMap<String, AuthScopedCacheValue>()
 
         /** Download worker pool. */
