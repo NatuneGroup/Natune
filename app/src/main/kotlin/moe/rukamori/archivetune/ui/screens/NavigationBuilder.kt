@@ -73,6 +73,8 @@ import moe.rukamori.archivetune.ui.screens.settings.AndroidAutoSettings
 import moe.rukamori.archivetune.ui.screens.settings.AodCustomizedScreen
 import moe.rukamori.archivetune.ui.screens.settings.AppearanceExtrasSettings
 import moe.rukamori.archivetune.ui.screens.settings.NavigationBarSettings
+import moe.rukamori.archivetune.ui.screens.settings.LIQUID_GLASS_SETTINGS_ROUTE
+import moe.rukamori.archivetune.ui.screens.settings.LiquidGlassSettings
 import moe.rukamori.archivetune.ui.screens.settings.AppearanceSection
 import moe.rukamori.archivetune.ui.screens.settings.AppearanceSectionSettings
 import moe.rukamori.archivetune.ui.screens.settings.AppearanceSettings
@@ -565,6 +567,12 @@ fun NavGraphBuilder.navigationBuilder(
         arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
     ) {
         NavigationBarSettings(navController, scrollTo = it.savedStateHandle["scrollTo"])
+    }
+    composable(
+        route = "$LIQUID_GLASS_SETTINGS_ROUTE?scrollTo={scrollTo}",
+        arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
+    ) {
+        LiquidGlassSettings(navController, scrollTo = it.savedStateHandle["scrollTo"])
     }
     composable("settings/appearance/icon") {
         IconScreen(navController)
