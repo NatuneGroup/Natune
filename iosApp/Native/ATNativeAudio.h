@@ -28,6 +28,13 @@ void at_audio_speed(at_audio_output *output, float speed);
 void at_audio_volume(at_audio_output *output, float volume);
 void at_audio_stop(at_audio_output *output);
 void at_audio_snapshot(at_audio_output *output, ae_snapshot *snapshot);
+/* Main-thread handoff to an AVAudioPlayerNode pump. The decoder, lease and shared session claim stay on this
+ * output. Begin drains the source-node callback before any manual pull; end requires the player node stopped.
+ * Pull is nonwaiting and returns only decoded frames. Normal playback never enters this mode. */
+int at_audio_begin_manual_output(at_audio_output *output);
+uint32_t at_audio_pull_manual_output(at_audio_output *output, float *samples, uint32_t frames);
+void at_audio_end_manual_output(at_audio_output *output);
+void at_audio_manual_output_failed(at_audio_output *output);
 /* Main-thread OS estimate in seconds: max(session output latency, output-node presentation latency), since these
  * overlap rather than form additive stages. Negative means unavailable. Never read from the realtime callback. */
 double at_audio_output_latency(at_audio_output *output);
