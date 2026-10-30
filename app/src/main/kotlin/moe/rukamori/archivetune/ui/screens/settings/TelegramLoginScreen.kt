@@ -101,7 +101,9 @@ fun TelegramLoginScreen(navController: NavController) {
 
     LaunchedEffect(Unit) {
         callingCode = defaultCallingCode(context)
-        if (!TelegramClient.ensureStarted(context)) {
+        if (!TelegramClient.ensureStarted(context) &&
+            (TelegramClient.authState.value as? TelegramAuthState.Unsupported)?.stateName != "AndroidVersion"
+        ) {
             Toast.makeText(context, R.string.telegram_unavailable, Toast.LENGTH_SHORT).show()
             navController.navigateUp()
         }
@@ -245,7 +247,12 @@ fun TelegramLoginScreen(navController: NavController) {
 
                 state is TelegramAuthState.Unsupported -> {
                     Text(
-                        text = stringResource(R.string.telegram_auth_unsupported, state.stateName),
+                        text =
+                            if (state.stateName == "AndroidVersion") {
+                                stringResource(R.string.telegram_android_version_unsupported)
+                            } else {
+                                stringResource(R.string.telegram_auth_unsupported, state.stateName)
+                            },
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
                     )
