@@ -4,15 +4,15 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.library.AutoPlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
@@ -22,7 +22,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.HistoryOrigin
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
-import moe.rukamori.archivetune.shared.ui.host.queuedEntry
+import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
 import moe.rukamori.archivetune.shared.ui.menu.MenuShareHandler
 import moe.rukamori.archivetune.shared.ui.menu.MenuSharing
@@ -31,65 +31,18 @@ import moe.rukamori.archivetune.shared.ui.menu.SharedOverflowMenu
 import moe.rukamori.archivetune.shared.ui.menu.SongMenuFacts
 import moe.rukamori.archivetune.shared.ui.menu.SongMenuHost
 import moe.rukamori.archivetune.shared.ui.menu.SongOverflowMenu
+import moe.rukamori.archivetune.shared.ui.menu.collectionShareAction
+import moe.rukamori.archivetune.shared.ui.menu.customArtworkEntryAction
 import moe.rukamori.archivetune.shared.ui.menu.playlistOccurrenceRemoval
 import moe.rukamori.archivetune.shared.ui.menu.songLibraryAndDownloadActions
 import moe.rukamori.archivetune.shared.ui.menu.songOverflowActions
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
-import moe.rukamori.archivetune.shared.ui.resources.m6_share
-import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.resources.m5pqDetailsRes
 import org.jetbrains.compose.resources.stringResource
-
-/**
- * The one row menu of the iOS host. It mounts the shared song menu with the owners this host actually has: queue,
- * library like and add-to-playlist, clipboard share, history removal and playlist-row removal. Rows whose owner the
- * iOS host does not connect (album and artist pages, sleep timer, downloads, custom artwork) are filtered off the
- * menu rather than appearing as dead items.
- */
-internal class IosSongMenuState {
-    var target: ContentOccurrence? by mutableStateOf(null)
-        private set
-
-    /** The editable local playlist the row sits in, so its remove row commits against that playlist. */
-    var playlistId: String? by mutableStateOf(null)
-        private set
-
-    /** The notice a failed or unconnected row leaves for the user, or null. */
-    var message: String? by mutableStateOf(null)
-        private set
-
-    private var refusedAsUnavailable = false
-
-    fun open(occurrence: ContentOccurrence, playlistId: String? = null) {
-        target = occurrence
-        this.playlistId = playlistId
-    }
-
-    fun dismiss() {
-        target = null
-        playlistId = null
-    }
-
-    fun dismissMessage() {
-        message = null
-    }
-
-    fun failed() {
-        message = if (refusedAsUnavailable) {
-            "ios_settings_feature_unavailable"
-        } else {
-            "ios_menu_action_failed"
-        }
-        refusedAsUnavailable = false
-    }
-
-    internal fun unavailable(): Nothing {
-        refusedAsUnavailable = true
-        throw UnsupportedOperationException("not connected on the iOS host")
-    }
-}
 
 /**
  * Queue commands get their own occurrence of the same item, because a row's list id can already sit in the queue and a
@@ -100,11 +53,23 @@ private class IosMenuInsertQueue(private val queue: QueueController) : QueueCont
         queue.insert(entries.map { it.queuedEntry() }, kind)
 }
 
+/** The host the shared song menu runs against on iOS. Rows without a real owner are filtered off the menu. */
 private class IosSongMenuHost(
-    private val state: IosSongMenuState,
+    private val state: IosItemMenuState,
     private val graph: IosSessionGraph,
+    private val openRoute: (String) -> Unit,
 ) : SongMenuHost {
-    override suspend fun startRadio(song: ContentRef) = state.unavailable()
+    /**
+     * The song loads alone and the watch-next tail is appended behind it, the pair of calls `PlayerConnection.startRadio`
+     * makes on Android. A queue that could not seed the tail is a failure, not a silent solo play.
+     */
+    override suspend fun startRadio(song: ContentRef) {
+        if (song.provider != ContentProvider.YOUTUBE.id || song.kind != ContentKind.SONG) state.unavailable()
+        val entry = state.target?.queuedEntry() ?: state.unavailable()
+        graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
+        check(graph.queue.startRadioSeamlessly()) { "The radio tail could not be seeded" }
+    }
+
     override suspend fun setInLibrary(song: ContentRef, inLibrary: Boolean) {
         // The library store commits saved items; removing a library row has no mutation on this host.
         if (!inLibrary) state.unavailable()
@@ -124,36 +89,40 @@ private class IosSongMenuHost(
     override suspend fun removeDownload(song: ContentRef) = state.unavailable()
     override suspend fun exportDownload(song: ContentRef, suggestedName: String) = state.unavailable()
     override suspend fun openWithExternalDownloader(song: ContentRef): Boolean = false
-    override suspend fun viewAlbum(albumId: String) = state.unavailable()
+
+    override suspend fun viewAlbum(albumId: String) {
+        val item = state.target?.item ?: state.unavailable()
+        state.dismiss()
+        openRoute(ArchiveRoutes.content(ContentRef(item.ref.provider, ContentKind.ALBUM, albumId)))
+    }
+
     override fun openSleepTimer() = state.unavailable()
     override suspend fun setRecommendationBlocked(song: ContentRef, blocked: Boolean) = state.unavailable()
     override suspend fun saveCoverArtwork(song: ContentRef, artworkUrl: String): Boolean = false
     override suspend fun refetchSong(song: ContentRef) = state.unavailable()
-    override fun openTrackInfo(song: ContentRef) = state.unavailable()
+
+    override fun openTrackInfo(song: ContentRef) {
+        state.dismiss()
+        openRoute(ArchiveRoutes.trackInfo(song.id))
+    }
 }
 
 /**
- * The iOS row menu mounted from the host bindings' overlays. Leaving a page closes its menu, as on the desktop host.
+ * The shared song menu over the owners this host connects: queue, like and add-to-playlist, the system share sheet,
+ * library add, history and playlist-row removal, album and artist pages, YouTube radio, track and media info and the
+ * custom artwork editor. Rows whose owner is not connected here (downloads, cache, speed dial, sleep timer, refetch,
+ * recommendation blocks, cover save) are filtered off rather than appearing as dead items.
  */
 @Composable
-internal fun IosSongMenuOverlay(state: IosSongMenuState, graph: IosSessionGraph, routeKey: String) {
-    DisposableEffect(routeKey) { onDispose { state.dismiss() } }
-    val occurrence = state.target ?: run {
-        state.message?.let { IosMenuNotice(it, state::dismissMessage) }
-        return
-    }
-    if (occurrence.item.ref.kind == ContentKind.SONG || occurrence.item.ref.kind == ContentKind.EPISODE) {
-        IosSongMenu(state, graph, occurrence)
-    } else {
-        IosCollectionRowMenu(state, graph, occurrence)
-    }
-    state.message?.let { IosMenuNotice(it, state::dismissMessage) }
-}
-
-@Composable
-private fun IosSongMenu(state: IosSongMenuState, graph: IosSessionGraph, occurrence: ContentOccurrence) {
-    val sharing = remember { MenuShareHandler(iosMenuSharing(state)) }
-    val host = remember { IosSongMenuHost(state, graph) }
+internal fun IosSongMenu(
+    menu: IosItemMenuState,
+    graph: IosSessionGraph,
+    host: IosHost,
+    occurrence: ContentOccurrence,
+    openRoute: (String) -> Unit,
+) {
+    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host)) }
+    val songHost = remember { IosSongMenuHost(menu, graph, openRoute) }
     val editablePlaylists by remember {
         graph.libraryContent.playlistRows().map { rows -> rows.filter { it.editable }.map { it.item } }
     }.collectAsState(emptyList())
@@ -182,6 +151,7 @@ private fun IosSongMenu(state: IosSongMenuState, graph: IosSessionGraph, occurre
     }
     val isTelegram = ref.id.startsWith("telegram://")
     val isLocal = ref.provider == ContentProvider.LOCAL.id
+    val artistRef = occurrence.item.artists.firstNotNullOfOrNull { it.ref(ref.provider) }
     val facts = SongMenuFacts(
         song = ref,
         title = occurrence.item.title,
@@ -209,12 +179,19 @@ private fun IosSongMenu(state: IosSongMenuState, graph: IosSessionGraph, occurre
                 liked = liked,
                 isLocal = isLocal,
                 mimeType = null,
-                viewArtists = state::unavailable,
+                viewArtists = {
+                    val artist = artistRef ?: menu.unavailable()
+                    menu.dismiss()
+                    openRoute(ArchiveRoutes.content(artist))
+                },
             ),
         )
-        addAll(songLibraryAndDownloadActions(facts, host))
-        state.playlistId?.let { playlistId -> add(playlistOccurrenceRemoval(playlistId, occurrence, graph.library)) }
-    }.filter { it.id in iosBoundSongRows(occurrence, facts, inLibrary) }
+        addAll(songLibraryAndDownloadActions(facts, songHost))
+        // The shared menu has no media-info row, so this host adds the Details row that opens the mounted route.
+        add(OverflowAction("media_info", m5pqDetailsRes) { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(ref.id)) })
+        menu.playlistId?.let { playlistId -> add(playlistOccurrenceRemoval(playlistId, occurrence, graph.library)) }
+        add(customArtworkEntryAction { menu.openCustomArtwork() })
+    }.filter { it.id in iosBoundSongRows(ref, facts, inLibrary, artistRef != null) }
     SongOverflowMenu(
         identity = "ios-song:${occurrence.occurrenceId}",
         expanded = true,
@@ -222,66 +199,70 @@ private fun IosSongMenu(state: IosSongMenuState, graph: IosSessionGraph, occurre
         actions = actions,
         library = graph.library,
         editablePlaylists = editablePlaylists,
-        onDismiss = state::dismiss,
-        onFailure = state::failed,
+        onDismiss = menu::dismiss,
+        onFailure = menu::failed,
+        songMetadata = graph.library.songMetadata,
     )
 }
 
 /** Album, artist and playlist rows get only the share link this host can actually build. */
 @Composable
-private fun IosCollectionRowMenu(state: IosSongMenuState, graph: IosSessionGraph, occurrence: ContentOccurrence) {
-    val sharing = remember { MenuShareHandler(iosMenuSharing(state)) }
+internal fun IosCollectionRowMenu(menu: IosItemMenuState, host: IosHost, occurrence: ContentOccurrence) {
+    val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host)) }
     val ref = occurrence.item.ref
     val actions = buildList<OverflowAction> {
         when (ref.kind) {
             ContentKind.ARTIST -> if (ref.id.length > 2 && ref.id.startsWith("UC") && ref.id.none(Char::isWhitespace)) {
-                add(OverflowAction("share", Res.string.m6_share) {
-                    check(sharing.artist(ref.id)) { "Share target unavailable" }
-                })
+                add(collectionShareAction { check(sharing.artist(ref.id)) { "Share target unavailable" } })
             }
             ContentKind.PLAYLIST -> if (ref.provider == ContentProvider.YOUTUBE.id) {
-                add(OverflowAction("share", Res.string.m6_share) {
-                    check(sharing.playlist(ref.id, null)) { "Share target unavailable" }
-                })
+                add(collectionShareAction { check(sharing.playlist(ref.id, null)) { "Share target unavailable" } })
             }
             else -> { }
         }
     }
     if (actions.isEmpty()) {
-        state.dismiss()
-        state.failed()
+        LaunchedEffect(occurrence) { menu.refuse() }
         return
     }
     SharedOverflowMenu(
         menuIdentity = "ios-item:${occurrence.occurrenceId}",
         expanded = true,
-        onDismiss = state::dismiss,
+        onDismiss = menu::dismiss,
         actions = actions,
-        onFailure = state::failed,
+        onFailure = menu::failed,
     )
 }
 
-/** The rows the iOS host connects end to end, per the opened occurrence. */
-private fun iosBoundSongRows(occurrence: ContentOccurrence, facts: SongMenuFacts, inLibrary: Boolean): Set<String> =
+/** The rows this host connects end to end, per the opened occurrence. */
+internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, inLibrary: Boolean, hasArtist: Boolean): Set<String> =
     buildSet {
-        addAll(listOf("play_next", "add_queue", "like", "add_playlist"))
+        addAll(listOf("play_next", "add_queue", "like", "add_playlist", "custom_artwork", "track_info", "media_info"))
+        // Link share covers catalog songs; Telegram ids and local files have no link or file-share owner here.
         if (!facts.isLocal && !facts.isTelegram) add("share")
+        // Library add commits through saveItems; removal has no mutation on this host.
         if (!inLibrary && !facts.isLocal) add("library")
         if (facts.fromHistory) add("remove_history")
+        if (facts.albumId != null) add("view_album")
+        if (hasArtist) add("view_artist")
+        // Watch-next radio is seeded only by a YouTube song.
+        if (ref.provider == ContentProvider.YOUTUBE.id && ref.kind == ContentKind.SONG && !facts.isTelegram) {
+            add("start_radio")
+        }
         add("remove_playlist")
     }
 
-private fun iosMenuSharing(state: IosSongMenuState): MenuSharing = object : MenuSharing {
-    override suspend fun shareLink(url: String) = copyToIosClipboard(url)
+private fun iosMenuSharing(state: IosItemMenuState, host: IosHost): MenuSharing = object : MenuSharing {
+    override suspend fun shareLink(url: String) = withContext(Dispatchers.Main) { iosShareText(host, url) }
     override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) = state.unavailable()
     // Link resolution needs the signed-in Telegram client's message-link query, which this host does not expose.
     override suspend fun telegramMessageLink(mediaId: String): String? = null
 }
 
 @Composable
-private fun IosMenuNotice(key: String, onDismiss: () -> Unit) {
+internal fun IosMenuNotice(key: String, onDismiss: () -> Unit) {
     val resource = when (key) {
-        "ios_settings_feature_unavailable" -> Res.string.ios_settings_feature_unavailable
+        IosItemMenuState.NOTICE_UNAVAILABLE -> Res.string.ios_settings_feature_unavailable
         else -> Res.string.ios_menu_action_failed
     }
     AlertDialog(

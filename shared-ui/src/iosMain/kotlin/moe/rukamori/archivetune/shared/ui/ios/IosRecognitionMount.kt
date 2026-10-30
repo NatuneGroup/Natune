@@ -16,8 +16,10 @@ import moe.rukamori.archivetune.shared.data.recognition.ShazamRecognitionMatcher
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionClock
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionDiagnostics
 import moe.rukamori.archivetune.shared.domain.recognition.RecognitionSignaturePort
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.screens.MusicRecognitionDetailsActions
 import moe.rukamori.archivetune.shared.ui.screens.RecognitionArtwork
 import moe.rukamori.archivetune.shared.ui.screens.recognition.RecognitionTimeFormatter
@@ -100,18 +102,30 @@ internal class IosRecognitionMount(
 
 /**
  * The recognition page. Leaving it cancels a listen that is still running, so the microphone is released when the page
- * is no longer shown. The navigation host supplies back, search, the external links and the details navigation; the
- * owner's own details action still settles the shown result first.
+ * is no longer shown. Back, search and links do the same work the navigation host binds over them. The owner's details
+ * action settles the shown result; the navigation host opens the details route right after it, so the callback here
+ * must not navigate a second time.
  */
 @Composable
-internal fun iosRecognitionPage(mount: IosRecognitionMount, route: ArchiveRoute): ArchiveGraphPage {
+internal fun iosRecognitionPage(
+    mount: IosRecognitionMount,
+    route: ArchiveRoute,
+    back: () -> Unit,
+    openRoute: (String) -> Unit,
+    report: (String) -> Unit,
+): ArchiveGraphPage {
     val owner = mount.owner()
     DisposableEffect(owner) { onDispose { owner.cancel() } }
     val state by owner.state.collectAsState()
     val reducedMotion = rememberIosReduceMotion()
     val ui = remember(state, reducedMotion) { state.toMusicRecognitionUi(mount.formatter, reducedMotion = reducedMotion) }
     val actions = remember(owner) {
-        owner.toMusicRecognitionActions(back = {}, search = {}, openUri = {}, openDetails = {})
+        owner.toMusicRecognitionActions(
+            back = back,
+            search = { query -> openRoute(ArchiveRoutes.search(query, ContentProvider.YOUTUBE)) },
+            openUri = { uri -> openIosUri(uri, report) },
+            openDetails = { },
+        )
     }
     return ArchiveGraphPage.MusicRecognition(
         state = ui,
@@ -123,14 +137,28 @@ internal fun iosRecognitionPage(mount: IosRecognitionMount, route: ArchiveRoute)
 
 /**
  * One saved recognition by its stable key, from the last match or the saved history. A key the owner does not hold
- * shows the shared missing state. The navigation host supplies every action.
+ * shows the shared missing state. The navigation host rebinds listen-again to reopen the recognition entry already on
+ * the stack with a fresh request token; the fallback here opens the recognition page without starting a listen.
  */
 @Composable
-internal fun iosRecognitionDetailsPage(mount: IosRecognitionMount, route: ArchiveRoute): ArchiveGraphPage {
+internal fun iosRecognitionDetailsPage(
+    mount: IosRecognitionMount,
+    route: ArchiveRoute,
+    back: () -> Unit,
+    openRoute: (String) -> Unit,
+    report: (String) -> Unit,
+): ArchiveGraphPage {
     val owner = mount.owner()
     val state by owner.state.collectAsState()
     val key = route.arguments["recognitionKey"].orEmpty()
     val track = remember(state, key) { state.detailsFor(key)?.toRecognizedTrackUi() }
-    val actions = remember { MusicRecognitionDetailsActions(back = {}, listenAgain = {}, search = {}, openUri = {}) }
+    val actions = remember {
+        MusicRecognitionDetailsActions(
+            back = back,
+            listenAgain = { openRoute(ArchiveRoutes.musicRecognition()) },
+            search = { query -> openRoute(ArchiveRoutes.search(query, ContentProvider.YOUTUBE)) },
+            openUri = { uri -> openIosUri(uri, report) },
+        )
+    }
     return ArchiveGraphPage.MusicRecognitionDetails(track = track, actions = actions, artwork = mount.artwork)
 }
