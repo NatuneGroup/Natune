@@ -29,9 +29,11 @@ import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzBackupVideoIdKey
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzTrackIdKey
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceAmazonPickKey
 import moe.rukamori.archivetune.shared.domain.source.SongSourceOverride
 import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzBackupVideoId
 import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzTrackId
+import moe.rukamori.archivetune.shared.domain.source.SongSourceAmazonPick
 import moe.rukamori.archivetune.shared.ui.host.hostSourceSnapshot
 import moe.rukamori.archivetune.shared.ui.host.toAudioResolveRequest
 import moe.rukamori.archivetune.shared.ui.host.unresolvedSourceReason
@@ -155,16 +157,16 @@ internal class DesktopQueueLocatorResolver(
 }
 
 /** The source snapshot one resolution reads, as every host reads it. */
-internal fun desktopSourceSnapshot(preferences: PreferenceSnapshot?): PlaybackSourceSnapshot = hostSourceSnapshot(preferences)
+internal fun desktopSourceSnapshot(preferences: PreferenceSnapshot?): PlaybackSourceSnapshot =
+    hostSourceSnapshot(preferences, spotifyStreamingReady = desktopSpotifyStreamingReady(preferences))
 
 /**
  * The audio providers this host connects, each over the one HTTP client of the graph, in no particular order: the
  * stored source order decides which one answers first. TIDAL, Deezer and QQ read the personal account leases of
  * [accounts] on every resolution, so a sign-out or a replaced account stops them at once. TIDAL and Deezer also read the
  * Playback Pool accounts of [pool] while its switch is on. JioSaavn is composed only when
- * its decoder key is supplied. Qobuz, Apple and Amazon stay out of this list until their account, digest or instance
- * owners publish them on this host; a missing source answers as an unavailable attempt, never as a guessed URL. YouTube
- * is the terminal tier and is passed to the resolver separately.
+ * its retained decoder is available. [DesktopAudioSources] adds Qobuz, Apple, Amazon and the separate Spotify streaming
+ * account over these same shared clients. YouTube is the terminal tier and is passed to the resolver separately.
  */
 internal fun desktopAudioProviders(
     http: HttpClient,
@@ -184,14 +186,17 @@ private fun ContentOccurrence.toResolveRequest(preferences: PreferenceSnapshot?)
     toAudioResolveRequest(preferences)
 
 /** The per-source catalogue ids the menu's source chooser stored, added to the request's authoritative ids. */
-private fun AudioResolveRequest.withSourcePins(preferences: PreferenceSnapshot?, songId: String): AudioResolveRequest {
+internal fun AudioResolveRequest.withSourcePins(preferences: PreferenceSnapshot?, songId: String): AudioResolveRequest {
     val qobuzTrack = preferences?.get(SongSourceQobuzTrackIdKey)?.let { SongSourceQobuzTrackId.get(it, songId) }
     val backupVideo = preferences?.get(SongSourceQobuzBackupVideoIdKey)?.let { SongSourceQobuzBackupVideoId.get(it, songId) }
     val extras = listOfNotNull(
         qobuzTrack?.let { AudioSourceType.QOBUZ to it },
         backupVideo?.let { AudioSourceType.QOBUZ_BACKUP to it },
     )
-    return if (extras.isEmpty()) this else copy(directIds = directIds + extras.toMap())
+    val amazon = if (SongSourceOverride.get(preferences?.get(SongSourceOverrideKey), songId) == AudioSourceType.AMAZON) {
+        SongSourceAmazonPick.get(preferences?.get(SongSourceAmazonPickKey), songId)
+    } else null
+    return if (extras.isEmpty() && amazon == null) this else copy(directIds = directIds + extras.toMap(), amazonPick = amazon)
 }
 
 private fun unavailableReason(occurrence: ContentOccurrence, attempts: List<AudioAttempt>): String =

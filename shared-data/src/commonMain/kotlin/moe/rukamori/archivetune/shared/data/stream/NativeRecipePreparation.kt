@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.data.stream
 import moe.rukamori.archivetune.shared.data.bytesource.RandomAccessByteSource
 import moe.rukamori.archivetune.shared.data.stream.cenc.CencMp4
 import moe.rukamori.archivetune.shared.data.stream.qmc.QmcDecryptor
+import moe.rukamori.archivetune.shared.data.stream.spotify.SpotifyPlayPlaySource
 import moe.rukamori.archivetune.shared.domain.repository.NativeAudioRecipe
 
 /**
@@ -60,6 +61,7 @@ object NativeRecipePreparation {
         when (recipe) {
             is NativeAudioRecipe.AmazonCenc -> prepareAmazon(recipe, opener)
             is NativeAudioRecipe.QqEncrypted -> prepareQq(recipe, opener)
+            is NativeAudioRecipe.SpotifyPlayPlay -> prepareSpotify(recipe, opener)
             // Apple's HLS keys are released to a platform content-decryption module. That module is not portable and
             // is a pending owner decision, so this refuses instead of pretending to decrypt.
             is NativeAudioRecipe.AppleHls ->
@@ -86,6 +88,17 @@ object NativeRecipePreparation {
                 expiresAtEpochMs = ciphertext.lease.expiresAtEpochMs,
             ),
         )
+    }
+
+    private suspend fun prepareSpotify(
+        recipe: NativeAudioRecipe.SpotifyPlayPlay,
+        opener: NativeCiphertextOpener,
+    ): NativePreparation {
+        val ciphertext = opener.open(recipe.url, recipe.accountScope)
+            ?: return NativePreparation.Refused("SPOTIFY_CIPHERTEXT_UNAVAILABLE")
+        val plaintext = SpotifyPlayPlaySource.open(ciphertext, recipe.key.reveal(), recipe.iv.reveal(), recipe.flac)
+            ?: return NativePreparation.Refused("SPOTIFY_PLAYPLAY_REJECTED")
+        return NativePreparation.Ready(plaintext)
     }
 
     private suspend fun prepareQq(

@@ -10,7 +10,8 @@ interface YouTubeResolutionPort {
     suspend fun fallback(tier: YouTubeFallbackTier, request: AudioResolveRequest): PreparedAudio?
 }
 enum class AudioAttemptResult { UNAVAILABLE, NO_MATCH, REJECTED_METADATA, TIMEOUT, FAILED, RESOLVED }
-data class AudioAttempt(val source: AudioSourceType, val result: AudioAttemptResult)
+data class AudioAttempt(val source: AudioSourceType, val result: AudioAttemptResult,
+    val unavailableReason: AudioProviderUnavailableReason? = null)
 sealed interface AudioResolution {
     data class Resolved(val audio: PreparedAudio, val attempts: List<AudioAttempt>) : AudioResolution
     data class Unavailable(val attempts: List<AudioAttempt>) : AudioResolution
@@ -44,6 +45,9 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
                 withTimeoutOrNull(30_000) { provider.resolve(request) }
             } catch (auth: TerminalPlaybackAuthentication) { throw auth }
             catch (cancel: CancellationException) { throw cancel }
+            catch (failure: AudioProviderUnavailable) {
+                attempts += AudioAttempt(source, AudioAttemptResult.UNAVAILABLE, failure.reason); continue
+            }
             catch (failure: ProviderRequestTimeout) {
                 attempts += AudioAttempt(source, AudioAttemptResult.TIMEOUT); continue
             }
@@ -93,6 +97,10 @@ internal fun PreparedAudio.matchesRequest(request: AudioResolveRequest): Boolean
         is PreparedAudio.TidalManifest -> DirectStream("", "", "", null, "Tidal manifest", source,
             track.item.title, track.artists.joinToString(", "), track.album, track.item.durationMs, trustedDirectId)
     }
-    return TitleMatch.evaluate(request.target.title, request.target.artists, request.target.album,
-        request.target.durationMs, stream).accepted
+    // An Amazon suggestion is a metadata choice, never an authoritative Amazon id. Check the returned metadata
+    // against that explicit choice instead of either rejecting it against the original title or trusting it blindly.
+    val target = request.amazonPick?.takeIf { source == AudioSourceType.AMAZON }?.let {
+        TrackMatching.Target(it.title, listOf(it.artist), it.album, it.durationMs)
+    } ?: request.target
+    return TitleMatch.evaluate(target.title, target.artists, target.album, target.durationMs, stream).accepted
 }

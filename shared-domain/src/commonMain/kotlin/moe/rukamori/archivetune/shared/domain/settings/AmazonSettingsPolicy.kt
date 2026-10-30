@@ -38,7 +38,13 @@ fun PreferenceSnapshot.amazonInstanceList(): List<String> = parseAmazonInstances
 
 /** Saves the normalized instance list. */
 fun PreferenceEditor.setAmazonInstances(raw: String) {
-    this[AmazonInstancesKey] = parseAmazonInstances(raw).joinToString("\n")
+    val instances = parseAmazonInstances(raw)
+    if (parseAmazonInstances(this[AmazonInstancesKey, ""]).firstOrNull() != instances.firstOrNull()) {
+        // The saved JWT belongs to the primary instance that issued it, not whichever host becomes primary next.
+        this[AmazonTurnstileJwtKey] = null
+        this[AmazonTurnstileJwtExpiryMsKey] = null
+    }
+    this[AmazonInstancesKey] = instances.joinToString("\n")
 }
 
 /** Stores an operator bypass token, trimmed. The key is vault-routed by the logical adapter. */
