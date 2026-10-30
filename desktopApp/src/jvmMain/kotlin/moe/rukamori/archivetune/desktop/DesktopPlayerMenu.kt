@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -73,6 +74,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.ArtistSeparatorsKey
@@ -120,8 +122,8 @@ private fun menuOccurrenceId(songId: String): String = "menu-$songId-${System.na
 /**
  * The player's overflow menu on the desktop host. It mounts the shared [PlayerQueueMenu] body, so the rows are the
  * baseline's; rows whose owner this host has (queue order, playlist picker, source pin, speed dial, tempo and pitch,
- * sleep timer, copy link, artist and album pages, details, share local, radio) act, and rows it does not (cast, canvas,
- * always-on display, downloads, the external downloader, equalizer, acoustic graph, Amazon search) are hidden through
+ * sleep timer, copy link, artist and album pages, details, share local, radio, downloads) act, and rows it does not
+ * (cast, canvas, always-on display, the external downloader, equalizer, acoustic graph, Amazon search) are hidden through
  * the state's capability flags instead of appearing as no-ops.
  */
 internal class DesktopPlayerMenuState {
@@ -429,14 +431,38 @@ internal class DesktopPlayerQueueActions(
         }
     }
 
+    override fun downloadTrack(track: PlayerQueueTrack) {
+        val item = menu.target?.takeIf { it.ref.id == track.mediaId } ?: return
+        graph.scope.launch {
+            try {
+                graph.downloads.start(item)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("the download could not be started: ${failure.javaClass.simpleName}")
+            }
+        }
+    }
+
+    override fun removeDownload(track: PlayerQueueTrack) {
+        val ref = menu.target?.ref?.takeIf { it.id == track.mediaId } ?: return
+        graph.scope.launch {
+            try {
+                graph.downloads.remove(ref.desktopDownloadId())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("the download could not be removed: ${failure.javaClass.simpleName}")
+            }
+        }
+    }
+
     // Rows hidden on this host: unreachable, but logged rather than silent if a trigger still reaches them.
 
     override fun setAodMode() = unsupported("setAodMode")
     override fun openEqualizer() = unsupported("openEqualizer")
     override fun openAcousticQuality(track: PlayerQueueTrack) = unsupported("openAcousticQuality")
     override fun cast(track: PlayerQueueTrack) = unsupported("cast")
-    override fun downloadTrack(track: PlayerQueueTrack) = unsupported("downloadTrack")
-    override fun removeDownload(track: PlayerQueueTrack) = unsupported("removeDownload")
     override fun openWithExternalDownloader(url: String) = unsupported("openWithExternalDownloader")
     override suspend fun refetchCanvas(track: PlayerQueueTrack, requireVertical: Boolean): PlayerQueueCanvasRefetchResult {
         unsupported("refetchCanvas")
@@ -508,6 +534,16 @@ internal fun DesktopPlayerMenuDialog(
     val actions = remember(graph, menu, navigate) { DesktopPlayerQueueActions(graph, menu, navigate) }
     val speed by actions.playbackSpeed.collectAsState()
     val pitch by actions.playbackPitch.collectAsState()
+    val transfers by produceState(emptyList<ContentDownload>(), graph) {
+        try {
+            graph.downloads.observe().collect { value = it }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            graph.report("download menu state is unavailable: ${failure.javaClass.simpleName}")
+        }
+    }
+    val download = desktopPlayerDownloadState(transfers, item.ref)
 
     val track = remember(item) { desktopPlayerMenuTrack(item) }
     val snapshot = prefs
@@ -515,7 +551,7 @@ internal fun DesktopPlayerMenuDialog(
     val state = PlayerQueueMenuState(
         style = snapshot?.get(PlayerDesignStyleKey).toEnum(PlayerDesignStyle.Default),
         appleMusicExperience = snapshot?.appleMusicMenus() ?: false,
-        download = PlayerQueueDownloadState.NOT_DOWNLOADED,
+        download = download,
         pinnedToSpeedDial = snapshot?.get(SpeedDialSongIdsKey)?.let { raw ->
             parseSpeedDialPins(raw).any { it.type == SpeedDialPinType.SONG && it.id == track.mediaId }
         } ?: false,
@@ -539,7 +575,7 @@ internal fun DesktopPlayerMenuDialog(
         radioSupported = desktopRadioSeedSupported(item.ref),
         acousticQualitySupported = false,
         equalizerSupported = false,
-        downloadsSupported = false,
+        downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
     )
 
     Dialog(onDismissRequest = menu::dismiss) {
