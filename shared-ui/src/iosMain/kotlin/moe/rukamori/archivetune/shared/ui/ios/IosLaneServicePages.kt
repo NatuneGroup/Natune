@@ -54,6 +54,7 @@ import moe.rukamori.archivetune.shared.ui.settings.StorageSettings
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
+import platform.Foundation.dateWithTimeIntervalSince1970
 
 /**
  * The lane pages that need a host service behind them: reachability probes, the release-notes checker and the
