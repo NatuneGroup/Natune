@@ -109,6 +109,7 @@ internal suspend fun assembleDesktopSessionOwners(
     vault: VaultSettingsStore,
     database: PortableStateDatabase,
     http: HttpClient,
+    network: DesktopNetworkOwner,
 ): DesktopSessionGraph {
     val accounts = VaultProviderAccountStore(vault)
     val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
@@ -477,6 +478,7 @@ internal suspend fun assembleDesktopSessionOwners(
         customArtwork = customArtwork,
         customArtworkFiles = customArtworkFiles,
         http = http,
+        network = network,
         playbackPool = playbackPool,
         youtubeLibrarySync = youtubeLibrarySync,
         listenTogether = listenTogether,
@@ -529,6 +531,7 @@ internal suspend fun assembleDesktopSessionOwners(
             desktopDiagnostic("custom artwork was not scanned: ${failure.javaClass.simpleName}")
         }
     }
+    network.start(scope)
     lastFm.start()
     lyrics.start()
     listenerPresence.start()

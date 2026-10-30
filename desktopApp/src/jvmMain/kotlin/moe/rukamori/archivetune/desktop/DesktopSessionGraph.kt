@@ -1,7 +1,6 @@
 package moe.rukamori.archivetune.desktop
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import java.nio.file.Files
 import java.nio.file.Path
 import java.text.Collator
@@ -135,6 +134,8 @@ class DesktopSessionGraph internal constructor(
      * asking for sources.
      */
     internal val http: HttpClient,
+    /** The process proxy policy, shared with Internet settings and installed before the HTTP clients. */
+    internal val network: DesktopNetworkOwner,
     /** The one Playback Pool client: the ArchivePool account feed, its vault cache and the community instance list. */
     internal val playbackPool: DesktopPlaybackPool,
     /** Pulls the signed-in YouTube Music library into [library]; the account settings force it after a switch. */
@@ -308,6 +309,7 @@ class DesktopSessionGraph internal constructor(
         uploads.close()
         http.close()
         player.close()
+        network.close()
         settings.close()
         ordinarySettings.close()
         database.close()
@@ -373,10 +375,22 @@ class DesktopSessionGraph internal constructor(
                 scope.cancel()
                 throw failure
             }
-            // The engine starts lazily, so building the client opens no connection. Every failure path below closes it.
-            val http = HttpClient(CIO)
+            val network = DesktopNetworkOwner { vault.snapshots.value }
+            val http = try {
+                network.applyNetworkSettings(vault.snapshot())
+                network.httpClient()
+            } catch (failure: Throwable) {
+                withContext(NonCancellable) {
+                    network.close()
+                    database.close()
+                    vault.close()
+                    ordinary.close()
+                }
+                scope.cancel()
+                throw failure
+            }
             return try {
-                assembleDesktopSessionOwners(scope, directory, ordinary, vault, database, http).also {
+                assembleDesktopSessionOwners(scope, directory, ordinary, vault, database, http, network).also {
                     if (pending != null) {
                         try {
                             withContext(Dispatchers.IO) { pending.finish() }
@@ -388,6 +402,7 @@ class DesktopSessionGraph internal constructor(
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
                     http.close()
+                    network.close()
                     database.close()
                     vault.close()
                     ordinary.close()
