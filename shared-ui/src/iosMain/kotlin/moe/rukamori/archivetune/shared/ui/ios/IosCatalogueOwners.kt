@@ -13,9 +13,9 @@ import moe.rukamori.archivetune.shared.ui.host.completeCatalogueList
 import moe.rukamori.archivetune.shared.ui.host.playableRows
 
 /**
- * The rows the iOS browse and artist-section pages showed, so a tap plays the list the listener saw, read to its end
- * within the shared finite-completion bounds first. The shelf feeds (Home, Charts, Moods, Releases, Discovery and the
- * remote artist page) have no shelf transport on this host, so only list pages record here.
+ * The rows the iOS catalogue pages showed, so a tap plays the list or shelf the listener saw. A list page is read to
+ * its end within the shared finite-completion bounds before it plays; a shelf row plays that shelf's own playable rows,
+ * as the Android home and charts screens queue their shelves.
  *
  * Main-thread only: pages record during composition and taps read the rows before any work leaves the thread.
  */
@@ -26,6 +26,7 @@ internal class IosCatalogueOwners(
     // Insertion order is the age order, so the oldest page's rows are dropped first once the bound is reached.
     private val shownLists = LinkedHashMap<ContentRequest, List<ContentOccurrence>>()
     private val heldContinuations = LinkedHashMap<ContentRequest, String?>()
+    private val shownShelves = LinkedHashMap<ContentRequest, LinkedHashMap<String, List<ContentOccurrence>>>()
 
     fun record(collection: ContentRequest, rows: List<ContentOccurrence>, continuation: String?) {
         shownLists.remove(collection)
@@ -36,8 +37,38 @@ internal class IosCatalogueOwners(
         while (heldContinuations.size > MAX_SHOWN_PAGES) heldContinuations.remove(heldContinuations.keys.first())
     }
 
-    /** Plays a recorded list from the tapped row. Returns false when [collection] is not a recorded list page. */
+    /** One shelf of a feed page. A shelf keeps its own row order, apart from the rest of the feed. */
+    fun recordShelf(collection: ContentRequest, shelfKey: String, rows: List<ContentOccurrence>) {
+        val shelves = shownShelves.getOrPut(collection) { LinkedHashMap() }
+        shelves.remove(shelfKey)
+        shelves[shelfKey] = rows
+        shownShelves.remove(collection)
+        shownShelves[collection] = shelves
+        while (shownShelves.size > MAX_SHOWN_PAGES) shownShelves.remove(shownShelves.keys.first())
+    }
+
+    /** Plays a recorded list or shelf row. Returns false when [collection] is not a recorded catalogue page. */
     fun playOccurrence(collection: ContentRequest, start: QueueStart): Boolean {
+        val shelfRows =
+            shownShelves[collection]?.values?.firstOrNull { shelf -> shelf.any { it.occurrenceId == start.occurrenceId } }
+        if (shelfRows != null) {
+            val playable = playableRows(shelfRows)
+            val startId = playable.firstOrNull { it.occurrenceId == start.occurrenceId }?.occurrenceId
+            if (startId == null) {
+                owners.report("the tapped row is not playable in its shelf")
+                return true
+            }
+            owners.scope.launch {
+                try {
+                    owners.queue.replace(playable, startId, playWhenReady = true)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    owners.report("the shelf could not be played")
+                }
+            }
+            return true
+        }
         val held = shownLists[collection] ?: return false
         owners.scope.launch {
             val entries = try {
