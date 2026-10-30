@@ -91,6 +91,12 @@ data class LibraryMixHeaderUi(
 /** What the Top mixes section shows. A host that cannot build mixes says so in [Message] instead of hiding the section. */
 sealed interface LibraryTopMixesUi {
     data class Message(val text: String) : LibraryTopMixesUi
+    data class Cards(
+        val items: List<ContentOccurrence>,
+        val loading: Boolean = false,
+        val message: String? = null,
+        val actionLabel: String? = null,
+    ) : LibraryTopMixesUi
 }
 
 /** [openRoute] opens a shortcut's route through the shell. [play] plays one recently played song on its own. */
@@ -100,6 +106,8 @@ class LibraryMixHeaderActions(
     val open: (ContentOccurrence) -> Unit = {},
     val selectFilter: (LibraryFilter) -> Unit = {},
     val retryRail: (String) -> Unit = {},
+    val openMix: (ContentOccurrence) -> Unit = open,
+    val refreshMixes: (() -> Unit)? = null,
 )
 
 /** A host's header for the mixed section: what it shows and what its cards and rail do. */
@@ -128,6 +136,9 @@ fun LazyListScope.libraryMixHeader(
     }
     when (val mixes = state.topMixes) {
         null -> Unit
+        is LibraryTopMixesUi.Cards -> item(key = "library-mix-top-mixes", contentType = "library-mix-top-mixes") {
+            LibraryTopMixCards(mixes, actions, artwork)
+        }
         is LibraryTopMixesUi.Message -> item(key = "library-mix-top-mixes", contentType = "library-mix-top-mixes") {
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 LibraryMixHeading(stringResource(Res.string.m9_library_top_mixes))

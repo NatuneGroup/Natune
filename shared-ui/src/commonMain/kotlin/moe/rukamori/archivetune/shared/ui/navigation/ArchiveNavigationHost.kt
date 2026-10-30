@@ -260,7 +260,7 @@ fun ArchiveNavigationHost(
                     open = { bot -> if (binding.state.ready && !binding.state.loadFailed) navigation.open("telegram/bot/${bot.id}") }))
             }
             is ArchiveGraphPage.TelegramBrowse -> {
-                require(route.destination == ArchiveDestination.TELEGRAM_BROWSE)
+                require(route.destination in setOf(ArchiveDestination.TELEGRAM, ArchiveDestination.TELEGRAM_BROWSE))
                 TelegramBrowseScreen(binding.state, binding.actions.copy(back = back), binding.avatar,
                     onPlaylistOpened = { navigation.open(ArchiveRoutes.content(ContentRef("telegram", ContentKind.PLAYLIST, it))) })
             }

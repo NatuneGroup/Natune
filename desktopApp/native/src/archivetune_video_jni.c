@@ -12,8 +12,8 @@
 
 #define VIDEO_BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_VideoArtworkNative_##name
 
-/* Five values in this order: sequence, width, height, state, presentation time in microseconds. */
-#define VIDEO_INFO_FIELDS 5
+/* Sequence, width, height, state, presentation time and duration in microseconds. */
+#define VIDEO_INFO_FIELDS 6
 #define VIDEO_ERROR_CAPACITY 256
 
 static ae_video *video_of(jlong handle) {
@@ -68,6 +68,7 @@ JNIEXPORT jint JNICALL VIDEO_BINDING(copyFrame)(JNIEnv *env, jclass type, jlong 
     values[2] = (jlong)native_info.height;
     values[3] = (jlong)native_info.state;
     values[4] = (jlong)native_info.pts_us;
+    values[5] = (jlong)native_info.duration_us;
     (*env)->SetLongArrayRegion(env, info, 0, VIDEO_INFO_FIELDS, values);
     return (jint)result;
 }

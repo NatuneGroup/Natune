@@ -31,6 +31,7 @@ import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
 import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
 import moe.rukamori.archivetune.desktop.telegram.TdlightClientSession
 import moe.rukamori.archivetune.desktop.telegram.TelegramNativeAccountPort
+import moe.rukamori.archivetune.shared.data.ai.AiRateLimiter
 import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.customartwork.JvmCustomArtworkFiles
@@ -326,10 +327,12 @@ internal suspend fun assembleDesktopSessionOwners(
         // A pack that cannot be constructed leaves Japanese romanization absent; settings stay ready.
         null
     }
+    // One limiter paces lyrics, settings probes and top-mix generation as a single AI caller.
+    val aiRateLimiter = AiRateLimiter()
     val lyricsSurface = LyricsSurfaceRuntime(
         scope = scope,
         store = vault,
-        service = KtorAiTextService(http),
+        service = KtorAiTextService(http, aiRateLimiter),
         lyrics = lyrics.current,
         packTokenizer = pack?.tokenizer ?: kotlinx.coroutines.flow.flowOf(null),
         transliterator = IcuLyricsTransliterator(),
@@ -484,6 +487,7 @@ internal suspend fun assembleDesktopSessionOwners(
         lyrics = lyrics,
         japaneseLanguagePack = pack,
         lyricsSurface = lyricsSurface,
+        aiRateLimiter = aiRateLimiter,
         listenerPresence = listenerPresence,
         locators = locators,
         youtubeContent = youtubeContent,

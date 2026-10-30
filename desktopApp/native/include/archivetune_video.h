@@ -32,10 +32,11 @@ typedef struct ae_video_frame_info {
     int32_t height;
     int32_t state;     /* ae_video_state */
     int64_t pts_us;    /* media time of the presented frame */
+    int64_t duration_us; /* container duration, 0 when unknown */
 } ae_video_frame_info;
 
 /*
- * Starts a reader for an HTTPS video stream. Opening happens on the reader thread, so this returns at once; a
+ * Starts a reader for an HTTPS stream or a host-validated local file. Opening happens on the reader thread, so this returns at once; a
  * failure shows up as AE_VIDEO_FAILED. Frames taller than max_height are scaled down. Returns NULL only when
  * the reader cannot start at all. A reader starts inactive: nothing is downloaded or decoded until
  * ae_video_set_active turns it on.

@@ -17,6 +17,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.settings.ActiveHomeSourcesKey
 import moe.rukamori.archivetune.shared.domain.settings.HomeSourceKey
+import moe.rukamori.archivetune.shared.domain.settings.HideAiMixKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
@@ -53,6 +54,7 @@ private val CHARTS_REQUEST = ContentRequest(ContentProvider.YOUTUBE, ContentSurf
 internal fun desktopHomePage(
     graph: DesktopSessionGraph,
     spotify: DesktopSpotifyAccounts,
+    topMixes: DesktopTopMixes,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage {
     val preferences by graph.settings.snapshots.collectAsState()
@@ -87,9 +89,11 @@ internal fun desktopHomePage(
         )
     }
     val feed = graph.catalogueOwners.home
+    androidx.compose.runtime.LaunchedEffect(topMixes) { topMixes.ensureLoaded() }
     androidx.compose.runtime.LaunchedEffect(feed) { feed.reload() }
     val snapshot by graph.queue.player.snapshot.collectAsState()
-    val shelves = feed.shelves.map { shelf -> shelf.toHomeShelf(graph, HOME_REQUEST, openRoute) }
+    val mixShelves = if (preferences?.get(HideAiMixKey) == true) emptyList() else topMixes.homeShelves()
+    val shelves = mixShelves + feed.shelves.map { shelf -> shelf.toHomeShelf(graph, HOME_REQUEST, openRoute) }
     SideEffect { shelves.forEach { graph.catalogueOwners.recordShelf(HOME_REQUEST, it.key, it.items) } }
     val page = PagedContentState(
         request = HOME_REQUEST,
