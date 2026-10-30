@@ -158,6 +158,18 @@ internal class IosListenTogetherOwner(
         return IosCommentTogetherMount(binding, songPicker)
     }
 
+    /**
+     * The room's suggest-a-song picker, on the caller's UI scope like the chat picker. Only a guest suggests, as on
+     * Android: the host plays a song directly. A pick sent while not a guest in a room is dropped, and [onSent] is told
+     * whether the suggestion went out.
+     */
+    fun suggestionPicker(uiScope: CoroutineScope, onSent: (Boolean) -> Unit): ChatSongPickerOwner =
+        ChatSongPickerOwner(content, uiScope, onShare = { track ->
+            val guest = isGuestInRoom()
+            if (guest) client.suggestTrack(track)
+            onSent(guest)
+        })
+
     init {
         scope.launch { client.events.collect { event -> guarded("event") { onEvent(event) } } }
     }
