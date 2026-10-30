@@ -17,6 +17,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import moe.rukamori.archivetune.shared.data.persistence.ListedDownload
 import moe.rukamori.archivetune.shared.data.persistence.StoredSongIndex
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
@@ -73,14 +74,17 @@ class JvmDownloadRepository(
     suspend fun download(key: DownloadKey, prepared: PreparedAudio, song: ContentItem? = null): Path {
         require(prepared.source == key.source) { "Download source mismatch" }
         require(prepared is PreparedAudio.Progressive) { "Native decryption/manifest preparation required" }
-        return download(key, prepared.stream.uri, song)
+        return download(key, prepared.stream.uri, song, prepared.stream.headers)
     }
 
     /**
      * [song] is the item the file holds. The index lists the download by it, so an indexed repository needs it, and
      * it must be the song the media id names. Its provider owns the file when the key does not name one.
      */
-    suspend fun download(key: DownloadKey, resolvedUrl: String, song: ContentItem? = null): Path {
+    suspend fun download(key: DownloadKey, resolvedUrl: String, song: ContentItem? = null): Path =
+        download(key, resolvedUrl, song, PlaybackHeaders.NONE)
+
+    private suspend fun download(key: DownloadKey, resolvedUrl: String, song: ContentItem?, headers: PlaybackHeaders): Path {
         require(key.mediaId.isNotBlank())
         require(key.source != AudioSourceType.SPOTIFY) { "Spotify streaming is not a download source" }
         require(resolvedUrl.startsWith("https://")) { "Download requires a resolved HTTPS source" }
@@ -102,7 +106,9 @@ class JvmDownloadRepository(
             withContext(Dispatchers.IO) {
                 Files.createDirectories(requestDirectory)
                 Files.createDirectories(destination.parent)
-                client.prepareGet(resolvedUrl).execute { response ->
+                client.prepareGet(resolvedUrl) {
+                    headers.reveal().forEach { (name, value) -> header(name, value) }
+                }.execute { response ->
                     require(response.status.value in 200..299) { "Download HTTP ${response.status.value}" }
                     val channel = response.bodyAsChannel()
                     Files.newOutputStream(staging, StandardOpenOption.CREATE_NEW).use { output ->
