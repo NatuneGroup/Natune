@@ -41,15 +41,12 @@ def imports(library):
 
 
 prefix_files = {p.name.lower(): p for p in prefix.glob("**/*.dll") if p.is_file()}
-# The MinGW toolchain's own runtime is not in the prefix. Only these names are taken from its bin directory, so an
-# unexpected toolchain DLL still fails the audit instead of shipping.
-MINGW_RUNTIME = {"libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll"}
-mingw_bin = os.environ.get("ARCHIVETUNE_MINGW_BIN")
-if mingw_bin:
-    for name in MINGW_RUNTIME:
-        candidate = pathlib.Path(mingw_bin) / name
-        if candidate.is_file():
-            prefix_files.setdefault(name, candidate)
+# The MinGW toolchain's runtime (winpthreads, libgcc, libstdc++) and the libraries it supplies to the prefix builds
+# (libiconv for libxml2) live in its bin directory, not the prefix. A DLL the prefix lacks may come from there, and is
+# named in the log; one found in neither still fails the audit.
+mingw_bin = pathlib.Path(os.environ["ARCHIVETUNE_MINGW_BIN"]) if os.environ.get("ARCHIVETUNE_MINGW_BIN") else None
+mingw_files = {p.name.lower(): p for p in mingw_bin.glob("*.dll") if p.is_file()} if mingw_bin else {}
+from_toolchain = []
 staged = set()
 queue = [p for p in destination.iterdir() if p.name.lower().endswith(".dll")]
 while queue:
@@ -59,6 +56,9 @@ while queue:
         if key in staged or key in SYSTEM_DLLS or SYSTEM_RE.match(key):
             continue
         source = prefix_files.get(key)
+        if source is None and key in mingw_files:
+            source = mingw_files[key]
+            from_toolchain.append(source.name)
         if source is None:
             raise RuntimeError(f"Unstaged dependency {dep} required by {library.name}")
         target = destination / source.name
@@ -84,3 +84,13 @@ for source, name in (
     if not source.is_file():
         raise RuntimeError(f"Required license missing: {source}")
     shutil.copyfile(source, notices / name)
+
+# MSYS2 installs each package's license under share/licenses/<package>; copy those of the toolchain DLLs that shipped.
+TOOLCHAIN_LICENSES = {"libwinpthread": "winpthreads", "libgcc_s": "gcc-libs", "libstdc++": "gcc-libs",
+                      "libiconv": "libiconv"}
+for name in from_toolchain:
+    print(f"Staged from the MinGW toolchain: {name}", file=sys.stderr)
+    package = next((p for prefix_name, p in TOOLCHAIN_LICENSES.items() if name.lower().startswith(prefix_name)), None)
+    licenses = mingw_bin.parent / "share/licenses" / package if package else None
+    if licenses and licenses.is_dir():
+        shutil.copytree(licenses, notices / f"mingw-{package}", dirs_exist_ok=True)
