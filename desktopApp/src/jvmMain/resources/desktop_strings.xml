@@ -153,4 +153,5 @@
     <string name="cross_service_import_done">Imported %1$d of %2$d tracks.</string>
     <string name="cross_service_import_start">Import</string>
     <string name="cross_service_import_open">Open playlist</string>
+    <string name="menu_download_export_pick">Export downloaded audio</string>
 </resources>
