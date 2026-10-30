@@ -113,6 +113,11 @@ private struct SystemLyricsList: View {
                         .equatable()
                         .id(line.index)
                         .onTapGesture { lyrics.seekTo(index: line.index) }
+                        .contextMenu {
+                            if let shareText = lyrics.shareText(index: line.index) {
+                                ShareLink(item: shareText)
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, SystemLyricsMetrics.horizontalPadding)
