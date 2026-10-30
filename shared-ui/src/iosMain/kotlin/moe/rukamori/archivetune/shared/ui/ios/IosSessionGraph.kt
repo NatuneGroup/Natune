@@ -27,6 +27,7 @@ import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
+import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
@@ -53,6 +54,7 @@ import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueContr
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
@@ -99,7 +101,10 @@ internal class IosSessionGraph private constructor(
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
     val youtubeTransport: IosYouTubeBrowseTransport,
+    /** The typed YouTube catalogue over [youtubeTransport] and the account binding: search, albums, playlists, sections. */
+    val youtubeContent: YouTubeContentRepository,
     internal val library: RoomLibraryRepository,
+    val artistBlocks: RoomArtistBlockRepository,
     val libraryContent: LibraryContentOwner,
     val pageOwners: LibraryPageOwners,
     /** The one listening history the library, the listen driver and the statistics pages read and write. */
@@ -119,6 +124,8 @@ internal class IosSessionGraph private constructor(
     private val reportLine: (String) -> Unit,
 ) {
     val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
+    /** The playlist tag catalog and assignments, in the same portable file as the playlists. */
+    val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
     /** The crossfade or automix blend armed into the next song. iOS connects no blend engine, so it stays null. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 
@@ -313,9 +320,8 @@ internal class IosSessionGraph private constructor(
                 preferences = { vault.snapshots.value },
             )
             // One typed router serves the queue's resolution and the chat song picker, so both search the same sources.
-            val contentRouter = ContentRepositoryRouter(
-                listOf(TypedRoomLibraryRepository(library), YouTubeContentRepository(youtubeTransport, youtubeAccount)),
-            )
+            val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
+            val contentRouter = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library), youtubeContent))
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
@@ -445,7 +451,9 @@ internal class IosSessionGraph private constructor(
                 player = player,
                 queue = queue,
                 library = library,
+                artistBlocks = artistBlocks,
                 youtubeTransport = youtubeTransport,
+                youtubeContent = youtubeContent,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
                 history = history,
