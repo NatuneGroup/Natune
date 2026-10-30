@@ -127,8 +127,8 @@ internal class DesktopCloseRequests {
 }
 
 /**
- * The desktop close preference. True hides the window to the tray instead of exiting. No settings row writes it on this
- * host yet, so it reads as absent and a close exits as it did before.
+ * The desktop close preference, written by the Window group's close-to-tray row on the settings home page. True hides
+ * the window to the tray instead of exiting, but only where a tray exists; without one a close still exits.
  */
 internal val DesktopHideToTrayKey = BooleanPreferenceKey("desktop_hide_to_tray")
 
