@@ -40,6 +40,12 @@ val MiniPlayerBottomSpacing = 4.dp
 val QueuePeekHeight = 64.dp
 val AppBarHeight = 64.dp
 
+// The player sheet counts as raised once it is this far above its collapsed bound.
+val SheetOverlayEpsilon = 2.dp
+
+// Distance over which header glass pills fade out as the rising player sheet approaches them.
+val PlayerHeaderGlassFadeRamp = 96.dp
+
 val ListItemHeight = 72.dp
 val ListThumbnailSize = 56.dp
 val GridThumbnailHeight = 128.dp
