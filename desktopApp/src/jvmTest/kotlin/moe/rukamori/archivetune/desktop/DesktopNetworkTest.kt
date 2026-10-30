@@ -85,6 +85,13 @@ class DesktopNetworkTest {
         }
     }
 
+    @Test fun rotationActivatesOnlyAfterBothClientPoolsHaveLiveRoutes() {
+        assertFalse(desktopRotationReady(0, 0))
+        assertFalse(desktopRotationReady(0, 3))
+        assertFalse(desktopRotationReady(3, 0))
+        assertTrue(desktopRotationReady(3, 5))
+    }
+
     @Test fun poolRotatesPerSelectionAndFailureMarksTheActualAddressNotTheLastSelection() {
         val selector = DesktopRotatingProxySelector()
         selector.loadProxies(listOf("first.example" to 8080, "second.example" to 8080))
