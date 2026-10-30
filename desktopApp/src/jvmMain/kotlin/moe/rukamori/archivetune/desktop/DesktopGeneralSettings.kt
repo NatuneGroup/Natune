@@ -5,7 +5,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import moe.rukamori.archivetune.desktop.integration.DesktopFilePickers
+import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.settings.AppearanceRoute
 import moe.rukamori.archivetune.shared.ui.settings.AppearanceSectionRoutes
@@ -30,8 +34,8 @@ internal val DESKTOP_GENERAL_SETTINGS_ROUTES = setOf(
 
 /**
  * One of [DESKTOP_GENERAL_SETTINGS_ROUTES]. This host has no bit-perfect or USB output, no wallpaper colours and no
- * low-memory mode, so those rows read as unsupported. Arranging chips, tags, home screens and artwork providers needs
- * an editor this host does not have yet, and reports itself unavailable.
+ * low-memory mode, so those rows read as unsupported. Home screens, chip, tag and artwork-provider order open the
+ * editors in [DesktopGeneralEditorHost]; Manage playlist tags opens the Library tag manager.
  */
 @Composable
 internal fun DesktopGeneralSettingsPage(
@@ -39,9 +43,13 @@ internal fun DesktopGeneralSettingsPage(
     controller: SettingsController,
     navigate: (String) -> Unit,
     onFailure: () -> Unit,
-    unavailable: () -> Unit,
     scrollTo: String?,
+    playlistTags: PlaylistTagsRepository,
 ) {
+    var editor by remember { mutableStateOf<DesktopGeneralEditor?>(null) }
+    editor?.let { open ->
+        DesktopGeneralEditorHost(open, controller, playlistTags, onDismiss = { editor = null }, onFailure = onFailure)
+    }
     when (path) {
         AppearanceRoute, in AppearanceSectionRoutes.keys -> AppearanceSettings(
             controller = controller,
@@ -53,9 +61,9 @@ internal fun DesktopGeneralSettingsPage(
             navigate = navigate,
             openWallpaperSettings = { },
             pickCustomFont = ::pickDesktopFont,
-            chooseHomeScreens = unavailable,
-            arrangeLibraryChips = unavailable,
-            arrangePlaylistTags = unavailable,
+            chooseHomeScreens = { editor = DesktopGeneralEditor.HOME_SCREENS },
+            arrangeLibraryChips = { editor = DesktopGeneralEditor.LIBRARY_CHIPS },
+            arrangePlaylistTags = { editor = DesktopGeneralEditor.PLAYLIST_TAGS },
             onFailure = onFailure,
             scrollTo = appearanceScrollTarget(path, scrollTo),
         )
@@ -68,8 +76,8 @@ internal fun DesktopGeneralSettingsPage(
             usbExclusiveSupported = false,
             releaseBitPerfectSink = { },
             navigate = navigate,
-            arrangeArtworkProviders = unavailable,
-            managePlaylistTags = unavailable,
+            arrangeArtworkProviders = { editor = DesktopGeneralEditor.ARTWORK_PROVIDERS },
+            managePlaylistTags = { navigate(DesktopTagsRoute) },
             onFailure = onFailure,
             scrollTo = scrollTo,
         )
