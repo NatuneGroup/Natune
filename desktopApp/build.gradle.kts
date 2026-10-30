@@ -53,9 +53,24 @@ kotlin {
         }
         jvmTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.ktor.client.mock)
+            implementation(libs.coroutines.test)
         }
     }
 }
+
+// Reuse the retained, platform-independent PlayPlay implementation verbatim. Android auth, Media3 and the
+// WebView code are deliberately not in this source set; the desktop adapter owns its separate streaming session.
+val desktopPlayPlaySources = layout.buildDirectory.dir("generated/retained-playplay")
+val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlaySources") {
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/echo")) {
+        include("SpotifyEchoProto.kt", "SpotifyPlayPlayLicenseRequest.kt", "SpotifyPlayPlayRecordDecoder.kt",
+            "SpotifyPlayPlayPipeline.kt", "SpotifyPlayPlayLeaves.kt")
+    }
+    into(desktopPlayPlaySources)
+}
+kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources) }
+tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(prepareDesktopPlayPlaySources) }
 
 // Provider credentials for the desktop host are injected at build time and never committed (see
 // docs/build-credentials.md). The generated DesktopBuildCredentials object is read through DesktopCredentials,
@@ -80,6 +95,9 @@ val desktopCredentialNames = listOf(
     "ARCHIVETUNE_FEEDBACK_INGEST_KEY",
     "ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID",
     "ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET",
+    "ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID",
+    "ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID",
+    "ARCHIVETUNE_SPOTIFY_AUDIO_IV",
 )
 val desktopLegacyCredentialNames = mapOf(
     "ARCHIVETUNE_LASTFM_API_KEY" to arrayOf("LASTFM_API_KEY"),

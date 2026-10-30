@@ -140,6 +140,8 @@ class DesktopSessionGraph internal constructor(
     internal val network: DesktopNetworkOwner,
     /** The one Playback Pool client: the ArchivePool account feed, its vault cache and the community instance list. */
     internal val playbackPool: DesktopPlaybackPool,
+    /** The audio source tiers and the player-menu source search, over the runtime admissions. */
+    internal val audioSources: DesktopAudioSources,
     /** Pulls the signed-in YouTube Music library into [library]; the account settings force it after a switch. */
     internal val youtubeLibrarySync: DesktopYouTubeLibrarySync,
     /** The one Listen Together owner: the room client and the driver that keeps [player] in step with the room. */
@@ -309,6 +311,7 @@ class DesktopSessionGraph internal constructor(
         locators.close()
         telegram.close()
         uploads.close()
+        audioSources.close()
         http.close()
         player.close()
         network.close()

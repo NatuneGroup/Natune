@@ -6,8 +6,11 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 import moe.rukamori.archivetune.shared.domain.settings.AudioSourceOrderKey
+import moe.rukamori.archivetune.shared.domain.settings.AmazonAudioQualityKey
+import moe.rukamori.archivetune.shared.domain.settings.AppleMusicQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.DeezerAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.QobuzAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.QqMusicAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.SaavnAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.TidalAudioQualityKey
@@ -21,12 +24,12 @@ import moe.rukamori.archivetune.shared.domain.source.TrackMatching
  * The source snapshot one resolution reads: the stored order and the stored toggles. Spotify streaming stays off until
  * its account owner reports ready. Without stored settings the built-in defaults apply, with the same Spotify gate.
  */
-fun hostSourceSnapshot(preferences: PreferenceSnapshot?): PlaybackSourceSnapshot {
+fun hostSourceSnapshot(preferences: PreferenceSnapshot?, spotifyStreamingReady: Boolean = false): PlaybackSourceSnapshot {
     val order = AudioSourceConfig.parseOrder(preferences?.get(AudioSourceOrderKey))
     val enabled = AudioSourceType.entries.filterTo(linkedSetOf<AudioSourceType>()) { source ->
         when (preferences) {
             null -> AudioSourceConfig.DEFAULT_ENABLED.getValue(source) && source != AudioSourceType.SPOTIFY
-            else -> preferences.audioSourceEnabled(source, spotifyStreamingReady = false)
+            else -> preferences.audioSourceEnabled(source, spotifyStreamingReady = spotifyStreamingReady)
         }
     }
     return PlaybackSourceSnapshot(order = order, enabled = enabled)
@@ -51,6 +54,15 @@ fun hostSourceQualities(preferences: PreferenceSnapshot?): Map<AudioSourceType, 
     }
     preferences?.get(QqMusicAudioQualityKey)?.takeIf { it in setOf("LOSSLESS", "HIGH", "STANDARD") }
         ?.let { put(AudioSourceType.QQ, it) }
+    when (preferences?.get(QobuzAudioQualityKey) ?: "FLAC") {
+        "FLAC" -> put(AudioSourceType.QOBUZ, "6")
+        "HI_RES" -> put(AudioSourceType.QOBUZ, "7")
+        "MAX" -> put(AudioSourceType.QOBUZ, "27")
+    }
+    preferences?.get(AppleMusicQualityKey)?.takeIf { it in setOf("AAC", "LOSSLESS", "HI_RES_LOSSLESS") }
+        ?.let { put(AudioSourceType.APPLE, it) }
+    preferences?.get(AmazonAudioQualityKey)?.takeIf { it in setOf("ULTRA_HD", "HD", "STANDARD") }
+        ?.let { put(AudioSourceType.AMAZON, it) }
 }
 
 /** The resolve request of one queue occurrence: its match target, its authoritative catalog id and the stored qualities. */
@@ -77,6 +89,10 @@ private fun ContentRef.directSourceId(): Pair<AudioSourceType, String>? =
         "deezer" -> AudioSourceType.DEEZER to id
         "jiosaavn" -> AudioSourceType.JIOSAAVN to id
         "qq" -> AudioSourceType.QQ to id
+        "qobuz" -> AudioSourceType.QOBUZ to id
+        "qobuz_backup" -> AudioSourceType.QOBUZ_BACKUP to id
+        "apple" -> AudioSourceType.APPLE to id
+        "spotify", "spotify_streaming" -> AudioSourceType.SPOTIFY to id
         else -> null
     }
 

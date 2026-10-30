@@ -26,6 +26,7 @@ import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
 import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
+import moe.rukamori.archivetune.desktop.provider.DesktopSourceAdmissions
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
 import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
 import moe.rukamori.archivetune.desktop.telegram.TdlightClientSession
@@ -112,6 +113,8 @@ internal suspend fun assembleDesktopSessionOwners(
     network: DesktopNetworkOwner,
 ): DesktopSessionGraph {
     val accounts = VaultProviderAccountStore(vault)
+    // Verified runtime leases (Qobuz lists, the streaming Spotify profile) live one layer above the persisted slots.
+    val sourceAdmissions = DesktopSourceAdmissions(accounts, accounts)
     val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
     val tidalAuth = TidalAccountAuth(
         http,
@@ -133,7 +136,7 @@ internal suspend fun assembleDesktopSessionOwners(
         offsetMsAt = { epochMs -> TimeZone.getDefault().getOffset(epochMs).toLong() },
     )
     // One port reads the accounts and cookies the settings UI writes, so every admission sees the same owner.
-    val playback = DesktopPlaybackPort(accounts = accounts, cookies = accounts)
+    val playback = DesktopPlaybackPort(accounts = sourceAdmissions, cookies = sourceAdmissions)
     vault.snapshots.value?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.let { playback.setVolume(it.coerceIn(0f, 1f)) }
     val player = MusicPlayerController(playback, scope)
     val telegramRoot = directory.resolve(TELEGRAM_DIRECTORY).toFile()
@@ -172,6 +175,14 @@ internal suspend fun assembleDesktopSessionOwners(
         scope = scope,
         log = ::desktopDiagnostic,
     )
+    val audioSources = desktopAudioSources(
+        http = http,
+        accounts = accounts,
+        preferences = { vault.snapshots.value },
+        admissions = sourceAdmissions,
+        tidalSessionRefresh = tidalSessionRefresh,
+        pool = playbackPool,
+    )
     val youtubeResolver = DesktopYouTubeResolver(
         http,
         preferences = { vault.snapshots.value },
@@ -180,7 +191,7 @@ internal suspend fun assembleDesktopSessionOwners(
     )
     // One resolver for playback and downloads alike, over the same providers and source chain.
     val audioResolver = OrderedAudioResolver(
-        providers = desktopAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
+        providers = audioSources.providers,
         youtube = youtubeResolver,
     )
     val storedIndex = RoomStoredSongIndex(database.storedSongs())
@@ -481,6 +492,7 @@ internal suspend fun assembleDesktopSessionOwners(
         http = http,
         network = network,
         playbackPool = playbackPool,
+        audioSources = audioSources,
         youtubeLibrarySync = youtubeLibrarySync,
         listenTogether = listenTogether,
         feedback = feedback,

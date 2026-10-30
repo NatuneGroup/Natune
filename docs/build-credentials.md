@@ -53,6 +53,16 @@ name is blank, so existing local setups keep working.
 | `ARCHIVETUNE_FEEDBACK_INGEST_KEY` (legacy `FEEDBACK_INGEST_KEY`) | Desktop: the write-only ingest key for the same service. It ships with the app, so the server must treat it as write-only access. | Reports are sent without the key; a service that requires it refuses them. |
 | `ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID` | Desktop only: the Google OAuth client of type "Desktop app" for Google Drive app data backup (`DesktopGoogleDriveAuthorization`, loopback sign-in with PKCE). It must belong to a Google Cloud project with the Drive API enabled and the `drive.appdata` scope on its consent screen. | The Google Drive backup rows show "Google Drive is not configured" and no sign-in starts. Manual backup files keep working. |
 | `ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET` | Desktop only: the client secret Google issues with the same desktop client. Google does not treat it as confidential for installed apps; it is sent when set. | Sign-in is tried without a secret; a client that requires one is reported as not configured. |
+| `ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID` | Desktop only: the retained Echo/PlayPlay device-pair flow, using the separate Spotify streaming account. This is a protocol client identifier, not a subscriber credential or the catalog token. | Echo reports client configuration unavailable and the normal source chain continues. |
+| `ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID` | Optional client-token fallback for the same desktop streaming flow. Never used to mint or change a catalog session. | Only the supplied desktop client is tried. |
+| `ARCHIVETUNE_SPOTIFY_AUDIO_IV` | Desktop only: the retained Echo audio protocol's 16-byte AES-CTR initialization vector, supplied as 32 hexadecimal characters. No protocol bytes are newly embedded by the desktop adapter. | Echo reports client configuration unavailable; neither ciphertext nor a guessed progressive URL reaches the engine. |
+
+Desktop streaming still requires its existing opt-in switch and a separately verified streaming account.
+Selecting the web-player method is preserved, not silently changed to Echo: that method needs a licensed
+content-decryption module and is unavailable on this desktop engine. The PlayPlay protocol implementation is
+compiled verbatim from the five retained, platform-independent files in `app/.../spotify/echo`; no Android
+auth, WebView or Media3 classes are included.
+
 ## How each module receives the values
 
 - **`:app`** declares each variable with `buildConfigField` in `app/build.gradle.kts`, so the value is
@@ -68,7 +78,8 @@ name is blank, so existing local setups keep working.
   entering Gradle's task history.
 - **`:desktopApp`** has its own `generateProviderCredentials` task that writes
   `moe.rukamori.archivetune.desktop.DesktopBuildCredentials` (TIDAL OAuth clients, the JioSaavn key,
-  Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed, the feedback service and the Google Drive desktop client). `DesktopCredentials` reads each value from an environment variable of the
+  Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed, the feedback service,
+  the Google Drive desktop client and Spotify Echo protocol configuration). `DesktopCredentials` reads each value from an environment variable of the
   same name, then a JVM system property of the same name (`-D<NAME>=<value>`), then the build-time value, so a
   packaged desktop build can be configured at launch without rebuilding.
 - The iOS host reads the Telegram pair and `ARCHIVETUNE_LISTENER_PRESENCE_URL` so far. Xcode takes them from the
