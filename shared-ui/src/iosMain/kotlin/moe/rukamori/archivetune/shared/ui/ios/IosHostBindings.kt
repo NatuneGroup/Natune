@@ -59,11 +59,8 @@ import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
-import moe.rukamori.archivetune.shared.ui.host.hostHistoryPage
 import moe.rukamori.archivetune.shared.ui.host.hostLibraryPage
-import moe.rukamori.archivetune.shared.ui.host.hostPlayOccurrence
 import moe.rukamori.archivetune.shared.ui.host.civilFromDays
-import moe.rukamori.archivetune.shared.ui.host.hostPlaylistPage
 import moe.rukamori.archivetune.shared.ui.host.hostStatisticsPage
 import moe.rukamori.archivetune.shared.ui.host.hostYearInMusicPage
 import moe.rukamori.archivetune.shared.ui.host.StatisticsRangeWindow
@@ -132,6 +129,9 @@ internal fun iosHostBindings(
     // rebuild the owner on every root recomposition.
     val openOwnRoute: (String) -> Unit = { target -> ownRoutes.trySend(target) }
     val goBack: () -> Unit = { backChannel.trySend(Unit) }
+    val catalogOwners = IosCatalogOwners(graph)
+    val playlistCreation = IosPlaylistCreation(graph.scope, graph.libraryContent, openOwnRoute)
+    val playlistTags = IosPlaylistTagsState(openOwnRoute)
     return ArchiveTuneHostBindings(
         queue = graph.queue,
         songMetadata = graph.library.songMetadata,
@@ -141,7 +141,9 @@ internal fun iosHostBindings(
         // gesture is handled by the shell itself.
         routes = merge(iosLaunchRoutes(host, graph), ownRoutes.receiveAsFlow()),
         backRequests = backChannel.receiveAsFlow(),
-        page = { route -> iosGraphPage(graph, host, itemMenu, recognition, route, openOwnRoute, goBack) },
+        page = { route ->
+            iosGraphPage(graph, host, itemMenu, recognition, catalogOwners, playlistCreation, playlistTags, route, openOwnRoute, goBack)
+        },
         artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         formatNewsDate = ::iosDiagnosticTime,
@@ -153,13 +155,16 @@ internal fun iosHostBindings(
                 IosUnboundSurface(Modifier.fillMaxSize())
             }
         },
-        overlays = { route -> IosItemMenuDialog(itemMenu, graph, host, route.value) },
+        overlays = { route ->
+            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute)
+            IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
+        },
         playerSlots = { expanded, active, _ -> iosPlayerSlots(host, graph, expanded, active) },
         playerControls = controls,
         // The row menu offers the queue commands this host answers and the custom artwork editor; the rest of the
         // baseline menu needs owners this host does not connect yet.
         more = { occurrence -> itemMenu.open(occurrence) },
-        playOccurrence = { collection, start -> hostPlayOccurrence(graph.pageOwners, collection, start) },
+        playOccurrence = { collection, start -> iosPlayOccurrence(graph, catalogOwners, collection, start) },
         openExternal = { uri -> openIosUri(uri, graph::report) },
         onFailure = { graph.report("a host request could not be completed") },
         // The iOS root has no screen beneath it, so back at the root has nothing to pop.
@@ -170,9 +175,10 @@ internal fun iosHostBindings(
 }
 
 /**
- * The Library, the local history, the playlist, the statistics, the year-in-music, the Listen Together and the Telegram
- * browse and bots routes the owners answer. Every other destination keeps the host boundary, and so does a Telegram
- * route while no client is signed in. The key keeps each route's own page state apart.
+ * The Library, the local history, the statistics, the year-in-music, the Listen Together and the Telegram browse and
+ * bots routes the owners answer here; the catalogue dispatcher answers the search, detail, artist, playlist, browse,
+ * account and info routes. Every other destination keeps the host boundary, and so does a Telegram route while no
+ * client is signed in. The key keeps each route's own page state apart.
  */
 @Composable
 private fun iosGraphPage(
@@ -180,6 +186,9 @@ private fun iosGraphPage(
     host: IosHost,
     menu: IosItemMenuState,
     recognition: IosRecognitionMount,
+    catalogOwners: IosCatalogOwners,
+    playlistCreation: IosPlaylistCreation,
+    playlistTags: IosPlaylistTagsState,
     route: ArchiveRoute,
     openRoute: (String) -> Unit,
     back: () -> Unit,
@@ -188,13 +197,13 @@ private fun iosGraphPage(
         when (route.destination) {
             ArchiveDestination.LIBRARY ->
                 hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
-            ArchiveDestination.PLAYLIST ->
-                hostPlaylistPage(graph.pageOwners, route) { menu.open(it) }
             ArchiveDestination.HISTORY -> iosHistoryPage(graph, menu)
-            ArchiveDestination.MUSIC_RECOGNITION -> iosRecognitionPage(mount = recognition, route)
-            ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> iosRecognitionDetailsPage(recognition, route)
-            ArchiveDestination.STATISTICS -> iosStatisticsPage(graph, openRoute)
-            ArchiveDestination.RECAP -> iosRecapPage(graph, route, openRoute)
+            ArchiveDestination.MUSIC_RECOGNITION ->
+                iosRecognitionPage(recognition, route, back, openRoute, graph::report)
+            ArchiveDestination.MUSIC_RECOGNITION_DETAILS ->
+                iosRecognitionDetailsPage(recognition, route, back, openRoute, graph::report)
+            ArchiveDestination.STATISTICS -> iosStatisticsPage(graph, menu, openRoute)
+            ArchiveDestination.RECAP -> iosRecapPage(graph, host, menu, route, openRoute)
             ArchiveDestination.LISTEN_TOGETHER -> iosListenTogetherPage(graph, host, back, openRoute)
             ArchiveDestination.LISTEN_TOGETHER_CHAT -> iosCommentTogetherPage(graph, host, back)
             ArchiveDestination.TELEGRAM_BROWSE -> iosTelegramBrowsePage(graph, host, back)
@@ -206,7 +215,8 @@ private fun iosGraphPage(
                     state = UploadsUi(available = false),
                     actions = UploadsActions(back = {}, upload = {}, delete = {}, play = { _, _ -> }, retry = {}, loadMore = {}),
                 )
-            else -> ArchiveGraphPage.Host
+            else -> iosCatalogGraphPage(graph, host, catalogOwners, menu, playlistCreation, playlistTags, route, back, openRoute)
+                ?: ArchiveGraphPage.Host
         }
     }
 
@@ -338,7 +348,7 @@ private const val DAY_MS = 86_400_000L
  * names resolve here, on the composition, because the range label is a plain callback that the page calls while it composes.
  */
 @Composable
-private fun iosStatisticsPage(graph: IosSessionGraph, openRoute: (String) -> Unit): ArchiveGraphPage {
+private fun iosStatisticsPage(graph: IosSessionGraph, menu: IosItemMenuState, openRoute: (String) -> Unit): ArchiveGraphPage {
     val continuousLabels = mapOf(
         "c0" to stringResource(Res.string.stats_range_1w),
         "c1" to stringResource(Res.string.stats_range_1m),
@@ -353,8 +363,8 @@ private fun iosStatisticsPage(graph: IosSessionGraph, openRoute: (String) -> Uni
         play = { rank -> iosPlayNow(graph, rank.item) },
         open = { ref -> openRoute(ArchiveRoutes.content(ref)) },
         recap = { year -> openRoute("year_in_music?year=$year") },
-        // The page hands over only a content reference here, not the item a row menu needs, so the row menu stays off.
-        more = null,
+        // The page hands over only a content reference; the menu resolves the real item before it opens.
+        more = { ref -> iosOpenRefMenu(graph, menu, "stats", ref) },
         nowMs = ::iosNowMillis,
         offsetMsAt = ::iosOffsetMsAt,
         rangeLabel = { window -> iosStatisticsRangeLabel(window, continuousLabels) },
@@ -364,15 +374,21 @@ private fun iosStatisticsPage(graph: IosSessionGraph, openRoute: (String) -> Uni
     )
 }
 
-/** The shared year recap over the iOS listening history. Sharing the card image is not connected on this host. */
+/** The shared year recap over the iOS listening history. The card image shares through the system share sheet. */
 @Composable
-private fun iosRecapPage(graph: IosSessionGraph, route: ArchiveRoute, openRoute: (String) -> Unit): ArchiveGraphPage =
+private fun iosRecapPage(
+    graph: IosSessionGraph,
+    host: IosHost,
+    menu: IosItemMenuState,
+    route: ArchiveRoute,
+    openRoute: (String) -> Unit,
+): ArchiveGraphPage =
     hostYearInMusicPage(
         statistics = graph.history,
         earliestListenMs = graph.history::earliestListenMs,
         yearArg = route.arguments["year"]?.toIntOrNull(),
-        share = null,
-        songMenu = null,
+        share = { share -> iosShareRecapCard(graph, host, share) },
+        songMenu = { ref -> iosOpenRefMenu(graph, menu, "recap", ref) },
         openRecap = { year -> openRoute("year_in_music?year=$year") },
         nowMs = ::iosNowMillis,
         offsetMsAt = ::iosOffsetMsAt,
