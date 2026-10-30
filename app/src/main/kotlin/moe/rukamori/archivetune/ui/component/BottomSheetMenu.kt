@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -26,13 +27,18 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.isUnspecified
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -77,7 +83,9 @@ class MenuState(
 fun BottomSheetMenu(
     modifier: Modifier = Modifier,
     state: MenuState,
-    background: Color = MaterialTheme.colorScheme.surface,
+    // Unspecified lets the menu use liquid glass when the host records a menu backdrop, and the
+    // theme surface otherwise; a specified colour always wins.
+    background: Color = Color.Unspecified,
 ) {
     val focusManager = LocalFocusManager.current
     val predictiveBack = LocalBackAnimationStyle.current == BackAnimationStyle.PREDICTIVE
@@ -88,14 +96,39 @@ fun BottomSheetMenu(
         val sheetState = rememberModalBottomSheetState()
         val scope = rememberCoroutineScope()
         val backState = rememberPredictiveSheetBackState()
+        val sheetShape = BottomSheetDefaults.ExpandedShape
+        val glassSource = LocalMenuGlassBackdrop.current?.takeIf { background.isUnspecified }
+        val useGlass = liquidGlassEligible(glassSource)
+        val baseScheme = MaterialTheme.colorScheme
+        val dark = baseScheme.surface.luminance() < 0.5f
+        val glassTint = menuGlassTint(baseScheme, dark, LocalLiquidGlassTuning.current.tintFactor)
+        val drawGlassTint: DrawScope.() -> Unit = remember(glassTint) { { drawRect(glassTint) } }
+        val sheetScheme = if (useGlass) remember(baseScheme, dark) { menuGlassColorScheme(baseScheme, dark) } else baseScheme
+        val glassModifier =
+            if (useGlass) {
+                Modifier.liquidGlassMaterial(
+                    backdrop = glassSource,
+                    shape = sheetShape,
+                    role = LiquidGlassRole.ActionMenu,
+                    onDrawSurface = drawGlassTint,
+                )
+            } else {
+                Modifier
+            }
         ModalBottomSheet(
             onDismissRequest = {
                 focusManager.clearFocus()
                 state.isVisible = false
             },
             sheetState = sheetState,
-            containerColor = background,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = sheetShape,
+            containerColor =
+                when {
+                    useGlass -> Color.Transparent
+                    background.isSpecified -> background
+                    else -> baseScheme.surface
+                },
+            contentColor = sheetScheme.onSurface,
             dragHandle = {
                 Box(
                     modifier =
@@ -103,7 +136,7 @@ fun BottomSheetMenu(
                             .padding(vertical = 12.dp)
                             .size(width = 40.dp, height = 4.dp)
                             .clip(RoundedCornerShape(2.dp))
-                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+                            .background(sheetScheme.onSurfaceVariant.copy(alpha = 0.4f)),
                 )
             },
             modifier =
@@ -121,7 +154,7 @@ fun BottomSheetMenu(
                         } else {
                             Modifier
                         },
-                    ),
+                    ).then(glassModifier),
         ) {
             // Material3's native sheet back handling only scales the sheet. In PREDICTIVE mode
             // this handler, composed inside the sheet's dialog after Material3's own, takes the
@@ -141,7 +174,7 @@ fun BottomSheetMenu(
                 // default. The MenuSurfaceSection cards inside still have their own rounded
                 // corners (MaterialTheme.shapes.extraLarge) and look fine edge-to-edge.
             ) {
-                state.content(this)
+                if (useGlass) MaterialTheme(colorScheme = sheetScheme) { state.content(this) } else state.content(this)
             }
         }
     }
