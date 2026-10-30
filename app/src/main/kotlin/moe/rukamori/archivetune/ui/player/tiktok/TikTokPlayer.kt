@@ -115,11 +115,7 @@ import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import moe.rukamori.archivetune.ui.player.AppleMusicQueueSheet
 import moe.rukamori.archivetune.ui.player.LocalVideoArtworkState
 import moe.rukamori.archivetune.ui.player.LocalVideoFullscreenState
-import moe.rukamori.archivetune.ui.player.MeshBackdrop
 import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
-import moe.rukamori.archivetune.ui.player.rememberMeshPalette
-import moe.rukamori.archivetune.LocalAnimationsDisabled
-import moe.rukamori.archivetune.ui.utils.resize
 
 /** Height of the top navigation row (icons + tabs). */
 internal val TIKTOK_TOP_NAV_HEIGHT = 44.dp
@@ -439,23 +435,8 @@ fun TikTokPlayerContent(
             )
         }
 
-    // ── The mesh field, once for the whole feed ──
-    // Keyed to the *settled* page rather than the dragged one: the palette follows the song that
-    // actually took over playback, so an abandoned swipe never leaves the backdrop on a track the
-    // user did not choose. One layer here replaces one per page — see the note in TikTokSongPage
-    // for why that mattered.
-    val backdropMetadata =
-        queueWindows.getOrNull(pagerState.settledPage)?.mediaItem?.metadata ?: mediaMetadata
-    val backdropArtUrl =
-        remember(backdropMetadata.id, backdropMetadata.thumbnailUrl) {
-            backdropMetadata.thumbnailUrl?.resize(
-                width = TIKTOK_ART_PX,
-                height = TIKTOK_ART_PX,
-                maxresAllowed = true,
-            )
-        }
-    val meshPalette = rememberMeshPalette(backdropArtUrl)
-
+    // Each page draws its own mesh field (TikTokMeshBackdrop in TikTokSongPage); this root only
+    // supplies the dark fill seen before a page has composed.
     Box(
         modifier =
             modifier
@@ -463,14 +444,6 @@ fun TikTokPlayerContent(
                 .then(if (LocalPlayerPresentation.current.sharedBackground) Modifier else Modifier.background(TIKTOK_EMPTY_BACKDROP))
                 .onGloballyPositioned { rootBounds = it.boundsInRoot() },
     ) {
-        if (!LocalPlayerPresentation.current.sharedBackground) MeshBackdrop(
-            palette = meshPalette,
-            trackKey = backdropMetadata.id,
-            reduceAnimation = LocalAnimationsDisabled.current,
-            // The pages lay their own legibility scrim over this (tiktokScrim), so this layer
-            // must not add a second — two stacked scrims read as a grey wash.
-            scrim = false,
-        )
         VerticalPager(
             state = pagerState,
             // The pager is the backdrop-capturing layer for the lyrics overflow popup: everything

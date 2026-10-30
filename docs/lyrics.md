@@ -124,8 +124,10 @@ Flamingo keeps only its controls-visible mask that clears the lines from under i
 pane (`ui/component/EnhancedKaraokePane.kt`) measures
 the view taller by those amounts and lifts it, so the library's ramps sit outside the
 clipped box and the anchor offset is raised by the same 20dp. Re-check both numbers when
-the library is upgraded. The single-active-line strip (TikTok main lyrics) has no list and
-no fade.
+the library is upgraded. lyrics-ui needs API 29, so below that the pane draws
+`BasicSyncedLyricsList` instead: a plain lazy list that owns its own auto-scroll to the
+same anchor, sweeps only the active karaoke line and pauses following for 3 s after a
+user drag. The single-active-line strip (TikTok main lyrics) has no list and no fade.
 
 ## Two things that were wrong, so they do not come back
 

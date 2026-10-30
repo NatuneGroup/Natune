@@ -34,6 +34,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,6 +49,7 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
@@ -102,9 +104,10 @@ fun ArtistAlbumsScreen(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val ambient = rememberArtistAmbientColors(viewModel.artistId, artist?.thumbnailUrl)
 
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().artistAmbientBackground(ambient),
     ) {
         LazyVerticalGrid(
             state = lazyGridState,
@@ -148,6 +151,8 @@ fun ArtistAlbumsScreen(
         }
 
         TopAppBar(
+            modifier = Modifier.artistAmbientBarBackground(ambient),
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             windowInsets =
                 WindowInsets(top = LocalStableSystemBarsTopPadding.current)
                     .union(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
