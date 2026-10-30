@@ -98,6 +98,8 @@ class DesktopSessionGraph internal constructor(
     val player: MusicPlayerController,
     /** The one checkpointed queue facade the root binds to. Every queue command runs inside the owner's lock. */
     val queue: TypedDelegatingQueueController,
+    /** Song-seeded radio over the same queue: seamless for the current song, a fresh watch-next queue otherwise. */
+    internal val radio: DesktopRadioOwner,
     /** Lifetime-bound projection of the queue and the player for the OS media controls. Never a second queue. */
     val metadata: StateFlow<DesktopMediaMetadata?>,
     /** The one device collator every sorted list of this host uses, so one artist never splits into two groups. */

@@ -120,7 +120,7 @@ private fun menuOccurrenceId(songId: String): String = "menu-$songId-${System.na
 /**
  * The player's overflow menu on the desktop host. It mounts the shared [PlayerQueueMenu] body, so the rows are the
  * baseline's; rows whose owner this host has (queue order, playlist picker, source pin, speed dial, tempo and pitch,
- * sleep timer, copy link, artist and album pages, details, share local) act, and rows it does not (radio, cast, canvas,
+ * sleep timer, copy link, artist and album pages, details, share local, radio) act, and rows it does not (cast, canvas,
  * always-on display, downloads, the external downloader, equalizer, acoustic graph, Amazon search) are hidden through
  * the state's capability flags instead of appearing as no-ops.
  */
@@ -415,9 +415,22 @@ internal class DesktopPlayerQueueActions(
     override fun startSleepTimerEndOfSong() = graph.sleepTimer.startSleepTimerEndOfSong()
     override fun clearSleepTimer() = graph.sleepTimer.clearSleepTimer()
 
+    override fun startRadio(track: PlayerQueueTrack) {
+        // The shared menu dismisses immediately after this call; keep its selected item across the launch.
+        val item = menu.target?.takeIf { it.ref.id == track.mediaId } ?: return
+        graph.scope.launch {
+            try {
+                graph.radio.start(item.ref)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("the radio could not be started: ${failure.javaClass.simpleName}")
+            }
+        }
+    }
+
     // Rows hidden on this host: unreachable, but logged rather than silent if a trigger still reaches them.
 
-    override fun startRadio(track: PlayerQueueTrack) = unsupported("startRadio")
     override fun setAodMode() = unsupported("setAodMode")
     override fun openEqualizer() = unsupported("openEqualizer")
     override fun openAcousticQuality(track: PlayerQueueTrack) = unsupported("openAcousticQuality")
@@ -523,7 +536,7 @@ internal fun DesktopPlayerMenuDialog(
         amazonSearchEnabled = false,
         searchableSources = setOf(AudioSourceType.YOUTUBE),
         alwaysOnDisplaySupported = false,
-        radioSupported = false,
+        radioSupported = desktopRadioSeedSupported(item.ref),
         acousticQualitySupported = false,
         equalizerSupported = false,
         downloadsSupported = false,

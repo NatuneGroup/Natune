@@ -54,8 +54,8 @@ import org.jetbrains.compose.resources.stringResource
  * The one row menu of the desktop host. A row's overflow opens it on that row's occurrence. It mounts the shared song
  * menu with the owners this host actually has: queue, library like and add-to-playlist, clipboard share, history
  * removal, playlist-row removal, album navigation, the sleep timer sheet, cover-art save, track info, the download
- * owner's start and removal, and the media-info route. Rows whose owner the desktop host does not connect (radio,
- * speed dial, cache removal, export, artist pages, refetch) are filtered off the menu rather than appearing as dead
+ * owner's start and removal, radio, and the media-info route. Rows whose owner the desktop host does not connect
+ * (speed dial, cache removal, export, artist pages, refetch) are filtered off the menu rather than appearing as dead
  * items.
  */
 internal class DesktopItemMenuState {
@@ -134,7 +134,10 @@ private class DesktopSongMenuHost(
     private val sleepSheet: DesktopSleepTimerSheetState,
     private val openRoute: (String) -> Unit,
 ) : SongMenuHost {
-    override suspend fun startRadio(song: ContentRef) = state.unavailable()
+    override suspend fun startRadio(song: ContentRef) {
+        val occurrence = state.target?.takeIf { it.item.ref == song } ?: state.unavailable()
+        graph.radio.start(song, occurrence.setVideoId)
+    }
     override suspend fun setInLibrary(song: ContentRef, inLibrary: Boolean) {
         // The library store commits saved items; removing a library row has no mutation on this host.
         if (!inLibrary) state.unavailable()
@@ -369,6 +372,7 @@ private fun DesktopCollectionRowMenu(
 private fun desktopBoundSongRows(occurrence: ContentOccurrence, facts: SongMenuFacts, inLibrary: Boolean): Set<String> =
     buildSet {
         addAll(listOf("play_next", "add_queue", "like", "add_playlist", "custom_artwork", "sleep_timer", "download_cover"))
+        if (desktopRadioSeedSupported(occurrence.item.ref)) add("start_radio")
         // Clipboard share covers catalog songs; Telegram ids and local files have no link or file-share owner here.
         if (!facts.isLocal && !facts.isTelegram) add("share")
         // Library add commits through saveItems; removal has no mutation on this host.

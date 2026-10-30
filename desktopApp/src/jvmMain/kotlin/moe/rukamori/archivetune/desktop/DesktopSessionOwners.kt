@@ -459,6 +459,7 @@ internal suspend fun assembleDesktopSessionOwners(
         history = history,
         player = player,
         queue = queue,
+        radio = DesktopRadioOwner(owner),
         metadata = metadata,
         textOrder = textOrder,
         libraryContent = libraryContent,

@@ -77,21 +77,14 @@ internal class DesktopLastFmDashboardHost(
 
     override fun isPlayerAvailable(): Boolean = true
 
-    /**
-     * A YouTube match becomes its own radio queue: the song loads alone, then `startRadioSeamlessly` appends the
-     * watch-next tail behind it, the same pair of calls `PlayerConnection.startRadio` makes. A non-YouTube ref
-     * cannot seed radio and reports unavailable, never a silent solo play.
-     */
     override fun startRadio(song: ContentOccurrence) {
         val ref = song.item.ref
-        if (ref.provider != ContentProvider.YOUTUBE.id || ref.kind != ContentKind.SONG) {
+        if (!desktopRadioSeedSupported(ref)) {
             unavailable()
             return
         }
-        val entry = song.queuedCopy()
         queueCommand("the radio could not be started") {
-            graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
-            graph.queue.startRadioSeamlessly()
+            graph.radio.start(ref, song.setVideoId)
         }
     }
 
