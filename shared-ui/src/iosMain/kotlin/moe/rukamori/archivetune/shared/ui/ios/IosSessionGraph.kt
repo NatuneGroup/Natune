@@ -32,6 +32,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCrossfadeHandoff
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
@@ -119,7 +120,7 @@ internal class IosSessionGraph private constructor(
     private val reportLine: (String) -> Unit,
 ) {
     val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
-    /** The crossfade or automix blend armed into the next song. iOS connects no blend engine, so it stays null. */
+    /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 
     /**
@@ -198,6 +199,7 @@ internal class IosSessionGraph private constructor(
      * released. The host's player, port and settings belong to the host, which closes them afterwards.
      */
     suspend fun close() = withContext(NonCancellable) {
+        playbackPort.cancelNext()
         listenTogether.close()
         listenDriver.close()
         progressDriver.close()
@@ -316,6 +318,7 @@ internal class IosSessionGraph private constructor(
             val contentRouter = ContentRepositoryRouter(
                 listOf(TypedRoomLibraryRepository(library), YouTubeContentRepository(youtubeTransport, youtubeAccount)),
             )
+            val handoff = IosCrossfadeHandoff(host.playbackPort, vault.snapshots)
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
@@ -330,6 +333,7 @@ internal class IosSessionGraph private constructor(
                 hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
                 hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
                 blockedArtistIds = { queueArtistBlocks.value },
+                handoffEngine = handoff,
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
             try {
@@ -435,6 +439,9 @@ internal class IosSessionGraph private constructor(
                     report = report,
                 ),
             )
+            val handoffHold = scope.launch {
+                listenTogether.client.roomState.map { it != null }.distinctUntilChanged().collect { handoff.hold(it) }
+            }
             val graph = IosSessionGraph(
                 scope = scope,
                 settings = vault,
@@ -459,7 +466,7 @@ internal class IosSessionGraph private constructor(
                 database = database,
                 listenDriver = listenDriver,
                 progressDriver = progressDriver,
-                drivers = drivers,
+                drivers = drivers + handoffHold,
                 reportLine = report,
             )
             lyrics.start()
