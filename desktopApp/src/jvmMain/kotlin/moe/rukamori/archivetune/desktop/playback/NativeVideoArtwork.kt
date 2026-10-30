@@ -9,6 +9,8 @@ internal class VideoArtworkFrameInfo(
     val width: Int,
     val height: Int,
     val state: VideoArtworkState,
+    val presentationTimeUs: Long = 0L,
+    val durationUs: Long? = null,
 )
 
 /**
@@ -40,7 +42,9 @@ internal class NativeVideoArtwork private constructor(private var handle: Long) 
         val current = handle.takeIf { it != 0L } ?: return null
         val result = VideoArtworkNative.copyFrame(current, knownSequence, address, capacity, info)
         val state = VideoArtworkState.entries.getOrElse(info[3].toInt()) { VideoArtworkState.FAILED }
-        return VideoArtworkFrameInfo(info[0], info[1].toInt(), info[2].toInt(), state) to result
+        return VideoArtworkFrameInfo(
+            info[0], info[1].toInt(), info[2].toInt(), state, info[4], info[5].takeIf { it > 0 },
+        ) to result
     }
 
     @Synchronized
@@ -54,7 +58,7 @@ internal class NativeVideoArtwork private constructor(private var handle: Long) 
     }
 
     companion object {
-        private const val INFO_FIELDS = 5
+        private const val INFO_FIELDS = 6
         private const val MICROS_PER_MILLI = 1_000L
 
         /** Null when the engine library is missing or the reader could not start. */
