@@ -7,6 +7,7 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import moe.rukamori.archivetune.shared.data.telegram.TdJsonRequester
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
 import moe.rukamori.archivetune.shared.domain.settings.TelegramBotForwardToChannelKey
 import moe.rukamori.archivetune.shared.domain.settings.TelegramBotsKey
@@ -14,7 +15,6 @@ import moe.rukamori.archivetune.shared.domain.telegram.TelegramBotDirectory
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramBotProfile
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramBotStore
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramChannelInfo
-import moe.rukamori.archivetune.shared.domain.telegram.TelegramChannelLibrary
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramChannelSearch
 
 /** How long a single TDLib search/lookup may take on iOS, matching the client's own request bound. */
@@ -36,18 +36,18 @@ class IosTelegramChannelSearch(
         val chatIds = LinkedHashSet<Long>()
         extractUsername(trimmed)?.let { username ->
             runCatching {
-                client.request("searchPublicChat", buildJsonObject { put("username", username) }, REQUEST_TIMEOUT_MS)
+                client.request("searchPublicChat", tdQuery("searchPublicChat") { put("username", username) }, REQUEST_TIMEOUT_MS)
             }.onSuccess { chat -> chat.telegramLong("id")?.let(chatIds::add) }
         }
         runCatching {
-            client.request("searchPublicChats", buildJsonObject { put("query", trimmed) }, REQUEST_TIMEOUT_MS)
+            client.request("searchPublicChats", tdQuery("searchPublicChats") { put("query", trimmed) }, REQUEST_TIMEOUT_MS)
         }.onSuccess { chats -> chats.chatIds(chatIds) }
         // searchPublicChats only ever returns chats with a public username, so a private channel the user already
         // joined could not be found by name at all — searchChats searches the user's own chat list locally.
         runCatching {
             client.request(
                 "searchChats",
-                buildJsonObject {
+                tdQuery("searchChats") {
                     put("query", trimmed)
                     put("limit", LOCAL_CHAT_SEARCH_LIMIT)
                 },
@@ -58,7 +58,7 @@ class IosTelegramChannelSearch(
     }
 
     private suspend fun getChat(chatId: Long): JsonObject =
-        client.request("getChat", buildJsonObject { put("chat_id", chatId) }, REQUEST_TIMEOUT_MS)
+        client.request("getChat", tdQuery("getChat") { put("chat_id", chatId) }, REQUEST_TIMEOUT_MS)
 
     private suspend fun toChannel(chat: JsonObject): TelegramChannelInfo? {
         val type = chat.telegramObject("type") ?: return null
@@ -68,7 +68,7 @@ class IosTelegramChannelSearch(
             runCatching {
                 client.request(
                     "getSupergroup",
-                    buildJsonObject { put("supergroup_id", supergroupId) },
+                    tdQuery("getSupergroup") { put("supergroup_id", supergroupId) },
                     REQUEST_TIMEOUT_MS,
                 )
             }.getOrNull()
@@ -111,14 +111,14 @@ class IosTelegramBotDirectory(
         val chat =
             client.request(
                 "searchPublicChat",
-                buildJsonObject { put("username", username.trim().removePrefix("@")) },
+                tdQuery("searchPublicChat") { put("username", username.trim().removePrefix("@")) },
                 REQUEST_TIMEOUT_MS,
             )
         val type = chat.telegramObject("type") ?: return null
         if (type.telegramText("@type") != "chatTypePrivate") return null
         val userId = type.telegramLong("user_id") ?: return null
         val user =
-            client.request("getUser", buildJsonObject { put("user_id", userId) }, REQUEST_TIMEOUT_MS)
+            client.request("getUser", tdQuery("getUser") { put("user_id", userId) }, REQUEST_TIMEOUT_MS)
         if (user.telegramObject("type")?.telegramText("@type") != "userTypeBot") return null
         val photo = chat.telegramObject("photo")
         return TelegramBotProfile(
@@ -154,16 +154,24 @@ class IosTelegramBotStore(
 }
 
 /**
- * The honest iOS channel-library state. Channel browse search is live, but no `LPtg<chatId>` playlist materialiser or
- * channel-sync engine exists on the iOS host yet, so opening a channel reports failure to the owner instead of
- * creating an empty playlist that looks synced.
+ * The running iOS client as a [TdJsonRequester], so the shared TDLib JSON bot chat and channel sync drive it. The
+ * query's own `@type` names the operation in the client's failure messages.
  */
-class IosTelegramChannelLibrary : TelegramChannelLibrary {
-    override suspend fun ensurePlaylist(chatId: Long, title: String): String =
-        throw UnsupportedOperationException("Telegram channel playlists are not wired on the iOS host")
-
-    override fun startSync(chatId: Long, title: String, losslessOnly: Boolean) = Unit
+class IosTelegramTdJson(
+    private val client: IosTelegramClient,
+) : TdJsonRequester {
+    override suspend fun request(query: JsonObject, timeoutMs: Long): JsonObject {
+        val operation = query.telegramText("@type") ?: throw IllegalArgumentException("TDLib query without @type")
+        return client.request(operation, query, timeoutMs)
+    }
 }
+
+/** TDLib JSON routes a query by its `@type`; a query without one is rejected before it reaches the function. */
+private inline fun tdQuery(type: String, build: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject =
+    buildJsonObject {
+        put("@type", type)
+        build()
+    }
 
 private val TELEGRAM_LINK_USERNAME =
     Regex("(?:https?://)?t(?:elegram)?\\.me/([A-Za-z0-9_]{3,})", RegexOption.IGNORE_CASE)
