@@ -537,6 +537,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 onFailure = onFailure,
                 unavailable = { show(featureUnavailable) },
                 scrollTo = scrollTo,
+                host = host,
             )
             "settings/misc" -> IosDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
             "settings/language_packs" -> IosLanguagePackSettingsPage(host, owners.controller, onFailure)

@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
@@ -7,24 +8,38 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.data.listentogether.ChatSongPickerOwner
 import moe.rukamori.archivetune.shared.data.listentogether.TrackInfo
+import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherAvatar
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsDefaults
+import moe.rukamori.archivetune.shared.domain.settings.commitListenTogetherAvatar
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.screens.ChatSongPicker
+import moe.rukamori.archivetune.shared.ui.screens.ChatSongPickerActions
+import moe.rukamori.archivetune.shared.ui.screens.ChatSongPickerUi
 import moe.rukamori.archivetune.shared.ui.screens.ListenTogetherActions
+import moe.rukamori.archivetune.shared.ui.screens.PagedContentState
 import moe.rukamori.archivetune.shared.ui.screens.commenttogether.CommentTogetherNativePorts
 import moe.rukamori.archivetune.shared.ui.settings.ListenTogetherSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
@@ -41,9 +56,9 @@ internal const val IosListenTogetherSettingsRoute = "settings/integrations/liste
 private const val IOS_LISTEN_TOGETHER_CHAT_ROUTE = "listen_together/chat"
 
 /**
- * The Listen Together room page over the graph's one owner. The chat and the settings open their routes. The song picker
- * for suggestions is not connected on this host, so that action says so on the page instead of opening nothing. Back is
- * the root's back, the same as the system gesture. The invite goes out through the iOS share sheet.
+ * The Listen Together room page over the graph's one owner. The chat and the settings open their routes. Suggest a song
+ * opens the shared song picker as a sheet over the room; a pick goes to the host as a suggestion. Back is the root's
+ * back, the same as the system gesture. The invite goes out through the iOS share sheet.
  */
 @Composable
 internal fun iosListenTogetherPage(
@@ -54,8 +69,24 @@ internal fun iosListenTogetherPage(
 ): ArchiveGraphPage {
     val owner = graph.listenTogether
     val state by owner.ui.collectAsState()
-    val unavailable = stringResource(Res.string.ios_settings_feature_unavailable)
-    val actions = remember(owner, host, back, openRoute, unavailable) {
+    val sent = stringResource(Res.string.ios_social_suggestion_sent)
+    val notGuest = stringResource(Res.string.ios_social_suggestion_guest_only)
+    val uiScope = rememberCoroutineScope()
+    var suggesting by remember { mutableStateOf(false) }
+    val picker = remember(owner, uiScope, sent, notGuest) {
+        owner.suggestionPicker(uiScope) { delivered ->
+            suggesting = false
+            owner.showMessage(if (delivered) sent else notGuest)
+        }
+    }
+    DisposableEffect(picker) { onDispose { picker.close() } }
+    if (suggesting) {
+        IosSuggestionPicker(graph, picker) {
+            picker.close()
+            suggesting = false
+        }
+    }
+    val actions = remember(owner, host, back, openRoute) {
         ListenTogetherActions(
             back = back,
             connect = owner::connect,
@@ -76,7 +107,7 @@ internal fun iosListenTogetherPage(
             rejectSuggestion = owner::rejectSuggestion,
             kick = owner::kick,
             transfer = owner::transfer,
-            suggestSong = { owner.showMessage(unavailable) },
+            suggestSong = { suggesting = true },
             settings = { openRoute(IosListenTogetherSettingsRoute) },
         )
     }
@@ -87,7 +118,8 @@ internal fun iosListenTogetherPage(
 
 /**
  * Settings > Listen Together over the same owner, so a blocked user released here is released in the live client too.
- * The custom member picture is not connected on this host, so that row reports it through [unavailable].
+ * The custom member picture is picked from the photo library over [host]'s view controller, stored downscaled, chosen
+ * as the avatar and sent to the room at once, as Android does. Without a [host] the row reports [unavailable].
  */
 @Composable
 internal fun IosListenTogetherSettingsPage(
@@ -97,22 +129,86 @@ internal fun IosListenTogetherSettingsPage(
     onFailure: () -> Unit,
     unavailable: () -> Unit,
     scrollTo: String?,
+    host: IosHost? = null,
 ) {
     val role by owner.settingsRole.collectAsState()
     val logs by owner.logs.collectAsState()
+    val scope = rememberCoroutineScope()
+    var customPicture by remember { mutableStateOf<ImageBitmap?>(null) }
+    var pictureVersion by remember { mutableStateOf(0) }
+    LaunchedEffect(pictureVersion) { customPicture = iosDecodeMinithumbnail(IosListenTogetherAvatar.load()) }
+    val pickCustomAvatar: () -> Unit = {
+        if (host == null) {
+            unavailable()
+        } else {
+            scope.launch {
+                val image = IosListenTogetherAvatar.pick(host.viewController) ?: return@launch
+                if (!IosListenTogetherAvatar.save(image)) {
+                    onNotice(SettingsNotice.Message(Res.string.ios_social_avatar_failed))
+                    return@launch
+                }
+                pictureVersion++
+                try {
+                    controller.edit { commitListenTogetherAvatar(ListenTogetherSettingsDefaults.CUSTOM_AVATAR_INDEX) }
+                    // Members already in the room see the new picture without waiting for a rejoin.
+                    owner.chat.broadcastCustomAvatar()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    onFailure()
+                }
+            }
+        }
+    }
     ListenTogetherSettings(
         controller = controller,
         servers = owner.servers,
         role = role,
         logs = logs,
-        onPickCustomAvatar = unavailable,
+        onPickCustomAvatar = pickCustomAvatar,
         onUnblockUser = owner.client::unblockUser,
         onClearLogs = owner::clearLogs,
         onCopyLogs = ::copyToIosClipboard,
         onNotice = onNotice,
         onFailure = onFailure,
         scrollTo = scrollTo,
-        avatar = { index, modifier -> IosLetterAvatar("${index + 1}", modifier) },
+        avatar = { index, modifier ->
+            val picture = customPicture
+            if (index == ListenTogetherSettingsDefaults.CUSTOM_AVATAR_INDEX && picture != null) {
+                Image(bitmap = picture, contentDescription = null, modifier = modifier.clip(CircleShape))
+            } else {
+                IosLetterAvatar("${index + 1}", modifier)
+            }
+        },
+    )
+}
+
+/** The shared song picker as the room's suggestion sheet. It searches songs only, and there is no now-playing row. */
+@Composable
+private fun IosSuggestionPicker(graph: IosSessionGraph, picker: ChatSongPickerOwner, dismiss: () -> Unit) {
+    val state by picker.state.collectAsState()
+    ChatSongPicker(
+        state = ChatSongPickerUi(
+            query = state.query,
+            page = PagedContentState(
+                items = state.items,
+                continuation = state.continuation,
+                loading = state.loading,
+                initialized = state.initialized,
+                failed = state.failed,
+            ),
+            current = null,
+            busy = false,
+        ),
+        actions = ChatSongPickerActions(
+            query = picker::changeQuery,
+            search = picker::search,
+            share = picker::share,
+            retry = picker::retry,
+            loadMore = picker::loadMore,
+            dismiss = dismiss,
+        ),
+        artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
     )
 }
 

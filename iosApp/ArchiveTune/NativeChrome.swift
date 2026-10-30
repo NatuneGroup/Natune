@@ -114,13 +114,19 @@ private struct NativeMiniPlayer: View {
                 Text(state.title)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .allowsTightening(true)
                 if !state.subtitle.isEmpty {
                     Text(state.subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .allowsTightening(true)
                 }
             }
+            // The capsule has a fixed height, so two lines of the largest text sizes would be clipped.
+            .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
@@ -197,6 +203,10 @@ private struct NativeTabButton: View {
                 Text(label)
                     .font(.caption2.weight(.medium))
                     .lineLimit(1)
+                    // A long translated tab name shrinks to fit its half of the capsule instead of truncating.
+                    .minimumScaleFactor(0.7)
+                    .allowsTightening(true)
+                    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             }
             .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
             .frame(maxWidth: .infinity, minHeight: 50)

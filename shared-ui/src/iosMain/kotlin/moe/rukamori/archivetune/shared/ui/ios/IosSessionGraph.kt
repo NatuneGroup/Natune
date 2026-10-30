@@ -34,6 +34,7 @@ import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
+import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherAvatar
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
@@ -64,11 +65,13 @@ import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
 import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
 import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
+import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsDefaults
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
+import moe.rukamori.archivetune.shared.domain.settings.listenTogetherAvatarIndex
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
@@ -115,6 +118,8 @@ internal class IosSessionGraph private constructor(
     val artworkLoader: IosArtworkLoader,
     /** The room, chat and settings owner over the one Listen Together engine, started and closed with the graph. */
     val listenTogether: IosListenTogetherOwner,
+    /** The YouTube Music uploads owner: picker transfers over its own client, closed with the graph. */
+    val uploads: IosYouTubeUploads,
     private val owner: PortableQueueOwner,
     private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
@@ -206,6 +211,7 @@ internal class IosSessionGraph private constructor(
      */
     suspend fun close() = withContext(NonCancellable) {
         listenTogether.close()
+        uploads.close()
         listenDriver.close()
         progressDriver.close()
         lyrics.close()
@@ -438,9 +444,17 @@ internal class IosSessionGraph private constructor(
                     queue = queue,
                     // The same finite clamp as the desktop host, before the one playback port.
                     setVolume = { level -> if (level.isFinite()) host.playbackPort.setVolume(level.coerceIn(0f, 1f)) },
+                    localAvatarBytes = {
+                        if (vault.snapshots.value?.listenTogetherAvatarIndex() == ListenTogetherSettingsDefaults.CUSTOM_AVATAR_INDEX) {
+                            IosListenTogetherAvatar.load()
+                        } else {
+                            null
+                        }
+                    },
                     report = report,
                 ),
             )
+            val uploads = IosYouTubeUploads(scope, vault, queue, report)
             val graph = IosSessionGraph(
                 scope = scope,
                 settings = vault,
@@ -462,6 +476,7 @@ internal class IosSessionGraph private constructor(
                 playbackPool = playbackPool,
                 artworkLoader = IosArtworkLoader(http),
                 listenTogether = listenTogether,
+                uploads = uploads,
                 owner = owner,
                 playbackPort = host.playbackPort,
                 database = database,

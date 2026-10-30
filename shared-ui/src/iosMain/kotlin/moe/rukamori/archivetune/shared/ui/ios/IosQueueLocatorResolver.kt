@@ -64,6 +64,7 @@ import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
 import moe.rukamori.archivetune.shared.domain.source.YouTubeFallbackTier
 import moe.rukamori.archivetune.shared.domain.source.toPlaybackLocator
+import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.host.hostSourceSnapshot
 import moe.rukamori.archivetune.shared.ui.host.toAudioResolveRequest
@@ -92,6 +93,12 @@ internal class IosQueueLocatorResolver(
     override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator {
         if (occurrence.item.ref.provider == LOCAL_PROVIDER) {
             throw IllegalStateException("local files are not connected on this iOS host")
+        }
+        // A Telegram song is a TDLib file the playback port streams itself; no provider chain can answer for it.
+        if (occurrence.item.ref.provider == TelegramTrackRef.SCHEME) {
+            val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)
+                ?: throw IllegalStateException("invalid Telegram media id: ${occurrence.item.ref.id}")
+            return PlaybackLocator.TelegramFile(track)
         }
         val request = occurrence.toAudioResolveRequest(preferences())
         var refused = emptySet<AudioSourceType>()
