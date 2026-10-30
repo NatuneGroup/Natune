@@ -442,6 +442,8 @@ val addLinuxBrowserDebDepends = tasks.register("addLinuxBrowserDebDepends") {
         packages.forEach { deb ->
             val tree = work.resolve(deb.nameWithoutExtension)
             tree.deleteRecursively()
+            // dpkg-deb creates only the last path component of its target.
+            work.mkdirs()
             runHostTool("dpkg-deb", "--raw-extract", deb.absolutePath, tree.absolutePath)
             val control = tree.resolve("DEBIAN/control")
             control.writeText(withDependsFields(control.readText(), linuxBrowserDebDepends))
