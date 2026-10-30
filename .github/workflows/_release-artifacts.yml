@@ -651,8 +651,9 @@ jobs:
           chmod +x "$APP_DIR/AppRun"
 
           TOOL="$RUNNER_TEMP/appimagetool-${APPIMAGE_ARCH}.AppImage"
+          # AppImageKit's release assets are gone; appimagetool moved to its own repository.
           curl --fail --location --retry 3 \
-            "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-${APPIMAGE_ARCH}.AppImage" \
+            "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${APPIMAGE_ARCH}.AppImage" \
             --output "$TOOL"
           chmod +x "$TOOL"
           APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" "$APP_DIR" \
