@@ -15,10 +15,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.domain.settings.LastFmProvider
+import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.settings.LastFmSettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 
@@ -39,7 +45,7 @@ internal fun DesktopLastFmSettingsPage(
     val pending by lastFm.pendingCount.collectAsState()
     val signIn by lastFm.signIn.collectAsState()
     Column(Modifier.fillMaxSize()) {
-        SignInCard(signIn, lastFm, report)
+        DesktopLastFmSignInCard(signIn, lastFm, report)
         // The baseline opens the dashboard from the profile menu, which this host does not draw.
         OutlinedButton(onClick = openDashboard, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text(DesktopStrings["lastfm_dashboard"])
@@ -60,8 +66,42 @@ internal fun DesktopLastFmSettingsPage(
     }
 }
 
+/**
+ * The Android app's dedicated Last.fm and Libre.fm sign-in routes. Opening one starts the web sign-in for [provider];
+ * the page goes back once the attempt ends, whether it was committed or cancelled.
+ */
 @Composable
-private fun SignInCard(state: DesktopLastFmSignIn, lastFm: DesktopLastFm, report: (String) -> Unit) {
+internal fun DesktopLastFmLoginPage(
+    lastFm: DesktopLastFm,
+    provider: LastFmProvider,
+    navigation: ShellNavigation,
+    report: (String) -> Unit,
+) {
+    val signIn by lastFm.signIn.collectAsState()
+    var begun by remember { mutableStateOf(false) }
+    LaunchedEffect(provider) {
+        if (lastFm.signIn.value == DesktopLastFmSignIn.Idle) {
+            lastFm.beginSignIn(provider) { url -> openDesktopUri(url, report) }
+        }
+        begun = true
+    }
+    LaunchedEffect(begun, signIn) {
+        // The flow, not the collected state, is read: the collected value can still be Idle in the frame after the
+        // sign-in began, which would close the page at once.
+        if (begun && lastFm.signIn.value == DesktopLastFmSignIn.Idle) navigation.back()
+    }
+    Column(Modifier.fillMaxSize()) {
+        Text(
+            DesktopSettingsText[if (provider == LastFmProvider.LIBREFM) "lastfm_login_librefm" else "lastfm_login_lastfm"],
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(16.dp),
+        )
+        DesktopLastFmSignInCard(signIn, lastFm, report)
+    }
+}
+
+@Composable
+internal fun DesktopLastFmSignInCard(state: DesktopLastFmSignIn, lastFm: DesktopLastFm, report: (String) -> Unit) {
     if (state == DesktopLastFmSignIn.Idle) return
     Card(Modifier.fillMaxWidth().padding(16.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -257,7 +257,9 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
 
 /** The settings routes this host mounts. Every other settings route keeps the unbound boundary. */
 internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
-    route.value.substringBefore('?').let { it in DESKTOP_SETTINGS_ROUTES || it in DESKTOP_GENERAL_SETTINGS_ROUTES }
+    route.value.substringBefore('?').let {
+        it in DESKTOP_SETTINGS_ROUTES || it in DESKTOP_GENERAL_SETTINGS_ROUTES || it in DESKTOP_EXTRA_SETTINGS_ROUTES
+    }
 
 private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
@@ -302,9 +304,11 @@ internal fun DesktopSettingsScreen(
                 controller = owners.controller,
                 navigate = navigate,
                 onFailure = onFailure,
-                unavailable = unavailable,
                 scrollTo = scrollTo,
+                playlistTags = graph.playlistTags,
             )
+            in DESKTOP_EXTRA_SETTINGS_ROUTES ->
+                DesktopExtraSettingsPage(path, graph, owners.controller, navigation, ::show, onFailure)
             "settings" -> SettingsHomePage(
                 controller = owners.controller,
                 navigate = navigate,
@@ -483,13 +487,13 @@ internal fun DesktopSettingsScreen(
                 openDashboard = { navigation.open(DesktopLastFmDashboardRoute) },
             )
             DesktopLastFmDashboardRoute -> DesktopLastFmDashboardPage(graph, navigation, unavailable)
-            "settings/privacy" -> DesktopPrivacySettingsPage(graph, owners.controller, onFailure, scrollTo)
+            "settings/privacy" -> DesktopPrivacySettingsPage(graph, owners.controller, ::show, onFailure, scrollTo)
             "settings/about" -> DesktopAboutPage(graph, owners.controller, navigation)
             DesktopListenTogetherSettingsRoute ->
                 DesktopListenTogetherSettingsPage(graph, owners.controller, onNotice, onFailure, unavailable, scrollTo)
             "settings/misc" -> DesktopDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
             "settings/logcat" -> DesktopDiagnosticLogPage(graph.settings, navigation, ::show)
-            "settings/backup_restore" -> DesktopBackupRestorePage(graph, owners.controller, onNotice, onFailure, scrollTo)
+            "settings/backup_restore" -> DesktopBackupRestorePage(graph, owners.controller, onNotice, onFailure, scrollTo, ::show)
             "settings/lyrics/providers" -> LyricsProviderSettings(
                 controller = owners.controller,
                 readStats = { preferences -> PaxsenixDiagnostics(graph.http, paxsenixSettingsOf(preferences)).getStats().getOrThrow() },
@@ -701,14 +705,12 @@ internal fun DesktopSettingsScreen(
     }
 }
 
-/**
- * Settings > Privacy on this host: the inline privacy rows and the listener-presence opt-in. The history controls of
- * the Android page need a history editor this host does not have yet.
- */
+/** Settings > Privacy on this host: the inline privacy rows, the history controls and the listener-presence opt-in. */
 @Composable
 private fun DesktopPrivacySettingsPage(
     graph: DesktopSessionGraph,
     controller: SettingsController,
+    show: (String) -> Unit,
     onFailure: () -> Unit,
     scrollTo: String?,
 ) {
@@ -725,6 +727,15 @@ private fun DesktopPrivacySettingsPage(
         scrollTo = scrollTo,
         onFailure = onFailure,
         extraItems = {
+            item(key = "history_controls") {
+                DesktopHistoryControls(
+                    preferences = preferences,
+                    controller = controller,
+                    clearListenHistory = graph.history::reset,
+                    show = show,
+                    onFailure = onFailure,
+                )
+            }
             item(key = "listener_presence") {
                 DesktopListenerPresenceSection(
                     store = graph.listenerPresence.store,

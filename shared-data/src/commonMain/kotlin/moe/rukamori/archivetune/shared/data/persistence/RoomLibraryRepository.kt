@@ -56,6 +56,14 @@ class RoomLibraryRepository(
         require(id.isNotBlank() && title.isNotBlank())
         dao.createPlaylist(PortablePlaylistRow(id, title))
     }
+    /** The local playlists the Android app hid from its Library, by title. */
+    fun observeHiddenPlaylists(): Flow<List<PortablePlaylistRow>> = dao.observeHiddenPlaylists()
+
+    /** Sets one playlist's hidden flag. An unknown id throws and changes nothing. */
+    suspend fun setPlaylistHidden(id: String, hidden: Boolean) {
+        require(dao.setPlaylistHidden(id, hidden) == 1) { "Unknown local playlist" }
+    }
+
     suspend fun playlistTags(id: String): Set<String> {
         requireNotNull(dao.playlist(id)) { "Unknown local playlist" }
         return dao.playlistTagNames(id).toSet()
