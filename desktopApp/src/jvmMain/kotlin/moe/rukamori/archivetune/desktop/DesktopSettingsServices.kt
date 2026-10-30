@@ -469,8 +469,9 @@ internal class DesktopSettingsServices(
         withContext(Dispatchers.IO) {
             CanvasConnectivity(
                 online = probeReachable("https://music.youtube.com/generate_204"),
-                wifi = true,
-                metered = false,
+                // The JVM reachability probe measures neither transport nor metering.
+                wifi = false,
+                metered = true,
             )
         }
 
