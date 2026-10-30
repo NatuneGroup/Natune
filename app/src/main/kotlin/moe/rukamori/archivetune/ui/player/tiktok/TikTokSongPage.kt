@@ -13,7 +13,7 @@
  *
  * A page is the full-bleed treatment TikTok gives a post: a mesh-gradient
  * backdrop blended from the artwork's own palette (the Bitchord player
- * style's blend, drawn once behind the pager by MeshBackdrop), the sharp artwork as
+ * style's blend, drawn per page by TikTokMeshBackdrop), the sharp artwork as
  * the hero in the middle (tapping it toggles playback, TikTok's
  * tap-to-pause; its edges dissolve into the backdrop so the cover never
  * meets the colours it was sampled from in a hard line), the action rail
@@ -107,6 +107,7 @@ import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.LyricsEnhanced
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.utils.resize
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
 import moe.rukamori.archivetune.ui.player.rememberSeekSkip
 import moe.rukamori.archivetune.utils.rememberPreference
 
@@ -195,8 +196,8 @@ internal fun TikTokSongPage(
     val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // ── Backdrop ── The mesh field is NOT drawn here. It lives once, behind the whole pager
-        // (see TikTokPlayerContent), and crossfades to the settled page's palette.
+        // A shared player background replaces the page's own mesh field.
+        if (!LocalPlayerPresentation.current.sharedBackground) TikTokMeshBackdrop(imageUrl = artUrl, trackKey = pageMetadata.id)
         Box(modifier = Modifier.fillMaxSize().tiktokScrim())
 
         Column(modifier = Modifier.fillMaxSize()) {
