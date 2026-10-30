@@ -47,6 +47,8 @@ internal fun EnhancedKaraokePane(
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier) {
+        // The inner Box's layout scope shadows this one, so the height is read here and handed down.
+        val viewportHeight = maxHeight
         val anchorOffset = remember(maxHeight) { maxHeight * 0.08f }
         Box(
             modifier =
@@ -72,7 +74,7 @@ internal fun EnhancedKaraokePane(
                     showTranslation = showTranslation,
                     showPhonetic = showPhonetic,
                     anchorOffset = anchorOffset,
-                    viewportHeight = maxHeight,
+                    viewportHeight = viewportHeight,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else Box(modifier = Modifier.fillMaxSize().outsetKaraokeLibraryMask()) {

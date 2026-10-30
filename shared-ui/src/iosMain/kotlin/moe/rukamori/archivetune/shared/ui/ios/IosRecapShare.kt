@@ -19,8 +19,10 @@ import org.jetbrains.skia.Surface
 import platform.Foundation.NSData
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
+import platform.Foundation.create
 import platform.Foundation.writeToFile
 import platform.UIKit.UIActivityViewController
+import platform.UIKit.popoverPresentationController
 
 /**
  * Shares one recap card through the system share sheet: the card is fitted to the baseline's 1080x1920, written as a

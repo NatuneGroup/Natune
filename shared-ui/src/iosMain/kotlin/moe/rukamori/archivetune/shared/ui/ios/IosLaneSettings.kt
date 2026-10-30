@@ -75,7 +75,10 @@ import moe.rukamori.archivetune.shared.ui.settings.SourceSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.aodSettingsRows
 import org.jetbrains.compose.resources.stringResource
+import platform.Foundation.ISOCountryCodes
+import platform.Foundation.ISOLanguageCodes
 import platform.Foundation.NSLocale
+import platform.Foundation.currentLocale
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on
@@ -259,7 +262,7 @@ private fun IosLaneContentSettingsPage(
 /** (code, localized name) pairs for the platform's ISO catalogs; an unnamed code shows itself. */
 private fun iosLaneIsoOptions(languages: Boolean): List<Pair<String, String>> {
     val locale = NSLocale.currentLocale
-    val raw: List<*> = if (languages) NSLocale.ISOLanguageCodes() else NSLocale.ISOCountryCodes()
+    val raw: List<*> = if (languages) NSLocale.ISOLanguageCodes else NSLocale.ISOCountryCodes
     return raw.filterIsInstance<String>().sorted().map { code ->
         val name = if (languages) {
             locale.localizedStringForLanguageCode(code)

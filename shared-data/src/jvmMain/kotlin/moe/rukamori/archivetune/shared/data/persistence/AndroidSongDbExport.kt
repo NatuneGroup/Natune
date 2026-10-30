@@ -70,7 +70,7 @@ object AndroidSongDbExport {
                 try {
                     connection.exec("PRAGMA foreign_keys = ON")
                     connection.exec("BEGIN")
-                    schemaStatements().forEach(connection::exec)
+                    schemaStatements().forEach { connection.exec(it) }
                     write(connection, model)
                     connection.exec("COMMIT")
                     connection.prepare("PRAGMA foreign_key_check").use { check(!it.step()) { "Export broke a foreign key" } }
