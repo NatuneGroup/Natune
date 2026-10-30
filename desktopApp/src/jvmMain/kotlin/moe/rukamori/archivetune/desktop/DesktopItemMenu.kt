@@ -21,13 +21,11 @@ import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.library.AutoPlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
-import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
-import moe.rukamori.archivetune.shared.domain.repository.DownloadPhase
 import moe.rukamori.archivetune.shared.domain.repository.HistoryOrigin
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
 import moe.rukamori.archivetune.shared.ui.host.queuedEntry
@@ -54,8 +52,8 @@ import org.jetbrains.compose.resources.stringResource
  * The one row menu of the desktop host. A row's overflow opens it on that row's occurrence. It mounts the shared song
  * menu with the owners this host actually has: queue, library like and add-to-playlist, clipboard share, history
  * removal, playlist-row removal, album navigation, the sleep timer sheet, cover-art save, track info, the download
- * owner's start and removal, and the media-info route. Rows whose owner the desktop host does not connect (radio,
- * speed dial, cache removal, export, artist pages, refetch) are filtered off the menu rather than appearing as dead
+ * owner's start, removal and export, radio, and the media-info route. Rows whose owner the desktop host does not connect
+ * (speed dial, cache removal, artist pages, refetch) are filtered off the menu rather than appearing as dead
  * items.
  */
 internal class DesktopItemMenuState {
@@ -134,7 +132,10 @@ private class DesktopSongMenuHost(
     private val sleepSheet: DesktopSleepTimerSheetState,
     private val openRoute: (String) -> Unit,
 ) : SongMenuHost {
-    override suspend fun startRadio(song: ContentRef) = state.unavailable()
+    override suspend fun startRadio(song: ContentRef) {
+        val occurrence = state.target?.takeIf { it.item.ref == song } ?: state.unavailable()
+        graph.radio.start(song, occurrence.setVideoId)
+    }
     override suspend fun setInLibrary(song: ContentRef, inLibrary: Boolean) {
         // The library store commits saved items; removing a library row has no mutation on this host.
         if (!inLibrary) state.unavailable()
@@ -151,9 +152,15 @@ private class DesktopSongMenuHost(
 
     override suspend fun removeFromCache(song: ContentRef) = state.unavailable()
     /** Queues the song on the one downloads owner, the same store the downloads page and media info read. */
-    override suspend fun startDownload(song: ContentRef) = graph.downloads.start(song, "")
-    override suspend fun removeDownload(song: ContentRef) = graph.downloads.remove(song.songDownloadId())
-    override suspend fun exportDownload(song: ContentRef, suggestedName: String) = state.unavailable()
+    override suspend fun startDownload(song: ContentRef) {
+        val item = state.target?.item?.takeIf { it.ref == song } ?: state.unavailable()
+        graph.downloads.start(item)
+    }
+    override suspend fun removeDownload(song: ContentRef) = graph.downloads.remove(song.desktopDownloadId())
+    override suspend fun exportDownload(song: ContentRef, suggestedName: String) {
+        val destination = chooseDesktopSaveFile(DesktopStrings["menu_download_export_pick"], suggestedName) ?: return
+        graph.downloads.export(song, destination.toPath())
+    }
     override suspend fun openWithExternalDownloader(song: ContentRef): Boolean = false
 
     override suspend fun viewAlbum(albumId: String) {
@@ -267,12 +274,24 @@ private fun DesktopSongMenu(
     val downloadState by produceState(CollectionDownloadState.NOT_DOWNLOADED, ref) {
         try {
             graph.downloads.observe().collect { transfers ->
-                value = downloadStateOf(transfers, ref.songDownloadId())
+                value = desktopDownloadMenuState(transfers, ref)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             value = CollectionDownloadState.NOT_DOWNLOADED
+        }
+    }
+    val downloadExtension by produceState<String?>(null, graph, ref, downloadState) {
+        value = null
+        if (downloadState == CollectionDownloadState.COMPLETED) {
+            value = try {
+                graph.downloads.completedFile(ref)?.let { desktopDownloadExtension(it.path) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
         }
     }
     val isTelegram = ref.id.startsWith("telegram://")
@@ -285,8 +304,7 @@ private fun DesktopSongMenu(
         inLibrary = inLibrary,
         speedDialPinned = false,
         download = downloadState,
-        // Export stays off the menu: exportDownload is not connected on this host, so no extension is offered.
-        downloadExtension = null,
+        downloadExtension = downloadExtension,
         fromHistory = occurrence.occurrenceId.startsWith("history:"),
         fromCache = false,
         albumId = occurrence.item.albumId,
@@ -369,6 +387,7 @@ private fun DesktopCollectionRowMenu(
 private fun desktopBoundSongRows(occurrence: ContentOccurrence, facts: SongMenuFacts, inLibrary: Boolean): Set<String> =
     buildSet {
         addAll(listOf("play_next", "add_queue", "like", "add_playlist", "custom_artwork", "sleep_timer", "download_cover"))
+        if (desktopRadioSeedSupported(occurrence.item.ref)) add("start_radio")
         // Clipboard share covers catalog songs; Telegram ids and local files have no link or file-share owner here.
         if (!facts.isLocal && !facts.isTelegram) add("share")
         // Library add commits through saveItems; removal has no mutation on this host.
@@ -378,20 +397,9 @@ private fun desktopBoundSongRows(occurrence: ContentOccurrence, facts: SongMenuF
         // The track-info route is mounted by the shared navigation host on this surface.
         add("track_info")
         // Start, cancel and removal commit through the downloads owner; Details opens the mounted media-info route.
-        addAll(listOf("download", "downloading", "remove_download", "media_info"))
+        if (desktopDownloadSupported(occurrence.item.ref)) add("download")
+        addAll(listOf("downloading", "remove_download", "export_download", "media_info"))
         add("remove_playlist")
-    }
-
-/** The id the downloads owner keys a song by, `provider:mediaId`, the form it lists, starts and removes it under. */
-private fun ContentRef.songDownloadId(): String = "$provider:$id"
-
-/** The row state the shared menu shows for the download with [id], read from the owner's transfers and stored rows. */
-private fun downloadStateOf(transfers: List<ContentDownload>, id: String): CollectionDownloadState =
-    when (transfers.firstOrNull { it.id == id }?.phase) {
-        DownloadPhase.COMPLETED -> CollectionDownloadState.COMPLETED
-        // A removal in progress keeps the row busy, so a new download cannot start over the removal.
-        DownloadPhase.QUEUED, DownloadPhase.DOWNLOADING, DownloadPhase.REMOVING -> CollectionDownloadState.IN_PROGRESS
-        DownloadPhase.STOPPED, DownloadPhase.FAILED, null -> CollectionDownloadState.NOT_DOWNLOADED
     }
 
 private fun desktopMenuSharing(state: DesktopItemMenuState): MenuSharing = object : MenuSharing {

@@ -98,6 +98,7 @@ data class YouTubeArtistDetail(
  * the session that transport applies (cookie, visitor data, login-for-browse) covers these reads as well.
  */
 class JvmYouTubeCatalogueTransport {
+    private val historyPages = CoreYouTubeHistory()
 
     /** The home feed: chips on the first page, shelf sections and the continuation for the next batch. */
     suspend fun home(continuation: String? = null, params: String? = null): YouTubeShelfPage {
@@ -217,7 +218,7 @@ class JvmYouTubeCatalogueTransport {
         YouTube.newReleaseAlbums().getOrThrow().map { it.toRelease() }
 
     /** The account's YouTube listen history sections; a signed-out or failed read throws. */
-    suspend fun historySections(continuation: String? = null): YouTubeHistoryPage = CoreYouTubeHistory.page(continuation)
+    suspend fun historySections(continuation: String? = null): YouTubeHistoryPage = historyPages.page(continuation)
 }
 
 /**

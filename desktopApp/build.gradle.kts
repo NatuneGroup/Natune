@@ -21,9 +21,11 @@ kotlin {
             implementation(project(":shared-data"))
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.compose.multiplatform.components.resources)
-            // The one HTTP client of the desktop graph. The CIO engine is pure JVM, so it adds no native library.
+            // The graph's proxy-aware HTTP client and the retained CIO provider/upload clients are pure JVM.
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.cio)
+            implementation(libs.ktor.client.okhttp)
+            implementation(libs.okhttp)
             implementation(libs.quickjs.kt)
             // The YouTube fallback tiers. InnerTubeX expects JSON content negotiation on its client. :core and the
             // NewPipe extractor already reach the package through shared-data; they are declared here so the NewPipe
