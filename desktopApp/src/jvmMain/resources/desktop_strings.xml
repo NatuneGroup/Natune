@@ -23,7 +23,7 @@
     <string name="browser_finish">Finish sign-in</string>
     <string name="spotify_login_window_hint">Sign in to Spotify in the window that opened, then press Finish sign-in.</string>
     <string name="spotify_not_connected">Spotify is not connected</string>
-    <string name="spotify_streaming_desktop_note">Spotify audio does not play on the desktop app yet. Signing in here checks and stores the streaming account only.</string>
+    <string name="spotify_streaming_desktop_note">Desktop streaming requires a separate account, Echo, and a build configured for PlayPlay. The web-player method needs a licensed content-decryption module and is unavailable here. A refused source continues through your normal source order.</string>
     <string name="spotify_track_unavailable">No playable match was found for this Spotify track.</string>
     <string name="spotify_item_unavailable">No matching item was found for this Spotify tile.</string>
     <string name="spotify_dj_unsupported">Spotify DJ playlists can only be played in the Spotify app.</string>

@@ -124,11 +124,16 @@ class KtorAmazonRepository(client: HttpClient, instanceBase: String, private val
     private suspend fun resolveViaInstance(request: AudioResolveRequest, base: String,
         access: AmazonInstanceAccess): PreparedAudio? {
         if (!access.isActive()) return null
-        if (request.target.title.isBlank() || request.target.artists.isEmpty()) return null
+        val pick = request.amazonPick
+        val wantedTitle = pick?.title ?: request.target.title
+        val wantedArtist = pick?.artist ?: request.target.artists.joinToString(", ")
+        val wantedAlbum = pick?.album ?: request.target.album
+        val wantedDuration = pick?.durationMs ?: request.target.durationMs
+        if (wantedTitle.isBlank() || wantedArtist.isBlank()) return null
         val quality = request.qualities[source] ?: "LOSSLESS"
-        val params = mutableMapOf("track" to request.target.title, "artist" to request.target.artists.joinToString(", "))
-        request.target.album?.takeIf { it.isNotBlank() }?.let { params["album"] = it }
-        request.target.durationMs?.takeIf { it > 0 }?.let { params["duration"] = "${it / 1000 + if (it % 1000 >= 500) 1 else 0}" }
+        val params = mutableMapOf("track" to wantedTitle, "artist" to wantedArtist)
+        wantedAlbum?.takeIf { it.isNotBlank() }?.let { params["album"] = it }
+        wantedDuration?.takeIf { it > 0 }?.let { params["duration"] = "${it / 1000 + if (it % 1000 >= 500) 1 else 0}" }
         val headers = buildMap {
             put("Origin", "https://monochrome.tf")
             access.turnstileJwt?.takeIf { it.isNotBlank() }?.let { put("X-Turnstile-JWT", it) }
@@ -149,7 +154,7 @@ class KtorAmazonRepository(client: HttpClient, instanceBase: String, private val
             if (envelope && root == null && reply.status !in setOf(401, 403, 428)) return null
         }
         if (root == null) {
-            val old = params + mapOf("album" to request.target.album.orEmpty(), "duration" to params["duration"].orEmpty(),
+            val old = params + mapOf("album" to wantedAlbum.orEmpty(), "duration" to params["duration"].orEmpty(),
                 "quality" to quality1(quality)) +
                 (access.operatorToken?.let { mapOf("bypass_token" to it) } ?: emptyMap())
             root = http.json("$base/api/track/", old, headers).jsonObject
