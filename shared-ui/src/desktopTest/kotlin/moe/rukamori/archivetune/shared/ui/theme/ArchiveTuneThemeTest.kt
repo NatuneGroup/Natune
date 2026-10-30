@@ -28,6 +28,24 @@ class ArchiveTuneThemeTest {
         onRoot().writeM4Screenshot("m4-poppins-theme.png")
     }
 
+    @Test fun contentOutsideSurfaceInheritsOnSurfaceContentColor() = runComposeUiTest {
+        var dark by mutableStateOf(true)
+        var content: Color? = null
+        var onSurface: Color? = null
+        setContent {
+            ArchiveTuneTheme(darkTheme = dark) {
+                content = LocalContentColor.current
+                onSurface = MaterialTheme.colorScheme.onSurface
+            }
+        }
+        runOnIdle { assertEquals(assertNotNull(onSurface), content) }
+        runOnIdle { dark = false }
+        runOnIdle {
+            assertEquals(assertNotNull(onSurface), content)
+            assertNotEquals(Color.Black, darkColorScheme().onSurface)
+        }
+    }
+
     @Test fun typographyPreservesBaselineMetricsAndResolvedFamily() {
         val type = archiveTuneTypography(FontFamily.Serif)
         assertEquals(57.sp, type.displayLarge.fontSize)

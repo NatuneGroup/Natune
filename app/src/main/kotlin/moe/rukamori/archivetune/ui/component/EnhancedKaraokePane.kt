@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.ui.component
 
+import android.os.Build
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -26,6 +27,7 @@ import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 /**
  * The synced Enhanced lyrics list: the library's [KaraokeLyricsView] inside a box whose top and bottom
  * edges fade, wherever the list is scrolled. The active line sits 8% of the box height below the top.
+ * Below API 29, where the library view cannot run, [BasicSyncedLyricsList] takes its place.
  */
 @Composable
 internal fun EnhancedKaraokePane(
@@ -56,7 +58,24 @@ internal fun EnhancedKaraokePane(
                     // The top ramp ends at the anchor, so the line being sung is never dimmed by it.
                     .lyricsViewportFade(top = minOf(anchorOffset, LyricsViewportFade.DefaultTop)),
         ) {
-            Box(modifier = Modifier.fillMaxSize().outsetKaraokeLibraryMask()) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                BasicSyncedLyricsList(
+                    listState = listState,
+                    lyrics = lyrics,
+                    currentPosition = currentPosition,
+                    onLineClicked = onLineClicked,
+                    onLinePressed = onLinePressed,
+                    textColor = textColor,
+                    normalLineTextStyle = normalLineTextStyle,
+                    accompanimentLineTextStyle = accompanimentLineTextStyle,
+                    phoneticTextStyle = phoneticTextStyle,
+                    showTranslation = showTranslation,
+                    showPhonetic = showPhonetic,
+                    anchorOffset = anchorOffset,
+                    viewportHeight = maxHeight,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else Box(modifier = Modifier.fillMaxSize().outsetKaraokeLibraryMask()) {
                 KaraokeLyricsView(
                     listState = listState,
                     lyrics = lyrics,

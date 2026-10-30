@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,7 @@ import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.shared.domain.settings.LiquidGlassTuningValues
 import moe.rukamori.archivetune.ui.component.sukisu.SukisuInteractiveHighlight
+import moe.rukamori.archivetune.ui.player.LocalPlayerSheetOverlayFraction
 import moe.rukamori.archivetune.ui.component.sukisu.rememberSukisuSpecularHighlight
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -236,9 +238,13 @@ fun LiquidGlassActionPill(
     interactive: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
+    // Header pills sit in the top zone the rising player sheet slides over; fading them out keeps
+    // their glass from floating on top of the sheet's own artwork.
+    val sheetOverlayFraction = LocalPlayerSheetOverlayFraction.current
     Row(
         modifier =
             modifier
+                .graphicsLayer { alpha = 1f - sheetOverlayFraction.value }
                 .height(48.dp)
                 .liquidGlass(
                     backdrop = backdrop,
