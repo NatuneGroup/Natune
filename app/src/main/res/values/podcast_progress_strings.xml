@@ -4,5 +4,5 @@
     <string name="podcast_episode_remaining">%1$s remaining</string>
     <string name="podcast_episode_position">Played %1$s</string>
     <string name="history_load_more">Load more</string>
-    <string name="history_paging_route_unavailable">Recent history is available through IP rotation. Older pages cannot use this route yet; turn off IP rotation and retry to load the full archive.</string>
+    <string name="history_paging_route_unavailable">History paging is unavailable while IP rotation is on. Turn off IP rotation in Internet settings, then retry to load older history.</string>
 </resources>
