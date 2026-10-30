@@ -70,9 +70,6 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
-import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
-import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
-import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.ArtistSeparatorsKey
@@ -90,6 +87,8 @@ import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.domain.settings.toggleSpeedDialPin
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.domain.source.AmazonTrackPick
+import moe.rukamori.archivetune.shared.domain.source.SongSourceAmazonPick
 import moe.rukamori.archivetune.shared.domain.source.SongSourceOverride
 import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzBackupVideoId
 import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzTrackId
@@ -107,7 +106,6 @@ import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueuePlaylistLo
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueSheetCollapse
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueTrack
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerSourceOverrideRequest
-import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerSourceQuality
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerSourceSearchResult
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 
@@ -121,7 +119,7 @@ private fun menuOccurrenceId(songId: String): String = "menu-$songId-${System.na
  * The player's overflow menu on the desktop host. It mounts the shared [PlayerQueueMenu] body, so the rows are the
  * baseline's; rows whose owner this host has (queue order, playlist picker, source pin, speed dial, tempo and pitch,
  * sleep timer, copy link, artist and album pages, details, share local) act, and rows it does not (radio, cast, canvas,
- * always-on display, downloads, the external downloader, equalizer, acoustic graph, Amazon search) are hidden through
+ * always-on display, downloads, the external downloader, equalizer, acoustic graph) are hidden through
  * the state's capability flags instead of appearing as no-ops.
  */
 internal class DesktopPlayerMenuState {
@@ -264,9 +262,9 @@ internal class DesktopPlayerQueueActions(
                             set(SongSourceQobuzBackupVideoIdKey, SongSourceQobuzBackupVideoId.withOverride(get(SongSourceQobuzBackupVideoIdKey), track.mediaId, request.videoId))
                         }
                         is PlayerSourceOverrideRequest.AmazonPick -> {
-                            // The Amazon pick codec has no portable representation yet; keep the pin only.
                             set(SongSourceOverrideKey, SongSourceOverride.withOverride(get(SongSourceOverrideKey), track.mediaId, AudioSourceType.AMAZON))
-                            set(SongSourceAmazonPickKey, get(SongSourceAmazonPickKey) ?: "")
+                            set(SongSourceAmazonPickKey, SongSourceAmazonPick.withOverride(get(SongSourceAmazonPickKey),
+                                track.mediaId, AmazonTrackPick(request.title, request.artist, request.album, request.durationMs)))
                         }
                     }
                 }
@@ -301,39 +299,12 @@ internal class DesktopPlayerQueueActions(
         }
     }
 
-    /** YouTube is the only catalogue with a song search on this host; other sources refuse inside the request. */
+    /** One search owner reuses the playback backends; unsupported provider filters stay honestly unavailable. */
     override suspend fun searchSongSources(
         query: String,
         sourceFilter: AudioSourceType?,
         includeAmazon: Boolean,
-    ): List<PlayerSourceSearchResult> {
-        if (sourceFilter != null && sourceFilter != AudioSourceType.YOUTUBE) return emptyList()
-        val page = try {
-            graph.youtubeContent.page(
-                ContentRequest(ContentProvider.YOUTUBE, ContentSurface.SEARCH, text = query, filter = ContentSearchFilter.SONGS),
-                continuation = null,
-            )
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            return emptyList()
-        }
-        return page.items.mapNotNull { occurrence ->
-            val item = occurrence.item
-            if (item.ref.kind != ContentKind.SONG) return@mapNotNull null
-            PlayerSourceSearchResult(
-                source = AudioSourceType.YOUTUBE,
-                trackId = item.ref.id,
-                title = item.title,
-                artist = item.artists.joinToString(", ") { it.name },
-                album = item.album,
-                thumbnailUrl = item.artworkUri,
-                durationMs = item.durationMs,
-                quality = PlayerSourceQuality.NONE,
-                isYouTubeSong = true,
-            )
-        }
-    }
+    ): List<PlayerSourceSearchResult> = graph.audioSources.search(graph.youtubeContent, query, sourceFilter, includeAmazon)
 
     /** Plays the picked YouTube result: the song goes next and starts, as the dialog's play action did. */
     override fun playYouTubeSearchResult(track: PlayerQueueTrack, result: PlayerSourceSearchResult) {
@@ -520,8 +491,8 @@ internal fun DesktopPlayerMenuDialog(
         sleepTimer = sleep,
         sourceChoices = desktopSourceSnapshot(prefs).enabled.toList(),
         selectedSource = pin,
-        amazonSearchEnabled = false,
-        searchableSources = setOf(AudioSourceType.YOUTUBE),
+        amazonSearchEnabled = graph.audioSources.amazonSearchEnabled,
+        searchableSources = graph.audioSources.searchableSources,
         alwaysOnDisplaySupported = false,
         radioSupported = false,
         acousticQualitySupported = false,
