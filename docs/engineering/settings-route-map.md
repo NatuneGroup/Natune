@@ -6,15 +6,15 @@ a host that cannot supply a page's owners keeps the explicit unbound/boundary su
 instead of an empty page.
 
 Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
-**D** = desktop (`desktopApp`, `DESKTOP_SETTINGS_ROUTES` + `DESKTOP_GENERAL_SETTINGS_ROUTES`),
+**D** = desktop (`desktopApp`, `DESKTOP_SETTINGS_ROUTES` + `DESKTOP_GENERAL_SETTINGS_ROUTES` + `DESKTOP_EXTRA_SETTINGS_ROUTES`),
 **iOS** = iOS host (`IOS_SETTINGS_ROUTES` + `IOS_GENERAL_SETTINGS_ROUTES`).
 
 | Route | A | D | iOS | Notes |
 |---|:-:|:-:|:-:|---|
 | `settings` (home) | ✓ | ✓ | ✓ | |
 | `settings/account` | ✓ | ✓ | — | no YouTube account owner on iOS |
-| `settings/hidden_playlists` | ✓ | — | — | |
-| `settings/appearance` | ✓ | ✓ | ✓ | one page: Theme, Player and Interface sections (anchors `appearance_theme`, `appearance_player`, `appearance_interface`); D/iOS: no wallpaper colors/dynamic, no font picker on iOS, home-screen chooser and arrange chips/tags unavailable |
+| `settings/hidden_playlists` | ✓ | ✓ | — | desktop: lists hidden local playlists with Unhide; the desktop Library does not filter hidden playlists yet |
+| `settings/appearance` | ✓ | ✓ | ✓ | one page: Theme, Player and Interface sections (anchors `appearance_theme`, `appearance_player`, `appearance_interface`); D/iOS: no wallpaper colors/dynamic, no font picker on iOS; desktop opens the home-screen, library-chip, playlist-tag and artwork-provider editors, iOS keeps them unavailable |
 | `settings/appearance/theme` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_theme` (or its `scrollTo`) |
 | `settings/appearance/player` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_player` (or its `scrollTo`) |
 | `settings/appearance/interface` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_interface` (or its `scrollTo`) |
@@ -26,51 +26,51 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/appearance/icon` | ✓ | — | — | launcher icon switcher, Android-only |
 | `settings/appearance/palette_picker` | ✓ | — | — | Android-only |
 | `settings/appearance/theme_creator` | ✓ | — | — | Android-only |
-| `settings/content` | ✓ | — | — | |
+| `settings/content` | ✓ | ✓ | — | desktop mounts |
 | `settings/lyrics` | ✓ | ✓ | ✓ | |
 | `settings/lyrics/providers` | ✓ | ✓ | ✓ | real Paxsenix stats + endpoint probes |
-| `settings/lyrics/romanisation` | ✓ | — | ✓ | JP toggle gated on real pack state |
-| `settings/language_packs` | ✓ | — | ✓ | JP pack real; SpatialFlow font "not available in this build" |
-| `settings/internet` | ✓ | — | — | no network owner on iOS/desktop |
+| `settings/lyrics/romanisation` | ✓ | ✓ | ✓ | JP toggle gated on real pack state |
+| `settings/language_packs` | ✓ | ✓ | ✓ | JP pack real; SpatialFlow font install/remove reports unavailable (no host font consumer) |
+| `settings/internet` | ✓ | ✓ | — | desktop mounts; no network owner on iOS |
 | `settings/player` | ✓ | ✓ | ✓ | bit-perfect/USB rows read unsupported |
-| `settings/player/ytdlp` | ✓ | — | ✓ | BUG-004 target; real runtime status (unavailable on iOS) |
-| `settings/canvas` | ✓ | — | — | |
-| `settings/sources` | ✓ | — | — | needs source-health owner |
+| `settings/player/ytdlp` | ✓ | ✓ | ✓ | BUG-004 target; real runtime status (unavailable on iOS) |
+| `settings/canvas` | ✓ | ✓ | — | desktop mounts |
+| `settings/sources` | ✓ | ✓ | — | desktop mounts |
 | `settings/android_auto` | ✓ | — | — | Android-only surface |
-| `settings/storage` | ✓ | — | — | |
-| `settings/storage/export_songs` | ✓ | — | — | |
-| `settings/downloads` | ✓ | — | — | |
-| `settings/privacy` | ✓ | ✓ | ✓ | BUG-005 defaults hold via shared rows |
-| `settings/backup_restore` | ✓ | ✓ | — | desktop mounts; iOS has no transports |
-| `settings/discord` | ✓ | — | — | |
+| `settings/storage` | ✓ | ✓ | — | desktop mounts |
+| `settings/storage/export_songs` | ✓ | ✓ | — | desktop: search, select, export downloads to a folder, delete |
+| `settings/downloads` | ✓ | ✓ | — | desktop mounts |
+| `settings/privacy` | ✓ | ✓ | ✓ | BUG-005 defaults hold via shared rows; desktop adds pause listen/search history and clear listen history |
+| `settings/backup_restore` | ✓ | ✓ | — | desktop mounts, plus Export for Android (schema-38 `song.db` + `settings.xml`); iOS has no transports |
+| `settings/discord` | ✓ | ✓ | — | desktop mounts |
 | `settings/discord/experimental` | ✓ | ✓ | ✓ | |
 | `settings/integration` | ✓ | ✓ | ✓ | pool/Spotify unconfigured → honest states |
 | `settings/integrations/listen_together` | ✓ | ✓ | ✓ | iOS: one owner over the session graph; custom member picture reports unavailable |
 | `settings/tidal` | ✓ | ✓ | ✓ | |
-| `settings/tidal/login` | ✓ | — | ✓ | iOS: mounted web sign-in page; reports unavailable without the `ARCHIVETUNE_*` TIDAL client settings |
-| `settings/qobuz` | ✓ | — | ✓ | iOS: mounted; token and instance health checks |
-| `settings/qobuz/login` | ✓ | — | ✓ | iOS: mounted; token verification and web-player secret candidates |
+| `settings/tidal/login` | ✓ | ✓ | ✓ | iOS: mounted web sign-in page; reports unavailable without the `ARCHIVETUNE_*` TIDAL client settings |
+| `settings/qobuz` | ✓ | ✓ | ✓ | iOS: mounted; token and instance health checks |
+| `settings/qobuz/login` | ✓ | ✓ | ✓ | iOS: mounted; token verification and web-player secret candidates |
 | `settings/deezer` | ✓ | ✓ | ✓ | |
-| `settings/deezer/login` | ✓ | — | ✓ | iOS: mounted Deezer web sign-in page |
-| `settings/amazon` | ✓ | — | — | |
-| `settings/jiosaavn` | ✓ | — | — | |
+| `settings/deezer/login` | ✓ | ✓ | ✓ | iOS: mounted Deezer web sign-in page |
+| `settings/amazon` | ✓ | ✓ | — | desktop mounts; Authorize reports unavailable (the Turnstile challenge needs an embedded page with a script bridge) |
+| `settings/jiosaavn` | ✓ | ✓ | — | desktop mounts |
 | `settings/qqmusic` | ✓ | ✓ | — | desktop mounts |
 | `settings/spotify_streaming` | ✓ | ✓ | — | desktop mounts |
-| `settings/applemusic` + `/login` | ✓ | — | — | |
+| `settings/applemusic` + `/login` | ✓ | page | — | desktop mounts the page, not `/login` |
 | `settings/telegram` | ✓ | ✓ | ✓ | iOS: one TDLib session page; the unbound boundary until the session exists |
 | `settings/telegram/login` `/browse` `/bots` `/chat/{id}` | ✓ | login | browse, bots | desktop mounts login only; iOS mounts browse and bots while the session exists, and login and bot chat stay on the boundary |
-| `settings/ai_integration` | ✓ | — | ✓ | real KtorAiTextService; "not configured" without provider |
+| `settings/ai_integration` | ✓ | ✓ | ✓ | real KtorAiTextService; "not configured" without provider |
 | `settings/lastfm` | ✓ | ✓ | — | desktop mounts (+dashboard route) |
-| `settings/lastfm/login` `/librefm-login` | ✓ | — | — | |
+| `settings/lastfm/login` `/librefm-login` | ✓ | ✓ | — | desktop: starts the browser sign-in for Last.fm or Libre.fm and returns when it ends |
 | `settings/lastfm/dashboard` | ✓ | ✓ | — | desktop mounts |
 | `settings/misc` (developer) | ✓ | ✓ | ✓ | acoustic/discord-debug/nerd-stats sections unavailable on iOS |
 | `settings/logcat` | ✓ | ✓ | ✓ | DiagnosticLogScreen on all three |
-| `settings/update` | ✓ | — | ✓ | no updater on desktop; iOS mounts the page with checks reported unavailable |
-| `settings/changelog?channel=` | ✓ | — | — | |
+| `settings/update` | ✓ | ✓ | ✓ | desktop mounts; iOS mounts the page with checks reported unavailable |
+| `settings/changelog?channel=` | ✓ | ✓ | — | desktop mounts |
 | `settings/about` | ✓ | ✓ | ✓ | iOS: real GitHub contributors/translations fetch |
-| `settings/po_token` | ✓ | — | — | YouTube-only |
-| `settings/customize_background` | ✓ | — | — | |
-| `settings/youtube/oauth` | ✓ | — | — | |
+| `settings/po_token` | ✓ | ✓ | — | YouTube-only; desktop mounts |
+| `settings/customize_background` | ✓ | ✓ | — | desktop: local image, blur, contrast, brightness (also `customize_background`) |
+| `settings/youtube/oauth` | ✓ | ✓ | — | desktop: device-code sign-in; needs `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID`/`_SECRET` at run time, and nothing on desktop uses the token for playback yet |
 | `login` (YouTube) | ✓ | ✓ | — | desktop mounts |
 
 ## Settings search

@@ -130,6 +130,10 @@ abstract class PortableLibraryDao {
     abstract fun observePlaylists(text: String): Flow<List<PortablePlaylistRow>>
     @Query("UPDATE portable_playlist SET title = :title WHERE id = :id")
     abstract suspend fun rename(id: String, title: String): Int
+    @Query("SELECT * FROM portable_playlist WHERE isHidden = 1 ORDER BY title, id")
+    abstract fun observeHiddenPlaylists(): Flow<List<PortablePlaylistRow>>
+    @Query("UPDATE portable_playlist SET isHidden = :hidden WHERE id = :id")
+    abstract suspend fun setPlaylistHidden(id: String, hidden: Boolean): Int
     @Query("DELETE FROM portable_playlist WHERE id = :id")
     abstract suspend fun deletePlaylistRow(id: String): Int
     /**
