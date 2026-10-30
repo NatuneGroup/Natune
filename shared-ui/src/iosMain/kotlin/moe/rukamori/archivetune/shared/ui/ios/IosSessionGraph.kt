@@ -124,7 +124,7 @@ internal class IosSessionGraph private constructor(
     private val reportLine: (String) -> Unit,
 ) {
     val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
-    /** The playlist tag catalog and assignments, in the same portable file as the playlists. */
+    /** The playlist tag catalog and assignments, in the same portable file as the playlists; the tag manager is not mounted on iOS. */
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
     /** The crossfade or automix blend armed into the next song. iOS connects no blend engine, so it stays null. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
