@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.provider
 
 import io.ktor.client.call.body
+import java.net.ProxySelector
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -18,33 +19,42 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentAccountChanged
 
 /**
  * Core's high-level history page omits its cursor. Its public lower-level browse accepts one, without changing
- * core or staging credentials in the global player. Keep this client private and copy the current session per read.
+ * core or staging credentials in the global player. Each transport owns its paging pin; the private client and
+ * mutex are shared, and every read applies that transport's route before sending.
  */
-internal object CoreYouTubeHistory {
-    private val client by lazy { InnerTube() }
-    private val lock = Mutex()
-    @OptIn(ExperimentalSerializationApi::class)
-    private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+internal class CoreYouTubeHistory {
+    private val session = HistoryProxySession()
+
+    private companion object {
+        val client by lazy { InnerTube() }
+        val lock = Mutex()
+        @OptIn(ExperimentalSerializationApi::class)
+        val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+
+        fun clearProxy() {
+            if (client.proxyUsername != null) client.proxyUsername = null
+            if (client.proxyPassword != null) client.proxyPassword = null
+            if (client.proxy != null) client.proxy = null
+        }
+    }
 
     suspend fun page(continuation: String?): YouTubeHistoryPage = lock.withLock {
         val auth = YouTube.currentPlaybackAuthState()
-        if (YouTube.ipRotationActiveCount.value > 0) {
-            // Keep the original first page and its routing. The private client cannot borrow core's internal selector.
-            if (continuation != null) throw YouTubeHistoryRoutingUnavailable()
-            val page = YouTube.musicHistory().getOrThrow()
-            val current = YouTube.currentPlaybackAuthState()
-            if (auth.cookie != current.cookie || auth.dataSyncId != current.dataSyncId) throw ContentAccountChanged()
-            return@withLock HistoryBrowsePage(
-                page.sections.orEmpty().map { section ->
-                    HistoryBrowseSection(section.title, section.songs.map { it.toSongCatalogueEntry() })
-                }, paginationUnavailable = true,
-            )
+        val route = try {
+            session.routeFor(continuation, auth.cookie, auth.dataSyncId) {
+                selectHistoryProxyRoute(
+                    ProxySelector.getDefault(), YouTube.proxy, YouTube.proxyUsername, YouTube.proxyPassword,
+                )
+            }
+        } catch (changed: ContentAccountChanged) {
+            clearProxy()
+            throw changed
         }
         client.applyAuthState(auth)
         client.locale = YouTube.locale
-        if (client.proxy != YouTube.proxy) client.proxy = YouTube.proxy
-        if (client.proxyUsername != YouTube.proxyUsername) client.proxyUsername = YouTube.proxyUsername
-        if (client.proxyPassword != YouTube.proxyPassword) client.proxyPassword = YouTube.proxyPassword
+        if (client.proxy != route.proxy) client.proxy = route.proxy
+        if (client.proxyUsername != route.username) client.proxyUsername = route.username
+        if (client.proxyPassword != route.password) client.proxyPassword = route.password
         if (client.dns != YouTube.dns) client.dns = YouTube.dns
         val response = client.browse(
             client = YouTubeClient.WEB_REMIX,
@@ -53,9 +63,12 @@ internal object CoreYouTubeHistory {
             setLogin = true,
         ).body<JsonObject>()
         val current = YouTube.currentPlaybackAuthState()
-        if (auth.cookie != current.cookie || auth.dataSyncId != current.dataSyncId) throw ContentAccountChanged()
-        if (YouTube.ipRotationActiveCount.value > 0) throw YouTubeHistoryRoutingUnavailable()
-        parseYouTubeHistoryPage(response) { cell ->
+        if (auth.cookie != current.cookie || auth.dataSyncId != current.dataSyncId) {
+            session.reset()
+            clearProxy()
+            throw ContentAccountChanged()
+        }
+        val page = parseYouTubeHistoryPage(response) { cell ->
             val song = if (cell["musicResponsiveListItemRenderer"] != null) {
                 val shelf = json.decodeFromJsonElement<MusicShelfRenderer>(
                     JsonObject(mapOf("contents" to kotlinx.serialization.json.JsonArray(listOf(cell)))),
@@ -68,5 +81,7 @@ internal object CoreYouTubeHistory {
             }
             song?.toSongCatalogueEntry()
         }
+        session.acceptNext(page.continuation)
+        page
     }
 }
