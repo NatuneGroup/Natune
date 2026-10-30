@@ -54,6 +54,9 @@ import okhttp3.Credentials
 
 private const val PROXY_PROBE_URL = "https://music.youtube.com/generate_204"
 
+internal fun desktopRotationReady(desktopCount: Int, innerTubeCount: Int): Boolean =
+    desktopCount > 0 && innerTubeCount > 0
+
 /** Process routing is installed before any desktop provider client is constructed. */
 internal class DesktopNetworkOwner(
     private val preferences: () -> PreferenceSnapshot?,
@@ -104,7 +107,9 @@ internal class DesktopNetworkOwner(
         startup = scope.launch {
             if (preferences()?.get(IpRotationEnabledKey) != true) return@launch
             try {
-                applyIpRotation(enabled = true, refresh = false)
+                if (applyIpRotation(enabled = true, refresh = false) == 0) {
+                    desktopDiagnostic("IP rotation restore found no validated proxy routes")
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -137,9 +142,15 @@ internal class DesktopNetworkOwner(
                     desktop.await()
                     core.await()
                 }
+                val count = rotation.activeCount()
+                if (!desktopRotationReady(count, YouTube.ipRotationActiveCount.value)) {
+                    // An empty pool must not hide a working saved static proxy behind a direct-only selector.
+                    disableRotation()
+                    return@withLock 0
+                }
                 rotating = true
                 connections.evictAll()
-                rotation.activeCount()
+                count
             } catch (failure: Throwable) {
                 disableRotation()
                 throw failure
