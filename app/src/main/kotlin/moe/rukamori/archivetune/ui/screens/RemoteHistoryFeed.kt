@@ -19,6 +19,8 @@ import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,6 +39,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.pages.HistoryPage
 import moe.rukamori.archivetune.ui.component.YouTubeListItem
+import moe.rukamori.archivetune.ui.screens.settings.SettingsAnchorScreens
 import moe.rukamori.archivetune.viewmodels.RemoteHistoryUiState
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -59,8 +62,8 @@ internal fun RemoteHistoryFeed(
     onSongMenu: (SongItem) -> Unit,
     onSongClick: (SongItem) -> Unit,
 ) {
-    LaunchedEffect(listState, continuation, loadingMore, loadMoreFailed) {
-        if (continuation == null || loadingMore || loadMoreFailed) return@LaunchedEffect
+    LaunchedEffect(listState, continuation, loadingMore, loadMoreFailed, paginationUnavailable) {
+        if (continuation == null || loadingMore || loadMoreFailed || paginationUnavailable) return@LaunchedEffect
         snapshotFlow {
             listState.layoutInfo.let { layout ->
                 layout.totalItemsCount > 0 &&
@@ -81,6 +84,24 @@ internal fun RemoteHistoryFeed(
         contentPadding = PaddingValues(bottom = 112.dp),
     ) {
         item("history_overview") { headerContent() }
+        if (paginationUnavailable) item("remote_history_route_boundary") {
+            Surface(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text(stringResource(R.string.history_paging_route_unavailable))
+                    TextButton(
+                        onClick = { navController.navigate("${SettingsAnchorScreens.INTERNET}?scrollTo=ip_rotation") },
+                    ) {
+                        Text(stringResource(R.string.history_open_internet_settings))
+                    }
+                    TextButton(onRetry, enabled = !loadingMore) { Text(stringResource(R.string.retry)) }
+                }
+            }
+        }
         when (remoteHistoryState) {
             RemoteHistoryUiState.Loading -> item("remote_history_loading") {
                 HistoryStateCard(
@@ -160,7 +181,7 @@ internal fun RemoteHistoryFeed(
                 }
             }
         }
-        if (remoteHistoryState is RemoteHistoryUiState.Success && (continuation != null || loadMoreFailed)) {
+        if (!paginationUnavailable && remoteHistoryState is RemoteHistoryUiState.Success && (continuation != null || loadMoreFailed)) {
             item("remote_history_more") {
                 Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (loadingMore) {
@@ -171,12 +192,6 @@ internal fun RemoteHistoryFeed(
                         TextButton(onLoadMore) { Text(stringResource(R.string.history_load_more)) }
                     }
                 }
-            }
-        }
-        if (paginationUnavailable) item("remote_history_route_boundary") {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                Text(stringResource(R.string.history_paging_route_unavailable))
-                TextButton(onRetry, enabled = !loadingMore) { Text(stringResource(R.string.retry)) }
             }
         }
     }

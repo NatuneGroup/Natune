@@ -72,6 +72,7 @@ fun TelegramSettings(
 
     val authState by TelegramClient.authState.collectAsStateWithLifecycle()
     val isReady = authState is TelegramAuthState.Ready
+    val unsupportedAndroidVersion = (authState as? TelegramAuthState.Unsupported)?.stateName == "AndroidVersion"
 
     var showLogoutDialog by remember { mutableStateOf(false) }
 
@@ -184,8 +185,11 @@ fun TelegramSettings(
                         PreferenceEntry(
                             modifier = positions.modifierFor("telegram_login"),
                             title = { Text(stringResource(R.string.telegram_login)) },
-                            description = stringResource(R.string.telegram_login_summary),
+                            description = stringResource(
+                                if (unsupportedAndroidVersion) R.string.telegram_android_version_unsupported else R.string.telegram_login_summary,
+                            ),
                             icon = { Icon(painterResource(R.drawable.provider_telegram), contentDescription = null) },
+                            isEnabled = !unsupportedAndroidVersion,
                             onClick = {
                                 TelegramClient.ensureStarted(context)
                                 navController.navigate(TELEGRAM_LOGIN_ROUTE)

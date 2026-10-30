@@ -52,6 +52,8 @@ object TdLibNativeLibrary {
     @Volatile
     private var loaded = false
 
+    private val compatibility = TdLibLoadCompatibility(Build.VERSION.SDK_INT)
+
     private val client =
         OkHttpClient
             .Builder()
@@ -74,9 +76,17 @@ object TdLibNativeLibrary {
     /** True once the library is usable in this process. */
     val isLoaded: Boolean get() = loaded
 
+    internal val unavailableStateName: String get() = compatibility.unavailableStateName
+
     /** True when the library still has to be downloaded before Telegram can start. */
     fun needsDownload(context: Context): Boolean =
-        !loaded && !BuildConfig.TDLIB_BUNDLED && !target(context).isFile
+        !loaded && !compatibility.androidVersionUnsupported && !BuildConfig.TDLIB_BUNDLED && !target(context).isFile
+
+    @Synchronized
+    internal fun onClientLinkageFailure(failure: LinkageError) {
+        loaded = false
+        compatibility.recordFailure(failure, libraryPresent = true)
+    }
 
     /**
      * Loads the library if it can be, without touching the network. Returns false on a slim build
@@ -85,14 +95,20 @@ object TdLibNativeLibrary {
     @Synchronized
     fun ensureLoaded(context: Context): Boolean {
         if (loaded) return true
+        if (compatibility.androidVersionUnsupported) return false
 
         // Bundled build: it is inside the APK, and the linker already knows where to find it.
         // Tried first (and unconditionally) so a build that reverts the slim flag keeps working
         // even with a stale download still sitting in filesDir.
-        if (runCatching { System.loadLibrary(LIB_NAME) }.isSuccess) {
+        val bundled = runCatching { System.loadLibrary(LIB_NAME) }
+        if (bundled.isSuccess) {
             loaded = true
             return true
         }
+        bundled.exceptionOrNull()?.let {
+            compatibility.recordFailure(it, libraryPresent = File(context.applicationInfo.nativeLibraryDir, FILE_NAME).isFile)
+        }
+        if (compatibility.androidVersionUnsupported) return false
 
         val file = target(context)
         if (!file.isFile) return false
@@ -108,6 +124,7 @@ object TdLibNativeLibrary {
             loaded = true
             true
         }.getOrElse {
+            compatibility.recordFailure(it, libraryPresent = true)
             Timber.tag(TAG).e(it, "Loading %s failed", file.absolutePath)
             false
         }
@@ -126,6 +143,7 @@ object TdLibNativeLibrary {
     ): Boolean =
         withContext(Dispatchers.IO) {
             if (ensureLoaded(context)) return@withContext true
+            if (compatibility.androidVersionUnsupported) return@withContext false
 
             val abi = abi
             if (abi == null) {

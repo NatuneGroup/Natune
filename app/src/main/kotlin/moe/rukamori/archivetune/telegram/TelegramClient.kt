@@ -121,7 +121,7 @@ object TelegramClient {
      * Starts the TDLib client if it isn't running yet. Safe to call from any thread. The app's
      * Telegram api_id/api_hash are baked in at build time (BuildConfig), so no user credential
      * entry is needed — the authorization flow advances straight to the phone-number step via
-     * [authState]. Returns false only when the build shipped without valid credentials.
+     * [authState]. Returns false when credentials or a usable native library are unavailable.
      */
     fun ensureStarted(context: Context): Boolean {
         val ctx = context.applicationContext
@@ -134,18 +134,27 @@ object TelegramClient {
             // reason, so refuse to start instead and let the caller offer the download.
             if (!TdLibNativeLibrary.ensureLoaded(ctx)) {
                 Timber.tag(TAG).w("TDLib native library is not available yet; not starting")
-                _authState.value = TelegramAuthState.Unsupported("NativeLibraryMissing")
+                _authState.value = TelegramAuthState.Unsupported(TdLibNativeLibrary.unavailableStateName)
                 return false
             }
             appContext = ctx
-            runCatching { Client.execute(TdApi.SetLogVerbosityLevel(1)) }
-            _authState.value = TelegramAuthState.Connecting
-            client =
-                Client.create(
-                    { update -> onUpdate(update) },
-                    { throwable -> Timber.tag(TAG).e(throwable, "TDLib update handler exception") },
-                    { throwable -> Timber.tag(TAG).e(throwable, "TDLib exception") },
-                )
+            try {
+                runCatching { Client.execute(TdApi.SetLogVerbosityLevel(1)) }
+                    .onFailure { if (it is LinkageError) throw it }
+                _authState.value = TelegramAuthState.Connecting
+                client =
+                    Client.create(
+                        { update -> onUpdate(update) },
+                        { throwable -> Timber.tag(TAG).e(throwable, "TDLib update handler exception") },
+                        { throwable -> Timber.tag(TAG).e(throwable, "TDLib exception") },
+                    )
+            } catch (failure: LinkageError) {
+                TdLibNativeLibrary.onClientLinkageFailure(failure)
+                appContext = null
+                _authState.value = TelegramAuthState.Unsupported(TdLibNativeLibrary.unavailableStateName)
+                Timber.tag(TAG).w(failure, "TDLib native client is unavailable; not starting")
+                return false
+            }
             return true
         }
     }
