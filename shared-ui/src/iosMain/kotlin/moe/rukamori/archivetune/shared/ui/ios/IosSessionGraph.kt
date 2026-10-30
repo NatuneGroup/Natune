@@ -33,6 +33,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCrossfadeHandoff
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherAvatar
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
@@ -131,7 +132,7 @@ internal class IosSessionGraph private constructor(
     val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
     /** The playlist tag catalog and assignments, in the same portable file as the playlists; the tag manager is not mounted on iOS. */
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
-    /** The crossfade or automix blend armed into the next song. iOS connects no blend engine, so it stays null. */
+    /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 
     /**
@@ -210,6 +211,7 @@ internal class IosSessionGraph private constructor(
      * released. The host's player, port and settings belong to the host, which closes them afterwards.
      */
     suspend fun close() = withContext(NonCancellable) {
+        playbackPort.cancelNext()
         listenTogether.close()
         uploads.close()
         listenDriver.close()
@@ -328,6 +330,7 @@ internal class IosSessionGraph private constructor(
             // One typed router serves the queue's resolution and the chat song picker, so both search the same sources.
             val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
             val contentRouter = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library), youtubeContent))
+            val handoff = IosCrossfadeHandoff(host.playbackPort, vault.snapshots)
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
@@ -342,6 +345,7 @@ internal class IosSessionGraph private constructor(
                 hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
                 hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
                 blockedArtistIds = { queueArtistBlocks.value },
+                handoffEngine = handoff,
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
             try {
@@ -455,6 +459,9 @@ internal class IosSessionGraph private constructor(
                 ),
             )
             val uploads = IosYouTubeUploads(scope, vault, queue, report)
+            val handoffHold = scope.launch {
+                listenTogether.client.roomState.map { it != null }.distinctUntilChanged().collect { handoff.hold(it) }
+            }
             val graph = IosSessionGraph(
                 scope = scope,
                 settings = vault,
@@ -482,7 +489,7 @@ internal class IosSessionGraph private constructor(
                 database = database,
                 listenDriver = listenDriver,
                 progressDriver = progressDriver,
-                drivers = drivers,
+                drivers = drivers + handoffHold,
                 reportLine = report,
             )
             lyrics.start()

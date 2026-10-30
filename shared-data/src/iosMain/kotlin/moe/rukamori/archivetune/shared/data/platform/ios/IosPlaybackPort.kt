@@ -40,6 +40,8 @@ class IosPlaybackPort : PlaybackPort {
     private val errors = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 16)
     private val mapper = EnginePlaybackMapper()
     private var output: CPointer<at_audio_output>? = null
+    private var blend: IosPlaybackBlend? = null
+    private var handoffEpoch = 0L
     private var request: PlaybackRequest? = null
     private var reopenOutput = false
     private var closed = false
@@ -83,7 +85,8 @@ class IosPlaybackPort : PlaybackPort {
             while (isActive) {
                 val busy = observe()
                 // Paused or idle reads drop to four a second, so the main thread is not woken twenty times a second for nothing.
-                withTimeoutOrNull(if (busy) ACTIVE_POLL_MS else IDLE_POLL_MS) { pollWake.receive() }
+                val interval = if (!busy) IDLE_POLL_MS else if (blend == null) ACTIVE_POLL_MS else BLEND_POLL_MS
+                withTimeoutOrNull(interval) { pollWake.receive() }
             }
         }
     }
@@ -104,6 +107,74 @@ class IosPlaybackPort : PlaybackPort {
             if (closed) return@launch
             volume = level.coerceIn(0f, 1f)
             output?.let { at_audio_volume(it, volume) }
+            blend?.setVolume(volume)
+        }
+    }
+
+    /**
+     * The queue has already resolved this occurrence through the usual source chain. It is admitted/opened using the
+     * same leases as Load, while the outgoing decoder keeps its source, position and account-bound transport.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun armNext(next: PlaybackRequest, overlapMs: Long): Boolean {
+        var armedEpoch: Long? = null
+        try {
+            return withContext(Dispatchers.Main) {
+                val native = output ?: return@withContext false
+                val playing = state.value ?: return@withContext false
+                if (closed || inbox.isClosedForSend || overlapMs < 0L || blend?.hasNext == true || !playing.playWhenReady ||
+                    playing.isEnded || next.occurrenceId == request?.occurrenceId
+                ) return@withContext false
+                val issuedAt = handoffEpoch
+                val locator = next.locator
+                val view = queuedViews.remove(next.occurrenceId)
+                var outcome = view?.outcome
+                var telegramSource: IosLeaseSource? = null
+                var source: IosBlendSource? = null
+                try {
+                    if (view != null && view.locator != next.locator) {
+                        outcome?.release()
+                        outcome = null
+                    }
+                    if (locator is PlaybackLocator.TelegramFile) {
+                        val session = telegram ?: return@withContext false
+                        val reader = accounts ?: return@withContext false
+                        val resolved = resolveTelegramTrack(session, reader, IOS_TELEGRAM_ACCOUNT_SCOPE, locator.track)
+                        telegramSource = (resolved as? IosTelegramTrackOutcome.Ready)?.source ?: return@withContext false
+                    }
+                    currentCoroutineContext().ensureActive()
+                    if (closed || issuedAt != handoffEpoch || output != native || blend?.hasNext == true) return@withContext false
+                    source = IosBlendSource.open(next, outcome, telegramSource, playing.playbackSpeed)
+                    // open consumes both resources, including on refusal.
+                    outcome = null
+                    telegramSource = null
+                    val prepared = source ?: return@withContext false
+                    val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also { blend = it }
+                        ?: return@withContext false
+                    if (!engine.arm(prepared, overlapMs)) return@withContext false
+                    source = null
+                    armedEpoch = issuedAt
+                    pollWake.trySend(Unit)
+                    true
+                } finally {
+                    source?.release()
+                    outcome?.release()
+                    telegramSource?.close()
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            // withContext can deliver cancellation after the arm committed on Main, before its caller got the answer.
+            withContext(Dispatchers.Main + NonCancellable) {
+                if (armedEpoch != null && armedEpoch == handoffEpoch) blend?.cancelNext(next.occurrenceId)
+            }
+            throw cancelled
+        }
+    }
+
+    fun cancelNext() {
+        scope.launch {
+            handoffEpoch++
+            blend?.cancelNext()
         }
     }
 
@@ -246,11 +317,20 @@ class IosPlaybackPort : PlaybackPort {
         when (command) {
             is PlaybackCommand.Load -> load(command)
             PlaybackCommand.Play -> output?.let {
-                if (at_audio_play(it) == 0) fail(PlaybackFailureReason.OUTPUT_FAILED)
+                if (!(blend?.play() ?: (at_audio_play(it) != 0))) fail(PlaybackFailureReason.OUTPUT_FAILED)
             }
-            PlaybackCommand.Pause -> output?.let { at_audio_pause(it) }
-            is PlaybackCommand.SeekTo -> output?.let { at_audio_seek(it, micros(command.positionMs)) }
-            is PlaybackCommand.SetSpeed -> output?.let { at_audio_speed(it, command.speed) }
+            PlaybackCommand.Pause -> {
+                invalidateHandoff()
+                blend?.pause() ?: output?.let { at_audio_pause(it) }
+            }
+            is PlaybackCommand.SeekTo -> {
+                invalidateHandoff()
+                blend?.seek(micros(command.positionMs)) ?: output?.let { at_audio_seek(it, micros(command.positionMs)) }
+            }
+            is PlaybackCommand.SetSpeed -> {
+                handoffEpoch++
+                blend?.setSpeed(command.speed) ?: output?.let { at_audio_speed(it, command.speed) }
+            }
             // ae_engine only exposes an atempo stage (tempo without pitch shift), so a pitch
             // multiplier cannot be applied here; the command is rejected instead of no-opping.
             is PlaybackCommand.SetPitch -> fail(PlaybackFailureReason.OUTPUT_FAILED)
@@ -528,6 +608,26 @@ class IosPlaybackPort : PlaybackPort {
     private fun observe(): Boolean {
         if (closed) return false
         val native = output ?: return false
+        blend?.let { engine ->
+            val now = SystemMonotonicClock.nowNanos()
+            val read = engine.poll(now)
+            read.promoted?.let { incoming ->
+                // Both nodes are already switched before the old decoder/transport can be released.
+                at_audio_stop(native)
+                at_audio_destroy(native)
+                liveTransport?.close()
+                output = incoming.output
+                request = incoming.request
+                liveTransport = incoming.transport
+                at_audio_volume(incoming.output, volume)
+                mapper.beginRequest(incoming.request, incoming.generation)
+            }
+            if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
+            mapper.observe(read.state, now, outputLatencyMillis(engine.outputLatencySeconds()))?.let { state.value = it }
+            mapper.failure(read.state) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
+            return read.state.hasSource &&
+                (read.state.isBuffering || (read.state.playWhenReady && !read.state.isEnded))
+        }
         return memScoped {
             val s = alloc<ae_snapshot>()
             at_audio_snapshot(native, s.ptr)
@@ -548,6 +648,8 @@ class IosPlaybackPort : PlaybackPort {
 
     private fun stop() {
         output?.let { at_audio_stop(it) }
+        blend?.close()
+        blend = null
         mapper.stopped(SystemMonotonicClock.nowNanos())?.let { state.value = it }
         request = null
         // The engine keeps its lease until the next load, so the transport is released here, after the engine has stopped.
@@ -557,9 +659,15 @@ class IosPlaybackPort : PlaybackPort {
 
     /** Advances the ticket so that any preparation still in flight is discarded, and cancels it so its transport is released. */
     private fun supersede() {
+        invalidateHandoff()
         ticket++
         preparing?.cancel()
         preparing = null
+    }
+
+    private fun invalidateHandoff() {
+        handoffEpoch++
+        blend?.cancelNext()
     }
 
     private fun fail(reason: PlaybackFailureReason) {
@@ -582,6 +690,7 @@ class IosPlaybackPort : PlaybackPort {
         const val MAX_QUEUED_VIEWS = 4
 
         const val ACTIVE_POLL_MS = 50L
+        const val BLEND_POLL_MS = 20L
         const val IDLE_POLL_MS = 250L
     }
 
@@ -625,7 +734,7 @@ private fun IosNativeAudioRoute.Outcome.release() {
 private fun DirectStream.isPersonal(): Boolean = accountScope != null && accountScope != ANONYMOUS_ACCOUNT_SCOPE
 
 /** An http(s) URL with a host and no embedded credentials, the only remote form the engine and the host lease accept. */
-private fun isWebUrl(url: String): Boolean {
+internal fun isWebUrl(url: String): Boolean {
     val parsed = NSURL.URLWithString(url)
     return '\u0000' !in url && parsed?.scheme?.lowercase() in setOf("https", "http") &&
         !parsed?.host.isNullOrBlank() && parsed?.user == null && parsed?.password == null
