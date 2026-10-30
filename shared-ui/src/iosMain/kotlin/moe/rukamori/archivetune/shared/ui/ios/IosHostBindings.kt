@@ -77,8 +77,6 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
-import moe.rukamori.archivetune.shared.ui.screens.UploadsActions
-import moe.rukamori.archivetune.shared.ui.screens.UploadsUi
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
 import moe.rukamori.archivetune.shared.ui.queue.PlaybackQueuePanel
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSettings
@@ -208,13 +206,8 @@ private fun iosGraphPage(
             ArchiveDestination.LISTEN_TOGETHER_CHAT -> iosCommentTogetherPage(graph, host, back)
             ArchiveDestination.TELEGRAM_BROWSE -> iosTelegramBrowsePage(graph, host, back)
             ArchiveDestination.TELEGRAM_BOTS -> iosTelegramBotsPage(graph, host, back, openRoute)
-            // Uploads need the picker and transfer transport this host does not have yet; the shared
-            // screen says so instead of showing an empty library or a dead button.
-            ArchiveDestination.UPLOADED_SONGS ->
-                ArchiveGraphPage.Uploads(
-                    state = UploadsUi(available = false),
-                    actions = UploadsActions(back = {}, upload = {}, delete = {}, play = { _, _ -> }, retry = {}, loadMore = {}),
-                )
+            ArchiveDestination.TELEGRAM_BOT_CHAT -> iosTelegramBotChatPage(graph, host, route.arguments.getValue("botId"))
+            ArchiveDestination.UPLOADED_SONGS -> iosUploadsPage(graph.uploads, graph.settings, host)
             else -> iosCatalogGraphPage(graph, host, catalogOwners, menu, playlistCreation, playlistTags, route, back, openRoute)
                 ?: ArchiveGraphPage.Host
         }

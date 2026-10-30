@@ -5,6 +5,7 @@ import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRenderRow
 import moe.rukamori.archivetune.shared.ui.lyrics.NativeLyricsDocument
 import moe.rukamori.archivetune.shared.ui.lyrics.NativeLyricsFrame
 import moe.rukamori.archivetune.shared.ui.lyrics.NativeLyricsTimeline
+import moe.rukamori.archivetune.shared.ui.lyrics.shareText
 import platform.UIKit.UIViewController
 
 /** Builds the native lyric view for one bridge. The Swift app registers it on iOS 26 and later. */
@@ -42,6 +43,9 @@ class IosNativeLyrics internal constructor() {
         val line = update?.document?.lines?.getOrNull(index) ?: return
         if (line.seekable) seek(line.timeMs)
     }
+
+    /** The text a share of row [index] sends, or null for an instrumental or empty row, which offers no share. */
+    fun shareText(index: Int): String? = update?.document?.lines?.getOrNull(index)?.shareText()
 
     internal fun accept(snapshot: PlaybackSnapshot) {
         timeline.accept(snapshot)
