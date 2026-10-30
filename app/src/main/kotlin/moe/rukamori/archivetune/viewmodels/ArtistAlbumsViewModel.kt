@@ -24,7 +24,7 @@ class ArtistAlbumsViewModel
         database: MusicDatabase,
         savedStateHandle: SavedStateHandle,
     ) : ViewModel() {
-        private val artistId = savedStateHandle.get<String>("artistId")!!
+        val artistId = savedStateHandle.get<String>("artistId")!!
         val artist =
             database
                 .artist(artistId)
