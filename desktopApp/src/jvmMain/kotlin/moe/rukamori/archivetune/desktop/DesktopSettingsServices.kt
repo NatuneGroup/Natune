@@ -25,7 +25,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
-import moe.rukamori.archivetune.shared.data.ai.AiRateLimiter
 import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapanesePackFailure
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
@@ -61,7 +60,7 @@ internal class DesktopSettingsServices(
         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
 
     val aiActions by lazy {
-        AiSettingsActions(graph.scope, controller, KtorAiTextService(graph.http, AiRateLimiter()))
+        AiSettingsActions(graph.scope, controller, KtorAiTextService(graph.http, graph.aiRateLimiter))
     }
 
     // ------------------------------------------------------------------ updates
@@ -355,8 +354,9 @@ internal class DesktopSettingsServices(
         withContext(Dispatchers.IO) {
             CanvasConnectivity(
                 online = probeReachable("https://music.youtube.com/generate_204"),
-                wifi = true,
-                metered = false,
+                // The JVM reachability probe measures neither transport nor metering.
+                wifi = false,
+                metered = true,
             )
         }
 

@@ -123,6 +123,8 @@ class DesktopSessionGraph internal constructor(
     internal val japaneseLanguagePack: JapaneseLanguagePackManager?,
     /** The one owner of the AI lyric sessions and of every lyric surface's phonetic readings. */
     internal val lyricsSurface: LyricsSurfaceRuntime,
+    /** The one AI request limiter every desktop AI text service shares. */
+    internal val aiRateLimiter: moe.rukamori.archivetune.shared.data.ai.AiRateLimiter,
     /** The one listener-presence owner: the opt-in document and the playback-driven heartbeat loop. */
     internal val listenerPresence: DesktopListenerPresence,
     private val locators: DesktopQueueLocatorResolver,

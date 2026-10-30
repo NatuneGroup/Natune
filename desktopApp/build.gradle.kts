@@ -50,6 +50,7 @@ kotlin {
             implementation(project(":desktopApp:tdlight-jvm"))
             // The Spotify catalog client (GraphQL with REST fallback, web-player token). It brings its own OkHttp engine.
             implementation(project(":spotifycore"))
+            implementation(project(":canvas"))
         }
         jvmTest.dependencies {
             implementation(kotlin("test"))
