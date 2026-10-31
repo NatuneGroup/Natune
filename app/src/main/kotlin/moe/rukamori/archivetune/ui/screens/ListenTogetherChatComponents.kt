@@ -123,6 +123,7 @@ import moe.rukamori.archivetune.LocalListenTogetherManager
 import moe.rukamori.archivetune.ui.component.LiquidGlassRole
 import moe.rukamori.archivetune.ui.component.liquidGlassMaterial
 import moe.rukamori.archivetune.ui.component.liquidGlassEligible
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ListenTogetherAvatarIndexKey
 import moe.rukamori.archivetune.listentogether.ChatMessagePayload
@@ -279,13 +280,15 @@ internal fun TypingIndicatorRow(
     modifier: Modifier = Modifier,
 ) {
     if (typingUsers.isEmpty()) return
-    val transition = rememberInfiniteTransition(label = "typing-dots")
-    val phase by transition.animateFloat(
+    // The dots bounce only while the app is STARTED; in the background they rest at the start of the cycle.
+    val dotsStarted by rememberLifecycleStarted()
+    val transition = if (dotsStarted) rememberInfiniteTransition(label = "typing-dots") else null
+    val phase = transition?.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(900), RepeatMode.Restart),
         label = "typing-phase",
-    )
+    )?.value ?: 0f
 
     Row(
         modifier = modifier.padding(horizontal = 16.dp, vertical = 4.dp),

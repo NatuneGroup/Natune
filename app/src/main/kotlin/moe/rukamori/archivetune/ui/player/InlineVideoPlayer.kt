@@ -102,6 +102,7 @@ import moe.rukamori.archivetune.constants.VideoAspectRatioKey
 import moe.rukamori.archivetune.constants.VideoPlaybackSpeedKey
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 
@@ -431,8 +432,10 @@ fun FullscreenVideoOverlay(
     // would otherwise capture the initial value forever).
     val latestPlaybackSpeed by rememberUpdatedState(playbackSpeed)
     val latestOnPlaybackSpeedChange by rememberUpdatedState(onPlaybackSpeedChange)
-    LaunchedEffect(Unit) {
-        if (playerConnection == null) return@LaunchedEffect
+    // The mirror pauses while the app is not STARTED; a resumed screen restarts it and reads the speed at once.
+    val videoStarted by rememberLifecycleStarted()
+    LaunchedEffect(videoStarted) {
+        if (playerConnection == null || !videoStarted) return@LaunchedEffect
         while (true) {
             val currentSpeed = playerConnection.player.playbackParameters.speed
             if (kotlin.math.abs(currentSpeed - latestPlaybackSpeed) > 0.01f) {
@@ -956,8 +959,9 @@ fun FullscreenVideoOverlay(
                         mutableLongStateOf(playerConnection.player.duration)
                     }
                     val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
-                    LaunchedEffect(mediaMetadata?.id, playbackState) {
-                        if (playbackState == Player.STATE_READY) {
+                    LaunchedEffect(mediaMetadata?.id, playbackState, videoStarted) {
+                        // Only the seek bar and its time label read this position, so the 10 Hz poll waits for a visible app.
+                        if (playbackState == Player.STATE_READY && videoStarted) {
                             while (isActive) {
                                 delay(100)
                                 if (!isUserSeeking) {

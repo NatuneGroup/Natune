@@ -56,6 +56,7 @@ import kotlinx.coroutines.isActive
 import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.customartwork.CustomArtworkStore
 import moe.rukamori.archivetune.di.CanvasCacheEntryPoint
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.utils.StreamClientUtils
 import okhttp3.OkHttpClient
 import timber.log.Timber
@@ -269,8 +270,10 @@ fun CanvasArtworkPlayer(
         }
     }
 
-    LaunchedEffect(currentUrl, isPlaying, primary, fallback, exoPlayer) {
-        if (!isPlaying || fallback.isNullOrBlank() || currentUrl != primary) return@LaunchedEffect
+    // The stall watchdog samples once a second, so it sleeps while the app is not STARTED and restarts its window on resume.
+    val canvasStarted by rememberLifecycleStarted()
+    LaunchedEffect(currentUrl, isPlaying, primary, fallback, exoPlayer, canvasStarted) {
+        if (!isPlaying || !canvasStarted || fallback.isNullOrBlank() || currentUrl != primary) return@LaunchedEffect
 
         var lastPosition = exoPlayer.currentPosition
         var stalledForMs = 0L
