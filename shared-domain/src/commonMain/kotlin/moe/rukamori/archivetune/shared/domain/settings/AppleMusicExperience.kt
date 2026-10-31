@@ -70,7 +70,11 @@ private fun PreferenceSnapshot.appleMusicSurface(key: BooleanPreferenceKey): Boo
     this[key] ?: (!this[AppleMusicSettingsMigratedKey, false] && this[AppleMusicExperienceKey, false])
 
 fun PreferenceSnapshot.appleMusicHeaders(): Boolean = appleMusicSurface(AppleMusicHeadersKey)
-fun PreferenceSnapshot.appleMusicMenus(): Boolean = appleMusicSurface(AppleMusicMenusKey)
+/**
+ * The menu surface is the effective menu look rather than the raw legacy key: a fresh install renders Apple Music,
+ * so its toggle and the experience indicator must read the same thing the menus render.
+ */
+fun PreferenceSnapshot.appleMusicMenus(): Boolean = playerMenuStyle() == PlayerMenuStyle.APPLE_MUSIC
 fun PreferenceSnapshot.appleMusicSearchBar(): Boolean = appleMusicSurface(AppleMusicSearchBarKey)
 fun PreferenceSnapshot.appleMusicPalette(): Boolean = appleMusicSurface(AppleMusicPaletteKey)
 
@@ -95,13 +99,20 @@ fun PreferenceSnapshot.selectedNavigationBarStyle(): NavigationBarStyle =
         NavigationBarStyle.APPLE_MUSIC
     } else this[NavigationBarStyleKey].toEnum(NavigationBarStyle.DEFAULT)
 
-/** An indicator, never a rendering gate: one Apple Music option is a mixed presentation, not the whole experience. */
+/**
+ * An indicator, never a rendering gate: one Apple Music option is a mixed presentation, not the whole experience.
+ * The menu look only counts once chosen: its Apple Music default belongs to the default presentation, so a fresh
+ * install still reads as the default style instead of Custom.
+ */
 fun PreferenceSnapshot.interfaceStyle(): InterfaceStyle {
-    val surfaces = listOf(
+    val chosenMenus = this[AppleMusicMenusKey]
+        ?: this[PlayerMenuStyleKey]?.let { playerMenuStyle() == PlayerMenuStyle.APPLE_MUSIC }
+        ?: (!this[AppleMusicSettingsMigratedKey, false] && this[AppleMusicExperienceKey, false]).takeIf { it }
+    val surfaces = listOfNotNull(
         selectedPlayerDesignStyle() == PlayerDesignStyle.APPLE_MUSIC,
         libraryStyle() == LibraryStyle.APPLE_MUSIC,
         selectedNavigationBarStyle() == NavigationBarStyle.APPLE_MUSIC,
-        appleMusicHeaders(), appleMusicMenus(), appleMusicSearchBar(), appleMusicPalette(),
+        appleMusicHeaders(), chosenMenus, appleMusicSearchBar(), appleMusicPalette(),
     )
     return when {
         surfaces.all { it } -> InterfaceStyle.APPLE_MUSIC

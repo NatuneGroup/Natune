@@ -19,9 +19,12 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
 import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
+import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.bitPerfectOutputSelected
 import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
 import moe.rukamori.archivetune.ui.component.navigationTreatmentKeys
+import moe.rukamori.archivetune.ui.component.rememberPlayerMenuStyleSetter
 import moe.rukamori.archivetune.ui.component.setNavigationTreatment
 import moe.rukamori.archivetune.ui.component.setPlaybackOutputPreference
 import moe.rukamori.archivetune.utils.conflictAwareState
@@ -57,7 +60,10 @@ internal fun ConflictAwareSearchSwitch(key: Preferences.Key<Boolean>, defaultVal
     val prefs = LocalSettingsPreferenceSnapshot.current
     val restartPrompt = LocalRestartPrompt.current
     val context = LocalContext.current
-    val (checked, setValue) = prefs.conflictAwareState(key, defaultValue)
+    val (storedChecked, setValue) = prefs.conflictAwareState(key, defaultValue)
+    val setMenuStyle = rememberPlayerMenuStyleSetter()
+    // The menus surface is the effective menu look, so the search result matches the Apple Music page row.
+    val checked = if (key == AppleMusicMenusKey) prefs.current.sharedSnapshot().appleMusicMenus() else storedChecked
     val sinkStatus by BitPerfectUsbOutput.status.collectAsStateWithLifecycle()
     val reason = settingsSwitchDisabledReason(key, prefs.current, sinkStatus.let { BitPerfectUsbOutput.sinkActive },
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S, blurOverridden)
@@ -68,6 +74,7 @@ internal fun ConflictAwareSearchSwitch(key: Preferences.Key<Boolean>, defaultVal
                 LiquidGlassEnabledKey, TabletModeEnabledKey -> restartPrompt.edit(prefs) { this[key] = enabled }
                 CrossfadeEnabledKey, AutomixEnabledKey, AudioOffload, BitPerfectUsbOutputKey, UsbExclusiveAudioKey ->
                     setPlaybackOutputPreference(restartPrompt, prefs, context, key, enabled)
+                AppleMusicMenusKey -> setMenuStyle(if (enabled) PlayerMenuStyle.APPLE_MUSIC else PlayerMenuStyle.MD3)
                 else -> setValue(enabled)
             }
         })
