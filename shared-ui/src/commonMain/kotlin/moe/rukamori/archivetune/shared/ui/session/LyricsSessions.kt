@@ -82,11 +82,17 @@ class LyricsSessions(
         appliedSettings.value = settings
         val target = settings.translation.translatorTargetLanguage.orEmpty().ifBlank { AiTargetLanguage.DEFAULT_TARGET }
         val request = AiLyricsSessionRequest(input.mediaId, input.lyrics, operation, target, input.hints)
+        // A rejected manual translation (not configured, unsupported DeepL target, blank or missing lyrics) starts nothing
+        // and leaves an INELIGIBLE state. Returning false makes the menu show its failure notice; the automatic path stays
+        // silent. Romanization keeps its result: lyrics with no romanizable script are a valid nothing-to-do outcome.
         if (operation == AiLyricsOperation.TRANSLATE) {
             dismissed.value = dismissed.value - input.mediaId
             translation.submit(request, settings)
-        } else romanization.submit(request, settings)
-        true
+            translation.state.value.failure != AiLyricsSessionFailure.INELIGIBLE
+        } else {
+            romanization.submit(request, settings)
+            true
+        }
     }
 
     /** Called only after an actual undo commit, never from observing an old database row. */
