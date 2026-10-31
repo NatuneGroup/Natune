@@ -47,6 +47,7 @@ import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkKeys
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkLimits
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkOverrides
 import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
+import moe.rukamori.archivetune.shared.ui.player.rememberCoverImage
 import org.jetbrains.skia.Image as SkiaImage
 
 /**
@@ -318,8 +319,9 @@ private suspend fun HttpResponse.readBoundedBytes(maxBytes: Int): ByteArray? {
 
 /**
  * One remote image in a fixed frame. The held image is shown at once when it exists. Otherwise the frame shows the
- * placeholder until the load decodes, and it keeps the placeholder when the load fails. A slot never shows an image
- * from a previous uri while the new one is loading.
+ * placeholder until the load decodes, and it keeps the placeholder when the load fails. A list row or avatar never
+ * shows an image from a previous uri while the new one loads, because a recycled slot would show another item's
+ * image. The player cover keeps its image instead; see DesktopQueueArtwork.
  */
 @Composable
 internal fun DesktopRemoteArtwork(uri: String?, loader: DesktopArtworkLoader, modifier: Modifier) {
@@ -338,11 +340,19 @@ internal fun DesktopRemoteArtwork(uri: String?, loader: DesktopArtworkLoader, mo
     }
 }
 
-/** The player cover: the artwork of the occurrence the slot names, or of the current occurrence when it names none. */
+/**
+ * The player cover: the artwork of the occurrence the slot names, or of the current occurrence when it names none.
+ * It keeps the cover on screen while the next image loads, so a track change does not blank the frame.
+ */
 @Composable
 internal fun DesktopQueueArtwork(occurrenceId: String?, graph: DesktopSessionGraph, modifier: Modifier) {
     val queue by graph.queue.state.collectAsState()
     val target = occurrenceId ?: queue.currentOccurrenceId
     val uri = queue.entries.firstOrNull { it.occurrenceId == target }?.item?.artworkUri
-    DesktopRemoteArtwork(uri, graph.artworkLoader, modifier)
+    val loader = graph.artworkLoader
+    val overrides by loader.overrides.collectAsState()
+    val shown = loader.displayUri(uri, overrides)
+    val image = rememberCoverImage(key = shown, cached = { loader.cached(uri) }, load = { loader.load(uri) })
+    if (image == null) DesktopArtworkPlaceholder(modifier)
+    else Image(bitmap = image, contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
 }
