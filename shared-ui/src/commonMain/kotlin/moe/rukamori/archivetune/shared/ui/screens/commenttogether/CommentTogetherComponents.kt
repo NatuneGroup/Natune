@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.listentogether.RepliedMessage
 import moe.rukamori.archivetune.shared.data.listentogether.TrackInfo
+import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -508,8 +509,9 @@ internal fun CommentTypingRow(
     modifier: Modifier = Modifier,
 ) {
     val shown = typing.take(MaxTypingAvatars)
-    val transition = rememberInfiniteTransition(label = "comment-typing")
-    val phase by transition.animateFloat(
+    // With motion off the dots hold the cycle start, so no frame clock runs behind a hidden or minimized window.
+    val transition = if (motionAllowed()) rememberInfiniteTransition(label = "comment-typing") else null
+    val phase = transition?.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -517,7 +519,7 @@ internal fun CommentTypingRow(
             repeatMode = RepeatMode.Restart,
         ),
         label = "comment-typing-phase",
-    )
+    )?.value ?: 0f
     val names = when (typing.size) {
         1 -> typing[0].username
         2 -> "${typing[0].username} & ${typing[1].username}"

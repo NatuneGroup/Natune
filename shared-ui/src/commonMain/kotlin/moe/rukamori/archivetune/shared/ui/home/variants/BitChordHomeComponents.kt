@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
 import moe.rukamori.archivetune.shared.ui.home.HomeHeroCardCorner
 import moe.rukamori.archivetune.shared.ui.home.HomeHeroCardRatio
 import moe.rukamori.archivetune.shared.ui.home.HomeShelfBottomSpacing
@@ -116,13 +117,19 @@ internal fun BitChordSectionHeader(
     }
 }
 
-/** Three bars that bounce while the current track plays. They are scaled in the draw layer, so the row never recomposes. */
+/** The bar height held while motion is off: no transition runs, so nothing wakes the frame clock behind a hidden window. */
+private const val BitChordIdleBarScale = 0.6f
+
+/**
+ * Three bars that bounce while the current track plays. They are scaled in the draw layer, so the row never recomposes.
+ * With motion off (backgrounded, minimized or reduced motion) they hold [BitChordIdleBarScale] instead.
+ */
 @Composable
 internal fun BitChordPlayingBars(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "BitChordPlayingBars")
+    val transition = if (motionAllowed()) rememberInfiniteTransition(label = "BitChordPlayingBars") else null
     val bars =
         (0..2).map { index ->
-            transition.animateFloat(
+            transition?.animateFloat(
                 initialValue = 0.35f,
                 targetValue = 1f,
                 animationSpec =
@@ -152,7 +159,7 @@ internal fun BitChordPlayingBars(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .width(3.dp)
                     .height(14.dp)
-                    .graphicsLayer { scaleY = bar.value }
+                    .graphicsLayer { scaleY = bar?.value ?: BitChordIdleBarScale }
                     .background(Color.White),
             )
         }
