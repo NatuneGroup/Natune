@@ -21,6 +21,7 @@ internal fun canvasConfigurationFrom(preferences: Preferences): CanvasConfigurat
         wifiOnly = preferences[CanvasWifiOnlyKey] ?: false,
         cacheLimitMb = (preferences[MaxCanvasCacheSizeKey] ?: 256).coerceAtLeast(-1),
         lowDataMode = preferences[LowDataModeKey] ?: true,
+        disableAnimatedArtworkOnMobileData = preferences[DisableAnimatedArtworkOnMobileDataKey] ?: false,
     )
 
 @Immutable
@@ -30,6 +31,7 @@ data class CanvasConfiguration(
     val wifiOnly: Boolean = false,
     val cacheLimitMb: Int = 256,
     val lowDataMode: Boolean = false,
+    val disableAnimatedArtworkOnMobileData: Boolean = false,
 )
 
 @Immutable
@@ -37,6 +39,7 @@ data class CanvasConnectivity(
     val online: Boolean = false,
     val wifi: Boolean = false,
     val metered: Boolean = true,
+    val cellular: Boolean = false,
 )
 
 @Immutable
@@ -49,7 +52,8 @@ data class CanvasPolicy(
     val networkAllowed: Boolean
         get() = ready && configuration.enabled && connectivity.online &&
             (!configuration.wifiOnly || connectivity.wifi) &&
-            (!configuration.lowDataMode || !connectivity.metered)
+            (!configuration.lowDataMode || !connectivity.metered) &&
+            (!configuration.disableAnimatedArtworkOnMobileData || !connectivity.cellular)
 }
 
 @Immutable

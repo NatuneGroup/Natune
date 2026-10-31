@@ -1,0 +1,7 @@
+<resources>
+    <string name="equalizer_graph_description">Equalizer graph. Drag a band up or down to change its gain.</string>
+    <string name="equalizer_graph_axis_khz">%1$dk</string>
+    <string name="equalizer_graph_readout_hz">%1$d Hz</string>
+    <string name="equalizer_graph_readout_khz">%1$d kHz</string>
+    <string name="equalizer_graph_readout">%1$s · %2$s dB</string>
+</resources>

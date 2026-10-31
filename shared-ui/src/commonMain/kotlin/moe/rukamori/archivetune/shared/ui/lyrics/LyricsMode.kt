@@ -45,7 +45,25 @@ data class LyricsModeProfile(
          */
         const val SIMPMUSIC_MANUAL_SCROLL_HOLD_MS = 4_000L
 
-        fun of(mode: LyricsMode): LyricsModeProfile =
+        /** The main-line size the saved lyrics text-size setting stores. The looks are tuned around it. */
+        const val TEXT_SIZE_DEFAULT_SP = 26f
+
+        /** The bounds of that setting. A stored value outside them is clamped, so a bad value cannot break the layout. */
+        const val TEXT_SIZE_MIN_SP = 16f
+        const val TEXT_SIZE_MAX_SP = 36f
+
+        /**
+         * The profile of [mode] with its main line at the saved [textSizeSp]. Every look moves by the same number of
+         * sp from its own tuned size, so the default keeps each look as it was, and ENHANCED follows the setting exactly.
+         */
+        fun of(mode: LyricsMode, textSizeSp: Float = TEXT_SIZE_DEFAULT_SP): LyricsModeProfile {
+            val base = baseOf(mode)
+            val requested = if (textSizeSp.isNaN()) TEXT_SIZE_DEFAULT_SP else textSizeSp.coerceIn(TEXT_SIZE_MIN_SP, TEXT_SIZE_MAX_SP)
+            val shift = requested - TEXT_SIZE_DEFAULT_SP
+            return if (shift == 0f) base else base.copy(mainSizeSp = base.mainSizeSp + shift)
+        }
+
+        private fun baseOf(mode: LyricsMode): LyricsModeProfile =
             when (mode) {
                 LyricsMode.ENHANCED -> LyricsModeProfile(
                     mainSizeSp = 26f,

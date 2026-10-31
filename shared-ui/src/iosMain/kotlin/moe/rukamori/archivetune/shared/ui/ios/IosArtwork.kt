@@ -31,6 +31,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import moe.rukamori.archivetune.shared.ui.player.rememberCoverImage
 import org.jetbrains.skia.Image as SkiaImage
 
 /**
@@ -149,7 +150,9 @@ private suspend fun HttpResponse.readBoundedBytes(maxBytes: Int): ByteArray? {
 
 /**
  * One remote image in a fixed frame. The held image is shown at once when it exists. Otherwise the frame shows the
- * placeholder until the load decodes, and keeps it when the load fails. A slot never shows the previous uri's image.
+ * placeholder until the load decodes, and keeps it when the load fails. A list row or avatar never shows the previous
+ * uri's image, because a recycled slot would show another item's image. The player cover keeps its image instead;
+ * see IosQueueArtwork.
  */
 @Composable
 internal fun IosRemoteArtwork(uri: String?, loader: IosArtworkLoader, modifier: Modifier) {
@@ -166,13 +169,19 @@ internal fun IosRemoteArtwork(uri: String?, loader: IosArtworkLoader, modifier: 
     }
 }
 
-/** The player cover: the artwork of the occurrence the slot names, or of the current occurrence when it names none. */
+/**
+ * The player cover: the artwork of the occurrence the slot names, or of the current occurrence when it names none.
+ * It keeps the cover on screen while the next image loads, so a track change does not blank the frame.
+ */
 @Composable
 internal fun IosQueueArtwork(occurrenceId: String?, graph: IosSessionGraph, modifier: Modifier) {
     val queue by graph.queue.state.collectAsState()
     val target = occurrenceId ?: queue.currentOccurrenceId
     val uri = queue.entries.firstOrNull { it.occurrenceId == target }?.item?.artworkUri
-    IosRemoteArtwork(uri, graph.artworkLoader, modifier)
+    val loader = graph.artworkLoader
+    val image = rememberCoverImage(key = uri, cached = { loader.cached(uri) }, load = { loader.load(uri) })
+    if (image == null) IosArtworkPlaceholder(modifier)
+    else Image(bitmap = image, contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
 }
 
 /** The frame a slot keeps while its image is absent, loading or unreadable. */

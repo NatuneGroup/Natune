@@ -2455,7 +2455,6 @@ private fun V8Artwork(
     videoId: String? = null,
     isMusicVideo: Boolean = false,
 ) {
-    val artworkRequest = rememberOfflineArtworkImageRequest(artworkUrl)
     val playerConnection = LocalPlayerConnection.current
     val videoArtworkState = LocalVideoArtworkState.current
     val showVideo =
@@ -2473,9 +2472,8 @@ private fun V8Artwork(
                 .background(if (showVideo) Color.Black else Color.White.copy(alpha = 0.08f)),
     ) {
         if (!showVideo) {
-            AsyncImage(
-                model = artworkRequest,
-                contentDescription = null,
+            PlayerCoverImage(
+                imageUrl = artworkUrl,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -3392,7 +3390,6 @@ private fun V9Artwork(
     videoId: String? = null,
     isMusicVideo: Boolean = false,
 ) {
-    val artworkRequest = rememberOfflineArtworkImageRequest(artworkUrl)
     val playerConnection = LocalPlayerConnection.current
     val videoArtworkState = LocalVideoArtworkState.current
     val showVideo =
@@ -3410,9 +3407,8 @@ private fun V9Artwork(
                 .background(if (showVideo) Color.Black else placeholderColor),
     ) {
         if (!showVideo) {
-            AsyncImage(
-                model = artworkRequest,
-                contentDescription = null,
+            PlayerCoverImage(
+                imageUrl = artworkUrl,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )

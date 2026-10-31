@@ -88,7 +88,6 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import androidx.media3.common.Player.STATE_ENDED
 import androidx.navigation.NavController
-import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.extensions.toggleRepeatMode
@@ -683,8 +682,8 @@ private fun EditorialDieCutArt(
             contentAlignment = Alignment.Center
         ) {
             if (artworkUrl != null) {
-                AsyncImage(
-                    model = artworkUrl,
+                PlayerCoverImage(
+                    imageUrl = artworkUrl,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

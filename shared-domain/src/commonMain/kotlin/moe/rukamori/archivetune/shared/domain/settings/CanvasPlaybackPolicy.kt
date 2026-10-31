@@ -20,4 +20,12 @@ fun PreferenceSnapshot.canvasPlaybackAllowed(
     (provider != CanvasHealthProvider.SPOTIFY || this[SpotifyCanvasKey, false]) &&
     connectivity != null && connectivity.online &&
     (!this[CanvasWifiOnlyKey, false] || connectivity.wifi) &&
-    (!lowDataMode() || !connectivity.metered)
+    (!lowDataMode() || !connectivity.metered) &&
+    animatedArtworkAllowed(connectivity)
+
+/**
+ * The mobile-data rule for animated artwork: with the setting on, a cellular network holds Canvas loops and music
+ * videos back. An unmeasured network is not known to be cellular, so the artwork stays on.
+ */
+fun PreferenceSnapshot.animatedArtworkAllowed(connectivity: CanvasConnectivity?): Boolean =
+    !this[DisableAnimatedArtworkOnMobileDataKey, false] || connectivity?.cellular != true

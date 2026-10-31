@@ -27,7 +27,7 @@ fun ArchiveTuneTheme(
     disableAnimations: Boolean = false,
     fontPreference: AppFontPreference = AppFontPreference.DEFAULT,
     customFontFamily: FontFamily? = null,
-    colorScheme: ColorScheme = if (darkTheme) darkColorScheme() else lightColorScheme(),
+    colorScheme: ColorScheme = archiveTuneDefaultColorScheme(darkTheme),
     content: @Composable () -> Unit,
 ) {
     val appFamily = FontFamily(Font(Res.font.m4_poppins))
@@ -51,6 +51,13 @@ fun ArchiveTuneTheme(
         }
     }
 }
+
+/**
+ * The scheme used when no palette is saved. The default parameter and the root both read it, so the default look
+ * has one definition.
+ */
+internal fun archiveTuneDefaultColorScheme(darkTheme: Boolean): ColorScheme =
+    if (darkTheme) darkColorScheme() else lightColorScheme()
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal object DisabledArchiveTuneMotion : MotionScheme {
