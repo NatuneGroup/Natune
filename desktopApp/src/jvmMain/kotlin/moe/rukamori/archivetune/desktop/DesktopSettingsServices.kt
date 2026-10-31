@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.desktop
 
+import androidx.compose.ui.text.font.FontFamily
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -18,6 +19,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.intOrNull
@@ -489,7 +491,15 @@ internal class DesktopSettingsServices(
         )
     }
 
-    val spatialFlowFont = MutableStateFlow<AddonDownloadUiState>(AddonDownloadUiState.Unavailable)
+    /**
+     * The optional SpatialFlow typeface. The owner keeps the installed file inside the instance directory and hands the
+     * player its family, so the title is drawn in it once the file is installed.
+     */
+    val spatialFlowFontOwner by lazy { DesktopSpatialFlowFont(instanceDirectory, graph.scope) }
+    val spatialFlowFont: StateFlow<AddonDownloadUiState> get() = spatialFlowFontOwner.state
+    val spatialFlowFontFamily: StateFlow<FontFamily?> get() = spatialFlowFontOwner.family
+    suspend fun installSpatialFlowFont(): Boolean = spatialFlowFontOwner.installPicked()
+    suspend fun removeSpatialFlowFont(): Boolean = spatialFlowFontOwner.remove()
 
     // ------------------------------------------------------------------ yt-dlp / downloads / po / amazon
 

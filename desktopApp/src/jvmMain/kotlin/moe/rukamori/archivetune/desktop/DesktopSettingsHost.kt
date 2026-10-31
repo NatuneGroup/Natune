@@ -58,6 +58,7 @@ import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
+import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogSettings
@@ -188,6 +189,8 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     }
 
     val services = DesktopSettingsServices(graph, controller, DesktopSettingsServices.currentInstanceDirectory())
+    // The Turnstile challenge window exchanges its token against the primary instance and commits the JWT here.
+    val amazon = DesktopAmazonAuthorize(graph, controller)
     val discord = DesktopDiscordPresence(graph, DesktopLaunchIntake.links, controller, graph::report)
 
     suspend fun qobuzSecretCandidates(): List<String> = qobuzScrape.candidates().orEmpty()
@@ -515,7 +518,24 @@ internal fun DesktopSettingsScreen(
                     poolInstanceCount = snapshot?.amazonInstanceList()?.size ?: 0,
                     currentTimeMillis = System::currentTimeMillis,
                     formatExpiry = owners.services::formatExpiry,
-                    onAuthorize = unavailable,
+                    onAuthorize = {
+                        scope.launch {
+                            show(DesktopStrings["amazon_challenge_opening"])
+                            show(
+                                when (val outcome = owners.amazon.authorize()) {
+                                    is AmazonAuthorizeOutcome.Authorized -> DesktopStrings["amazon_authorize_done"]
+                                    AmazonAuthorizeOutcome.Cancelled -> DesktopStrings["amazon_authorize_cancelled"]
+                                    AmazonAuthorizeOutcome.NotConfigured -> DesktopStrings["amazon_authorize_not_configured"]
+                                    AmazonAuthorizeOutcome.NoInstance -> DesktopStrings["amazon_authorize_no_instance"]
+                                    AmazonAuthorizeOutcome.Busy -> DesktopStrings["amazon_authorize_busy"]
+                                    is AmazonAuthorizeOutcome.Failed -> {
+                                        graph.report("amazon authorization failed: ${outcome.reason}")
+                                        DesktopStrings["amazon_authorize_failed"]
+                                    }
+                                },
+                            )
+                        }
+                    },
                     onFailure = onFailure,
                     onNotice = onNotice,
                     scrollTo = scrollTo,
@@ -605,8 +625,14 @@ internal fun DesktopSettingsScreen(
                     onInstallJapanese = { scope.launch { owners.services.installJapanese() } },
                     onCancelJapanese = { scope.launch { owners.services.cancelJapanese() } },
                     onRemoveJapanese = { scope.launch { owners.services.removeJapanese() } },
-                    onInstallSpatialFlowFont = { unavailable() },
-                    onRemoveSpatialFlowFont = { unavailable() },
+                    onInstallSpatialFlowFont = {
+                        if (owners.services.installSpatialFlowFont()) show(DesktopStrings["spatial_flow_font_installed"])
+                    },
+                    onRemoveSpatialFlowFont = {
+                        if (owners.services.removeSpatialFlowFont()) show(DesktopStrings["spatial_flow_font_removed"])
+                    },
+                    // The desktop has no pinned download: the user supplies the same typeface file Android installs.
+                    spatialFlowFontInstallLabel = Res.string.m6_additional_downloads_spatialflow_font_choose,
                     onFailure = onFailure,
                 )
             }

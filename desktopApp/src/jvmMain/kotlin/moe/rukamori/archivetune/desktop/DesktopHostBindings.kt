@@ -75,12 +75,13 @@ internal fun desktopHostBindings(
     val createPlaylist = DesktopPlaylistCreation(graph.scope, graph.libraryContent) { route -> ownRoutes.trySend(route) }
     // The playlist overflow menu, tag dialogs and CSV export of the Playlists and Manage tags pages.
     val playlistMenus = DesktopPlaylistMenuState(graph) { route -> ownRoutes.trySend(route) }
-    // The native controls observe the same queue, player and settings owners that the library rows use.
-    val sleepSheet = DesktopSleepTimerSheetState()
-    val playerMenu = DesktopPlayerMenuState()
-    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu)
     // One settings controller and sign-in lifecycle for every settings page of this window.
     val settingsOwners = DesktopSettingsOwners(graph)
+    // The native controls observe the same queue, player and settings owners that the library rows use, and the
+    // typeface the settings page installs, so a SpatialFlow title draws in that typeface once it is installed.
+    val sleepSheet = DesktopSleepTimerSheetState()
+    val playerMenu = DesktopPlayerMenuState()
+    val controls = DesktopPlayerControls(graph, sleepSheet, playerMenu, settingsOwners.services.spatialFlowFontFamily)
     val podcasts = createDesktopPodcasts(graph)
     val topMixes = createDesktopTopMixes(graph)
     val canvas = createDesktopCanvas(graph, settingsOwners.spotify)
