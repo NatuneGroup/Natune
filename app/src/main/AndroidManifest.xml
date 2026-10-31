@@ -77,6 +77,19 @@
             android:required="false" />
 
         <activity
+            android:name=".startup.StartupRecoveryActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:process=":crash"
+            android:taskAffinity="${applicationId}.crash"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"

@@ -40,6 +40,40 @@ Nothing is uploaded or turned into an issue automatically; review exports before
 
 ## Reproduce, fix and verify
 
+### Launch failures without adb
+
+Reopen the app from its launcher icon. The mobile icon aliases and TV launcher
+enter a small platform-UI activity in `:crash` before starting the main process.
+If the previous startup never stayed resumed for five seconds, this activity
+shows Safe mode rather than automatically retrying Hilt, Room, preferences,
+playback or native initialization. An interrupted startup is not proof of a
+crash: force-stop, reboot, background-only starts and memory pressure can also
+leave the marker. **Continue normally** clears only recovery state and explicitly
+retries. The recovery screen never resets settings, accounts or the library;
+normal startup's existing database repair/reset policy is unchanged.
+An unreviewed incomplete attempt survives main-process service/provider restarts;
+only its own healthy callback or the explicit recovery action clears it.
+
+Java exceptions are synchronously saved under `noBackupFilesDir/startup_recovery`
+(16,000 characters, timestamp and thread included), starting before providers in
+`attachBaseContext` and reinstalled before Hilt in `App.onCreate`. The existing
+DebugActivity/opt-in CrashFeedback handler remains the later delegate.
+Android 11+ exit history contributes Java/native crash, ANR, initialization
+failure and low-memory reasons. Android 12+ native tombstones are protobuf:
+only a bounded signal/abort/backtrace summary is rendered, not raw memory or log
+dumps. Native input is capped at 256 KiB, ANR text at 64 KiB, the combined
+redacted report at 80,000 characters. Copy/Share are explicit, text-only actions;
+review the report for private information first. This recovery report is not
+uploaded automatically; any existing opt-in CrashFeedback behavior is unchanged.
+Reviewed non-startup crashes are acknowledged on Continue when storage permits.
+
+Exit records/traces can be absent or overwritten by Android. Death before
+application attachment has no saved Java stack; exit history is unavailable
+below API 30. Deep links, Recents and service starts still use their existing
+main-process entry points; use the launcher icon to reach the independent
+recovery gate. These mechanisms require exact-head CI and device validation,
+including a signed update without clearing app data.
+
 Use [Android QA](../android-qa.md) and the pinned toolchain on an authorized host.
 Add a focused regression only when it exercises the failing behavior. Obtain the
 separate exact-candidate build/lint and unit-test gates; repeat the actual interaction.
