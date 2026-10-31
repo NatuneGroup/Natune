@@ -180,7 +180,6 @@ class App :
         BotGuardTokenGenerator.initialize(this)
         PreferenceStore.start(this)
         JapaneseLanguagePackManager.initialize(this)
-        moe.rukamori.archivetune.addons.AdditionalDownloads.initialize(this)
         Timber.plant(Timber.DebugTree())
         try {
             Timber.plant(
@@ -374,8 +373,17 @@ class App :
 
     private fun initializeDeferredAsync() {
         // Registers the recurring source refresh. KEEP, so this is a no-op once scheduled rather
-        // than pushing the next run further out on every launch.
-        moe.rukamori.archivetune.utils.SourceRefreshWorker.schedule(this)
+        // than pushing the next run further out on every launch. Off the create path because
+        // WorkManager's first use opens its database; nothing waits on the schedule being written.
+        applicationScope.launch(Dispatchers.IO) {
+            moe.rukamori.archivetune.utils.SourceRefreshWorker.schedule(this@App)
+        }
+
+        // Reads the optional-download folder and clears stale copies. The SpatialFlow font reads this
+        // state as a flow and falls back to the default face until it lands, so no frame waits on it.
+        applicationScope.launch(Dispatchers.IO) {
+            moe.rukamori.archivetune.addons.AdditionalDownloads.initialize(this@App)
+        }
 
         // A partial download is never resumable and never installable, so a process start is when it
         // goes. A staged APK survives only while it is still newer than the running build: once the
