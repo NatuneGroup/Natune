@@ -45,6 +45,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,7 +79,8 @@ internal fun PlayerQueueSongSourceDialog(
     onDismiss: () -> Unit,
 ) {
     var searchMode by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchField by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    val searchQuery = searchField.text
     // Saved by name, so the provider filter survives a process restore as the baseline's did. The enum is rebuilt from it.
     var sourceFilterName by rememberSaveable { mutableStateOf<String?>(null) }
     val sourceFilter = AudioSourceType.entries.firstOrNull { it.name == sourceFilterName }
@@ -136,9 +139,9 @@ internal fun PlayerQueueSongSourceDialog(
                     onClick = {
                         searchMode = !searchMode
                         if (searchMode) {
-                            searchQuery = sourceSearchSeed(track)
+                            searchField = sourceSearchSeed(track).let { TextFieldValue(it, TextRange(it.length)) }
                         } else {
-                            searchQuery = ""
+                            searchField = TextFieldValue("")
                             sourceFilterName = null
                         }
                     },
@@ -154,8 +157,8 @@ internal fun PlayerQueueSongSourceDialog(
 
             if (searchMode) {
                 OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    value = searchField,
+                    onValueChange = { searchField = it },
                     placeholder = { Text(stringResource(Res.string.m5pq_download_source_search_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
