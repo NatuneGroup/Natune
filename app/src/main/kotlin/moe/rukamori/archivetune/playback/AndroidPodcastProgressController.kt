@@ -50,12 +50,7 @@ class AndroidPodcastProgressController(database: MusicDatabase) : Player.Listene
         last = null
         next.addListener(this)
         sample()
-        ticker = scope.launch {
-            while (isActive) {
-                sample()
-                delay(500L)
-            }
-        }
+        if (next.isPlaying) startTicker()
     }
 
     fun detach() {
@@ -69,6 +64,27 @@ class AndroidPodcastProgressController(database: MusicDatabase) : Player.Listene
         scope.launch {
             drained.join()
             scope.cancel()
+        }
+    }
+
+    // Positions only move while playing, so the 500 ms sampler runs only for that span. Pause and
+    // seek are still sampled from onEvents, which runs after onIsPlayingChanged in the same batch.
+    private fun startTicker() {
+        if (ticker?.isActive == true) return
+        ticker = scope.launch {
+            while (isActive) {
+                sample()
+                delay(500L)
+            }
+        }
+    }
+
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (isPlaying) {
+            startTicker()
+        } else {
+            ticker?.cancel()
+            ticker = null
         }
     }
 

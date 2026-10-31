@@ -1102,6 +1102,7 @@ class MusicService :
         private set
     lateinit var player: Player
         private set
+    private val pausedPlaybackGate = PausedPlaybackGate()
     private lateinit var castPlaybackRepository: CastPlaybackRepository
     private lateinit var mediaSession: MediaLibrarySession
 
@@ -1565,6 +1566,7 @@ class MusicService :
             dataStore.edit { settings ->
                 settings[PlayerVolumeKey] = volume
             }
+            scope.launch(SilentHandler) { savePlayerStateToDisk() } // Resume file holds the volume; volume changes raise no player event.
         }
 
         currentSong.debounce(300).collect(scope) { song ->
@@ -1972,18 +1974,12 @@ class MusicService :
             }
         }
 
-        // Periodic save exists only to keep the resume *position* roughly current for a process
-        // death; every change to the queue itself already calls saveQueueToDisk from the eight
-        // event handlers that cause one. So this writes the small player-state file only — a
-        // full-queue snapshot would have to map every media item on the main thread, for a queue
-        // that has usually not changed.
+        // Periodic save keeps the resume position roughly current. Queue and paused changes are saved by
+        // their handlers; a full-queue snapshot here would have to map every media item on the main thread.
         scope.launch {
             while (isActive) {
-                delay(PERSISTENT_POSITION_SAVE_INTERVAL)
-                val shouldSave = withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }
-                if (shouldSave && player.mediaItemCount > 0) {
-                    savePlayerStateToDisk()
-                }
+                pausedPlaybackGate.awaitPlaybackOrDelay(player.isPlaying, PERSISTENT_POSITION_SAVE_INTERVAL.inWholeMilliseconds)
+                savePlayerStateToDisk()
             }
         }
     }
@@ -4433,6 +4429,7 @@ class MusicService :
             // 4. MediaSession + observable player state.
             mediaSession.player = player
             _playerFlow.value = player
+            pausedPlaybackGate.sync(player)
 
             // The rebuilt wrapper starts with playWhenReady=false regardless of what the promoted
             // ExoPlayer was doing, so the intent captured before the rebuild is re-applied here —
@@ -7957,6 +7954,7 @@ class MusicService :
         } else if (currentHistoryMediaId == null && currentMediaId != null) {
             beginHistorySession(currentMediaId)
         }
+        if (pausedPlaybackGate.onEvents(player, events)) scope.launch(SilentHandler) { savePlayerStateToDisk() }
         if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
             playbackStreamRecoveryTracker.onMediaItemChanged(currentMediaId)
             // Reset codec-recovery budget for the new media item.
@@ -10361,7 +10359,7 @@ class MusicService :
                                 }
                             }
                         }
-                        delay(500)
+                        pausedPlaybackGate.awaitPlaybackOrDelay(player.isPlaying, 500L)
                     }
                 } finally {
                     val active = track
@@ -12681,14 +12679,15 @@ class MusicService :
     private var lastPersistedQueue: PersistQueue? = null
 
     /**
-     * Writes just the resume position and transport flags, skipping the queue snapshot.
+     * Writes just the resume position and transport flags, skipping the queue snapshot, and only
+     * while [PersistentQueueKey] is on. The periodic save and paused changes from onEvents both use it.
      *
      * Deliberately not [saveQueueToDisk]: that maps every media item to persistable metadata on
-     * the main thread and writes two files. For the periodic save none of that changes between
-     * ticks — only the position does — and the queue file is already written by every handler that
-     * can change it.
+     * the main thread and writes two files. None of that changes here — only the position does —
+     * and the queue file is already written by every handler that can change it.
      */
     private suspend fun savePlayerStateToDisk() {
+        if (!withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }) return
         val saveGeneration = persistentSaveGeneration.get()
         val state =
             withContext(Dispatchers.Main.immediate) {
@@ -12835,6 +12834,7 @@ class MusicService :
         BitPerfectUsbOutput.sinkActive = false
         UsbExclusiveAudioOutputProvider.installed = false
         unregisterBluetoothReceiver()
+        if (::widgetUpdater.isInitialized) widgetUpdater.release()
         unregisterMuteRecoveryObserver()
         try {
             connectivityObserver.unregister()

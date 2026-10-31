@@ -22,7 +22,13 @@ object StartupRecovery {
         val installed = crashHandler ?: StartupCrashHandler(
             capture = { thread, error ->
                 if (!isRecoveryProcess(context)) {
-                    store(context).captureJava(System.currentTimeMillis(), thread.name, error)
+                    val build = CrashBuild(
+                        versionName = BuildConfig.VERSION_NAME,
+                        versionCode = BuildConfig.VERSION_CODE.toLong(),
+                        process = processName(context).orEmpty(),
+                        pid = Process.myPid(),
+                    )
+                    store(context).captureJava(System.currentTimeMillis(), thread.name, error, build)
                 }
             },
             previous = Thread.getDefaultUncaughtExceptionHandler(),

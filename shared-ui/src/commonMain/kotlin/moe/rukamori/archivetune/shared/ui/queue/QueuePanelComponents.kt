@@ -75,6 +75,57 @@ internal fun QueuePanelHeader(
     }
 }
 
+/** Height of the one-row header that replaces the expanded header once the list scrolls. */
+private val QueuePanelCompactHeight = 56.dp
+
+/**
+ * The one-row header shown over the list once it scrolls. The playback toggles stay on the row and the queue-level
+ * actions move into its menu, so nothing is lost while the expanded header is out of view.
+ */
+@Composable
+internal fun QueuePanelCompactHeader(
+    hasTracks: Boolean, ready: Boolean, infinite: Boolean, locked: Boolean, shuffle: Boolean, repeat: QueueRepeatMode,
+    onInfinite: (Boolean) -> Unit, onShuffle: () -> Unit, onRepeat: () -> Unit, onLock: () -> Unit,
+    onJump: () -> Unit, onSave: () -> Unit, onClear: () -> Unit, onSelect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var more by remember { mutableStateOf(false) }
+    Row(
+        modifier.fillMaxWidth().height(QueuePanelCompactHeight)
+            .background(MaterialTheme.colorScheme.surface).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(Res.string.queue_title), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        PlayerIcon(PlayerSymbol.SHUFFLE, stringResource(Res.string.m5_shuffle), onShuffle,
+            enabled = hasTracks, selected = shuffle, modifier = Modifier.testTag("queue-compact-shuffle"))
+        PlayerIcon(PlayerSymbol.REPEAT, stringResource(Res.string.m5_repeat), onRepeat, enabled = ready,
+            selected = repeat != QueueRepeatMode.OFF, stateLabel = stringResource(when (repeat) {
+                QueueRepeatMode.ONE -> Res.string.m5_repeat_one
+                QueueRepeatMode.ALL -> Res.string.m5_on
+                QueueRepeatMode.OFF -> Res.string.m5_off
+            }), modifier = Modifier.testTag("queue-compact-repeat"))
+        Box {
+            PlayerIcon(PlayerSymbol.MORE, stringResource(Res.string.queue_actions), { more = true })
+            DropdownMenu(more, { more = false }) {
+                DropdownMenuItem(text = { Text(stringResource(Res.string.queue_jump_current)) }, enabled = hasTracks,
+                    onClick = { more = false; onJump() })
+                DropdownMenuItem(text = { Text(stringResource(Res.string.queue_infinite)) }, enabled = ready,
+                    leadingIcon = { Checkbox(checked = infinite, onCheckedChange = null, enabled = ready) },
+                    onClick = { more = false; onInfinite(!infinite) })
+                DropdownMenuItem(text = { Text(stringResource(Res.string.queue_save_playlist)) }, enabled = hasTracks,
+                    onClick = { more = false; onSave() })
+                DropdownMenuItem(text = { Text(stringResource(Res.string.queue_clear_upcoming)) }, enabled = ready && hasTracks,
+                    onClick = { more = false; onClear() })
+                DropdownMenuItem(text = { Text(stringResource(Res.string.queue_select_tracks)) }, enabled = hasTracks,
+                    onClick = { more = false; onSelect() })
+                DropdownMenuItem(text = { Text(stringResource(if (locked) Res.string.queue_unlock_edits else Res.string.queue_lock_edits)) },
+                    enabled = ready, onClick = { more = false; onLock() })
+            }
+        }
+    }
+}
+
 @Composable
 internal fun QueueSelectionActions(
     count: Int, all: Boolean, onAll: () -> Unit, onClose: () -> Unit, onSave: () -> Unit, onRemove: () -> Unit,

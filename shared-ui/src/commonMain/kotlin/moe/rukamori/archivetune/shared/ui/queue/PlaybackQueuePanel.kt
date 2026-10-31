@@ -1,5 +1,9 @@
 package moe.rukamori.archivetune.shared.ui.queue
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -18,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +53,12 @@ import moe.rukamori.archivetune.shared.ui.screens.playlistRowKey
 import moe.rukamori.archivetune.shared.ui.screens.rememberPlaylistRowDrag
 import org.jetbrains.compose.resources.stringResource
 
+/** Lazy item key of the expanded header, which is the first item of the list. */
+private const val QueuePanelHeaderKey = "queue-panel-header"
+
+/** List items before the first row (the expanded header). Scroll targets add this to a row index. */
+private const val QueuePanelHeaderItems = 1
+
 /** Both portable hosts render the same controls over their real queue, settings and transactional library owners. */
 @Composable
 fun PlaybackQueuePanel(
@@ -71,6 +83,8 @@ fun PlaybackQueuePanel(
     val repeat = QueueRepeatMode.fromStoredValue(preferences?.get(RepeatModeKey) ?: 0)
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    // Read in the composition only through this state, so the panel recomposes when the overlay toggles, not per scroll tick.
+    val listScrolled by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0 } }
     val snackbar = remember { SnackbarHostState() }
     var selected by remember(queue) { mutableStateOf(emptySet<String>()) }
     var saveEntries by remember(queue) { mutableStateOf<List<ContentOccurrence>?>(null) }
@@ -86,7 +100,7 @@ fun PlaybackQueuePanel(
     LaunchedEffect(rows, state.currentOccurrenceId) {
         selected = selected.intersect(rows.mapTo(HashSet()) { it.occurrenceId })
         if (firstScroll && currentIndex >= 0) {
-            list.scrollToItem(currentIndex)
+            list.scrollToItem(currentIndex + QueuePanelHeaderItems)
             firstScroll = false
         }
     }
@@ -151,49 +165,65 @@ fun PlaybackQueuePanel(
             else Res.string.queue_source_library)
     }
 
+    val onInfinite: (Boolean) -> Unit = { enabled -> command {
+        settings.edit { set(AutoLoadMoreKey, enabled) }
+        edits.refreshInfiniteQueue()
+    } }
+    val onShuffle: () -> Unit = { command { check(edits.setShuffle(!state.shuffleEnabled)) } }
+    val onRepeat: () -> Unit = { command {
+        val next = when (repeat) {
+            QueueRepeatMode.OFF -> QueueRepeatMode.ALL
+            QueueRepeatMode.ALL -> QueueRepeatMode.ONE
+            QueueRepeatMode.ONE -> QueueRepeatMode.OFF
+        }
+        settings.edit { set(RepeatModeKey, next.storedValue) }
+        edits.refreshInfiniteQueue()
+    } }
+    val onLock: () -> Unit = { command { settings.edit { set(QueueEditLockKey, !locked) } } }
+    val onJump: () -> Unit = { if (currentIndex >= 0) scope.launch { list.animateScrollToItem(currentIndex + QueuePanelHeaderItems) } }
+    val onSave: () -> Unit = { save(rows) }
+    val onClear: () -> Unit = { remove {
+        settings.edit { set(AutoLoadMoreKey, false) }
+        edits.refreshInfiniteQueue()
+        edits.clearUpcoming()
+    } }
+    val onSelect: () -> Unit = { selected = rows.mapTo(HashSet()) { it.occurrenceId } }
+    val header: @Composable () -> Unit = {
+        QueuePanelHeader(
+            summary, sourceLabel, infinite, loading, locked, state.shuffleEnabled, repeat,
+            ready = preferences != null,
+            hasTracks = rows.isNotEmpty(),
+            onInfinite = onInfinite, onShuffle = onShuffle, onRepeat = onRepeat, onLock = onLock,
+            onJump = onJump, onSave = onSave, onClear = onClear, onSelect = onSelect,
+        )
+    }
+
+    val selectionActions: @Composable () -> Unit = {
+        if (selected.isNotEmpty()) QueueSelectionActions(
+            selected.size, selected.size == rows.size,
+            onAll = { selected = rows.mapTo(HashSet()) { it.occurrenceId } },
+            onClose = { selected = emptySet() },
+            onSave = { save(rows.filter { it.occurrenceId in selected }) },
+            onRemove = { val ids = selected; remove { edits.removeUndoable(ids) } },
+        )
+    }
+
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            QueuePanelHeader(
-                summary, sourceLabel, infinite, loading, locked, state.shuffleEnabled, repeat,
-                ready = preferences != null,
-                hasTracks = rows.isNotEmpty(),
-                onInfinite = { enabled -> command {
-                    settings.edit { set(AutoLoadMoreKey, enabled) }
-                    edits.refreshInfiniteQueue()
-                } },
-                onShuffle = { command { check(edits.setShuffle(!state.shuffleEnabled)) } },
-                onRepeat = { command {
-                    val next = when (repeat) {
-                        QueueRepeatMode.OFF -> QueueRepeatMode.ALL
-                        QueueRepeatMode.ALL -> QueueRepeatMode.ONE
-                        QueueRepeatMode.ONE -> QueueRepeatMode.OFF
-                    }
-                    settings.edit { set(RepeatModeKey, next.storedValue) }
-                    edits.refreshInfiniteQueue()
-                } },
-                onLock = { command { settings.edit { set(QueueEditLockKey, !locked) } } },
-                onJump = { if (currentIndex >= 0) scope.launch { list.animateScrollToItem(currentIndex) } },
-                onSave = { save(rows) },
-                onClear = { remove {
-                    settings.edit { set(AutoLoadMoreKey, false) }
-                    edits.refreshInfiniteQueue()
-                    edits.clearUpcoming()
-                } },
-                onSelect = { selected = rows.mapTo(HashSet()) { it.occurrenceId } },
-            )
-            if (selected.isNotEmpty()) QueueSelectionActions(
-                selected.size, selected.size == rows.size,
-                onAll = { selected = rows.mapTo(HashSet()) { it.occurrenceId } },
-                onClose = { selected = emptySet() },
-                onSave = { save(rows.filter { it.occurrenceId in selected }) },
-                onRemove = { val ids = selected; remove { edits.removeUndoable(ids) } },
-            )
             if (rows.isEmpty()) {
+                header()
                 Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(stringResource(Res.string.queue_empty))
                 }
             } else {
                 LazyColumn(Modifier.weight(1f).playlistRowDragViewport(drag), state = list, contentPadding = padding) {
+                    // The expanded header is the first item: it scrolls away and the compact header takes its place.
+                    item(key = QueuePanelHeaderKey) {
+                        Column {
+                            header()
+                            selectionActions()
+                        }
+                    }
                     itemsIndexed(drag.displayRows(rows), key = { _, entry -> playlistRowKey(entry.occurrenceId) }) { index, entry ->
                         QueuePanelTrack(
                             entry, current = entry.occurrenceId == state.currentOccurrenceId,
@@ -218,6 +248,23 @@ fun PlaybackQueuePanel(
                         )
                     }
                 }
+            }
+        }
+        AnimatedVisibility(
+            visible = listScrolled && rows.isNotEmpty(),
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            // The selection actions scroll away with the expanded header, so the overlay repeats them once the list scrolls.
+            Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
+                QueuePanelCompactHeader(
+                    hasTracks = rows.isNotEmpty(), ready = preferences != null, infinite = infinite, locked = locked,
+                    shuffle = state.shuffleEnabled, repeat = repeat,
+                    onInfinite = onInfinite, onShuffle = onShuffle, onRepeat = onRepeat, onLock = onLock,
+                    onJump = onJump, onSave = onSave, onClear = onClear, onSelect = onSelect,
+                )
+                selectionActions()
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(12.dp))

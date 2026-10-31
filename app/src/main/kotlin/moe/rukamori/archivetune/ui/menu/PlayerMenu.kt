@@ -1722,7 +1722,7 @@ private fun SongSourceDialog(
     onPlayFromSource: (SourceSearchResult) -> Unit,
 ) {
     var searchMode by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchField by rememberSaveable(stateSaver = sourceSearchFieldSaver) { mutableStateOf(sourceSearchFieldValue("")) }
     var sourceFilter by rememberSaveable { mutableStateOf<AudioSourceType?>(null) }
 
     // Strings fetched at the Composable scope so they can be referenced safely inside produceState.
@@ -1762,11 +1762,11 @@ private fun SongSourceDialog(
     // Debounced search — only fires when searchMode is on and query length >= 2.
     val results by produceState<List<SourceSearchResult>>(
         initialValue = emptyList(),
-        key1 = searchQuery,
+        key1 = searchField.text,
         key2 = sourceFilter,
         key3 = searchMode,
     ) {
-        if (!searchMode || searchQuery.length < 2 || backendMissing) {
+        if (!searchMode || searchField.text.length < 2 || backendMissing) {
             value = emptyList()
             return@produceState
         }
@@ -1783,7 +1783,7 @@ private fun SongSourceDialog(
         if (searchYtm) {
             withContext(Dispatchers.IO) {
                 runCatching {
-                    val ytResult = YouTube.search(searchQuery, YouTube.SearchFilter.FILTER_SONG, useAccountContext = false).getOrNull()
+                    val ytResult = YouTube.search(searchField.text, YouTube.SearchFilter.FILTER_SONG, useAccountContext = false).getOrNull()
                     if (ytResult == null) {
                         emptyList()
                     } else {
@@ -1815,7 +1815,7 @@ private fun SongSourceDialog(
                     val tidalQuery =
                         TidalAudioProvider.Query(
                             mediaId = "",
-                            title = searchQuery,
+                            title = searchField.text,
                             artists = emptyList(),
                             album = null,
                             isrc = null,
@@ -1840,7 +1840,7 @@ private fun SongSourceDialog(
         }
         if (searchAmazon) {
             withContext(Dispatchers.IO) {
-                runCatching { AppleMusicCatalog.searchTrackSuggestions(searchQuery, limit = 8) }
+                runCatching { AppleMusicCatalog.searchTrackSuggestions(searchField.text, limit = 8) }
                     .getOrNull()
                     ?.filterIsInstance<AppleMusicSearchItem.Track>()
                     ?.forEach { track ->
@@ -1869,7 +1869,7 @@ private fun SongSourceDialog(
             // calls (PoolAccountManager.qobuzAccounts + discoverInstances +
             // the actual search API call).
             withContext(Dispatchers.IO) {
-                runCatching { QobuzAudioProvider.searchCandidates(searchQuery, limit = 8) }
+                runCatching { QobuzAudioProvider.searchCandidates(searchField.text, limit = 8) }
                     .getOrDefault(emptyList())
                     .forEach { candidate ->
                         // If Qobuz didn't return a thumbnail, try to get one
@@ -1906,7 +1906,7 @@ private fun SongSourceDialog(
             // returns is keyed by a YouTube video id, which is both the mirror's primary
             // key and the source of the row's cover art (no artwork field in the payload).
             withContext(Dispatchers.IO) {
-                runCatching { QobuzBackupProvider.searchCandidates(searchQuery, limit = 8) }
+                runCatching { QobuzBackupProvider.searchCandidates(searchField.text, limit = 8) }
                     .getOrDefault(emptyList())
                     .forEach { candidate ->
                         out.add(
@@ -1929,7 +1929,7 @@ private fun SongSourceDialog(
         if (searchDeezer) {
             withContext(Dispatchers.IO) {
                 DeezerAudioProvider
-                    .searchCandidates(searchQuery, limit = 8)
+                    .searchCandidates(searchField.text, limit = 8)
                     .forEach { candidate ->
                         out.add(
                             SourceSearchResult(
@@ -1948,7 +1948,7 @@ private fun SongSourceDialog(
         }
         if (searchSaavn) {
             withContext(Dispatchers.IO) {
-                runCatching { SaavnService.searchSongs(searchQuery).getOrDefault(emptyList()) }
+                runCatching { SaavnService.searchSongs(searchField.text).getOrDefault(emptyList()) }
                     .getOrDefault(emptyList())
                     .forEach { saavnSong ->
                     val cover = saavnSong.image.maxByOrNull { runCatching { it.quality.substringBefore("x").toInt() }.getOrDefault(0) }?.url
@@ -1991,7 +1991,7 @@ private fun SongSourceDialog(
                 IconButton(
                     onClick = {
                         searchMode = !searchMode
-                        searchQuery = if (searchMode) initialSearchQuery else ""
+                        searchField = if (searchMode) sourceSearchFieldValue(initialSearchQuery) else sourceSearchFieldValue("")
                         if (!searchMode) sourceFilter = null
                     },
                 ) {
@@ -2004,8 +2004,8 @@ private fun SongSourceDialog(
             }
             if (searchMode) {
                 OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    value = searchField,
+                    onValueChange = { searchField = it },
                     placeholder = { Text(stringResource(R.string.download_source_search_hint)) },
                     singleLine = true,
                     modifier = Modifier
@@ -2054,7 +2054,7 @@ private fun SongSourceDialog(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                         )
                     }
-                    searchQuery.length < 2 -> {
+                    searchField.text.length < 2 -> {
                         Text(
                             text = noResultsText,
                             style = MaterialTheme.typography.bodyMedium,

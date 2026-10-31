@@ -29,12 +29,11 @@ private object Api30ProcessExits {
     fun read(context: Context, sinceMs: Long): HistoricalProcessExits {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             ?: return HistoricalProcessExits(emptyList(), unavailable = true)
-        val records = manager.getHistoricalProcessExitReasons(context.packageName, 0, 10)
+        val records = manager.getHistoricalProcessExitReasons(context.packageName, 0, MAX_CRASH_RECORDS)
         val exits = records.asSequence()
             .filter { it.processName == context.packageName && it.timestamp > sinceMs }
             .sortedByDescending { it.timestamp }
             .mapNotNull { info -> kind(info.reason)?.let { it to info } }
-            .take(3)
             .map { (kind, info) ->
                 var trace: CappedText? = null
                 var tombstone: NativeTombstone? = null

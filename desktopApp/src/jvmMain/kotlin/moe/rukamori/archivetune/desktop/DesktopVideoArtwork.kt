@@ -25,6 +25,7 @@ import androidx.compose.ui.window.DialogProperties
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -317,6 +318,11 @@ internal fun DesktopPlayerArtwork(occurrenceId: String?, graph: DesktopSessionGr
         target != null && snapshot?.occurrenceId == target
     var fullscreen by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
+    val windowShown = LocalDesktopWindowShown.current
+    LaunchedEffect(windowShown) {
+        // A hidden or minimized window takes its fullscreen video with it, so the video does not reappear on its own.
+        if (!windowShown) fullscreen = false
+    }
     Box(modifier) {
         DesktopQueueArtwork(occurrenceId, graph, Modifier.fillMaxSize())
         if (showVideo && videoId != null) {
@@ -344,7 +350,8 @@ internal fun DesktopPlayerArtwork(occurrenceId: String?, graph: DesktopSessionGr
             }
         }
     }
-    if (fullscreen && videoId != null) {
+    // Gated on the shown state rather than visible: the fullscreen window covers this one, which reads as occluded.
+    if (fullscreen && videoId != null && windowShown) {
         DesktopVideoFullscreen(videoId, graph, VideoFit.of(saved?.get(VideoAspectRatioKey))) { fullscreen = false }
     }
 }
