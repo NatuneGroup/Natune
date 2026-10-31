@@ -174,10 +174,9 @@ SpatialFlow's player (a second Media3 player, 50–60 s buffering, a 250 ms prog
 
 Liquid glass reads the app-wide backdrop through a throttled layer (`ThrottledLayerBackdrop`,
 32 ms, with a trailing record so the last frame is never stale); blur and refraction need Android 12,
-runtime shaders Android 13, and older devices fall back to the plain surfaces. The About page's
-SukiSU background (`SukisuAboutBackground`) runs its frame and colour loops only while its entry is
-RESUMED, motion is allowed (`LocalAnimationsDisabled`, `LocalAnimationScale` above 0) and the header
-is on screen; otherwise it draws one still frame.
+runtime shaders Android 13, and older devices fall back to the plain surfaces. The About page
+draws no glass or shader background: its header and credit segments are tonal `surfaceContainer` surfaces
+(`AboutTonalSegment`), so it has no frame or colour loop to pause.
 
 ## Data and privacy
 
