@@ -1102,6 +1102,7 @@ class MusicService :
         private set
     lateinit var player: Player
         private set
+    private val pausedPlaybackGate = PausedPlaybackGate()
     private lateinit var castPlaybackRepository: CastPlaybackRepository
     private lateinit var mediaSession: MediaLibrarySession
 
@@ -1972,14 +1973,11 @@ class MusicService :
             }
         }
 
-        // Periodic save exists only to keep the resume *position* roughly current for a process
-        // death; every change to the queue itself already calls saveQueueToDisk from the eight
-        // event handlers that cause one. So this writes the small player-state file only — a
-        // full-queue snapshot would have to map every media item on the main thread, for a queue
-        // that has usually not changed.
+        // Periodic save keeps the resume position roughly current. Queue and paused changes are saved by
+        // their handlers; a full-queue snapshot here would have to map every media item on the main thread.
         scope.launch {
             while (isActive) {
-                delay(PERSISTENT_POSITION_SAVE_INTERVAL)
+                pausedPlaybackGate.awaitPlaybackOrDelay(player.isPlaying, PERSISTENT_POSITION_SAVE_INTERVAL.inWholeMilliseconds)
                 val shouldSave = withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }
                 if (shouldSave && player.mediaItemCount > 0) {
                     savePlayerStateToDisk()
@@ -4433,6 +4431,7 @@ class MusicService :
             // 4. MediaSession + observable player state.
             mediaSession.player = player
             _playerFlow.value = player
+            pausedPlaybackGate.sync(player)
 
             // The rebuilt wrapper starts with playWhenReady=false regardless of what the promoted
             // ExoPlayer was doing, so the intent captured before the rebuild is re-applied here —
@@ -7957,6 +7956,7 @@ class MusicService :
         } else if (currentHistoryMediaId == null && currentMediaId != null) {
             beginHistorySession(currentMediaId)
         }
+        if (pausedPlaybackGate.onEvents(player, events)) scope.launch(SilentHandler) { savePlayerStateToDisk() }
         if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
             playbackStreamRecoveryTracker.onMediaItemChanged(currentMediaId)
             // Reset codec-recovery budget for the new media item.
@@ -10361,7 +10361,7 @@ class MusicService :
                                 }
                             }
                         }
-                        delay(500)
+                        pausedPlaybackGate.awaitPlaybackOrDelay(player.isPlaying, 500L)
                     }
                 } finally {
                     val active = track
