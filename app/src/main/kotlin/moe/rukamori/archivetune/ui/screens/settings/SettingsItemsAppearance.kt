@@ -9,6 +9,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AlbumCanvasEnabledKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
+import moe.rukamori.archivetune.constants.DisableAnimatedArtworkOnMobileDataKey
 import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.DynamicThemeKey
@@ -62,6 +63,7 @@ internal fun appearanceSettingsItem(
             SettingsChild("Thumbnail corner radius", "thumbnail_corner_radius", listOf("thumbnail corner", "corner radius", "rounded thumbnail", "thumbnail shape")),
             SettingsChild("Crop thumbnail to square", "crop_thumbnail_to_square", listOf("crop thumbnail", "square thumbnail", "thumbnail crop")) { SearchResultSwitch(CropThumbnailToSquareKey, false) },
             SettingsChild("Enable canvas in albums page", "album_canvas_enabled", listOf("album canvas", "canvas in album", "album motion artwork", "album animated cover", "album header video")) { SearchResultSwitch(AlbumCanvasEnabledKey, true) },
+            SettingsChild(context.getString(R.string.disable_animated_artwork_on_mobile_data), "disable_animated_artwork_on_mobile_data", listOf("animated artwork", "mobile data", "cellular", "canvas data", "music video", "data saver")) { SearchResultSwitch(DisableAnimatedArtworkOnMobileDataKey, false) },
             SettingsChild("Interface style", "interface_style", listOf("interface style", "design", "material you", "material 3", "expressive", "apple music", "apple music experience", "ios style", "apple tab bar")),
             SettingsChild("Library style", "library_style", listOf("library style", "apple music library", "library layout")),
             SettingsChild("Player design style", "player_design_style", listOf("player design", "player layout", "player style")),

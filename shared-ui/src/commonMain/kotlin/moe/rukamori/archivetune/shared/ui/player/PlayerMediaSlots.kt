@@ -34,6 +34,7 @@ fun PreferenceSnapshot.playerLyricsSettings(
         reduceMotion = reducedMotion || this[DisableAnimationsKey, false],
         depthEffects = depthEffects,
         backgroundVocals = backgroundVocals,
+        textSizeSp = this[LyricsTextSizeKey, LyricsModeProfile.TEXT_SIZE_DEFAULT_SP],
     )
 
 /**

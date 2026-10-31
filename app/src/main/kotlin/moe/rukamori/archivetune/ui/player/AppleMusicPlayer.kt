@@ -126,7 +126,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.navigation.NavController
-import coil3.compose.AsyncImage
 import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
@@ -510,7 +509,6 @@ fun AppleMusicPlayerContent(
             isMusicVideo = mediaMetadata.isMusicVideo,
         )
     val artworkUrl = thumbnailSwapState.displayUrl
-    val artworkRequest = rememberOfflineArtworkImageRequest(artworkUrl)
     val titleActions = rememberPlayerTitleActions(mediaMetadata, navController, state)
     // The inline lyrics renderer for the selected mode — read here (rather than inside the
     // portrait overlay) because the landscape arrangement renders the same panes in its
@@ -844,9 +842,8 @@ fun AppleMusicPlayerContent(
                                 .graphicsLayer(driftGraphicsLayer),
                     )
                 } else {
-                    AsyncImage(
-                        model = artworkRequest ?: artworkUrl,
-                        contentDescription = null,
+                    PlayerCoverImage(
+                        imageUrl = artworkUrl,
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier
@@ -980,7 +977,6 @@ fun AppleMusicPlayerContent(
                             contentAlignment = Alignment.Center,
                         ) {
                             AppleMusicSharpArtwork(
-                                artworkRequest = artworkRequest,
                                 artworkUrl = artworkUrl,
                                 canvasPrimaryUrl = canvasPrimaryUrl,
                                 canvasFallbackUrl = canvasFallbackUrl,
@@ -1130,7 +1126,6 @@ fun AppleMusicPlayerContent(
                             // overlay for details).
                             Box(modifier = Modifier.fillMaxSize().playerSeekDoubleTap()) {
                                 AppleMusicSharpArtwork(
-                                    artworkRequest = artworkRequest,
                                     artworkUrl = artworkUrl,
                                     canvasPrimaryUrl = canvasPrimaryUrl,
                                     canvasFallbackUrl = canvasFallbackUrl,
@@ -1201,7 +1196,6 @@ fun AppleMusicPlayerContent(
                                 // background so the blurred canvas shows through.
                                 Column(modifier = Modifier.fillMaxSize()) {
                                     AppleMusicMiniHeader(
-                                        artworkRequest = artworkRequest,
                                         artworkUrl = artworkUrl,
                                         mediaMetadata = mediaMetadata,
                                         currentSongLiked = currentSongLiked,
@@ -1394,7 +1388,6 @@ fun AppleMusicPlayerContent(
 
 @Composable
 private fun AppleMusicSharpArtwork(
-    artworkRequest: coil3.request.ImageRequest?,
     artworkUrl: String?,
     canvasPrimaryUrl: String?,
     canvasFallbackUrl: String?,
@@ -1556,9 +1549,8 @@ private fun AppleMusicSharpArtwork(
                     modifier = Modifier.matchParentSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    AsyncImage(
-                        model = artworkRequest ?: artworkUrl,
-                        contentDescription = null,
+                    PlayerCoverImage(
+                        imageUrl = artworkUrl,
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier
@@ -1577,9 +1569,8 @@ private fun AppleMusicSharpArtwork(
                 }
             }
         } else {
-            AsyncImage(
-                model = artworkRequest ?: artworkUrl,
-                contentDescription = null,
+            PlayerCoverImage(
+                imageUrl = artworkUrl,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),
             )
@@ -2174,7 +2165,6 @@ private fun AppleMusicMarqueeLine(
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun SharedTransitionScope.AppleMusicMiniHeader(
-    artworkRequest: coil3.request.ImageRequest?,
     artworkUrl: String?,
     mediaMetadata: MediaMetadata,
     currentSongLiked: Boolean,
@@ -2238,9 +2228,8 @@ private fun SharedTransitionScope.AppleMusicMiniHeader(
                             },
                     ),
         ) {
-            AsyncImage(
-                model = artworkRequest ?: artworkUrl,
-                contentDescription = null,
+            PlayerCoverImage(
+                imageUrl = artworkUrl,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().ordinarySleeve(LocalPlayerPresentation.current.hideSleeve),
             )
