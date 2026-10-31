@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
@@ -268,7 +269,7 @@ internal fun PlayerMetadata(c: PlayerRenderContext, centered: Boolean = false, e
                 fontFamily = c.state.spatialFont.takeIf { c.preferences.style.name == "SPATIALFLOW" })
         }
         TextButton(onClick = { c.actions.onAction(PlayerAction.ARTIST) }) {
-            Text(c.state.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            MarqueeText(c.state.artist, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }

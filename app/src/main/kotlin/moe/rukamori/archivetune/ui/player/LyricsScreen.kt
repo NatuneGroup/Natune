@@ -148,6 +148,7 @@ import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.LocalMenuState
+import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.PlayerSliderTrack
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import androidx.compose.ui.layout.boundsInRoot
@@ -1293,19 +1294,15 @@ private fun AppleMusicTrackHeader(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(
+            MarqueeText(
                 text = mediaMetadata.title,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = foregroundColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            Text(
+            MarqueeText(
                 text = artistText,
                 style = MaterialTheme.typography.bodyLarge,
                 color = foregroundColor.copy(alpha = 0.72f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
 

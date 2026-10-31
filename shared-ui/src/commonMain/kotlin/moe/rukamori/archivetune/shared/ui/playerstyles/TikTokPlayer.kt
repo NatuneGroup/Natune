@@ -8,7 +8,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,8 +16,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.player.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -91,15 +90,13 @@ internal fun TikTokPlayer(c: PlayerRenderContext) {
             enter = fadeIn(), exit = fadeOut(),
         ) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
+                MarqueeText(
                     c.state.title.ifBlank { stringResource(Res.string.m5_no_track) },
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { c.actions.onAction(PlayerAction.TITLE) }) },
                 )
-                Text(
+                MarqueeText(
                     c.state.artist,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { c.actions.onAction(PlayerAction.ARTIST) }) },
                 )

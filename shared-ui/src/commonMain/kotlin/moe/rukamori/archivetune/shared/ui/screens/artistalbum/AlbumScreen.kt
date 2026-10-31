@@ -60,6 +60,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.ui.glass.BackdropScene
 import moe.rukamori.archivetune.shared.ui.glass.LocalOpticalPolicy
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.stringResource
@@ -448,28 +449,24 @@ private fun AlbumHero(
                 overflow = TextOverflow.Ellipsis,
             )
             artists.forEach { artist ->
-                Text(
+                MarqueeText(
                     text = artist.title,
                     style = MaterialTheme.typography.titleMedium,
                     color = heroContentColor,
                     fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    centered = true,
                     modifier = Modifier
                         .padding(top = 8.dp)
                         .clickable { onArtist(artist.ref) },
                 )
             }
             if (metadata.isNotEmpty()) {
-                Text(
+                MarqueeText(
                     text = metadata,
                     style = MaterialTheme.typography.labelMedium,
                     color = heroContentColor.copy(alpha = 0.62f),
                     fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    centered = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 12.dp),

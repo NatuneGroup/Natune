@@ -62,6 +62,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.ui.glass.LiquidGlassRole
 import moe.rukamori.archivetune.shared.ui.glass.LocalOpticalPolicy
 import moe.rukamori.archivetune.shared.ui.glass.liquidGlassMaterial
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.stringResource
@@ -100,13 +101,11 @@ internal fun ArtistAlbumTopChrome(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ArtistAlbumIcon(symbol = ArtistAlbumSymbol.BACK, tint = contentColor, description = backDescription)
-            Text(
+            MarqueeText(
                 text = title,
                 modifier = Modifier.alpha(titleAlpha).widthIn(max = 220.dp),
                 style = MaterialTheme.typography.titleMedium,
                 color = contentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
         IconButton(
@@ -196,14 +195,12 @@ internal fun ArtistAlbumSectionTitle(
         modifier = if (onClick != null) base.clickable(onClick = onClick) else base,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
+        MarqueeText(
             text = title,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
         if (onClick != null) {
             ArtistAlbumIcon(
@@ -238,7 +235,7 @@ internal fun ArtistAlbumTrackRow(
         headlineContent = {
             Text(
                 text = display.title,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 color = if (active) scheme.primary else scheme.onSurface,
             )

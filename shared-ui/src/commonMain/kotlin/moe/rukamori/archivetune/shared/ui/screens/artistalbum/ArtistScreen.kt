@@ -64,6 +64,7 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
 import moe.rukamori.archivetune.shared.ui.glass.BackdropScene
 import moe.rukamori.archivetune.shared.ui.glass.LocalOpticalPolicy
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -539,28 +540,24 @@ private fun ArtistHero(
                 overflow = TextOverflow.Ellipsis,
             )
             if (audience.isNotEmpty()) {
-                Text(
+                MarqueeText(
                     text = audience,
                     style = MaterialTheme.typography.labelMedium,
                     color = heroContentColor.copy(alpha = 0.62f),
                     fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    centered = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 16.dp),
                 )
             }
             if (catalog.isNotEmpty()) {
-                Text(
+                MarqueeText(
                     text = catalog,
                     style = MaterialTheme.typography.labelMedium,
                     color = heroContentColor.copy(alpha = 0.62f),
                     fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    centered = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = if (audience.isEmpty()) 16.dp else 4.dp),
@@ -695,11 +692,9 @@ internal fun ArtistFlatTopBar(
     }
     TopAppBar(
         title = {
-            Text(
+            MarqueeText(
                 text = title,
                 modifier = Modifier.alpha(titleAlpha),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         },
         modifier = modifier,
