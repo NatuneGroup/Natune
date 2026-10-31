@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
 import moe.rukamori.archivetune.shared.ui.marquee.SettingsMarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import kotlin.math.roundToInt
@@ -32,7 +33,7 @@ fun SettingsPage(
     controller: SettingsController,
     scrollTo: String? = null,
     resumed: Boolean = true,
-    motionEnabled: Boolean = true,
+    motionEnabled: Boolean = motionAllowed(),
     onFailure: () -> Unit,
     modifier: Modifier = Modifier,
     onCommitted: suspend (SettingsChange) -> Unit = {},
