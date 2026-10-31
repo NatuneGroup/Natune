@@ -10,7 +10,6 @@ import moe.rukamori.archivetune.desktop.integration.DesktopSingleInstance
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.integration.DesktopProtocolRegistration
 import java.nio.file.Path
-import kotlinx.coroutines.runBlocking
 
 fun main(args: Array<String>) {
     // A restart after a staged restore starts this process while the old one is still leaving the instance lock.
@@ -34,7 +33,8 @@ fun main(args: Array<String>) {
         } catch (error: LinkageError) { System.err.println("URI registration: ${error.javaClass.simpleName}") }
     }
     // The session graph opens only after this process holds the instance lock, so a second launch never touches the data.
-    val graph = openDesktopSession(instanceDirectory)
+    // The loader starts that open from the window's composition, so the window appears before the open finishes.
+    val sessions = DesktopSessionLoader(instanceDirectory)
     DesktopMemoryHygiene.capRendererCaches()
     // A window close hides to the tray only when the mounted window allows it; any other close takes the explicit exit.
     val closeRequests = DesktopCloseRequests()
@@ -56,17 +56,13 @@ fun main(args: Array<String>) {
                 DesktopLaunchIntake.attachWindow(window)
                 onDispose { DesktopLaunchIntake.detachWindow(window) }
             }
-            val session = graph
-            if (session != null) {
-                DesktopMountedRoot(window, session, closeRequests) { exitApplication() }
-            } else {
-                DesktopUnavailableRoot()
-            }
+            DesktopSessionWindowRoot(window, sessions, closeRequests) { exitApplication() }
         }
     } } finally {
         windowState?.let { DesktopWindowBounds.save(instanceDirectory, it) }
         // Window services leave with the window composition; the graph closes after the window has stopped asking for work.
-        graph?.let { runBlocking { it.close() } }
+        // The wait is bounded, so an open still in flight cannot hold the process at exit.
+        sessions.close()
         instance.close()
     }
 }
