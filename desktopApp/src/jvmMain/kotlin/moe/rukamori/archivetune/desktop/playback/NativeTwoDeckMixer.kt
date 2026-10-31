@@ -101,7 +101,7 @@ internal class NativeTwoDeckMixer private constructor(
     }
 
     companion object {
-        /** The most equalizer sections the mixer holds. A host with more audible bands must refuse them. */
+        /** The most equalizer sections the mixer holds. A host with more bands must refuse them. */
         const val MAX_BANDS: Int = 16
 
         const val DEFAULT_SAMPLE_RATE_HZ: Int = 48_000
@@ -131,17 +131,18 @@ internal class NativeTwoDeckMixer private constructor(
 private const val COEFFICIENTS_PER_BAND = 5
 
 /**
- * Packs the audible bands as biquad sections in the layout the mixer takes: b0, b1, b2, a1, a2 per band.
- * A 0 dB band is left out, as [moe.rukamori.archivetune.shared.domain.dsp.eq.PortableEqualizer] does, so a
- * flat equalizer adds no section and leaves the stream untouched.
+ * Packs the bands as biquad sections in the layout the mixer takes: b0, b1, b2, a1, a2 per band. A flat equalizer,
+ * with every band at 0 dB, packs nothing and leaves the stream untouched, as the portable equalizer bypasses it.
+ * Otherwise every band keeps its section, 0 dB included: a 0 dB design is the identity, and the mixer resets its
+ * filter history whenever the section count changes, so dragging a band through 0 dB must not change that count.
  */
 internal fun equalizerCoefficients(sampleRateHz: Int, bands: List<EqualizerBand>): DoubleArray {
-    val audible = bands.filter { it.gainDb != 0.0 }
-    require(audible.size <= NativeTwoDeckMixer.MAX_BANDS) {
-        "the equalizer has ${audible.size} audible bands; the mixer holds ${NativeTwoDeckMixer.MAX_BANDS}"
+    require(bands.size <= NativeTwoDeckMixer.MAX_BANDS) {
+        "the equalizer has ${bands.size} bands; the mixer holds ${NativeTwoDeckMixer.MAX_BANDS}"
     }
-    val packed = DoubleArray(audible.size * COEFFICIENTS_PER_BAND)
-    audible.forEachIndexed { index, band ->
+    if (bands.all { it.gainDb == 0.0 }) return DoubleArray(0)
+    val packed = DoubleArray(bands.size * COEFFICIENTS_PER_BAND)
+    bands.forEachIndexed { index, band ->
         val section = designBand(sampleRateHz, band)
         val offset = index * COEFFICIENTS_PER_BAND
         packed[offset] = section.b0

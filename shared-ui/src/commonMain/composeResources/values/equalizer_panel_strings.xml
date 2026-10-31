@@ -1,0 +1,4 @@
+<resources>
+    <string name="equalizer_panel_title">Equalizer</string>
+    <string name="equalizer_panel_reset">Reset to flat</string>
+</resources>
