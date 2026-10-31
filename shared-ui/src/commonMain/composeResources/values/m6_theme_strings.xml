@@ -53,4 +53,14 @@
     <string name="m6_hide_cached">Hide cached card</string>
     <string name="m6_hide_local">Hide local files card</string>
     <string name="m6_hide_top50">Hide Top 50 card</string>
+    <string name="m6_theme_palette_style">Palette style</string>
+    <string name="m6_palette_style_desc">Shapes the colors built from the saved palette color. Applies while dynamic theme is off.</string>
+    <string name="m6_palette_style_automatic">Automatic</string>
+    <string name="m6_palette_style_tonal_spot">Tonal spot</string>
+    <string name="m6_palette_style_vibrant">Vibrant</string>
+    <string name="m6_palette_style_expressive">Expressive</string>
+    <string name="m6_palette_style_rainbow">Rainbow</string>
+    <string name="m6_palette_style_fruit_salad">Fruit salad</string>
+    <string name="m6_palette_style_monochrome">Monochrome</string>
+    <string name="m6_palette_style_neutral">Neutral</string>
 </resources>

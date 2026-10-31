@@ -77,7 +77,7 @@ private val crossPageOwners = buildMap {
     own("tidal", "sources", "tidal")
     own("appearance_theme", "appearance",
         "interface_style", "dynamic_theme", "random_theme_on_startup", "dark_theme", "pure_black", "color_palette", "color_source",
-        "palette_picker", "theme_creator", "app_icon", "disable_animations", "splash_overlay_enabled", "hide_status_bar",
+        "palette_picker", "theme_palette_style", "theme_creator", "app_icon", "disable_animations", "splash_overlay_enabled", "hide_status_bar",
         "ui_scale", "blur_intensity", "disable_blur", "backdrop_blur", "backdrop_blur_amount", "font_preference",
         "use_system_font", "custom_font", "liquid_glass_effects", "native_ios_interface", "wallpaper_permission",
         "apple_music_headers", "apple_music_menus", "apple_music_search_bar", "apple_music_palette")
