@@ -47,4 +47,8 @@ ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET =
 // The opt-in listener presence origin reaches the app through Info.plist the same way. A blank value sends nothing.
 // xcconfig treats // as a comment, so write the scheme as https:/$()/host when setting it in an xcconfig file.
 ARCHIVETUNE_LISTENER_PRESENCE_URL =
+// The Last.fm application key pair reaches the app through Info.plist the same way. A blank pair keeps Last.fm sign-in
+// not configured while Libre.fm and custom endpoints, or a user-entered key pair, keep working.
+ARCHIVETUNE_LASTFM_API_KEY =
+ARCHIVETUNE_LASTFM_API_SECRET =
 #include? "Credentials.xcconfig"

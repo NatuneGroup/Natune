@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCrossfadeHandoff
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherAvatar
+import moe.rukamori.archivetune.shared.data.platform.ios.IosNetworkOwner
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
@@ -102,6 +103,8 @@ internal class IosSessionGraph private constructor(
     val accountLifecycle: ProviderAccountLifecycle,
     val tidalAuth: TidalAccountAuth,
     val http: HttpClient,
+    /** The proxy route this process's Darwin session was built with; it cannot change while the session lives. */
+    val network: IosNetworkOwner,
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
     val youtubeTransport: IosYouTubeBrowseTransport,
@@ -121,6 +124,8 @@ internal class IosSessionGraph private constructor(
     val listenTogether: IosListenTogetherOwner,
     /** The YouTube Music uploads owner: picker transfers over its own client, closed with the graph. */
     val uploads: IosYouTubeUploads,
+    /** The Last.fm, Libre.fm and custom-endpoint scrobbler over the one player and queue, closed with the graph. */
+    val lastFm: IosLastFm,
     private val owner: PortableQueueOwner,
     private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
@@ -212,6 +217,7 @@ internal class IosSessionGraph private constructor(
      */
     suspend fun close() = withContext(NonCancellable) {
         playbackPort.cancelNext()
+        lastFm.close()
         listenTogether.close()
         uploads.close()
         listenDriver.close()
@@ -251,9 +257,13 @@ internal class IosSessionGraph private constructor(
                 scope.cancel()
                 throw failure
             }
-            val http = HttpClient(Darwin)
+            // The Darwin engine reads its proxy when it creates the session, so the saved route is decided before
+            // the client exists and stays pinned for this process.
+            val network = IosNetworkOwner({ settings.snapshots.value }, report)
+            val http = HttpClient(Darwin) { engine { network.configure(this) } }
+            report(network.describe())
             return try {
-                assemble(host, scope, settings, accounts, database, http, report)
+                assemble(host, scope, settings, accounts, database, http, network, report)
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
                     http.close()
@@ -271,6 +281,7 @@ internal class IosSessionGraph private constructor(
             accounts: VaultProviderAccountStore,
             database: PortableStateDatabase,
             http: HttpClient,
+            network: IosNetworkOwner,
             report: (String) -> Unit,
         ): IosSessionGraph {
             val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
@@ -355,6 +366,16 @@ internal class IosSessionGraph private constructor(
             } catch (failure: Exception) {
                 report("saved queue was not restored: ${failure::class.simpleName}")
             }
+            // The scrobbler sits on the one player and queue, so a like written below is mirrored to Last.fm by the
+            // same owner that queues the scrobbles.
+            val lastFm = IosLastFm(
+                scope = scope,
+                http = http,
+                settings = vault,
+                player = player,
+                queue = queue.state,
+                report = report,
+            )
             val listenDriver = ListenHistoryDriver(
                 scope = scope,
                 player = player,
@@ -401,6 +422,15 @@ internal class IosSessionGraph private constructor(
                 nowMs = ::iosNowMillis,
                 offsetMsAt = ::iosOffsetMsAt,
                 report = report,
+                onLikeWritten = { ref, liked ->
+                    try {
+                        lastFm.mirrorLove(library.item(ref), liked)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        report("Last.fm love skipped: ${failure::class.simpleName}")
+                    }
+                },
             )
             val pageOwners = LibraryPageOwners(
                 content = libraryContent,
@@ -458,7 +488,7 @@ internal class IosSessionGraph private constructor(
                     report = report,
                 ),
             )
-            val uploads = IosYouTubeUploads(scope, vault, queue, report)
+            val uploads = IosYouTubeUploads(scope, vault, queue, report) { network.configure(this) }
             val handoffHold = scope.launch {
                 listenTogether.client.roomState.map { it != null }.distinctUntilChanged().collect { handoff.hold(it) }
             }
@@ -469,6 +499,7 @@ internal class IosSessionGraph private constructor(
                 accountLifecycle = accountLifecycle,
                 tidalAuth = tidalAuth,
                 http = http,
+                network = network,
                 player = player,
                 queue = queue,
                 library = library,
@@ -484,6 +515,7 @@ internal class IosSessionGraph private constructor(
                 artworkLoader = IosArtworkLoader(http),
                 listenTogether = listenTogether,
                 uploads = uploads,
+                lastFm = lastFm,
                 owner = owner,
                 playbackPort = host.playbackPort,
                 database = database,
@@ -494,6 +526,7 @@ internal class IosSessionGraph private constructor(
             )
             lyrics.start()
             playbackPool.start()
+            lastFm.start()
             listenTogether.start()
             return graph
         }

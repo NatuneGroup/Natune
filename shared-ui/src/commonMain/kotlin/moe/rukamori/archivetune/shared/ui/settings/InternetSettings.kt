@@ -25,6 +25,8 @@ fun InternetSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    /** False on a host whose HTTP stack cannot change the proxy of a live session, so rotation is never offered. */
+    rotationSupported: Boolean = true,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -36,7 +38,7 @@ fun InternetSettings(
             action == InternetAction.ROTATION_REFRESH && !preferences[IpRotationEnabledKey, false]) action = null
     }
     SettingsPage(internetSettingsRows(preferences, !rotating, { action = InternetAction.PROXY },
-        { action = InternetAction.ROTATION_REFRESH }),
+        { action = InternetAction.ROTATION_REFRESH }, rotationSupported),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { change ->
             if (IpRotationEnabledKey in change.changedKeys) {
@@ -87,7 +89,7 @@ fun InternetSettings(
                     refreshed != null -> Text(stringResource(Res.string.m6_rotation_count, refreshed!!))
                     else -> CircularProgressIndicator()
                 }
-                if (preferences[IpRotationEnabledKey, false])
+                if (rotationSupported && preferences[IpRotationEnabledKey, false])
                     Text(stringResource(Res.string.m6_rotation_count, activeRotationCount))
             } },
             confirmButton = { TextButton(onClick = { action = null }) { Text(stringResource(Res.string.m6_done)) } },
@@ -100,6 +102,7 @@ fun internetSettingsRows(
     rotationIdle: Boolean,
     testProxy: () -> Unit,
     refreshRotation: () -> Unit,
+    rotationSupported: Boolean = true,
 ): List<SettingsRow> = buildList {
     add(SettingsRow.Choice("yt_music_region", Res.string.m6_yt_region, YouTubeMusicRegionKey, "SYSTEM_DEFAULT",
         youtubeRegionOptions(), write = { setYouTubeMusicRegion(it) }))
@@ -114,7 +117,8 @@ fun internetSettingsRows(
                 valid = { it.startsWith("https://") && validLyricsEndpoint(it) }))
     }
     add(SettingsRow.Toggle("proxy_settings", Res.string.m6_proxy_enable, ProxyEnabledKey, false,
-        description = Res.string.m6_proxy_rotation_precedence.takeIf { preferences[IpRotationEnabledKey, false] }))
+        description = Res.string.m6_proxy_rotation_precedence
+            .takeIf { rotationSupported && preferences[IpRotationEnabledKey, false] }))
     if (preferences[ProxyEnabledKey, false]) {
         add(SettingsRow.Choice("proxy_type", Res.string.m6_proxy_type, ProxyTypeKey, "HTTP", listOf(
             SettingsRow.Option("HTTP", Res.string.m6_proxy_http), SettingsRow.Option("SOCKS", Res.string.m6_proxy_socks))))
@@ -126,9 +130,11 @@ fun internetSettingsRows(
         add(SettingsRow.Toggle("stream_bypass_proxy", Res.string.m6_proxy_bypass, StreamBypassProxyKey, false))
         add(SettingsRow.Action("test_proxy", Res.string.m6_test_proxy, testProxy))
     }
-    add(SettingsRow.Toggle("ip_rotation", Res.string.m6_ip_rotation, IpRotationEnabledKey, false, enabled = rotationIdle))
-    if (preferences[IpRotationEnabledKey, false])
-        add(SettingsRow.Action("download_speed_limit", Res.string.m6_refresh_rotation, refreshRotation, enabled = rotationIdle))
+    if (rotationSupported) {
+        add(SettingsRow.Toggle("ip_rotation", Res.string.m6_ip_rotation, IpRotationEnabledKey, false, enabled = rotationIdle))
+        if (preferences[IpRotationEnabledKey, false])
+            add(SettingsRow.Action("download_speed_limit", Res.string.m6_refresh_rotation, refreshRotation, enabled = rotationIdle))
+    }
 }
 
 private fun youtubeRegionOptions(): List<SettingsRow.Option> = listOf(
