@@ -860,7 +860,7 @@ dependencies {
 androidComponents {
     onVariants(selector().all()) { variant ->
         // The automotive manifest removes MainActivity, so the generated icon-pack manifest —
-        // which launches MainActivity — would point at a component that is not in the APK.
+        // whose startup gate opens MainActivity — would lead to a component not in the APK.
         // Match the flavour, not the name.
         if (variant.productFlavors.any { (_, flavor) -> flavor == "automotive" }) return@onVariants
         val capitalizedVariantName =
@@ -872,7 +872,7 @@ androidComponents {
                 metadataFile.set(rootProject.layout.projectDirectory.file("IconPack/metadata.json"))
                 svgDirectory.set(rootProject.layout.projectDirectory.dir("IconPack/svg"))
                 applicationId.set(variant.applicationId)
-                targetActivityClassName.set("moe.rukamori.archivetune.MainActivity")
+                targetActivityClassName.set("moe.rukamori.archivetune.startup.StartupRecoveryActivity")
                 resourceOutputDirectory.set(
                     layout.buildDirectory.dir("generated/iconPack/${variant.name}/res"),
                 )

@@ -6,6 +6,7 @@ package moe.rukamori.archivetune.shared.domain.settings
  * normalization, blur materials and style-specific controls are retained.
  */
 fun PreferenceEditor.normalizeSettingsConflicts() {
+    migrateHistoryDuration()
     if (this[UseSystemFontKey] != null) {
         setFontPreference(RestartScopedSettings.resolveFontPreference(this[FontPreferenceKey], this[UseSystemFontKey]))
     }

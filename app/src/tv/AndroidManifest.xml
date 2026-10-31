@@ -17,7 +17,7 @@
     <application
         android:banner="@drawable/tv_banner">
         <activity
-            android:name=".MainActivity"
+            android:name=".startup.StartupRecoveryActivity"
             android:banner="@drawable/tv_banner">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

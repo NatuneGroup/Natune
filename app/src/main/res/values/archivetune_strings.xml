@@ -1,5 +1,35 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="startup_report_title">Previous launch report</string>
+    <string name="startup_safe_mode_title">Safe mode</string>
+    <string name="startup_recovery_loading">Checking the previous launch…</string>
+    <string name="startup_continue_normally">Continue normally</string>
+    <string name="startup_recovery_privacy">This recovery screen does not erase settings or library data. Review this report before copying or sharing it; diagnostics may contain private information. This recovery report is not uploaded automatically.</string>
+    <string name="startup_recovery_action_failed">Couldn’t complete this action. The report remains on this device; try Copy or reopen the app.</string>
+    <string name="startup_report_unavailable">The previous launch report could not be read. Safe mode has not loaded accounts, settings, the library, or playback. Continue normally retries startup; this screen does not reset app data.</string>
+    <string name="startup_report_build">Current build: %1$s (%2$s)</string>
+    <string name="startup_report_device">Device: %1$s %2$s\nAndroid: %3$s (API %4$s)\nABIs: %5$s</string>
+    <string name="startup_report_attempt">Recorded process start: %1$s at %2$s (PID %3$s)</string>
+    <string name="startup_incomplete_explanation">The previous process ended before startup was marked healthy. A crash, force-stop, restart, or memory pressure can cause this. Safe mode has skipped normal initialization. Copy or share the report, then use Continue normally to retry. This screen does not reset app data.</string>
+    <string name="startup_previous_exit_explanation">Android or the local crash recorder retained a previous process failure. Normal initialization is paused while you review this report. Continue normally opens the app; this screen does not reset app data.</string>
+    <string name="startup_report_java">Saved Java exception: %1$s\nThread: %2$s</string>
+    <string name="startup_report_no_java">No saved Java stack trace. Native crashes and deaths before application attachment may not run a Java exception handler.</string>
+    <string name="startup_report_exit">Android exit: %1$s\nReason: %2$s\nPID: %3$s; status or signal: %4$s</string>
+    <string name="startup_low_memory_note">Android reports memory pressure, not a confirmed application exception.</string>
+    <string name="startup_report_truncated">Diagnostic size limit reached, or the trace is incomplete. Some details are omitted.</string>
+    <string name="startup_trace_unavailable">Android did not retain a readable trace for this exit. Native tombstones require Android 12 or newer.</string>
+    <string name="startup_history_unavailable">Android exit history is unavailable (requires Android 11 or newer and device support).</string>
+    <string name="startup_history_empty">No matching Android exit record was retained.</string>
+    <string name="startup_exit_java">Unhandled Java exception</string>
+    <string name="startup_exit_native">Native crash</string>
+    <string name="startup_exit_anr">App not responding (ANR)</string>
+    <string name="startup_exit_initialization">Initialization failure</string>
+    <string name="startup_exit_low_memory">Low memory</string>
+    <string name="startup_native_summary">Native tombstone summary\nBuild fingerprint: %1$s\nTimestamp: %2$s\nPID: %3$s; crashing TID: %4$s</string>
+    <string name="startup_native_signal">Signal: %1$s (%2$s); code: %3$s (%4$s)</string>
+    <string name="startup_native_abort">Abort message: %1$s</string>
+    <string name="startup_native_thread">Thread %1$s: %2$s</string>
+    <string name="startup_native_frame">#%1$s pc %2$s %3$s (%4$s + %5$s) [Build ID: %6$s]</string>
     <string name="player_native_controls_description">This layout keeps its native transport and seek controls.</string>
     <string name="player_setting_not_used">Not used by the %1$s player</string>
     <string name="player_volume_bar_existing_layouts">Available in Immersive, V8, BitChord, Apple Music and Flamingo layouts</string>
