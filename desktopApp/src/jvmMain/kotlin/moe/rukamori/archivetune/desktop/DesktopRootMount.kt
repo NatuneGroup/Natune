@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -184,14 +186,22 @@ internal fun DesktopMountedRoot(window: Window, graph: DesktopSessionGraph, clos
         desktopHostBindings(graph, backRequests, recognition, feedback, quit)
     }
     val activity by services.windowActivity.activity.collectAsState()
-    ArchiveTuneRoot(
-        host = host,
-        // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
-        visible = activity.visible && !activity.minimized && !activity.occluded,
-        resumed = activity.resumed,
-        opticalCapabilities = DesktopOpticalCapabilities,
-    )
+    CompositionLocalProvider(LocalDesktopWindowShown provides (activity.visible && !activity.minimized)) {
+        ArchiveTuneRoot(
+            host = host,
+            // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
+            visible = activity.visible && !activity.minimized && !activity.occluded,
+            resumed = activity.resumed,
+            opticalCapabilities = DesktopOpticalCapabilities,
+        )
+    }
 }
+
+/**
+ * Whether this window is showing and not minimized. Occlusion is left out on purpose: a fullscreen video is its own
+ * window and covers this one, so an occlusion gate would close the very video that caused it.
+ */
+internal val LocalDesktopWindowShown = compositionLocalOf { false }
 
 /**
  * The window's close request. The window hides to the tray only while its services are attached, the observed preference

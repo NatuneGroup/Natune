@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.media3.common.C
+import tf.monochrome.android.audio.dsp.oxford.CompressorEffect
 import tf.monochrome.android.audio.usb.BypassDiagnostics
 
 object EngineRuntime {
@@ -71,8 +72,16 @@ object EngineRuntime {
     var revision by mutableStateOf(0)
         private set
 
+    /** The compressor on the Tryptify mix bus, published once that bus is built. Null until then. */
+    var compressorEffectState by mutableStateOf<CompressorEffect?>(null)
+        private set
+
     fun revisionBump() {
         revision++
+    }
+
+    fun publishCompressorEffect(effect: CompressorEffect) {
+        compressorEffectState = effect
     }
 
     fun publishActiveEngine(engine: AudioEngineRouterProcessor.Engine) {
