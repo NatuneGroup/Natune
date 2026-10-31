@@ -99,13 +99,20 @@ fun PreferenceSnapshot.selectedNavigationBarStyle(): NavigationBarStyle =
         NavigationBarStyle.APPLE_MUSIC
     } else this[NavigationBarStyleKey].toEnum(NavigationBarStyle.DEFAULT)
 
-/** An indicator, never a rendering gate: one Apple Music option is a mixed presentation, not the whole experience. */
+/**
+ * An indicator, never a rendering gate: one Apple Music option is a mixed presentation, not the whole experience.
+ * The menu look only counts once chosen: its Apple Music default belongs to the default presentation, so a fresh
+ * install still reads as the default style instead of Custom.
+ */
 fun PreferenceSnapshot.interfaceStyle(): InterfaceStyle {
-    val surfaces = listOf(
+    val chosenMenus = this[AppleMusicMenusKey]
+        ?: this[PlayerMenuStyleKey]?.let { playerMenuStyle() == PlayerMenuStyle.APPLE_MUSIC }
+        ?: (!this[AppleMusicSettingsMigratedKey, false] && this[AppleMusicExperienceKey, false]).takeIf { it }
+    val surfaces = listOfNotNull(
         selectedPlayerDesignStyle() == PlayerDesignStyle.APPLE_MUSIC,
         libraryStyle() == LibraryStyle.APPLE_MUSIC,
         selectedNavigationBarStyle() == NavigationBarStyle.APPLE_MUSIC,
-        appleMusicHeaders(), appleMusicMenus(), appleMusicSearchBar(), appleMusicPalette(),
+        appleMusicHeaders(), chosenMenus, appleMusicSearchBar(), appleMusicPalette(),
     )
     return when {
         surfaces.all { it } -> InterfaceStyle.APPLE_MUSIC
