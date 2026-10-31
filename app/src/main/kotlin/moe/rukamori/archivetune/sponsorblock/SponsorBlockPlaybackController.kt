@@ -17,7 +17,9 @@ import moe.rukamori.archivetune.utils.isLocalMediaId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,6 +50,9 @@ class SponsorBlockPlaybackController
         @Volatile private var segments: List<SponsorBlockSegment> = emptyList()
         private val skippedEndsMs = mutableSetOf<Long>()
 
+        // True only while the attached player is playing over known segments; the watcher sleeps otherwise.
+        private val active = MutableStateFlow(false)
+
         private val listener =
             object : Player.Listener {
                 override fun onMediaItemTransition(
@@ -55,6 +60,10 @@ class SponsorBlockPlaybackController
                     reason: Int,
                 ) {
                     reload(mediaItem)
+                }
+
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    publishActive()
                 }
             }
 
@@ -71,14 +80,16 @@ class SponsorBlockPlaybackController
             watcher =
                 scope.launch {
                     while (isActive) {
-                        val current = this@SponsorBlockPlaybackController.player
-                        if (current == null) {
-                            delay(IDLE_POLL_MS)
+                        // Paused, idle or with SponsorBlock off there is nothing to watch: wait for a change
+                        // rather than waking every interval.
+                        if (!active.value) {
+                            active.first { it }
                             continue
                         }
-                        val playing = withContext(Dispatchers.Main) { current.isPlaying }
-                        if (!playing || segments.isEmpty()) {
-                            delay(IDLE_POLL_MS)
+                        // A wake signal read on this scope can race a detach; sleep rather than end the watcher.
+                        val current = this@SponsorBlockPlaybackController.player
+                        if (current == null) {
+                            delay(ACTIVE_POLL_MS)
                             continue
                         }
                         withContext(Dispatchers.Main) { skipIfInsideSegment(current) }
@@ -100,6 +111,12 @@ class SponsorBlockPlaybackController
             scope = null
             segments = emptyList()
             skippedEndsMs.clear()
+            publishActive()
+        }
+
+        // Keeps the watcher's wake signal in step with the attached player and the loaded segments.
+        private fun publishActive() {
+            active.value = player?.isPlaying == true && segments.isNotEmpty()
         }
 
         private fun skipIfInsideSegment(player: Player) {
@@ -122,6 +139,7 @@ class SponsorBlockPlaybackController
             val request = ++generation
             segments = emptyList()
             skippedEndsMs.clear()
+            publishActive()
             val id = mediaItem?.mediaId ?: return
             // Local files are never looked up. Podcast episodes are looked up only when the user opted in,
             // which the repository checks, so the controller never has to read preferences itself.
@@ -135,6 +153,7 @@ class SponsorBlockPlaybackController
                     // Both a settings edit and a player promotion invalidate a late lookup for the same id.
                     if (generation == request && player === attached && player?.currentMediaItem?.mediaId == id) {
                         segments = loaded
+                        publishActive()
                     }
                 }
             }
@@ -143,7 +162,6 @@ class SponsorBlockPlaybackController
         private companion object {
             const val TAG = "SponsorBlock"
             const val ACTIVE_POLL_MS = 200L
-            const val IDLE_POLL_MS = 750L
 
             /** Too close to the end to be worth a seek, and close enough that seeking may overshoot. */
             const val SKIP_TAIL_MS = 300L

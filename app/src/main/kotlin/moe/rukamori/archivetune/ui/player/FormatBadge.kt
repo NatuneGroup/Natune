@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 
 // ── The codec / quality badge (adapted to ArchiveTune's FormatEntity) ─────────
 
@@ -115,8 +116,10 @@ private fun LosslessLabel(text: String, animated: Boolean, modifier: Modifier = 
 @Composable
 private fun ShimmerText(text: String) {
     var widthPx by remember { mutableIntStateOf(0) }
-    val transition = rememberInfiniteTransition(label = "lossless-shimmer")
-    val progress by transition.animateFloat(
+    // The sweep runs only while the app is STARTED; in the background the word holds its plain base color.
+    val shimmerStarted by rememberLifecycleStarted()
+    val transition = if (shimmerStarted) rememberInfiniteTransition(label = "lossless-shimmer") else null
+    val progress = transition?.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -124,7 +127,7 @@ private fun ShimmerText(text: String) {
             repeatMode = RepeatMode.Restart,
         ),
         label = "lossless-shimmer-progress",
-    )
+    )?.value ?: 0f
     val baseColor = Color.White.copy(alpha = 0.68f)
     val brush = if (widthPx <= 0) {
         Brush.linearGradient(listOf(baseColor, baseColor))

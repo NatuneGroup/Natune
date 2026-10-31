@@ -232,6 +232,7 @@ import moe.rukamori.archivetune.ui.theme.PlayerPaletteCache
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.getNextFallbackUrl
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.utils.defaultStorefront
 import moe.rukamori.archivetune.utils.ImageBlurUtils
@@ -797,8 +798,10 @@ fun BottomSheetPlayer(
         mutableLongStateOf(0L)
     }
 
-    LaunchedEffect(sleepTimerEnabled) {
-        if (sleepTimerEnabled) {
+    // The 1 s tick only refreshes on-screen labels, so it waits for a STARTED app; the first pass on resume is immediate.
+    val sleepCountdownStarted by rememberLifecycleStarted()
+    LaunchedEffect(sleepTimerEnabled, sleepCountdownStarted) {
+        if (sleepTimerEnabled && sleepCountdownStarted) {
             while (isActive) {
                 sleepTimerTimeLeft =
                     if (playerConnection.service.sleepTimer.pauseWhenSongEnd) {

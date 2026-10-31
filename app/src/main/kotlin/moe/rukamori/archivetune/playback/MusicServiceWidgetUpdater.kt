@@ -10,6 +10,7 @@ package moe.rukamori.archivetune.playback
 
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.PowerManager
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
@@ -81,13 +82,16 @@ internal class MusicServiceWidgetUpdater(
 
                     while (isActive && player.isPlaying) {
                         delay(WIDGET_PROGRESS_UPDATE_INTERVAL_MILLIS)
-                        if (player.isPlaying) {
+                        // Widgets are not visible with the screen off, so those ticks skip the Glance write.
+                        if (player.isPlaying && isScreenOn()) {
                             updateProgress(installedTargets, player.playbackProgress())
                         }
                     }
                 }
         }
     }
+
+    private fun isScreenOn(): Boolean = service.getSystemService(PowerManager::class.java)?.isInteractive == true
 
     private suspend fun pushState() {
         val installedTargets = findInstalledTargets(playbackWidgets)

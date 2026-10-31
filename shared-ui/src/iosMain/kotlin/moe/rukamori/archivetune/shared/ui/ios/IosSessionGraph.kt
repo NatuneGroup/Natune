@@ -15,11 +15,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
@@ -504,9 +504,12 @@ internal class IosSessionGraph private constructor(
                     }
                 },
                 scope.launch {
-                    while (isActive) {
-                        delay(POSITION_CHECKPOINT_INTERVAL_MS)
-                        if (player.snapshot.value?.playWhenReady == true) checkpointNow(queue, report)
+                    // Checkpoints tick only while playWhenReady is set; a paused session sleeps until play.
+                    player.snapshot.map { it?.playWhenReady == true }.distinctUntilChanged().collectLatest { playing ->
+                        while (playing) {
+                            delay(POSITION_CHECKPOINT_INTERVAL_MS)
+                            checkpointNow(queue, report)
+                        }
                     }
                 },
             )

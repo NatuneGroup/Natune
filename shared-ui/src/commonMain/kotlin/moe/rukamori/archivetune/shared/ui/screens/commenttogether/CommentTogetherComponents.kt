@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.listentogether.RepliedMessage
 import moe.rukamori.archivetune.shared.data.listentogether.TrackInfo
+import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -508,8 +509,10 @@ internal fun CommentTypingRow(
     modifier: Modifier = Modifier,
 ) {
     val shown = typing.take(MaxTypingAvatars)
-    val transition = rememberInfiniteTransition(label = "comment-typing")
-    val phase by transition.animateFloat(
+    // With motion off the dots hold the cycle start, so no frame clock runs behind a hidden or minimized window.
+    val transition = if (motionAllowed()) rememberInfiniteTransition(label = "comment-typing") else null
+    // Read inside the dot loop, where the delegate was read, so a frame recomposes only the dots.
+    val phase = transition?.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -546,7 +549,8 @@ internal fun CommentTypingRow(
         Spacer(Modifier.width(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             repeat(3) { index ->
-                val lift = sin(((phase + index * 0.2f) * 2f * PI.toFloat()).toDouble()).toFloat().coerceAtLeast(0f)
+                val phaseAt = (phase?.value ?: 0f) + index * 0.2f
+                val lift = sin((phaseAt * 2f * PI.toFloat()).toDouble()).toFloat().coerceAtLeast(0f)
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 2.dp)
