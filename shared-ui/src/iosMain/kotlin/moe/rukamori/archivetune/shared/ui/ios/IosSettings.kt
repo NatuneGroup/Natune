@@ -588,7 +588,6 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 controller = owners.controller,
                 navigate = navigate,
                 onFailure = onFailure,
-                unavailable = { show(featureUnavailable) },
                 scrollTo = scrollTo,
             )
             "settings/logcat" -> {
