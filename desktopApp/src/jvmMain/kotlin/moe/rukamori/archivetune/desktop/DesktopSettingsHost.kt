@@ -58,6 +58,7 @@ import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
+import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogSettings
@@ -624,8 +625,14 @@ internal fun DesktopSettingsScreen(
                     onInstallJapanese = { scope.launch { owners.services.installJapanese() } },
                     onCancelJapanese = { scope.launch { owners.services.cancelJapanese() } },
                     onRemoveJapanese = { scope.launch { owners.services.removeJapanese() } },
-                    onInstallSpatialFlowFont = { unavailable() },
-                    onRemoveSpatialFlowFont = { unavailable() },
+                    onInstallSpatialFlowFont = {
+                        if (owners.services.installSpatialFlowFont()) show(DesktopStrings["spatial_flow_font_installed"])
+                    },
+                    onRemoveSpatialFlowFont = {
+                        if (owners.services.removeSpatialFlowFont()) show(DesktopStrings["spatial_flow_font_removed"])
+                    },
+                    // The desktop has no pinned download: the user supplies the same typeface file Android installs.
+                    spatialFlowFontInstallLabel = Res.string.m6_additional_downloads_spatialflow_font_choose,
                     onFailure = onFailure,
                 )
             }
