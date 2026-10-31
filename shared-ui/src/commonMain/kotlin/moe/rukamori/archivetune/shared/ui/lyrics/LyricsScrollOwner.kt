@@ -92,7 +92,8 @@ internal fun LyricsAutoFollow(
     }
     LaunchedEffect(primary, discontinuity, owner.resumeGeneration, visible) {
         val jump = discontinuity != owner.handledDiscontinuity
-        val moved = primary != owner.handledPrimary
+        // The first line a fresh owner follows is not a change, so it animates and never glides in.
+        val moved = owner.handledPrimary >= 0 && primary != owner.handledPrimary
         owner.handledDiscontinuity = discontinuity
         owner.handledPrimary = primary
         if (jump) owner.following = true
