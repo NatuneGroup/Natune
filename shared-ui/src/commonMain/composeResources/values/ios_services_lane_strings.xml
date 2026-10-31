@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="ios_services_internet_note">This host applies the saved proxy when the session starts, so a changed address or password applies the next time Natune launches. The proxy covers catalog, YouTube, Last.fm and upload requests. Playback audio, now-playing artwork, Listen Together, listener presence and Japanese pack downloads keep the system route. IP rotation is unavailable here. Localhost, loopback addresses and *.local hosts bypass the proxy. An HTTP proxy password is answered only when the proxy asks for it. A SOCKS proxy password is best effort on this host.</string>
+    <string name="ios_services_internet_note">This host applies the saved proxy when the session starts, so a changed address or password applies the next time Natune launches. The proxy covers catalog, YouTube, Last.fm and upload requests. Playback audio, now-playing artwork, Listen Together, listener presence and Japanese pack downloads use the system connection. IP rotation, DNS-over-HTTPS, the YouTube region and the stream bypass switch are not offered here. Localhost, loopback addresses and *.local hosts bypass the proxy. An HTTP proxy password is answered only when the proxy asks for it. A SOCKS proxy password is best effort on this host.</string>
     <string name="ios_services_internet_applies_next_launch">Saved. The new proxy settings apply the next time Natune launches.</string>
 
     <string name="ios_services_lastfm_contacting">Contacting the scrobbling service…</string>

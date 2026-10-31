@@ -52,6 +52,7 @@ import moe.rukamori.archivetune.shared.ui.settings.ChangelogState
 import moe.rukamori.archivetune.shared.ui.settings.DiscordSettings
 import moe.rukamori.archivetune.shared.ui.settings.DownloadsSettings
 import moe.rukamori.archivetune.shared.ui.settings.InternetSettings
+import moe.rukamori.archivetune.shared.ui.settings.InternetSupport
 import moe.rukamori.archivetune.shared.ui.settings.PoTokenGeneration
 import moe.rukamori.archivetune.shared.ui.settings.PoTokenSettings
 import moe.rukamori.archivetune.shared.ui.settings.ProxyConnectionResult
@@ -195,7 +196,11 @@ internal fun IosLaneServiceSettingsPage(
                     onFailure = onFailure,
                     scrollTo = scrollTo,
                     modifier = Modifier.weight(1f),
-                    rotationSupported = false,
+                    // The Darwin engine cannot re-route a live session, and playback audio never takes the proxy, so the
+                    // stream switch does not apply. DNS-over-HTTPS and the YouTube region have no iOS runtime yet.
+                    support = InternetSupport(
+                        rotation = false, streamBypass = false, dnsOverHttps = false, youtubeRegion = false,
+                    ),
                 )
             }
         }
