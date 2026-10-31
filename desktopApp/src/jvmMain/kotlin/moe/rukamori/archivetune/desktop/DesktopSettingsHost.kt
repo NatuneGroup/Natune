@@ -188,6 +188,8 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     }
 
     val services = DesktopSettingsServices(graph, controller, DesktopSettingsServices.currentInstanceDirectory())
+    // The Turnstile challenge window exchanges its token against the primary instance and commits the JWT here.
+    val amazon = DesktopAmazonAuthorize(graph, controller)
     val discord = DesktopDiscordPresence(graph, DesktopLaunchIntake.links, controller, graph::report)
 
     suspend fun qobuzSecretCandidates(): List<String> = qobuzScrape.candidates().orEmpty()
@@ -515,7 +517,24 @@ internal fun DesktopSettingsScreen(
                     poolInstanceCount = snapshot?.amazonInstanceList()?.size ?: 0,
                     currentTimeMillis = System::currentTimeMillis,
                     formatExpiry = owners.services::formatExpiry,
-                    onAuthorize = unavailable,
+                    onAuthorize = {
+                        scope.launch {
+                            show(DesktopStrings["amazon_challenge_opening"])
+                            show(
+                                when (val outcome = owners.amazon.authorize()) {
+                                    is AmazonAuthorizeOutcome.Authorized -> DesktopStrings["amazon_authorize_done"]
+                                    AmazonAuthorizeOutcome.Cancelled -> DesktopStrings["amazon_authorize_cancelled"]
+                                    AmazonAuthorizeOutcome.NotConfigured -> DesktopStrings["amazon_authorize_not_configured"]
+                                    AmazonAuthorizeOutcome.NoInstance -> DesktopStrings["amazon_authorize_no_instance"]
+                                    AmazonAuthorizeOutcome.Busy -> DesktopStrings["amazon_authorize_busy"]
+                                    is AmazonAuthorizeOutcome.Failed -> {
+                                        graph.report("amazon authorization failed: ${outcome.reason}")
+                                        DesktopStrings["amazon_authorize_failed"]
+                                    }
+                                },
+                            )
+                        }
+                    },
                     onFailure = onFailure,
                     onNotice = onNotice,
                     scrollTo = scrollTo,
