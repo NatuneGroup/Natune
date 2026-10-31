@@ -106,6 +106,12 @@ val HidePlayerThumbnailKey = booleanPreferencesKey("hidePlayerThumbnail")
 val ArchiveTuneCanvasKey = booleanPreferencesKey("archiveTuneCanvas")
 val SpotifyCanvasKey = booleanPreferencesKey("spotifyCanvas")
 
+/**
+ * Whether animated artwork (a Canvas loop or a music video) gives way to the still cover while the device is on
+ * cellular data. Default off: moving artwork plays on mobile data unless this is turned on.
+ */
+val DisableAnimatedArtworkOnMobileDataKey = booleanPreferencesKey("disableAnimatedArtworkOnMobileData")
+
 /** Which provider the Canvas playback layer resolves artwork from. */
 val CanvasSourceKey = stringPreferencesKey("canvasSource")
 
