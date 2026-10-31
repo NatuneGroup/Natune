@@ -29,9 +29,9 @@ name is blank, so existing local setups keep working.
 | --- | --- | --- |
 | `ARCHIVETUNE_LASTFM_API_KEY` (legacy `LASTFM_API_KEY`) | Last.fm sign-in and the default Last.fm API key for scrobbling. Read by `:app` (`BuildConfig.LASTFM_API_KEY`) and `:lastfm` (`ProviderBuildCredentials`). | Last.fm sign-in reports not configured unless the user has entered their own key in Last.fm settings. Libre.fm and custom endpoints keep their own keys or the compatibility pair. |
 | `ARCHIVETUNE_LASTFM_API_SECRET` (legacy `LASTFM_SECRET`) | Signing secret for the same Last.fm calls. Same consumers as above. | As above. A key without a secret does not count as configured. |
-| `ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY` | Cloudflare Turnstile verification for Amazon Music instances (`AmazonAudioProvider`, `AmazonTurnstileActivity`). | "Authorize with Turnstile" shows "not configured" and loads nothing. Operator bypass tokens keep working. |
+| `ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY` | Cloudflare Turnstile verification for Amazon Music instances (`AmazonAudioProvider`, `AmazonTurnstileActivity`; desktop `DesktopAmazonAuthorize`, which runs the challenge in its native window). | "Authorize with Turnstile" shows "not configured" and loads nothing. Operator bypass tokens keep working. |
 | `ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN` | Origin the Turnstile sitekey is locked to, sent as the `Origin` header and used as the WebView base URL. | Same as the sitekey. With the origin blank, no `Origin` header is sent. |
-| `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID` | YouTube device-code sign-in (`YouTubeOAuthRepository`, `YouTubeOAuthLoginScreen`). | The sign-in shows "not configured" and sends no request. Stored sessions are not cleared. |
+| `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID` | YouTube device-code sign-in (`YouTubeOAuthRepository`, `YouTubeOAuthLoginScreen`; desktop `DesktopYouTubeOAuth`). | The sign-in shows "not configured" and sends no request. Stored sessions are not cleared. |
 | `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET` | Client secret for the same flow. | As above. |
 | `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY` | WebClient PO token generation (`PoTokenWebView`) and BotGuard token minting (`BotGuardTokenGenerator`, as its `API_KEY`). The same value feeds both. | No WebClient PO token is minted; the existing client fallbacks continue. |
 | `ARCHIVETUNE_POTOKEN_REQUEST_KEY` | Request key for the same PO token and BotGuard paths. The same value feeds both. | As above. |
@@ -79,7 +79,8 @@ auth, WebView or Media3 classes are included.
 - **`:desktopApp`** has its own `generateProviderCredentials` task that writes
   `moe.rukamori.archivetune.desktop.DesktopBuildCredentials` (TIDAL OAuth clients, the JioSaavn key,
   Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed, the feedback service,
-  the Google Drive desktop client and Spotify Echo protocol configuration). `DesktopCredentials` reads each value from an environment variable of the
+  the Google Drive desktop client, Spotify Echo protocol configuration, the YouTube device-code
+  client pair and the Amazon Turnstile sitekey). `DesktopCredentials` reads each value from an environment variable of the
   same name, then a JVM system property of the same name (`-D<NAME>=<value>`), then the build-time value, so a
   packaged desktop build can be configured at launch without rebuilding.
 - The iOS host reads the Telegram pair and `ARCHIVETUNE_LISTENER_PRESENCE_URL` so far. Xcode takes them from the
