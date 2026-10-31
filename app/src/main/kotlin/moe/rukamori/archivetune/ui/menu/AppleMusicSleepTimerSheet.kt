@@ -43,9 +43,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,10 +57,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.playback.SleepTimer
+import moe.rukamori.archivetune.shared.domain.playback.sleepCountdownRemainingMs
 import moe.rukamori.archivetune.utils.makeTimeString
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -72,23 +71,12 @@ fun AppleMusicSleepTimerSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Poll the SleepTimer once per displayed second for the live countdown. We deliberately
-    // don't read `triggerTime` as a Compose state here because the timer mutates
-    // it from a background coroutine — reading it once per recomposition via the
-    // published `var triggerTime` works fine, but a once-per-second polling loop keeps the
-    // displayed countdown smooth without forcing a recomp on every millis tick.
-    var remainingMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(sleepTimer, sleepTimer.isActive) {
-        while (isActive) {
-            remainingMs =
-                when {
-                    sleepTimer.pauseWhenSongEnd -> -1L // sentinel: "end of song"
-                    sleepTimer.triggerTime > 0 -> sleepTimer.triggerTime - System.currentTimeMillis()
-                    else -> 0L
-                }
-            delay(countdownTickMs(remainingMs))
-        }
-    }
+    // The countdown derives from the controller's deadline. Reading the deadline during composition recomposes this
+    // sheet when the timer starts, changes or clears, and the countdown is collected only while the sheet is shown.
+    val deadlineEpochMs = sleepTimer.deadlineEpochMs
+    val remainingMs by remember(deadlineEpochMs) {
+        sleepCountdownRemainingMs(deadlineEpochMs) { System.currentTimeMillis() }
+    }.collectAsState(initial = 0L)
 
     val isEndOfSong = sleepTimer.pauseWhenSongEnd
     val isTimed = sleepTimer.triggerTime > 0 && !isEndOfSong
@@ -353,15 +341,6 @@ fun AppleMusicSleepTimerSheet(
             }
         }
     }
-}
-
-/**
- * The readout shows whole seconds and only changes when the current one ends. Waking at that instant keeps it exact,
- * with no wakeup in between. A stopped or end-of-song timer shows no countdown, so it re-checks once a second.
- */
-private fun countdownTickMs(remainingMs: Long): Long {
-    val intoSecond = remainingMs % 1_000L
-    return if (remainingMs > 0L && intoSecond > 0L) intoSecond else 1_000L
 }
 
 /** Formats a minute count as `Hh Mm` (e.g. 95 → "1h 35m", 5 → "5m", 0 → "Off"). */
