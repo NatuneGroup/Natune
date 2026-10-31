@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.theme.LocalArchiveTuneFontFamily
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 
 
 val BitChordPageGutter = 16.dp
@@ -136,12 +137,16 @@ fun BitChordSectionHeader(
     }
 }
 
+/** The bar height held while the app is not STARTED: no transition runs behind a backgrounded app. */
+private const val BitChordIdleBarScale = 0.6f
+
 @Composable
 fun BitChordPlayingBars(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "BitChordPlayingBars")
+    val barsStarted by rememberLifecycleStarted()
+    val transition = if (barsStarted) rememberInfiniteTransition(label = "BitChordPlayingBars") else null
     val bars =
         (0..2).map { index ->
-            transition.animateFloat(
+            transition?.animateFloat(
                 initialValue = 0.35f,
                 targetValue = 1f,
                 animationSpec =
@@ -175,7 +180,7 @@ fun BitChordPlayingBars(modifier: Modifier = Modifier) {
                         .height(14.dp)
                         // Scaled in the draw layer: reading the animation in composition would
                         // recompose and re-measure the row every frame while a track plays.
-                        .graphicsLayer { scaleY = bar.value }
+                        .graphicsLayer { scaleY = bar?.value ?: BitChordIdleBarScale }
                         .background(Color.White),
             )
         }

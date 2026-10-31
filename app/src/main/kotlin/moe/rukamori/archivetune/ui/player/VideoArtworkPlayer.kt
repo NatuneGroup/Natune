@@ -89,6 +89,7 @@ import moe.rukamori.archivetune.constants.PlayerStreamClientKey
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.response.PlayerResponse
 import moe.rukamori.archivetune.playback.stream.NewPipeStreamUrlExtractor
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.utils.ImageBlurUtils
 import moe.rukamori.archivetune.utils.StreamClientUtils
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -1428,8 +1429,10 @@ private fun VideoAmbientBackdrop(
     val context = LocalContext.current
     val isPreS = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
 
-    val transition = rememberInfiniteTransition(label = "video-ambient-drift")
-    val animatedDriftX by transition.animateFloat(
+    // The drift runs only while the app is STARTED; a backdrop left in the background rests centered.
+    val driftStarted by rememberLifecycleStarted()
+    val transition = if (driftStarted) rememberInfiniteTransition(label = "video-ambient-drift") else null
+    val animatedDriftX = transition?.animateFloat(
         initialValue = -90f,
         targetValue = 90f,
         animationSpec =
@@ -1438,8 +1441,8 @@ private fun VideoAmbientBackdrop(
                 repeatMode = RepeatMode.Reverse,
             ),
         label = "video-ambient-x",
-    )
-    val animatedDriftY by transition.animateFloat(
+    )?.value ?: 0f
+    val animatedDriftY = transition?.animateFloat(
         initialValue = -60f,
         targetValue = 60f,
         animationSpec =
@@ -1448,7 +1451,7 @@ private fun VideoAmbientBackdrop(
                 repeatMode = RepeatMode.Reverse,
             ),
         label = "video-ambient-y",
-    )
+    )?.value ?: 0f
     val driftX = if (isPreS) 0f else animatedDriftX
     val driftY = if (isPreS) 0f else animatedDriftY
 
