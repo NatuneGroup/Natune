@@ -506,16 +506,20 @@ class PlayerConnection(
         // song from 0.
         if (service.commitCrossfadeForSkipNext()) return
         service.prepareForManualSkip()
+        val finishedBeforeSkip = player.playbackState == STATE_ENDED
         player.seekToNext()
         player.prepare()
-        player.playWhenReady = true
+        // A skip keeps the play state the user left, so a paused queue loads paused. A queue that already
+        // played to its end was not paused by the user, so a skip from there still starts playback.
+        if (finishedBeforeSkip) player.playWhenReady = true
     }
 
     fun seekToPrevious() {
         service.prepareForManualSkip()
+        val finishedBeforeSkip = player.playbackState == STATE_ENDED
         player.seekToPrevious()
         player.prepare()
-        player.playWhenReady = true
+        if (finishedBeforeSkip) player.playWhenReady = true
     }
 
     fun seekBy(deltaMs: Long) {
