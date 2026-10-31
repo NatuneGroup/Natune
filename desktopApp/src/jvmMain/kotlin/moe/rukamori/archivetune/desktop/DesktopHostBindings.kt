@@ -32,6 +32,7 @@ import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
 import moe.rukamori.archivetune.shared.domain.settings.DisableAnimationsKey
+import moe.rukamori.archivetune.shared.domain.settings.LyricsModeKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -39,6 +40,7 @@ import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsMode
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSyncControls
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
@@ -279,7 +281,11 @@ private fun desktopPlayerSlots(
         playback = graph.player.snapshot,
         romanization = romanization,
         settings = preferences.playerLyricsSettings(
-            syncOffsetMs = tools.offsets.value(current?.item?.ref), reducedMotion = preferences[DisableAnimationsKey] == true,
+            syncOffsetMs = tools.offsets.value(current?.item?.ref),
+            reducedMotion = preferences[DisableAnimationsKey] == true,
+            // ENHANCED reads its depth on desktop too; reduced motion leaves every row flat.
+            depthEffects = LyricsMode.fromStored(preferences[LyricsModeKey]) == LyricsMode.ENHANCED &&
+                preferences[DisableAnimationsKey] != true,
         ),
         actions = actions,
         compactStyle = if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
