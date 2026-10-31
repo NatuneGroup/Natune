@@ -138,7 +138,7 @@ fun BitChordSectionHeader(
 }
 
 /** The bar height held while the app is not STARTED: no transition runs behind a backgrounded app. */
-private const val BitChordIdleBarScale = 0.6f
+private const val BIT_CHORD_IDLE_BAR_SCALE = 0.6f
 
 @Composable
 fun BitChordPlayingBars(modifier: Modifier = Modifier) {
@@ -180,7 +180,7 @@ fun BitChordPlayingBars(modifier: Modifier = Modifier) {
                         .height(14.dp)
                         // Scaled in the draw layer: reading the animation in composition would
                         // recompose and re-measure the row every frame while a track plays.
-                        .graphicsLayer { scaleY = bar?.value ?: BitChordIdleBarScale }
+                        .graphicsLayer { scaleY = bar?.value ?: BIT_CHORD_IDLE_BAR_SCALE }
                         .background(Color.White),
             )
         }

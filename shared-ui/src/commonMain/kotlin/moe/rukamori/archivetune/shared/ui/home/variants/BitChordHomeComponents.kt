@@ -118,11 +118,11 @@ internal fun BitChordSectionHeader(
 }
 
 /** The bar height held while motion is off: no transition runs, so nothing wakes the frame clock behind a hidden window. */
-private const val BitChordIdleBarScale = 0.6f
+private const val BIT_CHORD_IDLE_BAR_SCALE = 0.6f
 
 /**
  * Three bars that bounce while the current track plays. They are scaled in the draw layer, so the row never recomposes.
- * With motion off (backgrounded, minimized or reduced motion) they hold [BitChordIdleBarScale] instead.
+ * With motion off (backgrounded, minimized or reduced motion) they hold [BIT_CHORD_IDLE_BAR_SCALE] instead.
  */
 @Composable
 internal fun BitChordPlayingBars(modifier: Modifier = Modifier) {
@@ -159,7 +159,7 @@ internal fun BitChordPlayingBars(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .width(3.dp)
                     .height(14.dp)
-                    .graphicsLayer { scaleY = bar?.value ?: BitChordIdleBarScale }
+                    .graphicsLayer { scaleY = bar?.value ?: BIT_CHORD_IDLE_BAR_SCALE }
                     .background(Color.White),
             )
         }
