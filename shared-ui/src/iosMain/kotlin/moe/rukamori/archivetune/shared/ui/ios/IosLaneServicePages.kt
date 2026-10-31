@@ -1,6 +1,11 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -8,6 +13,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
@@ -21,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import moe.rukamori.archivetune.shared.data.platform.ios.IosProxyTestResult
 import moe.rukamori.archivetune.shared.domain.settings.CanvasConnectivity
 import moe.rukamori.archivetune.shared.domain.settings.CanvasHealthProvider
 import moe.rukamori.archivetune.shared.domain.settings.CanvasProbeState
@@ -34,6 +42,8 @@ import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.ios_lane_spotify_streaming_note
 import moe.rukamori.archivetune.shared.ui.resources.ios_lane_storage_note
+import moe.rukamori.archivetune.shared.ui.resources.ios_services_internet_applies_next_launch
+import moe.rukamori.archivetune.shared.ui.resources.ios_services_internet_note
 import moe.rukamori.archivetune.shared.ui.settings.AmazonSettings
 import moe.rukamori.archivetune.shared.ui.settings.CanvasSettings
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogRelease
@@ -56,9 +66,10 @@ import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 
 /**
- * The lane pages that need a host service behind them: reachability probes, the release-notes checker and the
- * Discord token check are real; cache clearing, storage moves, proxy application, PO-token extraction and Spotify
- * streaming sign-in have no owner on this host and report themselves unavailable rather than faking a result.
+ * The lane pages that need a host service behind them: reachability probes, the release-notes checker, the Discord
+ * token check, the proxy probe and Last.fm scrobbling are real; cache clearing, storage moves, PO-token extraction
+ * and Spotify streaming sign-in have no owner on this host and report themselves unavailable rather than faking a
+ * result. The internet page mounts the saved static route with the limits the Darwin engine imposes.
  */
 @Composable
 internal fun IosLaneServiceSettingsPage(
@@ -159,16 +170,41 @@ internal fun IosLaneServiceSettingsPage(
             onFailure = onFailure,
             scrollTo = scrollTo,
         )
-        "settings/internet" -> InternetSettings(
+        "settings/internet" -> {
+            val network = owners.graph.network
+            Column(Modifier.fillMaxSize()) {
+                Text(
+                    stringResource(Res.string.ios_services_internet_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                InternetSettings(
+                    controller = owners.controller,
+                    // No route is offered while running: the Darwin engine keeps the proxy it started with.
+                    activeRotationCount = 0,
+                    applyNetworkSettings = { snapshot ->
+                        // The edits are already persisted by the page. This reports the one thing it cannot do: the
+                        // running session keeps its route until the next launch.
+                        if (network.savedRouteChanged(snapshot)) {
+                            onNotice(SettingsNotice.Message(Res.string.ios_services_internet_applies_next_launch))
+                        }
+                    },
+                    applyIpRotation = { _, _ -> 0 },
+                    testProxy = { snapshot -> network.testProxy(snapshot).toProxyConnectionResult() },
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                    modifier = Modifier.weight(1f),
+                    rotationSupported = false,
+                )
+            }
+        }
+        "settings/lastfm" -> IosLastFmSettingsPage(
+            lastFm = owners.graph.lastFm,
             controller = owners.controller,
-            // The iOS playback client applies neither the static proxy nor rotation; the edits persist so they
-            // are ready on hosts that do apply them, and every apply/test reports its honest outcome.
-            activeRotationCount = 0,
-            applyNetworkSettings = { },
-            applyIpRotation = { _, _ -> 0 },
-            testProxy = { ProxyConnectionResult.FAILED },
             onFailure = onFailure,
             scrollTo = scrollTo,
+            report = host::report,
         )
         "settings/po_token" -> PoTokenSettings(
             controller = owners.controller,
@@ -221,6 +257,17 @@ private fun iosLaneFormatExpiry(millis: Long): String =
     NSDateFormatter()
         .apply { dateFormat = "yyyy-MM-dd HH:mm" }
         .stringFromDate(NSDate.dateWithTimeIntervalSince1970(millis / 1000.0))
+
+/** The iOS probe's sanitized outcome in the shared page's vocabulary; DNS and host failures both read as unreachable. */
+private fun IosProxyTestResult.toProxyConnectionResult(): ProxyConnectionResult =
+    when (this) {
+        IosProxyTestResult.CONNECTED -> ProxyConnectionResult.CONNECTED
+        IosProxyTestResult.INVALID_CONFIGURATION -> ProxyConnectionResult.INVALID_CONFIGURATION
+        IosProxyTestResult.AUTHENTICATION -> ProxyConnectionResult.AUTHENTICATION
+        IosProxyTestResult.TIMEOUT -> ProxyConnectionResult.TIMEOUT
+        IosProxyTestResult.UNREACHABLE -> ProxyConnectionResult.UNREACHABLE
+        IosProxyTestResult.FAILED -> ProxyConnectionResult.FAILED
+    }
 
 /** Probes the Canvas providers on the same endpoints the desktop host uses, reporting each state as it lands. */
 private suspend fun iosLaneRefreshCanvasHealth(

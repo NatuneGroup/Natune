@@ -31,7 +31,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/lyrics/providers` | ✓ | ✓ | ✓ | real Paxsenix stats + endpoint probes |
 | `settings/lyrics/romanisation` | ✓ | ✓ | ✓ | JP toggle gated on real pack state |
 | `settings/language_packs` | ✓ | ✓ | ✓ | JP pack real; SpatialFlow font install/remove reports unavailable (no host font consumer) |
-| `settings/internet` | ✓ | ✓ | — | desktop mounts; no network owner on iOS |
+| `settings/internet` | ✓ | ✓ | ✓ | iOS: the saved static proxy is applied to the session graph's Darwin engine at launch and a saved edit applies next launch; rotation and its refresh row are hidden (one `NSURLSession` per engine), and the page states the limits |
 | `settings/player` | ✓ | ✓ | ✓ | bit-perfect/USB rows read unsupported |
 | `settings/player/ytdlp` | ✓ | ✓ | ✓ | BUG-004 target; real runtime status (unavailable on iOS) |
 | `settings/canvas` | ✓ | ✓ | — | desktop mounts |
@@ -60,8 +60,8 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/telegram` | ✓ | ✓ | ✓ | iOS: one TDLib session page; the unbound boundary until the session exists |
 | `settings/telegram/login` `/browse` `/bots` `/chat/{id}` | ✓ | login | browse, bots | desktop mounts login only; iOS mounts browse and bots while the session exists, and login and bot chat stay on the boundary |
 | `settings/ai_integration` | ✓ | ✓ | ✓ | real KtorAiTextService; "not configured" without provider |
-| `settings/lastfm` | ✓ | ✓ | — | desktop mounts (+dashboard route) |
-| `settings/lastfm/login` `/librefm-login` | ✓ | ✓ | — | desktop: starts the browser sign-in for Last.fm or Libre.fm and returns when it ends |
+| `settings/lastfm` | ✓ | ✓ | ✓ | iOS: account status, web sign-in card and the shared rows; scrobbles persist in the app container and likes mirror when sending loves is on |
+| `settings/lastfm/login` `/librefm-login` | ✓ | ✓ | — | desktop: starts the browser sign-in for Last.fm or Libre.fm and returns when it ends; iOS starts the same sign-in from the Last.fm page's Connect rows instead |
 | `settings/lastfm/dashboard` | ✓ | ✓ | — | desktop mounts |
 | `settings/misc` (developer) | ✓ | ✓ | ✓ | acoustic/discord-debug/nerd-stats sections unavailable on iOS |
 | `settings/logcat` | ✓ | ✓ | ✓ | DiagnosticLogScreen on all three |

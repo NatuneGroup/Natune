@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ios_services_internet_note">This host applies the saved proxy when the session starts, so a changed address or password applies the next time Natune launches. The proxy covers catalog, YouTube, Last.fm and upload requests. Playback audio, now-playing artwork, Listen Together, listener presence and Japanese pack downloads keep the system route. IP rotation is unavailable here. Localhost, loopback addresses and *.local hosts bypass the proxy. An HTTP proxy password is answered only when the proxy asks for it. A SOCKS proxy password is best effort on this host.</string>
+    <string name="ios_services_internet_applies_next_launch">Saved. The new proxy settings apply the next time Natune launches.</string>
+
+    <string name="ios_services_lastfm_contacting">Contacting the scrobbling service…</string>
+    <string name="ios_services_lastfm_waiting_title">Approve Natune in your browser</string>
+    <string name="ios_services_lastfm_waiting_description">Allow access on the page that opened, then come back here and press Finish sign-in.</string>
+    <string name="ios_services_lastfm_not_approved">The service has not confirmed the approval yet. Allow access on the page, then try again.</string>
+    <string name="ios_services_lastfm_finish">Finish sign-in</string>
+    <string name="ios_services_lastfm_open_again">Open the page again</string>
+    <string name="ios_services_lastfm_cancel">Cancel</string>
+    <string name="ios_services_lastfm_not_configured">Last.fm is not configured in this build. Libre.fm and custom services still work, and you can enter your own Last.fm key pair under Custom endpoint.</string>
+    <string name="ios_services_lastfm_sign_in_failed">The scrobbling service did not answer. Check your connection and try again.</string>
+    <string name="ios_services_lastfm_dismiss">Dismiss</string>
+    <string name="ios_services_lastfm_status_title">Scrobbling account</string>
+    <string name="ios_services_lastfm_status_signed_out">Not signed in. Connect a service above to start scrobbling.</string>
+    <string name="ios_services_lastfm_status_signed_in">Signed in as %1$s</string>
+</resources>
