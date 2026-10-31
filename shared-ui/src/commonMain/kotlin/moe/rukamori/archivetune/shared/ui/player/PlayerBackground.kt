@@ -32,7 +32,10 @@ internal fun PlayerBackground(c: PlayerRenderContext) {
     val last=palette.getOrNull(2) ?: base
     val flamingoMotion=p.style==moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle.FLAMINGO &&
         p.flamingoMotion && style==PlayerBackgroundStyle.BLUR
-    val moving=(style==PlayerBackgroundStyle.GLOW_ANIMATED || flamingoMotion) && c.motionActive
+    // Ambient motion follows play state, as the player styles' waves already do: paused or ended playback keeps the
+    // static frame, so the frame clock stops. Play intent is the signal here; the audio clock is not needed for a glow.
+    val playing=c.state.playback?.let { it.playWhenReady && !it.isEnded } == true
+    val moving=(style==PlayerBackgroundStyle.GLOW_ANIMATED || flamingoMotion) && c.motionActive && playing
     var phase by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(moving) {
         if(moving) {
