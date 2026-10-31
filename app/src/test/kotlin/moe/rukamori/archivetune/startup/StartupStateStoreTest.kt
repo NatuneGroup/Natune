@@ -1,0 +1,95 @@
+package moe.rukamori.archivetune.startup
+
+import java.io.ByteArrayInputStream
+import java.io.File
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+class StartupStateStoreTest {
+    @get:Rule val temporary = TemporaryFolder()
+
+    @Test fun pendingSurvivesProcessRecreationAndOnlyItsOwnHealthyCallbackCanClearIt() {
+        val directory = temporary.newFolder()
+        val first = StartupStateStore(directory)
+        val attempt = StartupAttempt(100L, 10, "previous-build")
+        first.begin(attempt)
+        val nextProcess = StartupStateStore(directory)
+        assertTrue(nextProcess.pendingExists())
+        assertEquals(attempt, nextProcess.pendingAttempt())
+        assertFalse(nextProcess.markHealthy(attempt.copy(pid = 11)))
+        assertTrue(nextProcess.pendingExists())
+        assertTrue(nextProcess.markHealthy(attempt))
+        assertFalse(nextProcess.pendingExists())
+        assertEquals(attempt, nextProcess.lastAttempt())
+    }
+
+    @Test fun retryClearsOnlyTheSentinelAndKeepsTheJavaEvidence() {
+        val store = StartupStateStore(temporary.newFolder())
+        store.begin(StartupAttempt(100L, 10, "build"))
+        store.captureJava(101L, "main", IllegalStateException("fixture failure"))
+        assertTrue(store.clearPending())
+        assertFalse(store.pendingExists())
+        assertNotNull(store.javaCrash())
+        assertEquals(101L, store.javaCrash()?.timestampMs)
+        assertEquals("main", store.javaCrash()?.thread)
+        assertTrue(store.javaCrash()!!.stack.contains("IllegalStateException: fixture failure"))
+        assertFalse(store.javaCrash()!!.truncated)
+    }
+
+    @Test fun backgroundRestartCannotHideAnUnreviewedStartupFailure() {
+        val directory = temporary.newFolder()
+        val failed = StartupAttempt(100L, 10, "failed-build")
+        StartupStateStore(directory).begin(failed)
+        val restarted = StartupStateStore(directory)
+        val later = StartupAttempt(200L, 11, "current-build")
+        restarted.begin(later)
+        assertEquals(failed, restarted.pendingAttempt())
+        assertEquals(failed, restarted.lastAttempt())
+        assertFalse(restarted.markHealthy(later))
+        assertTrue(restarted.pendingExists())
+    }
+
+    @Test fun javaCaptureIsBoundedAndContainsTheTimestampEvenWithALargeMessage() {
+        val directory = temporary.newFolder()
+        val store = StartupStateStore(directory)
+        store.captureJava(123L, "main", RuntimeException("x".repeat(100_000)))
+        val report = store.javaCrash()!!
+        assertEquals(123L, report.timestampMs)
+        assertTrue(report.stack.startsWith("java.lang.RuntimeException"))
+        assertTrue(report.truncated)
+        assertTrue(directory.listFiles()!!.filter { it.isFile }.sumOf { it.length() } <= StartupStateStore.MAX_JAVA_CHARS * 4L)
+    }
+
+    @Test fun acknowledgementDoesNotForgetANewerReviewedExit() {
+        val store = StartupStateStore(temporary.newFolder())
+        assertEquals(0L, store.acknowledgedThrough())
+        store.acknowledgeThrough(200L)
+        store.acknowledgeThrough(100L)
+        assertEquals(200L, store.acknowledgedThrough())
+    }
+
+    @Test fun interruptedMarkerRemainsDetectableWithoutAParseableBody() {
+        val directory = temporary.newFolder()
+        File(directory, "startup_pending").writeText("partial")
+        val store = StartupStateStore(directory)
+        assertTrue(store.pendingExists())
+        assertNull(store.pendingAttempt())
+    }
+
+    @Test fun traceReadsNeverConsumeMoreThanTheBudget() {
+        val stream = ByteArrayInputStream("abcdefgh".toByteArray())
+        val capped = stream.readCappedText(4)
+        assertEquals("abcd", capped.text)
+        assertTrue(capped.truncated)
+        assertEquals(4, stream.available())
+        val complete = ByteArrayInputStream("ok".toByteArray()).readCappedText(4)
+        assertEquals("ok", complete.text)
+        assertFalse(complete.truncated)
+    }
+}

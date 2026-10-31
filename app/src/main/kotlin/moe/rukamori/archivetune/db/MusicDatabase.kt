@@ -512,13 +512,16 @@ private object SchemaTools {
         val insertColumns = expectedOrdered.joinToString(",") { "`${it.name}`" }
         val selectExpr =
             expectedOrdered.joinToString(",") { col ->
-                val old = actualColumns[col.name]
-                when {
-                    old != null -> "`${col.name}`"
+                val fallback = when {
                     col.defaultValue != null -> col.defaultValue
                     col.notNull -> defaultLiteral(col.type)
                     else -> "NULL"
                 }
+                migrationColumnExpression(
+                    sourceName = col.name.takeIf { it in actualColumns },
+                    notNull = col.notNull,
+                    fallback = fallback,
+                )
             }
 
         db.execSQL("INSERT INTO `${table.name}` ($insertColumns) SELECT $selectExpr FROM `$oldTable`")
