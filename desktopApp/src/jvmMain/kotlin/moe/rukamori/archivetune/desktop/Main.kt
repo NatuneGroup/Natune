@@ -1,6 +1,8 @@
 package moe.rukamori.archivetune.desktop
 
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
@@ -52,6 +54,8 @@ fun main(args: Array<String>) {
             title = DesktopStrings["app_name"],
             state = state,
         ) {
+            val density = LocalDensity.current.density
+            LaunchedEffect(window, density) { DesktopWindowBounds.applyMinimumSize(window, density) }
             DisposableEffect(window) {
                 DesktopLaunchIntake.attachWindow(window)
                 onDispose { DesktopLaunchIntake.detachWindow(window) }
