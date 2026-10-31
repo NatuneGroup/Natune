@@ -51,6 +51,18 @@ fun appearanceThemeSettingsRows(
         description = Res.string.m6_palette_sources_exclusive, write = { setRandomThemeOnStartup(it) }))
     if (!dynamic || !nativeDynamicColors)
         add(SettingsRow.Action("palette_picker", Res.string.m6_palette, { navigate("settings/appearance/palette_picker") }))
+    // The style shapes the saved palette color, which applies only while dynamic theme is off.
+    if (!dynamic) add(SettingsRow.Choice("theme_palette_style", Res.string.m6_theme_palette_style, ThemePaletteStyleKey,
+        ThemePaletteStyle.AUTOMATIC.name, listOf(
+            SettingsRow.Option(ThemePaletteStyle.AUTOMATIC.name, Res.string.m6_palette_style_automatic),
+            SettingsRow.Option(ThemePaletteStyle.TONAL_SPOT.name, Res.string.m6_palette_style_tonal_spot),
+            SettingsRow.Option(ThemePaletteStyle.VIBRANT.name, Res.string.m6_palette_style_vibrant),
+            SettingsRow.Option(ThemePaletteStyle.EXPRESSIVE.name, Res.string.m6_palette_style_expressive),
+            SettingsRow.Option(ThemePaletteStyle.RAINBOW.name, Res.string.m6_palette_style_rainbow),
+            SettingsRow.Option(ThemePaletteStyle.FRUIT_SALAD.name, Res.string.m6_palette_style_fruit_salad),
+            SettingsRow.Option(ThemePaletteStyle.MONOCHROME.name, Res.string.m6_palette_style_monochrome),
+            SettingsRow.Option(ThemePaletteStyle.NEUTRAL.name, Res.string.m6_palette_style_neutral),
+        ), description = Res.string.m6_palette_style_desc))
     add(SettingsRow.Action("app_icon", Res.string.m6_app_icon, { navigate("settings/appearance/icon") }))
     add(SettingsRow.Choice("dark_theme", Res.string.m6_dark_theme, DarkModeKey, "AUTO", listOf(
         SettingsRow.Option("ON", Res.string.m6_on), SettingsRow.Option("OFF", Res.string.m6_off),

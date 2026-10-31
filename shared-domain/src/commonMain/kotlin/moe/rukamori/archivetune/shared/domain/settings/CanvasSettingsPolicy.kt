@@ -20,11 +20,15 @@ enum class CanvasHealthState {
     LOW_DATA_MODE,
 }
 
-/** Host-measured network state. Callers pass null until the host has measured it, which reads as not checked. */
+/**
+ * Host-measured network state. Callers pass null until the host has measured it, which reads as not checked.
+ * [cellular] is known only on hosts that can tell a cellular link from Wi-Fi; the others leave it false.
+ */
 data class CanvasConnectivity(
     val online: Boolean = false,
     val wifi: Boolean = false,
     val metered: Boolean = true,
+    val cellular: Boolean = false,
 )
 
 /** Host probe progress for one provider. The shared policy never probes; it only reads what the host reports. */
@@ -71,6 +75,7 @@ fun PreferenceSnapshot.canvasHealthGate(
     provider == CanvasHealthProvider.SPOTIFY && !canvasSpotifyConnected() -> CanvasHealthState.NOT_CONNECTED
     !connectivity.online -> CanvasHealthState.OFFLINE
     this[CanvasWifiOnlyKey, false] && !connectivity.wifi -> CanvasHealthState.WIFI_REQUIRED
+    !animatedArtworkAllowed(connectivity) -> CanvasHealthState.WIFI_REQUIRED
     lowDataMode() && connectivity.metered -> CanvasHealthState.LOW_DATA_MODE
     else -> CanvasHealthState.CHECKING
 }
@@ -103,12 +108,13 @@ fun PreferenceSnapshot.canvasHealthStates(
 }
 
 /**
- * Whether the network allows Canvas at all: enabled, online, and inside the wifi-only and low-data rules. A refresh
- * is offered only when this holds and no provider is still being checked.
+ * Whether the network allows Canvas at all: enabled, online, and inside the wifi-only, low-data and animated-artwork
+ * mobile-data rules. A refresh is offered only when this holds and no provider is still being checked.
  */
 fun PreferenceSnapshot.canvasNetworkAllowed(connectivity: CanvasConnectivity?): Boolean {
     if (connectivity == null || !this[ArchiveTuneCanvasKey, false]) return false
     return connectivity.online &&
         (!this[CanvasWifiOnlyKey, false] || connectivity.wifi) &&
-        (!lowDataMode() || !connectivity.metered)
+        (!lowDataMode() || !connectivity.metered) &&
+        animatedArtworkAllowed(connectivity)
 }

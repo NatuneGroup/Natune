@@ -652,4 +652,6 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         InlineUsbExclusiveBitPerfectEnabledKey,
         InlineMultichannelDownmixEnabledKey,
         NativeIosInterfaceKey,
+        DisableAnimatedArtworkOnMobileDataKey,
+        ThemePaletteStyleKey,
     )

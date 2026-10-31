@@ -84,6 +84,15 @@ import moe.rukamori.archivetune.R
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
+/**
+ * The readout shows whole seconds and only changes when the current one ends. Waking at that instant keeps it exact,
+ * with no wakeup in between. A stopped or end-of-song timer shows no countdown, so it re-checks once a second.
+ */
+private fun countdownTickMs(remainingMs: Long): Long {
+    val intoSecond = remainingMs % 1_000L
+    return if (remainingMs > 0L && intoSecond > 0L) intoSecond else 1_000L
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SpatialFlowSleepTimerSheet(
@@ -114,7 +123,7 @@ fun SpatialFlowSleepTimerSheet(
                     remainingMinutes = totalSecs / 60
                     remainingSeconds = totalSecs % 60
                 }
-                kotlinx.coroutines.delay(1000.milliseconds)
+                kotlinx.coroutines.delay(countdownTickMs(diffMs).milliseconds)
             }
         } else {
             remainingMinutes = 0
