@@ -908,8 +908,8 @@ private fun appearancePlayerRows(
                         valueText = { playerDesignStyleLabel(it) },
                     )
                 }
-        }
-
+            }
+            item { PlayerMenuStyleSetting(prefs = prefs, modifier = positions.modifierFor("player_menu_style")) }
         // Only for the TikTok style: the strip reserves a fixed slot under the artwork on
         // that page and nowhere else.
         if (playerDesignStyle == PlayerDesignStyle.TIKTOK) {

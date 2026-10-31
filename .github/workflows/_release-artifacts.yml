@@ -905,9 +905,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p downloaded-artifacts
+          # A leftover update-feed hand-off comes from an earlier attempt. This attempt regenerates the manifest,
+          # so only the per-variant hand-offs are restored and the empty-list check below ignores the feed.
           mapfile -t STAGING_TAGS < <(
             gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/staging-${GITHUB_RUN_ID}-" \
-              --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' || true
+              --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' | grep -v -- '-update-feed$' || true
           )
           if [[ "${#STAGING_TAGS[@]}" -eq 0 ]]; then
             if [[ "$ARTIFACTS_OUTCOME" == "success" ]]; then
@@ -1026,6 +1028,9 @@ jobs:
             RELEASE_ARGS+=(--prerelease --latest=false)
           fi
           gh release create "${RELEASE_ARGS[@]}" "${RELEASE_FILES[@]}"
+          # Recorded as soon as the release exists, so the feed job still runs when a later step fails. The
+          # stale re-check below writes false after it removes the release again.
+          echo "did_publish=true" >> "$GITHUB_OUTPUT"
 
           CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_BRANCH" --jq '.sha')"
           if [[ "$CURRENT_SHA" != "$COMMIT_SHA" ]]; then
@@ -1049,7 +1054,6 @@ jobs:
             --notes-file "$NOTES_FILE" \
             --output "$MANIFEST_NAME" \
             "${APK_FILES[@]}"
-          echo "did_publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload update-feed manifest for the next job
         id: upload-update-feed
@@ -1085,6 +1089,39 @@ jobs:
           fi
           gh release upload "$STAGING_TAG" "$MANIFEST" --repo "$GITHUB_REPOSITORY" --clobber
 
+      - name: Keep only the newest five nightly releases
+        if: steps.publish.outputs.did_publish == 'true' && inputs.channel == 'nightly'
+        # Housekeeping after the release is published: a failure here must not block the feed or the release.
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          KEEP=5
+          # Only N<digits> tags are nightly releases, so stable v* tags, update-feed and local-* never match.
+          # Drafts and releases without a publish time cannot be ordered, so they are left alone.
+          NIGHTLY_RELEASES="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[]
+              | select(.draft == false and .published_at != null and (.tag_name | test("^N[0-9]+$")))
+              | [.tag_name, .published_at] | @tsv')"
+          # Newest first by publish time; the tag breaks ties. ISO 8601 UTC timestamps order correctly as text.
+          mapfile -t SUPERSEDED < <(
+            printf '%s\n' "$NIGHTLY_RELEASES" | sed '/^$/d' | sort -t$'\t' -k2,2r -k1,1r |
+              awk -F'\t' -v keep="$KEEP" 'NR > keep { print $1 }'
+          )
+          for NIGHTLY_TAG in "${SUPERSEDED[@]}"; do
+            if [[ "$NIGHTLY_TAG" == "$TAG_NAME" ]]; then
+              continue
+            fi
+            if gh release delete "$NIGHTLY_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
+              echo "Deleted superseded nightly release $NIGHTLY_TAG."
+            else
+              echo "::warning::Could not delete superseded nightly release $NIGHTLY_TAG."
+            fi
+          done
+
       - name: Delete the staging release hand-off
         if: steps.publish.outputs.did_publish == 'true'
         continue-on-error: true
@@ -1110,9 +1147,16 @@ jobs:
           done
 
   publish-update-feed:
-    name: Publish ${{ inputs.channel }} update-feed manifest
-    needs: publish-release
-    if: needs.publish-release.outputs.did_publish == 'true'
+    name: Publish ${{ inputs.channel }} update-feed manifest and remove staging hand-offs
+    # Runs after every outcome of a publishing run, so its staging hand-offs are always removed. The manifest
+    # steps below run only when publish-release created or updated the release. Smoke runs (publish: false)
+    # skip this job, which keeps their hand-offs downloadable as docs/releasing.md describes.
+    needs:
+      - android
+      - desktop
+      - ios
+      - publish-release
+    if: always() && inputs.publish
     runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: write
@@ -1122,6 +1166,7 @@ jobs:
     steps:
       - name: Download update-feed manifest
         id: download-update-feed
+        if: needs.publish-release.outputs.did_publish == 'true'
         uses: actions/download-artifact@v8
         continue-on-error: true
         with:
@@ -1129,7 +1174,7 @@ jobs:
           path: feed-artifact
 
       - name: Restore the update-feed manifest from its staging release
-        if: steps.download-update-feed.outcome == 'failure'
+        if: needs.publish-release.outputs.did_publish == 'true' && steps.download-update-feed.outcome == 'failure'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1149,6 +1194,7 @@ jobs:
             --clobber
 
       - name: Publish current manifest to the fixed update-feed release
+        if: needs.publish-release.outputs.did_publish == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1199,15 +1245,32 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --clobber
 
-      - name: Delete the staging update-feed hand-off
+      - name: Remove every staging hand-off of this run
+        # Last step of the run. It runs after a failed, skipped or refused publish too, and it removes the
+        # update-feed hand-off that the manifest step above read.
+        if: always()
         continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          STAGING_TAG="staging-${GITHUB_RUN_ID}-update-feed"
-          if gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes ||
-              echo "::warning::Could not delete staging release $STAGING_TAG."
+          # The dash after the run ID keeps another run's hand-offs out of this prefix.
+          if ! REFS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/staging-${GITHUB_RUN_ID}-" \
+            --jq '.[].ref')"; then
+            echo "::warning::Could not list the staging hand-offs of run $GITHUB_RUN_ID; delete them by hand."
+            exit 0
           fi
+          mapfile -t STAGING_TAGS < <(printf '%s\n' "$REFS" | sed -e 's|^refs/tags/||' -e '/^$/d')
+          for STAGING_TAG in "${STAGING_TAGS[@]}"; do
+            # A tag goes only after its release is gone, so a release that survives a failed delete keeps its tag.
+            if gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 &&
+               ! gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
+              echo "::warning::Could not delete staging release $STAGING_TAG."
+              continue
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$STAGING_TAG" >/dev/null 2>&1; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$STAGING_TAG" >/dev/null ||
+                echo "::warning::Could not delete tag $STAGING_TAG."
+            fi
+          done

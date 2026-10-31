@@ -391,7 +391,7 @@ private fun DiscordDebugSection() {
                             text = stringResource(R.string.discord_integration),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(

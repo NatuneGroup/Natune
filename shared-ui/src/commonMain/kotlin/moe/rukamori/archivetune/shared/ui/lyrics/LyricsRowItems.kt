@@ -1,8 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -15,7 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +30,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_clear_selection
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_selected_count
@@ -64,19 +65,35 @@ internal fun LyricsRowItem(
     onLongPress: () -> Unit,
     depth: LyricsDepth = LyricsDepth.Flat,
     depthEnabled: Boolean = false,
+    /** Waits before a line change reaches the row. Depth and the settle share it, so they ripple together. */
+    staggerMs: Long = 0L,
+    /** The line-change glide of the scroll. Null on the looks that keep the single animated scroll. */
+    settle: LyricsLineSettle? = null,
+    refined: Boolean = false,
+    interlude: LyricsInterlude? = null,
 ) {
     // Unsynced text has no timing to follow, so it reads at full strength rather than as an idle line.
     val linePalette = if (row.isSynced) palette else palette.copy(dim = palette.bright)
     Column(
         Modifier
             .fillMaxWidth()
-            .then(if (depthEnabled) Modifier.lyricsDepth(depth, alignment, animate = !reduceMotion) else Modifier)
+            .then(
+                if (depthEnabled) {
+                    Modifier.lyricsDepth(depth, alignment, animate = !reduceMotion, staggerMs = staggerMs)
+                } else {
+                    Modifier
+                },
+            )
+            .then(if (settle != null) Modifier.lyricsSettle(settle, staggerMs) else Modifier)
             .testTag(lyricsRowTag(row.index))
             .background(if (selected) palette.glow.copy(alpha = SELECTED_ROW_ALPHA) else Color.Transparent)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
             .padding(vertical = 8.dp),
         horizontalAlignment = alignment.horizontal(),
     ) {
+        interlude?.let {
+            LyricsInterludeDots(interlude = it, clock = clock, color = palette.bright, reduceMotion = reduceMotion)
+        }
         SweptLyricLine(
             row = row,
             style = mainStyle,
@@ -86,6 +103,7 @@ internal fun LyricsRowItem(
             shapes = shapes,
             minSweepMs = minSweepMs,
             reduceMotion = reduceMotion,
+            refined = refined,
             modifier = Modifier.fillMaxWidth(),
         )
         row.background?.let { background ->
@@ -103,26 +121,58 @@ internal fun LyricsRowItem(
 
 /**
  * Scale, fade and softening by distance from the sung line. The scale grows from the row's aligned edge so a
- * start-aligned line does not drift sideways. Without reduced motion the change follows a soft spring.
+ * start-aligned line does not drift sideways. Without reduced motion the change follows a soft spring, held back by
+ * [staggerMs] so a line change ripples outward from the sung line. Scale and alpha are read in the draw phase, so a
+ * spring frame does not recompose the row. The blur radius is composed, because the blur modifier has to exist.
  */
 @Composable
-private fun Modifier.lyricsDepth(depth: LyricsDepth, alignment: LyricsLineAlignment, animate: Boolean): Modifier {
-    val spec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
-    val scale by animateFloatAsState(depth.scale, if (animate) spec else snap(), label = "lyrics-depth-scale")
-    val alpha by animateFloatAsState(depth.alpha, if (animate) spec else snap(), label = "lyrics-depth-alpha")
-    val blur by animateFloatAsState(depth.blurDp, if (animate) spec else snap(), label = "lyrics-depth-blur")
+private fun Modifier.lyricsDepth(
+    depth: LyricsDepth,
+    alignment: LyricsLineAlignment,
+    animate: Boolean,
+    staggerMs: Long,
+): Modifier {
+    val scaleAnim = remember { Animatable(depth.scale) }
+    val alphaAnim = remember { Animatable(depth.alpha) }
+    val blurAnim = remember { Animatable(depth.blurDp) }
+    LaunchedEffect(depth, animate, staggerMs) {
+        if (!animate) {
+            scaleAnim.snapTo(depth.scale)
+            alphaAnim.snapTo(depth.alpha)
+            blurAnim.snapTo(depth.blurDp)
+            return@LaunchedEffect
+        }
+        if (staggerMs > 0L) delay(staggerMs)
+        val spec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
+        launch { scaleAnim.animateTo(depth.scale, spec) }
+        launch { alphaAnim.animateTo(depth.alpha, spec) }
+        launch { blurAnim.animateTo(depth.blurDp, spec) }
+    }
     val originX = when (alignment) {
         LyricsLineAlignment.START -> 0f
         LyricsLineAlignment.CENTER -> 0.5f
         LyricsLineAlignment.END -> 1f
     }
     return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-        this.alpha = alpha
+        scaleX = scaleAnim.value
+        scaleY = scaleAnim.value
+        alpha = alphaAnim.value
         transformOrigin = TransformOrigin(originX, 0.5f)
-    }.then(if (blur > BLUR_THRESHOLD_DP) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
+    }.then(
+        if (blurAnim.value > BLUR_THRESHOLD_DP) {
+            Modifier.blur(blurAnim.value.dp, BlurredEdgeTreatment.Unbounded)
+        } else {
+            Modifier
+        },
+    )
 }
+
+/**
+ * The line-change glide. The row is drawn where it was before the list moved, and eases to its place after [staggerMs].
+ * The offset is read in the draw phase, so a frame of the glide does not recompose the row.
+ */
+private fun Modifier.lyricsSettle(settle: LyricsLineSettle, staggerMs: Long): Modifier =
+    graphicsLayer { translationY = settle.offsetPx(staggerMs) }
 
 /** Below this the softening is invisible, and skipping it spares the row an offscreen layer. */
 private const val BLUR_THRESHOLD_DP = 0.05f

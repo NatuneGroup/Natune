@@ -224,6 +224,12 @@ class DesktopSessionGraph internal constructor(
     /** The one sleep timer of this process. It only pauses [player], so every window shares it. */
     internal val sleepTimer = DesktopSleepTimer(this)
 
+    /**
+     * The one equalizer of this process. Its bands reach the engine through [playback], and its levels are saved in
+     * [settings].
+     */
+    internal val equalizer = DesktopEqualizer(scope = scope, settings = settings, playback = playback)
+
     /** The crossfade or automix blend armed into the next song, which the player artwork follows. */
     internal val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 

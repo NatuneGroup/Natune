@@ -92,6 +92,9 @@ private val SheetSurface = Color(0xFF202020)
 
 private val SheetSubtitle = Color(0xFFA8A8A8)
 
+/** The now-playing section is the list's first item, so queue rows start one index later. */
+private const val SimpMusicQueueHeaderItems = 1
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SimpMusicQueueSheet(
@@ -118,7 +121,7 @@ internal fun SimpMusicQueueSheet(
     val queueActionScope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(currentWindowIndex, entries.size) {
         if (currentWindowIndex in 0 until entries.size) {
-            runCatching { listState.scrollToItem(currentWindowIndex) }
+            runCatching { listState.scrollToItem(currentWindowIndex + SimpMusicQueueHeaderItems) }
         }
     }
 
@@ -181,16 +184,6 @@ internal fun SimpMusicQueueSheet(
                     Spacer(Modifier.size(48.dp))
                 }
 
-                Spacer(Modifier.height(20.dp))
-                Text(
-                    text = stringResource(R.string.now_playing),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                )
-                Spacer(Modifier.height(6.dp))
-                currentEntry?.let { SimpMusicQueueRow(it, isPlaying = true, onClick = null, onMore = null) }
-
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -200,23 +193,38 @@ internal fun SimpMusicQueueSheet(
                         modifier = Modifier.padding(horizontal = 20.dp).weight(1f),
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(6.dp))
 
                 QueueExtrasBar(
                     onJumpToCurrent = {
                         if (currentWindowIndex in entries.indices) queueActionScope.launch {
-                            listState.animateScrollToItem(currentWindowIndex)
+                            listState.animateScrollToItem(currentWindowIndex + SimpMusicQueueHeaderItems)
                         }
                     },
                     contentColor = Color.White,
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
 
+                // The now-playing section scrolls away with the rows; the top bar, title and actions stay pinned.
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f),
                     horizontalAlignment = Alignment.Start,
                 ) {
+                    item(key = "simp_now_playing") {
+                        Column {
+                            Spacer(Modifier.height(14.dp))
+                            Text(
+                                text = stringResource(R.string.now_playing),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            currentEntry?.let { SimpMusicQueueRow(it, isPlaying = true, onClick = null, onMore = null) }
+                            Spacer(Modifier.height(10.dp))
+                        }
+                    }
                     itemsIndexed(entries, key = { i, entry -> "$i:${entry.first.id}" }) { index, entry ->
                         val (meta, periodIndex) = entry
                         SimpMusicQueueRow(

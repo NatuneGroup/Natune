@@ -25,6 +25,9 @@ import moe.rukamori.archivetune.shared.domain.settings.appleMusicPalette
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicSearchBar
 import moe.rukamori.archivetune.shared.domain.settings.interfaceStyle
 import moe.rukamori.archivetune.shared.domain.settings.libraryStyle as sharedLibraryStyle
+import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
+import moe.rukamori.archivetune.shared.domain.settings.playerMenuStyle as sharedPlayerMenuStyle
+import moe.rukamori.archivetune.shared.domain.settings.setPlayerMenuStyle
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.applySharedPreferenceEdit
@@ -67,6 +70,19 @@ fun rememberAppleMusicSearchBar(): Boolean = rememberPreferenceSnapshot().curren
 
 @Composable
 fun rememberAppleMusicPalette(): Boolean = rememberPreferenceSnapshot().current.sharedSnapshot().appleMusicPalette()
+
+/** The three-dot and lyrics menu look, read from a page's [PreferenceSnapshot]. */
+fun PreferenceSnapshot.playerMenuStyle(): PlayerMenuStyle = current.sharedSnapshot().sharedPlayerMenuStyle()
+
+@Composable
+fun rememberPlayerMenuStyle(): PlayerMenuStyle = rememberPreferenceSnapshot().playerMenuStyle()
+
+/** Writes the menu look through the shared rule, so the legacy Apple menus toggle moves with the choice. */
+@Composable
+fun rememberPlayerMenuStyleSetter(): (PlayerMenuStyle) -> Unit {
+    val dataStore = LocalContext.current.dataStore
+    return { style -> PreferenceStore.launchEdit(dataStore) { applySharedPreferenceEdit { setPlayerMenuStyle(style) } } }
+}
 
 /** Only the explicit preset action coordinates the independently editable surfaces. */
 @Composable

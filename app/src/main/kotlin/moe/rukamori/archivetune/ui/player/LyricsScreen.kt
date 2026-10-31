@@ -148,6 +148,7 @@ import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.LocalMenuState
+import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.PlayerSliderTrack
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import androidx.compose.ui.layout.boundsInRoot
@@ -1157,6 +1158,8 @@ private fun AppleMusicBackground(
                 .background(AppleMusicFallbackGradient.last()),
     ) {
         val isPreS = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+        // Held outside the AnimatedContent child, so a new backdrop shows the last loaded one while it loads.
+        val heldBackgroundCover = remember { mutableStateOf<String?>(null) }
         AnimatedContent(
             targetState = mediaMetadata.thumbnailUrl,
             transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
@@ -1186,9 +1189,9 @@ private fun AppleMusicBackground(
                         )
                     }
                 } else {
-                    AsyncImage(
-                        model = thumbnailUrl,
-                        contentDescription = null,
+                    HeldPlayerCover(
+                        imageUrl = thumbnailUrl,
+                        held = heldBackgroundCover,
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier
@@ -1270,9 +1273,8 @@ private fun AppleMusicTrackHeader(
                     .background(foregroundColor.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center,
         ) {
-            AsyncImage(
-                model = mediaMetadata.thumbnailUrl,
-                contentDescription = null,
+            PlayerCoverImage(
+                imageUrl = mediaMetadata.thumbnailUrl,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -1292,19 +1294,15 @@ private fun AppleMusicTrackHeader(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(
+            MarqueeText(
                 text = mediaMetadata.title,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = foregroundColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            Text(
+            MarqueeText(
                 text = artistText,
                 style = MaterialTheme.typography.bodyLarge,
                 color = foregroundColor.copy(alpha = 0.72f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
 
