@@ -11,12 +11,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.backup.DesktopBackup
 import moe.rukamori.archivetune.shared.data.playlistimport.PlaylistImportOwner
@@ -396,9 +396,12 @@ internal suspend fun assembleDesktopSessionOwners(
             }
         },
         scope.launch {
-            while (isActive) {
-                delay(POSITION_CHECKPOINT_INTERVAL_MS)
-                if (player.snapshot.value?.playWhenReady == true) checkpointNow(queue)
+            // Checkpoints tick only while playWhenReady is set; a paused session sleeps until play.
+            player.snapshot.map { it?.playWhenReady == true }.distinctUntilChanged().collectLatest { playing ->
+                while (playing) {
+                    delay(POSITION_CHECKPOINT_INTERVAL_MS)
+                    checkpointNow(queue)
+                }
             }
         },
     )
