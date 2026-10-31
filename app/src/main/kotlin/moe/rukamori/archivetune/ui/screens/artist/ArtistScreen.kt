@@ -96,7 +96,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
-import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.flow.collect
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -145,6 +144,7 @@ import moe.rukamori.archivetune.ui.component.shimmer.ButtonPlaceholder
 import moe.rukamori.archivetune.ui.component.shimmer.ListItemPlaceHolder
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
+import moe.rukamori.archivetune.ui.component.shimmer.shimmerWhileStarted
 import moe.rukamori.archivetune.ui.menu.AlbumMenu
 import moe.rukamori.archivetune.ui.menu.SongMenu
 import moe.rukamori.archivetune.ui.menu.YouTubeAlbumMenu
@@ -351,7 +351,7 @@ fun ArtistScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = ArtistHeroMinHeight)
-                                    .shimmer()
+                                    .shimmerWhileStarted()
                                     .background(MaterialTheme.colorScheme.surfaceContainerLow),
                         ) {
                             Column(
