@@ -143,14 +143,19 @@ under them, and the mask only fades the lyrics, never the glass or artwork behin
 SimpMusic card, every player style's lyrics pane) must not add a second edge mask.
 Flamingo keeps only its controls-visible mask that clears the lines from under its controls.
 
-`KaraokeLyricsView` (lyrics-ui 1.0.x) hard-codes its own 20dp/100dp mask. Enhanced's synced
-pane (`ui/component/EnhancedKaraokePane.kt`) measures
-the view taller by those amounts and lifts it, so the library's ramps sit outside the
-clipped box and the anchor offset is raised by the same 20dp. Re-check both numbers when
-the library is upgraded. lyrics-ui needs API 29, so below that the pane draws
-`BasicSyncedLyricsList` instead: a plain lazy list that owns its own auto-scroll to the
-same anchor, sweeps only the active karaoke line and pauses following for 3 s after a
-user drag. The single-active-line strip (TikTok main lyrics) has no list and no fade.
+Enhanced's synced pane (`ui/component/EnhancedKaraokePane.kt`) draws every line with
+`BasicSyncedLyricsList` on every API level. The list owns its auto-scroll to the anchor, sweeps
+the active karaoke line with `EnhancedSweptLine`, glides rows on a line change, scales and fades
+rows by their distance from the sung line, and shows interlude dots over silences of 4 s or more.
+Following pauses for 3 s after a user drag, and a tap-to-seek resumes it at once. While the user
+scrolls, every line is un-blurred. Distance blur needs Android 12+ and the line-blur setting, and
+is off under reduced motion, with animations disabled, and on low-end devices.
+
+The library's `KaraokeLyricsView` (lyrics-ui 1.0.x, which hard-codes a 20dp/100dp mask) stays
+wired behind `USE_KARAOKE_LIBRARY_VIEW`, switched off, because it cannot draw the sweep, glide,
+depth or dots. Its measure-taller-and-lift workaround and the 20dp anchor offset apply only to
+that branch; re-check those numbers when the library is upgraded. The single-active-line strip
+(TikTok main lyrics) has no list and no fade.
 
 ## Two things that were wrong, so they do not come back
 

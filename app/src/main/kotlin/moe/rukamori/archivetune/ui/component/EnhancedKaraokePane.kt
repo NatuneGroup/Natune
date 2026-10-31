@@ -25,9 +25,9 @@ import moe.rukamori.archivetune.shared.ui.lyrics.LyricsViewportFade
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 
 /**
- * The synced Enhanced lyrics list: the library's [KaraokeLyricsView] inside a box whose top and bottom
- * edges fade, wherever the list is scrolled. The active line sits 8% of the box height below the top.
- * Below API 29, where the library view cannot run, [BasicSyncedLyricsList] takes its place.
+ * The synced Enhanced lyrics list inside a box whose top and bottom edges fade, wherever the list is scrolled. The
+ * active line sits 8% of the box height below the top. The in-house [BasicSyncedLyricsList] draws the lines on every
+ * API level, so the feathered sweep, the line-change glide, the distance depth and the interlude dots all run.
  */
 @Composable
 internal fun EnhancedKaraokePane(
@@ -45,6 +45,7 @@ internal fun EnhancedKaraokePane(
     showPhonetic: Boolean,
     maxContentWidth: Dp,
     modifier: Modifier = Modifier,
+    manualScrolling: Boolean = false,
 ) {
     BoxWithConstraints(modifier = modifier) {
         // The inner Box's layout scope shadows this one, so the height is read here and handed down.
@@ -60,7 +61,33 @@ internal fun EnhancedKaraokePane(
                     // The top ramp ends at the anchor, so the line being sung is never dimmed by it.
                     .lyricsViewportFade(top = minOf(anchorOffset, LyricsViewportFade.DefaultTop)),
         ) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            if (USE_KARAOKE_LIBRARY_VIEW && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                Box(modifier = Modifier.fillMaxSize().outsetKaraokeLibraryMask()) {
+                    KaraokeLyricsView(
+                        listState = listState,
+                        lyrics = lyrics,
+                        currentPosition = currentPosition,
+                        onLineClicked = onLineClicked,
+                        onLinePressed = onLinePressed,
+                        textColor = textColor,
+                        normalLineTextStyle = normalLineTextStyle,
+                        accompanimentLineTextStyle = accompanimentLineTextStyle,
+                        phoneticTextStyle = phoneticTextStyle,
+                        blendMode = BlendMode.SrcOver,
+                        useBlurEffect = useBlurEffect,
+                        showTranslation = showTranslation,
+                        showPhonetic = showPhonetic,
+                        // The view starts KaraokeLibraryTopMask above the box, so the anchor moves down by
+                        // the same amount to keep the active line at anchorOffset on screen.
+                        offset = anchorOffset + KaraokeLibraryTopMask,
+                        // Reduced from 36.dp → 20.dp → 8.dp.
+                        keepAliveZone = 8.dp,
+                        // The library applies this modifier to its outer box and to its list, so it must
+                        // stay free of layout changes that would compound.
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            } else {
                 BasicSyncedLyricsList(
                     listState = listState,
                     lyrics = lyrics,
@@ -76,35 +103,17 @@ internal fun EnhancedKaraokePane(
                     anchorOffset = anchorOffset,
                     viewportHeight = viewportHeight,
                     modifier = Modifier.fillMaxSize(),
-                )
-            } else Box(modifier = Modifier.fillMaxSize().outsetKaraokeLibraryMask()) {
-                KaraokeLyricsView(
-                    listState = listState,
-                    lyrics = lyrics,
-                    currentPosition = currentPosition,
-                    onLineClicked = onLineClicked,
-                    onLinePressed = onLinePressed,
-                    textColor = textColor,
-                    normalLineTextStyle = normalLineTextStyle,
-                    accompanimentLineTextStyle = accompanimentLineTextStyle,
-                    phoneticTextStyle = phoneticTextStyle,
-                    blendMode = BlendMode.SrcOver,
                     useBlurEffect = useBlurEffect,
-                    showTranslation = showTranslation,
-                    showPhonetic = showPhonetic,
-                    // The view starts KaraokeLibraryTopMask above the box, so the anchor moves down by
-                    // the same amount to keep the active line at anchorOffset on screen.
-                    offset = anchorOffset + KaraokeLibraryTopMask,
-                    // Reduced from 36.dp → 20.dp → 8.dp.
-                    keepAliveZone = 8.dp,
-                    // The library applies this modifier to its outer box and to its list, so it must
-                    // stay free of layout changes that would compound.
-                    modifier = Modifier.fillMaxSize(),
+                    manualScrolling = manualScrolling,
                 )
             }
         }
     }
 }
+
+// The library view stays wired for a switch back, but ENHANCED draws through BasicSyncedLyricsList on every API level:
+// the library cannot take the feathered sweep, the glide, the depth or the interlude dots that the Enhanced look needs.
+private const val USE_KARAOKE_LIBRARY_VIEW = false
 
 // lyrics-ui 1.0.x hard-codes a DstIn ramp over KaraokeLyricsView (20dp in at the top, 100dp out at
 // the bottom) and offers no parameter to turn it off. Left in place it stacks with the box fade, and
