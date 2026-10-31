@@ -102,6 +102,9 @@ fun LyricsFullscreenRenderer(
     val styles = remember(profile) { LyricsRowStyles(profile) }
     val alignments = remember(rows, settings.mode) { rows.map { LyricsAlignmentPolicy.of(settings.mode, it) } }
     val scanner = remember(rows) { LyricsRenderRows.scanner(rows) }
+    val interludes = remember(rows, profile.refinedMotion) {
+        if (profile.refinedMotion) LyricsInterludes.byRow(rows) else emptyMap<Int, LyricsInterlude>()
+    }
     val frameLoop = LyricsFrameGate.runsFrameLoop(visible, resumed, settings.reduceMotion, snapshot)
     val clock = rememberLyricsClock(snapshot, settings.syncOffsetMs, LyricsFeedTiming.leadMsFor(rows), frameLoop)
     val measurer = rememberTextMeasurer()
@@ -110,6 +113,12 @@ fun LyricsFullscreenRenderer(
     val primary = activeRows.lastOrNull() ?: -1
 
     val scrollOwner = rememberLyricsScrollOwner()
+    // Only ENHANCED glides its rows into place on a line change, and reduced motion keeps every row still.
+    val settleOn = profile.refinedMotion && !settings.reduceMotion
+    val lineSettle = remember(listState) { LyricsLineSettle(listState) }
+    // A glide cut short by reduced motion or another look must not leave the rows part way along their path.
+    LaunchedEffect(settleOn) { if (!settleOn) lineSettle.clear() }
+    val settle = if (settleOn) lineSettle else null
     // A listener reading ahead sees every row sharp, as Apple Music does while the list is dragged.
     val dragged by listState.interactionSource.collectIsDraggedAsState()
     LyricsAutoFollow(
@@ -120,6 +129,7 @@ fun LyricsFullscreenRenderer(
         visible = visible,
         reduceMotion = settings.reduceMotion,
         profile = profile,
+        settle = settle,
     )
     val scrollConnection = remember(scrollOwner) {
         object : NestedScrollConnection {
@@ -178,9 +188,14 @@ fun LyricsFullscreenRenderer(
             ) {
                 items(rows, key = { it.index }) { row ->
                     val alignment = alignments[row.index]
-                    val depth = if (settings.depthEffects && !dragged) {
-                        LyricsDepth.of(LyricsDepth.distance(row.index, primary, row.index in activeRows),
-                            reduceMotion = settings.reduceMotion)
+                    val distance = LyricsDepth.distance(row.index, primary, row.index in activeRows)
+                    // A row is sharp while the finger is on the list. ENHANCED also keeps rows sharp until the
+                    // hold ends, so a listener reading ahead is never shown blurred lines.
+                    val holding = dragged || (profile.refinedMotion && !scrollOwner.following)
+                    val depth = if (settings.depthEffects && !holding) {
+                        val steps = LyricsDepth.of(distance, reduceMotion = settings.reduceMotion)
+                        // Reduced effects keep the static fade but drop the blur, the costly offscreen layer.
+                        if (profile.refinedMotion && settings.reduceMotion) steps.copy(blurDp = 0f) else steps
                     } else {
                         LyricsDepth.Flat
                     }
@@ -198,9 +213,17 @@ fun LyricsFullscreenRenderer(
                         reduceMotion = settings.reduceMotion,
                         depth = depth,
                         depthEnabled = settings.depthEffects,
+                        staggerMs = if (profile.refinedMotion) LyricsDepth.staggerMs(distance) else 0L,
+                        settle = settle,
+                        refined = profile.refinedMotion,
+                        interlude = interludes[row.index],
                         onTap = {
                             when (LyricsTapPolicy.onTap(row, selection.isActive, settings.tapToSeek)) {
-                                is LyricsTapAction.Seek -> actions.onSeek(row.timeMs)
+                                is LyricsTapAction.Seek -> {
+                                    // A tapped line returns to the playhead, so following resumes with the seek.
+                                    scrollOwner.resume()
+                                    actions.onSeek(row.timeMs)
+                                }
                                 LyricsTapAction.ToggleSelection -> selection = selection.toggled(row.index)
                                 LyricsTapAction.None -> Unit
                             }

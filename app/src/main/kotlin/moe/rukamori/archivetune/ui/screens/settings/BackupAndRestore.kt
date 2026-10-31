@@ -772,7 +772,7 @@ private fun ExportPlaylistItem(
                 Text(
                     text = playlist.name,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(

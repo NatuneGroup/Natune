@@ -1522,7 +1522,7 @@ class MainActivity : ComponentActivity() {
                     // on pages below the tabs.
                     val isBottomUiCompact =
                         !useRail &&
-                            !active &&
+                            !active && !moe.rukamori.archivetune.shared.ui.navigation.isSettingsRoute(currentRoute.orEmpty()) &&
                             when (navigationBarCompactBehavior) {
                                 NavigationBarCompactBehavior.ALWAYS_COMPACT -> true
                                 NavigationBarCompactBehavior.ADAPTIVE -> scrolledDown
@@ -1935,7 +1935,7 @@ class MainActivity : ComponentActivity() {
                             useRail,
                             bottomInset,
                             shouldShowNavigationBar,
-                            playerBottomSheetState.isDismissed,
+                            playerBottomSheetState.isDismissed, currentRoute,
                             navigationBarStyle,
                             navVisibleHeight,
                             effectiveStatusBarTop,
@@ -1943,7 +1943,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             var bottom = bottomInset
                             val navStack = shouldShowNavigationBar && !useRail
-                            if (!playerBottomSheetState.isDismissed) {
+                            if (!playerBottomSheetState.isDismissed && !moe.rukamori.archivetune.shared.ui.navigation.isSettingsRoute(currentRoute.orEmpty())) {
                                 bottom +=
                                     if (navStack) {
                                         androidx.compose.ui.unit.lerp(

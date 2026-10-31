@@ -71,13 +71,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
+import moe.rukamori.archivetune.ui.player.PlayerCoverImage
 import moe.rukamori.archivetune.ui.player.label
 import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.ui.utils.rememberPreBlurredBitmap
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -178,10 +177,8 @@ internal fun SpatialFlowBlurredBackdrop(
                     )
                 }
             } else {
-                val request = rememberOfflineArtworkImageRequest(artUrl)
-                AsyncImage(
-                    model = request,
-                    contentDescription = null,
+                PlayerCoverImage(
+                    imageUrl = artUrl,
                     contentScale = ContentScale.Crop,
                     modifier =
                         Modifier

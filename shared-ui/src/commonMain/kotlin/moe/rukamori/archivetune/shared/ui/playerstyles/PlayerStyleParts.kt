@@ -33,10 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
@@ -52,10 +49,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -63,7 +57,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.sin
-import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
 import moe.rukamori.archivetune.shared.ui.player.PlayerIcon
 import moe.rukamori.archivetune.shared.ui.player.PlayerRenderContext
@@ -79,58 +73,6 @@ import moe.rukamori.archivetune.shared.ui.resources.m5_playing_from
 import moe.rukamori.archivetune.shared.ui.resources.m5_replay
 import moe.rukamori.archivetune.shared.ui.resources.m5_seek
 import org.jetbrains.compose.resources.stringResource
-
-/** Fade both horizontal edges, matching the original marquee viewportEdgeFade for overflowing lines. */
-internal fun Modifier.edgeFade(width: Dp = 8.dp): Modifier = drawWithContent {
-    val px = width.toPx().coerceAtMost(size.width / 2f)
-    drawContent()
-    if (px > 1f) {
-        drawRect(
-            Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = 0f, endX = px),
-            blendMode = BlendMode.DstIn,
-        )
-        drawRect(
-            Brush.horizontalGradient(
-                listOf(Color.Black, Color.Transparent),
-                startX = size.width - px, endX = size.width,
-            ),
-            blendMode = BlendMode.DstIn,
-        )
-    }
-}
-
-@Composable
-internal fun MarqueeText(
-    text: String,
-    modifier: Modifier = Modifier,
-    color: Color = Color.Unspecified,
-    style: TextStyle = LocalTextStyle.current,
-    fontWeight: FontWeight? = null,
-    fontStyle: FontStyle? = null,
-    fontFamily: FontFamily? = null,
-    letterSpacing: TextUnit = TextUnit.Unspecified,
-    centered: Boolean = false,
-    maxLines: Int = 1,
-    fade: Boolean = true,
-) {
-    // Overflowing text makes one pass per text, and only while motion is allowed (that gate already includes visible
-    // and resumed). A static clip stays behind otherwise, so no frame clock runs for it.
-    Text(
-        text = text,
-        modifier = modifier
-            .trackMarquee(trackKey = text, enabled = motionAllowed())
-            .then(if (fade) Modifier.edgeFade() else Modifier),
-        color = color,
-        style = style,
-        fontWeight = fontWeight,
-        fontStyle = fontStyle,
-        fontFamily = fontFamily,
-        letterSpacing = letterSpacing,
-        maxLines = maxLines,
-        overflow = TextOverflow.Clip,
-        textAlign = if (centered) TextAlign.Center else TextAlign.Start,
-    )
-}
 
 /** Rounded-square "E" glyph matching the original explicit-content badge. */
 @Composable

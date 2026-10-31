@@ -11,10 +11,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.Properties
+import kotlin.math.roundToInt
 
 private const val BOUNDS_FILE = "window-bounds.properties"
-private const val MIN_WIDTH = 480f
-private const val MIN_HEIGHT = 360f
+// The smallest window the three-column layouts are built for: below this the navigation, player and queue controls clip.
+private const val MIN_WIDTH = 800f
+private const val MIN_HEIGHT = 600f
 private const val MAX_EDGE = 8192f
 
 /** The window as it was when the app last quit. [position] is null when it should open where the system puts it. */
@@ -26,6 +28,14 @@ internal class DesktopSavedWindow(val position: WindowPosition, val size: DpSize
  */
 internal object DesktopWindowBounds {
     private val defaultSize = DpSize(1024.dp, 720.dp)
+
+    /** Applies the minimum window size to the AWT window, in its device pixels, so no drag or saved size goes below it. */
+    fun applyMinimumSize(window: java.awt.Window, density: Float) {
+        window.minimumSize = java.awt.Dimension(
+            (MIN_WIDTH * density).roundToInt(),
+            (MIN_HEIGHT * density).roundToInt(),
+        )
+    }
 
     fun load(instanceDirectory: Path): DesktopSavedWindow {
         val fallback = DesktopSavedWindow(WindowPosition.PlatformDefault, defaultSize, WindowPlacement.Floating)

@@ -135,7 +135,9 @@ internal fun PlayerQueueSongSourceDialog(
                 IconButton(
                     onClick = {
                         searchMode = !searchMode
-                        if (!searchMode) {
+                        if (searchMode) {
+                            searchQuery = sourceSearchSeed(track)
+                        } else {
                             searchQuery = ""
                             sourceFilterName = null
                         }
@@ -397,6 +399,16 @@ private fun SourceSearchResultRow(
         icon(result.source.sourceIcon(), MaterialTheme.colorScheme.onSurfaceVariant, Modifier.size(16.dp))
     }
 }
+
+/**
+ * Entering search opens on the song's title and artists, so the providers answer without the user typing first.
+ * Blank parts are dropped so a missing artist cannot leave a stray space in the query.
+ */
+private fun sourceSearchSeed(track: PlayerQueueTrack): String =
+    (listOf(track.title) + track.artists.map { it.name })
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString(" ")
 
 /** The artist line, then the duration when the provider reports one. The search payload may omit it. */
 private fun resultSubtitle(result: PlayerSourceSearchResult): String =

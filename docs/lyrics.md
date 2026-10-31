@@ -94,12 +94,35 @@ screen to read as anything but flicker). The style's own fullscreen lyrics sheet
 
 ## The word sweep
 
-`SweptLyricLine` draws a line as two stacked copies — dim underneath, bright on top
-clipped to however much has been sung — plus an optional blurred third copy for the
-glow. The clip is recomputed in the draw phase, so a frame costs a clip and a redraw
-rather than a recomposition.
+`SweptLyricLine` draws a line in two layers: the whole line dim, then the sung part bright,
+clipped to however much has been sung. The clip is recomputed in the draw phase, so a frame
+costs a clip and a redraw rather than a recomposition. The glow is a tinted rounded box behind
+the word being sung, not a blurred copy of the text.
 
-It is fed by `rememberLyricClock`, which carries the player's twice-a-second position
+ENHANCED (the `refinedMotion` flag on `LyricsModeProfile`, in `shared-ui`) adds these, all of
+them skipped under reduced motion:
+
+- The sung edge is feathered over 6 dp with a `DstIn` mask on a layer limited to the line's band.
+- The glow is scaled by how long the word is held. Words under 1 s get none, and the share rises
+  to full at 2 s (`LyricsSweepGeometry.emphasisGain`).
+- A word held for at least 1 s lifts up to 2.5 dp while it is sung. It is cut out of the line
+  and drawn again higher inside its own box (`LyricsSweepGeometry.liftShare`).
+- An instrumental break of 4 s or more shows three dots above the next line (`LyricsInterludes`,
+  `LyricsInterludeDots`). They light in turn over the break and breathe.
+- Depth (scale, fade and blur by distance from the sung line) waits `LyricsDepth.staggerMs` per
+  step, so a line change ripples outward. Rows stay sharp until the listener's hold ends or a
+  line is tapped, not only while the finger is down. The desktop host turns depth on for ENHANCED
+  unless reduced motion is on.
+- The list moves to a new line at once, and each row starts where it was and eases into place
+  after the same stagger (`LyricsLineSettle`). The glide lasts at most 1 s, is off under reduced
+  motion, and ends at once on a drag, a seek or a hidden surface. The line settles at 35% of the
+  box, about a third from the top. Every other look keeps the single animated scroll.
+
+The iOS 26 native Enhanced view (`iosApp/ArchiveTune/SystemLyrics.swift`) draws its own sweep. It
+takes the idle alpha and the depth values from the shared profile, but not the feather, lift,
+glow gating, dots, stagger or glide.
+
+It is fed by `rememberLyricsClock`, which carries the player's twice-a-second position
 report forward on the frame clock so the sweep does not step.
 
 **Both compact surfaces share this renderer.** That is a deliberate exception to the

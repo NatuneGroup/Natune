@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
+import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -244,10 +245,14 @@ fun PlayerQueueMenu(
                 }
                 item {
                     PlayerQueueSurface(modifier = Modifier.padding(vertical = 6.dp)) {
-                        PlayerQueueGrid(
-                            items = gridItems,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                        )
+                        if (state.menuStyle == PlayerMenuStyle.MD3) {
+                            PlayerQueueActionList(items = gridItems, modifier = Modifier.padding(vertical = 4.dp))
+                        } else {
+                            PlayerQueueGrid(
+                                items = gridItems,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                            )
+                        }
                     }
                 }
                 item { Spacer(modifier = Modifier.height(12.dp)) }

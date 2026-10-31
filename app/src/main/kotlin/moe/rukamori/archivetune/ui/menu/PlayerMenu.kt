@@ -126,7 +126,6 @@ import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.ListDialog
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
-import moe.rukamori.archivetune.ui.component.NewActionGrid
 import moe.rukamori.archivetune.ui.player.rememberDeviceMusicVolumeController
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.resize
@@ -371,6 +370,7 @@ fun PlayerMenu(
             sources = availableSources,
             selected = currentSongSource,
             amazonSourceEnabled = amazonSourceEnabled,
+            initialSearchQuery = mediaMetadata.sourceSearchSeed(),
             onDismiss = { showSourceDialog = false },
             onSelect = { source ->
                 onSongSourceChange(SongSourceOverride.withOverride(songSourceRaw, mediaMetadata.id, source))
@@ -675,7 +675,7 @@ fun PlayerMenu(
         item { YouTubePlaylistRecoveryActions() }
         item {
             MenuSurfaceSection(modifier = Modifier.padding(vertical = 6.dp)) {
-                NewActionGrid(
+                PlayerMenuActionBlock(
                     actions =
                         buildList {
                             castPlayerMenuAction?.let(::add)
@@ -1715,6 +1715,7 @@ private fun SongSourceDialog(
     sources: List<AudioSourceType>,
     selected: AudioSourceType?,
     amazonSourceEnabled: Boolean,
+    initialSearchQuery: String,
     onDismiss: () -> Unit,
     onSelect: (AudioSourceType?) -> Unit,
     onPlaySong: (SongItem) -> Unit,
@@ -1990,10 +1991,8 @@ private fun SongSourceDialog(
                 IconButton(
                     onClick = {
                         searchMode = !searchMode
-                        if (!searchMode) {
-                            searchQuery = ""
-                            sourceFilter = null
-                        }
+                        searchQuery = if (searchMode) initialSearchQuery else ""
+                        if (!searchMode) sourceFilter = null
                     },
                 ) {
                     Icon(
