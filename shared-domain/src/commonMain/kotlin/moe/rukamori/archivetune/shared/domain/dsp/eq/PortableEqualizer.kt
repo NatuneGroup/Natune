@@ -21,8 +21,9 @@ data class EqualizerBand(
 }
 
 /**
- * Cascade of biquad bands. A band at 0 dB is left out of the cascade, so a flat equalizer is not merely
- * close to transparent: [process] returns without touching the samples, which keeps bit-perfect exact.
+ * Cascade of biquad bands, one stage per band. A band at 0 dB keeps its stage: its design is the identity,
+ * so dragging a band through 0 dB retunes that stage in place instead of resetting the others. [process]
+ * returns without touching the samples while every band is at 0 dB, which keeps a flat equalizer bit-exact.
  */
 class PortableEqualizer(private val sampleRateHz: Int, private val channels: Int) {
     private val stages = ArrayList<BiquadFilter>()
@@ -33,16 +34,16 @@ class PortableEqualizer(private val sampleRateHz: Int, private val channels: Int
 
     /**
      * Replaces the bands. When the band count is unchanged the existing stages keep their history and only
-     * retune, so a slider drag does not click. A different count starts every stage from silence.
+     * retune, so a slider drag does not click, including a drag that crosses 0 dB. A different count starts
+     * every stage from silence.
      */
     fun setBands(bands: List<EqualizerBand>) {
-        val audible = bands.filter { it.gainDb != 0.0 }
-        if (audible.size != stages.size) {
+        if (bands.size != stages.size) {
             stages.clear()
-            repeat(audible.size) { stages.add(BiquadFilter(channels)) }
+            repeat(bands.size) { stages.add(BiquadFilter(channels)) }
         }
-        audible.forEachIndexed { index, band -> stages[index].setCoefficients(design(band)) }
-        audibleBands = audible
+        bands.forEachIndexed { index, band -> stages[index].setCoefficients(design(band)) }
+        audibleBands = bands.filter { it.gainDb != 0.0 }
     }
 
     fun process(samples: FloatArray, frames: Int) {
