@@ -310,35 +310,49 @@ class IosHost {
     }
 
     /**
-     * Builds the Telegram session over [accounts] and hands it to playback. A TDLib database left by an earlier sign-in
-     * restores its session at once, so Telegram tracks in a restored queue can play before settings are opened. Without
-     * a build identity the session stays not configured, and a failure here leaves Telegram absent, never the host.
+     * Builds the Telegram session over [accounts]. A TDLib database left by an earlier sign-in restores its session at
+     * once, so Telegram tracks in a restored queue can play as soon as the session is attached. Without a build identity
+     * the session stays not configured, and a failure here leaves Telegram absent, never the host. Starting TDLib maps
+     * and initialises its native library, so this runs on a worker.
      */
-    private fun openTelegram(accounts: VaultProviderAccountStore) {
-        val session = try {
-            val storageRoot = iosTelegramStorageRoot()
-            IosTelegramClient(
-                credentials = iosTelegramApiCredentials(),
-                storageRoot = storageRoot,
-                applicationVersion = iosApplicationVersion(),
-                cancelRetainedDownloads = { cancelIosTelegramTransfers() },
-                nativeAccount = IosTelegramNativeAccountPort(
-                    beginAttempt = accounts::beginNativeTelegramAttempt,
-                    acceptSession = accounts::acceptNativeTelegramSession,
-                    revokeSession = accounts::revokeNativeTelegramSession,
-                ),
-                log = { message ->
-                    println("Natune iOS: $message")
-                    diagnostics?.append(DiagnosticLevel.INFO, "Telegram", message)
-                },
-            ).also { if (iosTelegramHasSession(storageRoot)) it.start() }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            null
-        } ?: return
-        playbackPort.attachTelegram(session)
-        telegramSession.value = session
+    private fun buildTelegramSession(accounts: VaultProviderAccountStore): IosTelegramClient? = try {
+        val storageRoot = iosTelegramStorageRoot()
+        IosTelegramClient(
+            credentials = iosTelegramApiCredentials(),
+            storageRoot = storageRoot,
+            applicationVersion = iosApplicationVersion(),
+            cancelRetainedDownloads = { cancelIosTelegramTransfers() },
+            nativeAccount = IosTelegramNativeAccountPort(
+                beginAttempt = accounts::beginNativeTelegramAttempt,
+                acceptSession = accounts::acceptNativeTelegramSession,
+                revokeSession = accounts::revokeNativeTelegramSession,
+            ),
+            log = { message ->
+                println("Natune iOS: $message")
+                diagnostics?.append(DiagnosticLevel.INFO, "Telegram", message)
+            },
+        ).also { if (iosTelegramHasSession(storageRoot)) it.start() }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Runs beside settings and the session graph, which never wait for it. The build happens on a worker, and the session
+     * reaches playback on the main thread once it exists. A host closed meanwhile releases the session here, because
+     * close() has already taken what was attached and nothing else would close this one.
+     */
+    private fun startTelegramInBackground(accounts: VaultProviderAccountStore) {
+        scope.launch(NonCancellable) {
+            val session = withContext(Dispatchers.Default) { buildTelegramSession(accounts) } ?: return@launch
+            if (closed) {
+                withContext(Dispatchers.Default) { session.close() }
+                return@launch
+            }
+            playbackPort.attachTelegram(session)
+            telegramSession.value = session
+        }
     }
 
     private suspend fun openSettingsAndPack() {
@@ -363,7 +377,7 @@ class IosHost {
         // through it. It is both the account reader and the cookie source, as on the desktop host.
         val accounts = VaultProviderAccountStore(opened.vault)
         attachAccounts(accounts, accounts)
-        openTelegram(accounts)
+        startTelegramInBackground(accounts)
         val pack = try {
             iosJapaneseLanguagePackManager(
                 scope = scope,

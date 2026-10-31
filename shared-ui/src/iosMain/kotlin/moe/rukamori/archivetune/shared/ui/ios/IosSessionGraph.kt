@@ -198,7 +198,7 @@ internal class IosSessionGraph private constructor(
         val current = state.currentOccurrenceId ?: return@withQueueAccess false
         val target = QueueAdvancePolicy.successor(iosRepeatMode(settings.snapshots.value), state.playOrder, current)
             ?: return@withQueueAccess false
-        owner.select(target, 0L)
+        owner.skipTo(target, 0L)
         true
     }
 
@@ -213,7 +213,7 @@ internal class IosSessionGraph private constructor(
             val current = state.currentOccurrenceId ?: return@withQueueAccess false
             val index = state.playOrder.indexOf(current)
             if (index <= 0) return@withQueueAccess false
-            owner.select(state.playOrder[index - 1], 0L)
+            owner.skipTo(state.playOrder[index - 1], 0L)
             true
         }
     }

@@ -2,9 +2,11 @@ package moe.rukamori.archivetune.desktop
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -18,10 +20,20 @@ import java.awt.KeyboardFocusManager
 import java.awt.Window
 import java.awt.event.KeyEvent
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.SwingUtilities
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopHostServices
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.settings.BooleanPreferenceKey
@@ -30,16 +42,93 @@ import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 
 /**
  * Opens the one session graph for this process. A failure is logged by class name only and returns null, so the
- * window shows [DesktopUnavailableRoot] instead of a memory, plaintext or empty stand-in.
+ * window shows [DesktopUnavailableRoot] instead of a memory, plaintext or empty stand-in. A cancellation is rethrown
+ * rather than logged as a failure.
  */
-internal fun openDesktopSession(instanceDirectory: Path): DesktopSessionGraph? = try {
-    runBlocking { DesktopSessionGraph.open(instanceDirectory) }
+internal suspend fun openDesktopSession(instanceDirectory: Path): DesktopSessionGraph? = try {
+    DesktopSessionGraph.open(instanceDirectory)
+} catch (cancelled: CancellationException) {
+    throw cancelled
 } catch (failure: Exception) {
     desktopDiagnostic("session graph unavailable: ${failure.javaClass.simpleName}")
     null
 } catch (failure: LinkageError) {
     desktopDiagnostic("session graph unavailable: ${failure.javaClass.simpleName}")
     null
+}
+
+/** Where the one session graph stands. The window mounts the root that matches, so no root reads a null graph. */
+internal sealed interface DesktopSessionState {
+    /** The open is still running on the loader's background coroutine. */
+    data object Loading : DesktopSessionState
+
+    class Ready(val graph: DesktopSessionGraph) : DesktopSessionState
+
+    /** The open failed; [DesktopUnavailableRoot] names the gap and offers no action. */
+    data object Unavailable : DesktopSessionState
+}
+
+/**
+ * Owns the one open of the session graph for the process. The open starts from the window's composition and runs off the
+ * launch thread, so the window appears at once with [DesktopLoadingRoot]. [close] gives an open still in flight, and then a
+ * graph that opened, a bounded wait each. Past the bound the process exits without them, as it would for any background work.
+ */
+internal class DesktopSessionLoader(private val instanceDirectory: Path) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val started = AtomicBoolean(false)
+    private val mutableState = MutableStateFlow<DesktopSessionState>(DesktopSessionState.Loading)
+    val state: StateFlow<DesktopSessionState> = mutableState.asStateFlow()
+
+    @Volatile private var opening: Job? = null
+
+    /** Starts the open once. The window composition calls this, because it is the first point that needs the graph. */
+    fun start() {
+        if (!started.compareAndSet(false, true)) return
+        opening = scope.launch {
+            val graph = try {
+                openDesktopSession(instanceDirectory)
+            } catch (failure: Throwable) {
+                // openDesktopSession already handles the expected failures; any other one must not leave the window waiting.
+                mutableState.value = DesktopSessionState.Unavailable
+                throw failure
+            }
+            mutableState.value = graph?.let { DesktopSessionState.Ready(it) } ?: DesktopSessionState.Unavailable
+        }
+    }
+
+    /** Process exit, after the window has stopped asking for work. */
+    fun close() {
+        val inFlight = opening
+        if (inFlight != null) runBlocking { withTimeoutOrNull(CLOSE_TIMEOUT_MS) { inFlight.join() } }
+        val graph = (mutableState.value as? DesktopSessionState.Ready)?.graph ?: return
+        // The graph's own close is non-cancellable, so the bound applies to this wait rather than to the close.
+        val closing = scope.launch { graph.close() }
+        runBlocking { withTimeoutOrNull(CLOSE_TIMEOUT_MS) { closing.join() } }
+    }
+
+    private companion object {
+        const val CLOSE_TIMEOUT_MS = 5_000L
+    }
+}
+
+/**
+ * The window's content. It starts the loader from composition and mounts the root once the graph is ready, showing
+ * [DesktopLoadingRoot] until then and [DesktopUnavailableRoot] if the open fails.
+ */
+@Composable
+internal fun DesktopSessionWindowRoot(
+    window: Window,
+    sessions: DesktopSessionLoader,
+    closeRequests: DesktopCloseRequests,
+    quit: () -> Unit,
+) {
+    LaunchedEffect(sessions) { sessions.start() }
+    val session by sessions.state.collectAsState()
+    when (val current = session) {
+        is DesktopSessionState.Ready -> DesktopMountedRoot(window, current.graph, closeRequests, quit)
+        DesktopSessionState.Loading -> DesktopLoadingRoot()
+        DesktopSessionState.Unavailable -> DesktopUnavailableRoot()
+    }
 }
 
 /**
@@ -140,6 +229,16 @@ internal fun DesktopUnavailableRoot() {
     ArchiveTuneTheme {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(DesktopStrings["host_graph_unavailable"], textAlign = TextAlign.Center)
+        }
+    }
+}
+
+/** The window while the session graph opens. A spinner needs no text, so it adds no string resource. */
+@Composable
+internal fun DesktopLoadingRoot() {
+    ArchiveTuneTheme {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
         }
     }
 }
