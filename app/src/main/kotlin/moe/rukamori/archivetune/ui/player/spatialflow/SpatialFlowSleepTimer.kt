@@ -64,10 +64,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -81,8 +80,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.shared.domain.playback.sleepCountdownRemainingMs
 import kotlin.math.roundToInt
-import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -97,30 +96,14 @@ fun SpatialFlowSleepTimerSheet(
     var sliderValue by remember { mutableFloatStateOf(1f) }
     var showTimePicker by remember { mutableStateOf(false) }
 
-    var remainingMinutes by remember { mutableLongStateOf(0L) }
-    var remainingSeconds by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(sleepTimerEndTime, sleepTimerMode) {
-        if (sleepTimerMode == SpatialFlowSleepTimerMode.CUSTOM && sleepTimerEndTime > 0) {
-            while (true) {
-                val now = System.currentTimeMillis()
-                val diffMs = sleepTimerEndTime - now
-                if (diffMs <= 0) {
-                    remainingMinutes = 0
-                    remainingSeconds = 0
-                    break
-                } else {
-                    val totalSecs = diffMs / 1000
-                    remainingMinutes = totalSecs / 60
-                    remainingSeconds = totalSecs % 60
-                }
-                kotlinx.coroutines.delay(1000.milliseconds)
-            }
-        } else {
-            remainingMinutes = 0
-            remainingSeconds = 0
-        }
-    }
+    // Only the custom timer counts down, to the deadline the host passed in. The countdown is collected only while
+    // this sheet is composed, and the minutes and seconds readout is split from the remaining milliseconds.
+    val countdownEndTime = if (sleepTimerMode == SpatialFlowSleepTimerMode.CUSTOM) sleepTimerEndTime else 0L
+    val remainingMs by remember(countdownEndTime) {
+        sleepCountdownRemainingMs(countdownEndTime) { System.currentTimeMillis() }
+    }.collectAsState(initial = 0L)
+    val remainingMinutes = remainingMs / 60_000L
+    val remainingSeconds = (remainingMs / 1_000L) % 60L
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,

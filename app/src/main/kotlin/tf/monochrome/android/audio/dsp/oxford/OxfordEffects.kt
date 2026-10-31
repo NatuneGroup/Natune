@@ -272,6 +272,11 @@ class InflatorEffect @Inject constructor() {
 
 @Singleton
 class CompressorEffect @Inject constructor() {
+    private companion object {
+        /** Caps the fall per meter poll so a jittering meter does not flicker a label. */
+        const val GAIN_REDUCTION_FALL_STEP_DB = 0.1f
+    }
+
     private val handle = AtomicLong(CompressorNative.nativeCreate())
 
     private val _state = MutableStateFlow(CompressorState())
@@ -304,7 +309,7 @@ class CompressorEffect @Inject constructor() {
     fun pollMeters() {
         val h = handle.get()
         if (h == 0L) return
-        _gainReductionDb.value = CompressorNative.nativeGainReductionDb(h)
+        _gainReductionDb.value = smoothGainReduction(CompressorNative.nativeGainReductionDb(h), _gainReductionDb.value)
         val packed = CompressorNative.nativeReadMeters(h)
         val l = java.lang.Float.intBitsToFloat((packed ushr 32).toInt())
         val r = java.lang.Float.intBitsToFloat((packed and 0xFFFFFFFFL).toInt())
@@ -335,6 +340,10 @@ class CompressorEffect @Inject constructor() {
         val h = handle.getAndSet(0L)
         if (h != 0L) CompressorNative.nativeDestroy(h)
     }
+
+    /** Rises at once and falls at most [GAIN_REDUCTION_FALL_STEP_DB] per poll, so the published value settles. */
+    private fun smoothGainReduction(raw: Float, previous: Float): Float =
+        if (raw >= previous) raw else maxOf(raw, previous - GAIN_REDUCTION_FALL_STEP_DB)
 
     private fun push(s: CompressorState) {
         val h = handle.get()

@@ -12991,9 +12991,7 @@ class MusicService :
                     // it would restart that song from 0.
                     if (!commitCrossfadeForSkipNext()) {
                         prepareForManualSkip()
-                        player.seekToNext()
-                        player.prepare()
-                        player.play()
+                        player.skipKeepingPlayState { seekToNext() }
                     }
                 }
             }
@@ -13001,9 +12999,7 @@ class MusicService :
             "moe.rukamori.archivetune.WIDGET_SKIP_PREV" -> {
                 if (player.hasPreviousMediaItem()) {
                     prepareForManualSkip()
-                    player.seekToPrevious()
-                    player.prepare()
-                    player.play()
+                    player.skipKeepingPlayState { seekToPrevious() }
                 }
             }
         }

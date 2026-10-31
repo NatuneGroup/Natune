@@ -96,6 +96,7 @@ import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.BlurRadiusKey
 import moe.rukamori.archivetune.constants.ChipSortTypeKey
 import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
+import moe.rukamori.archivetune.constants.DisableAnimatedArtworkOnMobileDataKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
 import moe.rukamori.archivetune.constants.CustomFontNameKey
 import moe.rukamori.archivetune.constants.CustomFontUriKey
@@ -700,6 +701,8 @@ private fun appearancePlayerRows(
         prefs.enumState(PlayerDesignStyleKey, defaultValue = PlayerDesignStyle.Default)
     val (appleMusicAnimatedArtwork, onAppleMusicAnimatedArtworkChange) =
         prefs.state(AppleMusicAnimatedArtworkKey, defaultValue = true)
+    val (disableAnimatedArtworkOnMobileData, onDisableAnimatedArtworkOnMobileDataChange) =
+        prefs.state(DisableAnimatedArtworkOnMobileDataKey, defaultValue = false)
     val (appleMusicBackdropWander, onAppleMusicBackdropWanderChange) =
         prefs.state(AppleMusicBackdropWanderKey, defaultValue = true)
     val (appleMusicPauseScale, onAppleMusicPauseScaleChange) =
@@ -1198,6 +1201,16 @@ private fun appearancePlayerRows(
                     onCheckedChange = onAlbumCanvasEnabledChange,
                 )
         }
+            item {
+                SwitchPreference(
+                    modifier = positions.modifierFor("disable_animated_artwork_on_mobile_data"),
+                    title = { Text(stringResource(R.string.disable_animated_artwork_on_mobile_data)) },
+                    description = stringResource(R.string.disable_animated_artwork_on_mobile_data_desc),
+                    icon = { Icon(painterResource(R.drawable.android_cell), null) },
+                    checked = disableAnimatedArtworkOnMobileData,
+                    onCheckedChange = onDisableAnimatedArtworkOnMobileDataChange,
+                )
+            }
         }
     }
 }

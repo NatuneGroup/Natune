@@ -131,4 +131,5 @@ private fun NetworkCapabilities.toCanvasConnectivity(): CanvasConnectivity = Can
     wifi = hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
     metered = !hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) ||
         hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
+    cellular = hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
 )

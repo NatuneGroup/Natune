@@ -37,9 +37,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,8 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import moe.rukamori.archivetune.shared.domain.playback.sleepCountdownRemainingMs
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.m4lf_icon_skip_next
 import moe.rukamori.archivetune.shared.ui.resources.m6_icon_close
@@ -59,9 +58,6 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
-
-/** The countdown refreshes this often, which keeps the readout smooth without recomposing every millisecond. */
-private const val SLEEP_TIMER_POLL_MS = 500L
 
 /** The presets the baseline offered as chips, in minutes. */
 private val SLEEP_TIMER_PRESET_MINUTES: List<Int> = listOf(5, 10, 15, 20, 30, 45, 60, 90)
@@ -116,19 +112,11 @@ internal fun PlayerQueueSleepTimerSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // A sentinel of -1 marks the end-of-song timer, which has no trigger time to count down to.
-    var remainingMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(state, clock) {
-        while (isActive) {
-            remainingMs =
-                when {
-                    state.pauseWhenSongEnd -> -1L
-                    state.triggerAtEpochMs > 0L -> state.triggerAtEpochMs - clock.nowEpochMs()
-                    else -> 0L
-                }
-            delay(SLEEP_TIMER_POLL_MS)
-        }
-    }
+    // The countdown runs to the host's deadline and is collected only while this sheet is composed. The end-of-song
+    // timer has no deadline, so it reads zero here, and its label comes from isEndOfSong below.
+    val remainingMs by remember(state.triggerAtEpochMs, clock) {
+        sleepCountdownRemainingMs(state.triggerAtEpochMs) { clock.nowEpochMs() }
+    }.collectAsState(initial = 0L)
 
     val isEndOfSong = state.pauseWhenSongEnd
     val isTimed = state.triggerAtEpochMs > 0L && !isEndOfSong
