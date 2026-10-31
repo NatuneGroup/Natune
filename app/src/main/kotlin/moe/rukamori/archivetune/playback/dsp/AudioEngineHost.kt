@@ -89,7 +89,8 @@ class AudioEngineHost @Inject constructor(
             if (!AudioEngineRouterProcessor.tryptifyNativeAvailable()) return@runCatching null
             tf.monochrome.android.audio.eq.FrequencyTargets.init(context)
             val preferences = PreferencesManager(context)
-            val mixBus = MixBusProcessor(InflatorEffect(), CompressorEffect(), CrossfeedEffect())
+            val compressor = CompressorEffect()
+            val mixBus = MixBusProcessor(InflatorEffect(), compressor, CrossfeedEffect())
             val autoEq = AutoEqProcessor()
             val paramEq = ParametricEqProcessor()
             val downmix = DownmixProcessor()
@@ -122,6 +123,7 @@ class AudioEngineHost @Inject constructor(
                         StretchAudioProcessor(),
                     ),
                 )
+            EngineRuntime.publishCompressorEffect(compressor)
             TryptifyStack(chain, controller)
         }.onFailure { Log.w(TAG, "Tryptify engine unavailable", it) }
             .getOrNull()
