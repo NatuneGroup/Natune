@@ -14,7 +14,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings` (home) | ✓ | ✓ | ✓ | |
 | `settings/account` | ✓ | ✓ | — | no YouTube account owner on iOS |
 | `settings/hidden_playlists` | ✓ | ✓ | — | desktop: lists hidden local playlists with Unhide; the desktop Library does not filter hidden playlists yet |
-| `settings/appearance` | ✓ | ✓ | ✓ | one page: Theme, Player and Interface sections (anchors `appearance_theme`, `appearance_player`, `appearance_interface`); D/iOS: no wallpaper colors/dynamic, no font picker on iOS; desktop opens the home-screen, library-chip, playlist-tag and artwork-provider editors, iOS keeps them unavailable |
+| `settings/appearance` | ✓ | ✓ | ✓ | one page: Theme, Player and Interface sections (anchors `appearance_theme`, `appearance_player`, `appearance_interface`); D/iOS: no wallpaper colors/dynamic, no font picker on iOS; desktop opens the home-screen, library-chip, playlist-tag and artwork-provider editors, iOS opens its own dialogs for the same four preferences |
 | `settings/appearance/theme` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_theme` (or its `scrollTo`) |
 | `settings/appearance/player` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_player` (or its `scrollTo`) |
 | `settings/appearance/interface` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_interface` (or its `scrollTo`) |
@@ -32,7 +32,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/lyrics/romanisation` | ✓ | ✓ | ✓ | JP toggle gated on real pack state |
 | `settings/language_packs` | ✓ | ✓ | ✓ | JP pack real; SpatialFlow font install/remove reports unavailable (no host font consumer) |
 | `settings/internet` | ✓ | ✓ | — | desktop mounts; no network owner on iOS |
-| `settings/player` | ✓ | ✓ | ✓ | bit-perfect/USB rows read unsupported |
+| `settings/player` | ✓ | ✓ | ✓ | bit-perfect/USB rows read unsupported; the playlist-tag row opens `library/tags`, the real tag manager on iOS |
 | `settings/player/ytdlp` | ✓ | ✓ | ✓ | BUG-004 target; real runtime status (unavailable on iOS) |
 | `settings/canvas` | ✓ | ✓ | — | desktop mounts |
 | `settings/sources` | ✓ | ✓ | — | desktop mounts |
