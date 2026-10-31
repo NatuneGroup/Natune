@@ -20,6 +20,8 @@ Between `bit_perfect_usb` and the engines sits `usb_exclusive_audio` (`UsbExclus
 
 Appearance (`settings/appearance`) is one scrolling page in three sections — Theme, Player and Interface — whose first groups carry the section anchors `appearance_theme`, `appearance_player` and `appearance_interface`. The former sub-page routes `settings/appearance/theme`, `/player` and `/interface` stay registered so old links and saved back stacks still open; each shows the same page scrolled to its section, or to its own `?scrollTo=` anchor when one is given. Search entries indexed under a section owner navigate to `settings/appearance` with the row's anchor. Extras, lyrics animations, navigation bar, AOD, icon, palette and theme creator remain separate pages.
 
+The Player section's **Player menu style** row (`player_menu_style`; search child `Player menu style`; scroll owner `player_menu_style` in `SettingsScreen` and the shared `SettingsRoutes`) chooses the three-dot and lyrics menu look: Apple Music (the default) or Material 3. A choice writes `PlayerMenuStyleKey` and the legacy `AppleMusicMenusKey` together. A stored legacy `apple_music_menus` value still decides when it is set, so presets and restores keep their meaning. The effective style is the Apple menus surface: the Apple menus toggle, its search result and the experience indicator all read it. On a fresh install they show the Apple Music menus, so the indicator reads Custom until the menu is set to Material 3.
+
 ## Conflict ownership and dormant choices
 
 The Android host and shared settings use `shared-domain/settings` transaction rules, not
