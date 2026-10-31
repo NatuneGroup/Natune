@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import moe.rukamori.archivetune.constants.QueueListItemHeight
 import moe.rukamori.archivetune.constants.QueueListThumbnailSize
@@ -31,6 +32,8 @@ fun QueueMediaMetadataListItem(
     isActive: Boolean = false,
     isPlaying: Boolean = false,
     shouldLoadImage: Boolean = true,
+    showActiveContainer: Boolean = true,
+    textColorOverride: Color? = null,
     trailingContent: @Composable RowScope.() -> Unit = {},
 ) {
     ListItem(
@@ -68,6 +71,8 @@ fun QueueMediaMetadataListItem(
         trailingContent = trailingContent,
         modifier = modifier,
         isActive = isActive,
+        showActiveContainer = showActiveContainer,
+        textColorOverride = textColorOverride,
         rowHeight = QueueListItemHeight,
     )
 }

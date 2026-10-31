@@ -65,7 +65,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,8 +83,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.navigation.NavController
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
@@ -97,7 +94,6 @@ import moe.rukamori.archivetune.extensions.toggleRepeatMode
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalMenuState
-import moe.rukamori.archivetune.ui.component.MediaMetadataListItem
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.utils.makeTimeString
@@ -105,7 +101,7 @@ import moe.rukamori.archivetune.utils.rememberPreference
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
-private val QueuePillHeight = 48.dp
+private val QueuePillHeight = 40.dp
 private val QueuePillCornerRadius = 16.dp
 
 /** In-place queue sheet for the Apple Music player. */
@@ -135,8 +131,7 @@ fun AppleMusicQueueSheet(
     val queueActionScope = rememberCoroutineScope()
     val infiniteQueueLabel = stringResource(R.string.queue_infinite)
 
-    // Sleep timer state — mirrors Queue.kt's sleep-timer block so the pill
-    // shows the remaining time and toggles the timer correctly.
+    // Sleep timer state. The pill reads the shared countdown, so this sheet runs no polling loop of its own.
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     val sleepTimerEnabled =
         remember(
@@ -145,20 +140,8 @@ fun AppleMusicQueueSheet(
         ) {
             playerConnection.service.sleepTimer.isActive
         }
-    var sleepTimerTimeLeft by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(sleepTimerEnabled) {
-        if (sleepTimerEnabled) {
-            while (isActive) {
-                sleepTimerTimeLeft =
-                    if (playerConnection.service.sleepTimer.pauseWhenSongEnd) {
-                        playerConnection.player.duration - playerConnection.player.currentPosition
-                    } else {
-                        playerConnection.service.sleepTimer.triggerTime - System.currentTimeMillis()
-                    }
-                delay(1000L)
-            }
-        }
+    val sleepTimerTimeLeft by rememberQueueSleepTimerRemainingMs(playerConnection.service.sleepTimer) {
+        playerConnection.player
     }
 
     // Adaptive text colors — the sheet renders on the Apple Music blurred
@@ -314,7 +297,7 @@ fun AppleMusicQueueSheet(
         // Matches ViviMusic QueueV2's pill row exactly — same 24/12 padding,
         // same 8dp spacing, same active/inactive alpha treatment.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             val pillShape = RoundedCornerShape(QueuePillCornerRadius)
@@ -406,9 +389,9 @@ fun AppleMusicQueueSheet(
             }
         }
 
-        // Queue header row: title + edit-lock toggle.
+        // Queue header row: title + edit-lock toggle. Its icon buttons set the height, so it adds no padding of its own.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -449,7 +432,7 @@ fun AppleMusicQueueSheet(
         LazyColumn(
             state = lazyListState,
             contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f),
         ) {
             itemsIndexed(
                 items = mutableQueueWindows,
@@ -496,11 +479,11 @@ fun AppleMusicQueueSheet(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    .padding(horizontal = 16.dp, vertical = 2.dp)
                                     .clip(rowShape)
                                     .background(rowBg),
                         ) {
-                            MediaMetadataListItem(
+                            QueueMediaMetadataListItem(
                                 mediaMetadata = metadata,
                                 isSelected = false,
                                 isActive = isActive,
@@ -514,7 +497,7 @@ fun AppleMusicQueueSheet(
                                 // the glass pill shows.
                                 showActiveContainer = false,
                                 // Force song titles to always render white. Without this
-                                // override, MediaMetadataListItem falls back to
+                                // override, ListItem falls back to
                                 // MaterialTheme.colorScheme.onSurface / onSecondaryContainer,
                                 // which is what the V9 'Material Extended' dynamic-color
                                 // system mutates based on the artwork palette — so when a
