@@ -20,6 +20,8 @@
     <key>ArchiveTuneTidalPkceClientId</key><string>$(ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID)</string>
     <key>ArchiveTuneTidalPkceClientSecret</key><string>$(ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET)</string>
     <key>ArchiveTuneListenerPresenceUrl</key><string>$(ARCHIVETUNE_LISTENER_PRESENCE_URL)</string>
+    <key>ArchiveTuneLastFmApiKey</key><string>$(ARCHIVETUNE_LASTFM_API_KEY)</string>
+    <key>ArchiveTuneLastFmApiSecret</key><string>$(ARCHIVETUNE_LASTFM_API_SECRET)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>

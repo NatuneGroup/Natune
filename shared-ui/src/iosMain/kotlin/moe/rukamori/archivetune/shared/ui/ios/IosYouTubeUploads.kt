@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
+import io.ktor.client.engine.darwin.DarwinClientEngineConfig
 import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -70,9 +71,12 @@ internal class IosYouTubeUploads(
     private val settings: VaultSettingsStore,
     private val queue: QueueController,
     private val report: (String) -> Unit,
+    /** Applies the saved proxy route to this client's engine; the session graph passes its network owner here. */
+    configureEngine: DarwinClientEngineConfig.() -> Unit = {},
 ) {
     // A dedicated client: a transfer must not share a request timeout sized for catalogue reads.
     private val http = HttpClient(Darwin) {
+        engine(configureEngine)
         expectSuccess = false
         followRedirects = false
         install(HttpTimeout) {
