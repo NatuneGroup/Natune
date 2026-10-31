@@ -17,6 +17,7 @@ import moe.rukamori.archivetune.shared.domain.settings.ProxyRoute
 import moe.rukamori.archivetune.shared.domain.settings.ProxyRouteType
 import moe.rukamori.archivetune.shared.domain.settings.proxyRoute
 import platform.Foundation.NSURLCredential
+import platform.Foundation.NSURLCredentialPersistence
 import platform.Foundation.NSURLSessionAuthChallengePerformDefaultHandling
 import platform.Foundation.NSURLSessionAuthChallengeUseCredential
 import platform.Foundation.create
@@ -85,12 +86,11 @@ fun DarwinClientEngineConfig.applyIosProxyRoute(route: ProxyRoute?) {
         } else {
             completionHandler(
                 NSURLSessionAuthChallengeUseCredential,
-                // credentialWithUser is not bound by this Kotlin/Native release; create replaces it.
-                // Persistence 0 is NSURLCredentialPersistenceNone, given by value: that name does not resolve here.
+                // The Foundation category initializer is bound as a companion create(), not credentialWithUser.
                 NSURLCredential.create(
                     user = username,
                     password = password,
-                    persistence = 0,
+                    persistence = NSURLCredentialPersistence.NSURLCredentialPersistenceNone,
                 ),
             )
         }
