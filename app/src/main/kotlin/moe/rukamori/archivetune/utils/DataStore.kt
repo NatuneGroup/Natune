@@ -41,10 +41,6 @@ import moe.rukamori.archivetune.constants.AppleMusicSettingsMigratedKey
 import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
 import moe.rukamori.archivetune.shared.domain.settings.migrateAppleMusicSettings
 import moe.rukamori.archivetune.shared.domain.settings.normalizeSettingsConflicts
-import moe.rukamori.archivetune.constants.HISTORY_DURATION_LEGACY_FLOAT_KEY
-import moe.rukamori.archivetune.constants.HISTORY_DURATION_MAX
-import moe.rukamori.archivetune.constants.HISTORY_DURATION_MIN
-import moe.rukamori.archivetune.constants.HistoryDuration
 import moe.rukamori.archivetune.constants.LyricsMode
 import moe.rukamori.archivetune.constants.LyricsModeKey
 import moe.rukamori.archivetune.constants.PlayerStreamClient
@@ -59,6 +55,7 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     name = "settings",
     produceMigrations = { _ ->
         listOf(
+            HistoryDurationMigration,
             object : DataMigration<Preferences> {
                 override suspend fun shouldMigrate(currentData: Preferences): Boolean =
                     currentData[AppleMusicExperienceKey] == true && currentData[AppleMusicSettingsMigratedKey] != true
@@ -74,25 +71,6 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
 
                 override suspend fun migrate(currentData: Preferences): Preferences =
                     currentData.editSharedPreferences { normalizeSettingsConflicts() }
-
-                override suspend fun cleanUp() {}
-            },
-            object : DataMigration<Preferences> {
-                override suspend fun shouldMigrate(currentData: Preferences): Boolean =
-                    currentData[HISTORY_DURATION_LEGACY_FLOAT_KEY] != null &&
-                        currentData[HistoryDuration] == null
-
-                override suspend fun migrate(currentData: Preferences): Preferences =
-                    currentData.toMutablePreferences().apply {
-                        val oldFloat = currentData[HISTORY_DURATION_LEGACY_FLOAT_KEY]
-                        if (oldFloat != null) {
-                            this[HistoryDuration] =
-                                oldFloat
-                                    .toInt()
-                                    .coerceIn(HISTORY_DURATION_MIN, HISTORY_DURATION_MAX)
-                            this.remove(HISTORY_DURATION_LEGACY_FLOAT_KEY)
-                        }
-                    }
 
                 override suspend fun cleanUp() {}
             },
