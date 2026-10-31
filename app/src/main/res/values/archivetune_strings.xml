@@ -30,6 +30,9 @@
     <string name="startup_native_abort">Abort message: %1$s</string>
     <string name="startup_native_thread">Thread %1$s: %2$s</string>
     <string name="startup_native_frame">#%1$s pc %2$s %3$s (%4$s + %5$s) [Build ID: %6$s]</string>
+    <string name="crash_record_version">Version %1$s (%2$s)</string>
+    <string name="crash_record_version_unknown">Version unknown</string>
+    <string name="crash_record_earlier_version">%1$s, from an earlier version</string>
     <string name="player_native_controls_description">This layout keeps its native transport and seek controls.</string>
     <string name="player_setting_not_used">Not used by the %1$s player</string>
     <string name="player_volume_bar_existing_layouts">Available in Immersive, V8, BitChord, Apple Music and Flamingo layouts</string>
