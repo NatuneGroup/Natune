@@ -11,35 +11,27 @@
 package moe.rukamori.archivetune.ui.component
 
 import androidx.compose.foundation.MarqueeAnimationMode
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.Text
-import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.LocalAnimationsDisabled
-import moe.rukamori.archivetune.ui.utils.fadingEdge
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText as SharedMarqueeText
 
 /**
- * One line of text that scrolls sideways when it does not fit, with a soft fade at both edges while
- * it is scrolling. A [fadeWidth] of zero scrolls without the fade.
+ * One line of text that scrolls sideways when it does not fit and fades at its edges while it scrolls. The motion,
+ * the fade and the pass timing come from the shared marquee. [animationEnabled] and [LocalAnimationsDisabled] turn the
+ * motion off, and [phaseKey] keeps a line's pass when it is left and re-entered. [animationMode] is accepted for
+ * existing callers and has no effect.
  */
 @Composable
 fun MarqueeText(
@@ -55,46 +47,21 @@ fun MarqueeText(
     animationMode: MarqueeAnimationMode = MarqueeAnimationMode.Immediately,
     iterations: Int = Int.MAX_VALUE,
     animationEnabled: Boolean = true,
+    phaseKey: Any? = null,
 ) {
-    val animationsDisabled = LocalAnimationsDisabled.current
-    var contentWidth by remember(text, style, fontSize, fontWeight) { mutableIntStateOf(0) }
-    var viewportWidth by remember { mutableIntStateOf(0) }
-    val animate = marqueeShouldAnimate(contentWidth, viewportWidth, animationEnabled, !animationsDisabled, iterations)
-
-    Box(
-        modifier =
-            (if (marqueeFadesEdges(animate, fadeWidth)) modifier.fadingEdge(horizontal = fadeWidth) else modifier)
-                .clipToBounds()
-                .onSizeChanged { viewportWidth = it.width },
-    ) {
-        Text(
-            text = text,
-            inlineContent = inlineContent,
-            style = style,
-            color = color,
-            fontSize = fontSize,
-            fontWeight = fontWeight,
-            textAlign = textAlign,
-            maxLines = 1,
-            // Reached only in the frame before the marquee has measured; after that the marquee
-            // owns the overflow.
-            overflow = TextOverflow.Ellipsis,
-            onTextLayout = {
-                // Intrinsics remain meaningful when the inactive line is constrained/ellipsized.
-                contentWidth = maxOf(it.size.width, kotlin.math.ceil(it.multiParagraph.maxIntrinsicWidth).toInt())
-            },
-            // Inactive/reduced-motion text stays ellipsized with no marquee node or edge fade.
-            modifier =
-                if (!animate) {
-                    Modifier.fillMaxWidth()
-                } else {
-                    Modifier.fillMaxWidth().basicMarquee(
-                        iterations = iterations,
-                        animationMode = animationMode,
-                    )
-                },
-        )
-    }
+    SharedMarqueeText(
+        text = text,
+        modifier = modifier,
+        style = style.merge(TextStyle(fontSize = fontSize)),
+        color = color,
+        fontWeight = fontWeight,
+        textAlign = textAlign,
+        inlineContent = inlineContent,
+        fadeWidth = fadeWidth,
+        active = animationEnabled && !LocalAnimationsDisabled.current,
+        phaseKey = phaseKey,
+        iterations = iterations,
+    )
 }
 
 internal fun marqueeShouldAnimate(
@@ -121,6 +88,7 @@ fun MarqueeText(
     animationMode: MarqueeAnimationMode = MarqueeAnimationMode.Immediately,
     iterations: Int = Int.MAX_VALUE,
     animationEnabled: Boolean = true,
+    phaseKey: Any? = null,
 ) {
     MarqueeText(
         text = remember(text) { AnnotatedString(text) },
@@ -134,5 +102,6 @@ fun MarqueeText(
         animationMode = animationMode,
         iterations = iterations,
         animationEnabled = animationEnabled,
+        phaseKey = phaseKey,
     )
 }

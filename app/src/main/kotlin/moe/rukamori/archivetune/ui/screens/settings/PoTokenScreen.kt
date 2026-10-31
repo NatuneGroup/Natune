@@ -266,6 +266,7 @@ fun PoTokenScreen(
                     MarqueeText(
                         text = stringResource(R.string.po_token_generation),
                         fontWeight = FontWeight.Bold,
+                        phaseKey = R.string.po_token_generation,
                     )
                 },
                 navigationIcon = {
