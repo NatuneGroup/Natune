@@ -8,7 +8,6 @@ import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -63,6 +62,7 @@ import moe.rukamori.archivetune.shared.ui.home.HomeFeedSectionHeader
 import moe.rukamori.archivetune.shared.ui.home.SpotifyHomeLayout
 import moe.rukamori.archivetune.shared.ui.home.spotifyHomeSurface
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.painterResource
@@ -490,22 +490,18 @@ private fun SpotifyMediaCard(
             if (isResolving) SpotifySelectionIndicator()
         }
         Spacer(Modifier.height(6.dp))
-        Text(
+        MarqueeText(
             text = effectiveSong(item).title,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.fillMaxWidth().basicMarquee(),
+            modifier = Modifier.fillMaxWidth(),
         )
-        Text(
+        MarqueeText(
             text = effectiveSong(item).subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.secondary,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.fillMaxWidth().basicMarquee(),
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -528,14 +524,12 @@ private fun SpotifyArtistCard(
             artwork(item, Modifier.size(SpotifyArtistSize).clip(CircleShape))
             if (isResolving) SpotifySelectionIndicator()
         }
-        Text(
+        MarqueeText(
             text = effectiveSong(item).title,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.padding(top = 4.dp).basicMarquee(),
+            centered = true,
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 }
