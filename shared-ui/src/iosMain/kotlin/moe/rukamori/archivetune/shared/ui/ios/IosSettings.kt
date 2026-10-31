@@ -9,6 +9,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -66,6 +67,8 @@ import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.presence.ListenerPresenceSection
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_spotify_browser_unavailable
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_spotify_sign_in_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_change_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
@@ -78,7 +81,6 @@ import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
 import moe.rukamori.archivetune.shared.ui.settings.LanguagePackSettings
 import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
 import moe.rukamori.archivetune.shared.ui.settings.LyricsRomanisationSettings
-import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
 import moe.rukamori.archivetune.shared.ui.settings.japanesePackUiState
 import moe.rukamori.archivetune.shared.ui.settings.DeezerArlAccount
 import moe.rukamori.archivetune.shared.ui.settings.DeezerSettings
@@ -115,6 +117,7 @@ import platform.Foundation.NSByteCountFormatterCountStyleFile
  */
 internal class IosSettingsOwners(internal val graph: IosSessionGraph, browser: IosCookieOnlyBrowserAuth) {
     val deezerWeb = IosDeezerWebSignIn(graph, browser)
+    val spotifyCatalog = IosSpotifyCatalogAccount(graph, browser)
     val controller = SettingsController(
         graph.settings,
         graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY,
@@ -155,6 +158,25 @@ internal class IosSettingsOwners(internal val graph: IosSessionGraph, browser: I
         ),
         nowMs = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     )
+
+    /**
+     * Release notes only: unlike [updateChecker] this one reads the feeds (updaterAvailable = true) so the changelog
+     * page has real releases, while [UpdateInstallMode.UNAVAILABLE] keeps it from ever offering an install.
+     */
+    val releaseNotes by lazy {
+        SharedUpdateChecker(
+            client = graph.http,
+            settings = graph.settings,
+            profile = UpdateInstallProfile(
+                updaterAvailable = true,
+                installMode = UpdateInstallMode.UNAVAILABLE,
+                isNightlyBuild = false,
+                installedCode = 0,
+                versionName = "",
+            ),
+            nowMs = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+        )
+    }
     /** A pasted refresh token counts only once TIDAL exchanged it and its session names the account. */
     suspend fun verifyTidalRefreshToken(refreshToken: String): TidalSessionFacts? =
         when (val result = graph.tidalAuth.refresh(refreshToken, TidalAuthFlowDevice)) {
@@ -345,7 +367,7 @@ private val IOS_SETTINGS_ROUTES = setOf(
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
     "settings/integration", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
     "settings/lyrics/romanisation", "settings/ai_integration", "settings/about", IosListenTogetherSettingsRoute,
-) + IOS_GENERAL_SETTINGS_ROUTES
+) + IOS_GENERAL_SETTINGS_ROUTES + IOS_LANE_SETTINGS_ROUTES
 
 /** One mounted settings page. Notices and host messages show in this page's snackbar; a failed save is logged and announced. */
 @Composable
@@ -479,22 +501,35 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 onFailure = onFailure,
                 scrollTo = scrollTo,
             )
-            "settings/integration" -> IntegrationSettings(
-                controller = owners.controller,
-                poolConfigured = owners.poolConfigured,
-                // No catalog or streaming Spotify sign-in exists on this host yet, so its rows report that honestly.
-                spotifyAccount = SpotifyCatalogAccountState(),
-                spotifyError = null,
-                navigate = navigate,
-                onConnectSpotify = { show(featureUnavailable) },
-                onReloadSpotifyPlaylists = { },
-                onLogoutSpotify = { },
-                onDismissSpotifyError = { },
-                onPoolAccountsChanged = { enabled -> owners.onPoolAccountsChanged(enabled) },
-                onOpenCrossServiceImport = { show(featureUnavailable) },
-                onFailure = onFailure,
-                scrollTo = scrollTo,
-            )
+            "settings/integration" -> {
+                val spotifyAccount by owners.spotifyCatalog.state.collectAsState()
+                val spotifyErrorKind by owners.spotifyCatalog.error.collectAsState()
+                val spotifyError = spotifyErrorKind?.let { kind ->
+                    stringResource(
+                        when (kind) {
+                            IosSpotifyCatalogError.SIGN_IN_FAILED -> Res.string.ios_lane_spotify_sign_in_failed
+                            IosSpotifyCatalogError.BROWSER_UNAVAILABLE -> Res.string.ios_lane_spotify_browser_unavailable
+                        }
+                    )
+                }
+                LaunchedEffect(Unit) { owners.spotifyCatalog.restore() }
+                IntegrationSettings(
+                    controller = owners.controller,
+                    poolConfigured = owners.poolConfigured,
+                    // The catalog account signs in here; streaming sign-in stays honestly unavailable on this host.
+                    spotifyAccount = spotifyAccount,
+                    spotifyError = spotifyError,
+                    navigate = navigate,
+                    onConnectSpotify = owners.spotifyCatalog::connect,
+                    onReloadSpotifyPlaylists = owners.spotifyCatalog::reload,
+                    onLogoutSpotify = owners.spotifyCatalog::logOut,
+                    onDismissSpotifyError = owners.spotifyCatalog::dismissError,
+                    onPoolAccountsChanged = { enabled -> owners.onPoolAccountsChanged(enabled) },
+                    onOpenCrossServiceImport = { show(featureUnavailable) },
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                )
+            }
             IosListenTogetherSettingsRoute -> IosListenTogetherSettingsPage(
                 owner = owners.graph.listenTogether,
                 controller = owners.controller,
@@ -502,6 +537,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 onFailure = onFailure,
                 unavailable = { show(featureUnavailable) },
                 scrollTo = scrollTo,
+                host = host,
             )
             "settings/misc" -> IosDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
             "settings/language_packs" -> IosLanguagePackSettingsPage(host, owners.controller, onFailure)
@@ -534,12 +570,24 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 onOpenApiKeyPortal = { uri -> openIosUri(uri, host::report) },
             )
             "settings/about" -> IosAboutPage(owners.graph, owners.controller, navigation)
+            in IOS_LANE_SETTINGS_ROUTES -> IosLaneSettingsPage(
+                path = route.value.substringBefore('?'),
+                host = host,
+                owners = owners,
+                channel = route.arguments["channel"],
+                navigation = navigation,
+                navigate = navigate,
+                onNotice = onNotice,
+                onFailure = onFailure,
+                unavailable = { show(featureUnavailable) },
+                scrollTo = scrollTo,
+            )
             in IOS_GENERAL_SETTINGS_ROUTES -> IosGeneralSettingsPage(
                 path = route.value.substringBefore('?'),
+                graph = owners.graph,
                 controller = owners.controller,
                 navigate = navigate,
                 onFailure = onFailure,
-                unavailable = { show(featureUnavailable) },
                 scrollTo = scrollTo,
             )
             "settings/logcat" -> {

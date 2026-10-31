@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Listen Together on the iOS host: the guest's song suggestion and the custom profile picture. -->
+    <string name="ios_social_suggestion_sent">Suggestion sent to the host</string>
+    <string name="ios_social_suggestion_guest_only">Only a guest in a room can suggest a song</string>
+    <string name="ios_social_avatar_failed">Could not save that picture</string>
+</resources>

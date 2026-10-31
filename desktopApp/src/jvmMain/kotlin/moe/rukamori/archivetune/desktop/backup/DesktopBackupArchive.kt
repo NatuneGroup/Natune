@@ -31,6 +31,8 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.shared.data.backup.AndroidBackupArchive
+import moe.rukamori.archivetune.shared.data.backup.JvmBackupArchiveCodec
+import moe.rukamori.archivetune.shared.data.persistence.AndroidSongDbExport
 import moe.rukamori.archivetune.shared.data.persistence.BackupCategory
 import moe.rukamori.archivetune.shared.data.persistence.BackupPreferencePolicy
 import moe.rukamori.archivetune.shared.data.persistence.PORTABLE_STATE_SCHEMA_VERSION
@@ -244,6 +246,33 @@ internal class DesktopBackupArchiveGateway(
         }
     }
 
+    /**
+     * An archive in the Android app's own format: `settings.xml` and a schema-38 `song.db` written from the library
+     * snapshot by [AndroidSongDbExport]. The retained codec checks the result as the Android restore would.
+     */
+    suspend fun createAndroid(selected: Set<BackupDataCategory>): ByteArray {
+        require(selected.isNotEmpty())
+        return withScratch { scratch ->
+            val libraryFiles = if (BackupDataCategory.LIBRARY in selected) {
+                val snapshot = scratch.resolve(DesktopBackupFormat.DATABASE).also { snapshotDatabase(it) }
+                val songDb = scratch.resolve(ANDROID_SONG_DB)
+                AndroidSongDbExport.export(snapshot, songDb, nowMillis())
+                mapOf(ANDROID_SONG_DB to withContext(Dispatchers.IO) { Files.readAllBytes(songDb) })
+            } else {
+                emptyMap()
+            }
+            val preferences = settingsSubset(settings.snapshot(), selected) ?: PreferenceSnapshot.EMPTY
+            val categories = selected.map { category ->
+                when (category) {
+                    BackupDataCategory.LIBRARY -> BackupCategory.LIBRARY
+                    BackupDataCategory.ACCOUNT -> BackupCategory.ACCOUNT
+                    BackupDataCategory.SETTINGS -> BackupCategory.SETTINGS
+                }
+            }.toSet()
+            withContext(Dispatchers.IO) { JvmBackupArchiveCodec().create(preferences, categories, libraryFiles) }
+        }
+    }
+
     override suspend fun inspect(archive: ByteArray): BackupArchiveInspection =
         withScratch { scratch -> BackupArchiveInspection(parse(archive, scratch).categories) }
 
@@ -425,6 +454,7 @@ internal class DesktopBackupArchiveGateway(
 
     private companion object {
         const val COPY_BUFFER_BYTES = 64 * 1024
+        const val ANDROID_SONG_DB = "song.db"
     }
 }
 

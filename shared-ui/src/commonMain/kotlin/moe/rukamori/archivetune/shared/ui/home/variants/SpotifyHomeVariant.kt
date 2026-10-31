@@ -494,6 +494,7 @@ private fun SpotifyMediaCard(
             text = effectiveSong(item).title,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             softWrap = false,
             modifier = Modifier.fillMaxWidth().basicMarquee(),
@@ -530,6 +531,7 @@ private fun SpotifyArtistCard(
         Text(
             text = effectiveSong(item).title,
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 1,
             softWrap = false,

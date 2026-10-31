@@ -44,8 +44,11 @@ fun ArchiveTuneTheme(
         RoundedCornerShape(16.dp), RoundedCornerShape(24.dp), RoundedCornerShape(32.dp)) }
     CompositionLocalProvider(LocalArchiveTuneFontFamily provides family) {
         MaterialExpressiveTheme(colorScheme = colors, typography = type, shapes = shapes,
-            motionScheme = if (disableAnimations) DisabledArchiveTuneMotion else MotionScheme.expressive(),
-            content = content)
+            motionScheme = if (disableAnimations) DisabledArchiveTuneMotion else MotionScheme.expressive()) {
+            // Text drawn outside a Surface (custom-painted cards, scaffold-free roots) otherwise
+            // falls back to Color.Black and vanishes on dark schemes.
+            CompositionLocalProvider(LocalContentColor provides colors.onSurface, content = content)
+        }
     }
 }
 

@@ -82,6 +82,8 @@ kotlin {
             // InnerTubeX expects the injected client to negotiate JSON bodies itself.
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
+            // The network owner configures the engine hosts inject (proxy route and proxy credentials).
+            implementation(libs.ktor.client.darwin)
             implementation("androidx.sqlite:sqlite-bundled:2.6.2")
         }
         // InnerTubeX (com.github.MetrolistGroup.innertubex v0.11.0, GPL-3.0) is consumed through its

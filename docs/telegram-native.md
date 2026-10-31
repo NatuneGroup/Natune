@@ -32,6 +32,20 @@ discarded, so the host is untrusted by construction.
 Point `-PtdlibNativeBaseUrl=` at your own release to stop depending on upstream hosting; the assets
 must be named `libtdjni-<abi>.so.gz` and match the pinned digests.
 
+## Android 7 compatibility
+
+There is no verified API 26 minimum for the pinned binary: the upstream Android recipe at
+`56f8e36ea8b2bea278e6c439be7f24186e118d78` passes `ANDROID_PLATFORM=android-16`, and the pinned
+TDLight OpenSSL recipe uses API 16/21. Do not disable every API 24–25 device based only on its SDK.
+
+On API 24–25, an `UnsatisfiedLinkError` from an installed bundled library, a digest-verified cached
+library or native client creation instead latches `Unsupported("AndroidVersion")`. Settings and
+direct login explain the unavailable integration, and further native-load/download attempts stop
+for that process. A library that is merely absent on a slim build remains `NativeLibraryMissing`;
+its first download is not mistaken for an incompatible platform. Other client linkage failures
+also fail safely rather than escaping startup. These guards do not establish device compatibility;
+API 24/25 bundled and downloaded-library checks still require device evidence.
+
 ## Schema differences from TDLib 1.8.56
 
 The 1.8.66 bump changed three calls the fork uses:

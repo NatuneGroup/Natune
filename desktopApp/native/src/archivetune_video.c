@@ -75,6 +75,7 @@ struct ae_video {
     int32_t width;
     int32_t height;
     int64_t pts_us;
+    int64_t duration_us;
     uint64_t sequence;
     int32_t state;
     char error[AV_ERROR_CAPACITY];
@@ -156,8 +157,12 @@ static int interrupt_cb(void *opaque) {
 
 static int open_input(ae_video *v, AVFormatContext **format, AVCodecContext **decoder, int *stream_index) {
     AVDictionary *options = NULL;
-    /* Only the TLS stream the host resolved is fetched; nothing in a container can send FFmpeg elsewhere. */
-    av_dict_set(&options, "protocol_whitelist", "https,tls,tcp", 0);
+    int local = strncmp(v->url, "file:", 5) == 0;
+    /* Local canvases cannot open network URLs or playlist/concat demuxers. Remote streams cannot open files. */
+    av_dict_set(&options, "protocol_whitelist", local ? "file" : "https,tls,tcp", 0);
+    if (local) {
+        av_dict_set(&options, "format_whitelist", "mov,matroska,webm,gif", 0);
+    }
     av_dict_set(&options, "rw_timeout", "15000000", 0);
     av_dict_set(&options, "reconnect", "1", 0);
     av_dict_set(&options, "reconnect_on_network_error", "1", 0);
@@ -215,6 +220,13 @@ static int open_input(ae_video *v, AVFormatContext **format, AVCodecContext **de
     *format = fmt;
     *decoder = ctx;
     *stream_index = index;
+    int64_t duration = fmt->duration > 0 ? fmt->duration : 0;
+    if (duration == 0 && fmt->streams[index]->duration > 0) {
+        duration = av_rescale_q(fmt->streams[index]->duration, fmt->streams[index]->time_base, AV_TIME_BASE_Q);
+    }
+    pthread_mutex_lock(&v->mutex);
+    v->duration_us = duration > 0 ? duration : 0;
+    pthread_mutex_unlock(&v->mutex);
     return 0;
 }
 
@@ -383,7 +395,7 @@ static void *video_main(void *opaque) {
             seek = decoded_pts != AV_NOPTS_VALUE || target > AV_START_SEEK_US;
         } else if (decoded_pts != AV_NOPTS_VALUE) {
             int behind = target > decoded_pts + AV_BEHIND_RESYNC_US && !ended;
-            int ahead = target < decoded_pts - AV_AHEAD_RESYNC_US;
+            int ahead = target < decoded_pts - AV_AHEAD_RESYNC_US || (ended && target < decoded_pts);
             seek = behind || ahead;
         }
         resync = 0;
@@ -477,7 +489,7 @@ static void video_free(ae_video *v) {
 }
 
 ae_video *ae_video_open(const char *url, const char *user_agent, int32_t max_height) {
-    if (!url || strncmp(url, "https://", 8) != 0) {
+    if (!url || (strncmp(url, "https://", 8) != 0 && strncmp(url, "file:", 5) != 0)) {
         return NULL;
     }
     ae_video *v = calloc(1, sizeof *v);
@@ -548,6 +560,7 @@ int32_t ae_video_copy_frame(ae_video *v, uint64_t known_sequence, uint8_t *out, 
     info->height = v->height;
     info->state = v->state;
     info->pts_us = v->pts_us;
+    info->duration_us = v->duration_us;
     if (v->sequence != 0 && v->sequence != known_sequence && v->front) {
         size_t need = (size_t)v->width * (size_t)v->height * 4u;
         if (!out || capacity < need) {

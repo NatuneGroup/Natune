@@ -18,6 +18,10 @@ import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.AudioProviderRepository
 import moe.rukamori.archivetune.shared.domain.repository.AudioResolveRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
+import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
+import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.TerminalPlaybackAuthentication
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -49,7 +53,7 @@ internal class DesktopTidalSource(
 
     private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false)
 
-    override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
+    private suspend fun attempts(): List<Attempt> {
         val snapshot = preferences()
         val country = snapshot?.tidalCountryCode()?.takeIf { it.length == 2 } ?: "US"
         val personal = personalRepository(country)?.let { Attempt(it) }
@@ -85,9 +89,12 @@ internal class DesktopTidalSource(
         }
         val accountFirst = snapshot?.get(TidalAccountFirstKey) ?: true
         val accountAttempts = listOfNotNull(personal) + pooled
-        val attempts = if (accountFirst) accountAttempts + instances else instances + accountAttempts
+        return if (accountFirst) accountAttempts + instances else instances + accountAttempts
+    }
+
+    override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         var failure: Exception? = null
-        for (attempt in attempts) {
+        for (attempt in attempts()) {
             try {
                 attempt.repository.resolve(request)?.let { resolved ->
                     if (attempt.pooled) pool?.noteSuccess(DesktopPlaybackPool.TIDAL, attempt.poolId)
@@ -109,6 +116,22 @@ internal class DesktopTidalSource(
         }
         failure?.let { throw it }
         return null
+    }
+
+    suspend fun search(query: String): List<ContentItem> {
+        val request = ContentRequest(ContentProvider.TIDAL, ContentSurface.SEARCH,
+            text = query, filter = ContentSearchFilter.SONGS)
+        for (attempt in attempts()) {
+            try {
+                val rows = attempt.repository.page(request, null).items.map { it.item }
+                if (rows.isNotEmpty()) return rows
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Search failure is not a playback failure and must not report a pool account dead.
+            }
+        }
+        return emptyList()
     }
 
     private suspend fun personalRepository(country: String): KtorTidalRepository? {

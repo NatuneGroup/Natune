@@ -1,6 +1,8 @@
 package moe.rukamori.archivetune.shared.data.provider
 
 import io.ktor.client.HttpClient
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.json.*
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.source.*
@@ -79,6 +81,9 @@ class KtorAmazonAuthorization(client: HttpClient, instanceBase: String) {
         const val TURNSTILE_SITEKEY = "0x4AAAAAADgxqF6QVMm0GLHH"
         const val TURNSTILE_ORIGIN = "https://monochrome.tf/"
         const val TURNSTILE_JWT_TTL_MS = 60L * 60L * 1000L
+
+        /** A JWT is replaced this long before it expires, the same margin the Android authorization screen applies. */
+        const val TURNSTILE_JWT_SAFETY_MS = 5L * 60L * 1000L
     }
     suspend fun exchangeTurnstile(responseToken: String, operatorToken: String? = null): String {
         require(responseToken.isNotBlank())
@@ -90,6 +95,37 @@ class KtorAmazonAuthorization(client: HttpClient, instanceBase: String) {
         }).jsonObject
         return listOf("access_token", "jwt", "token").firstNotNullOfOrNull { root.text(it) }
             ?: throw ProviderProtocolFailure()
+    }
+}
+
+/**
+ * The `exp` claim of a Turnstile JWT in epoch milliseconds, or null when the token is not a JWT or carries no usable
+ * expiry. The claim is seconds; the value here is milliseconds like every other expiry the settings store holds.
+ */
+@OptIn(ExperimentalEncodingApi::class)
+fun amazonTurnstileJwtExpiresAtMs(jwt: String): Long? {
+    val payload = jwt.split('.').getOrNull(1)?.takeIf { it.isNotBlank() } ?: return null
+    val claims = runCatching {
+        Base64.UrlSafe.decode(payload.padEnd((payload.length + 3) / 4 * 4, '=')).decodeToString()
+    }.getOrNull() ?: return null
+    val seconds = runCatching {
+        Json.parseToJsonElement(claims).jsonObject["exp"]?.jsonPrimitive?.longOrNull
+    }.getOrNull() ?: return null
+    return seconds.takeIf { it > 0L }?.times(1000L)
+}
+
+/**
+ * When a freshly exchanged Turnstile JWT stops being used. The instance states the lifetime in the `exp` claim, and the
+ * fixed TTL is only for an opaque token; the margin never takes more than half of a short-lived one, exactly as the
+ * Android authorization screen decides it.
+ */
+fun amazonTurnstileExpiry(jwt: String, nowMs: Long): Long {
+    val margin = KtorAmazonAuthorization.TURNSTILE_JWT_SAFETY_MS
+    val expiresAt = amazonTurnstileJwtExpiresAtMs(jwt)
+    return if (expiresAt != null) {
+        expiresAt - minOf(margin, (expiresAt - nowMs) / 2)
+    } else {
+        nowMs + KtorAmazonAuthorization.TURNSTILE_JWT_TTL_MS - margin
     }
 }
 
@@ -124,11 +160,16 @@ class KtorAmazonRepository(client: HttpClient, instanceBase: String, private val
     private suspend fun resolveViaInstance(request: AudioResolveRequest, base: String,
         access: AmazonInstanceAccess): PreparedAudio? {
         if (!access.isActive()) return null
-        if (request.target.title.isBlank() || request.target.artists.isEmpty()) return null
+        val pick = request.amazonPick
+        val wantedTitle = pick?.title ?: request.target.title
+        val wantedArtist = pick?.artist ?: request.target.artists.joinToString(", ")
+        val wantedAlbum = pick?.album ?: request.target.album
+        val wantedDuration = pick?.durationMs ?: request.target.durationMs
+        if (wantedTitle.isBlank() || wantedArtist.isBlank()) return null
         val quality = request.qualities[source] ?: "LOSSLESS"
-        val params = mutableMapOf("track" to request.target.title, "artist" to request.target.artists.joinToString(", "))
-        request.target.album?.takeIf { it.isNotBlank() }?.let { params["album"] = it }
-        request.target.durationMs?.takeIf { it > 0 }?.let { params["duration"] = "${it / 1000 + if (it % 1000 >= 500) 1 else 0}" }
+        val params = mutableMapOf("track" to wantedTitle, "artist" to wantedArtist)
+        wantedAlbum?.takeIf { it.isNotBlank() }?.let { params["album"] = it }
+        wantedDuration?.takeIf { it > 0 }?.let { params["duration"] = "${it / 1000 + if (it % 1000 >= 500) 1 else 0}" }
         val headers = buildMap {
             put("Origin", "https://monochrome.tf")
             access.turnstileJwt?.takeIf { it.isNotBlank() }?.let { put("X-Turnstile-JWT", it) }
@@ -149,7 +190,7 @@ class KtorAmazonRepository(client: HttpClient, instanceBase: String, private val
             if (envelope && root == null && reply.status !in setOf(401, 403, 428)) return null
         }
         if (root == null) {
-            val old = params + mapOf("album" to request.target.album.orEmpty(), "duration" to params["duration"].orEmpty(),
+            val old = params + mapOf("album" to wantedAlbum.orEmpty(), "duration" to params["duration"].orEmpty(),
                 "quality" to quality1(quality)) +
                 (access.operatorToken?.let { mapOf("bypass_token" to it) } ?: emptyMap())
             root = http.json("$base/api/track/", old, headers).jsonObject

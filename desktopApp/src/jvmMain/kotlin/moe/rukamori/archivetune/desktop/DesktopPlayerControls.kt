@@ -1,7 +1,9 @@
 package moe.rukamori.archivetune.desktop
 
+import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -48,6 +50,8 @@ internal class DesktopPlayerControls(
     private val graph: DesktopSessionGraph,
     private val sleepSheet: DesktopSleepTimerSheetState,
     private val playerMenu: DesktopPlayerMenuState,
+    /** The installed SpatialFlow typeface. The shared player draws its title in it while that style is selected. */
+    private val spatialFont: StateFlow<FontFamily?> = MutableStateFlow(null),
 ) : PlayerNativeControls {
     private var lastSeekAt = 0L
     private var seekMultiplier = 1
@@ -58,7 +62,11 @@ internal class DesktopPlayerControls(
         .distinctUntilChanged()
         .flatMapLatest { ref -> if (ref == null) flowOf(false) else graph.libraryContent.isLiked(ref) }
 
-    override val state: StateFlow<PlayerNativeState> = combine(
+    /**
+     * The queue, playback, settings, like and handoff owners as one observed state. The typeface is combined afterwards
+     * because it is not part of the queue's state and changes only when the user installs or removes it.
+     */
+    private val observed: Flow<PlayerNativeState> = combine(
         graph.queue.state,
         graph.player.snapshot,
         graph.settings.snapshots,
@@ -66,6 +74,10 @@ internal class DesktopPlayerControls(
         graph.handoff,
     ) { queue, playback, preferences, isLiked, handoff ->
         desktopNativeState(queue, playback, preferences, isLiked, handoff)
+    }
+
+    override val state: StateFlow<PlayerNativeState> = combine(observed, spatialFont) { native, font ->
+        native.copy(spatialFont = font)
     }.stateIn(
         graph.scope,
         SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS),
@@ -162,7 +174,8 @@ internal class DesktopPlayerControls(
 /**
  * The observed native state for [playback]. Previous and next follow the queue owner's own rules: the same successor
  * for the repeat mode in settings, and the same restart threshold as the graph's previous skip. [liked] is the owner's
- * liked state for the current song, and it reads as not liked until that list has been read.
+ * liked state for the current song, and it reads as not liked until that list has been read. [spatialFont] is the
+ * installed optional typeface, or null while the player keeps the default family.
  */
 internal fun desktopNativeState(
     queue: QueueState,
@@ -170,6 +183,7 @@ internal fun desktopNativeState(
     preferences: PreferenceSnapshot?,
     liked: Boolean = false,
     handoff: QueueHandoffState? = null,
+    spatialFont: FontFamily? = null,
 ): PlayerNativeState {
     val mode = repeatModeOf(preferences)
     val current = queue.currentOccurrenceId
@@ -188,7 +202,7 @@ internal fun desktopNativeState(
         volume = preferences?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f,
         canvasAvailable = false,
         palette = emptyList(),
-        spatialFont = null,
+        spatialFont = spatialFont,
         handoff = handoff?.takeIf { it.fromOccurrenceId == playback?.occurrenceId }?.let {
             PlayerHandoff(it.fromOccurrenceId, it.toOccurrenceId, it.fadeStartPositionMs, it.overlapMs)
         },

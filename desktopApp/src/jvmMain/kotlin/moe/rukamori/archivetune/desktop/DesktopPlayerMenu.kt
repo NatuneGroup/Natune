@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -70,9 +71,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
-import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
-import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
-import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.ArtistSeparatorsKey
@@ -90,6 +89,8 @@ import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.domain.settings.toggleSpeedDialPin
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.domain.source.AmazonTrackPick
+import moe.rukamori.archivetune.shared.domain.source.SongSourceAmazonPick
 import moe.rukamori.archivetune.shared.domain.source.SongSourceOverride
 import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzBackupVideoId
 import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzTrackId
@@ -107,7 +108,6 @@ import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueuePlaylistLo
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueSheetCollapse
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueTrack
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerSourceOverrideRequest
-import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerSourceQuality
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerSourceSearchResult
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 
@@ -120,8 +120,8 @@ private fun menuOccurrenceId(songId: String): String = "menu-$songId-${System.na
 /**
  * The player's overflow menu on the desktop host. It mounts the shared [PlayerQueueMenu] body, so the rows are the
  * baseline's; rows whose owner this host has (queue order, playlist picker, source pin, speed dial, tempo and pitch,
- * sleep timer, copy link, artist and album pages, details, share local) act, and rows it does not (radio, cast, canvas,
- * always-on display, downloads, the external downloader, equalizer, acoustic graph, Amazon search) are hidden through
+ * sleep timer, copy link, artist and album pages, details, share local, radio, downloads) act, and rows it does not
+ * (cast, canvas, always-on display, the external downloader, equalizer, acoustic graph) are hidden through
  * the state's capability flags instead of appearing as no-ops.
  */
 internal class DesktopPlayerMenuState {
@@ -264,9 +264,9 @@ internal class DesktopPlayerQueueActions(
                             set(SongSourceQobuzBackupVideoIdKey, SongSourceQobuzBackupVideoId.withOverride(get(SongSourceQobuzBackupVideoIdKey), track.mediaId, request.videoId))
                         }
                         is PlayerSourceOverrideRequest.AmazonPick -> {
-                            // The Amazon pick codec has no portable representation yet; keep the pin only.
                             set(SongSourceOverrideKey, SongSourceOverride.withOverride(get(SongSourceOverrideKey), track.mediaId, AudioSourceType.AMAZON))
-                            set(SongSourceAmazonPickKey, get(SongSourceAmazonPickKey) ?: "")
+                            set(SongSourceAmazonPickKey, SongSourceAmazonPick.withOverride(get(SongSourceAmazonPickKey),
+                                track.mediaId, AmazonTrackPick(request.title, request.artist, request.album, request.durationMs)))
                         }
                     }
                 }
@@ -301,39 +301,12 @@ internal class DesktopPlayerQueueActions(
         }
     }
 
-    /** YouTube is the only catalogue with a song search on this host; other sources refuse inside the request. */
+    /** One search owner reuses the playback backends; unsupported provider filters stay honestly unavailable. */
     override suspend fun searchSongSources(
         query: String,
         sourceFilter: AudioSourceType?,
         includeAmazon: Boolean,
-    ): List<PlayerSourceSearchResult> {
-        if (sourceFilter != null && sourceFilter != AudioSourceType.YOUTUBE) return emptyList()
-        val page = try {
-            graph.youtubeContent.page(
-                ContentRequest(ContentProvider.YOUTUBE, ContentSurface.SEARCH, text = query, filter = ContentSearchFilter.SONGS),
-                continuation = null,
-            )
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            return emptyList()
-        }
-        return page.items.mapNotNull { occurrence ->
-            val item = occurrence.item
-            if (item.ref.kind != ContentKind.SONG) return@mapNotNull null
-            PlayerSourceSearchResult(
-                source = AudioSourceType.YOUTUBE,
-                trackId = item.ref.id,
-                title = item.title,
-                artist = item.artists.joinToString(", ") { it.name },
-                album = item.album,
-                thumbnailUrl = item.artworkUri,
-                durationMs = item.durationMs,
-                quality = PlayerSourceQuality.NONE,
-                isYouTubeSong = true,
-            )
-        }
-    }
+    ): List<PlayerSourceSearchResult> = graph.audioSources.search(graph.youtubeContent, query, sourceFilter, includeAmazon)
 
     /** Plays the picked YouTube result: the song goes next and starts, as the dialog's play action did. */
     override fun playYouTubeSearchResult(track: PlayerQueueTrack, result: PlayerSourceSearchResult) {
@@ -415,15 +388,52 @@ internal class DesktopPlayerQueueActions(
     override fun startSleepTimerEndOfSong() = graph.sleepTimer.startSleepTimerEndOfSong()
     override fun clearSleepTimer() = graph.sleepTimer.clearSleepTimer()
 
+    override fun startRadio(track: PlayerQueueTrack) {
+        // The shared menu dismisses immediately after this call; keep its selected item across the launch.
+        val item = menu.target?.takeIf { it.ref.id == track.mediaId } ?: return
+        graph.scope.launch {
+            try {
+                graph.radio.start(item.ref)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("the radio could not be started: ${failure.javaClass.simpleName}")
+            }
+        }
+    }
+
+    override fun downloadTrack(track: PlayerQueueTrack) {
+        val item = menu.target?.takeIf { it.ref.id == track.mediaId } ?: return
+        graph.scope.launch {
+            try {
+                graph.downloads.start(item)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("the download could not be started: ${failure.javaClass.simpleName}")
+            }
+        }
+    }
+
+    override fun removeDownload(track: PlayerQueueTrack) {
+        val ref = menu.target?.ref?.takeIf { it.id == track.mediaId } ?: return
+        graph.scope.launch {
+            try {
+                graph.downloads.remove(ref.desktopDownloadId())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("the download could not be removed: ${failure.javaClass.simpleName}")
+            }
+        }
+    }
+
     // Rows hidden on this host: unreachable, but logged rather than silent if a trigger still reaches them.
 
-    override fun startRadio(track: PlayerQueueTrack) = unsupported("startRadio")
     override fun setAodMode() = unsupported("setAodMode")
     override fun openEqualizer() = unsupported("openEqualizer")
     override fun openAcousticQuality(track: PlayerQueueTrack) = unsupported("openAcousticQuality")
     override fun cast(track: PlayerQueueTrack) = unsupported("cast")
-    override fun downloadTrack(track: PlayerQueueTrack) = unsupported("downloadTrack")
-    override fun removeDownload(track: PlayerQueueTrack) = unsupported("removeDownload")
     override fun openWithExternalDownloader(url: String) = unsupported("openWithExternalDownloader")
     override suspend fun refetchCanvas(track: PlayerQueueTrack, requireVertical: Boolean): PlayerQueueCanvasRefetchResult {
         unsupported("refetchCanvas")
@@ -495,6 +505,16 @@ internal fun DesktopPlayerMenuDialog(
     val actions = remember(graph, menu, navigate) { DesktopPlayerQueueActions(graph, menu, navigate) }
     val speed by actions.playbackSpeed.collectAsState()
     val pitch by actions.playbackPitch.collectAsState()
+    val transfers by produceState(emptyList<ContentDownload>(), graph) {
+        try {
+            graph.downloads.observe().collect { value = it }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            graph.report("download menu state is unavailable: ${failure.javaClass.simpleName}")
+        }
+    }
+    val download = desktopPlayerDownloadState(transfers, item.ref)
 
     val track = remember(item) { desktopPlayerMenuTrack(item) }
     val snapshot = prefs
@@ -502,7 +522,7 @@ internal fun DesktopPlayerMenuDialog(
     val state = PlayerQueueMenuState(
         style = snapshot?.get(PlayerDesignStyleKey).toEnum(PlayerDesignStyle.Default),
         appleMusicExperience = snapshot?.appleMusicMenus() ?: false,
-        download = PlayerQueueDownloadState.NOT_DOWNLOADED,
+        download = download,
         pinnedToSpeedDial = snapshot?.get(SpeedDialSongIdsKey)?.let { raw ->
             parseSpeedDialPins(raw).any { it.type == SpeedDialPinType.SONG && it.id == track.mediaId }
         } ?: false,
@@ -520,13 +540,13 @@ internal fun DesktopPlayerMenuDialog(
         sleepTimer = sleep,
         sourceChoices = desktopSourceSnapshot(prefs).enabled.toList(),
         selectedSource = pin,
-        amazonSearchEnabled = false,
-        searchableSources = setOf(AudioSourceType.YOUTUBE),
+        amazonSearchEnabled = graph.audioSources.amazonSearchEnabled,
+        searchableSources = graph.audioSources.searchableSources,
         alwaysOnDisplaySupported = false,
-        radioSupported = false,
+        radioSupported = desktopRadioSeedSupported(item.ref),
         acousticQualitySupported = false,
         equalizerSupported = false,
-        downloadsSupported = false,
+        downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
     )
 
     Dialog(onDismissRequest = menu::dismiss) {

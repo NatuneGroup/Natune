@@ -31,12 +31,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -96,9 +98,10 @@ fun ArtistSongsScreen(
     val artist by viewModel.artist.collectAsStateWithLifecycle()
     val songs by viewModel.songs.collectAsStateWithLifecycle()
     val lazyListState = rememberLazyListState()
+    val ambient = rememberArtistAmbientColors(viewModel.artistId, artist?.thumbnailUrl)
 
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().artistAmbientBackground(ambient),
     ) {
         LazyColumn(
             state = lazyListState,
@@ -196,6 +199,8 @@ fun ArtistSongsScreen(
         }
 
         TopAppBar(
+            modifier = Modifier.artistAmbientBarBackground(ambient),
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             windowInsets =
                 WindowInsets(top = LocalStableSystemBarsTopPadding.current)
                     .union(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),

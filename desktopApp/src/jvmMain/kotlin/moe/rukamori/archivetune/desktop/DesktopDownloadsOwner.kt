@@ -3,11 +3,8 @@ package moe.rukamori.archivetune.desktop
 import java.nio.file.Path
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.download.DownloadKey
 import moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository
 import moe.rukamori.archivetune.shared.data.persistence.PortableStoredSongDao
@@ -16,6 +13,7 @@ import moe.rukamori.archivetune.shared.data.provider.AudioResolution
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.domain.repository.AudioPurpose
 import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
@@ -52,19 +50,17 @@ internal class DesktopDownloadsOwner(
     private val report: (String) -> Unit,
 ) : DownloadActions {
 
-    /** In-flight and ended transfers the store cannot report yet, keyed by download id. */
-    private val jobs = MutableStateFlow<Map<String, TransferState>>(emptyMap())
-
-    private data class TransferState(val ref: ContentRef, val phase: DownloadPhase, val job: Job?)
+    private val transfers = DesktopDownloadTransfers(scope, ::runTransfer, report)
 
     override fun observe(): Flow<List<ContentDownload>> =
-        combine(storedSongs.observe(DOWNLOAD_ORIGIN), jobs) { rows, transfers ->
+        combine(storedSongs.observe(DOWNLOAD_ORIGIN), transfers.state) { rows, transfers ->
             val listed = rows.map { row ->
-                val id = downloadId(row.provider, row.mediaId)
+                val ref = ContentRef(row.provider, ContentKind.SONG, row.mediaId)
+                val id = ref.desktopDownloadId()
                 val job = transfers[id]
                 ContentDownload(
                     id = id,
-                    ref = ContentRef(row.provider, ContentKind.SONG, row.mediaId),
+                    ref = ref,
                     phase = job?.phase ?: DownloadPhase.COMPLETED,
                     bytesDownloaded = row.bytes ?: 0L,
                     totalBytes = row.bytes,
@@ -77,7 +73,7 @@ internal class DesktopDownloadsOwner(
                 }
                 .map { transfer ->
                     ContentDownload(
-                        id = downloadId(transfer.ref.provider, transfer.ref.id),
+                        id = transfer.ref.desktopDownloadId(),
                         ref = transfer.ref,
                         phase = transfer.phase,
                         bytesDownloaded = 0L,
@@ -88,75 +84,63 @@ internal class DesktopDownloadsOwner(
         }
 
     override suspend fun start(ref: ContentRef, quality: String) {
-        val id = downloadId(ref.provider, ref.id)
-        jobs.value = jobs.value + (id to TransferState(ref, DownloadPhase.QUEUED, null))
-        val job = scope.launch { runTransfer(ref, quality) }
-        jobs.value = jobs.value + (id to TransferState(ref, DownloadPhase.DOWNLOADING, job))
+        val item = library.findSong(ref.id, ref.provider)
+            ?: throw IllegalStateException("The song metadata is not available")
+        start(item, quality)
+    }
+
+    /** A catalog menu already has canonical metadata; downloading it must not require saving it to the library first. */
+    suspend fun start(item: ContentItem, quality: String = "") {
+        require(desktopDownloadSupported(item.ref)) { "This item cannot be downloaded on the desktop host" }
+        transfers.start(item, quality)
     }
 
     /** Stop cancels the transfer: its staged bytes go with the request and no row is written. */
     override suspend fun stop(id: String) {
-        val transfer = jobs.value[id] ?: return
-        transfer.job?.cancel()
-        jobs.value = jobs.value + (id to transfer.copy(phase = DownloadPhase.STOPPED, job = null))
+        transfers.stop(id)
     }
 
     override suspend fun resume(id: String) {
-        val transfer = jobs.value[id] ?: return
-        start(transfer.ref, "")
+        transfers.resume(id)
     }
 
     override suspend fun remove(id: String) {
-        val transfer = jobs.value[id]
-        transfer?.job?.cancel()
         val (provider, mediaId) = id.split(':', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
         if (mediaId.isBlank()) return
-        jobs.value = jobs.value + (id to TransferState(
-            transfer?.ref ?: ContentRef(provider, ContentKind.SONG, mediaId),
-            DownloadPhase.REMOVING, null))
         try {
-            val row = storedSongs.find(DOWNLOAD_ORIGIN, provider, mediaId)
-            val source = row?.source?.let { name -> AudioSourceType.entries.firstOrNull { it.name == name } }
-                ?: AudioSourceType.YOUTUBE
-            downloads.remove(DownloadKey(mediaId, source, row?.quality ?: "", provider))
+            transfers.remove(ContentRef(provider, ContentKind.SONG, mediaId)) {
+                val row = storedSongs.find(DOWNLOAD_ORIGIN, provider, mediaId)
+                val source = row?.source?.let { name -> AudioSourceType.entries.firstOrNull { it.name == name } }
+                    ?: AudioSourceType.YOUTUBE
+                downloads.remove(DownloadKey(mediaId, source, row?.quality ?: "", provider))
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             report("the download was not removed: ${failure.javaClass.simpleName}")
-        } finally {
-            jobs.value = jobs.value - id
+            throw failure
         }
     }
 
-    private suspend fun runTransfer(ref: ContentRef, quality: String) {
-        val id = downloadId(ref.provider, ref.id)
-        try {
-            val item = library.findSong(ref.id, ref.provider)
-                ?: throw IllegalStateException("the song is not in the library")
-            val occurrence = ContentOccurrence("download:$id", item)
-            val request = occurrence.toAudioResolveRequest(settings.snapshots.value)
-                .copy(purpose = AudioPurpose.DOWNLOAD)
-            val resolution = resolver.resolve(
-                request, hostSourceSnapshot(settings.snapshots.value), rejected = emptySet())
-            val audio = (resolution as? AudioResolution.Resolved)?.audio
-                ?: throw IllegalStateException("no connected source resolved the song")
-            if (audio !is PreparedAudio.Progressive) {
-                throw IllegalStateException("the resolved source cannot be stored as a file")
-            }
-            val key = DownloadKey(
-                ref.id, audio.source,
-                quality.ifBlank { request.qualities[audio.source] ?: "" },
-                ref.provider,
-            )
-            downloads.download(key, audio, item)
-            jobs.value = jobs.value + (id to TransferState(ref, DownloadPhase.COMPLETED, null))
-        } catch (cancelled: CancellationException) {
-            jobs.value = jobs.value + (id to TransferState(ref, DownloadPhase.STOPPED, null))
-            throw cancelled
-        } catch (failure: Exception) {
-            jobs.value = jobs.value + (id to TransferState(ref, DownloadPhase.FAILED, null))
-            report("the download failed: ${failure.message ?: failure.javaClass.simpleName}")
+    private suspend fun runTransfer(item: ContentItem, quality: String) {
+        val ref = item.ref
+        val id = ref.desktopDownloadId()
+        val occurrence = ContentOccurrence("download:$id", item)
+        val request = occurrence.toAudioResolveRequest(settings.snapshots.value)
+            .copy(purpose = AudioPurpose.DOWNLOAD)
+        val resolution = resolver.resolve(
+            request, hostSourceSnapshot(settings.snapshots.value), rejected = emptySet())
+        val audio = (resolution as? AudioResolution.Resolved)?.audio
+            ?: throw IllegalStateException("no connected source resolved the song")
+        if (audio !is PreparedAudio.Progressive) {
+            throw IllegalStateException("the resolved source cannot be stored as a file")
         }
+        val key = DownloadKey(
+            ref.id, audio.source,
+            quality.ifBlank { request.qualities[audio.source] ?: "" },
+            ref.provider,
+        )
+        downloads.download(key, audio, item)
     }
 
     /**
@@ -166,10 +150,24 @@ internal class DesktopDownloadsOwner(
     suspend fun fileOf(provider: String, mediaId: String, source: AudioSourceType, quality: String): Path? =
         downloads.find(DownloadKey(mediaId, source, quality, provider))
 
+    suspend fun completedFile(ref: ContentRef): DesktopCompletedDownload? {
+        if (ref.kind != ContentKind.SONG) return null
+        val row = storedSongs.find(DOWNLOAD_ORIGIN, ref.provider, ref.id) ?: return null
+        val source = AudioSourceType.entries.firstOrNull { it.name == row.source } ?: return null
+        val quality = row.quality ?: return null
+        val bytes = row.bytes?.takeIf { it > 0L } ?: return null
+        val file = downloads.find(DownloadKey(ref.id, source, quality, ref.provider)) ?: return null
+        return DesktopCompletedDownload(file, bytes)
+    }
+
+    suspend fun export(ref: ContentRef, destination: Path) {
+        val completed = completedFile(ref) ?: throw IllegalStateException("No completed download is available")
+        copyDesktopDownload(completed, destination)
+    }
+
     /** Every committed download row, so the page can show each stored item and the locator can
      * resolve a stored song without a network request. */
     fun storedRows(): Flow<List<PortableStoredSongRow>> = storedSongs.observe(DOWNLOAD_ORIGIN)
     suspend fun listedRows() = storedSongs.rows(DOWNLOAD_ORIGIN)
 
-    private fun downloadId(provider: String, mediaId: String) = "$provider:$mediaId"
 }

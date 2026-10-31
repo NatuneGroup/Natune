@@ -5,6 +5,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.settings.AppearanceRoute
 import moe.rukamori.archivetune.shared.ui.settings.AppearanceSectionRoutes
@@ -31,19 +34,24 @@ internal val IOS_GENERAL_SETTINGS_ROUTES = setOf(
     SettingsRoutes.YTDLP,
 )
 
+/** Which arrange dialog is open, if any. */
+private enum class IosArrangeDialogKind { HOME_SCREENS, LIBRARY_CHIPS, PLAYLIST_TAGS, ARTWORK_PROVIDERS }
+
 /**
- * One of [IOS_GENERAL_SETTINGS_ROUTES]. This host has no bit-perfect or USB output, no wallpaper colours, no
- * home-screen editor and no custom-font pick, so those rows read as unsupported.
+ * One of [IOS_GENERAL_SETTINGS_ROUTES]. This host has no bit-perfect or USB output, no wallpaper colours and no
+ * custom-font pick, so those rows read as unsupported. The home-screen, chip, tag and artwork arrange rows open the
+ * dialogs below, which edit the same preferences the Android dialogs do.
  */
 @Composable
 internal fun IosGeneralSettingsPage(
     path: String,
+    graph: IosSessionGraph,
     controller: SettingsController,
     navigate: (String) -> Unit,
     onFailure: () -> Unit,
-    unavailable: () -> Unit,
     scrollTo: String?,
 ) {
+    var arrangeDialog by remember { mutableStateOf<IosArrangeDialogKind?>(null) }
     when (path) {
         AppearanceRoute, in AppearanceSectionRoutes.keys -> AppearanceSettings(
             controller = controller,
@@ -57,9 +65,9 @@ internal fun IosGeneralSettingsPage(
             // The file picker returns a security-scoped bookmark rather than a font name the theme row needs.
             pickCustomFont = { null },
             customFontPickerSupported = false,
-            chooseHomeScreens = unavailable,
-            arrangeLibraryChips = unavailable,
-            arrangePlaylistTags = unavailable,
+            chooseHomeScreens = { arrangeDialog = IosArrangeDialogKind.HOME_SCREENS },
+            arrangeLibraryChips = { arrangeDialog = IosArrangeDialogKind.LIBRARY_CHIPS },
+            arrangePlaylistTags = { arrangeDialog = IosArrangeDialogKind.PLAYLIST_TAGS },
             onFailure = onFailure,
             scrollTo = appearanceScrollTarget(path, scrollTo),
             nativeIosInterface = true,
@@ -73,8 +81,9 @@ internal fun IosGeneralSettingsPage(
             usbExclusiveSupported = false,
             releaseBitPerfectSink = { },
             navigate = navigate,
-            arrangeArtworkProviders = unavailable,
-            managePlaylistTags = unavailable,
+            arrangeArtworkProviders = { arrangeDialog = IosArrangeDialogKind.ARTWORK_PROVIDERS },
+            // The tag manager is the library's own tags page, so the row opens the page that edits this graph's tags.
+            managePlaylistTags = { navigate("library/tags") },
             onFailure = onFailure,
             scrollTo = scrollTo,
         )
@@ -84,6 +93,24 @@ internal fun IosGeneralSettingsPage(
         SettingsRoutes.YTDLP -> YtDlpRuntimeSettings(
             readRuntime = { YtDlpRuntimeStatus(pythonAvailable = false, scriptAvailable = false) },
         )
+    }
+    val dialog = arrangeDialog
+    if (dialog != null) {
+        val snapshot by controller.store.snapshots.collectAsState()
+        val preferences = snapshot
+        if (preferences != null) {
+            val dismiss = { arrangeDialog = null }
+            when (dialog) {
+                IosArrangeDialogKind.HOME_SCREENS ->
+                    IosHomeScreensDialog(preferences, controller, dismiss, onFailure)
+                IosArrangeDialogKind.LIBRARY_CHIPS ->
+                    IosArrangeLibraryChipsDialog(preferences, controller, dismiss, onFailure)
+                IosArrangeDialogKind.PLAYLIST_TAGS ->
+                    IosArrangePlaylistTagsDialog(graph, preferences, controller, dismiss, onFailure)
+                IosArrangeDialogKind.ARTWORK_PROVIDERS ->
+                    IosArrangeArtworkProvidersDialog(preferences, controller, dismiss, onFailure)
+            }
+        }
     }
 }
 

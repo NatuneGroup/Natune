@@ -2,70 +2,66 @@
 
 package moe.rukamori.archivetune.shared.ui.ios
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkReader
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkSource
 import moe.rukamori.archivetune.shared.domain.platform.FileHandle
-import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.IosHost
-import moe.rukamori.archivetune.shared.ui.menu.BoundEditSongInfoDialog
-import moe.rukamori.archivetune.shared.ui.songmetadata.effectiveSong
-import moe.rukamori.archivetune.shared.ui.resources.*
-import moe.rukamori.archivetune.shared.ui.resources.m5pq_add_to_queue
-import moe.rukamori.archivetune.shared.ui.resources.m5pq_play_next
-import moe.rukamori.archivetune.shared.ui.resources.m4_custom_artwork_title
-import moe.rukamori.archivetune.shared.ui.resources.m6_cancel
 import moe.rukamori.archivetune.shared.ui.screens.customartwork.BoundCustomArtworkEditDialog
 import moe.rukamori.archivetune.shared.ui.screens.customartwork.CustomArtworkKind
-import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSUUID
 
 /**
- * The one row menu of the iOS host. A row's overflow opens it on that row's occurrence. It offers the queue commands
- * the iOS queue owner answers and, for a song, the custom artwork editor over the portable repository. The rest of the
- * baseline song menu needs library, download, share and artist owners that this host does not connect yet, so those
- * rows are left out instead of appearing as no-ops.
+ * The one row menu of the iOS host. A row's overflow opens it on that row's occurrence, and the shared song menu runs
+ * against the owners this host connects (see [IosSongMenu]). A page action whose owner is not connected reports the
+ * unavailable notice through [refuse] instead of doing nothing.
  */
 internal class IosItemMenuState {
-    /** The row the menu is open for, or null while it is closed. The dialog reads it, so a click shows the menu at once. */
+    /** The row the menu is open for, or null while it is closed. */
     var target: ContentOccurrence? by mutableStateOf(null)
+        private set
+
+    /** The editable local playlist the row sits in, so its "remove from playlist" row commits against that playlist. */
+    var playlistId: String? by mutableStateOf(null)
         private set
 
     /** The song whose custom artwork editor is open, or null. It replaces the menu rather than stacking on it. */
     var artworkTarget: ContentItem? by mutableStateOf(null)
         private set
 
-    var songInfoTarget: ContentItem? by mutableStateOf(null)
+    /** The notice key a failed or unconnected action leaves for the user, or null. */
+    var message: String? by mutableStateOf(null)
         private set
 
-    fun open(occurrence: ContentOccurrence) {
+    private var refusedAsUnavailable = false
+
+    fun open(occurrence: ContentOccurrence, playlistId: String? = null) {
         target = occurrence
+        this.playlistId = playlistId
     }
 
     fun dismiss() {
         target = null
+        playlistId = null
         artworkTarget = null
-        songInfoTarget = null
     }
 
     fun openCustomArtwork() {
         val occurrence = target ?: return
         target = null
+        playlistId = null
         artworkTarget = occurrence.item
     }
 
@@ -73,27 +69,39 @@ internal class IosItemMenuState {
         artworkTarget = null
     }
 
-    fun openSongInfo() {
-        songInfoTarget = target?.item
-        target = null
+    fun dismissMessage() {
+        message = null
     }
 
-    /**
-     * Queues the open row with [kind] in the one queue. The menu closes before the command runs, so a second click
-     * cannot queue the row twice. A refused command is written to the host log, as every other iOS action is.
-     */
-    fun enqueue(graph: IosSessionGraph, kind: UserQueuedKind) {
-        val occurrence = target ?: return
-        target = null
-        graph.scope.launch {
-            try {
-                graph.queue.insert(listOf(occurrence.queuedEntry()), kind)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                graph.report("the row was not queued: ${failure::class.simpleName}")
-            }
-        }
+    /** A failed menu row: the unavailable notice for a row this host does not connect, otherwise the failure. */
+    fun failed() {
+        message = if (refusedAsUnavailable) NOTICE_UNAVAILABLE else NOTICE_FAILED
+        refusedAsUnavailable = false
+    }
+
+    /** A page action this host does not connect: the menu closes and the unavailable notice says so. */
+    fun refuse() {
+        dismiss()
+        refusedAsUnavailable = false
+        message = NOTICE_UNAVAILABLE
+    }
+
+    /** A download of a provider this host cannot store: the menu closes and the notice names the limit. */
+    fun refuseDownload() {
+        dismiss()
+        refusedAsUnavailable = false
+        message = NOTICE_DOWNLOAD_REFUSED
+    }
+
+    internal fun unavailable(): Nothing {
+        refusedAsUnavailable = true
+        throw UnsupportedOperationException("not connected on the iOS host")
+    }
+
+    companion object {
+        const val NOTICE_UNAVAILABLE = "ios_settings_feature_unavailable"
+        const val NOTICE_FAILED = "ios_menu_action_failed"
+        const val NOTICE_DOWNLOAD_REFUSED = "ios_download_refused"
     }
 }
 
@@ -105,22 +113,19 @@ internal fun ContentOccurrence.queuedEntry(): ContentOccurrence =
     ContentOccurrence("queued:${NSUUID().UUIDString}", item, setVideoId)
 
 /**
- * The row menu as a dialog over the page it opened on. The navigation host does not key the route body, so the effect
- * is keyed on the route itself: leaving a page closes its menu, and a menu opened on one page is never shown again on
- * another page.
+ * The row menu over the page it opened on. The navigation host does not key the route body, so the effect is keyed on
+ * the route itself: leaving a page closes its menu, and a menu opened on one page is never shown again on another
+ * page. The shared menu is a dropdown, so it is anchored at the middle of the screen rather than its top corner.
  */
 @Composable
-internal fun IosItemMenuDialog(menu: IosItemMenuState, graph: IosSessionGraph, host: IosHost, routeKey: String) {
+internal fun IosItemMenuDialog(
+    menu: IosItemMenuState,
+    graph: IosSessionGraph,
+    host: IosHost,
+    routeKey: String,
+    openRoute: (String) -> Unit,
+) {
     DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
-    val songMetadata = graph.library.songMetadata
-    menu.songInfoTarget?.let { item ->
-        if (songMetadata != null) BoundEditSongInfoDialog(
-            song = item,
-            repository = songMetadata,
-            onDismiss = menu::dismiss,
-            onFailure = { graph.report("the song information was not saved") },
-        )
-    }
     menu.artworkTarget?.let { item ->
         BoundCustomArtworkEditDialog(
             artworkUrl = item.artworkUri,
@@ -133,33 +138,18 @@ internal fun IosItemMenuDialog(menu: IosItemMenuState, graph: IosSessionGraph, h
             preview = { modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         )
     }
-    val occurrence = menu.target ?: return
-    AlertDialog(
-        onDismissRequest = menu::dismiss,
-        title = { Text(effectiveSong(occurrence.item).title) },
-        text = {
-            Column {
-                TextButton(
-                    onClick = { menu.enqueue(graph, UserQueuedKind.PLAY_NEXT) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(Res.string.m5pq_play_next)) }
-                TextButton(
-                    onClick = { menu.enqueue(graph, UserQueuedKind.ADD_TO_QUEUE) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(Res.string.m5pq_add_to_queue)) }
-                if (occurrence.item.ref.kind == ContentKind.SONG) {
-                    if (songMetadata != null) TextButton(onClick = menu::openSongInfo, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(Res.string.song_metadata_edit))
-                    }
-                    TextButton(onClick = menu::openCustomArtwork, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(Res.string.m4_custom_artwork_title))
-                    }
+    menu.target?.let { occurrence ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box {
+                if (occurrence.item.ref.kind == ContentKind.SONG || occurrence.item.ref.kind == ContentKind.EPISODE) {
+                    IosSongMenu(menu, graph, host, occurrence, openRoute)
+                } else {
+                    IosCollectionRowMenu(menu, host, occurrence)
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = menu::dismiss) { Text(stringResource(Res.string.m6_cancel)) } },
-    )
+        }
+    }
+    menu.message?.let { IosMenuNotice(it, menu::dismissMessage) }
 }
 
 /**

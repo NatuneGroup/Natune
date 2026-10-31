@@ -58,6 +58,8 @@ import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.m6_additional_downloads_spatialflow_font_choose
 import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogSettings
@@ -188,6 +190,8 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     }
 
     val services = DesktopSettingsServices(graph, controller, DesktopSettingsServices.currentInstanceDirectory())
+    // The Turnstile challenge window exchanges its token against the primary instance and commits the JWT here.
+    val amazon = DesktopAmazonAuthorize(graph, controller)
     val discord = DesktopDiscordPresence(graph, DesktopLaunchIntake.links, controller, graph::report)
 
     suspend fun qobuzSecretCandidates(): List<String> = qobuzScrape.candidates().orEmpty()
@@ -257,7 +261,9 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
 
 /** The settings routes this host mounts. Every other settings route keeps the unbound boundary. */
 internal fun desktopMountsSettings(route: ArchiveRoute): Boolean =
-    route.value.substringBefore('?').let { it in DESKTOP_SETTINGS_ROUTES || it in DESKTOP_GENERAL_SETTINGS_ROUTES }
+    route.value.substringBefore('?').let {
+        it in DESKTOP_SETTINGS_ROUTES || it in DESKTOP_GENERAL_SETTINGS_ROUTES || it in DESKTOP_EXTRA_SETTINGS_ROUTES
+    }
 
 private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings", "settings/account", "login", "settings/integration", "settings/tidal", "settings/deezer", "settings/qqmusic",
@@ -302,9 +308,11 @@ internal fun DesktopSettingsScreen(
                 controller = owners.controller,
                 navigate = navigate,
                 onFailure = onFailure,
-                unavailable = unavailable,
                 scrollTo = scrollTo,
+                playlistTags = graph.playlistTags,
             )
+            in DESKTOP_EXTRA_SETTINGS_ROUTES ->
+                DesktopExtraSettingsPage(path, graph, owners.controller, navigation, ::show, onFailure)
             "settings" -> SettingsHomePage(
                 controller = owners.controller,
                 navigate = navigate,
@@ -483,13 +491,13 @@ internal fun DesktopSettingsScreen(
                 openDashboard = { navigation.open(DesktopLastFmDashboardRoute) },
             )
             DesktopLastFmDashboardRoute -> DesktopLastFmDashboardPage(graph, navigation, unavailable)
-            "settings/privacy" -> DesktopPrivacySettingsPage(graph, owners.controller, onFailure, scrollTo)
+            "settings/privacy" -> DesktopPrivacySettingsPage(graph, owners.controller, ::show, onFailure, scrollTo)
             "settings/about" -> DesktopAboutPage(graph, owners.controller, navigation)
             DesktopListenTogetherSettingsRoute ->
                 DesktopListenTogetherSettingsPage(graph, owners.controller, onNotice, onFailure, unavailable, scrollTo)
             "settings/misc" -> DesktopDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
             "settings/logcat" -> DesktopDiagnosticLogPage(graph.settings, navigation, ::show)
-            "settings/backup_restore" -> DesktopBackupRestorePage(graph, owners.controller, onNotice, onFailure, scrollTo)
+            "settings/backup_restore" -> DesktopBackupRestorePage(graph, owners.controller, onNotice, onFailure, scrollTo, ::show)
             "settings/lyrics/providers" -> LyricsProviderSettings(
                 controller = owners.controller,
                 readStats = { preferences -> PaxsenixDiagnostics(graph.http, paxsenixSettingsOf(preferences)).getStats().getOrThrow() },
@@ -511,7 +519,24 @@ internal fun DesktopSettingsScreen(
                     poolInstanceCount = snapshot?.amazonInstanceList()?.size ?: 0,
                     currentTimeMillis = System::currentTimeMillis,
                     formatExpiry = owners.services::formatExpiry,
-                    onAuthorize = unavailable,
+                    onAuthorize = {
+                        scope.launch {
+                            show(DesktopStrings["amazon_challenge_opening"])
+                            show(
+                                when (val outcome = owners.amazon.authorize()) {
+                                    is AmazonAuthorizeOutcome.Authorized -> DesktopStrings["amazon_authorize_done"]
+                                    AmazonAuthorizeOutcome.Cancelled -> DesktopStrings["amazon_authorize_cancelled"]
+                                    AmazonAuthorizeOutcome.NotConfigured -> DesktopStrings["amazon_authorize_not_configured"]
+                                    AmazonAuthorizeOutcome.NoInstance -> DesktopStrings["amazon_authorize_no_instance"]
+                                    AmazonAuthorizeOutcome.Busy -> DesktopStrings["amazon_authorize_busy"]
+                                    is AmazonAuthorizeOutcome.Failed -> {
+                                        graph.report("amazon authorization failed: ${outcome.reason}")
+                                        DesktopStrings["amazon_authorize_failed"]
+                                    }
+                                },
+                            )
+                        }
+                    },
                     onFailure = onFailure,
                     onNotice = onNotice,
                     scrollTo = scrollTo,
@@ -601,8 +626,14 @@ internal fun DesktopSettingsScreen(
                     onInstallJapanese = { scope.launch { owners.services.installJapanese() } },
                     onCancelJapanese = { scope.launch { owners.services.cancelJapanese() } },
                     onRemoveJapanese = { scope.launch { owners.services.removeJapanese() } },
-                    onInstallSpatialFlowFont = { unavailable() },
-                    onRemoveSpatialFlowFont = { unavailable() },
+                    onInstallSpatialFlowFont = {
+                        if (owners.services.installSpatialFlowFont()) show(DesktopStrings["spatial_flow_font_installed"])
+                    },
+                    onRemoveSpatialFlowFont = {
+                        if (owners.services.removeSpatialFlowFont()) show(DesktopStrings["spatial_flow_font_removed"])
+                    },
+                    // The desktop has no pinned download: the user supplies the same typeface file Android installs.
+                    spatialFlowFontInstallLabel = Res.string.m6_additional_downloads_spatialflow_font_choose,
                     onFailure = onFailure,
                 )
             }
@@ -701,14 +732,12 @@ internal fun DesktopSettingsScreen(
     }
 }
 
-/**
- * Settings > Privacy on this host: the inline privacy rows and the listener-presence opt-in. The history controls of
- * the Android page need a history editor this host does not have yet.
- */
+/** Settings > Privacy on this host: the inline privacy rows, the history controls and the listener-presence opt-in. */
 @Composable
 private fun DesktopPrivacySettingsPage(
     graph: DesktopSessionGraph,
     controller: SettingsController,
+    show: (String) -> Unit,
     onFailure: () -> Unit,
     scrollTo: String?,
 ) {
@@ -725,6 +754,15 @@ private fun DesktopPrivacySettingsPage(
         scrollTo = scrollTo,
         onFailure = onFailure,
         extraItems = {
+            item(key = "history_controls") {
+                DesktopHistoryControls(
+                    preferences = preferences,
+                    controller = controller,
+                    clearListenHistory = graph.history::reset,
+                    show = show,
+                    onFailure = onFailure,
+                )
+            }
             item(key = "listener_presence") {
                 DesktopListenerPresenceSection(
                     store = graph.listenerPresence.store,

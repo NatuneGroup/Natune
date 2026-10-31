@@ -166,7 +166,7 @@ fun ArchiveNavigationHost(
                 require(route.destination == ArchiveDestination.LOCAL_SONGS)
                 val a = binding.actions
                 LocalSongsScreen(binding.state, LocalSongsActions(back, a.query, a.sort, a.requestPermission, a.scan,
-                    a.minimumDuration, a.pickFolder, a.removeFolder, a.play, a.retry, a.more), artwork)
+                    a.minimumDuration, a.pickFolder, a.removeFolder, a.play, a.retry, a.more, a.importFiles), artwork)
             }
             is ArchiveGraphPage.Uploads -> {
                 require(route.destination == ArchiveDestination.UPLOADED_SONGS)
@@ -260,7 +260,7 @@ fun ArchiveNavigationHost(
                     open = { bot -> if (binding.state.ready && !binding.state.loadFailed) navigation.open("telegram/bot/${bot.id}") }))
             }
             is ArchiveGraphPage.TelegramBrowse -> {
-                require(route.destination == ArchiveDestination.TELEGRAM_BROWSE)
+                require(route.destination in setOf(ArchiveDestination.TELEGRAM, ArchiveDestination.TELEGRAM_BROWSE))
                 TelegramBrowseScreen(binding.state, binding.actions.copy(back = back), binding.avatar,
                     onPlaylistOpened = { navigation.open(ArchiveRoutes.content(ContentRef("telegram", ContentKind.PLAYLIST, it))) })
             }

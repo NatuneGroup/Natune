@@ -26,6 +26,8 @@ import moe.rukamori.archivetune.shared.domain.repository.UnsupportedContentOpera
  * set. Keep the two in step until the mapping moves to a source set that both platforms compile.
  */
 class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTransport {
+    private val historyPages = CoreYouTubeHistory()
+
     override suspend fun page(browse: YouTubeBrowse, continuation: String?): YouTubeEntryPage =
         when (browse) {
             is YouTubeBrowse.Playlist -> playlistPage(browse.playlistId, continuation)
@@ -121,7 +123,7 @@ class JvmYouTubeBrowseTransport : YouTubeBrowseTransport, YouTubeAccountTranspor
         return libraryPage(browseId, continuation)
     }
 
-    override suspend fun history(continuation: String?): YouTubeEntryPage = CoreYouTubeHistory.page(continuation).entriesPage()
+    override suspend fun history(continuation: String?): YouTubeEntryPage = historyPages.page(continuation).entriesPage()
 
     override suspend fun likeSong(videoId: String, liked: Boolean) {
         YouTube.likeVideo(videoId, liked).getOrThrow()

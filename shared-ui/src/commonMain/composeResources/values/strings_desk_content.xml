@@ -1,0 +1,8 @@
+<resources>
+    <string name="content_lyrics_offset_minus">−100 ms</string>
+    <string name="content_lyrics_offset_plus">+100 ms</string>
+    <string name="content_lyrics_offset_value">Lyrics offset: %1$d ms</string>
+    <string name="content_lyrics_offset_reset">Reset</string>
+    <string name="content_reveal_audio">Show audio file</string>
+    <string name="content_view_podcast">View podcast</string>
+</resources>

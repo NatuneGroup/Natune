@@ -14,8 +14,6 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentNews
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
-import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
-import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.repository.NewsRepository
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
@@ -31,9 +29,6 @@ import moe.rukamori.archivetune.shared.ui.screens.LocalSongsActions
 import moe.rukamori.archivetune.shared.ui.screens.LocalSongsUi
 import moe.rukamori.archivetune.shared.ui.screens.NewsArticleUi
 import moe.rukamori.archivetune.shared.ui.screens.NewsUi
-import moe.rukamori.archivetune.shared.ui.screens.PagedContentState
-import moe.rukamori.archivetune.shared.ui.screens.PodcastBrowseUi
-import moe.rukamori.archivetune.shared.ui.screens.PodcastUi
 import moe.rukamori.archivetune.shared.data.persistence.storedOccurrence
 
 /**
@@ -65,44 +60,6 @@ internal fun desktopArticlePage(newsId: String): ArchiveGraphPage =
             available = false,
         ),
         retry = {},
-    )
-
-/**
- * `podcasts` on this host. The core carries podcast models, but no desktop podcast transport is
- * configured, so the browse page mounts as an initialized, failed page with no subscription
- * operation — the honest state rather than an empty catalog presented as real.
- */
-internal fun desktopPodcastsPage(): ArchiveGraphPage =
-    ArchiveGraphPage.Podcasts(
-        state = PodcastBrowseUi(
-            page = PagedContentState(initialized = true, failed = true),
-            subscriptionsAvailable = false,
-        ),
-        query = {},
-        subscriptionsOnly = {},
-        subscribe = null,
-        retry = {},
-        loadMore = {},
-    )
-
-/** `podcast/<browseId>` mounts the same honest state: no transport, no subscription operation. */
-internal fun desktopPodcastPage(browseId: String): ArchiveGraphPage =
-    ArchiveGraphPage.Podcast(
-        state = PodcastUi(
-            collection = ContentRequest(
-                provider = ContentProvider.YOUTUBE,
-                surface = ContentSurface.PODCAST,
-                parent = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PODCAST, browseId),
-            ),
-            header = null,
-            description = null,
-            episodes = emptyList(),
-            page = PagedContentState(initialized = true, failed = true),
-            subscription = null,
-        ),
-        subscribe = null,
-        retry = {},
-        loadMore = {},
     )
 
 @Composable
