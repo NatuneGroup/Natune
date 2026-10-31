@@ -132,7 +132,9 @@ class LibraryContentOwner(
 
     /**
      * The local playlists as the Playlists page lists them. The page orders and filters its own rows, so the stored
-     * sequences and counts are all it needs. They are order keys, never shown as dates.
+     * sequences, counts and the hidden flag are all it needs. They are order keys, never shown as dates. A hidden
+     * playlist is included with [PlaylistCollectionRow.hidden] set, exactly like Android's list, so the page's own
+     * Show hidden control decides whether it is drawn instead of the owner dropping it.
      */
     fun playlistRows(): Flow<List<PlaylistCollectionRow>> = library.observeLocalPlaylists().map { summaries ->
         summaries.map { summary ->
@@ -141,6 +143,7 @@ class LibraryContentOwner(
                 songCount = summary.songCount,
                 createdEpochMs = summary.createdSeq,
                 updatedEpochMs = summary.newestAddedSeq,
+                hidden = summary.hidden,
             )
         }
     }
@@ -389,10 +392,14 @@ class LibraryContentOwner(
         }
     }
 
+    /**
+     * The Library's playlist section. Playlists the user hid stay stored and playable but are left out here, as
+     * Android's Library leaves them out; the Playlists page, which owns the Show hidden control, still lists them.
+     */
     private fun playlists(snapshot: PreferenceSnapshot): Flow<ContentPage?> {
         val sort = snapshot.librarySortState(PlaylistSortTypeKey, PlaylistSortDescendingKey, LibraryDefaults.playlistSort)
         return library.observeLocalPlaylists().map { summaries ->
-            ContentPage(orderedPlaylists(summaries, sort).map { summary -> summary.occurrence })
+            ContentPage(orderedPlaylists(summaries.filterNot { it.hidden }, sort).map { summary -> summary.occurrence })
         }
     }
 
