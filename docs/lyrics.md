@@ -111,11 +111,16 @@ them skipped under reduced motion:
   `LyricsInterludeDots`). They light in turn over the break and breathe.
 - Depth (scale, fade and blur by distance from the sung line) waits `LyricsDepth.staggerMs` per
   step, so a line change ripples outward. Rows stay sharp until the listener's hold ends or a
-  line is tapped, not only while the finger is down.
+  line is tapped, not only while the finger is down. The desktop host turns depth on for ENHANCED
+  unless reduced motion is on.
+- The list moves to a new line at once, and each row starts where it was and eases into place
+  after the same stagger (`LyricsLineSettle`). The glide lasts at most 1 s, is off under reduced
+  motion, and ends at once on a drag, a seek or a hidden surface. The line settles at 35% of the
+  box, about a third from the top. Every other look keeps the single animated scroll.
 
 The iOS 26 native Enhanced view (`iosApp/ArchiveTune/SystemLyrics.swift`) draws its own sweep. It
 takes the idle alpha and the depth values from the shared profile, but not the feather, lift,
-glow gating, dots or stagger.
+glow gating, dots, stagger or glide.
 
 It is fed by `rememberLyricsClock`, which carries the player's twice-a-second position
 report forward on the frame clock so the sweep does not step.
