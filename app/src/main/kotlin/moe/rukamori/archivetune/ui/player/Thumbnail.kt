@@ -76,7 +76,6 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
-import coil3.compose.AsyncImage
 import coil3.imageLoader
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -532,15 +531,12 @@ fun Thumbnail(
 
                                     val displayUrl = thumbnailSwapState.displayUrl
 
-                                    val thumbnailBgRequest = rememberOfflineArtworkImageRequest(displayUrl)
-                                    val thumbnailArtworkRequest = rememberOfflineArtworkImageRequest(displayUrl)
                                     val thumbnailBgBlurEnabled = !disableBlur && backdropEnabled && backdropBlurAmount > 0
 
                                     if (thumbnailBgBlurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                         val blurRadiusPx = (backdropBlurAmount * 60 / 100f).coerceAtMost(60f)
-                                        AsyncImage(
-                                            model = thumbnailBgRequest,
-                                            contentDescription = null,
+                                        PlayerCoverImage(
+                                            imageUrl = displayUrl,
                                             contentScale = ContentScale.FillBounds,
                                             modifier =
                                                 Modifier
@@ -556,9 +552,8 @@ fun Thumbnail(
                                             shouldCropArtwork = shouldCropArtwork,
                                         )
                                     } else {
-                                        AsyncImage(
-                                            model = thumbnailBgRequest,
-                                            contentDescription = null,
+                                        PlayerCoverImage(
+                                            imageUrl = displayUrl,
                                             contentScale = ContentScale.FillBounds,
                                             modifier =
                                                 Modifier
@@ -574,9 +569,8 @@ fun Thumbnail(
                                             item.mediaId == currentMediaItem?.mediaId &&
                                             !item.mediaId.isLocalMediaId()
 
-                                    AsyncImage(
-                                        model = thumbnailArtworkRequest,
-                                        contentDescription = null,
+                                    PlayerCoverImage(
+                                        imageUrl = displayUrl,
                                         contentScale = if (shouldCropArtwork) ContentScale.Crop else ContentScale.Fit,
                                         modifier =
                                             Modifier
@@ -697,9 +691,8 @@ private fun ThumbnailBgBlurApi30(
             modifier = modifier,
         )
     } else {
-        AsyncImage(
-            model = rememberOfflineArtworkImageRequest(imageUrl),
-            contentDescription = null,
+        PlayerCoverImage(
+            imageUrl = imageUrl,
             contentScale = ContentScale.FillBounds,
             modifier = modifier,
         )

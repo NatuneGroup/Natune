@@ -143,7 +143,6 @@ import androidx.media3.common.Player.STATE_READY
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.palette.graphics.Palette
-import coil3.compose.AsyncImage
 import coil3.imageLoader
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -3102,7 +3101,6 @@ private fun V8PlayerBackdrop(
             ),
         )
     }
-    val backdropRequest = rememberOfflineArtworkImageRequest(currentUrl)
     val blurRadiusDp = 44.dp * (backdropBlurAmount.toFloat() / 100f)
 
     Box(
@@ -3119,9 +3117,8 @@ private fun V8PlayerBackdrop(
         } else if (currentUrl != null) {
             val backdropHasBlur = backdropBlurAmount > 0
             if (backdropHasBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                AsyncImage(
-                    model = backdropRequest,
-                    contentDescription = null,
+                PlayerCoverImage(
+                    imageUrl = currentUrl,
                     contentScale = ContentScale.Crop,
                     modifier =
                         Modifier
@@ -3132,11 +3129,7 @@ private fun V8PlayerBackdrop(
                                 scaleY = 1.16f
                                 alpha = 0.66f
                             },
-                    onState = { state ->
-                        if (state is coil3.compose.AsyncImagePainter.State.Error) {
-                            getNextFallbackUrl(currentUrl)?.let { currentUrl = it }
-                        }
-                    },
+                    onError = { getNextFallbackUrl(currentUrl)?.let { currentUrl = it } },
                 )
             } else if (backdropHasBlur) {
                 BackdropBlurApi30(
@@ -3155,9 +3148,8 @@ private fun V8PlayerBackdrop(
                     },
                 )
             } else {
-                AsyncImage(
-                    model = backdropRequest,
-                    contentDescription = null,
+                PlayerCoverImage(
+                    imageUrl = currentUrl,
                     contentScale = ContentScale.Crop,
                     modifier =
                         Modifier
@@ -3167,11 +3159,7 @@ private fun V8PlayerBackdrop(
                                 scaleY = 1.16f
                                 alpha = 0.66f
                             },
-                    onState = { state ->
-                        if (state is coil3.compose.AsyncImagePainter.State.Error) {
-                            getNextFallbackUrl(currentUrl)?.let { currentUrl = it }
-                        }
-                    },
+                    onError = { getNextFallbackUrl(currentUrl)?.let { currentUrl = it } },
                 )
             }
         }
@@ -3250,16 +3238,11 @@ private fun BackdropBlurApi30(
             modifier = modifier,
         )
     } else {
-        AsyncImage(
-            model = rememberOfflineArtworkImageRequest(model),
-            contentDescription = null,
+        PlayerCoverImage(
+            imageUrl = model,
             contentScale = ContentScale.Crop,
             modifier = modifier,
-            onState = { state ->
-                if (state is coil3.compose.AsyncImagePainter.State.Error && model != null) {
-                    onError?.invoke(model)
-                }
-            },
+            onError = { if (model != null) onError?.invoke(model) },
         )
     }
 }

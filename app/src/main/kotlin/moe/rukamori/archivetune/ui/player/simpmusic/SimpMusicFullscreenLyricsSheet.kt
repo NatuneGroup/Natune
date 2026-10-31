@@ -110,7 +110,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import coil3.compose.AsyncImage
 import kotlin.math.cos
 import kotlin.math.sin
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
@@ -134,6 +133,7 @@ import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
+import moe.rukamori.archivetune.ui.player.PlayerCoverImage
 import moe.rukamori.archivetune.ui.player.SelectedLyrics
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
@@ -406,9 +406,8 @@ internal fun SimpMusicFullscreenLyricsSheet(
                             .padding(horizontal = 36.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AsyncImage(
-                        model = mediaMetadata.thumbnailUrl?.highRes(),
-                        contentDescription = null,
+                    PlayerCoverImage(
+                        imageUrl = mediaMetadata.thumbnailUrl?.highRes(),
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier

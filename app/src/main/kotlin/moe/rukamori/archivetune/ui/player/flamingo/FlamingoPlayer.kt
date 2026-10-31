@@ -263,6 +263,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.ui.player.playerControlMotion
+import moe.rukamori.archivetune.ui.player.PlayerCoverImage
 import moe.rukamori.archivetune.ui.player.rememberPlayerControlMotion
 
 private const val AnimDurationMillis = 300
@@ -1056,9 +1057,8 @@ fun FlamingoPlayerContent(
                                 if ((canvasFlightProgress > 0.005f || canvasFlightOverlayAlpha > 0.005f) &&
                                     canvasFlightSlotRect != null
                                 ) {
-                                    AsyncImage(
-                                        model = artworkUrl,
-                                        contentDescription = null,
+                                    PlayerCoverImage(
+                                        imageUrl = artworkUrl,
                                         contentScale = ContentScale.Crop,
                                         modifier =
                                             Modifier
@@ -2558,9 +2558,8 @@ private fun FlamingoCanvasStage(
             },
     ) {
         if (staticBaseAlpha > 0.01f) {
-            AsyncImage(
-                model = staticArtworkUrl,
-                contentDescription = null,
+            PlayerCoverImage(
+                imageUrl = staticArtworkUrl,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .matchParentSize()
@@ -2618,9 +2617,8 @@ private fun FlamingoLandscapeStage(
                         .matchParentSize()
                         .graphicsLayer { alpha = staticBaseAlpha.coerceAtLeast(1f / 255f) },
                 ) {
-                    AsyncImage(
-                        model = artworkUrl,
-                        contentDescription = null,
+                    PlayerCoverImage(
+                        imageUrl = artworkUrl,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .matchParentSize(),

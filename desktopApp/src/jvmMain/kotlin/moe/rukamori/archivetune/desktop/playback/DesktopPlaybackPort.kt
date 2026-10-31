@@ -207,13 +207,28 @@ class DesktopPlaybackPort(
         trackGainDb: Double? = null,
         trackPeak: Double? = null,
     ) {
-        require(equalizerBands.count { it.gainDb != 0.0 } <= NativeTwoDeckMixer.MAX_BANDS) {
-            "the equalizer has more audible bands than the mixer holds (${NativeTwoDeckMixer.MAX_BANDS})"
+        require(equalizerBands.size <= NativeTwoDeckMixer.MAX_BANDS) {
+            "the equalizer has ${equalizerBands.size} bands; the mixer holds ${NativeTwoDeckMixer.MAX_BANDS}"
         }
         submitTask {
             stages = StageConfig(request, equalizerBands, routeFacts)
             val index = activeIndex()
             sessions[index]?.let { sessions[index] = it.copy(trackGainDb = trackGainDb, trackPeak = trackPeak) }
+            applyStages()
+        }
+    }
+
+    /**
+     * Turns the equalizer on or off and sets its bands, for the playing occurrence and every later one. The other
+     * software stages and the route facts stay as [configureSoftwareStages] left them. A live drag calls this once per
+     * move: the band count stays fixed, so the mixer keeps its filter history and a drag through 0 dB does not click.
+     */
+    fun setEqualizer(enabled: Boolean, bands: List<EqualizerBand>) {
+        require(bands.size <= NativeTwoDeckMixer.MAX_BANDS) {
+            "the equalizer has ${bands.size} bands; the mixer holds ${NativeTwoDeckMixer.MAX_BANDS}"
+        }
+        submitTask {
+            stages = stages.copy(request = stages.request.copy(equalizerEnabled = enabled), bands = bands)
             applyStages()
         }
     }

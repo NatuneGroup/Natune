@@ -65,6 +65,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
@@ -80,7 +81,6 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -103,8 +103,6 @@ import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import coil3.request.allowHardware
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
@@ -3736,6 +3734,8 @@ fun PlayerBackground(
             isMusicVideo = mediaMetadata?.isMusicVideo ?: false,
         )
     val backgroundThumbnailUrl = backgroundSwapState.displayUrl
+    // Held outside the AnimatedContent children below, so each new background shows the last loaded one while it loads.
+    val heldBackgroundCover = remember { mutableStateOf<String?>(null) }
     val blurOff = disableBlur || !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val styleAppliesBlur =
         !blurOff && effectiveBlurRadius > 0f && effectiveBlurRadius >= 0.5f
@@ -3751,7 +3751,6 @@ fun PlayerBackground(
                 // muddy grey. The Haze approach preserves the artwork's actual
                 // colours at full saturation, darkened only by a uniform 30%
                 // black tint for text legibility.
-                val context = LocalContext.current
                 val backgroundHazeState = remember { HazeState() }
                 AnimatedContent(
                     targetState = backgroundThumbnailUrl,
@@ -3763,16 +3762,12 @@ fun PlayerBackground(
                     if (thumbnailUrl != null) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             // 1. The source component displaying the unblurred image
-                            AsyncImage(
-                                model =
-                                    ImageRequest
-                                        .Builder(context)
-                                        .data(thumbnailUrl)
-                                        .size(256, 256)
-                                        .allowHardware(false)
-                                        .build(),
-                                contentDescription = "Blurred background",
+                            HeldPlayerCover(
+                                imageUrl = thumbnailUrl,
+                                held = heldBackgroundCover,
                                 contentScale = ContentScale.Crop,
+                                contentDescription = "Blurred background",
+                                downsampleTo = 256,
                                 modifier =
                                     Modifier
                                         .fillMaxSize()
@@ -3881,10 +3876,11 @@ fun PlayerBackground(
                     if (thumbnailUrl != null) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             if (!blurOff) {
-                                AsyncImage(
-                                    model = thumbnailUrl.highRes(),
-                                    contentDescription = "Blurred background",
+                                HeldPlayerCover(
+                                    imageUrl = thumbnailUrl.highRes(),
+                                    held = heldBackgroundCover,
                                     contentScale = ContentScale.Crop,
+                                    contentDescription = "Blurred background",
                                     modifier =
                                         Modifier.fillMaxSize().let {
                                             if (styleAppliesBlur) it.blur(radius = effectiveBlurRadius.dp) else it

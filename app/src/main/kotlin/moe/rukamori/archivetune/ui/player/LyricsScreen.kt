@@ -1157,6 +1157,8 @@ private fun AppleMusicBackground(
                 .background(AppleMusicFallbackGradient.last()),
     ) {
         val isPreS = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+        // Held outside the AnimatedContent child, so a new backdrop shows the last loaded one while it loads.
+        val heldBackgroundCover = remember { mutableStateOf<String?>(null) }
         AnimatedContent(
             targetState = mediaMetadata.thumbnailUrl,
             transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
@@ -1186,9 +1188,9 @@ private fun AppleMusicBackground(
                         )
                     }
                 } else {
-                    AsyncImage(
-                        model = thumbnailUrl,
-                        contentDescription = null,
+                    HeldPlayerCover(
+                        imageUrl = thumbnailUrl,
+                        held = heldBackgroundCover,
                         contentScale = ContentScale.Crop,
                         modifier =
                             Modifier
@@ -1270,9 +1272,8 @@ private fun AppleMusicTrackHeader(
                     .background(foregroundColor.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center,
         ) {
-            AsyncImage(
-                model = mediaMetadata.thumbnailUrl,
-                contentDescription = null,
+            PlayerCoverImage(
+                imageUrl = mediaMetadata.thumbnailUrl,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
