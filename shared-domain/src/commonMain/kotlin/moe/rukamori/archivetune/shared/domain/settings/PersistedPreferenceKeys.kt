@@ -685,3 +685,9 @@ val InlineUsbExclusiveBitPerfectEnabledKey = BooleanPreferenceKey("usb_exclusive
 val InlineMultichannelDownmixEnabledKey = BooleanPreferenceKey("multichannel_downmix_enabled")
 // iOS host only: the system tab bar, mini player and lyrics on iOS 26 and later. Android never reads it.
 val NativeIosInterfaceKey = BooleanPreferenceKey("nativeIosInterface")
+// Metrolist 14.0.0-rc6 port. When on, animated artwork (Canvas loops and music videos) waits for a non-cellular
+// network. Off keeps today's behavior.
+val DisableAnimatedArtworkOnMobileDataKey = BooleanPreferenceKey("disableAnimatedArtworkOnMobileData")
+// Metrolist 14.0.0-rc6 port. The palette style by enum name. Unset or unknown reads as the default palette, which is
+// today's look.
+val ThemePaletteStyleKey = StringPreferenceKey("themePaletteStyle")
