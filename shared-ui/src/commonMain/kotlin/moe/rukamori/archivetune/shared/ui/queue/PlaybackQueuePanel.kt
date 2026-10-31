@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.ui.queue
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.item
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -197,6 +199,16 @@ fun PlaybackQueuePanel(
         )
     }
 
+    val selectionActions: @Composable () -> Unit = {
+        if (selected.isNotEmpty()) QueueSelectionActions(
+            selected.size, selected.size == rows.size,
+            onAll = { selected = rows.mapTo(HashSet()) { it.occurrenceId } },
+            onClose = { selected = emptySet() },
+            onSave = { save(rows.filter { it.occurrenceId in selected }) },
+            onRemove = { val ids = selected; remove { edits.removeUndoable(ids) } },
+        )
+    }
+
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             if (rows.isEmpty()) {
@@ -210,13 +222,7 @@ fun PlaybackQueuePanel(
                     item(key = QueuePanelHeaderKey) {
                         Column {
                             header()
-                            if (selected.isNotEmpty()) QueueSelectionActions(
-                                selected.size, selected.size == rows.size,
-                                onAll = { selected = rows.mapTo(HashSet()) { it.occurrenceId } },
-                                onClose = { selected = emptySet() },
-                                onSave = { save(rows.filter { it.occurrenceId in selected }) },
-                                onRemove = { val ids = selected; remove { edits.removeUndoable(ids) } },
-                            )
+                            selectionActions()
                         }
                     }
                     itemsIndexed(drag.displayRows(rows), key = { _, entry -> playlistRowKey(entry.occurrenceId) }) { index, entry ->
@@ -251,12 +257,16 @@ fun PlaybackQueuePanel(
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            QueuePanelCompactHeader(
-                hasTracks = rows.isNotEmpty(), ready = preferences != null, infinite = infinite, locked = locked,
-                shuffle = state.shuffleEnabled, repeat = repeat,
-                onInfinite = onInfinite, onShuffle = onShuffle, onRepeat = onRepeat, onLock = onLock,
-                onJump = onJump, onSave = onSave, onClear = onClear, onSelect = onSelect,
-            )
+            // The selection actions scroll away with the expanded header, so the overlay repeats them once the list scrolls.
+            Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
+                QueuePanelCompactHeader(
+                    hasTracks = rows.isNotEmpty(), ready = preferences != null, infinite = infinite, locked = locked,
+                    shuffle = state.shuffleEnabled, repeat = repeat,
+                    onInfinite = onInfinite, onShuffle = onShuffle, onRepeat = onRepeat, onLock = onLock,
+                    onJump = onJump, onSave = onSave, onClear = onClear, onSelect = onSelect,
+                )
+                selectionActions()
+            }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(12.dp))
     }
