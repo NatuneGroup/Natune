@@ -370,6 +370,7 @@ fun PlayerMenu(
             sources = availableSources,
             selected = currentSongSource,
             amazonSourceEnabled = amazonSourceEnabled,
+            initialSearchQuery = mediaMetadata.sourceSearchSeed(),
             onDismiss = { showSourceDialog = false },
             onSelect = { source ->
                 onSongSourceChange(SongSourceOverride.withOverride(songSourceRaw, mediaMetadata.id, source))
@@ -1714,6 +1715,7 @@ private fun SongSourceDialog(
     sources: List<AudioSourceType>,
     selected: AudioSourceType?,
     amazonSourceEnabled: Boolean,
+    initialSearchQuery: String,
     onDismiss: () -> Unit,
     onSelect: (AudioSourceType?) -> Unit,
     onPlaySong: (SongItem) -> Unit,
@@ -1989,10 +1991,8 @@ private fun SongSourceDialog(
                 IconButton(
                     onClick = {
                         searchMode = !searchMode
-                        if (!searchMode) {
-                            searchQuery = ""
-                            sourceFilter = null
-                        }
+                        searchQuery = if (searchMode) initialSearchQuery else ""
+                        if (!searchMode) sourceFilter = null
                     },
                 ) {
                     Icon(
