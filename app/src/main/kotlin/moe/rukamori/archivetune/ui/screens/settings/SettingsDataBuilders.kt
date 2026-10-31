@@ -299,6 +299,11 @@ fun buildSettingsGroups(
                 SettingsChild("Show Discord debug UI", "show_discord_debug_ui", listOf("discord debug", "show debug ui", "discord debug ui")),
                 SettingsChild("Debug logs", "debug_logs", listOf("debug logs", "verbose logs", "diagnostic logs")),
                 SettingsChild(
+                    context.getString(R.string.crash_logs_title),
+                    "crash_logs",
+                    listOf("crash logs", "crash", "crash report", "crash history", "anr", "native crash", "tombstone", "exit reason", "app exit"),
+                ),
+                SettingsChild(
                     context.getString(R.string.acoustic_quality_title),
                     "acoustic_quality",
                     listOf("acoustic", "quality graph", "spectrogram", "spectrum", "cutoff", "analysis"),
