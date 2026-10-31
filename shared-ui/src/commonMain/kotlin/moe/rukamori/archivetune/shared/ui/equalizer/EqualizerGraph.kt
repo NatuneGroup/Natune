@@ -31,7 +31,7 @@ import kotlin.math.abs
 import kotlin.math.log10
 import kotlin.math.roundToInt
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 /** The gain span the graph draws above and below 0 dB by default. */
