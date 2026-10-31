@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +39,7 @@ import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadius
 import moe.rukamori.archivetune.scaledDelay
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import kotlin.random.Random
 
 @Composable
@@ -56,11 +58,13 @@ fun PlayingIndicator(
         }
 
     val animationsDisabled = LocalAnimationsDisabled.current
-    LaunchedEffect(animationsDisabled) {
+    // The bars hold their last height while the app is not STARTED, so a backgrounded list runs no frame loop.
+    val started by rememberLifecycleStarted()
+    LaunchedEffect(animationsDisabled, started) {
         // Animations off means a static indicator: at scale 0 the animateTo calls below would
         // still land after one frame and the bars would teleport to a new height every ~66ms,
         // which is busier than animating, not calmer.
-        if (animationsDisabled) return@LaunchedEffect
+        if (animationsDisabled || !started) return@LaunchedEffect
         scaledDelay(300)
         animatables.forEach { animatable ->
             launch {

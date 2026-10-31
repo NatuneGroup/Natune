@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import com.valentinilk.shimmer.defaultShimmerTheme
 import com.valentinilk.shimmer.shimmer
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 
 // Hoisted to file level — this brush + color list never changes, so we
 // avoid allocating a new Brush.verticalGradient and a new List<Color> on
@@ -47,7 +49,7 @@ fun ShimmerHost(
         verticalArrangement = verticalArrangement,
         modifier =
             modifier
-                .shimmer()
+                .shimmerWhileStarted()
                 .graphicsLayer(alpha = 0.99f)
                 .drawWithContent {
                     drawContent()
@@ -58,6 +60,16 @@ fun ShimmerHost(
                 },
         content = content,
     )
+}
+
+/**
+ * [shimmer] while the app is STARTED. The sweep is a frame loop, so a placeholder left on screen while the app is in
+ * the background holds still instead of animating an unseen window.
+ */
+@Composable
+fun Modifier.shimmerWhileStarted(): Modifier {
+    val started by rememberLifecycleStarted()
+    return if (started) shimmer() else this
 }
 
 val ShimmerTheme =

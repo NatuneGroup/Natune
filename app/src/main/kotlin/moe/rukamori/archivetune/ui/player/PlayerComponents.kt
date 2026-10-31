@@ -133,6 +133,7 @@ import moe.rukamori.archivetune.ui.theme.PlayerSliderColors
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.utils.fadingEdge
 import moe.rukamori.archivetune.ui.utils.highRes
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
@@ -4098,7 +4099,9 @@ fun PlayerBackground(
                     label = "GlowAnimatedContent",
                 ) { colors ->
                     if (colors.isNotEmpty()) {
-                        val infiniteTransition = rememberInfiniteTransition(label = "GlowAnimation")
+                        // The glow turns only while the app is STARTED; in the background it sits at its start colors.
+                        val glowStarted by rememberLifecycleStarted()
+                        val infiniteTransition = if (glowStarted) rememberInfiniteTransition(label = "GlowAnimation") else null
 
                         // Deferred draw-phase read: keep this as a State<Float> (no `by`) and
                         // only touch .value inside drawWithCache below. Reading it here via
@@ -4109,7 +4112,7 @@ fun PlayerBackground(
                         // the 20s glow rotation from stealing frame budget from anything else
                         // on screen (e.g. word-synced lyrics).
                         val progressState =
-                            infiniteTransition.animateFloat(
+                            infiniteTransition?.animateFloat(
                                 initialValue = 0f,
                                 targetValue = 1f,
                                 animationSpec =
@@ -4161,7 +4164,7 @@ fun PlayerBackground(
                                             // Read .value here, in the draw phase, so this whole
                                             // block re-runs on every animation tick without
                                             // forcing the composable above to recompose.
-                                            val progress = progressState.value
+                                            val progress = progressState?.value ?: 0f
 
                                             val color1 = rotatedColorAt(0, progress)
                                             val color2 = rotatedColorAt(1, progress)

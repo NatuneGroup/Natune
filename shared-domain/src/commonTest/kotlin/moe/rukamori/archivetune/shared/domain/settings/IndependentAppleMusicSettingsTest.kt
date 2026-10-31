@@ -26,7 +26,7 @@ class IndependentAppleMusicSettingsTest {
 
     @Test fun eachIndividualOptionChangesOnlyItsOwnSurfaceFromMaterial() {
         surfaceEdits.forEachIndexed { index, edit ->
-            val editor = PreferenceSnapshot.EMPTY.toEditor()
+            val editor = PreferenceSnapshot.of(AppleMusicMenusKey to false).toEditor()
             edit(editor, true)
             editor.migrateAppleMusicSettings()
             assertEquals(List(7) { it == index }, selections(editor.snapshot()), "surface $index")
@@ -89,5 +89,29 @@ class IndependentAppleMusicSettingsTest {
         editor[AppleMusicBackdropWanderKey] = false
         assertEquals(InterfaceStyle.APPLE_MUSIC, editor.snapshot().interfaceStyle())
         assertFalse(editor[AppleMusicAnimatedArtworkKey, true])
+    }
+
+    @Test fun freshInstallRendersAppleMenusButStillReadsAsTheDefaultStyle() {
+        assertEquals(PlayerMenuStyle.APPLE_MUSIC, PreferenceSnapshot.EMPTY.playerMenuStyle())
+        assertTrue(PreferenceSnapshot.EMPTY.appleMusicMenus())
+        assertEquals(InterfaceStyle.MATERIAL_EXPRESSIVE, PreferenceSnapshot.EMPTY.interfaceStyle())
+    }
+
+    @Test fun storedLegacyMenusChoiceDecidesTheMenuStyle() {
+        assertEquals(PlayerMenuStyle.MD3, PreferenceSnapshot.of(AppleMusicMenusKey to false).playerMenuStyle())
+        assertEquals(
+            PlayerMenuStyle.APPLE_MUSIC,
+            PreferenceSnapshot.of(AppleMusicMenusKey to true, PlayerMenuStyleKey to "MD3").playerMenuStyle(),
+        )
+    }
+
+    @Test fun choosingAMenuStyleWritesBothKeysAndCountsTowardTheIndicator() {
+        val editor = PreferenceSnapshot.EMPTY.toEditor()
+        editor.setPlayerMenuStyle(PlayerMenuStyle.MD3)
+        assertEquals(PlayerMenuStyle.MD3, editor.snapshot().playerMenuStyle())
+        assertEquals(false, editor[AppleMusicMenusKey])
+        assertEquals(InterfaceStyle.MATERIAL_EXPRESSIVE, editor.snapshot().interfaceStyle())
+        editor.setPlayerMenuStyle(PlayerMenuStyle.APPLE_MUSIC)
+        assertEquals(InterfaceStyle.CUSTOM, editor.snapshot().interfaceStyle())
     }
 }

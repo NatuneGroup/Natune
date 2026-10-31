@@ -65,6 +65,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/lastfm/dashboard` | ✓ | ✓ | — | desktop mounts |
 | `settings/misc` (developer) | ✓ | ✓ | ✓ | acoustic/discord-debug/nerd-stats sections unavailable on iOS |
 | `settings/logcat` | ✓ | ✓ | ✓ | DiagnosticLogScreen on all three |
+| `settings/crash_logs` `/{recordId}` | ✓ | — | — | Android-only, added after the baseline: Developer Crash logs list and record detail over the bounded startup record store; not mounted on desktop or iOS |
 | `settings/update` | ✓ | ✓ | ✓ | desktop mounts; iOS mounts the page with checks reported unavailable |
 | `settings/changelog?channel=` | ✓ | ✓ | — | desktop mounts |
 | `settings/about` | ✓ | ✓ | ✓ | iOS: real GitHub contributors/translations fetch |

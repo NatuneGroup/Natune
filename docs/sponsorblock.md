@@ -26,8 +26,9 @@ and a SponsorBlock lookup for them would be both meaningless and a leak.
   lookup, access-ordered LRU of 64 responses. Overlapping segments are merged, since
   seeking out of one into the next reads as a stutter. Lookup failures do not break
   playback; coroutine cancellation propagates, and a 404 is normal "nothing published".
-- `SponsorBlockPlaybackController.kt` — polls 200ms while playing, 750ms otherwise,
-  and seeks out of a segment it is inside.
+- `SponsorBlockPlaybackController.kt` — polls 200ms only while playing over known
+  segments. Paused, idle and segment-free states sleep until the play state or the
+  segments change, and it seeks out of a segment it is inside.
 - `PodcastSponsorBlockDriver.kt` (`shared-ui`) — the desktop and iOS path, podcast
   episodes only.
 

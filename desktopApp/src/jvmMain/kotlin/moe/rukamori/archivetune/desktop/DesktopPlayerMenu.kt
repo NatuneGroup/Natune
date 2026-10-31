@@ -523,7 +523,7 @@ internal fun DesktopPlayerMenuDialog(
     val pin = snapshot?.get(SongSourceOverrideKey)?.let { SongSourceOverride.get(it, track.mediaId) }
     val state = PlayerQueueMenuState(
         style = snapshot?.get(PlayerDesignStyleKey).toEnum(PlayerDesignStyle.Default),
-        appleMusicExperience = snapshot?.appleMusicMenus() ?: false,
+        appleMusicExperience = snapshot?.appleMusicMenus() ?: (PlayerMenuStyle.Default == PlayerMenuStyle.APPLE_MUSIC),
         download = download,
         pinnedToSpeedDial = snapshot?.get(SpeedDialSongIdsKey)?.let { raw ->
             parseSpeedDialPins(raw).any { it.type == SpeedDialPinType.SONG && it.id == track.mediaId }

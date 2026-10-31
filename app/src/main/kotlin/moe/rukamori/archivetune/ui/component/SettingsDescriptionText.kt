@@ -38,6 +38,7 @@ fun SettingsDescriptionText(
     style: TextStyle = LocalTextStyle.current,
     color: Color = Color.Unspecified,
     fontWeight: FontWeight? = null,
+    phaseKey: Any? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val entry = remember(lifecycle) { SettingsTextLifecycles.entry(lifecycle) }
@@ -53,6 +54,7 @@ fun SettingsDescriptionText(
         color = color,
         fontWeight = fontWeight,
         active = active && visible && !LocalAnimationsDisabled.current,
+        phaseKey = phaseKey,
         modifier = modifier.onGloballyPositioned { coordinates ->
             visible = coordinates.isAttached &&
                 !coordinates.boundsInWindow()

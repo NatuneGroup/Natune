@@ -141,6 +141,7 @@ import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.ui.utils.YTThumbQuality
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.ui.utils.buildYTThumbnailUrl
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import java.util.concurrent.ConcurrentHashMap
@@ -1488,8 +1489,11 @@ private fun DashboardTrackRow(
             }
             Spacer(Modifier.width(8.dp))
             if (isNowPlaying) {
-                val infiniteTransition = rememberInfiniteTransition(label = "lastfm_now_playing_pulse")
-                val pulseScale by infiniteTransition.animateFloat(
+                // The pulse stops while the app is not STARTED and the pill rests at scale 1.
+                val pulseStarted by rememberLifecycleStarted()
+                val infiniteTransition = if (pulseStarted) rememberInfiniteTransition(label = "lastfm_now_playing_pulse") else null
+                // Kept as a State and read in the draw phase, so the pulse does not recompose the row every frame.
+                val pulseScale = infiniteTransition?.animateFloat(
                     initialValue = 1.0f,
                     targetValue = 1.06f,
                     animationSpec = infiniteRepeatable(
@@ -1504,8 +1508,9 @@ private fun DashboardTrackRow(
                     tonalElevation = 4.dp,
                     shadowElevation = 2.dp,
                     modifier = Modifier.graphicsLayer {
-                        scaleX = pulseScale
-                        scaleY = pulseScale
+                        val scale = pulseScale?.value ?: 1.0f
+                        scaleX = scale
+                        scaleY = scale
                     },
                 ) {
                     Row(

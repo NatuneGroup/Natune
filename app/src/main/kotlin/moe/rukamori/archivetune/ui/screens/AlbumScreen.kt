@@ -82,7 +82,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.exoplayer.offline.Download
 import androidx.navigation.NavController
-import com.valentinilk.shimmer.shimmer
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -107,6 +106,7 @@ import moe.rukamori.archivetune.ui.component.shimmer.ButtonPlaceholder
 import moe.rukamori.archivetune.ui.component.shimmer.ListItemPlaceHolder
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
+import moe.rukamori.archivetune.ui.component.shimmer.shimmerWhileStarted
 import moe.rukamori.archivetune.ui.menu.AlbumMenu
 import moe.rukamori.archivetune.ui.menu.SelectionSongMenu
 import moe.rukamori.archivetune.ui.menu.SongMenu
@@ -552,7 +552,7 @@ fun AlbumScreen(
                                         Modifier
                                             .fillMaxWidth()
                                             .heightIn(min = 560.dp)
-                                            .shimmer()
+                                            .shimmerWhileStarted()
                                             .background(MaterialTheme.colorScheme.surfaceContainerLow),
                                 ) {
                                     Column(

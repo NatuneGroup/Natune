@@ -8,8 +8,14 @@
 
 package moe.rukamori.archivetune.playback
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.PowerManager
+import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
@@ -63,6 +69,30 @@ internal class MusicServiceWidgetUpdater(
     private var stateJob: Job? = null
     private var progressJob: Job? = null
 
+    // Widgets are not visible with the screen off, so the progress timer stops with the screen and starts again on
+    // ACTION_SCREEN_ON. Nothing ticks while the screen is off.
+    private val screenReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == Intent.ACTION_SCREEN_ON) updateProgressTracking() else progressJob?.cancel()
+            }
+        }
+    private var screenReceiverRegistered = false
+
+    init {
+        registerScreenReceiver()
+    }
+
+    /** Called when the service is destroyed: the progress timer and the screen receiver end with it. */
+    fun release() {
+        progressJob?.cancel()
+        progressJob = null
+        if (screenReceiverRegistered) {
+            runCatching { service.unregisterReceiver(screenReceiver) }
+            screenReceiverRegistered = false
+        }
+    }
+
     fun update() {
         stateJob?.cancel()
         stateJob =
@@ -73,20 +103,33 @@ internal class MusicServiceWidgetUpdater(
 
     fun updateProgressTracking() {
         progressJob?.cancel()
-        if (player.isPlaying && player.duration > 0) {
+        if (player.isPlaying && player.duration > 0 && isScreenOn()) {
             progressJob =
                 scope.launch(SilentHandler) {
                     val installedTargets = findInstalledTargets(progressWidgets)
                     if (installedTargets.isEmpty()) return@launch
 
-                    while (isActive && player.isPlaying) {
+                    // The loop also ends itself when the screen is off, so a missed broadcast cannot keep it ticking.
+                    while (isActive && player.isPlaying && isScreenOn()) {
                         delay(WIDGET_PROGRESS_UPDATE_INTERVAL_MILLIS)
-                        if (player.isPlaying) {
+                        if (player.isPlaying && isScreenOn()) {
                             updateProgress(installedTargets, player.playbackProgress())
                         }
                     }
                 }
         }
+    }
+
+    private fun isScreenOn(): Boolean = service.getSystemService(PowerManager::class.java)?.isInteractive == true
+
+    private fun registerScreenReceiver() {
+        val filter =
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            }
+        ContextCompat.registerReceiver(service, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        screenReceiverRegistered = true
     }
 
     private suspend fun pushState() {

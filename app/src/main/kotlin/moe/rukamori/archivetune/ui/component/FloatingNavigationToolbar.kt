@@ -115,6 +115,7 @@ import moe.rukamori.archivetune.constants.NavigationBarHeightKey
 import moe.rukamori.archivetune.constants.NavigationBarLabelSpacingKey
 import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.ui.screens.Screens
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.utils.rememberPreference
 import com.kyant.backdrop.Backdrop
 import kotlin.math.abs
@@ -980,7 +981,10 @@ internal fun rememberPreSFrostedBitmap(
     val barPositionState = rememberUpdatedState(barPositionInRoot)
     val barSizeState = rememberUpdatedState(barSize)
 
-    LaunchedEffect(backdrop, blurRadiusPx, updateIntervalMs) {
+    // The capture (a GPU readback and a blur every interval) stops while the app is not STARTED.
+    val started by rememberLifecycleStarted()
+    LaunchedEffect(backdrop, blurRadiusPx, updateIntervalMs, started) {
+        if (!started) return@LaunchedEffect
         while (isActive) {
             val layer = backdrop.layer
             val layerW = layer.size.width

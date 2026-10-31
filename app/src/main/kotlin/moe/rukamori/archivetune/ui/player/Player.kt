@@ -793,22 +793,9 @@ fun BottomSheetPlayer(
             playerConnection.service.sleepTimer.isActive
         }
 
-    var sleepTimerTimeLeft by remember {
-        mutableLongStateOf(0L)
-    }
-
-    LaunchedEffect(sleepTimerEnabled) {
-        if (sleepTimerEnabled) {
-            while (isActive) {
-                sleepTimerTimeLeft =
-                    if (playerConnection.service.sleepTimer.pauseWhenSongEnd) {
-                        playerConnection.player.duration - playerConnection.player.currentPosition
-                    } else {
-                        playerConnection.service.sleepTimer.triggerTime - System.currentTimeMillis()
-                    }
-                delay(1000L)
-            }
-        }
+    // Shared with the queue sheet: one countdown owner that stops while the app is backgrounded.
+    val sleepTimerTimeLeft by rememberQueueSleepTimerRemainingMs(playerConnection.service.sleepTimer) {
+        playerConnection.player
     }
 
     var showSleepTimerDialog by remember {

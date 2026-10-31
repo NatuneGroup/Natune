@@ -83,7 +83,7 @@
             android:launchMode="singleTask"
             android:process=":crash"
             android:taskAffinity="${applicationId}.crash"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            android:theme="@style/Theme.ArchiveTune">
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />

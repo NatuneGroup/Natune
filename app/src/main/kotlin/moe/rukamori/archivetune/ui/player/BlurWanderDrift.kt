@@ -13,6 +13,7 @@ package moe.rukamori.archivetune.ui.player
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.isActive
 import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -211,15 +213,17 @@ internal fun rememberBlurWanderDrift(
     val drift = remember(maxDriftDp) { BlurWanderDrift(maxDriftDp = maxDriftDp) }
     val animationsDisabled = LocalAnimationsDisabled.current
     val animatorScale = LocalAnimationScale.current
+    // The wander holds its position while the app is not STARTED: a frame clock for an unseen window is wasted work.
+    val started by rememberLifecycleStarted()
     // Keyed on maxDriftDp as well: a size change (rotation, fold/unfold,
     // split-screen) recreates the drift instance above, and the animation
     // loop must follow the new instance or the wander freezes at (0, 0).
-    LaunchedEffect(active, maxDriftDp, animationsDisabled, animatorScale) {
+    LaunchedEffect(active, maxDriftDp, animationsDisabled, animatorScale, started) {
         // Animations off — the system's remove-animations setting, the in-app toggle, or scale
         // 0 — stop the wander; a background that will not sit still is exactly what those are
         // meant to switch off. Other scales advance by scaled frame time, matching Compose's
         // own infinite transitions.
-        if (!active || animationsDisabled || animatorScale <= 0f) return@LaunchedEffect
+        if (!active || !started || animationsDisabled || animatorScale <= 0f) return@LaunchedEffect
         var lastFrameNanos = 0L
         while (isActive) {
             withFrameNanos { frameTimeNanos ->
