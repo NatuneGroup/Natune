@@ -99,11 +99,11 @@ val desktopCredentialNames = listOf(
     "ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID",
     "ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID",
     "ARCHIVETUNE_SPOTIFY_AUDIO_IV",
-    // The YouTube device-code pair. Android keeps its public pair in source; the desktop takes it at build time so no
-    // client literal is committed, and the code sign-in reads as not configured without it.
+    // The YouTube device-code pair, under the names Android's BuildConfig reads, so no client literal is committed.
+    // Without it the code sign-in reads as not configured.
     "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID",
     "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET",
-    // The Amazon Turnstile sitekey, read at build time for the same reason; without it the sign-in is not configured.
+    // The Amazon Turnstile sitekey, under the name Android's BuildConfig reads; without it sign-in is not configured.
     "ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY",
 )
 val desktopLegacyCredentialNames = mapOf(
