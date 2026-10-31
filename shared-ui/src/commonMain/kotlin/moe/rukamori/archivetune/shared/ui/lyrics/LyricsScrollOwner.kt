@@ -38,6 +38,9 @@ internal class LyricsScrollOwner {
     /** The last discontinuity count handled. A different count means a seek or a new session. */
     var handledDiscontinuity: Int = 0
 
+    /** The line the list last followed. A different line is a line change, which may settle rather than animate. */
+    var handledPrimary: Int = -1
+
     fun onListenerScroll() {
         following = false
         holdGeneration += 1
@@ -57,6 +60,9 @@ internal fun rememberLyricsScrollOwner(): LyricsScrollOwner = remember { LyricsS
  * list follows the playhead again. A seek or a session change jumps. Ordinary playhead movement animates, unless
  * reduced motion is on, in which case it also jumps. For a look that holds while dragged, the hold does not
  * start until the drag ends, so a finger resting on the list is not followed out from under it.
+ *
+ * A line change on a look with [settle] moves the list at once and lets the rows glide from where they were, so the
+ * change ripples outward from the sung line. Every other move keeps the single animated scroll.
  */
 @Composable
 internal fun LyricsAutoFollow(
@@ -67,6 +73,7 @@ internal fun LyricsAutoFollow(
     visible: Boolean,
     reduceMotion: Boolean,
     profile: LyricsModeProfile,
+    settle: LyricsLineSettle? = null,
 ) {
     val dragged by listState.interactionSource.collectIsDraggedAsState()
     val holdOpen = dragged && profile.holdsWhileDragged
@@ -75,20 +82,43 @@ internal fun LyricsAutoFollow(
         delay(profile.manualScrollHoldMs)
         owner.resume()
     }
+    // A hand on the list or a hidden surface ends a settle at once, so nothing glides under a finger.
+    LaunchedEffect(dragged, visible) {
+        if (dragged || !visible) settle?.clear()
+    }
+    val settleGeneration = settle?.generation ?: 0
+    LaunchedEffect(settleGeneration) {
+        if (settle != null && settleGeneration > 0) settle.runSettle()
+    }
     LaunchedEffect(primary, discontinuity, owner.resumeGeneration, visible) {
         val jump = discontinuity != owner.handledDiscontinuity
+        // The first line a fresh owner follows is not a change, so it animates and never glides in.
+        val moved = owner.handledPrimary >= 0 && primary != owner.handledPrimary
         owner.handledDiscontinuity = discontinuity
+        owner.handledPrimary = primary
         if (jump) owner.following = true
         if (!visible || !owner.following || primary < 0) return@LaunchedEffect
         val viewportHeight = listState.awaitViewportHeight()
         val anchor = -(viewportHeight * profile.anchorFraction).roundToInt()
-        if (jump || reduceMotion) {
-            listState.scrollToItem(primary, anchor)
-        } else {
-            listState.animateScrollToItem(primary, anchor)
+        // Only a line that is laid out now can settle; a line off screen animates as it always did.
+        val fromTop = if (settle != null && moved && !jump && !dragged) listState.itemTopOrNull(primary) else null
+        when {
+            jump || reduceMotion -> {
+                settle?.clear()
+                listState.scrollToItem(primary, anchor)
+            }
+            settle != null && fromTop != null -> {
+                settle.start(primary, fromTop)
+                listState.scrollToItem(primary, anchor)
+            }
+            else -> listState.animateScrollToItem(primary, anchor)
         }
     }
 }
+
+/** Where the row starts in the viewport now, or null while it is not laid out. */
+private fun LazyListState.itemTopOrNull(index: Int): Int? =
+    layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
 
 /** The list is not measured on its first frame, so the anchor waits for a real viewport height. */
 private suspend fun LazyListState.awaitViewportHeight(): Int {
