@@ -245,6 +245,26 @@ fun DebugSettings(navController: NavController, scrollTo: String? = null) {
                         onClick = { navController.navigate("settings/logcat") },
                     )
                 }
+
+                item {
+                    PreferenceEntry(
+                        title = { Text(stringResource(R.string.crash_logs_title)) },
+                        description = stringResource(R.string.crash_logs_description),
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.bug_report),
+                                contentDescription = null,
+                            )
+                        },
+                        trailingContent = {
+                            Icon(
+                                painter = painterResource(R.drawable.navigate_next),
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = { navController.navigate("settings/crash_logs") },
+                    )
+                }
             }
 
             AnimatedVisibility(

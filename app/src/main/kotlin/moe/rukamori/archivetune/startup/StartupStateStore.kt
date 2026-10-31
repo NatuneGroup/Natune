@@ -14,6 +14,8 @@ internal data class CappedText(val text: String, val truncated: Boolean)
 internal data class CappedBytes(val bytes: ByteArray, val truncated: Boolean)
 
 internal class StartupStateStore(private val directory: File) {
+    private val recordsDirectory: File get() = File(directory, RECORDS_DIRECTORY)
+
     fun pendingExists(): Boolean = File(directory, PENDING_FILE).isFile
     fun pendingAttempt(): StartupAttempt? = readAttempt(PENDING_FILE)
     fun lastAttempt(): StartupAttempt? = readAttempt(LAST_ATTEMPT_FILE)
@@ -33,7 +35,12 @@ internal class StartupStateStore(private val directory: File) {
 
     fun clearPending(): Boolean = File(directory, PENDING_FILE).let { !it.exists() || it.delete() }
 
-    fun captureJava(timestampMs: Long, thread: String, throwable: Throwable) {
+    fun captureJava(
+        timestampMs: Long,
+        thread: String,
+        throwable: Throwable,
+        build: CrashBuild = CrashBuild.UNKNOWN,
+    ) {
         val writer = CappedWriter(MAX_JAVA_CHARS)
         PrintWriter(writer).use { output ->
             output.println(timestampMs)
@@ -44,7 +51,26 @@ internal class StartupStateStore(private val directory: File) {
                 // Even an exhausted VM can leave the timestamp and the part already written.
             }
         }
-        writeSync(JAVA_CRASH_FILE, writer.toString())
+        val content = writer.toString()
+        // The record is written first so a failure of the single-slot file below still leaves the crash listed.
+        runCatching {
+            saveRecord(
+                CrashRecord(
+                    timestampMs = timestampMs,
+                    pid = build.pid,
+                    kind = ProcessExitKind.CRASH,
+                    status = 0,
+                    captured = true,
+                    process = build.process,
+                    thread = thread.replace('\n', ' ').take(128),
+                    body = content.split('\n', limit = 3).getOrElse(2) { "" },
+                    truncated = content.length >= MAX_JAVA_CHARS,
+                    versionName = build.versionName,
+                    versionCode = build.versionCode,
+                ),
+            )
+        }
+        writeSync(JAVA_CRASH_FILE, content)
     }
 
     fun javaCrash(): SavedJavaCrash? {
@@ -55,10 +81,47 @@ internal class StartupStateStore(private val directory: File) {
         return SavedJavaCrash(timestamp, lines[1], lines[2], saved.length >= MAX_JAVA_CHARS)
     }
 
+    /** Called once the newest Java crash has a record, or it was imported from a previous build. */
+    fun removeJavaCrash() {
+        File(directory, JAVA_CRASH_FILE).delete()
+    }
+
     fun acknowledgedThrough(): Long = read(REVIEWED_FILE, 64)?.trim()?.toLongOrNull() ?: 0L
 
     fun acknowledgeThrough(timestampMs: Long) {
         writeSync(REVIEWED_FILE, maxOf(acknowledgedThrough(), timestampMs).toString())
+    }
+
+    fun exitsImportedThrough(): Long = read(EXITS_IMPORTED_FILE, 64)?.trim()?.toLongOrNull() ?: 0L
+
+    fun markExitsImportedThrough(timestampMs: Long) {
+        writeSync(EXITS_IMPORTED_FILE, maxOf(exitsImportedThrough(), timestampMs).toString())
+    }
+
+    /** Saves one record, then keeps only the newest [MAX_CRASH_RECORDS]. Returns false when the write failed. */
+    fun saveRecord(record: CrashRecord): Boolean {
+        val saved = runCatching {
+            writeFile(recordsDirectory, crashRecordFileName(record.id), encodeCrashRecord(record))
+        }.isSuccess
+        if (saved) runCatching { pruneRecords() }
+        return saved
+    }
+
+    fun listRecords(): List<CrashRecord> =
+        recordFiles().mapNotNull { readRecordFile(it) }.sortedByDescending { it.timestampMs }
+
+    fun readRecord(id: String): CrashRecord? =
+        if (isValidCrashRecordId(id)) readRecordFile(File(recordsDirectory, crashRecordFileName(id))) else null
+
+    /**
+     * Clearing also drops the single-slot Java file and moves the import watermark, so the exits Android
+     * still remembers, and the Java crash they duplicate, do not come back at the next launch.
+     */
+    fun clearRecords(): Boolean {
+        recordsDirectory.listFiles()?.forEach { it.delete() }
+        removeJavaCrash()
+        runCatching { markExitsImportedThrough(System.currentTimeMillis()) }
+        return recordFiles().isEmpty()
     }
 
     private fun readAttempt(name: String): StartupAttempt? {
@@ -74,10 +137,31 @@ internal class StartupStateStore(private val directory: File) {
             null
         }
 
-    private fun writeSync(name: String, body: String) {
-        if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Recovery directory unavailable")
-        val destination = File(directory, name)
-        val staging = File(directory, "$name.tmp")
+    private fun readRecordFile(file: File): CrashRecord? =
+        try {
+            file.inputStream().use { decodeCrashRecord(it.readCappedText(MAX_RECORD_BYTES).text) }
+        } catch (_: IOException) {
+            null
+        }
+
+    /** Newest first, by the timestamp in the file name, so pruning drops the oldest. */
+    private fun recordFiles(): List<File> {
+        val files = recordsDirectory.listFiles() ?: return emptyList()
+        return files
+            .filter { it.isFile && isCrashRecordFileName(it.name) }
+            .sortedByDescending { crashRecordFileTimestamp(it.name) ?: Long.MIN_VALUE }
+    }
+
+    private fun pruneRecords() {
+        recordFiles().drop(MAX_CRASH_RECORDS).forEach { it.delete() }
+    }
+
+    private fun writeSync(name: String, body: String) = writeFile(directory, name, body)
+
+    private fun writeFile(parent: File, name: String, body: String) {
+        if (!parent.isDirectory && !parent.mkdirs()) throw IOException("Recovery directory unavailable")
+        val destination = File(parent, name)
+        val staging = File(parent, "$name.tmp")
         FileOutputStream(staging).use { output ->
             output.write(body.toByteArray(Charsets.UTF_8))
             output.fd.sync()
@@ -105,6 +189,8 @@ internal class StartupStateStore(private val directory: File) {
         private const val LAST_ATTEMPT_FILE = "last_startup"
         private const val JAVA_CRASH_FILE = "java_crash.txt"
         private const val REVIEWED_FILE = "reviewed_through"
+        private const val EXITS_IMPORTED_FILE = "exits_imported_through"
+        private const val RECORDS_DIRECTORY = "records"
         internal const val MAX_JAVA_CHARS = 16_000
     }
 }

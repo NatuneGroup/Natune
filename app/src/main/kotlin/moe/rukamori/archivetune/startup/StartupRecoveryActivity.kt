@@ -1,29 +1,92 @@
 package moe.rukamori.archivetune.startup
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Process
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import java.io.IOException
 import java.util.concurrent.Executors
+import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.MainActivity
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.ui.theme.ArchiveTuneTheme
 
-/** Launcher gate and recovery UI share no Hilt, Compose, preferences, providers or native runtime. */
-class StartupRecoveryActivity : Activity() {
+/**
+ * Launcher gate and recovery UI. Nothing from the main process is initialised before the recovery decision:
+ * no Hilt graph, preferences, providers or native runtime. The theme's default path reads bundled fonts and
+ * the system palette only, and text follows the system font scale.
+ */
+class StartupRecoveryActivity : ComponentActivity() {
     private val reader = Executors.newSingleThreadExecutor()
     private var generation = 0
+    private var state by mutableStateOf<RecoveryState>(RecoveryState.Loading)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContent {
+            ArchiveTuneTheme {
+                when (val current = state) {
+                    RecoveryState.Loading -> RecoveryLoadingScreen()
+                    is RecoveryState.Report -> RecoveryReportScreen(
+                        report = current.report,
+                        onShare = ::shareReport,
+                        onContinue = ::continueNormally,
+                        onClose = ::finishAndRemoveTask,
+                        onActionFailed = ::showActionFailure,
+                    )
+                }
+            }
+        }
         checkPreviousLaunch()
     }
 
@@ -35,62 +98,37 @@ class StartupRecoveryActivity : Activity() {
 
     private fun checkPreviousLaunch() {
         val current = ++generation
-        setContentView(TextView(this).apply {
-            text = getString(R.string.startup_recovery_loading)
-            setPadding(24, 24, 24, 24)
-        })
+        state = RecoveryState.Loading
         reader.execute {
             val result = runCatching { previousLaunchReport(this) }
             runOnUiThread {
                 if (current != generation || isFinishing || isDestroyed) return@runOnUiThread
                 result.fold(
                     onSuccess = { report -> if (report == null) openMain(restart = false) else showReport(report) },
-                    onFailure = { showReport(StartupReport(getString(R.string.startup_report_unavailable), true, 0L)) },
+                    onFailure = {
+                        showReport(StartupReport(getString(R.string.startup_report_unavailable), true, 0L))
+                    },
                 )
             }
         }
     }
 
     private fun showReport(report: StartupReport) {
-        val padding = (16 * resources.displayMetrics.density).toInt()
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(padding, padding, padding, padding)
-        }
-        column.addView(TextView(this).apply {
-            text = getString(if (report.safeMode) R.string.startup_safe_mode_title else R.string.startup_report_title)
-            textSize = 22f
-        })
-        column.addView(TextView(this).apply {
-            text = getString(R.string.startup_recovery_privacy)
-            setPadding(0, padding, 0, padding)
-        })
-        column.addView(ScrollView(this).apply {
-            addView(TextView(this@StartupRecoveryActivity).apply {
-                text = report.text
-                textSize = 12f
-                setTextIsSelectable(true)
-            })
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        state = RecoveryState.Report(report)
+    }
 
-        fun button(label: Int, action: () -> Unit) = Button(this).apply {
-            setText(label)
-            setOnClickListener { runCatching(action).onFailure { showActionFailure() } }
-        }
-        val actions = LinearLayout(this)
-        actions.addView(button(R.string.copy) {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-            clipboard?.setPrimaryClip(ClipData.newPlainText(getString(R.string.startup_report_title), report.text))
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        actions.addView(button(R.string.share) {
-            // Text sharing avoids a FileProvider call, which would start the broken main process.
+    private fun shareReport(report: StartupReport) {
+        // Text sharing avoids a FileProvider call, which would start the broken main process.
+        runCatching {
             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, report.text)
             }, getString(R.string.share_logs)))
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        column.addView(actions)
-        column.addView(button(R.string.startup_continue_normally) {
+        }.onFailure { showActionFailure() }
+    }
+
+    private fun continueNormally(report: StartupReport) {
+        runCatching {
             val store = StartupRecovery.store(this)
             if (report.safeMode) {
                 liveMainProcessId(this)?.let { Process.killProcess(it) }
@@ -98,9 +136,7 @@ class StartupRecoveryActivity : Activity() {
             if (!store.clearPending()) throw IOException("Startup marker could not be cleared")
             runCatching { store.acknowledgeThrough(report.reviewedThroughMs) }
             openMain(restart = report.safeMode)
-        })
-        column.addView(button(R.string.close) { finishAndRemoveTask() })
-        setContentView(column)
+        }.onFailure { showActionFailure() }
     }
 
     private fun openMain(restart: Boolean) {
@@ -125,5 +161,174 @@ class StartupRecoveryActivity : Activity() {
         generation++
         reader.shutdownNow()
         super.onDestroy()
+    }
+}
+
+private sealed interface RecoveryState {
+    data object Loading : RecoveryState
+    data class Report(val report: StartupReport) : RecoveryState
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RecoveryLoadingScreen() {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            LoadingIndicator(modifier = Modifier.size(48.dp))
+            Text(
+                text = stringResource(R.string.startup_recovery_loading),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun RecoveryReportScreen(
+    report: StartupReport,
+    onShare: (StartupReport) -> Unit,
+    onContinue: (StartupReport) -> Unit,
+    onClose: () -> Unit,
+    onActionFailed: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val title = stringResource(if (report.safeMode) R.string.startup_safe_mode_title else R.string.startup_report_title)
+    val copiedMessage = stringResource(R.string.copied)
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    )
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            runCatching {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                clipboard?.setPrimaryClip(ClipData.newPlainText(title, report.text))
+                            }.onSuccess {
+                                scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
+                            }.onFailure { onActionFailed() }
+                        },
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.content_copy),
+                            contentDescription = stringResource(R.string.copy),
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        bottomBar = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Button(
+                    onClick = { onContinue(report) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shapes = ButtonDefaults.shapes(),
+                ) {
+                    Text(stringResource(R.string.startup_continue_normally))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { onShare(report) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.share))
+                    }
+                    TextButton(
+                        onClick = onClose,
+                        modifier = Modifier.weight(1f),
+                        shapes = ButtonDefaults.shapes(),
+                    ) {
+                        Text(stringResource(R.string.close))
+                    }
+                }
+            }
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                shape = RoundedCornerShape(18.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.error),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.startup_recovery_privacy),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                shape = RoundedCornerShape(18.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            ) {
+                SelectionContainer(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text(
+                        text = report.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
