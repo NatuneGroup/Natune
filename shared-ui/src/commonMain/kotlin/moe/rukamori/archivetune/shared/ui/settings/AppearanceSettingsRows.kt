@@ -38,8 +38,7 @@ fun appearanceThemeSettingsRows(
     add(SettingsRow.Toggle("apple_music_headers", Res.string.m6_apple_music_headers, AppleMusicHeadersKey, false,
         description = Res.string.m6_apple_music_independent_desc, read = { it.appleMusicHeaders() }))
     add(SettingsRow.Toggle("apple_music_menus", Res.string.m6_apple_music_menus, AppleMusicMenusKey, false,
-        description = Res.string.m6_apple_music_independent_desc, read = { it.appleMusicMenus() },
-        write = { setPlayerMenuStyle(if (it) PlayerMenuStyle.APPLE_MUSIC else PlayerMenuStyle.MD3) }))
+        description = Res.string.m6_apple_music_independent_desc, read = { it.appleMusicMenus() }))
     add(SettingsRow.Toggle("apple_music_search_bar", Res.string.m6_apple_music_search_bar, AppleMusicSearchBarKey, false,
         description = Res.string.m6_apple_music_independent_desc, read = { it.appleMusicSearchBar() }))
     add(SettingsRow.Toggle("apple_music_palette", Res.string.m6_apple_music_palette, AppleMusicPaletteKey, false,
