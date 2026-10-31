@@ -72,10 +72,10 @@ fun AppleMusicSleepTimerSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Poll the SleepTimer every 500ms for the live countdown. We deliberately
+    // Poll the SleepTimer once per displayed second for the live countdown. We deliberately
     // don't read `triggerTime` as a Compose state here because the timer mutates
     // it from a background coroutine — reading it once per recomposition via the
-    // published `var triggerTime` works fine, but a 500ms polling loop keeps the
+    // published `var triggerTime` works fine, but a once-per-second polling loop keeps the
     // displayed countdown smooth without forcing a recomp on every millis tick.
     var remainingMs by remember { mutableLongStateOf(0L) }
     LaunchedEffect(sleepTimer, sleepTimer.isActive) {
@@ -86,7 +86,7 @@ fun AppleMusicSleepTimerSheet(
                     sleepTimer.triggerTime > 0 -> sleepTimer.triggerTime - System.currentTimeMillis()
                     else -> 0L
                 }
-            delay(500L)
+            delay(countdownTickMs(remainingMs))
         }
     }
 
@@ -353,6 +353,15 @@ fun AppleMusicSleepTimerSheet(
             }
         }
     }
+}
+
+/**
+ * The readout shows whole seconds and only changes when the current one ends. Waking at that instant keeps it exact,
+ * with no wakeup in between. A stopped or end-of-song timer shows no countdown, so it re-checks once a second.
+ */
+private fun countdownTickMs(remainingMs: Long): Long {
+    val intoSecond = remainingMs % 1_000L
+    return if (remainingMs > 0L && intoSecond > 0L) intoSecond else 1_000L
 }
 
 /** Formats a minute count as `Hh Mm` (e.g. 95 → "1h 35m", 5 → "5m", 0 → "Off"). */
