@@ -78,8 +78,8 @@ internal sealed interface IosLastFmSignIn {
 /**
  * The iOS scrobbling owner: the signed Last.fm, Libre.fm or custom service, the persistent pending-scrobble queue in
  * the app container, and the playback driver that applies the shared scrobble rule to the one player. The build
- * supplies the Last.fm key pair from its Info.plist settings; without it Last.fm sign-in reports not configured, as on
- * the other hosts, and a user-supplied key pair still works.
+ * supplies the Last.fm key pair from its Info.plist settings. The iOS page has no field for another Last.fm pair, so
+ * Last.fm sign-in reports not configured without it. Libre.fm and custom services do not depend on it.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class IosLastFm(
