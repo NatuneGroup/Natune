@@ -33,6 +33,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.StateFlow
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
@@ -49,7 +50,21 @@ data class LyricsSurfaceSettings(
     val depthEffects: Boolean = false,
     /** Trailing background vocals move to their own smaller line beneath the lead. Hosts opt in. */
     val backgroundVocals: Boolean = false,
+    /** The saved lyrics text size in sp. Hosts pass the stored value; the default keeps each look's tuned size. */
+    val textSizeSp: Float = LyricsModeProfile.TEXT_SIZE_DEFAULT_SP,
 )
+
+/** The most the fullscreen list is inset above its first row and below its last. */
+private val LYRICS_FULLSCREEN_MAX_INSET = 160.dp
+
+/**
+ * The top and bottom inset of the fullscreen list: the playhead's distance from the top of the viewport, kept between
+ * the row padding and the full inset. A short window keeps its first and last rows reachable at the playhead, and a
+ * tall one keeps the full inset. Before the viewport is measured the full inset applies, so the first frame does not move.
+ */
+internal fun lyricsVerticalInset(viewportHeight: Dp, anchorFraction: Float): Dp =
+    if (viewportHeight <= 0.dp) LYRICS_FULLSCREEN_MAX_INSET
+    else (viewportHeight * anchorFraction).coerceIn(LYRICS_ROW_PADDING, LYRICS_FULLSCREEN_MAX_INSET)
 
 /** Host callbacks. The renderer never seeks, shares or writes anything on its own. */
 @Stable
@@ -82,7 +97,7 @@ fun LyricsFullscreenRenderer(
     val rows = remember(lines, phonetics, settings.backgroundVocals) {
         LyricsRenderRows.build(lines, phonetics, splitBackground = settings.backgroundVocals)
     }
-    val profile = remember(settings.mode) { LyricsModeProfile.of(settings.mode) }
+    val profile = remember(settings.mode, settings.textSizeSp) { LyricsModeProfile.of(settings.mode, settings.textSizeSp) }
     val palette = lyricsPalette(profile)
     val styles = remember(profile) { LyricsRowStyles(profile) }
     val alignments = remember(rows, settings.mode) { rows.map { LyricsAlignmentPolicy.of(settings.mode, it) } }
@@ -118,6 +133,8 @@ fun LyricsFullscreenRenderer(
     val density = LocalDensity.current
     val horizontalPaddingPx = with(density) { (LYRICS_ROW_PADDING * 2).roundToPx() }
     var rowWidthPx by remember { mutableIntStateOf(0) }
+    var viewportHeightPx by remember { mutableIntStateOf(0) }
+    val verticalInset = with(density) { lyricsVerticalInset(viewportHeightPx.toDp(), profile.anchorFraction) }
     // Shapes the rows that are about to become active, in slices that yield, so a line change does not pay for
     // its layout inside the draw that starts it.
     LaunchedEffect(shapes, primary, rowWidthPx, styles, alignments, visible) {
@@ -153,8 +170,11 @@ fun LyricsFullscreenRenderer(
                     .fillMaxSize()
                     .lyricsViewportFade()
                     .testTag(LYRICS_LIST_TAG)
-                    .onSizeChanged { rowWidthPx = (it.width - horizontalPaddingPx).coerceAtLeast(0) },
-                contentPadding = PaddingValues(vertical = 160.dp, horizontal = LYRICS_ROW_PADDING),
+                    .onSizeChanged {
+                        rowWidthPx = (it.width - horizontalPaddingPx).coerceAtLeast(0)
+                        viewportHeightPx = it.height
+                    },
+                contentPadding = PaddingValues(vertical = verticalInset, horizontal = LYRICS_ROW_PADDING),
             ) {
                 items(rows, key = { it.index }) { row ->
                     val alignment = alignments[row.index]
