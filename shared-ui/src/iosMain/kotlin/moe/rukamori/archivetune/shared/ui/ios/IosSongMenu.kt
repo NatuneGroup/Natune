@@ -13,9 +13,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.shared.data.download.downloadTaskId
 import moe.rukamori.archivetune.shared.domain.library.AutoPlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -38,6 +40,7 @@ import moe.rukamori.archivetune.shared.ui.menu.songLibraryAndDownloadActions
 import moe.rukamori.archivetune.shared.ui.menu.songOverflowActions
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.ios_download_refused
 import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
@@ -85,8 +88,24 @@ private class IosSongMenuHost(
     }
 
     override suspend fun removeFromCache(song: ContentRef) = state.unavailable()
-    override suspend fun startDownload(song: ContentRef) = state.unavailable()
-    override suspend fun removeDownload(song: ContentRef) = state.unavailable()
+
+    /**
+     * A download resolves under the user's download source order and is stored in the app container. A provider this
+     * host cannot store is refused before any task exists, so the notice names the limit instead of a bare failure.
+     */
+    override suspend fun startDownload(song: ContentRef) {
+        val item = state.target?.item
+        try {
+            if (item != null && item.ref == song) graph.downloads.start(item) else graph.downloads.start(song, "")
+        } catch (refused: DownloadRefused) {
+            state.refuseDownload()
+        }
+    }
+
+    override suspend fun removeDownload(song: ContentRef) {
+        graph.downloads.remove(downloadTaskId(song))
+    }
+
     override suspend fun exportDownload(song: ContentRef, suggestedName: String) = state.unavailable()
     override suspend fun openWithExternalDownloader(song: ContentRef): Boolean = false
 
@@ -109,9 +128,10 @@ private class IosSongMenuHost(
 
 /**
  * The shared song menu over the owners this host connects: queue, like and add-to-playlist, the system share sheet,
- * library add, history and playlist-row removal, album and artist pages, YouTube radio, track and media info and the
- * custom artwork editor. Rows whose owner is not connected here (downloads, cache, speed dial, sleep timer, refetch,
- * recommendation blocks, cover save) are filtered off rather than appearing as dead items.
+ * library add, downloads, history and playlist-row removal, album and artist pages, YouTube radio, track and media
+ * info and the custom artwork editor. Rows whose owner is not connected here (cache, speed dial, sleep timer,
+ * refetch, recommendation blocks, cover save, exporting a download to another app) are filtered off rather than
+ * appearing as dead items.
  */
 @Composable
 internal fun IosSongMenu(
@@ -152,6 +172,15 @@ internal fun IosSongMenu(
     val isTelegram = ref.id.startsWith("telegram://")
     val isLocal = ref.provider == ContentProvider.LOCAL.id
     val artistRef = occurrence.item.artists.firstNotNullOfOrNull { it.ref(ref.provider) }
+    val transfers by produceState(emptyList<ContentDownload>(), ref) {
+        try {
+            graph.downloads.observe().collect { value = it }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            value = emptyList()
+        }
+    }
     val facts = SongMenuFacts(
         song = ref,
         title = occurrence.item.title,
@@ -159,7 +188,7 @@ internal fun IosSongMenu(
         isTelegram = isTelegram,
         inLibrary = inLibrary,
         speedDialPinned = false,
-        download = CollectionDownloadState.NOT_DOWNLOADED,
+        download = graph.downloads.downloadStateOf(transfers, ref),
         downloadExtension = null,
         fromHistory = occurrence.occurrenceId.startsWith("history:"),
         fromCache = false,
@@ -245,6 +274,14 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, inLibrary: 
         if (facts.fromHistory) add("remove_history")
         if (facts.albumId != null) add("view_album")
         if (hasArtist) add("view_artist")
+        // A provider that can only stream encrypted audio has no stored file here, so it offers no download row.
+        if (iosDownloadRefusal(ref) == null) {
+            when (facts.download) {
+                CollectionDownloadState.NOT_DOWNLOADED -> add("download")
+                CollectionDownloadState.COMPLETED -> add("remove_download")
+                CollectionDownloadState.IN_PROGRESS -> add("downloading")
+            }
+        }
         // Watch-next radio is seeded only by a YouTube song.
         if (ref.provider == ContentProvider.YOUTUBE.id && ref.kind == ContentKind.SONG && !facts.isTelegram) {
             add("start_radio")
@@ -263,6 +300,7 @@ private fun iosMenuSharing(state: IosItemMenuState, host: IosHost): MenuSharing 
 internal fun IosMenuNotice(key: String, onDismiss: () -> Unit) {
     val resource = when (key) {
         IosItemMenuState.NOTICE_UNAVAILABLE -> Res.string.ios_settings_feature_unavailable
+        IosItemMenuState.NOTICE_DOWNLOAD_REFUSED -> Res.string.ios_download_refused
         else -> Res.string.ios_menu_action_failed
     }
     AlertDialog(

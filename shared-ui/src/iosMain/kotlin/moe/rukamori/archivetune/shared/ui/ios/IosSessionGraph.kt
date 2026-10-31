@@ -23,10 +23,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
+import moe.rukamori.archivetune.shared.data.localmedia.IosLocalMediaSource
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
+import moe.rukamori.archivetune.shared.data.persistence.RoomLocalMediaLibrary
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
@@ -36,6 +38,8 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCrossfadeHandoff
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherAvatar
+import moe.rukamori.archivetune.shared.data.platform.ios.IosMediaDirectories
+import moe.rukamori.archivetune.shared.data.platform.ios.IosMediaImporter
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
@@ -121,6 +125,10 @@ internal class IosSessionGraph private constructor(
     val listenTogether: IosListenTogetherOwner,
     /** The YouTube Music uploads owner: picker transfers over its own client, closed with the graph. */
     val uploads: IosYouTubeUploads,
+    /** Downloads: the shared portable queue over this host's source chain, stored in the app container. */
+    val downloads: IosDownloadsOwner,
+    /** The imported local songs: the Files picker, the shared scan pipeline and the `local` library rows. */
+    val localMedia: IosLocalMediaOwner,
     private val owner: PortableQueueOwner,
     private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
@@ -218,6 +226,9 @@ internal class IosSessionGraph private constructor(
         progressDriver.close()
         lyrics.close()
         drivers.forEach { it.cancel() }
+        // The download and import owners write rows and files, so both stop before the checkpoint and the database.
+        downloads.close()
+        localMedia.close()
         checkpointNow(queue, reportLine)
         owner.close()
         http.close()
@@ -286,7 +297,10 @@ internal class IosSessionGraph private constructor(
                 tidalAuth, accountLifecycle, vault, preferences = { vault.snapshots.value }, nowMs = ::iosNowMillis,
             )
             val songMetadata = moe.rukamori.archivetune.shared.data.persistence.RoomSongMetadataRepository(database.songMetadataOverrides())
-            val library = RoomLibraryRepository(database.library(), listens = database.listens(), songMetadata = songMetadata)
+            val library = RoomLibraryRepository(
+                database.library(), listens = database.listens(), storedSongs = database.storedSongs(),
+                songMetadata = songMetadata,
+            )
             val artistBlocks = RoomArtistBlockRepository(database.artistBlocks(), nowMs = ::iosNowMillis)
             val blockedQueueArtists = artistBlocks.observeBlockedArtists().map { refs ->
                 refs.filter { it.provider == ContentProvider.YOUTUBE.id }.mapTo(HashSet()) { it.id }
@@ -312,20 +326,45 @@ internal class IosSessionGraph private constructor(
                 personalScope = { providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL) },
                 syncEnabled = { vault.snapshots.value?.get(YtmSyncKey) ?: true },
             )
-            val locators = IosQueueLocatorResolver(
-                audio = OrderedAudioResolver(
-                    providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
-                    youtube = IosYouTubeResolver(
-                        http = http,
-                        transport = youtubeTransport,
-                        preferences = { vault.snapshots.value },
-                        personalScope = {
-                            providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
-                        },
-                    ),
+            val audioResolver = OrderedAudioResolver(
+                providers = iosAudioProviders(http, accounts, { vault.snapshots.value }, tidalSessionRefresh, playbackPool),
+                youtube = IosYouTubeResolver(
+                    http = http,
+                    transport = youtubeTransport,
+                    preferences = { vault.snapshots.value },
+                    personalScope = {
+                        providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
+                    },
                 ),
+            )
+            // Both media owners write into the app container, which the host creates once here.
+            val mediaDirectories = IosMediaDirectories().also { it.ensure() }
+            val localMedia = IosLocalMediaOwner(
+                host = host,
+                importer = IosMediaImporter(mediaDirectories.imports),
+                library = RoomLocalMediaLibrary(database.localTracks(), vault, songMetadata),
+                source = IosLocalMediaSource(mediaDirectories.imports, mediaDirectories.importArtwork),
+                scope = scope,
+                report = report,
+            )
+            val downloads = IosDownloadsOwner(
+                tasks = database.downloadTasks(),
+                storedSongs = database.storedSongs(),
+                library = library,
+                settings = vault,
+                resolver = audioResolver,
+                root = mediaDirectories.downloads,
+                client = http,
+                scope = scope,
+                nowMs = ::iosNowMillis,
+                report = report,
+            )
+            val locators = IosQueueLocatorResolver(
+                audio = audioResolver,
                 port = host.playbackPort,
                 preferences = { vault.snapshots.value },
+                localFile = { ref -> localMedia.pathOf(ref.id) },
+                downloadedFile = { ref -> downloads.committedFile(ref) },
             )
             // One typed router serves the queue's resolution and the chat song picker, so both search the same sources.
             val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
@@ -484,6 +523,8 @@ internal class IosSessionGraph private constructor(
                 artworkLoader = IosArtworkLoader(http),
                 listenTogether = listenTogether,
                 uploads = uploads,
+                downloads = downloads,
+                localMedia = localMedia,
                 owner = owner,
                 playbackPort = host.playbackPort,
                 database = database,
@@ -495,6 +536,9 @@ internal class IosSessionGraph private constructor(
             lyrics.start()
             playbackPool.start()
             listenTogether.start()
+            // Re-arms a persisted download queue and publishes the imported songs the last session listed.
+            downloads.start()
+            localMedia.start()
             return graph
         }
     }

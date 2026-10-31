@@ -37,10 +37,16 @@ data class LocalSongsUi(
 class LocalSongsActions(
     val back: () -> Unit, val query: (String) -> Unit, val sort: (LocalSongSort, Boolean) -> Unit,
     val requestPermission: () -> Unit, val scan: () -> Unit, val minimumDuration: (Int) -> Unit,
-    val pickFolder: (included: Boolean, current: List<String>) -> Unit,
-    val removeFolder: (included: Boolean, folder: String) -> Unit,
+    /** Null on a host with no folder picker, where the folder rules are left out rather than shown as dead buttons. */
+    val pickFolder: ((included: Boolean, current: List<String>) -> Unit)?,
+    val removeFolder: ((included: Boolean, folder: String) -> Unit)?,
     val play: (selected: ContentOccurrence, visibleQueue: List<ContentOccurrence>) -> Unit,
     val retry: () -> Unit, val more: ((ContentOccurrence) -> Unit)?,
+    /**
+     * Imports audio through the host's own file picker, for a host whose local songs are picked rather than scanned
+     * from a media store. Null on a host with a media store, where the scan button is the only way in.
+     */
+    val importFiles: (() -> Unit)? = null,
 )
 
 fun visibleLocalSongs(
@@ -123,6 +129,11 @@ private fun LocalScanPanel(scan: LocalScanUi, actions: LocalSongsActions) {
                     enabled = !scan.scanning, modifier = Modifier.testTag("local-scan-primary")) {
                     Text(stringResource(if (scan.permissionGranted) Res.string.m4_scan_device else Res.string.m4_allow))
                 }
+                actions.importFiles?.let { importFiles ->
+                    TextButton(importFiles, enabled = !scan.scanning, modifier = Modifier.testTag("local-import-files")) {
+                        Text(stringResource(Res.string.local_songs_import_files))
+                    }
+                }
                 TextButton({ expanded = !expanded }) { Text(stringResource(Res.string.m4_scan_filters)) }
             }
             if (expanded) {
@@ -131,16 +142,18 @@ private fun LocalScanPanel(scan: LocalScanUi, actions: LocalSongsActions) {
                 Slider(scan.minimumDurationSeconds.toFloat(), { actions.minimumDuration(it.roundToInt()) },
                     valueRange = 0f..maxOf(180, scan.minimumDurationSeconds).toFloat(),
                     steps = if (scan.minimumDurationSeconds <= 180) 11 else 0, enabled = !scan.scanning)
-                listOf(true, false).forEach { included ->
+                val pickFolder = actions.pickFolder
+                val removeFolder = actions.removeFolder
+                if (pickFolder != null && removeFolder != null) listOf(true, false).forEach { included ->
                     val folders = if (included) scan.includedFolders else scan.excludedFolders
                     Text(stringResource(if (included) Res.string.m4_include_folders else Res.string.m4_exclude_folders))
-                    TextButton({ actions.pickFolder(included, folders) }, enabled = !scan.scanning) {
+                    TextButton({ pickFolder(included, folders) }, enabled = !scan.scanning) {
                         Text(stringResource(Res.string.m4_add_folder))
                     }
                     folders.distinct().forEach { folder ->
                         Row {
                             Text(folder, Modifier.weight(1f))
-                            TextButton({ actions.removeFolder(included, folder) }, enabled = !scan.scanning) {
+                            TextButton({ removeFolder(included, folder) }, enabled = !scan.scanning) {
                                 Text(stringResource(Res.string.m4_remove))
                             }
                         }
