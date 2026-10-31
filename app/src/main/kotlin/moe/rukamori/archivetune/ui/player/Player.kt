@@ -232,7 +232,6 @@ import moe.rukamori.archivetune.ui.theme.PlayerPaletteCache
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.getNextFallbackUrl
-import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.utils.defaultStorefront
 import moe.rukamori.archivetune.utils.ImageBlurUtils
@@ -794,24 +793,9 @@ fun BottomSheetPlayer(
             playerConnection.service.sleepTimer.isActive
         }
 
-    var sleepTimerTimeLeft by remember {
-        mutableLongStateOf(0L)
-    }
-
-    // The 1 s tick only refreshes on-screen labels, so it waits for a STARTED app; the first pass on resume is immediate.
-    val sleepCountdownStarted by rememberLifecycleStarted()
-    LaunchedEffect(sleepTimerEnabled, sleepCountdownStarted) {
-        if (sleepTimerEnabled && sleepCountdownStarted) {
-            while (isActive) {
-                sleepTimerTimeLeft =
-                    if (playerConnection.service.sleepTimer.pauseWhenSongEnd) {
-                        playerConnection.player.duration - playerConnection.player.currentPosition
-                    } else {
-                        playerConnection.service.sleepTimer.triggerTime - System.currentTimeMillis()
-                    }
-                delay(1000L)
-            }
-        }
+    // Shared with the queue sheet: one countdown owner that stops while the app is backgrounded.
+    val sleepTimerTimeLeft by rememberQueueSleepTimerRemainingMs(playerConnection.service.sleepTimer) {
+        playerConnection.player
     }
 
     var showSleepTimerDialog by remember {
