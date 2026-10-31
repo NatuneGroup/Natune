@@ -226,7 +226,8 @@ internal fun iosPlaylistsPage(
         grid = { grid = !grid },
         lock = { write("the playlist lock was not saved") { content.setPlaylistLocked(!locked) } },
         create = { creation.show() },
-        manageTags = {},
+        // The same tags page the settings row opens; the page carries the manager, the filter chips just read its ids.
+        manageTags = tagState::manageTags,
         open = {},
         more = { menu.refuse() },
         assignTags = { ref -> if (ref.provider == ContentProvider.LOCAL.id) tagState.openTags(ref) else menu.refuse() },
