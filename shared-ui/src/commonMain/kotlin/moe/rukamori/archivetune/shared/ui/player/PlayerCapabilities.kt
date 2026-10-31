@@ -65,6 +65,9 @@ fun effectivePlayerBackground(style: PlayerBackgroundStyle, blurOff: Boolean): P
 fun playerVolumeVisible(style: PlayerDesignStyle, canonical: Boolean?, legacyFlamingo: Boolean?): Boolean =
     if (style == PlayerDesignStyle.FLAMINGO) legacyFlamingo ?: canonical ?: true else canonical ?: true
 
+/** The shipped default of the swipe-sensitivity setting; a fresh install swipes at this sensitivity. */
+internal const val DEFAULT_SWIPE_SENSITIVITY = 0.73f
+
 /** Reads never consolidate/migrate storage. Explicit edits belong to M6's atomic preference owner. */
 data class PlayerPreferences(
     val style: PlayerDesignStyle,
@@ -83,6 +86,8 @@ data class PlayerPreferences(
     val customBrightness: Float,
     val flamingoMotion: Boolean,
     val metrolistPresentation: MetrolistPresentation,
+    /** The swipe-sensitivity setting, 0 to 1. A higher value commits an artwork swipe after less drag. */
+    val swipeSensitivity: Float = DEFAULT_SWIPE_SENSITIVITY,
 )
 
 /** The sleeve is transparent but still laid out, so morphs and pagers keep their bounds. */
@@ -112,5 +117,6 @@ fun PreferenceSnapshot.playerPreferences(): PlayerPreferences {
         customBrightness = bounded(this[PlayerCustomBrightnessKey], 1f, 0f..2f),
         flamingoMotion = this[FlamingoBackgroundEffectKey] ?: false,
         metrolistPresentation = this[MetrolistPresentationKey].toEnum(MetrolistPresentation.MODERN),
+        swipeSensitivity = bounded(this[SwipeSensitivityKey], DEFAULT_SWIPE_SENSITIVITY, 0f..1f),
     )
 }
