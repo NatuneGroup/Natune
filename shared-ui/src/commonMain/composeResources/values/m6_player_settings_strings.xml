@@ -51,6 +51,8 @@
     <string name="m6_player_buttons">Player button style</string>
     <string name="m6_secondary">Secondary color</string>
     <string name="m6_album_canvas">Album-page Canvas</string>
+    <string name="m6_disable_animated_artwork_mobile">Disable animated artwork on mobile data</string>
+    <string name="m6_disable_animated_artwork_mobile_desc">Do not load Canvas loops and music videos over a cellular connection. Wi-Fi playback is not affected.</string>
     <string name="m6_source_settings">Source settings</string>
     <string name="m6_lyrics_settings">Lyrics settings</string>
     <string name="m6_video_playback">Enable video playback</string>

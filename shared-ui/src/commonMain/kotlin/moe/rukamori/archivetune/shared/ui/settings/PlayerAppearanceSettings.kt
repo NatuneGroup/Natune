@@ -113,6 +113,11 @@ fun playerAppearanceSettingsRows(
         playbackSliderOptions(), enabled = style.honors(PlayerStyleSetting.SLIDER_STYLE),
         description = note(PlayerStyleSetting.SLIDER_STYLE)))
     add(SettingsRow.Toggle("album_canvas_enabled", Res.string.m6_album_canvas, AlbumCanvasEnabledKey, true))
+    add(SettingsRow.Toggle(
+        "disable_animated_artwork_on_mobile_data", Res.string.m6_disable_animated_artwork_mobile,
+        DisableAnimatedArtworkOnMobileDataKey, false,
+        description = Res.string.m6_disable_animated_artwork_mobile_desc,
+    ))
 }
 
 internal fun playerDesignOptions(): List<SettingsRow.Option> = listOf(

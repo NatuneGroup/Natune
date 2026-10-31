@@ -12,7 +12,11 @@ package moe.rukamori.archivetune.canvas
 
 import androidx.compose.runtime.Immutable
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import moe.rukamori.archivetune.constants.*
+
+// The shared :shared-domain key has this same on-disk name, and the settings store maps keys by name.
+private val DisableAnimatedArtworkOnMobileDataPreference = booleanPreferencesKey("disableAnimatedArtworkOnMobileData")
 
 internal fun canvasConfigurationFrom(preferences: Preferences): CanvasConfiguration =
     CanvasConfiguration(
@@ -21,6 +25,7 @@ internal fun canvasConfigurationFrom(preferences: Preferences): CanvasConfigurat
         wifiOnly = preferences[CanvasWifiOnlyKey] ?: false,
         cacheLimitMb = (preferences[MaxCanvasCacheSizeKey] ?: 256).coerceAtLeast(-1),
         lowDataMode = preferences[LowDataModeKey] ?: true,
+        disableAnimatedArtworkOnMobileData = preferences[DisableAnimatedArtworkOnMobileDataPreference] ?: false,
     )
 
 @Immutable
@@ -30,6 +35,7 @@ data class CanvasConfiguration(
     val wifiOnly: Boolean = false,
     val cacheLimitMb: Int = 256,
     val lowDataMode: Boolean = false,
+    val disableAnimatedArtworkOnMobileData: Boolean = false,
 )
 
 @Immutable
@@ -49,7 +55,8 @@ data class CanvasPolicy(
     val networkAllowed: Boolean
         get() = ready && configuration.enabled && connectivity.online &&
             (!configuration.wifiOnly || connectivity.wifi) &&
-            (!configuration.lowDataMode || !connectivity.metered)
+            (!configuration.lowDataMode || !connectivity.metered) &&
+            (!configuration.disableAnimatedArtworkOnMobileData || !connectivity.cellular)
 }
 
 @Immutable
