@@ -13,7 +13,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 |---|:-:|:-:|:-:|---|
 | `settings` (home) | ✓ | ✓ | ✓ | |
 | `settings/account` | ✓ | ✓ | — | no YouTube account owner on iOS |
-| `settings/hidden_playlists` | ✓ | ✓ | — | desktop: lists hidden local playlists with Unhide; the desktop Library does not filter hidden playlists yet |
+| `settings/hidden_playlists` | ✓ | ✓ | — | desktop: lists hidden local playlists with Unhide; the desktop Library always leaves them out, and the Playlists page leaves them out until its Show hidden toggle is on, as Android does |
 | `settings/appearance` | ✓ | ✓ | ✓ | one page: Theme, Player and Interface sections (anchors `appearance_theme`, `appearance_player`, `appearance_interface`); D/iOS: no wallpaper colors/dynamic, no font picker on iOS; desktop opens the home-screen, library-chip, playlist-tag and artwork-provider editors, iOS keeps them unavailable |
 | `settings/appearance/theme` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_theme` (or its `scrollTo`) |
 | `settings/appearance/player` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_player` (or its `scrollTo`) |
@@ -30,7 +30,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/lyrics` | ✓ | ✓ | ✓ | |
 | `settings/lyrics/providers` | ✓ | ✓ | ✓ | real Paxsenix stats + endpoint probes |
 | `settings/lyrics/romanisation` | ✓ | ✓ | ✓ | JP toggle gated on real pack state |
-| `settings/language_packs` | ✓ | ✓ | ✓ | JP pack real; SpatialFlow font install/remove reports unavailable (no host font consumer) |
+| `settings/language_packs` | ✓ | ✓ | ✓ | JP pack real; desktop installs and removes a user-chosen SpatialFlow TTF (no pinned download on desktop) and the SpatialFlow title uses it once installed; the on-device render is not verified yet |
 | `settings/internet` | ✓ | ✓ | — | desktop mounts; no network owner on iOS |
 | `settings/player` | ✓ | ✓ | ✓ | bit-perfect/USB rows read unsupported |
 | `settings/player/ytdlp` | ✓ | ✓ | ✓ | BUG-004 target; real runtime status (unavailable on iOS) |
@@ -52,7 +52,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/qobuz/login` | ✓ | ✓ | ✓ | iOS: mounted; token verification and web-player secret candidates |
 | `settings/deezer` | ✓ | ✓ | ✓ | |
 | `settings/deezer/login` | ✓ | ✓ | ✓ | iOS: mounted Deezer web sign-in page |
-| `settings/amazon` | ✓ | ✓ | — | desktop mounts; Authorize reports unavailable (the Turnstile challenge needs an embedded page with a script bridge) |
+| `settings/amazon` | ✓ | ✓ | — | desktop mounts; Authorize runs the Turnstile challenge in a native window on the sign-in origin and reports not configured without the build-time sitekey |
 | `settings/jiosaavn` | ✓ | ✓ | — | desktop mounts |
 | `settings/qqmusic` | ✓ | ✓ | — | desktop mounts |
 | `settings/spotify_streaming` | ✓ | ✓ | — | desktop mounts |
@@ -70,7 +70,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/about` | ✓ | ✓ | ✓ | iOS: real GitHub contributors/translations fetch |
 | `settings/po_token` | ✓ | ✓ | — | YouTube-only; desktop mounts |
 | `settings/customize_background` | ✓ | ✓ | — | desktop: local image, blur, contrast, brightness (also `customize_background`) |
-| `settings/youtube/oauth` | ✓ | ✓ | — | desktop: device-code sign-in; needs `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID`/`_SECRET` at run time, and nothing on desktop uses the token for playback yet |
+| `settings/youtube/oauth` | ✓ | ✓ | — | desktop: device-code sign-in; the client pair comes from the build (CI secrets) or an environment variable or system property of the same name, and sign-in reports not configured without it; nothing on desktop uses the token for playback yet |
 | `login` (YouTube) | ✓ | ✓ | — | desktop mounts |
 
 ## Settings search
