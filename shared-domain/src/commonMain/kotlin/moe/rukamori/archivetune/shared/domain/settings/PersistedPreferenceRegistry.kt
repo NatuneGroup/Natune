@@ -394,6 +394,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         HISTORY_DURATION_LEGACY_FLOAT_KEY,
         HistoryDuration,
         PlayerButtonsStyleKey,
+        PlayerMenuStyleKey,
         PlayerBackgroundStyleKey,
         LyricsBackgroundStyleKey,
         ShowLyricsKey,
