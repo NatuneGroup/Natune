@@ -310,6 +310,8 @@ internal fun QueueState.playFor(occurrenceId: String): LastFmPlay? {
         title = item.title,
         albumTitle = item.album,
         metadataDurationSeconds = ((item.durationMs ?: 0L) / 1000L).toInt(),
+        // The tracker never tracks a podcast play, so the flag has to come from the content kind here.
+        isPodcast = item.ref.kind == ContentKind.EPISODE || item.ref.kind == ContentKind.PODCAST,
     )
 }
 

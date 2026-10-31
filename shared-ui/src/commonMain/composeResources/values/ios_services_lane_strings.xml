@@ -10,7 +10,7 @@
     <string name="ios_services_lastfm_finish">Finish sign-in</string>
     <string name="ios_services_lastfm_open_again">Open the page again</string>
     <string name="ios_services_lastfm_cancel">Cancel</string>
-    <string name="ios_services_lastfm_not_configured">Last.fm is not configured in this build. Libre.fm and custom services still work, and you can enter your own Last.fm key pair under Custom endpoint.</string>
+    <string name="ios_services_lastfm_not_configured">Last.fm is not configured in this build. Libre.fm and custom services still work, and a custom service can take its own key pair under Custom endpoint.</string>
     <string name="ios_services_lastfm_sign_in_failed">The scrobbling service did not answer. Check your connection and try again.</string>
     <string name="ios_services_lastfm_dismiss">Dismiss</string>
     <string name="ios_services_lastfm_status_title">Scrobbling account</string>
