@@ -511,6 +511,7 @@ internal fun CommentTypingRow(
     val shown = typing.take(MaxTypingAvatars)
     // With motion off the dots hold the cycle start, so no frame clock runs behind a hidden or minimized window.
     val transition = if (motionAllowed()) rememberInfiniteTransition(label = "comment-typing") else null
+    // Read inside the dot loop, where the delegate was read, so a frame recomposes only the dots.
     val phase = transition?.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -519,7 +520,7 @@ internal fun CommentTypingRow(
             repeatMode = RepeatMode.Restart,
         ),
         label = "comment-typing-phase",
-    )?.value ?: 0f
+    )
     val names = when (typing.size) {
         1 -> typing[0].username
         2 -> "${typing[0].username} & ${typing[1].username}"
@@ -548,7 +549,8 @@ internal fun CommentTypingRow(
         Spacer(Modifier.width(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             repeat(3) { index ->
-                val lift = sin(((phase + index * 0.2f) * 2f * PI.toFloat()).toDouble()).toFloat().coerceAtLeast(0f)
+                val phaseAt = (phase?.value ?: 0f) + index * 0.2f
+                val lift = sin((phaseAt * 2f * PI.toFloat()).toDouble()).toFloat().coerceAtLeast(0f)
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 2.dp)
