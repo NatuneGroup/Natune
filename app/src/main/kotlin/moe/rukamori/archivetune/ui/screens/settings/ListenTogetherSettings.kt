@@ -462,7 +462,7 @@ fun ListenTogetherSettings(
                     },
                     title = { Text(stringResource(R.string.listen_together_username)) },
                     description = {
-                        SettingsDescriptionText(username.ifEmpty { stringResource(R.string.not_set) })
+                        SettingsDescriptionText(username.ifEmpty { stringResource(R.string.not_set) }, phaseKey = R.string.listen_together_username)
                     },
                     onClick = if (roomState == null) {
                         { showUsernameDialog = true }
@@ -475,9 +475,8 @@ fun ListenTogetherSettings(
                     title = { Text(stringResource(R.string.listen_together_server_url)) },
                     description = {
                         SettingsDescriptionText(
-                            selectedServer?.let { server ->
-                                "${server.name} - ${server.location}"
-                            } ?: serverUrl,
+                            selectedServer?.let { server -> "${server.name} - ${server.location}" } ?: serverUrl,
+                            phaseKey = R.string.listen_together_server_url,
                         )
                     },
                     onClick = { showServerUrlDialog = true }

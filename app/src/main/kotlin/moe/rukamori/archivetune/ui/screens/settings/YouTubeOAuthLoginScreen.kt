@@ -153,6 +153,7 @@ fun YouTubeOAuthLoginScreen(navController: NavController) {
                     MarqueeText(
                         text = stringResource(R.string.yt_oauth_sign_in),
                         fontWeight = FontWeight.Bold,
+                        phaseKey = R.string.yt_oauth_sign_in,
                     )
                 },
                 navigationIcon = {
