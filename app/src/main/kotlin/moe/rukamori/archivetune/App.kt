@@ -8,8 +8,6 @@
 
 package moe.rukamori.archivetune
 
-import android.app.ActivityManager
-import android.app.Application
 import android.content.Context
 import android.content.ComponentCallbacks2
 import android.content.Intent
@@ -61,6 +59,8 @@ import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
+import moe.rukamori.archivetune.startup.StartupApplication
+import moe.rukamori.archivetune.startup.StartupRecovery
 import moe.rukamori.archivetune.applemusic.AppleMusicAudioProvider
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
@@ -101,7 +101,7 @@ import kotlin.system.exitProcess
 
 @HiltAndroidApp
 class App :
-    Application(),
+    StartupApplication(),
     SingletonImageLoader.Factory {
 
     /**
@@ -162,30 +162,20 @@ class App :
         }
     }
 
-    private fun currentProcessName(): String? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            Application.getProcessName()
-        } else {
-            val pid = android.os.Process.myPid()
-            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            activityManager
-                ?.runningAppProcesses
-                ?.firstOrNull { it.pid == pid }
-                ?.processName
-        }
-
     @OptIn(DelicateCoroutinesApi::class)
     override fun onCreate() {
+        StartupRecovery.installExceptionHandler(this)
+        if (StartupRecovery.isRecoveryProcess(this)) {
+            onCreateWithoutInjection()
+            return
+        }
         // Ahead of super.onCreate(): Hilt injects there, and an OkHttpClient built by an injected
         // object would otherwise capture the system ProxySelector for good.
         AppProxy.install()
         super.onCreate()
-        startCanvasPolicy.start(applicationScope)
         instance = this
-        if (currentProcessName()?.endsWith(":crash") == true) {
-            Timber.plant(Timber.DebugTree())
-            return
-        }
+        StartupRecovery.watchHealthyStartup(this)
+        startCanvasPolicy.start(applicationScope)
         YtDlpJavaScriptRuntime.initialize(this)
         BotGuardTokenGenerator.initialize(this)
         PreferenceStore.start(this)
@@ -207,6 +197,7 @@ class App :
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        if (StartupRecovery.isRecoveryProcess(this)) return
         // Direct call like upstream: the body is map ops that cannot throw, and a
         // silent catch here would hide exactly the injection failure that matters.
         youtubeiStreamRepository.trimMemory(level)
@@ -627,7 +618,7 @@ class App :
         }
 
         try {
-            Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            StartupRecovery.setApplicationCrashHandler { thread, throwable ->
                 // Replacing the default handler also drops the runtime's FATAL EXCEPTION line, which
                 // is the only place the persistent log capture can see the crash.
                 android.util.Log.e("AndroidRuntime", "FATAL EXCEPTION: ${thread.name}", throwable)
