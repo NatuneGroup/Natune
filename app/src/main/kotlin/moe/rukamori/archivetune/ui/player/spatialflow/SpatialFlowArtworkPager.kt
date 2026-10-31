@@ -23,11 +23,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.PlayerCoverImage
 import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 
@@ -98,9 +98,8 @@ internal fun SpatialFlowArtworkPager(
                 contentAlignment = Alignment.Center,
             ) {
                 if (!pageArtUrl.isNullOrBlank() && !isError) {
-                    AsyncImage(
-                        model = pageArtUrl,
-                        contentDescription = null,
+                    PlayerCoverImage(
+                        imageUrl = pageArtUrl,
                         contentScale = ContentScale.Crop,
                         onError = { isError = true },
                         modifier = Modifier.fillMaxSize().playerSeekDoubleTap(),
