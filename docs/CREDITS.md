@@ -123,6 +123,12 @@ their approaches were followed.
   the Enhanced lyrics animation and the self-hosted Lyprio lyrics protocol. The recovered
   Metrolist 14.0.0-rc3 material was read as reference only; the Kotlin here is written
   fresh.
+- **Metrolist 14.0.0-rc6**: several 2026-10 player, lyrics, theme and playback refinements
+  are behavior-level re-implementations of its rc6 improvements, including the artwork that
+  holds the previous cover while the next loads, the lyrics text size, the mobile-data
+  animated artwork switch, the gain-reduction readout, the stable equalizer graph and the
+  palette styles. Credit order: InnerTune (Zion Huang), Metrolist (Mostafa Alagamy),
+  ArchiveTune (Rukamori), with the KMP port by vossgraves / Natune.
 - [Metrolist](https://github.com/mostafaalagamy/Metrolist): crossfade handoff timing, the
   Listen Together codec, and the Enhanced lyrics approach (one smoothed lyric clock,
   overlap-aware active-line scanning, draw-phase word wipe and glow masks, cooperative
