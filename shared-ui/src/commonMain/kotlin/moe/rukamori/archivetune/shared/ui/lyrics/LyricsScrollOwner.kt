@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -20,8 +21,11 @@ import kotlin.math.roundToInt
  */
 @Stable
 internal class LyricsScrollOwner {
-    /** True while the list follows the playhead. Read and written only by the follow effects. */
-    var following: Boolean = true
+    /**
+     * True while the list follows the playhead. A listener scroll clears it. It is snapshot state, so the look can
+     * unblur its rows while the list is held.
+     */
+    var following: Boolean by mutableStateOf(true)
 
     /** Counts listener scrolls. Each change restarts the hold, so the hold runs from the last scroll. */
     var holdGeneration by mutableIntStateOf(0)

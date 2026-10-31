@@ -19,10 +19,18 @@ internal data class LyricsDepth(
         private const val SCALE_STEP = 0.025f
         private const val BLUR_STEP_DP = 0.75f
         private const val ALPHA_STEP = 0.12f
+        private const val STAGGER_STEP_MS = 45L
 
         /** Steps from the primary row, or null while nothing is sung yet or the row itself is sung. */
         fun distance(index: Int, primary: Int, active: Boolean): Int? =
             if (primary < 0 || active) null else abs(index - primary)
+
+        /**
+         * How long a row waits before it follows a line change, so the change ripples outward from the sung line.
+         * The sung line and unsynced rows wait not at all.
+         */
+        fun staggerMs(distance: Int?): Long =
+            if (distance == null || distance <= 0) 0L else STAGGER_STEP_MS * distance.coerceAtMost(MAX_STEPS)
 
         /** Reduced motion keeps every row at full size, so a line change never animates a scale. */
         fun of(distance: Int?, reduceMotion: Boolean): LyricsDepth {
