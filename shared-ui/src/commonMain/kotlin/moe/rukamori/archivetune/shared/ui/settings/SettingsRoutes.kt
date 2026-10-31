@@ -84,7 +84,8 @@ private val crossPageOwners = buildMap {
     own("appearance_player", "appearance",
         "player_design_style", "player_background_style", "lyrics_background_style", "mini_player_background_style",
         "player_buttons_style", "player_slider_style", "show_player_volume_bar", "hide_player_thumbnail", "crop_thumbnail_to_square",
-        "thumbnail_corner_radius", "customized_background", "album_canvas_enabled", "apple_music_animated_artwork", "simpmusic_lyrics")
+        "thumbnail_corner_radius", "customized_background", "album_canvas_enabled", "apple_music_animated_artwork",
+        "disable_animated_artwork_on_mobile_data", "simpmusic_lyrics")
     own("appearance_interface", "appearance",
         "home_screen_style", "minimal_home_mode", "default_open_tab", "search_bar_position", "hide_search_bar_while_scrolling",
         "back_animation_style", "tablet_mode", "navigation_bar_style", "navigation_bar_settings", "hide_scrollbar",

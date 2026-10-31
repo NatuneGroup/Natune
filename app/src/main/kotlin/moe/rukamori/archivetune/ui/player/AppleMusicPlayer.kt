@@ -133,6 +133,7 @@ import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.scaledDelay
+import moe.rukamori.archivetune.canvas.CanvasNetworkAccess
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
 import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
@@ -674,11 +675,16 @@ fun AppleMusicPlayerContent(
         // of the five places they are read: a canvas that is off should be indistinguishable from
         // a song that never had one, and that is exactly what a null URL already means here.
         val animatedArtworkEnabled by rememberPreference(AppleMusicAnimatedArtworkKey, defaultValue = true)
-        val canvasPrimaryUrl = canvasPrimaryUrl.takeIf { animatedArtworkEnabled }
-        val canvasFallbackUrl = canvasFallbackUrl.takeIf { animatedArtworkEnabled }
+        // The mobile-data setting holds the artwork back only while the network is known to be cellular.
+        val canvasPolicy by CanvasNetworkAccess.policy.collectAsStateWithLifecycle()
+        val animatedArtworkOnNetwork =
+            animatedArtworkEnabled &&
+                (!canvasPolicy.configuration.disableAnimatedArtworkOnMobileData || !canvasPolicy.connectivity.cellular)
+        val canvasPrimaryUrl = canvasPrimaryUrl.takeIf { animatedArtworkOnNetwork }
+        val canvasFallbackUrl = canvasFallbackUrl.takeIf { animatedArtworkOnNetwork }
 
         val videoShowing =
-            animatedArtworkEnabled &&
+            animatedArtworkOnNetwork &&
                 LocalVideoArtworkState.current != null &&
                 mediaMetadata.isMusicVideo &&
                 !mediaMetadata.id.isLocalMediaId()
