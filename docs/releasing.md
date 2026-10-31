@@ -31,9 +31,12 @@ Nightly tag, release title, Android `versionName`, desktop display version and
 artifact names use `N<yyyyMMdd>` in UTC (for example, `N20261026`). The iOS
 `CFBundleShortVersionString` must be numeric, so the IPA carries the package
 version there and the allocated build code as `CFBundleVersion`. A
-same-date nightly replaces its prior release and tag. Unless `force` is selected
-for a manual run, the workflow skips when the current `dev` commit matches the
-target of the latest nightly release.
+same-date nightly replaces its prior release and tag. After each successful
+nightly publish, only the newest five `N<digits>` releases are kept, ordered by
+publish time; older ones are deleted together with their tags. Stable `v*`
+releases, the `update-feed` release and `local-*` tags are never touched. Unless
+`force` is selected for a manual run, the workflow skips when the current `dev`
+commit matches the target of the latest nightly release.
 
 Desktop package formats require numeric versions. Stable installers use the
 stable version; nightly installers use the next stable version as their package
@@ -73,10 +76,14 @@ artifact quota must not break a run whose builds succeeded. Each build job tries
 `actions/upload-artifact` first; when that upload fails, the same file set is
 parked on a per-run prerelease tagged `staging-<run_id>-<job>` (for example
 `staging-40906373528-android-gms-mobile-arm64`) and the publish job restores the
-missing files from those tags with `gh release download`. The staging releases
-are deleted once the real release is published, and are left in place when
-`publish` is false so a smoke run stays downloadable. Clean any leftover
-`staging-*` prerelease up by hand when a run was abandoned before publishing.
+missing files from those tags with `gh release download`. The publish job deletes
+the per-variant staging releases once the real release is published. The
+`publish-update-feed` job runs after every outcome of a publishing run and removes
+every `staging-<run_id>-*` release and tag of that run, including the update-feed
+hand-off once it has read the manifest. That covers a successful publish, a
+publish refused for a stale head and a failed run. A `publish: false` smoke run
+keeps its staging releases so they stay downloadable; delete those by hand once
+they are no longer needed.
 
 The workflows also publish `stable.json` and `nightly.json` to the fixed
 `update-feed` prerelease in this repository. The manifest links point to this
