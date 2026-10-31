@@ -117,7 +117,6 @@ import moe.rukamori.archivetune.ui.component.BottomSheet
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalMenuState
-import moe.rukamori.archivetune.ui.component.MediaMetadataListItem
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.menu.AddToPlaylistDialog
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
@@ -1018,7 +1017,7 @@ fun Queue(
                                                 null
                                             }
                                         }
-                                    MediaMetadataListItem(
+                                    QueueMediaMetadataListItem(
                                         mediaMetadata = trackMetadata,
                                         isSelected = selection && trackMetadata in selectedSongs,
                                         isActive = isActive,

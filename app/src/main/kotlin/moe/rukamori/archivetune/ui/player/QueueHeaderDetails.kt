@@ -1,10 +1,10 @@
 package moe.rukamori.archivetune.ui.player
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,14 +42,21 @@ internal fun QueueHeaderDetails(title: String?, remainingMs: Long?, color: Color
     }
 }
 
+// One line instead of a stacked title and status: the status wraps rather than clips when the font scale grows.
 @Composable
 internal fun QueueAutoplayFooter(enabled: Boolean, color: Color) {
-    Spacer(Modifier.height(14.dp))
-    Text(stringResource(R.string.queue_continue_playing), style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold, color = color)
-    Spacer(Modifier.height(2.dp))
-    Text(stringResource(if (enabled) R.string.queue_autoplaying_similar else R.string.queue_autoplay_off),
-        style = MaterialTheme.typography.bodySmall, color = color.copy(alpha = 0.5f))
-    Spacer(Modifier.height(12.dp))
-    HorizontalDivider(color = color.copy(alpha = 0.08f), thickness = 1.dp)
+    Column {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(stringResource(R.string.queue_continue_playing), style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold, color = color)
+            Text(stringResource(if (enabled) R.string.queue_autoplaying_similar else R.string.queue_autoplay_off),
+                style = MaterialTheme.typography.labelMedium, color = color.copy(alpha = 0.5f),
+                modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        HorizontalDivider(color = color.copy(alpha = 0.08f), thickness = 1.dp)
+    }
 }

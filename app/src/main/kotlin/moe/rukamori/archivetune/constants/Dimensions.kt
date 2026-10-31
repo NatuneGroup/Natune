@@ -48,6 +48,11 @@ val PlayerHeaderGlassFadeRamp = 96.dp
 
 val ListItemHeight = 72.dp
 val ListThumbnailSize = 56.dp
+
+// The player queue packs more rows per screen: 64 dp rows with 48 dp artwork instead of the library's 72/56.
+val QueueListItemHeight = 64.dp
+val QueueListThumbnailSize = 48.dp
+
 val GridThumbnailHeight = 128.dp
 
 val ThumbnailCornerRadius = 10.dp
