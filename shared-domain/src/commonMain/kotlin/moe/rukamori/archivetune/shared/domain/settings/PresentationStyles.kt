@@ -38,6 +38,21 @@ enum class PlayerDesignStyle {
     }
 }
 
+/**
+ * The look of the player's three-dot menu and the lyrics menu. APPLE_MUSIC is the Apple Music action layout and the
+ * default; MD3 is a standard Material 3 list of the same actions. The names are persisted.
+ */
+enum class PlayerMenuStyle {
+    APPLE_MUSIC,
+    MD3,
+    ;
+
+    companion object {
+        /** The menu a fresh install opens with. */
+        val Default: PlayerMenuStyle = APPLE_MUSIC
+    }
+}
+
 /** Preset status, derived from the independently selected surfaces. CUSTOM is not an apply action. */
 enum class InterfaceStyle {
     MATERIAL_EXPRESSIVE,

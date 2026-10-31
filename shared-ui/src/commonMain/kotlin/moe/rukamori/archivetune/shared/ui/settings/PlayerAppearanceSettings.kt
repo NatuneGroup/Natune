@@ -44,6 +44,12 @@ fun playerAppearanceSettingsRows(
     ), write = { setLibraryStyle(LibraryStyle.valueOf(it)) }))
     add(SettingsRow.Choice("player_design_style", Res.string.m6_player_design, PlayerDesignStyleKey, "V4",
         playerDesignOptions()))
+    add(SettingsRow.Choice("player_menu_style", Res.string.m6_player_menu_style, PlayerMenuStyleKey,
+        PlayerMenuStyle.Default.name, listOf(
+            SettingsRow.Option("APPLE_MUSIC", Res.string.m6_apple_music), SettingsRow.Option("MD3", Res.string.m6_menu_md3),
+        ),
+        description = Res.string.m6_player_menu_style_desc,
+        read = { it.playerMenuStyle().name }, write = { setPlayerMenuStyle(PlayerMenuStyle.valueOf(it)) }))
     if (style == PlayerDesignStyle.METROLIST_KMP) add(SettingsRow.Choice("metrolist_presentation",
         Res.string.m6_metrolist_presentation, MetrolistPresentationKey, "MODERN", listOf(
             SettingsRow.Option("MODERN", Res.string.m6_modern), SettingsRow.Option("VINTAGE", Res.string.m6_vintage))))

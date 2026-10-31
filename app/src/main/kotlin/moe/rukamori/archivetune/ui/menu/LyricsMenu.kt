@@ -8,7 +8,6 @@
 
 package moe.rukamori.archivetune.ui.menu
 
-import moe.rukamori.archivetune.ui.component.rememberAppleMusicMenus
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.border
@@ -144,7 +143,6 @@ import moe.rukamori.archivetune.ui.component.MediaMetadataListItem
 import moe.rukamori.archivetune.ui.component.MenuHeaderCard
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
-import moe.rukamori.archivetune.ui.component.NewActionGrid
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.utils.TranslatorLang
 import moe.rukamori.archivetune.utils.TranslatorLanguages
@@ -858,7 +856,7 @@ fun LyricsMenu(
 
             item {
                 MenuSurfaceSection(modifier = Modifier.padding(vertical = 6.dp)) {
-                    NewActionGrid(
+                    PlayerMenuActionBlock(
                         actions =
                             menuActions.map { item ->
                                 NewAction(
@@ -1750,9 +1748,9 @@ private fun LyricsSearchInputActions(
 }
 
 /**
- * The lyrics three-dot menu. Outside the Apple Music Experience it is the ordinary menu sheet every
- * other three-dot opens; inside it, it is Apple Music's anchored action list growing out of the
- * button that was tapped.
+ * The lyrics three-dot menu. With the Material 3 menu style it is the ordinary menu sheet every other
+ * three-dot opens; with Apple Music it is the anchored action list growing out of the button that was
+ * tapped.
  */
 @Composable
 fun AnchoredLyricsOverflowMenu(
@@ -1764,7 +1762,7 @@ fun AnchoredLyricsOverflowMenu(
     onDismiss: () -> Unit,
     viewModel: LyricsMenuViewModel = hiltViewModel(),
 ) {
-    if (!rememberAppleMusicMenus()) {
+    if (rememberMd3PlayerMenus()) {
         val menuState = LocalMenuState.current
         LaunchedEffect(Unit) {
             menuState.show {

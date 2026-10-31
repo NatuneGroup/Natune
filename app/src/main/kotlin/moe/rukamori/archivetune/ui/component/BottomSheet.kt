@@ -111,10 +111,15 @@ fun BottomSheet(
      * without one get their own state and the sheet's internal back handler drives it.
      */
     predictiveBackState: PredictiveSheetBackState? = null,
+    /**
+     * False while the collapsed bar must not show, such as on a settings page. Nothing is drawn or hit-tested where it
+     * sits, so the pages underneath take the touches; playback is untouched.
+     */
+    collapsedContentVisible: Boolean = true,
     collapsedContent: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val dragEnabled = collapsedDragEnabled || !state.isCollapsed
+    val dragEnabled = (collapsedDragEnabled && collapsedContentVisible) || !state.isCollapsed
     val predictiveBack = predictiveBackState ?: rememberPredictiveSheetBackState()
     val predictiveBackStyle = LocalBackAnimationStyle.current == BackAnimationStyle.PREDICTIVE
     Box(
@@ -212,7 +217,7 @@ fun BottomSheet(
             )
         }
 
-        if (!state.isExpanded && (onDismiss == null || !state.isDismissed)) {
+        if (collapsedContentVisible && !state.isExpanded && (onDismiss == null || !state.isDismissed)) {
             Box(
                 modifier =
                     Modifier
