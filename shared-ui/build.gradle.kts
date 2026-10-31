@@ -52,6 +52,8 @@ kotlin {
                 api(libs.kotlinx.coroutines.core)
                 // Die-cut morphing artwork (V10): Morph/RoundedPolygon are cross-platform here.
                 implementation(libs.androidx.graphics.shapes)
+                // Saved-color schemes use the same generator as the Android palette (JVM and iOS variants).
+                implementation(libs.material.kolor)
                 // The host owners take the host's HttpClient; each host supplies its own engine.
                 implementation(libs.ktor.client.core)
             }
