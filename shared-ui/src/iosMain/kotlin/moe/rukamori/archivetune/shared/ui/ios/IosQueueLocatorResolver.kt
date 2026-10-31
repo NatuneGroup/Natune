@@ -75,7 +75,7 @@ import moe.rukamori.archivetune.shared.ui.settings.poolScopeForFeedId
 import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
 import platform.Foundation.NSUUID
 
-/** The local-file provider id. A local song has no provider to search, so it is refused until a local owner exists. */
+/** The local-file provider id. A local song has no provider to search: it plays the file its import owner named. */
 private const val LOCAL_PROVIDER = "local"
 
 /**
@@ -89,11 +89,19 @@ internal class IosQueueLocatorResolver(
     private val audio: OrderedAudioResolver,
     private val port: IosPlaybackPort,
     private val preferences: () -> PreferenceSnapshot?,
+    /** The imported file of a `local` song, or null when its file is gone. */
+    private val localFile: (moe.rukamori.archivetune.shared.domain.repository.ContentRef) -> String? = { null },
+    /** The stored file of a completed download, or null when the song is not a stored download. */
+    private val downloadedFile: suspend (moe.rukamori.archivetune.shared.domain.repository.ContentRef) -> String? = { null },
 ) : QueueLocatorResolver {
     override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator {
         if (occurrence.item.ref.provider == LOCAL_PROVIDER) {
-            throw IllegalStateException("local files are not connected on this iOS host")
+            val path = localFile(occurrence.item.ref)
+                ?: throw IllegalStateException("the imported file of this local song is gone")
+            return PlaybackLocator.LocalFile(path)
         }
+        // A stored download plays from the app container before any provider is asked for it.
+        downloadedFile(occurrence.item.ref)?.let { return PlaybackLocator.LocalFile(it) }
         // A Telegram song is a TDLib file the playback port streams itself; no provider chain can answer for it.
         if (occurrence.item.ref.provider == TelegramTrackRef.SCHEME) {
             val track = TelegramTrackRef.fromMediaId(occurrence.item.ref.id)
