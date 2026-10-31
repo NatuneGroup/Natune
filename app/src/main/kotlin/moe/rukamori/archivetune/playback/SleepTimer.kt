@@ -33,6 +33,13 @@ class SleepTimer(
     val isActive: Boolean
         get() = triggerTime != -1L || pauseWhenSongEnd
 
+    /**
+     * The timed countdown's deadline in epoch milliseconds, or 0 when none runs. The sheets derive their countdown from
+     * this value, so this controller stays the only owner of the timer and no sheet keeps a loop of its own.
+     */
+    val deadlineEpochMs: Long
+        get() = triggerTime.coerceAtLeast(0L)
+
     fun start(minute: Int) {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
