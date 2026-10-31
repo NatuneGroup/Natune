@@ -12834,6 +12834,7 @@ class MusicService :
         BitPerfectUsbOutput.sinkActive = false
         UsbExclusiveAudioOutputProvider.installed = false
         unregisterBluetoothReceiver()
+        if (::widgetUpdater.isInitialized) widgetUpdater.release()
         unregisterMuteRecoveryObserver()
         try {
             connectivityObserver.unregister()
