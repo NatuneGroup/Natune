@@ -60,6 +60,9 @@
     <string name="export_songs_progress">Exporting %1$d of %2$d…</string>
     <string name="export_songs_done">Exported %1$d of %2$d songs.</string>
     <string name="export_songs_deleted">Deleted %1$d downloads.</string>
+    <string name="spatial_flow_font_invalid">That file is not a usable font. Choose the Google Sans Flex TTF.</string>
+    <string name="spatial_flow_font_failed">The typeface could not be installed. Check the file location and free space, then try again.</string>
+    <string name="spatial_flow_font_remove_failed">The typeface could not be removed. Try again.</string>
     <string name="youtube_oauth_title">Sign in with a code</string>
     <string name="youtube_oauth_description">Sign in to YouTube on another device or in your browser by entering a code.</string>
     <string name="youtube_oauth_not_configured">Code sign-in is not configured in this build.</string>
