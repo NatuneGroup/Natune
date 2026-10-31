@@ -61,6 +61,14 @@ internal fun rememberPlayerArtworkPager(state: PlayerState,actions: PlayerAction
     return sync
 }
 
+/**
+ * Metrolist commits an artwork swipe once the drag passes `width * (0.42 - sensitivity * 0.0024)` on a
+ * 0 to 100 scale. Natune's sensitivity runs 0 to 1, so the same curve is `0.42 - 0.24 * s`, handed to
+ * the pager as its snap positional threshold. A higher sensitivity commits after less drag.
+ */
+internal fun artworkSnapThreshold(swipeSensitivity: Float): Float =
+    0.42f-0.24f*swipeSensitivity.coerceIn(0f,1f)
+
 @Composable
 internal fun PlayerArtworkPager(c: PlayerRenderContext,modifier: Modifier=Modifier,vertical: Boolean=false) {
     val ids=c.state.occurrenceIds
@@ -81,8 +89,11 @@ internal fun PlayerArtworkPager(c: PlayerRenderContext,modifier: Modifier=Modifi
             } else c.slots.artwork(id,Modifier.fillMaxSize())
         }
     }
+    // The swipe-sensitivity setting decides how far an artwork drag must travel before the pager commits.
+    val flingBehavior=PagerDefaults.flingBehavior(state=c.artworkPager.pager,
+        snapPositionalThreshold=artworkSnapThreshold(c.preferences.swipeSensitivity))
     if(vertical) VerticalPager(c.artworkPager.pager,modifier=frame.testTag("vertical-artwork-pager"),
-        userScrollEnabled=enabled,key={ ids[it] },pageContent=page)
+        userScrollEnabled=enabled,flingBehavior=flingBehavior,key={ ids[it] },pageContent=page)
     else HorizontalPager(c.artworkPager.pager,modifier=frame.testTag("horizontal-artwork-pager"),
-        userScrollEnabled=enabled,key={ ids[it] },pageContent=page)
+        userScrollEnabled=enabled,flingBehavior=flingBehavior,key={ ids[it] },pageContent=page)
 }
