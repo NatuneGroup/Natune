@@ -537,6 +537,19 @@ class PortableQueueOwner(
     }
 
     override suspend fun select(occurrenceId: String, positionMs: Long) {
+        selectOccurrence(occurrenceId, positionMs, playWhenReady = true)
+    }
+
+    /**
+     * A manual Next or Previous. The chosen occurrence keeps the play state the player has now, so a paused queue
+     * loads paused and a playing one keeps playing. A song tap goes through [select] and always starts playback.
+     * Without a player snapshot there is no paused state to keep, so the skip starts playback as it always did.
+     */
+    suspend fun skipTo(occurrenceId: String, positionMs: Long) {
+        selectOccurrence(occurrenceId, positionMs, playWhenReady = player.snapshot.value?.playWhenReady ?: true)
+    }
+
+    private suspend fun selectOccurrence(occurrenceId: String, positionMs: Long, playWhenReady: Boolean) {
         requireInside()
         require(positionMs >= 0) { "Position must not be negative" }
         val queue = currentState
@@ -544,7 +557,7 @@ class PortableQueueOwner(
             ?: throw IllegalArgumentException("Occurrence is not in the queue")
         val playRequest = requestFor(target)
         currentState = queue.copy(revision = queue.revision + 1, currentOccurrenceId = occurrenceId)
-        startPrepared(playRequest, positionMs, playWhenReady = true)
+        startPrepared(playRequest, positionMs, playWhenReady = playWhenReady)
         infinite.consider()
     }
 
