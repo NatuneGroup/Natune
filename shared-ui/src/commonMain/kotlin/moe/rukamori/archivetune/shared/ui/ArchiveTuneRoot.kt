@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
@@ -22,6 +23,9 @@ import moe.rukamori.archivetune.shared.ui.player.*
 import moe.rukamori.archivetune.shared.ui.screens.*
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
+import moe.rukamori.archivetune.shared.ui.theme.archiveTuneDefaultColorScheme
+import moe.rukamori.archivetune.shared.ui.theme.paletteColorScheme
+import moe.rukamori.archivetune.shared.ui.theme.savedPaletteSeed
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -146,7 +150,16 @@ private fun ArchiveTuneLoadedRoot(
         )
         val policy = opticalPolicy(preferences, opticalCapabilities, resumed, visible,
             playerExpanded = expanded, lyricsExpanded = expanded && interaction.fullscreenLyrics)
-        ArchiveTuneTheme(disableAnimations = preferences[DisableAnimationsKey, false]) {
+        val darkTheme = isSystemInDarkTheme()
+        // A palette is rebuilt only when its seed, style or dark flag changes. Without a saved palette the scheme is
+        // the default one, so the default look does not change.
+        val paletteSeed = preferences.savedPaletteSeed()
+        val paletteStyle = preferences.themePaletteStyle()
+        val colorScheme = remember(paletteSeed, paletteStyle, darkTheme) {
+            paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) } ?: archiveTuneDefaultColorScheme(darkTheme)
+        }
+        ArchiveTuneTheme(darkTheme = darkTheme, disableAnimations = preferences[DisableAnimationsKey, false],
+            colorScheme = colorScheme) {
             ProvideBackdropSources(policy) { pageSource ->
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     ArchiveTuneShell(navigation, preferences,

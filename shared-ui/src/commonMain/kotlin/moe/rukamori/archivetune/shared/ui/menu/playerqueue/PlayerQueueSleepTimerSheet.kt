@@ -60,8 +60,14 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** The countdown refreshes this often, which keeps the readout smooth without recomposing every millisecond. */
-private const val SLEEP_TIMER_POLL_MS = 500L
+/**
+ * The readout shows whole seconds and only changes when the current one ends. Waking at that instant keeps it exact,
+ * with no wakeup in between. A stopped or end-of-song timer shows no countdown, so it re-checks once a second.
+ */
+private fun countdownTickMs(remainingMs: Long): Long {
+    val intoSecond = remainingMs % 1_000L
+    return if (remainingMs > 0L && intoSecond > 0L) intoSecond else 1_000L
+}
 
 /** The presets the baseline offered as chips, in minutes. */
 private val SLEEP_TIMER_PRESET_MINUTES: List<Int> = listOf(5, 10, 15, 20, 30, 45, 60, 90)
@@ -126,7 +132,7 @@ internal fun PlayerQueueSleepTimerSheet(
                     state.triggerAtEpochMs > 0L -> state.triggerAtEpochMs - clock.nowEpochMs()
                     else -> 0L
                 }
-            delay(SLEEP_TIMER_POLL_MS)
+            delay(countdownTickMs(remainingMs))
         }
     }
 

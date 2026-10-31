@@ -13,6 +13,7 @@ import java.time.Duration
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
+import kotlin.random.Random
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +56,9 @@ internal class DesktopDiscordPresence(
 
     private var webSocket: WebSocket? = null
     private var heartbeatJob: Job? = null
+    private var heartbeatSocket: WebSocket? = null
+    // Reset before each beat and set again by the gateway's acknowledgement. Still false at the next beat means it went unanswered.
+    @Volatile private var heartbeatAcked = true
     private var presenceDriver: Job? = null
     private var lastSequence: Int? = null
 
@@ -223,7 +227,7 @@ internal class DesktopDiscordPresence(
     }
 
     private fun closeGateway() {
-        heartbeatJob?.cancel(); heartbeatJob = null
+        heartbeatJob?.cancel(); heartbeatJob = null; heartbeatSocket = null
         runCatching { webSocket?.sendClose(WebSocket.NORMAL_CLOSURE, "") }
         webSocket = null
         lastSequence = null
@@ -263,21 +267,22 @@ internal class DesktopDiscordPresence(
                             identified.complete(true)
                         }
                         1 -> ws.sendText(buildJsonObject { put("op", 1); put("d", lastSequence) }.toString(), true)
-                        11 -> Unit
+                        11 -> if (heartbeatSocket === ws) heartbeatAcked = true
                         0 -> lastSequence = event["s"]?.jsonPrimitive?.intOrNull ?: lastSequence
                     }
                     return CompletableFuture.completedFuture(null)
                 }
 
                 override fun onClose(ws: WebSocket, statusCode: Int, reason: String): CompletionStage<*> {
-                    heartbeatJob?.cancel(); heartbeatJob = null
+                    // Only this socket's heartbeat: a late close from a dropped socket must not stop a newer one.
+                    if (heartbeatSocket === ws) { heartbeatJob?.cancel(); heartbeatJob = null; heartbeatSocket = null }
                     if (webSocket === ws) webSocket = null
                     identified.complete(false)
                     return CompletableFuture.completedFuture(null)
                 }
 
                 override fun onError(ws: WebSocket, error: Throwable) {
-                    heartbeatJob?.cancel(); heartbeatJob = null
+                    if (heartbeatSocket === ws) { heartbeatJob?.cancel(); heartbeatJob = null; heartbeatSocket = null }
                     if (webSocket === ws) webSocket = null
                     identified.complete(false)
                 }
@@ -293,13 +298,31 @@ internal class DesktopDiscordPresence(
 
     private fun startHeartbeat(socket: WebSocket, intervalMs: Long) {
         heartbeatJob?.cancel()
+        heartbeatSocket = socket
+        heartbeatAcked = true
         heartbeatJob = scope.launch(Dispatchers.IO) {
-            delay((intervalMs * 0.7).toLong())
+            // Discord asks for a random first beat inside one interval, so clients do not all beat at the same instant.
+            delay((intervalMs * Random.nextDouble()).toLong())
             while (true) {
+                if (!heartbeatAcked) {
+                    // The previous beat was never acknowledged, so the link is dead. Drop it once; the next
+                    // playback update identifies again, and nothing here retries on a timer.
+                    dropDeadGateway(socket)
+                    return@launch
+                }
+                heartbeatAcked = false
                 socket.sendText(buildJsonObject { put("op", 1); put("d", lastSequence) }.toString(), true)
                 delay(intervalMs)
             }
         }
+    }
+
+    private fun dropDeadGateway(socket: WebSocket) {
+        if (webSocket === socket) {
+            webSocket = null
+            lastSequence = null
+        }
+        runCatching { socket.sendClose(WebSocket.NORMAL_CLOSURE, "heartbeat ack missed") }
     }
 
     /** Presence payload shaped like the Android client's: name/details/state/timestamps/assets/type. */
