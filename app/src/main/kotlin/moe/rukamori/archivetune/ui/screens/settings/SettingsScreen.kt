@@ -179,6 +179,8 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
         own("behavior", "appearance", "force_high_refresh_rate")
         own("appearance_extras", "behavior", "show_tags_in_library")
         own("downloads", "storage", "downloaded_songs", "download_location")
+        // Crash logs is a Developer child with its own page; the list has no ?scrollTo anchor.
+        own("crash_logs", "developer_options", "crash_logs")
     }
 
 internal fun searchableSettingsRoute(parentKey: String, scrollKey: String?): String? {
@@ -214,6 +216,7 @@ internal fun searchableSettingsRoute(parentKey: String, scrollKey: String?): Str
             "backup_restore" -> "settings/backup_restore"
             "developer_options" -> "settings/misc"
             "logcat" -> "settings/logcat"
+            "crash_logs" -> "settings/crash_logs"
             "about" -> "settings/about"
             "discord" -> "settings/discord"
             "discord_experimental" -> "settings/discord/experimental"
@@ -239,6 +242,7 @@ internal fun searchableSettingsRoute(parentKey: String, scrollKey: String?): Str
                 "po_token",
                 "account",
                 "logcat",
+                "crash_logs",
                 "listen_together",
             )
     return if (!supportsScroll || scrollKey.isNullOrBlank()) route else "$route?scrollTo=$scrollKey"

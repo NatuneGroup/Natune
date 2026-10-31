@@ -82,6 +82,8 @@ import moe.rukamori.archivetune.ui.screens.settings.BackupAndRestore
 import moe.rukamori.archivetune.ui.screens.settings.CanvasSettings
 import moe.rukamori.archivetune.ui.screens.settings.ChangelogScreen
 import moe.rukamori.archivetune.ui.screens.settings.ContentSettings
+import moe.rukamori.archivetune.ui.screens.settings.CrashLogDetailScreen
+import moe.rukamori.archivetune.ui.screens.settings.CrashLogsScreen
 import moe.rukamori.archivetune.ui.screens.settings.CustomizeBackground
 import moe.rukamori.archivetune.ui.screens.settings.DebugSettings
 import moe.rukamori.archivetune.ui.screens.settings.DiscordSettings
@@ -817,6 +819,15 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("settings/logcat") {
         LogcatScreen(navController)
+    }
+    composable("settings/crash_logs") {
+        CrashLogsScreen(navController)
+    }
+    composable(
+        route = "settings/crash_logs/{recordId}",
+        arguments = listOf(navArgument("recordId") { type = NavType.StringType }),
+    ) {
+        CrashLogDetailScreen(navController, recordId = it.arguments?.getString("recordId"))
     }
     if (BuildConfig.UPDATER_AVAILABLE) {
         composable("settings/update") {
