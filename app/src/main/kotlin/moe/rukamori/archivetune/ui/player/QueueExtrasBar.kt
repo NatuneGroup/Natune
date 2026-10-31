@@ -4,13 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -58,7 +56,11 @@ import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberPreference
 import java.time.LocalDateTime
 
-/** Queue actions shared by the host's custom queue surfaces; their transports remain style-owned. */
+/**
+ * Queue actions shared by the host's custom queue surfaces; their transports remain style-owned.
+ * One row: the source and counts take the width the actions leave. The autoplay toggle sits in the overflow menu,
+ * so a large font scale wraps nothing and the bar stays one row tall.
+ */
 @Composable
 internal fun QueueExtrasBar(
     onJumpToCurrent: () -> Unit,
@@ -94,35 +96,36 @@ internal fun QueueExtrasBar(
     var undoJob by remember { mutableStateOf<Job?>(null) }
 
     Column(modifier.fillMaxWidth()) {
-        title?.takeIf { it.isNotBlank() }?.let {
-            Text(stringResource(R.string.queue_source_title, it), style = MaterialTheme.typography.labelMedium,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, color = contentColor)
-        }
-        Text(
-            pluralStringResource(R.plurals.n_song, windows.size, windows.size) + " · " +
-                (if (durationKnown) makeTimeString(totalMs) else stringResource(R.string.unknown)) + " · " +
-                stringResource(R.string.queue_time_remaining,
-                    if (durationKnown) makeTimeString(remaining) else stringResource(R.string.unknown)),
-            style = MaterialTheme.typography.labelSmall,
-            color = contentColor.copy(alpha = 0.7f),
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            if (showInfinity) {
-                FilterChip(
-                    selected = infinite,
-                    onClick = {
-                        val enabled = !infinite
-                        infinite = enabled
-                        if (!enabled) connection.service.onInfiniteQueueDisabled()
-                    },
-                    label = { Text(stringResource(R.string.queue_infinite), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingIcon = {
-                        if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = contentColor)
-                        else Icon(painterResource(R.drawable.all_inclusive), null, Modifier.size(18.dp))
-                    },
-                    colors = FilterChipDefaults.filterChipColors(labelColor = contentColor, iconColor = contentColor),
-                    modifier = Modifier.weight(1f, fill = false),
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                title?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        stringResource(R.string.queue_source_title, it),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = contentColor,
+                    )
+                }
+                Text(
+                    pluralStringResource(R.plurals.n_song, windows.size, windows.size) + " · " +
+                        (if (durationKnown) makeTimeString(totalMs) else stringResource(R.string.unknown)) + " · " +
+                        stringResource(
+                            R.string.queue_time_remaining,
+                            if (durationKnown) makeTimeString(remaining) else stringResource(R.string.unknown),
+                        ),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = contentColor.copy(alpha = 0.7f),
                 )
+            }
+            if (showInfinity && loading) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = contentColor)
             }
             IconButton(onClick = { saveSnapshot = metadata.toList() }, enabled = metadata.isNotEmpty()) {
                 Icon(painterResource(R.drawable.playlist_add), stringResource(R.string.queue_save_playlist), tint = contentColor)
@@ -135,6 +138,19 @@ internal fun QueueExtrasBar(
                     Icon(painterResource(R.drawable.more_vert), stringResource(R.string.queue_actions), tint = contentColor)
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    if (showInfinity) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.queue_infinite)) },
+                            leadingIcon = { Icon(painterResource(R.drawable.all_inclusive), null) },
+                            trailingIcon = { Checkbox(checked = infinite, onCheckedChange = null) },
+                            onClick = {
+                                menu = false
+                                val enabled = !infinite
+                                infinite = enabled
+                                if (!enabled) connection.service.onInfiniteQueueDisabled()
+                            },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.queue_clear_upcoming)) },
                         onClick = {
