@@ -113,6 +113,12 @@ fun LyricsFullscreenRenderer(
     val primary = activeRows.lastOrNull() ?: -1
 
     val scrollOwner = rememberLyricsScrollOwner()
+    // Only ENHANCED glides its rows into place on a line change, and reduced motion keeps every row still.
+    val settleOn = profile.refinedMotion && !settings.reduceMotion
+    val lineSettle = remember(listState) { LyricsLineSettle(listState) }
+    // A glide cut short by reduced motion or another look must not leave the rows part way along their path.
+    LaunchedEffect(settleOn) { if (!settleOn) lineSettle.clear() }
+    val settle = if (settleOn) lineSettle else null
     // A listener reading ahead sees every row sharp, as Apple Music does while the list is dragged.
     val dragged by listState.interactionSource.collectIsDraggedAsState()
     LyricsAutoFollow(
@@ -123,6 +129,7 @@ fun LyricsFullscreenRenderer(
         visible = visible,
         reduceMotion = settings.reduceMotion,
         profile = profile,
+        settle = settle,
     )
     val scrollConnection = remember(scrollOwner) {
         object : NestedScrollConnection {
@@ -206,7 +213,8 @@ fun LyricsFullscreenRenderer(
                         reduceMotion = settings.reduceMotion,
                         depth = depth,
                         depthEnabled = settings.depthEffects,
-                        depthStaggerMs = if (profile.refinedMotion) LyricsDepth.staggerMs(distance) else 0L,
+                        staggerMs = if (profile.refinedMotion) LyricsDepth.staggerMs(distance) else 0L,
+                        settle = settle,
                         refined = profile.refinedMotion,
                         interlude = interludes[row.index],
                         onTap = {

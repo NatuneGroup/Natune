@@ -65,7 +65,10 @@ internal fun LyricsRowItem(
     onLongPress: () -> Unit,
     depth: LyricsDepth = LyricsDepth.Flat,
     depthEnabled: Boolean = false,
-    depthStaggerMs: Long = 0L,
+    /** Waits before a line change reaches the row. Depth and the settle share it, so they ripple together. */
+    staggerMs: Long = 0L,
+    /** The line-change glide of the scroll. Null on the looks that keep the single animated scroll. */
+    settle: LyricsLineSettle? = null,
     refined: Boolean = false,
     interlude: LyricsInterlude? = null,
 ) {
@@ -76,11 +79,12 @@ internal fun LyricsRowItem(
             .fillMaxWidth()
             .then(
                 if (depthEnabled) {
-                    Modifier.lyricsDepth(depth, alignment, animate = !reduceMotion, staggerMs = depthStaggerMs)
+                    Modifier.lyricsDepth(depth, alignment, animate = !reduceMotion, staggerMs = staggerMs)
                 } else {
                     Modifier
                 },
             )
+            .then(if (settle != null) Modifier.lyricsSettle(settle, staggerMs) else Modifier)
             .testTag(lyricsRowTag(row.index))
             .background(if (selected) palette.glow.copy(alpha = SELECTED_ROW_ALPHA) else Color.Transparent)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
@@ -162,6 +166,13 @@ private fun Modifier.lyricsDepth(
         },
     )
 }
+
+/**
+ * The line-change glide. The row is drawn where it was before the list moved, and eases to its place after [staggerMs].
+ * The offset is read in the draw phase, so a frame of the glide does not recompose the row.
+ */
+private fun Modifier.lyricsSettle(settle: LyricsLineSettle, staggerMs: Long): Modifier =
+    graphicsLayer { translationY = settle.offsetPx(staggerMs) }
 
 /** Below this the softening is invisible, and skipping it spares the row an offscreen layer. */
 private const val BLUR_THRESHOLD_DP = 0.05f
