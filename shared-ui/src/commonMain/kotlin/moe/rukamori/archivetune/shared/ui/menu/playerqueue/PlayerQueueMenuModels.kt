@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
+import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 
 /**
@@ -219,6 +220,8 @@ data class PlayerQueueMenuState(
     val equalizerSupported: Boolean = true,
     /** A host with no download owner hides the download and remove-download rows. */
     val downloadsSupported: Boolean = true,
+    /** Apple Music keeps the icon grid of actions; MD3 lists the same actions as rows with their icons. */
+    val menuStyle: PlayerMenuStyle = PlayerMenuStyle.Default,
 )
 
 /**

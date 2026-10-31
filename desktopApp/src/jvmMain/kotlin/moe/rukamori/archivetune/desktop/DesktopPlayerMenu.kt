@@ -77,6 +77,8 @@ import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.ArtistSeparatorsKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
+import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
+import moe.rukamori.archivetune.shared.domain.settings.playerMenuStyle
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceAmazonPickKey
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzBackupVideoIdKey
@@ -547,6 +549,7 @@ internal fun DesktopPlayerMenuDialog(
         acousticQualitySupported = false,
         equalizerSupported = false,
         downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
+        menuStyle = snapshot?.playerMenuStyle() ?: PlayerMenuStyle.Default,
     )
 
     Dialog(onDismissRequest = menu::dismiss) {
