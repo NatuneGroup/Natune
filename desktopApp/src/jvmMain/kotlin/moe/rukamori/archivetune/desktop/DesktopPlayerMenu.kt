@@ -120,8 +120,8 @@ private fun menuOccurrenceId(songId: String): String = "menu-$songId-${System.na
 /**
  * The player's overflow menu on the desktop host. It mounts the shared [PlayerQueueMenu] body, so the rows are the
  * baseline's; rows whose owner this host has (queue order, playlist picker, source pin, speed dial, tempo and pitch,
- * sleep timer, copy link, artist and album pages, details, share local, radio, downloads) act, and rows it does not
- * (cast, canvas, always-on display, the external downloader, equalizer, acoustic graph) are hidden through
+ * sleep timer, equalizer, copy link, artist and album pages, details, share local, radio, downloads) act, and rows it
+ * does not (cast, canvas, always-on display, the external downloader, acoustic graph) are hidden through
  * the state's capability flags instead of appearing as no-ops.
  */
 internal class DesktopPlayerMenuState {
@@ -431,7 +431,7 @@ internal class DesktopPlayerQueueActions(
     // Rows hidden on this host: unreachable, but logged rather than silent if a trigger still reaches them.
 
     override fun setAodMode() = unsupported("setAodMode")
-    override fun openEqualizer() = unsupported("openEqualizer")
+    override fun openEqualizer() = graph.equalizer.openSheet()
     override fun openAcousticQuality(track: PlayerQueueTrack) = unsupported("openAcousticQuality")
     override fun cast(track: PlayerQueueTrack) = unsupported("cast")
     override fun openWithExternalDownloader(url: String) = unsupported("openWithExternalDownloader")
@@ -545,7 +545,7 @@ internal fun DesktopPlayerMenuDialog(
         alwaysOnDisplaySupported = false,
         radioSupported = desktopRadioSeedSupported(item.ref),
         acousticQualitySupported = false,
-        equalizerSupported = false,
+        equalizerSupported = true,
         downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
     )
 

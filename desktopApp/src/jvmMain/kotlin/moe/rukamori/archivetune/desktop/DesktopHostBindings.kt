@@ -121,6 +121,7 @@ internal fun desktopHostBindings(
             DesktopPlaylistMenuOverlay(playlistMenus, graph, route.value)
             DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph) { target -> ownRoutes.trySend(target) }
             DesktopSleepTimerOverlay(sleepSheet, graph.sleepTimer)
+            DesktopEqualizerOverlay(graph.equalizer)
             DesktopFeedbackOverlay(feedback, graph)
             DesktopBackupRestartDialog(graph, quit)
             DesktopLyricsShareNotice(lyricsTools)
