@@ -22,9 +22,9 @@ class SpotifyPlayPlaySourceTest {
 
     private fun source(plaintext: ByteArray, skip: Int, knownLength: Boolean = true): RandomAccessByteSource {
         val raw = ByteArray(skip) { (it * 5).toByte() } + plaintext
-        val cipher = Cipher.getInstance("AES/CTR/NoPadding").apply {
-            init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
-        }
+        // Not apply(): there `iv` would resolve to Cipher.getIV(), which is still null before init.
+        val cipher = Cipher.getInstance("AES/CTR/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
         val encrypted = cipher.doFinal(raw)
         val lease = ByteSourceLease(ByteSourceAccount("spotify", "stream-user", "streaming-scope"), origin,
             setOf(origin), "track-bound", 10_000L, encrypted.size.toLong().takeIf { knownLength })
