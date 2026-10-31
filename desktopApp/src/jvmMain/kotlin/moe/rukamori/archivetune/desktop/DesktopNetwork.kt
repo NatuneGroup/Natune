@@ -52,7 +52,7 @@ import moe.rukamori.archivetune.shared.ui.settings.ProxyConnectionResult
 import okhttp3.ConnectionPool
 import okhttp3.Credentials
 
-private const val PROXY_PROBE_URL = "https://music.youtube.com/generate_204"
+internal const val PROXY_PROBE_URL = "https://music.youtube.com/generate_204"
 
 internal fun desktopRotationReady(desktopCount: Int, innerTubeCount: Int): Boolean =
     desktopCount > 0 && innerTubeCount > 0

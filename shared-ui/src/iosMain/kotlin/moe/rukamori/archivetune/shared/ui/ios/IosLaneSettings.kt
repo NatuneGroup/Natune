@@ -79,6 +79,8 @@ import platform.Foundation.ISOCountryCodes
 import platform.Foundation.ISOLanguageCodes
 import platform.Foundation.NSLocale
 import platform.Foundation.currentLocale
+import platform.Foundation.localizedStringForCountryCode
+import platform.Foundation.localizedStringForLanguageCode
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on

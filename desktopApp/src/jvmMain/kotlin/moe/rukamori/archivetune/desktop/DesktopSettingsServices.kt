@@ -317,7 +317,7 @@ internal class DesktopSettingsServices(
                 AudioSourceType.QQ -> probeReachable("https://c.y.qq.com/")
                 AudioSourceType.SPOTIFY -> preferences.spotifyStreamingSignedIn()
                 AudioSourceType.JIOSAAVN -> probeReachable("https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")
-                AudioSourceType.YOUTUBE -> probeReachable(YOUTUBE_MUSIC_PROBE_URL)
+                AudioSourceType.YOUTUBE -> probeReachable(PROXY_PROBE_URL)
             }
         }
 
