@@ -43,6 +43,7 @@ data class CanvasConnectivity(
     val online: Boolean = false,
     val wifi: Boolean = false,
     val metered: Boolean = true,
+    val cellular: Boolean = false,
 )
 
 @Immutable
