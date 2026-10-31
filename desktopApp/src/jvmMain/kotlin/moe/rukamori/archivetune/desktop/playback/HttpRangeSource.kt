@@ -5,6 +5,7 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import moe.rukamori.archivetune.desktop.openDesktopStreamConnection
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceCancelledException
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceLease
@@ -146,7 +147,7 @@ internal class HttpRangeSource(
             if (origin !in lease.permittedOrigins) {
                 throw ByteSourceException("the source origin is not permitted by its lease")
             }
-            val http = URL(current).openConnection() as HttpURLConnection
+            val http = openDesktopStreamConnection(URL(current)) as HttpURLConnection
             connection = http
             http.instanceFollowRedirects = false
             http.useCaches = false

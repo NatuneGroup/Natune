@@ -1914,7 +1914,7 @@ private fun SingleActiveLineCluster(
  * full text colour across its own [start, end].
  */
 @Composable
-private fun KaraokeSweepText(
+internal fun KaraokeSweepText(
     syllables: List<KaraokeSyllable>,
     currentPosition: () -> Int,
     textColor: Color,
@@ -1942,7 +1942,7 @@ private fun KaraokeSweepText(
 
 /** The phonetic (romanisation) and translation rows stacked under the main line. */
 @Composable
-private fun TranslationStack(
+internal fun TranslationStack(
     translation: String?,
     textColor: Color,
     phoneticTextStyle: TextStyle,
@@ -1974,7 +1974,7 @@ private const val SENTENCE_PUNCTUATION = ".,!?;:…"
 private fun isLatinWordChar(ch: Char): Boolean =
     ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '\''
 
-private fun List<KaraokeSyllable>.joinSyllableContents(): String {
+internal fun List<KaraokeSyllable>.joinSyllableContents(): String {
     val builder = StringBuilder()
     forEachIndexed { index, syllable ->
         builder.append(syllable.content)

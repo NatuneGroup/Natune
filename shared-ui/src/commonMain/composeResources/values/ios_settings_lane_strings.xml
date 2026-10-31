@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ios_lane_nav_bar_style">Navigation bar style</string>
+    <string name="ios_lane_nav_style_default">Default</string>
+    <string name="ios_lane_nav_style_floating">Floating</string>
+    <string name="ios_lane_nav_style_yuma">YumaPlayer</string>
+    <string name="ios_lane_nav_style_apple_music">Apple Music</string>
+    <string name="ios_lane_nav_style_sukisu">SukiSU liquid glass</string>
+    <string name="ios_lane_nav_layout">Bottom pills layout</string>
+    <string name="ios_lane_nav_layout_desc">Choose the standard or compact layout for navigation, search, and the mini-player</string>
+    <string name="ios_lane_nav_compact">Compact</string>
+    <string name="ios_lane_nav_compact_behavior">Mini player and bar behavior</string>
+    <string name="ios_lane_nav_compact_behavior_desc">Fold the navigation bar into round Library and Search buttons with the mini player between them. Adaptive does it while you scroll down</string>
+    <string name="ios_lane_nav_compact_adaptive">Adaptive</string>
+    <string name="ios_lane_nav_compact_always_expanded">Always expanded</string>
+    <string name="ios_lane_nav_compact_always_compact">Always compact</string>
+    <string name="ios_lane_nav_frosted">Frosted navigation bar</string>
+    <string name="ios_lane_nav_frosted_desc">Apply a frosted blur behind the navigation bar</string>
+    <string name="ios_lane_nav_tint_frosted">Tint frosted navigation bar</string>
+    <string name="ios_lane_nav_tint_frosted_desc">Frosted blur tinted with the accent color (turns off the neutral frosted option)</string>
+    <string name="ios_lane_nav_liquid">Liquid Glass navigation bar</string>
+    <string name="ios_lane_nav_liquid_desc">Use the Liquid Glass effect for the bottom navigation bar</string>
+    <string name="ios_lane_nav_liquid_disabled">Turn on Liquid Glass effects in Appearance first</string>
+    <string name="ios_lane_nav_stock_color">Stock colours instead of Liquid Glass</string>
+    <string name="ios_lane_nav_stock_color_desc">Draw the navigation bar, round buttons and mini player in plain theme colours with no glass effect</string>
+    <string name="ios_lane_nav_glow">Glass glow</string>
+    <string name="ios_lane_nav_glow_desc">Rim light and soft sheen on the navigation bar and the round bottom buttons</string>
+    <string name="ios_lane_nav_glow_intensity">Glass glow intensity</string>
+    <string name="ios_lane_nav_glow_intensity_desc">Scales the rim light and sheen. 100% is the default look</string>
+    <string name="ios_lane_nav_hide_labels">Hide labels in navigation bar</string>
+    <string name="ios_lane_nav_hide_labels_desc">Show only icons in the bottom navigation bar</string>
+    <string name="ios_lane_nav_hide_on_scroll">Hide while scrolling</string>
+    <string name="ios_lane_nav_hide_on_scroll_desc">Slides the navigation bar away when scrolling down a tab and lowers the mini player into its place; scrolling up brings it back</string>
+    <string name="ios_lane_nav_dimensions">Dimensions</string>
+    <string name="ios_lane_nav_width">Width</string>
+    <string name="ios_lane_nav_width_desc">Fraction of screen width used by the floating bar</string>
+    <string name="ios_lane_nav_height">Height</string>
+    <string name="ios_lane_nav_height_desc">Multiplier applied to the default bar height</string>
+    <string name="ios_lane_nav_opacity">Opacity</string>
+    <string name="ios_lane_nav_opacity_desc">0–100% opacity of the bar surface</string>
+    <string name="ios_lane_nav_transparency">Transparency</string>
+    <string name="ios_lane_nav_transparency_desc">See-through amount when frosted blur is off</string>
+    <string name="ios_lane_nav_label_spacing">Label spacing</string>
+    <string name="ios_lane_nav_label_spacing_desc">Gap between icon and label (dp)</string>
+    <string name="ios_lane_nav_corner_radius">Corner radius</string>
+    <string name="ios_lane_nav_corner_radius_desc">Roundedness of the floating bar corners (dp)</string>
+    <string name="ios_lane_nav_reset_dimensions">Reset dimensions to default</string>
+
+    <string name="ios_lane_telegram_login_title">Telegram Login</string>
+    <string name="ios_lane_telegram_phone_title">Phone Number</string>
+    <string name="ios_lane_telegram_phone_description">Enter your Telegram number. You can come back and edit it later.</string>
+    <string name="ios_lane_telegram_phone_number">Phone number</string>
+    <string name="ios_lane_telegram_next">Next</string>
+    <string name="ios_lane_telegram_code_title">Verification Code</string>
+    <string name="ios_lane_telegram_code">Login code</string>
+    <string name="ios_lane_telegram_code_sent">A login code was sent to %1$s</string>
+    <string name="ios_lane_telegram_code_sent_app">A login code was sent to your Telegram app on %1$s. Check your other sessions.</string>
+    <string name="ios_lane_telegram_code_sent_sms">A login code was sent by SMS to %1$s.</string>
+    <string name="ios_lane_telegram_code_sent_call">You will receive a phone call to %1$s with your login code.</string>
+    <string name="ios_lane_telegram_resend_code">Resend code</string>
+    <string name="ios_lane_telegram_resend_code_in">Resend code in %1$ds</string>
+    <string name="ios_lane_telegram_password_title">Two-Step Verification</string>
+    <string name="ios_lane_telegram_password_description">Enter your Telegram two-step verification password.</string>
+    <string name="ios_lane_telegram_password">Two-step verification password</string>
+    <string name="ios_lane_telegram_password_hint">Hint: %1$s</string>
+    <string name="ios_lane_telegram_connected">Telegram connected</string>
+    <string name="ios_lane_telegram_checking">Checking your Telegram account…</string>
+    <string name="ios_lane_telegram_check_failed">Telegram signed in, but the account could not be verified. Go back and open this page again to retry.</string>
+    <string name="ios_lane_telegram_failed">Telegram did not accept that. Check it and try again.</string>
+    <string name="ios_lane_telegram_not_configured">Telegram is not configured in this build.</string>
+    <string name="ios_lane_telegram_native_unavailable">The Telegram library is not available in this build, so Telegram cannot start.</string>
+    <string name="ios_lane_telegram_unsupported">This Telegram sign-in step is not supported by the iOS app.</string>
+
+    <string name="ios_lane_artwork_local_embedded">Local embedded</string>
+    <string name="ios_lane_artwork_original_metadata">Original metadata</string>
+    <string name="ios_lane_artwork_tidal">Tidal</string>
+    <string name="ios_lane_artwork_spotify_canvas">Spotify Canvas</string>
+    <string name="ios_lane_artwork_archivetune_canvas">ArchiveTune Canvas</string>
+
+    <string name="ios_lane_home_sign_in_first">Sign in first</string>
+
+    <string name="ios_lane_spotify_sign_in_failed">Spotify sign-in could not be completed. Try again.</string>
+    <string name="ios_lane_spotify_browser_unavailable">The sign-in window is not available on this device.</string>
+    <string name="ios_lane_spotify_streaming_note">Spotify streaming sign-in is not available on the iOS app yet. The catalog account above still feeds Spotify playlists and artwork.</string>
+
+    <string name="ios_lane_aod_note">These settings are saved, but the iOS app has no always-on display.</string>
+    <string name="ios_lane_storage_note">The iOS app keeps its data in the app container; choosing another storage location is not available.</string>
+</resources>

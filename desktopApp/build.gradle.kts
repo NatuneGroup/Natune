@@ -21,9 +21,11 @@ kotlin {
             implementation(project(":shared-data"))
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.compose.multiplatform.components.resources)
-            // The one HTTP client of the desktop graph. The CIO engine is pure JVM, so it adds no native library.
+            // The graph's proxy-aware HTTP client and the retained CIO provider/upload clients are pure JVM.
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.cio)
+            implementation(libs.ktor.client.okhttp)
+            implementation(libs.okhttp)
             implementation(libs.quickjs.kt)
             // The YouTube fallback tiers. InnerTubeX expects JSON content negotiation on its client. :core and the
             // NewPipe extractor already reach the package through shared-data; they are declared here so the NewPipe
@@ -48,12 +50,28 @@ kotlin {
             implementation(project(":desktopApp:tdlight-jvm"))
             // The Spotify catalog client (GraphQL with REST fallback, web-player token). It brings its own OkHttp engine.
             implementation(project(":spotifycore"))
+            implementation(project(":canvas"))
         }
         jvmTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.ktor.client.mock)
+            implementation(libs.coroutines.test)
         }
     }
 }
+
+// Reuse the retained, platform-independent PlayPlay implementation verbatim. Android auth, Media3 and the
+// WebView code are deliberately not in this source set; the desktop adapter owns its separate streaming session.
+val desktopPlayPlaySources = layout.buildDirectory.dir("generated/retained-playplay")
+val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlaySources") {
+    from(rootProject.file("app/src/main/kotlin/moe/rukamori/archivetune/spotify/echo")) {
+        include("SpotifyEchoProto.kt", "SpotifyPlayPlayLicenseRequest.kt", "SpotifyPlayPlayRecordDecoder.kt",
+            "SpotifyPlayPlayPipeline.kt", "SpotifyPlayPlayLeaves.kt")
+    }
+    into(desktopPlayPlaySources)
+}
+kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources) }
+tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(prepareDesktopPlayPlaySources) }
 
 // Provider credentials for the desktop host are injected at build time and never committed (see
 // docs/build-credentials.md). The generated DesktopBuildCredentials object is read through DesktopCredentials,
@@ -78,6 +96,15 @@ val desktopCredentialNames = listOf(
     "ARCHIVETUNE_FEEDBACK_INGEST_KEY",
     "ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID",
     "ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET",
+    "ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID",
+    "ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID",
+    "ARCHIVETUNE_SPOTIFY_AUDIO_IV",
+    // The YouTube device-code pair, under the names Android's BuildConfig reads, so no client literal is committed.
+    // Without it the code sign-in reads as not configured.
+    "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID",
+    "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET",
+    // The Amazon Turnstile sitekey, under the name Android's BuildConfig reads; without it sign-in is not configured.
+    "ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY",
 )
 val desktopLegacyCredentialNames = mapOf(
     "ARCHIVETUNE_LASTFM_API_KEY" to arrayOf("LASTFM_API_KEY"),

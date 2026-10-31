@@ -6,9 +6,36 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import kotlin.test.*
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
+import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.domain.source.DirectStream
 
 class JvmDownloadRepositoryTest {
+    @Test fun progressiveDownloadCarriesItsRequiredHeaders() = runTest {
+        val dir = Files.createTempDirectory("archivetune-download-headers")
+        val referer = "https://audio.example/catalog"
+        val client = HttpClient(MockEngine {
+            assertEquals(referer, it.headers["Referer"])
+            respond("fixture-media")
+        })
+        try {
+            val repository = JvmDownloadRepository(dir, client)
+            val key = DownloadKey("id", AudioSourceType.QOBUZ, "lossless", "fixture-provider")
+            val stream = DirectStream(
+                uri = "https://audio.example/file",
+                mimeType = "audio/flac",
+                codecs = "flac",
+                contentLength = null,
+                label = "fixture",
+                source = key.source,
+                headers = PlaybackHeaders.of(mapOf("Referer" to referer)),
+            )
+            val file = repository.download(key, PreparedAudio.Progressive(stream))
+            assertEquals("fixture-media", Files.readString(file))
+            assertEquals(file, repository.find(key))
+        } finally { client.close(); dir.toFile().deleteRecursively() }
+    }
     @Test fun sourceCachesAreDistinctAndDownloadsNeverEvictAutomatically() = runTest {
         val dir = Files.createTempDirectory("archivetune-download-test")
         val client = HttpClient(MockEngine { respond("fixture-media") })

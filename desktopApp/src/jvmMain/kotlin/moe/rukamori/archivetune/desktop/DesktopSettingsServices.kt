@@ -1,11 +1,6 @@
 package moe.rukamori.archivetune.desktop
 
-import java.net.Authenticator
-import java.net.InetSocketAddress
-import java.net.PasswordAuthentication
-import java.net.Proxy
-import java.net.ProxySelector
-import java.net.SocketAddress
+import androidx.compose.ui.text.font.FontFamily
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -17,9 +12,6 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLongArray
-import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.Inflater
 import javax.swing.JFileChooser
 import kotlinx.coroutines.Dispatchers
@@ -27,8 +19,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.intOrNull
@@ -36,7 +27,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
-import moe.rukamori.archivetune.shared.data.ai.AiRateLimiter
 import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapanesePackFailure
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
@@ -72,7 +62,7 @@ internal class DesktopSettingsServices(
         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
 
     val aiActions by lazy {
-        AiSettingsActions(graph.scope, controller, KtorAiTextService(graph.http, AiRateLimiter()))
+        AiSettingsActions(graph.scope, controller, KtorAiTextService(graph.http, graph.aiRateLimiter))
     }
 
     // ------------------------------------------------------------------ updates
@@ -280,11 +270,6 @@ internal class DesktopSettingsServices(
             "https://github.com/NatuneGroup/ArchiveTune/releases/download/update-feed"
         private const val UPDATE_RELEASES_BASE = "https://github.com/NatuneGroup/ArchiveTune/releases"
         private const val UPDATE_FEED_MANIFEST_SCHEMA = 1
-        private const val YOUTUBE_MUSIC_PROBE_URL = "https://music.youtube.com/generate_204"
-        private const val MAX_PROXY_CANDIDATES = 60
-        private const val MAX_ACTIVE_PROXIES = 20
-        private const val PROXY_VALIDATION_CONCURRENCY = 12
-        private const val ROTATION_COOLDOWN_MS = 60_000L
 
         /** Fixed pointer file the next launch reads before opening the instance directory. */
         fun storagePointerFile(): Path =
@@ -309,111 +294,13 @@ internal class DesktopSettingsServices(
 
     // ------------------------------------------------------------------ network
 
-    private val rotationSelector = DesktopRotatingProxySelector()
-    private var previousSelector: ProxySelector? = null
-    private val activeRotationCount = AtomicInteger(0)
+    fun activeRotationCount(): Int = graph.network.activeRotationCount()
 
-    fun activeRotationCount(): Int = activeRotationCount.get()
+    suspend fun applyNetworkSettings(preferences: PreferenceSnapshot) = graph.network.applyNetworkSettings(preferences)
 
-    suspend fun applyNetworkSettings(preferences: PreferenceSnapshot): Unit = withContext(Dispatchers.IO) {
-        if (preferences[IpRotationEnabledKey, false]) return@withContext // rotation owns the selector
-        installStaticProxy(preferences)
-    }
+    suspend fun testProxy(preferences: PreferenceSnapshot): ProxyConnectionResult = graph.network.testProxy(preferences)
 
-    private fun installStaticProxy(preferences: PreferenceSnapshot) {
-        if (!preferences[ProxyEnabledKey, false] || preferences[ProxyHostKey, ""].isBlank()) {
-            if (rotationSelector.activeCount() == 0) {
-                ProxySelector.setDefault(previousSelector ?: directSelector)
-                previousSelector = null
-            }
-            Authenticator.setDefault(null)
-            return
-        }
-        val type = if (preferences[ProxyTypeKey, "HTTP"] == "SOCKS") Proxy.Type.SOCKS else Proxy.Type.HTTP
-        val address = InetSocketAddress.createUnresolved(
-            preferences[ProxyHostKey, ""].trim(), preferences[ProxyPortKey, 8080],
-        )
-        if (previousSelector == null) previousSelector = ProxySelector.getDefault() ?: directSelector
-        val proxy = Proxy(type, address)
-        ProxySelector.setDefault(object : ProxySelector() {
-            override fun select(uri: URI?): List<Proxy> = listOf(proxy)
-            override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: java.io.IOException?) {}
-        })
-        val user = preferences[ProxyUsernameKey, ""]
-        if (user.isNotBlank()) {
-            Authenticator.setDefault(object : Authenticator() {
-                override fun getPasswordAuthentication(): PasswordAuthentication =
-                    PasswordAuthentication(user, preferences[ProxyPasswordKey, ""].toCharArray())
-            })
-        } else Authenticator.setDefault(null)
-    }
-
-    suspend fun testProxy(preferences: PreferenceSnapshot): ProxyConnectionResult = withContext(Dispatchers.IO) {
-        val host = preferences[ProxyHostKey, ""].trim()
-        if (!preferences[ProxyEnabledKey, false] || host.isEmpty()) {
-            return@withContext ProxyConnectionResult.INVALID_CONFIGURATION
-        }
-        val port = preferences[ProxyPortKey, 8080]
-        if (port !in 1..65535) return@withContext ProxyConnectionResult.INVALID_CONFIGURATION
-        val type = if (preferences[ProxyTypeKey, "HTTP"] == "SOCKS") Proxy.Type.SOCKS else Proxy.Type.HTTP
-        try {
-            val proxy = Proxy(type, InetSocketAddress.createUnresolved(host, port))
-            val client = HttpClient.newBuilder()
-                .proxy(ProxySelector.of(proxy.address() as InetSocketAddress))
-                .connectTimeout(Duration.ofSeconds(6))
-                .build()
-            val request = HttpRequest.newBuilder(URI.create(YOUTUBE_MUSIC_PROBE_URL))
-                .timeout(Duration.ofSeconds(8)).GET().build()
-            client.send(request, HttpResponse.BodyHandlers.discarding())
-            ProxyConnectionResult.CONNECTED
-        } catch (e: java.net.http.HttpConnectTimeoutException) {
-            ProxyConnectionResult.TIMEOUT
-        } catch (e: java.net.UnknownHostException) {
-            ProxyConnectionResult.DNS_FAILURE
-        } catch (e: java.net.ConnectException) {
-            ProxyConnectionResult.UNREACHABLE
-        } catch (e: java.nio.channels.UnresolvedAddressException) {
-            ProxyConnectionResult.DNS_FAILURE
-        } catch (e: java.net.SocketTimeoutException) {
-            ProxyConnectionResult.TIMEOUT
-        } catch (e: Exception) {
-            if (e.cause is java.net.SocketTimeoutException) ProxyConnectionResult.TIMEOUT
-            else ProxyConnectionResult.FAILED
-        }
-    }
-
-    /**
-     * Same contract as Android's YouTube.enableIpRotation/refreshIpRotation/disableIpRotation:
-     * fetches the public proxy list, validates each candidate against music.youtube.com's
-     * generate_204, keeps the live ones in a rotating JVM selector. Returns live count; 0 means
-     * nothing validated so rotation stays off.
-     */
-    suspend fun applyIpRotation(enabled: Boolean, refresh: Boolean): Int = withContext(Dispatchers.IO) {
-        if (!enabled) {
-            ProxySelector.setDefault(previousSelector ?: directSelector)
-            previousSelector = null
-            rotationSelector.loadProxies(emptyList())
-            activeRotationCount.set(0)
-            return@withContext 0
-        }
-        if (refresh) {
-            if (rotationSelector.activeCount() <= 1) rotationSelector.fetchAndLoad() else rotationSelector.rotate()
-        } else {
-            rotationSelector.fetchAndLoad()
-        }
-        val count = rotationSelector.activeCount()
-        if (count > 0) {
-            if (previousSelector == null) previousSelector = ProxySelector.getDefault() ?: directSelector
-            ProxySelector.setDefault(rotationSelector)
-        }
-        activeRotationCount.set(count)
-        count
-    }
-
-    private val directSelector = object : ProxySelector() {
-        override fun select(uri: URI?): List<Proxy> = listOf(Proxy.NO_PROXY)
-        override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: java.io.IOException?) {}
-    }
+    suspend fun applyIpRotation(enabled: Boolean, refresh: Boolean): Int = graph.network.applyIpRotation(enabled, refresh)
 
     // ------------------------------------------------------------------ sources
 
@@ -432,7 +319,7 @@ internal class DesktopSettingsServices(
                 AudioSourceType.QQ -> probeReachable("https://c.y.qq.com/")
                 AudioSourceType.SPOTIFY -> preferences.spotifyStreamingSignedIn()
                 AudioSourceType.JIOSAAVN -> probeReachable("https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")
-                AudioSourceType.YOUTUBE -> probeReachable(YOUTUBE_MUSIC_PROBE_URL)
+                AudioSourceType.YOUTUBE -> probeReachable(PROXY_PROBE_URL)
             }
         }
 
@@ -469,8 +356,9 @@ internal class DesktopSettingsServices(
         withContext(Dispatchers.IO) {
             CanvasConnectivity(
                 online = probeReachable("https://music.youtube.com/generate_204"),
-                wifi = true,
-                metered = false,
+                // The JVM reachability probe measures neither transport nor metering.
+                wifi = false,
+                metered = true,
             )
         }
 
@@ -603,7 +491,15 @@ internal class DesktopSettingsServices(
         )
     }
 
-    val spatialFlowFont = MutableStateFlow<AddonDownloadUiState>(AddonDownloadUiState.Unavailable)
+    /**
+     * The optional SpatialFlow typeface. The owner keeps the installed file inside the instance directory and hands the
+     * player its family, so the title is drawn in it once the file is installed.
+     */
+    val spatialFlowFontOwner by lazy { DesktopSpatialFlowFont(instanceDirectory, graph.scope) }
+    val spatialFlowFont: StateFlow<AddonDownloadUiState> get() = spatialFlowFontOwner.state
+    val spatialFlowFontFamily: StateFlow<FontFamily?> get() = spatialFlowFontOwner.family
+    suspend fun installSpatialFlowFont(): Boolean = spatialFlowFontOwner.installPicked()
+    suspend fun removeSpatialFlowFont(): Boolean = spatialFlowFontOwner.remove()
 
     // ------------------------------------------------------------------ yt-dlp / downloads / po / amazon
 
@@ -640,110 +536,6 @@ internal class DesktopSettingsServices(
             val response = plainClient.send(builder.build(), HttpResponse.BodyHandlers.ofString())
             if (response.statusCode() in 200..299) response.body() else null
         }.getOrNull()
-
-    // ------------------------------------------------------------------ rotation (ported from core RotatingProxyClient)
-
-    private class RotationProxyPool(val proxies: Array<Proxy>, val deadUntil: AtomicLongArray)
-
-    private inner class DesktopRotatingProxySelector : ProxySelector() {
-
-        private val poolRef = AtomicReference(RotationProxyPool(emptyArray(), AtomicLongArray(0)))
-        private val index = AtomicInteger(0)
-        private val lastSelectedIndex = AtomicInteger(-1)
-
-        fun loadProxies(configs: List<Pair<String, Int>>) {
-            poolRef.set(
-                RotationProxyPool(
-                    Array(configs.size) { Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(configs[it].first, configs[it].second)) },
-                    AtomicLongArray(configs.size),
-                ),
-            )
-            index.set(0)
-        }
-
-        fun activeCount(): Int {
-            val pool = poolRef.get()
-            val now = System.currentTimeMillis()
-            return (0 until pool.proxies.size).count { pool.deadUntil.get(it) <= now }
-        }
-
-        fun rotate() {
-            if (poolRef.get().proxies.isNotEmpty()) index.incrementAndGet()
-        }
-
-        fun markLastSelectedFailed() {
-            val pool = poolRef.get()
-            val selected = lastSelectedIndex.get()
-            if (selected in pool.proxies.indices) {
-                pool.deadUntil.set(selected, System.currentTimeMillis() + ROTATION_COOLDOWN_MS)
-            }
-        }
-
-        override fun select(uri: URI?): List<Proxy> {
-            val pool = poolRef.get()
-            if (pool.proxies.isEmpty()) return listOf(Proxy.NO_PROXY)
-            val now = System.currentTimeMillis()
-            for (attempt in pool.proxies.indices) {
-                val candidate = Math.floorMod(index.get() + attempt, pool.proxies.size)
-                if (pool.deadUntil.get(candidate) <= now) {
-                    lastSelectedIndex.set(candidate)
-                    return listOf(pool.proxies[candidate])
-                }
-            }
-            return listOf(Proxy.NO_PROXY)
-        }
-
-        override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: java.io.IOException?) {
-            markLastSelectedFailed()
-        }
-
-        suspend fun fetchAndLoad() = withContext(Dispatchers.IO) {
-            val configs = fetchProxyConfigs()
-            loadProxies(validateProxyConfigs(configs))
-        }
-
-        private fun fetchProxyConfigs(): List<Pair<String, Int>> = runCatching {
-            val request = HttpRequest.newBuilder(
-                URI.create("https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"),
-            ).timeout(Duration.ofSeconds(20)).GET().build()
-            plainClient.send(request, HttpResponse.BodyHandlers.ofString())
-                .takeIf { it.statusCode() == 200 }?.body()
-                ?.lineSequence()
-                ?.mapNotNull { line ->
-                    val trimmed = line.trim()
-                    val colon = trimmed.lastIndexOf(':')
-                    if (colon < 0) return@mapNotNull null
-                    val host = trimmed.substring(0, colon)
-                    val port = trimmed.substring(colon + 1).toIntOrNull() ?: return@mapNotNull null
-                    if (port !in 1..65535 || host.isEmpty()) null else host to port
-                }
-                ?.take(MAX_PROXY_CANDIDATES)
-                ?.toList()
-        }.getOrNull() ?: emptyList()
-
-        private suspend fun validateProxyConfigs(configs: List<Pair<String, Int>>): List<Pair<String, Int>> =
-            coroutineScope {
-                val semaphore = Semaphore(PROXY_VALIDATION_CONCURRENCY)
-                configs.map { config ->
-                    async(Dispatchers.IO) {
-                        semaphore.withPermit {
-                            if (isProxyUsable(config)) config else null
-                        }
-                    }
-                }.awaitAll().filterNotNull().take(MAX_ACTIVE_PROXIES)
-            }
-
-        private fun isProxyUsable(config: Pair<String, Int>): Boolean = runCatching {
-            val client = HttpClient.newBuilder()
-                .proxy(ProxySelector.of(InetSocketAddress.createUnresolved(config.first, config.second)))
-                .connectTimeout(Duration.ofSeconds(4))
-                .build()
-            val request = HttpRequest.newBuilder(URI.create(YOUTUBE_MUSIC_PROBE_URL))
-                .timeout(Duration.ofSeconds(6)).GET().build()
-            client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() in 200..399
-        }.getOrDefault(false)
-
-    }
 
     // ------------------------------------------------------------------ japanese pack io
 

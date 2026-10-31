@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.ui.resources.*
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /** The Japanese romanization dictionary as the host's download manager reports it. Negative progress is preparing. */
@@ -36,6 +37,7 @@ sealed interface AddonDownloadUiState {
  * Additional downloads: the base language, the optional Japanese romanization dictionary and the SpatialFlow typeface.
  * Downloads, cancels and removals are host-owned. The page shows the reported state and offers only the action that
  * state allows; during a check or removal no action is offered. [formatSize] is the host's locale-aware byte formatter.
+ * [spatialFlowFontInstallLabel] lets a host that installs a local file name that action instead of a download.
  */
 @Composable
 fun LanguagePackSettings(
@@ -52,6 +54,7 @@ fun LanguagePackSettings(
     resumed: Boolean = true,
     motionEnabled: Boolean = true,
     modifier: Modifier = Modifier,
+    spatialFlowFontInstallLabel: StringResource = Res.string.m6_language_pack_download,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -107,7 +110,7 @@ fun LanguagePackSettings(
             run = { hostAction(onRemoveSpatialFlowFont) },
         )
         AddonDownloadUiState.NotInstalled, is AddonDownloadUiState.Failed -> SettingsRow.Action(
-            "additional_downloads_spatialflow_action", Res.string.m6_language_pack_download,
+            "additional_downloads_spatialflow_action", spatialFlowFontInstallLabel,
             run = { hostAction(onInstallSpatialFlowFont) },
         )
     }

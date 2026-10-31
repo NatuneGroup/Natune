@@ -1650,10 +1650,7 @@ class MainActivity : ComponentActivity() {
                             null
                         }
 
-                    val liquidGlassActive =
-                        liquidGlassEnabled &&
-                            !disableBlur &&
-                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    val liquidGlassActive = liquidGlassEnabled && !disableBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     val liquidGlassBackdrop: Backdrop? = if (liquidGlassActive) rememberThrottledLayerBackdrop() else null
 
                     val bottomNavigationBarHeightState =
@@ -1891,6 +1888,7 @@ class MainActivity : ComponentActivity() {
                             bottom = with(density) { WindowInsets.systemBars.getBottom(density).toDp() },
                         )
                     val effectiveTopInset = effectiveStatusBarTop
+                    val rootGlassOverlay = moe.rukamori.archivetune.ui.player.rememberRootGlassOverlay(liquidGlassActive, menuState.isVisible, playerBottomSheetState, effectiveStatusBarTop, maxHeight)
 
                     LaunchedEffect(isYearInMusicScreen, playerConnection) {
                         val connection = playerConnection ?: return@LaunchedEffect
@@ -2443,6 +2441,7 @@ class MainActivity : ComponentActivity() {
                         moe.rukamori.archivetune.ui.component.LocalMenuState provides menuState,
                         LocalNavigationBarBackdrop provides navBarFrostedBackdrop,
                         LocalLiquidGlassBackdrop provides liquidGlassBackdrop,
+                        *rootGlassOverlay.providedValues,
                         moe.rukamori.archivetune.ui.component.LocalLiquidGlassTuning provides moe.rukamori.archivetune.ui.component.rememberLiquidGlassTuning(),
                         moe.rukamori.archivetune.ui.player.LocalIsInPipMode provides isInPictureInPictureModeState,
                         moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen provides isPlayerLyricsFullScreen,
@@ -2481,7 +2480,7 @@ class MainActivity : ComponentActivity() {
                             (isTvDevice || !playerBottomSheetState.isExpandedOrExpanding)
                         Row(
                             modifier =
-                                Modifier
+                                Modifier.then(rootGlassOverlay.menuRecordingModifier)
                                     // The reveal lives on the content, not on the root: the
                                     // overlay is a sibling of this row, and an alpha on the
                                     // shared parent would fade the particles out with the UI.

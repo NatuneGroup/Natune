@@ -56,6 +56,14 @@ class RoomLibraryRepository(
         require(id.isNotBlank() && title.isNotBlank())
         dao.createPlaylist(PortablePlaylistRow(id, title))
     }
+    /** The local playlists the Android app hid from its Library, by title. */
+    fun observeHiddenPlaylists(): Flow<List<PortablePlaylistRow>> = dao.observeHiddenPlaylists()
+
+    /** Sets one playlist's hidden flag. An unknown id throws and changes nothing. */
+    suspend fun setPlaylistHidden(id: String, hidden: Boolean) {
+        require(dao.setPlaylistHidden(id, hidden) == 1) { "Unknown local playlist" }
+    }
+
     suspend fun playlistTags(id: String): Set<String> {
         requireNotNull(dao.playlist(id)) { "Unknown local playlist" }
         return dao.playlistTagNames(id).toSet()
@@ -93,6 +101,7 @@ class RoomLibraryRepository(
                         songCount = entries.size,
                         createdSeq = row.createdSeq ?: 0L,
                         newestAddedSeq = entries.maxOfOrNull { it.addedSeq } ?: 0L,
+                        hidden = row.isHidden,
                     )
                 }
             }) { summaries -> summaries.toList() }
@@ -503,10 +512,13 @@ class RoomLibraryRepository(
 /**
  * One local playlist as its screens read it. [createdSeq] is the sequence it was created in and [newestAddedSeq] the
  * newest song-addition sequence in it. Both only order rows. Neither is a clock time, and no row displays them.
+ * [hidden] is the flag Android's Library honours: a hidden playlist stays stored and playable, and every list that is
+ * not the hidden-playlists page leaves it out unless the user asked to see hidden rows.
  */
 data class LocalPlaylistSummary(
     val occurrence: ContentOccurrence,
     val songCount: Int,
     val createdSeq: Long,
     val newestAddedSeq: Long,
+    val hidden: Boolean = false,
 )

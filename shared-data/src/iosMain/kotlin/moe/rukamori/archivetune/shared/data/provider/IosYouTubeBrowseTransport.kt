@@ -48,8 +48,9 @@ private val DURATION_REGEX = Regex("^\\d{1,2}:\\d{2}(?::\\d{2})?\$")
  * below and reduced to [YouTubeEntry] the same way the Android catalogue does (watch endpoints are songs, browse
  * endpoints are albums, artists or playlists by the id's shape).
  *
- * Filters with a verified InnerTube parameter are served; ALL, PLAYLISTS, PODCASTS and EPISODES keep the explicit
- * refusal the desktop transport records rather than searching a different surface.
+ * The six Android `SearchFilter` params are served, and ALL is served as YouTube's own summary page — the same request
+ * the Android app makes without a param. PLAYLISTS, PODCASTS and EPISODES have no verified param in the Android app
+ * either, so they keep the explicit refusal rather than searching a different surface.
  */
 class IosYouTubeBrowseTransport(
     private val http: HttpClient,
@@ -59,6 +60,12 @@ class IosYouTubeBrowseTransport(
     // bodies. It is never closed on its own, because closing it would close the shared engine; the graph owns that.
     private val client by lazy { createHttpClient() }
     private val innerTube by lazy { InnerTube(httpClient = client) }
+
+    /**
+     * The one InnerTubeX session of this host. The shelf transport ([catalogueTransport]) reads it as well, so the
+     * home feed and the account listings act for the same sign-in.
+     */
+    internal val innerTubeSession: InnerTube get() = innerTube
 
     private val json: Json = Json { ignoreUnknownKeys = true }
 
@@ -315,7 +322,21 @@ class IosYouTubeBrowseTransport(
         shelf.contents.orEmpty().mapNotNull { cell -> cell.toEntry() }
 
     private suspend fun searchPage(browse: YouTubeBrowse.Search, continuation: String?): YouTubeEntryPage {
-        val params = browse.filter.innerTubeParam() ?: throw UnsupportedContentOperation()
+        val params = youTubeSearchFilterParam(browse.filter)
+        if (params == null) {
+            // The ALL filter is YouTube's summary page: the same request without `params`, answered with a top-result
+            // card, inline snippets and the type shelves. The Android app reads it through `YouTube.searchSummary`,
+            // and the shared section-list parser reduces it to the same rows. The summary carries no continuation.
+            if (browse.filter != ContentSearchFilter.ALL || continuation != null) throw UnsupportedContentOperation()
+            val response = innerTube.search(BROWSE_CLIENT, query = browse.query).body<SearchResponse>()
+            val contents = response.contents
+            return YouTubeEntryPage(
+                youTubeSearchSummaryPage(
+                    tabbedSearchResultsRenderer = contents?.tabbedSearchResultsRenderer,
+                    sectionList = contents?.sectionListRenderer,
+                ),
+            )
+        }
         val response =
             if (continuation == null) {
                 innerTube.search(BROWSE_CLIENT, query = browse.query, params = params).body<SearchResponse>()
@@ -464,7 +485,9 @@ private fun ResponsiveItem.toEntry(): YouTubeEntry? {
     val groups = subtitleGroups()
     // Search shelves label the result type in the first subtitle group ("Song", "Video", "Album", ...). The label is
     // only a hint: when it names a different surface than the endpoint did, the endpoint stays authoritative.
-    val labeledKind = groups.firstOrNull()?.typeLabel()?.contentKind()
+    // A linked run in that group is the artist or album credit itself, so only plain text can carry the label.
+    val labelGroup = groups.firstOrNull()?.takeIf { group -> group.none { it.navigationEndpoint != null } }
+    val labeledKind = labelGroup?.typeLabel()?.contentKind()
     if (labeledKind != null && kind == ContentKind.SONG) kind = labeledKind
     val artists = groups.artistCredits()
     val album = groups.firstNotNullOfOrNull { group -> group.firstNotNullOfOrNull { run -> run.albumId() } }
@@ -561,22 +584,6 @@ private fun NextContinuation.token(): String? =
 
 private fun ContinuationItemRenderer.token(): String? =
     continuationEndpoint?.continuationCommand?.token
-
-/** Only filters with a verified InnerTube parameter cross this boundary, as on desktop. */
-private fun ContentSearchFilter.innerTubeParam(): String? =
-    when (this) {
-        ContentSearchFilter.SONGS -> "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
-        ContentSearchFilter.VIDEOS -> "EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D"
-        ContentSearchFilter.ALBUMS -> "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"
-        ContentSearchFilter.ARTISTS -> "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
-        ContentSearchFilter.FEATURED_PLAYLISTS -> "EgeKAQQoADgBagwQDhAKEAMQBRAJEAQ%3D"
-        ContentSearchFilter.COMMUNITY_PLAYLISTS -> "EgeKAQQoAEABagoQAxAEEAoQCRAF"
-        ContentSearchFilter.ALL,
-        ContentSearchFilter.PLAYLISTS,
-        ContentSearchFilter.PODCASTS,
-        ContentSearchFilter.EPISODES,
-        -> null
-    }
 
 // The browse and search payloads the InnerTubeX response types leave as raw objects. Each model covers the renderer
 // shapes YouTube Music returns for shelves, playlist shelves, grid cells and continuations; anything else is ignored

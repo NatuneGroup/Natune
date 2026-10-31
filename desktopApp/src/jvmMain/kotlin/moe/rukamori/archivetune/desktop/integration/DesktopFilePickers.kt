@@ -18,18 +18,19 @@ class DesktopFilePickers(private val window: Window? = null) : AutoCloseable {
         .asCoroutineDispatcher()
     @Volatile private var closing = false
 
-    suspend fun files(multiple: Boolean = true): List<Path> = choose(folder = false, multiple)
-    suspend fun folder(): Path? = choose(folder = true, multiple = false).singleOrNull()
+    /** [title] names the chooser; null keeps the generic open-file or open-folder title. */
+    suspend fun files(multiple: Boolean = true, title: String? = null): List<Path> = choose(folder = false, multiple, title)
+    suspend fun folder(title: String? = null): Path? = choose(folder = true, multiple = false, title).singleOrNull()
 
-    private suspend fun choose(folder: Boolean, multiple: Boolean): List<Path> = withContext(dispatcher) {
-        val title = DesktopStrings[if (folder) "open_folder" else "open_file"]
+    private suspend fun choose(folder: Boolean, multiple: Boolean, title: String?): List<Path> = withContext(dispatcher) {
+        val label = title ?: DesktopStrings[if (folder) "open_folder" else "open_file"]
         val paths = if (System.getProperty("os.name").startsWith("Linux")) {
             // The poll rechecks cancellation and disposal, so a chooser the user never answers cannot pin this executor.
-            GtkFileChooser.choose(folder, multiple, title) { closing || !isActive }
+            GtkFileChooser.choose(folder, multiple, label) { closing || !isActive }
         } else {
             NativeDesktopBridge.ensureLoaded()
             NativeDesktopBridge.pickFiles(window?.let { Pointer.nativeValue(Native.getComponentPointer(it)) } ?: 0L,
-                folder, multiple, title)?.toList().orEmpty()
+                folder, multiple, label)?.toList().orEmpty()
         }
         paths.map { Path.of(it).toAbsolutePath().normalize() }
     }

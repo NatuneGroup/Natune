@@ -45,6 +45,7 @@ struct at_audio_output {
     std::atomic<bool> interrupted{false};
     std::atomic<bool> consuming{false};
     std::atomic<bool> closing{false};
+    std::atomic<bool> manual_output{false};
     std::atomic<int> render_active{0};
     std::atomic<double> last_render{0};
     uint64_t output_error = 0;
@@ -149,7 +150,9 @@ static bool start_output(at_audio_output *p) {
         std::lock_guard<std::mutex> guard(g_session_lock);
         claim_playback_locked(p);
         started = configure_playback_locked(&error);
-        if (started && ![p->graph isRunning]) started = [p->graph startAndReturnError:&error];
+        if (started && !p->manual_output.load() && ![p->graph isRunning]) {
+            started = [p->graph startAndReturnError:&error];
+        }
         if (!started) release_playback_locked(p);
     }
     if (!started) {
@@ -203,7 +206,8 @@ at_audio_output *at_audio_create(char *error, size_t error_len) {
             if (buffers->mBuffers[i].mData)
                 memset(buffers->mBuffers[i].mData, 0, buffers->mBuffers[i].mDataByteSize);
         }
-        if (p->closing.load() || !p->running.load() || p->interrupted.load() || buffers->mNumberBuffers != 1 ||
+        if (p->closing.load() || p->manual_output.load() || !p->running.load() ||
+            p->interrupted.load() || buffers->mNumberBuffers != 1 ||
             !buffers->mBuffers[0].mData ||
             buffers->mBuffers[0].mNumberChannels != 2 ||
             buffers->mBuffers[0].mDataByteSize < frames * 2 * sizeof(float)) {
@@ -376,6 +380,41 @@ void at_audio_snapshot(at_audio_output *p, ae_snapshot *snapshot) {
         snapshot->error_code = AE_ERROR_OUTPUT;
         snapshot->flags &= ~AE_FLAG_ADVANCING;
     }
+}
+int at_audio_begin_manual_output(at_audio_output *p) {
+    require_main();
+    if (p->manual_output.exchange(true)) return 1;
+    [p->graph pause];
+    // Pause plus the published gate prevents another source callback from consuming PCM. Drain the one already in flight.
+    for (int attempt = 0; attempt < 100 && p->render_active.load() != 0; ++attempt) usleep(1000);
+    if (p->render_active.load() != 0) {
+        p->manual_output.store(false);
+        if (p->wants_play.load()) start_output(p);
+        return 0;
+    }
+    p->consuming.store(false);
+    return 1;
+}
+uint32_t at_audio_pull_manual_output(at_audio_output *p, float *samples, uint32_t frames) {
+    require_main();
+    if (!p->manual_output.load() || !p->running.load() || p->interrupted.load() || p->closing.load()) return 0;
+    uint32_t decoded = ae_engine_render_realtime(p->core, samples, frames);
+    p->last_render.store(CACurrentMediaTime());
+    p->consuming.store(decoded > 0);
+    return decoded;
+}
+void at_audio_end_manual_output(at_audio_output *p) {
+    require_main();
+    p->manual_output.store(false);
+    p->consuming.store(false);
+    if (p->wants_play.load()) start_output(p);
+}
+void at_audio_manual_output_failed(at_audio_output *p) {
+    require_main();
+    p->requires_recreation = true;
+    p->wants_play.store(false);
+    ae_engine_pause(p->core);
+    output_failure(p);
 }
 double at_audio_output_latency(at_audio_output *p) {
     require_main();

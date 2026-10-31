@@ -31,6 +31,7 @@ data class PodcastUi(
     val page: PagedContentState,
     /** Null means the provider/host has no supported subscription operation, not "unsubscribed". */
     val subscription: PodcastSubscriptionUi? = null,
+    val subscriptionNotice: String? = null,
 ) {
     init {
         require(collection.surface == ContentSurface.PODCAST && collection.parent?.kind == ContentKind.PODCAST)
@@ -80,6 +81,7 @@ fun PodcastScreen(
                             SubscriptionButton(subscription, requireNotNull(actions.subscribe), "podcast-subscribe")
                         }
                     }
+                    state.subscriptionNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     state.description?.takeIf { it.isNotBlank() }?.let {
                         Text(it, style = MaterialTheme.typography.bodyLarge)
                     }
@@ -128,6 +130,7 @@ data class PodcastBrowseUi(
     val subscriptionsOnly: Boolean = false,
     val subscriptionsAvailable: Boolean = false,
     val subscriptions: Map<ContentRef, PodcastSubscriptionUi> = emptyMap(),
+    val subscriptionNotice: String? = null,
 )
 class PodcastBrowseActions(
     val back: () -> Unit,
@@ -158,6 +161,9 @@ fun PodcastBrowseScreen(
         ManagementHeader(stringResource(Res.string.m4_podcasts), actions.back)
         OutlinedTextField(state.query, actions.query, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             singleLine = true, label = { Text(stringResource(Res.string.m4_search)) })
+        state.subscriptionNotice?.let {
+            Text(it, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+        }
         if (state.subscriptionsAvailable) Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(!state.subscriptionsOnly, { actions.subscriptionsOnly(false) }, label = { Text(stringResource(Res.string.m4_all)) })
             FilterChip(state.subscriptionsOnly, { actions.subscriptionsOnly(true) },

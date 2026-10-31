@@ -16,6 +16,7 @@ data class AudioResolveRequest(
     val isrc: String? = null,
     val qualities: Map<AudioSourceType, String> = emptyMap(),
     val purpose: AudioPurpose = AudioPurpose.PLAYBACK,
+    val amazonPick: AmazonTrackPick? = null,
 )
 
 /** Only Progressive is acceptable to the existing progressive downloader/ordinary Remote locator. */
@@ -78,6 +79,11 @@ sealed interface NativeAudioRecipe {
     }
     data class AmazonCenc(val url: String, val key: AudioSecret, override val accountScope: String) : NativeAudioRecipe {
         override val source get() = AudioSourceType.AMAZON
+    }
+    /** PlayPlay bytes stay encrypted until an admitted streaming-account lease opens them. */
+    data class SpotifyPlayPlay(val url: String, val key: AudioSecret, val iv: AudioSecret, val flac: Boolean,
+        override val accountScope: String) : NativeAudioRecipe {
+        override val source get() = AudioSourceType.SPOTIFY
     }
     /**
      * A QQ Music protected container. [eKey] is null for a footer-less QMC1 container, which the static cipher opens

@@ -73,12 +73,14 @@ internal fun desktopGraphPage(
     recognition: DesktopRecognitionMount,
     playlistMenus: DesktopPlaylistMenuState,
     spotify: DesktopSpotifyAccounts,
+    podcasts: DesktopPodcastsOwner,
+    topMixes: DesktopTopMixes,
     route: ArchiveRoute,
     back: () -> Unit,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage = key(route.value) {
     when (route.destination) {
-        ArchiveDestination.HOME -> desktopHomePage(graph, spotify, openRoute)
+        ArchiveDestination.HOME -> desktopHomePage(graph, spotify, topMixes, openRoute)
         ArchiveDestination.DISCOVERY -> desktopDiscoveryPage(graph, openRoute)
         ArchiveDestination.CHARTS -> desktopChartsPage(graph)
         ArchiveDestination.MOODS -> desktopMoodsPage(graph)
@@ -87,7 +89,7 @@ internal fun desktopGraphPage(
         ArchiveDestination.ARTIST_SONGS -> desktopArtistSongsPage(graph, route, menu, openRoute, back)
         ArchiveDestination.ARTIST_ALBUMS -> desktopArtistAlbumsPage(graph, route, menu, openRoute, back)
         ArchiveDestination.ARTIST_ITEMS -> desktopArtistItemsPage(graph, route, menu, openRoute, back)
-        ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, spotify, openRoute)
+        ArchiveDestination.LIBRARY -> desktopLibraryPage(graph, spotify, topMixes, openRoute)
         ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
             desktopSearchPage(graph, graph.catalogPages, spotify, route) { openRoute(ArchiveRoutes.musicRecognition()) }
         ArchiveDestination.ARTIST ->
@@ -110,15 +112,15 @@ internal fun desktopGraphPage(
         ArchiveDestination.MUSIC_RECOGNITION_DETAILS -> desktopRecognitionDetailsPage(recognition, route)
         ArchiveDestination.LISTEN_TOGETHER -> desktopListenTogetherPage(graph, openRoute)
         ArchiveDestination.LISTEN_TOGETHER_CHAT -> desktopCommentTogetherPage(graph)
-        ArchiveDestination.TELEGRAM_BROWSE -> desktopTelegramBrowsePage(graph, back)
+        ArchiveDestination.TELEGRAM, ArchiveDestination.TELEGRAM_BROWSE -> desktopTelegramBrowsePage(graph, back)
         ArchiveDestination.TELEGRAM_BOTS -> desktopTelegramBotsPage(graph, back, openRoute)
         ArchiveDestination.TELEGRAM_BOT_CHAT -> desktopTelegramBotChatPage(graph, route.arguments.getValue("botId"))
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu, spotify)
         ArchiveDestination.ACCOUNT -> desktopAccountPage(graph)
         ArchiveDestination.NEWS -> desktopNewsPage()
         ArchiveDestination.ARTICLE -> desktopArticlePage(route.arguments.getValue("newsId"))
-        ArchiveDestination.PODCASTS -> desktopPodcastsPage()
-        ArchiveDestination.PODCAST -> desktopPodcastPage(route.arguments.getValue("browseId"))
+        ArchiveDestination.PODCASTS -> desktopPodcastsPage(podcasts)
+        ArchiveDestination.PODCAST -> desktopPodcastPage(podcasts, route.arguments.getValue("browseId"))
         ArchiveDestination.LOCAL_SONGS -> desktopLocalSongsPage(graph, menu)
         ArchiveDestination.UPLOADED_SONGS -> desktopUploadsPage(graph)
         ArchiveDestination.DOWNLOADS -> desktopDownloadsPage(graph)
@@ -135,13 +137,16 @@ internal fun desktopGraphPage(
 private fun desktopLibraryPage(
     graph: DesktopSessionGraph,
     spotify: DesktopSpotifyAccounts,
+    topMixes: DesktopTopMixes,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage {
     val snapshot by graph.settings.snapshots.collectAsState()
     val stored = snapshot?.get(LibrarySourceKey).toEnum(LibraryDefaults.source)
     return when (stored.resolved(spotify.libraryAvailable())) {
         LibrarySource.YTM -> hostLibraryPage(graph.pageOwners, DesktopStrings["library_top_mixes_unavailable"], openRoute)
+            .withDesktopMixes(desktopAiMixBinding(graph, topMixes, openRoute))
         LibrarySource.SPOTIFY -> desktopSpotifyLibraryPage(graph, spotify, openRoute)
+            .withDesktopMixes(desktopSpotifyMixBinding(graph, spotify, openRoute))
     }
 }
 

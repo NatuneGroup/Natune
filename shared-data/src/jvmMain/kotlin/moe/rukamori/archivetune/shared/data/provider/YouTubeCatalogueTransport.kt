@@ -27,80 +27,20 @@ import moe.rukamori.archivetune.shared.domain.repository.UnsupportedContentOpera
  *
  * The mapping mirrors the Android screens (`HomeScreen`, `ArtistScreen`, `ChartsScreen`,
  * `MoodAndGenresScreen`, `YouTubeBrowseScreen`, `NewReleaseScreen`, `HistoryScreen`). Keep the two in step.
+ *
+ * The shelf shapes live in commonMain ([YouTubeShelfPage] and friends), so the iOS transport fills the same models
+ * from its own InnerTubeX session.
  */
-
-/** One shelf in a catalogue feed. [more] is the provider's own section endpoint for "see all", when it gave one. */
-data class YouTubeShelf(
-    val key: String,
-    val title: String,
-    val label: String? = null,
-    val thumbnail: String? = null,
-    val entries: List<YouTubeEntry>,
-    val more: ContentSection? = null,
-    /** Charts rank rows; [numbered] asks the host to number them. */
-    val numbered: Boolean = false,
-    /** A grid shelf lays out tiles; a list shelf lays out rows. */
-    val grid: Boolean = false,
-    /** The provider's column packing for the shelf rows; null leaves the host's default. */
-    val numItemsPerColumn: Int? = null,
-)
-
-/** A feed page: its shelves, chips that re-request the feed, and the continuation for the next shelf batch. */
-data class YouTubeShelfPage(
-    val shelves: List<YouTubeShelf>,
-    val continuation: String? = null,
-    val chips: List<YouTubeFeedChip> = emptyList(),
-    /** The provider's own page title, when it sends one (browse/category pages). */
-    val title: String? = null,
-)
-
-/** A home feed chip: [params] selects it, [deselectParams] un-selects it when the provider gave one. */
-data class YouTubeFeedChip(val title: String, val params: String?, val deselectParams: String?)
-
-/** A mood or genre tile: the stripe color and the section it browses to. */
-data class YouTubeMoodGenre(val title: String, val stripeArgb: Long, val section: ContentSection)
-
-enum class YouTubeReleaseType { ALBUM, SINGLE, EP }
-
-/** A new-release row: the album entry plus the year and type the provider gave for the chips. */
-data class YouTubeRelease(val entry: YouTubeEntry, val year: Int?, val type: YouTubeReleaseType)
-
-/** The explore page payload: the new-release shelf and the flat mood/genre tile list. */
-data class YouTubeExplore(val releases: List<YouTubeRelease>, val moods: List<YouTubeMoodGenre>)
-
-/** One section of an artist page. [more] is the provider's "see all" endpoint when it gave one. */
-data class YouTubeArtistSection(
-    val title: String,
-    val entries: List<YouTubeEntry>,
-    val more: ContentSection?,
-    val grid: Boolean,
-)
-
-/** A play/shuffle/radio endpoint the provider gave on an artist page. One id is always present. */
-data class YouTubeWatchTarget(val videoId: String?, val playlistId: String?, val params: String?)
-
-/** The remote artist page. [shelves] keep the provider order; [releases] is the same data seen flat. */
-data class YouTubeArtistDetail(
-    val artist: YouTubeEntry,
-    val subscribersText: String?,
-    val monthlyListenersText: String?,
-    val description: String?,
-    val shelves: List<YouTubeArtistSection>,
-    val releases: List<YouTubeRelease>,
-    val shareLink: String,
-    val play: YouTubeWatchTarget? = null,
-    val shuffle: YouTubeWatchTarget? = null,
-    val radio: YouTubeWatchTarget? = null,
-)
 
 /**
- * The desktop catalogue transport. The core client is an object shared with [JvmYouTubeBrowseTransport], so
- * the session that transport applies (cookie, visitor data, login-for-browse) covers these reads as well.
+ * The desktop catalogue transport. The core client is an object shared with [JvmYouTubeBrowseTransport], so the session
+ * that transport applies (cookie, visitor data, login-for-browse) covers these reads as well.
  */
-class JvmYouTubeCatalogueTransport {
+class JvmYouTubeCatalogueTransport : YouTubeCatalogueTransport {
+    private val historyPages = CoreYouTubeHistory()
 
     /** The home feed: chips on the first page, shelf sections and the continuation for the next batch. */
-    suspend fun home(continuation: String? = null, params: String? = null): YouTubeShelfPage {
+    override suspend fun home(continuation: String?, params: String?): YouTubeShelfPage {
         val page = YouTube.home(continuation, params).getOrThrow()
         return YouTubeShelfPage(
             shelves = page.sections.mapIndexed { index, section ->
@@ -181,7 +121,7 @@ class JvmYouTubeCatalogueTransport {
     }
 
     /** The charts page: ranked top songs first, then the genre/new-release shelves, paged by continuation. */
-    suspend fun charts(continuation: String? = null): YouTubeShelfPage {
+    override suspend fun charts(continuation: String?): YouTubeShelfPage {
         val page = YouTube.getChartsPage(continuation).getOrThrow()
         return YouTubeShelfPage(
             shelves =
@@ -199,7 +139,7 @@ class JvmYouTubeCatalogueTransport {
     }
 
     /** The explore page: the new-release shelf plus the flat mood/genre tile list the Android screen shows. */
-    suspend fun explore(): YouTubeExplore {
+    override suspend fun explore(): YouTubeExplore {
         val page = YouTube.explore().getOrThrow()
         return YouTubeExplore(
             releases = page.newReleaseAlbums.map { it.toRelease() },
@@ -213,11 +153,11 @@ class JvmYouTubeCatalogueTransport {
     }
 
     /** The new-releases page: every album the endpoint returned, in the provider's order. */
-    suspend fun newReleases(): List<YouTubeRelease> =
+    override suspend fun newReleases(): List<YouTubeRelease> =
         YouTube.newReleaseAlbums().getOrThrow().map { it.toRelease() }
 
     /** The account's YouTube listen history sections; a signed-out or failed read throws. */
-    suspend fun historySections(continuation: String? = null): YouTubeHistoryPage = CoreYouTubeHistory.page(continuation)
+    suspend fun historySections(continuation: String? = null): YouTubeHistoryPage = historyPages.page(continuation)
 }
 
 /**

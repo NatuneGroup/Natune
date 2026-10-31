@@ -12,19 +12,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramBotDirectory
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramBotStore
-import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramChannelLibrary
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramChannelSearch
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramNativeAdmission
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramTdJson
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.telegram.TelegramBotsOwner
 import moe.rukamori.archivetune.shared.data.telegram.TelegramBrowseOwner
+import moe.rukamori.archivetune.shared.data.telegram.TdJsonTelegramChannelSync
 import moe.rukamori.archivetune.shared.domain.settings.TelegramLosslessOnlyKey
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramChannelInfo
 import moe.rukamori.archivetune.shared.ui.IosHost
@@ -53,7 +56,7 @@ private fun iosTelegramBrowseMount(graph: IosSessionGraph, client: IosTelegramCl
         TelegramBrowseOwnerBinding(
             owner = TelegramBrowseOwner(
                 channelSearch = IosTelegramChannelSearch(client),
-                channelLibrary = IosTelegramChannelLibrary(),
+                channelLibrary = iosTelegramChannelLibrary(graph, client),
                 losslessOnly = { graph.settings.snapshots.value?.get(TelegramLosslessOnlyKey) ?: false },
                 scope = scope,
             ),
@@ -71,10 +74,7 @@ private fun iosTelegramBrowseMount(graph: IosSessionGraph, client: IosTelegramCl
     )
 }
 
-/**
- * The saved Telegram bot list over the signed-in iOS client, gated the same way as browse. Opening a bot goes to its
- * chat route, which stays the host boundary on this host, so that route says so instead of showing an empty page.
- */
+/** The saved Telegram bot list over the signed-in iOS client, gated the same way as browse. Opening a bot opens its chat. */
 @Composable
 internal fun iosTelegramBotsPage(
     graph: IosSessionGraph,
@@ -123,6 +123,27 @@ private fun iosTelegramBotsMount(
 }
 
 /**
+ * Channel playlists over the signed-in client. Syncs run on the graph scope, not the page's, because opening a channel
+ * navigates to its playlist and leaves this page while the sync still runs.
+ */
+internal fun iosTelegramChannelLibrary(graph: IosSessionGraph, client: IosTelegramClient): TdJsonTelegramChannelSync =
+    TdJsonTelegramChannelSync(
+        td = IosTelegramTdJson(client),
+        library = graph.library,
+        scope = graph.scope,
+        ready = { iosTelegramAwaitAdmission(client) },
+        report = graph::report,
+    )
+
+/** Waits a bounded time for the account check, so a sync or a bot request never runs on an unverified account. */
+internal suspend fun iosTelegramAwaitAdmission(client: IosTelegramClient): Boolean =
+    withTimeoutOrNull(TELEGRAM_ADMISSION_WAIT_MS) {
+        client.admission.first { it is IosTelegramNativeAdmission.Admitted }
+    } != null
+
+private const val TELEGRAM_ADMISSION_WAIT_MS = 30_000L
+
+/**
  * A channel's minithumbnail when TDLib sent one, else the letter tile. The search rows carry no picture bytes, so the
  * picture is looked up by chat id. A missing or unreadable picture is the tile, never a failed row.
  */
@@ -144,5 +165,5 @@ private fun iosTelegramChannelAvatar(
 }
 
 /** Decodes a TDLib minithumbnail. A payload Skia cannot read becomes null here, so one bad picture cannot fail the page. */
-private fun iosDecodeMinithumbnail(bytes: ByteArray?): ImageBitmap? =
+internal fun iosDecodeMinithumbnail(bytes: ByteArray?): ImageBitmap? =
     bytes?.let { runCatching { SkiaImage.makeFromEncoded(it).toComposeImageBitmap() }.getOrNull() }
