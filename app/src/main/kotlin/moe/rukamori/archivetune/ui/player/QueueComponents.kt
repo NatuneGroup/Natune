@@ -136,13 +136,13 @@ fun CurrentSongHeader(
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                 .bottomSheetDraggable(sheetState)
                 .padding(horizontal = 16.dp)
-                .padding(top = 20.dp, bottom = 8.dp),
+                .padding(top = 8.dp, bottom = 4.dp),
     ) {
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp),
+                    .padding(bottom = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
             Box(
@@ -158,7 +158,7 @@ fun CurrentSongHeader(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             AsyncImage(
                 model = mediaMetadata?.thumbnailUrl,
@@ -166,8 +166,8 @@ fun CurrentSongHeader(
                 contentScale = ContentScale.Crop,
                 modifier =
                     Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(onBackgroundColor.copy(alpha = 0.06f)),
             )
 
@@ -177,7 +177,7 @@ fun CurrentSongHeader(
             ) {
                 Text(
                     text = mediaMetadata?.title ?: "",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -185,7 +185,7 @@ fun CurrentSongHeader(
                 )
                 Text(
                     text = mediaMetadata?.artists?.joinToString(", ") { it.name } ?: "",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = onBackgroundColor.copy(alpha = 0.6f),
@@ -194,7 +194,7 @@ fun CurrentSongHeader(
 
             IconButton(
                 onClick = onToggleLike,
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(40.dp),
                 colors =
                     IconButtonDefaults.iconButtonColors(
                         contentColor =
@@ -215,12 +215,12 @@ fun CurrentSongHeader(
                             },
                         ),
                     contentDescription = stringResource(R.string.action_like),
-                    modifier = Modifier.size(26.dp).playerControlMotion(PlayerControlKind.Like, liked),
+                    modifier = Modifier.size(24.dp).playerControlMotion(PlayerControlKind.Like, liked),
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Row(
             modifier =
@@ -228,7 +228,7 @@ fun CurrentSongHeader(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(24.dp))
                     .background(onBackgroundColor.copy(alpha = 0.06f))
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -290,7 +290,7 @@ fun CurrentSongHeader(
             )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         QueueHeaderDetails(queueTitle, queueRemainingMs, onBackgroundColor, onSaveQueueClick, onJumpToCurrentClick)
 
@@ -328,7 +328,7 @@ fun CurrentSongHeader(
                     }
                     onShuffleClick()
                 },
-                modifier = Modifier.weight(1f).size(48.dp),
+                modifier = Modifier.weight(1f).height(44.dp),
                 shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
                 colors = if (shuffleModeEnabled) checkedColors else uncheckedColors,
             ) {
@@ -350,7 +350,7 @@ fun CurrentSongHeader(
                     }
                     onRepeatClick()
                 },
-                modifier = Modifier.weight(1f).size(48.dp),
+                modifier = Modifier.weight(1f).height(44.dp),
                 shapes = ButtonGroupDefaults.connectedMiddleButtonShapes(),
                 colors = if (repeatMode != Player.REPEAT_MODE_OFF) checkedColors else uncheckedColors,
             ) {
@@ -371,7 +371,7 @@ fun CurrentSongHeader(
             ToggleButton(
                 checked = infiniteQueueEnabled,
                 onCheckedChange = { onInfiniteQueueClick() },
-                modifier = Modifier.weight(1f).size(48.dp).semantics { contentDescription = infiniteQueueLabel },
+                modifier = Modifier.weight(1f).height(44.dp).semantics { contentDescription = infiniteQueueLabel },
                 shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
                 colors = infiniteCheckedColors,
             ) {
