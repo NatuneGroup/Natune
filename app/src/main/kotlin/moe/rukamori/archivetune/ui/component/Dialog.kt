@@ -233,7 +233,15 @@ fun ActionPromptDialog(
                 Column(
                     modifier = Modifier.padding(24.dp),
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                    // The body takes only the height left above the action row and scrolls when tall content or a
+                    // large font scale would otherwise push Reset/Cancel/OK out of the surface (same as DefaultDialog).
+                    Column(
+                        modifier =
+                            Modifier
+                                .weight(1f, fill = false)
+                                .verticalScroll(rememberScrollState())
+                                .padding(12.dp),
+                    ) {
                         // title
                         if (titleBar != null) {
                             Row {

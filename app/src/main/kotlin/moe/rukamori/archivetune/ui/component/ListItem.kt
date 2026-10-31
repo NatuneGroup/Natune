@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.constants.ListItemHeight
 
@@ -35,6 +36,8 @@ inline fun ListItem(
     showActiveContainer: Boolean = true,
     textColorOverride: Color? = null,
     noinline progressContent: (@Composable () -> Unit)? = null,
+    // A minimum rather than a fixed height: text-bearing rows grow with the system font scale.
+    rowHeight: Dp = ListItemHeight,
 ) {
     val titleColor =
         textColorOverride ?: if (isActive) {
@@ -60,7 +63,7 @@ inline fun ListItem(
         modifier =
             modifier
                 .focusable()
-                .height(ListItemHeight)
+                .heightIn(min = rowHeight)
                 .padding(horizontal = 8.dp)
                 .then(
                     if (isActive && showActiveContainer) {
