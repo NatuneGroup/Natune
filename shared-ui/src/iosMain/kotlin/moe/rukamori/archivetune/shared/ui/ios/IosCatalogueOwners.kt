@@ -11,11 +11,18 @@ import moe.rukamori.archivetune.shared.domain.repository.TypedContentRepository
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.completeCatalogueList
 import moe.rukamori.archivetune.shared.ui.host.playableRows
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_list_empty
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_list_not_played
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_list_unreadable
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_row_not_playable
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_shelf_not_played
+import org.jetbrains.compose.resources.getString
 
 /**
- * The rows the iOS browse and artist-section pages showed, so a tap plays the list the listener saw, read to its end
- * within the shared finite-completion bounds first. The shelf feeds (Home, Charts, Moods, Releases, Discovery and the
- * remote artist page) have no shelf transport on this host, so only list pages record here.
+ * The rows the iOS catalogue pages showed, so a tap plays the list or shelf the listener saw. A list page is read to
+ * its end within the shared finite-completion bounds before it plays; a shelf row plays that shelf's own playable rows,
+ * as the Android home and charts screens queue their shelves.
  *
  * Main-thread only: pages record during composition and taps read the rows before any work leaves the thread.
  */
@@ -26,6 +33,7 @@ internal class IosCatalogueOwners(
     // Insertion order is the age order, so the oldest page's rows are dropped first once the bound is reached.
     private val shownLists = LinkedHashMap<ContentRequest, List<ContentOccurrence>>()
     private val heldContinuations = LinkedHashMap<ContentRequest, String?>()
+    private val shownShelves = LinkedHashMap<ContentRequest, LinkedHashMap<String, List<ContentOccurrence>>>()
 
     fun record(collection: ContentRequest, rows: List<ContentOccurrence>, continuation: String?) {
         shownLists.remove(collection)
@@ -36,8 +44,38 @@ internal class IosCatalogueOwners(
         while (heldContinuations.size > MAX_SHOWN_PAGES) heldContinuations.remove(heldContinuations.keys.first())
     }
 
-    /** Plays a recorded list from the tapped row. Returns false when [collection] is not a recorded list page. */
+    /** One shelf of a feed page. A shelf keeps its own row order, apart from the rest of the feed. */
+    fun recordShelf(collection: ContentRequest, shelfKey: String, rows: List<ContentOccurrence>) {
+        val shelves = shownShelves.getOrPut(collection) { LinkedHashMap() }
+        shelves.remove(shelfKey)
+        shelves[shelfKey] = rows
+        shownShelves.remove(collection)
+        shownShelves[collection] = shelves
+        while (shownShelves.size > MAX_SHOWN_PAGES) shownShelves.remove(shownShelves.keys.first())
+    }
+
+    /** Plays a recorded list or shelf row. Returns false when [collection] is not a recorded catalogue page. */
     fun playOccurrence(collection: ContentRequest, start: QueueStart): Boolean {
+        val shelfRows =
+            shownShelves[collection]?.values?.firstOrNull { shelf -> shelf.any { it.occurrenceId == start.occurrenceId } }
+        if (shelfRows != null) {
+            owners.scope.launch {
+                val playable = playableRows(shelfRows)
+                val startId = playable.firstOrNull { it.occurrenceId == start.occurrenceId }?.occurrenceId
+                if (startId == null) {
+                    owners.report(getString(Res.string.ios_transports_row_not_playable))
+                    return@launch
+                }
+                try {
+                    owners.queue.replace(playable, startId, playWhenReady = true)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    owners.report(getString(Res.string.ios_transports_shelf_not_played))
+                }
+            }
+            return true
+        }
         val held = shownLists[collection] ?: return false
         owners.scope.launch {
             val entries = try {
@@ -50,10 +88,10 @@ internal class IosCatalogueOwners(
                 null
             }
             if (entries.isNullOrEmpty()) {
-                return@launch owners.report("the list could not be read to its end, so it was not played")
+                return@launch owners.report(getString(Res.string.ios_transports_list_unreadable))
             }
             val playable = playableRows(entries)
-            if (playable.isEmpty()) return@launch owners.report("the list holds no playable rows")
+            if (playable.isEmpty()) return@launch owners.report(getString(Res.string.ios_transports_list_empty))
             val startId = playable.firstOrNull { it.occurrenceId == start.occurrenceId }?.occurrenceId
                 ?: playable.firstOrNull { it.item.ref == start.item }?.occurrenceId
                 ?: playable.first().occurrenceId
@@ -62,7 +100,7 @@ internal class IosCatalogueOwners(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                owners.report("the list could not be played")
+                owners.report(getString(Res.string.ios_transports_list_not_played))
             }
         }
         return true

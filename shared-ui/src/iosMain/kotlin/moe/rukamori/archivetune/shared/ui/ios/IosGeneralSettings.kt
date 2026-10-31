@@ -49,7 +49,6 @@ internal fun IosGeneralSettingsPage(
     controller: SettingsController,
     navigate: (String) -> Unit,
     onFailure: () -> Unit,
-    unavailable: () -> Unit,
     scrollTo: String?,
 ) {
     var arrangeDialog by remember { mutableStateOf<IosArrangeDialogKind?>(null) }
@@ -83,8 +82,8 @@ internal fun IosGeneralSettingsPage(
             releaseBitPerfectSink = { },
             navigate = navigate,
             arrangeArtworkProviders = { arrangeDialog = IosArrangeDialogKind.ARTWORK_PROVIDERS },
-            // The tag manager edits the library this host has not mounted yet; arranging stays available.
-            managePlaylistTags = unavailable,
+            // The tag manager is the library's own tags page, so the row opens the page that edits this graph's tags.
+            managePlaylistTags = { navigate("library/tags") },
             onFailure = onFailure,
             scrollTo = scrollTo,
         )

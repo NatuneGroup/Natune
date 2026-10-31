@@ -38,9 +38,10 @@ internal class IosCatalogOwners(graph: IosSessionGraph) {
 }
 
 /**
- * The catalogue destinations this host answers: search, albums, artists and their sections, playlists and tags,
- * browse sections, the account, and the news, podcast and track-info pages. A destination no owner here answers
- * returns null, so the caller keeps its own pages and the explicit host boundary for the rest.
+ * The catalogue destinations this host answers: the home feed and the discovery, charts, mood and new-release
+ * shelves, search, albums, artists and their sections, playlists and tags, browse sections, the account, and the news,
+ * podcast and track-info pages. A destination no owner here answers returns null, so the caller keeps its own pages
+ * and the explicit host boundary for the rest.
  */
 @Composable
 internal fun iosCatalogGraphPage(
@@ -54,6 +55,11 @@ internal fun iosCatalogGraphPage(
     back: () -> Unit,
     openRoute: (String) -> Unit,
 ): ArchiveGraphPage? = when (route.destination) {
+    ArchiveDestination.HOME -> iosHomePage(graph, owners.lists, openRoute)
+    ArchiveDestination.DISCOVERY -> iosDiscoveryPage(graph, owners.lists)
+    ArchiveDestination.CHARTS -> iosChartsPage(graph, owners.lists)
+    ArchiveDestination.MOODS -> iosMoodsPage(graph)
+    ArchiveDestination.RELEASES -> iosReleasesPage(graph)
     ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
         hostSearchPage(owners.pages, route) { openRoute(ArchiveRoutes.musicRecognition()) }
     ArchiveDestination.ALBUM ->
