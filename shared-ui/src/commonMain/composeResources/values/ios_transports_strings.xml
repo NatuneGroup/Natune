@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The iOS catalogue feeds and the play actions on their rows: a failed read, and a row, shelf or list that cannot be played. -->
+    <string name="ios_transports_feed_failed">This feed could not be loaded. Try again.</string>
+    <string name="ios_transports_explore_failed">The explore page could not be loaded. Try again.</string>
+    <string name="ios_transports_releases_failed">New releases could not be loaded. Try again.</string>
+    <string name="ios_transports_row_not_playable">This row cannot be played from its shelf.</string>
+    <string name="ios_transports_shelf_not_played">The shelf could not be played.</string>
+    <string name="ios_transports_list_unreadable">The list could not be read to its end, so it was not played.</string>
+    <string name="ios_transports_list_empty">The list holds no playable rows.</string>
+    <string name="ios_transports_list_not_played">The list could not be played.</string>
+</resources>

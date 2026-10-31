@@ -48,7 +48,9 @@ import moe.rukamori.archivetune.shared.data.provider.KtorSponsorBlockRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
+import moe.rukamori.archivetune.shared.data.provider.YouTubeCatalogueTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
+import moe.rukamori.archivetune.shared.data.provider.catalogueTransport
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
@@ -107,6 +109,8 @@ internal class IosSessionGraph private constructor(
     val youtubeTransport: IosYouTubeBrowseTransport,
     /** The typed YouTube catalogue over [youtubeTransport] and the account binding: search, albums, playlists, sections. */
     val youtubeContent: YouTubeContentRepository,
+    /** The shelf feeds over the same InnerTubeX session: the home feed, charts, explore and new releases. */
+    val youtubeCatalogue: YouTubeCatalogueTransport,
     internal val library: RoomLibraryRepository,
     val artistBlocks: RoomArtistBlockRepository,
     val libraryContent: LibraryContentOwner,
@@ -306,6 +310,8 @@ internal class IosSessionGraph private constructor(
             // player clients first and keeps InnerTubeX as the bounded extractor tier, like the desktop host.
             val youtubeTransport = IosYouTubeBrowseTransport(http)
             youtubeTransport.refreshSession(vault.snapshots.value)
+            // The shelf feeds read the same session, so a signed-in home feed and the account listings agree.
+            val youtubeCatalogue = youtubeTransport.catalogueTransport()
             val youtubeAccount = YouTubeAccountBinding(
                 transport = youtubeTransport,
                 accounts = accounts,
@@ -475,6 +481,7 @@ internal class IosSessionGraph private constructor(
                 artistBlocks = artistBlocks,
                 youtubeTransport = youtubeTransport,
                 youtubeContent = youtubeContent,
+                youtubeCatalogue = youtubeCatalogue,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
                 history = history,
