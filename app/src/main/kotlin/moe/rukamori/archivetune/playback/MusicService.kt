@@ -1566,6 +1566,7 @@ class MusicService :
             dataStore.edit { settings ->
                 settings[PlayerVolumeKey] = volume
             }
+            scope.launch(SilentHandler) { savePlayerStateToDisk() } // Resume file holds the volume; volume changes raise no player event.
         }
 
         currentSong.debounce(300).collect(scope) { song ->
