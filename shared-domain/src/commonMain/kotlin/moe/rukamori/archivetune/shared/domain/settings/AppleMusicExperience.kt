@@ -60,6 +60,12 @@ fun PreferenceEditor.setLibraryStyle(style: LibraryStyle) {
     this[LibraryStyleKey] = style.name
 }
 
+/** Writes the choice and the legacy Apple menus surface together, so the Apple Music indicator follows the choice. */
+fun PreferenceEditor.setPlayerMenuStyle(style: PlayerMenuStyle) {
+    this[PlayerMenuStyleKey] = style.name
+    this[AppleMusicMenusKey] = style == PlayerMenuStyle.APPLE_MUSIC
+}
+
 private fun PreferenceSnapshot.appleMusicSurface(key: BooleanPreferenceKey): Boolean =
     this[key] ?: (!this[AppleMusicSettingsMigratedKey, false] && this[AppleMusicExperienceKey, false])
 
@@ -67,6 +73,16 @@ fun PreferenceSnapshot.appleMusicHeaders(): Boolean = appleMusicSurface(AppleMus
 fun PreferenceSnapshot.appleMusicMenus(): Boolean = appleMusicSurface(AppleMusicMenusKey)
 fun PreferenceSnapshot.appleMusicSearchBar(): Boolean = appleMusicSurface(AppleMusicSearchBarKey)
 fun PreferenceSnapshot.appleMusicPalette(): Boolean = appleMusicSurface(AppleMusicPaletteKey)
+
+/**
+ * The three-dot and lyrics menu look. A stored legacy Apple menus choice still decides, so the independent toggle and
+ * the presets keep their meaning; otherwise the menu style decides, and a fresh install gets Apple Music.
+ */
+fun PreferenceSnapshot.playerMenuStyle(): PlayerMenuStyle {
+    val legacyMenus = this[AppleMusicMenusKey]
+    if (legacyMenus != null) return if (legacyMenus) PlayerMenuStyle.APPLE_MUSIC else PlayerMenuStyle.MD3
+    return this[PlayerMenuStyleKey].toEnum(PlayerMenuStyle.Default)
+}
 
 fun PreferenceSnapshot.selectedPlayerDesignStyle(): PlayerDesignStyle =
     this[PlayerDesignStyleKey].toEnum(

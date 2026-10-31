@@ -99,7 +99,7 @@ fun ArchiveTuneShell(
                 }
             }
         val layout = shellLayout(maxWidth.value, television, preferences, effectiveScrolledDown, searchActive,
-            navigation.route == navigation.selectedTab.route)
+            navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route))
         val nativeActive by (nativeChrome?.active ?: InactiveNativeChrome).collectAsState()
         val nativeInsetDp by (nativeChrome?.bottomInsetDp ?: NoNativeInset).collectAsState()
         val nativeYields = nativeActive && layout.nativeChromeReplaces()

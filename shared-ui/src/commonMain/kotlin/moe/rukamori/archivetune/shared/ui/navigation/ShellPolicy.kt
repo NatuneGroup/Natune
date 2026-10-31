@@ -12,8 +12,9 @@ fun shellLayout(
     scrolledDown: Boolean = false,
     searchActive: Boolean = false,
     topLevel: Boolean = true,
+    settingsRoute: Boolean = false,
 ): ShellLayout {
-    if (searchActive) return ShellLayout.Hidden
+    if (searchActive || settingsRoute) return ShellLayout.Hidden
     // The Apple Music bar itself owns its one-row geometry, not the preset indicator.
     if (preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC) return ShellLayout.CompactRow
     if (television) return ShellLayout.TvRail
@@ -49,6 +50,12 @@ fun frostedNavigationOnScreen(layout: ShellLayout, preferences: PreferenceSnapsh
         ShellLayout.MiniPlayerOnly, ShellLayout.Hidden -> false
     }
 }
+
+/**
+ * The settings page and every settings subpage. Those routes draw no tab bar, rail, compact row or mini player on any
+ * platform, and playback continues underneath. The first path segment is the one [ArchiveRoutes.resolve] maps to SETTINGS.
+ */
+fun isSettingsRoute(route: String): Boolean = route.substringBefore('?').substringBefore('/') == "settings"
 
 fun compactLeftIsLibrary(route: String): Boolean =
     route in setOf("home", "history", "local_songs", "library_playlists", "library_spotify_playlists", "library_artists") ||

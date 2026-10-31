@@ -1330,7 +1330,7 @@ fun BottomSheetPlayer(
             } else {
                 !aodModeEnabled && !isLyricsScreenVisible
             },
-        keepContentAlive = true,
+        keepContentAlive = true, collapsedContentVisible = !moe.rukamori.archivetune.shared.ui.navigation.isSettingsRoute(currentRoute.orEmpty()),
         collapsedContent = {
             MiniPlayer(
                 position = position,

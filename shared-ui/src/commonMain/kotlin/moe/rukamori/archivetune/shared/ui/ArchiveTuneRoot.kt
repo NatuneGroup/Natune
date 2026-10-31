@@ -235,8 +235,9 @@ private fun NativeChromeLink(
     val nowPlaying = current?.let {
         NativeNowPlaying(it.occurrenceId, it.item.title, it.item.subtitle, it.item.artworkUri, playing)
     }
-    val state = NativeShellState(visible = !expanded, selectedTab = navigation.selectedTab, nowPlaying = nowPlaying,
-        labels = labels)
+    // Settings pages draw no shell chrome, so the platform tab bar and mini player step aside there as well.
+    val state = NativeShellState(visible = !expanded && !isSettingsRoute(navigation.route),
+        selectedTab = navigation.selectedTab, nowPlaying = nowPlaying, labels = labels)
     SideEffect { chrome.publish(state) }
     DisposableEffect(chrome) { onDispose { chrome.publish(NativeShellState()) } }
     val latestCurrent by rememberUpdatedState(current)

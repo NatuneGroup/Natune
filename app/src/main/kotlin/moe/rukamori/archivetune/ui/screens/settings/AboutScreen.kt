@@ -83,7 +83,7 @@ import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import moe.rukamori.archivetune.ui.component.preferenceGroup
-import moe.rukamori.archivetune.ui.screens.settings.about.SukisuAboutBackground
+import moe.rukamori.archivetune.ui.screens.settings.about.AboutTonalSegment
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.viewmodels.AboutContributorsUiState
@@ -158,7 +158,7 @@ private fun AboutScreenContent(
     val listState = rememberLazyListState()
 
     Scaffold(
-        containerColor = Color.Transparent,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             SettingsTopAppBar(
@@ -184,7 +184,7 @@ private fun AboutScreenContent(
                 WindowInsetsSides.Horizontal,
             )
 
-        SukisuAboutBackground(listState = listState, modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize()) {
             when (state) {
                 AboutScreenState.Loading -> {
                     AboutLoadingContent(
@@ -852,7 +852,7 @@ private fun AboutHeaderCard(
             BuildConfig.ARCHITECTURE.uppercase()
         }
 
-    SettingsGlassSegment(index = 0, count = 1, modifier = modifier) {
+    AboutTonalSegment(index = 0, count = 1, modifier = modifier) {
         Column(
             modifier =
                 Modifier
@@ -935,7 +935,7 @@ private fun AboutMetadataPill(
 }
 
 /**
- * A credit row: the avatar sits directly on the glass segment — [PreferenceEntry]'s icon slot
+ * A credit row: the avatar sits directly on the tonal segment — [PreferenceEntry]'s icon slot
  * paints a filled expressive blob behind its content, which would put a colour disc behind the
  * picture. Row anatomy (heights, paddings, typography) matches [PreferenceEntry].
  */
@@ -952,7 +952,7 @@ private fun AboutMemberRow(
             member.profileUrl?.let { url -> { onOpenUri(url) } }
         }
 
-    SettingsGlassSegment(
+    AboutTonalSegment(
         index = index,
         count = count,
         modifier = modifier,
@@ -1052,7 +1052,7 @@ private fun AboutContributorRow(
             { onOpenProfile(profileUrl) }
         }
 
-    SettingsGlassSegment(
+    AboutTonalSegment(
         index = index,
         count = count,
         modifier = modifier,
@@ -1099,7 +1099,7 @@ private fun AboutContributorsStatusSegment(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SettingsGlassSegment(index = 0, count = 1, modifier = modifier) {
+    AboutTonalSegment(index = 0, count = 1, modifier = modifier) {
         Column(
             modifier =
                 Modifier

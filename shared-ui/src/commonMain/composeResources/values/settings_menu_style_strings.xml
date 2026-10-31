@@ -1,0 +1,5 @@
+<resources>
+    <string name="m6_player_menu_style">Player menu style</string>
+    <string name="m6_player_menu_style_desc">Applies to the player three-dot menu and the lyrics menu.</string>
+    <string name="m6_menu_md3">Material 3 list</string>
+</resources>
