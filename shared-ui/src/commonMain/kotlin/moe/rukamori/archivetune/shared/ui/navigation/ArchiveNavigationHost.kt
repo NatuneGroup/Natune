@@ -166,7 +166,7 @@ fun ArchiveNavigationHost(
                 require(route.destination == ArchiveDestination.LOCAL_SONGS)
                 val a = binding.actions
                 LocalSongsScreen(binding.state, LocalSongsActions(back, a.query, a.sort, a.requestPermission, a.scan,
-                    a.minimumDuration, a.pickFolder, a.removeFolder, a.play, a.retry, a.more), artwork)
+                    a.minimumDuration, a.pickFolder, a.removeFolder, a.play, a.retry, a.more, a.importFiles), artwork)
             }
             is ArchiveGraphPage.Uploads -> {
                 require(route.destination == ArchiveDestination.UPLOADED_SONGS)

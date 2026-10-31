@@ -86,6 +86,13 @@ internal class IosItemMenuState {
         message = NOTICE_UNAVAILABLE
     }
 
+    /** A download of a provider this host cannot store: the menu closes and the notice names the limit. */
+    fun refuseDownload() {
+        dismiss()
+        refusedAsUnavailable = false
+        message = NOTICE_DOWNLOAD_REFUSED
+    }
+
     internal fun unavailable(): Nothing {
         refusedAsUnavailable = true
         throw UnsupportedOperationException("not connected on the iOS host")
@@ -94,6 +101,7 @@ internal class IosItemMenuState {
     companion object {
         const val NOTICE_UNAVAILABLE = "ios_settings_feature_unavailable"
         const val NOTICE_FAILED = "ios_menu_action_failed"
+        const val NOTICE_DOWNLOAD_REFUSED = "ios_download_refused"
     }
 }
 

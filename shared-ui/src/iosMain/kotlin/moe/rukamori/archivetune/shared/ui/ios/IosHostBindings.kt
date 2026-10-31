@@ -196,6 +196,8 @@ private fun iosGraphPage(
             ArchiveDestination.LIBRARY ->
                 hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
             ArchiveDestination.HISTORY -> iosHistoryPage(graph, menu)
+            ArchiveDestination.LOCAL_SONGS -> iosLocalSongsPage(graph, menu, back)
+            ArchiveDestination.DOWNLOADS -> iosDownloadsPage(graph, back)
             ArchiveDestination.MUSIC_RECOGNITION ->
                 iosRecognitionPage(recognition, route, back, openRoute, graph::report)
             ArchiveDestination.MUSIC_RECOGNITION_DETAILS ->
