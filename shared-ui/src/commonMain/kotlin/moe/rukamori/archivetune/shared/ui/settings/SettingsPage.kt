@@ -1,6 +1,5 @@
 package moe.rukamori.archivetune.shared.ui.settings
 
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.marquee.SettingsMarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
@@ -93,18 +93,18 @@ fun SettingsPage(
                         Column {
                             Text(stringResource(option.label))
                             description?.let {
-                                Text(
-                                    stringResource(it),
-                                    modifier = if (visible && resumed && motionEnabled) Modifier.basicMarquee(iterations = 2) else Modifier,
-                                    maxLines = 1,
+                                SettingsMarqueeText(
+                                    text = stringResource(it),
+                                    active = visible && resumed && motionEnabled,
+                                    phaseKey = row.anchor,
                                 )
                             }
                         }
                     } else if (description != null) {
-                        Text(
-                            stringResource(description),
-                            modifier = if (visible && resumed && motionEnabled) Modifier.basicMarquee(iterations = 2) else Modifier,
-                            maxLines = 1,
+                        SettingsMarqueeText(
+                            text = stringResource(description),
+                            active = visible && resumed && motionEnabled,
+                            phaseKey = row.anchor,
                         )
                     } else if (row is SettingsRow.IntChoice) {
                         val stored = preferences[row.key, row.default]

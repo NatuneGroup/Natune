@@ -194,7 +194,7 @@ fun UploadedSongsScreen(
         }
         items(state.rows, key = { "uploaded-${it.occurrenceId}" }) { row ->
             ListItem(
-                headlineContent = { Text(row.item.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                headlineContent = { Text(row.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                 supportingContent = {
                     Text(
                         listOf(row.item.subtitle, row.item.album.orEmpty())

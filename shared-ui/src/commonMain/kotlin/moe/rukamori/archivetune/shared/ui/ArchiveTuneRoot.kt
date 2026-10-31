@@ -21,6 +21,7 @@ import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.navigation.*
 import moe.rukamori.archivetune.shared.ui.player.*
 import moe.rukamori.archivetune.shared.ui.screens.*
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import moe.rukamori.archivetune.shared.ui.theme.archiveTuneDefaultColorScheme
@@ -171,7 +172,7 @@ private fun ArchiveTuneLoadedRoot(
                                 Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { expanded = true }.padding(horizontal = 16.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(current.item.title, Modifier.weight(1f), maxLines = 1)
+                                MarqueeText(current.item.title, Modifier.weight(1f))
                                 val playing = playback?.playWhenReady == true
                                 val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, playing, policy.motion)
                                 TextButton(onClick = {

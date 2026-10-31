@@ -21,9 +21,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.stringResource
@@ -49,7 +49,7 @@ fun ArtistAlbumsScreen(
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
             title = {
-                Text(text = title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                MarqueeText(text = title)
             },
             navigationIcon = {
                 Box(

@@ -35,11 +35,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.ui.glass.LocalOpticalPolicy
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
+import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import org.jetbrains.compose.resources.stringResource
@@ -76,7 +76,7 @@ fun ArtistSongsScreen(
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
             title = {
-                Text(text = displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                MarqueeText(text = displayName)
             },
             navigationIcon = {
                 // A plain box carries the long press, which IconButton would swallow.
