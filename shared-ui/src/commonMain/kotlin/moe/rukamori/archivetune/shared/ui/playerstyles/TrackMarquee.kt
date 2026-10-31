@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.playerstyles
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
@@ -30,6 +31,8 @@ private val TrackMarqueeSpacing = 30.dp
  * marquee, and a later return does not restart a pass that already ran for this track. A pass cut short by a lifecycle
  * change is not retried either, which keeps a paused or hidden player from scrolling in the background.
  */
+// The opt-in covers MarqueeSpacing, which no other shared-ui file uses yet.
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun Modifier.trackMarquee(trackKey: Any?, enabled: Boolean): Modifier {
     var passStarted by remember(trackKey) { mutableStateOf(false) }
