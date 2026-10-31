@@ -163,7 +163,7 @@ class YouTubeShelfWireTest {
                     {"musicResponsiveListItemRenderer":${songFields("row_song_03")}},
                     {"musicShelfRenderer":{"title":{"runs":[{"text":"Songs"}]},
                       "contents":[{"musicResponsiveListItemRenderer":${songFields("shelf_song4")}}]}}]}}
-                ]}}}]}
+                ]}}}}]}
             """.trimIndent()),
             sectionList = null,
         )
