@@ -15,6 +15,17 @@ import androidx.compose.runtime.setValue
 enum class ProxyConnectionResult { CONNECTED, INVALID_CONFIGURATION, AUTHENTICATION, TIMEOUT, DNS_FAILURE, UNREACHABLE, FAILED }
 private enum class InternetAction { PROXY, ROTATION_REFRESH }
 
+/**
+ * The internet rows one host can honor. A row the host cannot apply is left out rather than shown as a control that
+ * does nothing; the defaults keep every row for a host that applies them all.
+ */
+data class InternetSupport(
+    val rotation: Boolean = true,
+    val streamBypass: Boolean = true,
+    val dnsOverHttps: Boolean = true,
+    val youtubeRegion: Boolean = true,
+)
+
 @Composable
 fun InternetSettings(
     controller: SettingsController,
@@ -25,8 +36,8 @@ fun InternetSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
-    /** False on a host whose HTTP stack cannot change the proxy of a live session, so rotation is never offered. */
-    rotationSupported: Boolean = true,
+    /** The rows this host can apply; a host whose HTTP stack cannot change a live session's proxy leaves rotation out. */
+    support: InternetSupport = InternetSupport(),
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -38,7 +49,7 @@ fun InternetSettings(
             action == InternetAction.ROTATION_REFRESH && !preferences[IpRotationEnabledKey, false]) action = null
     }
     SettingsPage(internetSettingsRows(preferences, !rotating, { action = InternetAction.PROXY },
-        { action = InternetAction.ROTATION_REFRESH }, rotationSupported),
+        { action = InternetAction.ROTATION_REFRESH }, support),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { change ->
             if (IpRotationEnabledKey in change.changedKeys) {
@@ -89,7 +100,7 @@ fun InternetSettings(
                     refreshed != null -> Text(stringResource(Res.string.m6_rotation_count, refreshed!!))
                     else -> CircularProgressIndicator()
                 }
-                if (rotationSupported && preferences[IpRotationEnabledKey, false])
+                if (support.rotation && preferences[IpRotationEnabledKey, false])
                     Text(stringResource(Res.string.m6_rotation_count, activeRotationCount))
             } },
             confirmButton = { TextButton(onClick = { action = null }) { Text(stringResource(Res.string.m6_done)) } },
@@ -102,23 +113,26 @@ fun internetSettingsRows(
     rotationIdle: Boolean,
     testProxy: () -> Unit,
     refreshRotation: () -> Unit,
-    rotationSupported: Boolean = true,
+    support: InternetSupport = InternetSupport(),
 ): List<SettingsRow> = buildList {
-    add(SettingsRow.Choice("yt_music_region", Res.string.m6_yt_region, YouTubeMusicRegionKey, "SYSTEM_DEFAULT",
-        youtubeRegionOptions(), write = { setYouTubeMusicRegion(it) }))
-    add(SettingsRow.Toggle("dns_over_https", Res.string.m6_doh, EnableDnsOverHttpsKey, false))
-    if (preferences[EnableDnsOverHttpsKey, false]) {
-        add(SettingsRow.Choice("dns_provider", Res.string.m6_dns_provider, DnsOverHttpsProviderKey, "Cloudflare",
-            listOf("Cloudflare" to Res.string.m6_dns_cloudflare, "Google" to Res.string.m6_dns_google,
-                "AdGuard" to Res.string.m6_dns_adguard, "Quad9" to Res.string.m6_dns_quad9, "Custom" to Res.string.m6_custom)
-                .map { SettingsRow.Option(it.first, it.second) }))
-        if (preferences[DnsOverHttpsProviderKey, "Cloudflare"] == "Custom")
-            add(SettingsRow.Text("dns_custom_url", Res.string.m6_dns_custom, InlineCustomDnsUrlKey, default = "https://",
-                valid = { it.startsWith("https://") && validLyricsEndpoint(it) }))
+    if (support.youtubeRegion)
+        add(SettingsRow.Choice("yt_music_region", Res.string.m6_yt_region, YouTubeMusicRegionKey, "SYSTEM_DEFAULT",
+            youtubeRegionOptions(), write = { setYouTubeMusicRegion(it) }))
+    if (support.dnsOverHttps) {
+        add(SettingsRow.Toggle("dns_over_https", Res.string.m6_doh, EnableDnsOverHttpsKey, false))
+        if (preferences[EnableDnsOverHttpsKey, false]) {
+            add(SettingsRow.Choice("dns_provider", Res.string.m6_dns_provider, DnsOverHttpsProviderKey, "Cloudflare",
+                listOf("Cloudflare" to Res.string.m6_dns_cloudflare, "Google" to Res.string.m6_dns_google,
+                    "AdGuard" to Res.string.m6_dns_adguard, "Quad9" to Res.string.m6_dns_quad9, "Custom" to Res.string.m6_custom)
+                    .map { SettingsRow.Option(it.first, it.second) }))
+            if (preferences[DnsOverHttpsProviderKey, "Cloudflare"] == "Custom")
+                add(SettingsRow.Text("dns_custom_url", Res.string.m6_dns_custom, InlineCustomDnsUrlKey, default = "https://",
+                    valid = { it.startsWith("https://") && validLyricsEndpoint(it) }))
+        }
     }
     add(SettingsRow.Toggle("proxy_settings", Res.string.m6_proxy_enable, ProxyEnabledKey, false,
         description = Res.string.m6_proxy_rotation_precedence
-            .takeIf { rotationSupported && preferences[IpRotationEnabledKey, false] }))
+            .takeIf { support.rotation && preferences[IpRotationEnabledKey, false] }))
     if (preferences[ProxyEnabledKey, false]) {
         add(SettingsRow.Choice("proxy_type", Res.string.m6_proxy_type, ProxyTypeKey, "HTTP", listOf(
             SettingsRow.Option("HTTP", Res.string.m6_proxy_http), SettingsRow.Option("SOCKS", Res.string.m6_proxy_socks))))
@@ -127,10 +141,11 @@ fun internetSettingsRows(
         add(SettingsRow.Number("proxy_port", Res.string.m6_proxy_port, ProxyPortKey, 8080, 1..65535))
         add(SettingsRow.Text("proxy_username", Res.string.m6_proxy_username, ProxyUsernameKey, masked = true))
         add(SettingsRow.Text("proxy_password", Res.string.m6_proxy_password, ProxyPasswordKey, masked = true))
-        add(SettingsRow.Toggle("stream_bypass_proxy", Res.string.m6_proxy_bypass, StreamBypassProxyKey, false))
+        if (support.streamBypass)
+            add(SettingsRow.Toggle("stream_bypass_proxy", Res.string.m6_proxy_bypass, StreamBypassProxyKey, false))
         add(SettingsRow.Action("test_proxy", Res.string.m6_test_proxy, testProxy))
     }
-    if (rotationSupported) {
+    if (support.rotation) {
         add(SettingsRow.Toggle("ip_rotation", Res.string.m6_ip_rotation, IpRotationEnabledKey, false, enabled = rotationIdle))
         if (preferences[IpRotationEnabledKey, false])
             add(SettingsRow.Action("download_speed_limit", Res.string.m6_refresh_rotation, refreshRotation, enabled = rotationIdle))

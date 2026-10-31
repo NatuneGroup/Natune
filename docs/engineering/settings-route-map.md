@@ -31,7 +31,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/lyrics/providers` | ✓ | ✓ | ✓ | real Paxsenix stats + endpoint probes |
 | `settings/lyrics/romanisation` | ✓ | ✓ | ✓ | JP toggle gated on real pack state |
 | `settings/language_packs` | ✓ | ✓ | ✓ | JP pack real; SpatialFlow font install/remove reports unavailable (no host font consumer) |
-| `settings/internet` | ✓ | ✓ | ✓ | iOS: the saved static proxy is applied to the session graph's Darwin engine at launch and a saved edit applies next launch; rotation and its refresh row are hidden (one `NSURLSession` per engine), and the page states the limits |
+| `settings/internet` | ✓ | ✓ | ✓ | iOS: the saved static proxy (HTTP or SOCKS, address and credentials) applies at launch to the session graph's Darwin engine and the uploads client, and a saved edit applies next launch; rotation is hidden (one `NSURLSession` per engine), DNS-over-HTTPS, the YouTube region and the stream bypass switch are hidden because no iOS path applies them, and the page states the limits |
 | `settings/player` | ✓ | ✓ | ✓ | bit-perfect/USB rows read unsupported |
 | `settings/player/ytdlp` | ✓ | ✓ | ✓ | BUG-004 target; real runtime status (unavailable on iOS) |
 | `settings/canvas` | ✓ | ✓ | — | desktop mounts |
