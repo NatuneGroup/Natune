@@ -17,9 +17,9 @@ import moe.rukamori.archivetune.shared.domain.settings.ProxyRoute
 import moe.rukamori.archivetune.shared.domain.settings.ProxyRouteType
 import moe.rukamori.archivetune.shared.domain.settings.proxyRoute
 import platform.Foundation.NSURLCredential
-import platform.Foundation.NSURLCredentialPersistenceNone
 import platform.Foundation.NSURLSessionAuthChallengePerformDefaultHandling
 import platform.Foundation.NSURLSessionAuthChallengeUseCredential
+import platform.Foundation.create
 
 /** The sanitized outcome of one proxy probe; the settings page maps it to its own result type. */
 enum class IosProxyTestResult { CONNECTED, INVALID_CONFIGURATION, AUTHENTICATION, TIMEOUT, UNREACHABLE, FAILED }
@@ -80,15 +80,17 @@ fun DarwinClientEngineConfig.applyIosProxyRoute(route: ProxyRoute?) {
     handleChallenge { _, _, challenge, completionHandler ->
         val space = challenge.protectionSpace
         // One retry absorbs a proxy that asks twice; a third refusal is the proxy rejecting these credentials.
-        if (!space.isProxy || challenge.previousFailureCount >= 2L) {
+        if (!space.isProxy() || challenge.previousFailureCount >= 2L) {
             completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, null)
         } else {
             completionHandler(
                 NSURLSessionAuthChallengeUseCredential,
-                NSURLCredential.credentialWithUser(
+                // credentialWithUser is not bound by this Kotlin/Native release; create replaces it.
+                // Persistence 0 is NSURLCredentialPersistenceNone, given by value: that name does not resolve here.
+                NSURLCredential.create(
                     user = username,
                     password = password,
-                    persistence = NSURLCredentialPersistenceNone,
+                    persistence = 0,
                 ),
             )
         }

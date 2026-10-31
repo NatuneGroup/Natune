@@ -236,7 +236,9 @@ private fun WireResponsiveItem.toEntry(): YouTubeEntry? {
     val groups = subtitleGroups()
     // A search row labels its own type in the first subtitle group ("Song", "Album", ...). The endpoint stays
     // authoritative whenever it named a surface of its own; the label only refines a row proven playable.
-    val labeled = groups.firstOrNull()?.joinToString("") { it.text.orEmpty() }?.trim()?.kindOfLabel()
+    // A linked run in that group is the artist or album credit itself, so only plain text can carry the label.
+    val typeLabel = groups.firstOrNull()?.takeIf { group -> group.none { it.navigationEndpoint != null } }
+    val labeled = typeLabel?.joinToString("") { it.text.orEmpty() }?.trim()?.kindOfLabel()
     val resolved = if (kind == ContentKind.SONG && labeled != null) labeled else kind
     val artists = groups.artistCredits()
     val album = groups.firstNotNullOfOrNull { group -> group.firstNotNullOfOrNull { it.albumCredit() } }

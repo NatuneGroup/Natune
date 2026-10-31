@@ -485,7 +485,9 @@ private fun ResponsiveItem.toEntry(): YouTubeEntry? {
     val groups = subtitleGroups()
     // Search shelves label the result type in the first subtitle group ("Song", "Video", "Album", ...). The label is
     // only a hint: when it names a different surface than the endpoint did, the endpoint stays authoritative.
-    val labeledKind = groups.firstOrNull()?.typeLabel()?.contentKind()
+    // A linked run in that group is the artist or album credit itself, so only plain text can carry the label.
+    val labelGroup = groups.firstOrNull()?.takeIf { group -> group.none { it.navigationEndpoint != null } }
+    val labeledKind = labelGroup?.typeLabel()?.contentKind()
     if (labeledKind != null && kind == ContentKind.SONG) kind = labeledKind
     val artists = groups.artistCredits()
     val album = groups.firstNotNullOfOrNull { group -> group.firstNotNullOfOrNull { run -> run.albumId() } }
