@@ -70,7 +70,11 @@ private fun PreferenceSnapshot.appleMusicSurface(key: BooleanPreferenceKey): Boo
     this[key] ?: (!this[AppleMusicSettingsMigratedKey, false] && this[AppleMusicExperienceKey, false])
 
 fun PreferenceSnapshot.appleMusicHeaders(): Boolean = appleMusicSurface(AppleMusicHeadersKey)
-fun PreferenceSnapshot.appleMusicMenus(): Boolean = appleMusicSurface(AppleMusicMenusKey)
+/**
+ * The menu surface is the effective menu look rather than the raw legacy key: a fresh install renders Apple Music,
+ * so its toggle and the experience indicator must read the same thing the menus render.
+ */
+fun PreferenceSnapshot.appleMusicMenus(): Boolean = playerMenuStyle() == PlayerMenuStyle.APPLE_MUSIC
 fun PreferenceSnapshot.appleMusicSearchBar(): Boolean = appleMusicSurface(AppleMusicSearchBarKey)
 fun PreferenceSnapshot.appleMusicPalette(): Boolean = appleMusicSurface(AppleMusicPaletteKey)
 
