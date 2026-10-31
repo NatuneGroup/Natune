@@ -423,6 +423,8 @@
     <string name="spotify_liked_songs">Liked Songs</string>
     <string name="apple_music_animated_artwork">Animated artwork</string>
     <string name="apple_music_animated_artwork_desc">Play a song’s Canvas loop or music video in place of the cover.</string>
+    <string name="disable_animated_artwork_on_mobile_data">Disable animated artwork on mobile data</string>
+    <string name="disable_animated_artwork_on_mobile_data_desc">Show the still cover instead of a Canvas loop or music video while on cellular data.</string>
     <string name="apple_music_backdrop_wander">Wandering backdrop</string>
     <string name="apple_music_backdrop_wander_desc">Let the blurred artwork drift and zoom while lyrics are open.</string>
     <string name="apple_music_pause_scale">Pause shrink</string>
