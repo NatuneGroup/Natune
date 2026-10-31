@@ -31,6 +31,11 @@ data class LyricsModeProfile(
     val manualScrollHoldMs: Long,
     /** Whether a drag keeps the hold open until the finger lifts. The other looks restart the hold on each scroll. */
     val holdsWhileDragged: Boolean,
+    /**
+     * ENHANCED's refinements: the feathered sweep, glow only for held syllables, interlude dots, a staggered depth
+     * change, and rows left unblurred while the list is held. The other looks keep their own motion.
+     */
+    val refinedMotion: Boolean = false,
 ) {
     companion object {
         /**
@@ -71,9 +76,10 @@ data class LyricsModeProfile(
                     lineSpacingFactor = 1f,
                     minSweepMs = LyricsSweepGeometry.MIN_SWEEP_MS,
                     anchorFraction = 0.35f,
-                    idleAlpha = 0.6f,
+                    idleAlpha = 0.4f,
                     manualScrollHoldMs = MANUAL_SCROLL_HOLD_MS,
                     holdsWhileDragged = false,
+                    refinedMotion = true,
                 )
                 LyricsMode.SPOTIFY -> LyricsModeProfile(
                     mainSizeSp = 26f,

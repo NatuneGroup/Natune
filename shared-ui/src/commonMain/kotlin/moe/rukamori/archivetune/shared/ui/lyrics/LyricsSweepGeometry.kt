@@ -1,5 +1,8 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
+import kotlin.math.PI
+import kotlin.math.sin
+
 /**
  * One word's box on the laid-out text. [leftPx] is at most [rightPx]. [line] is the visual line the word
  * starts on, and it is always below [LyricsLineBands.lineCount].
@@ -48,6 +51,10 @@ object LyricsSweepGeometry {
     /** Words at or below [GLOW_FAST_MS] get the floor; words at or above [GLOW_SLOW_MS] get the full bloom. */
     const val GLOW_FAST_MS = 130L
     const val GLOW_SLOW_MS = 800L
+
+    /** A word earns glow only from [EMPHASIS_MIN_MS]; it reaches its full share [EMPHASIS_RAMP_MS] later. */
+    const val EMPHASIS_MIN_MS = 1_000L
+    const val EMPHASIS_RAMP_MS = 1_000L
 
     /** Share of the active word that is sung, from 0 to 1. Reduced motion jumps between 0 and 1. */
     fun progressAt(
@@ -121,5 +128,26 @@ object LyricsSweepGeometry {
         }
         val pace = ((held - GLOW_FAST_MS).toFloat() / (GLOW_SLOW_MS - GLOW_FAST_MS)).coerceIn(0f, 1f)
         return (GLOW_FLOOR + (1f - GLOW_FLOOR) * pace) * envelope.coerceIn(0f, 1f)
+    }
+
+    /**
+     * How much of its glow a word earns, from 0 to 1. A word shorter than [EMPHASIS_MIN_MS] earns none, so quick
+     * syllables do not flicker. From there the share rises from half to full over [EMPHASIS_RAMP_MS].
+     */
+    fun emphasisGain(box: LyricsWordBox): Float {
+        val held = box.endMs - box.startMs
+        if (held < EMPHASIS_MIN_MS) return 0f
+        return (0.5f + 0.5f * ((held - EMPHASIS_MIN_MS).toFloat() / EMPHASIS_RAMP_MS)).coerceAtMost(1f)
+    }
+
+    /**
+     * How far a held word has lifted, from 0 to 1. It rises and falls with the word and peaks mid-word, so the lift
+     * is one smooth movement. Words that earn no emphasis do not lift at all.
+     */
+    fun liftShare(box: LyricsWordBox, positionMs: Long): Float {
+        if (positionMs < box.startMs || positionMs >= box.endMs) return 0f
+        val held = (box.endMs - box.startMs).coerceAtLeast(1L)
+        val through = ((positionMs - box.startMs).toFloat() / held).coerceIn(0f, 1f)
+        return emphasisGain(box) * sin(PI.toFloat() * through)
     }
 }
