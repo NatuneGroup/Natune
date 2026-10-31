@@ -25,6 +25,7 @@
 
 #include <windows.h>
 #include <objbase.h>
+#include <objidl.h>
 #include <wrl.h>
 #include <wrl/event.h>
 #include <WebView2.h>
@@ -32,6 +33,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cwchar>
 #include <filesystem>
 #include <functional>
@@ -70,6 +72,8 @@ constexpr int kWindowWidth = 960;
 constexpr int kWindowHeight = 720;
 /* Opening waits for the owner thread, which normally answers at once. The bound keeps a wedged runtime from hanging Java. */
 constexpr int kOpenTimeoutSeconds = 10;
+/* A challenge document is a small page; the bound keeps a caller from holding an unbounded string in the window. */
+constexpr std::size_t kMaxHtmlBytes = 256 * 1024;
 constexpr wchar_t kOwnerClass[] = L"ArchiveTuneBrowserOwner";
 constexpr wchar_t kSessionClass[] = L"ArchiveTuneBrowserSession";
 
@@ -84,6 +88,8 @@ struct Session {
     std::vector<std::string> origins;
     std::shared_ptr<BrowserCallbacks> callbacks;
     std::wstring userDataFolder;
+    /* When set, the document navigation is answered with these bytes instead of the network response. */
+    std::string html;
     /* When set, a navigation to it is reported through onNavigate and cancelled, like shouldOverrideUrlLoading. */
     std::string capturePrefix;
     bool failed = false;
@@ -290,6 +296,62 @@ void requestCookiesOnOwner(jlong id, jlong requestId, const std::string &origin)
             }).Get());
 }
 
+/*
+ * Owner thread only. Answers the document navigation with the caller's bytes, so the page's origin is the requested
+ * URL's origin while its content is the caller's page: the desktop equivalent of the Android loadDataWithBaseURL.
+ * Only that one request is replaced; every other request keeps its normal network path.
+ */
+void attachDocumentOverride(Session &session, jlong id) {
+    session.webview->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT);
+    EventRegistrationToken token{};
+    session.webview->add_WebResourceRequested(
+        Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+            [id](ICoreWebView2 *, ICoreWebView2WebResourceRequestedEventArgs *args) -> HRESULT {
+                Session *current = findSession(id);
+                if (!current || !args || current->html.empty()) return S_OK;
+                // Without the environment the document cannot be answered, so the window ends rather than showing the
+                // real site in place of the challenge.
+                if (current->environment.Get() == nullptr) {
+                    failSession(*current);
+                    return S_OK;
+                }
+                ComPtr<ICoreWebView2WebResourceRequest> request;
+                if (FAILED(args->get_Request(request.GetAddressOf())) || request.Get() == nullptr) return S_OK;
+                LPWSTR uri = nullptr;
+                if (FAILED(request->get_Uri(&uri))) return S_OK;
+                const bool isDocument = uri != nullptr && wideFromUtf8(current->startUrl) == uri;
+                CoTaskMemFree(uri);
+                if (!isDocument) return S_OK;
+
+                // The document is answered from memory. A failed write must end the window: falling through would
+                // let the request reach the network and show the real site instead of the challenge.
+                ComPtr<IStream> stream;
+                if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, stream.GetAddressOf())) || stream.Get() == nullptr) {
+                    failSession(*current);
+                    return S_OK;
+                }
+                ULONG written = 0;
+                const ULONG size = static_cast<ULONG>(current->html.size());
+                const HRESULT wrote = stream->Write(current->html.data(), size, &written);
+                LARGE_INTEGER start{};
+                const HRESULT rewound = stream->Seek(start, STREAM_SEEK_SET, nullptr);
+                if (FAILED(wrote) || FAILED(rewound) || written != size) {
+                    failSession(*current);
+                    return S_OK;
+                }
+                ComPtr<ICoreWebView2WebResourceResponse> response;
+                if (FAILED(current->environment->CreateWebResourceResponse(
+                        stream.Get(), 200, L"OK", L"Content-Type: text/html; charset=utf-8",
+                        response.GetAddressOf())) ||
+                    response.Get() == nullptr) {
+                    failSession(*current);
+                    return S_OK;
+                }
+                return args->put_Response(response.Get());
+            }).Get(),
+        &token);
+}
+
 /* Owner thread only. Installs the policy handlers before the first navigation can run. */
 void attachController(Session &session, ICoreWebView2Controller *controller) {
     session.controller = controller;
@@ -356,6 +418,9 @@ void attachController(Session &session, ICoreWebView2Controller *controller) {
         failSession(session);
         return;
     }
+    if (!session.html.empty()) {
+        attachDocumentOverride(session, id);
+    }
     session.webview->Navigate(wideFromUtf8(session.startUrl).c_str());
 }
 
@@ -410,7 +475,7 @@ std::wstring makeUserDataFolder() {
 /* Owner thread only. Returns the session id, or 0 when the window or its folder cannot be created. */
 jlong createSession(const std::string &startUrl, const std::string &title, const std::string &finishText,
                     const std::vector<std::string> &origins, const std::string &capturePrefix,
-                    const std::shared_ptr<BrowserCallbacks> &callbacks) {
+                    const std::shared_ptr<BrowserCallbacks> &callbacks, const std::string &html = std::string()) {
     const std::wstring folder = makeUserDataFolder();
     if (folder.empty()) return 0;
     const std::wstring titleWide = wideFromUtf8(title);
@@ -423,6 +488,7 @@ jlong createSession(const std::string &startUrl, const std::string &title, const
     session->capturePrefix = capturePrefix;
     session->callbacks = callbacks;
     session->userDataFolder = folder;
+    session->html = html;
 
     HWND window = CreateWindowExW(0, kSessionClass, titleWide.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                                   CW_USEDEFAULT, CW_USEDEFAULT, kWindowWidth, kWindowHeight, nullptr, nullptr,
@@ -588,6 +654,48 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
 
     if (result.wait_for(std::chrono::seconds(kOpenTimeoutSeconds)) == std::future_status::ready) return result.get();
     /* A creation that has not started never will; one that has started answers promptly, so its handle is returned. */
+    if (ticket->abandon()) return 0;
+    return result.get();
+}
+
+/*
+ * The challenge window: the document navigation keeps [documentUrl] as its URL and origin, and the bytes are answered
+ * from [html] by the document override, so a script that is domain-locked to the sign-in origin runs there.
+ */
+JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_openHtml(
+    JNIEnv *env, jclass, jstring documentUrl, jstring html, jobjectArray origins, jstring title, jstring doneLabel,
+    jstring capturePrefix, jobject listener) {
+    if (!ensureOwner()) return 0;
+
+    const std::string document = utf8FromJava(env, documentUrl);
+    const std::string content = utf8FromJava(env, html);
+    const std::string windowTitle = utf8FromJava(env, title);
+    const std::string finishText = utf8FromJava(env, doneLabel);
+    const std::string capture = utf8FromJava(env, capturePrefix);
+    const std::vector<std::string> allowed = readOrigins(env, origins);
+    const std::string documentOrigin = httpsOriginOf(document);
+    if (content.empty() || content.size() > kMaxHtmlBytes) return 0;
+    if (!allCanonical(allowed) || documentOrigin.empty() || !contains(allowed, documentOrigin)) return 0;
+
+    auto callbacks = std::make_shared<BrowserCallbacks>(env, listener);
+    if (!callbacks->valid()) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return 0;
+    }
+
+    auto reply = std::make_shared<std::promise<jlong>>();
+    std::future<jlong> result = reply->get_future();
+    auto ticket = std::make_shared<OpenTicket>();
+
+    post([=]() {
+        if (!ticket->begin()) {
+            reply->set_value(0);
+            return;
+        }
+        reply->set_value(createSession(document, windowTitle, finishText, allowed, capture, callbacks, content));
+    });
+
+    if (result.wait_for(std::chrono::seconds(kOpenTimeoutSeconds)) == std::future_status::ready) return result.get();
     if (ticket->abandon()) return 0;
     return result.get();
 }

@@ -32,6 +32,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <future>
@@ -62,6 +63,8 @@ constexpr int kWindowWidth = 960;
 constexpr int kWindowHeight = 720;
 /* Opening waits for the owner loop, which normally answers at once. The bound keeps a wedged display from hanging Java. */
 constexpr int kOpenTimeoutSeconds = 10;
+/* A challenge document is a small page; the bound keeps a caller from holding an unbounded string in the window. */
+constexpr std::size_t kMaxHtmlBytes = 256 * 1024;
 
 /* Only the owner thread touches the registry, so it needs no lock. */
 struct Session {
@@ -269,7 +272,7 @@ void onCookiesReady(GObject *source, GAsyncResult *result, gpointer data) {
 /* Owner thread only. Builds the window, its Finish control and the policy-enforcing web view. */
 jlong createSession(const std::string &startUrl, const std::string &title, const std::string &finishText,
                     const std::vector<std::string> &origins, const std::string &capturePrefix,
-                    const std::shared_ptr<BrowserCallbacks> &callbacks) {
+                    const std::shared_ptr<BrowserCallbacks> &callbacks, const std::string &html = std::string()) {
     try {
         auto session = std::make_unique<Session>();
         session->id = nextSessionId();
@@ -300,7 +303,13 @@ jlong createSession(const std::string &startUrl, const std::string &title, const
 
         Session *registered = session.get();
         sessions().emplace(id, std::move(session));
-        webkit_web_view_load_uri(registered->view, startUrl.c_str());
+        if (html.empty()) {
+            webkit_web_view_load_uri(registered->view, startUrl.c_str());
+        } else {
+            /* The base URI is the document's origin, so a page whose script is domain-locked to the sign-in origin
+             * runs there, as it does in the Android WebView's loadDataWithBaseURL. */
+            webkit_web_view_load_html(registered->view, html.c_str(), startUrl.c_str());
+        }
         gtk_widget_show_all(registered->window);
         return id;
     } catch (...) {
@@ -472,6 +481,49 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
 
     if (result.wait_for(std::chrono::seconds(kOpenTimeoutSeconds)) == std::future_status::ready) return result.get();
     /* A creation that has not started never will; one that has started answers promptly, so its handle is returned. */
+    if (ticket->abandon()) return 0;
+    return result.get();
+}
+
+/*
+ * The challenge window: the document is [documentUrl]'s origin but its bytes are [html], so a script that is
+ * domain-locked to the sign-in origin runs there. The policy, the capture prefix and the cookie reads are the same
+ * ones `open` enforces, so the page can report only through the capture prefix the caller supplied.
+ */
+JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_openHtml(
+    JNIEnv *env, jclass, jstring documentUrl, jstring html, jobjectArray origins, jstring title, jstring doneLabel,
+    jstring capturePrefix, jobject listener) {
+    if (!ensureOwner()) return 0;
+
+    const std::string document = utf8FromJava(env, documentUrl);
+    const std::string content = utf8FromJava(env, html);
+    const std::string windowTitle = utf8FromJava(env, title);
+    const std::string finishText = utf8FromJava(env, doneLabel);
+    const std::string capture = utf8FromJava(env, capturePrefix);
+    const std::vector<std::string> allowed = readOrigins(env, origins);
+    const std::string documentOrigin = httpsOriginOf(document);
+    if (content.empty() || content.size() > kMaxHtmlBytes) return 0;
+    if (!allCanonical(allowed) || documentOrigin.empty() || !contains(allowed, documentOrigin)) return 0;
+
+    auto callbacks = std::make_shared<BrowserCallbacks>(env, listener);
+    if (!callbacks->valid()) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return 0;
+    }
+
+    auto reply = std::make_shared<std::promise<jlong>>();
+    std::future<jlong> result = reply->get_future();
+    auto ticket = std::make_shared<OpenTicket>();
+
+    post([=]() {
+        if (!ticket->begin()) {
+            reply->set_value(0);
+            return;
+        }
+        reply->set_value(createSession(document, windowTitle, finishText, allowed, capture, callbacks, content));
+    });
+
+    if (result.wait_for(std::chrono::seconds(kOpenTimeoutSeconds)) == std::future_status::ready) return result.get();
     if (ticket->abandon()) return 0;
     return result.get();
 }

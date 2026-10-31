@@ -30,6 +30,24 @@ internal object NativeCookieBrowser {
         listener: Any,
     ): Long
 
+    /**
+     * Loads [html] as the document of [documentUrl], so the page runs on that URL's origin instead of a local file's.
+     * This is the desktop equivalent of the Android `loadDataWithBaseURL` the Turnstile screen uses: the widget is
+     * domain-locked to the sign-in origin, so the document has to be that origin for the challenge to render. The
+     * navigation policy, the cookie policy and the capture prefix work exactly as in [open]; the page reports its
+     * result by navigating to a capture-prefix URL, which the native side cancels after reporting it.
+     */
+    @JvmStatic
+    external fun openHtml(
+        documentUrl: String,
+        html: String,
+        origins: Array<String>,
+        title: String,
+        doneLabel: String,
+        capturePrefix: String,
+        listener: Any,
+    ): Long
+
     /** Asks for the cookies of one authorized origin. The answer arrives on [NativeCookieBrowserListener.onCookies]. */
     @JvmStatic
     external fun requestCookies(handle: Long, requestId: Long, origin: String)

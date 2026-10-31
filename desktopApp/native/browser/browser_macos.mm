@@ -31,6 +31,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <future>
 #include <memory>
 #include <string>
@@ -57,6 +58,8 @@ constexpr CGFloat kWindowWidth = 960;
 constexpr CGFloat kWindowHeight = 720;
 constexpr CGFloat kTopBarHeight = 48;
 constexpr int kOpenTimeoutSeconds = 10;
+/* A challenge document is a small page; the bound keeps a caller from holding an unbounded string in the window. */
+constexpr std::size_t kMaxHtmlBytes = 256 * 1024;
 
 /* Main-thread state for one attempt. The callbacks are shared with the cookie completion blocks. */
 struct Record {
@@ -213,7 +216,7 @@ namespace {
 
 /* Main thread only. Builds the window and its web view, then starts the first navigation. */
 jlong openOnMain(const std::shared_ptr<Record> &record, const std::string &start, const std::string &title,
-                 const std::string &finishText) {
+                 const std::string &finishText, const std::string &html = std::string()) {
     NSURL *startURL = [NSURL URLWithString:[NSString stringWithUTF8String:start.c_str()]];
     if (!startURL) return 0;
 
@@ -258,7 +261,12 @@ jlong openOnMain(const std::shared_ptr<Record> &record, const std::string &start
 
     [window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
-    [webView loadRequest:[NSURLRequest requestWithURL:startURL]];
+    if (html.empty()) {
+        [webView loadRequest:[NSURLRequest requestWithURL:startURL]];
+    } else {
+        /* The base URL is the document's origin, so a page whose script is domain-locked to it runs on that origin. */
+        [webView loadHTMLString:[NSString stringWithUTF8String:html.c_str()] baseURL:startURL];
+    }
     return sessionId;
 }
 
@@ -344,6 +352,52 @@ JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_N
 
     if (result.wait_for(std::chrono::seconds(kOpenTimeoutSeconds)) == std::future_status::ready) return result.get();
     /* A creation that has not started never will; one that has started answers promptly, so its handle is returned. */
+    if (ticket->abandon()) return 0;
+    return result.get();
+}
+
+/*
+ * The challenge window: the document is [documentUrl]'s origin but its bytes are [html], so a script that is
+ * domain-locked to the sign-in origin runs there. The policy, the capture prefix and the cookie reads are the same
+ * ones `open` enforces.
+ */
+JNIEXPORT jlong JNICALL Java_moe_rukamori_archivetune_desktop_integration_auth_NativeCookieBrowser_openHtml(
+    JNIEnv *env, jclass, jstring documentUrl, jstring html, jobjectArray origins, jstring title, jstring doneLabel,
+    jstring capturePrefix, jobject listener) {
+    const std::string document = utf8FromJava(env, documentUrl);
+    const std::string content = utf8FromJava(env, html);
+    const std::string windowTitle = utf8FromJava(env, title);
+    const std::string finishText = utf8FromJava(env, doneLabel);
+    const std::string capture = utf8FromJava(env, capturePrefix);
+    const std::vector<std::string> allowed = readOrigins(env, origins);
+    const std::string documentOrigin = httpsOriginOf(document);
+    if (content.empty() || content.size() > kMaxHtmlBytes) return 0;
+    if (!allCanonical(allowed) || documentOrigin.empty() || !contains(allowed, documentOrigin)) return 0;
+
+    auto callbacks = std::make_shared<BrowserCallbacks>(env, listener);
+    if (!callbacks->valid()) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return 0;
+    }
+
+    auto record = std::make_shared<Record>();
+    record->callbacks = callbacks;
+    record->origins = allowed;
+    record->capturePrefix = capture;
+
+    auto reply = std::make_shared<std::promise<jlong>>();
+    std::future<jlong> result = reply->get_future();
+    auto ticket = std::make_shared<OpenTicket>();
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!ticket->begin()) {
+            reply->set_value(0);
+            return;
+        }
+        reply->set_value(openOnMain(record, document, windowTitle, finishText, content));
+    });
+
+    if (result.wait_for(std::chrono::seconds(kOpenTimeoutSeconds)) == std::future_status::ready) return result.get();
     if (ticket->abandon()) return 0;
     return result.get();
 }
