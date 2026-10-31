@@ -65,7 +65,15 @@ dumps. Native input is capped at 256 KiB, ANR text at 64 KiB, the combined
 redacted report at 80,000 characters. Copy/Share are explicit, text-only actions;
 review the report for private information first. This recovery report is not
 uploaded automatically; any existing opt-in CrashFeedback behavior is unchanged.
-Reviewed non-startup crashes are acknowledged on Continue when storage permits.
+Every Java crash, native crash, ANR, initialization failure and low-memory exit is kept
+in one bounded store, `noBackupFilesDir/startup_recovery/records` (the newest 20, each
+capped at 24,000 characters). Developer > Crash logs lists them newest first with the
+app version and process, and opens a record for copy or share. Only failures of the
+installed build interrupt startup; records from an earlier build are labelled as such,
+and low-memory kills are listed for diagnosis only. Continue, opening the Crash logs
+page or opening a record acknowledges the failures shown so far; DebugActivity
+acknowledges the crash it displays. Clearing the Crash logs deletes the store and
+moves the exit-import watermark forward, so cleared exits do not return.
 
 Exit records/traces can be absent or overwritten by Android. Death before
 application attachment has no saved Java stack; exit history is unavailable

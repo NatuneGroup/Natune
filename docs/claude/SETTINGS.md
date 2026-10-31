@@ -204,12 +204,13 @@ Stable and Nightly are explicit choices on all builds; build identity is only th
 Canary migration must not overwrite a later Stable choice. Update/About/startup/worker paths
 share the selected channel, reject stale channel candidates and require known newer version codes.
 
-Developer remains `settings/misc`; `acoustic_quality` is a searchable animated expansion
-for the current item. No item disables Run with an explanation. Shared PlayerMenu, SongMenu
-and YouTubeSongMenu actions open the same dialog for their actual selected item, not blindly
-the playing song; SpatialFlow uses the shared player menu. Opening is idle; collapse/navigation/
-target changes deactivate work even during exit animation. See [architecture](ARCHITECTURE.md)
-for bounded-source and heuristic-result limits.
+Developer remains `settings/misc`; Crash logs is a Developer child (`settings/crash_logs`, record
+detail `settings/crash_logs/{recordId}`, Android only) over the startup record store.
+`acoustic_quality` is a searchable animated expansion for the current item. No item disables Run
+with an explanation. Shared PlayerMenu, SongMenu and YouTubeSongMenu actions open the same dialog
+for their actual selected item, not blindly the playing song; SpatialFlow uses the shared player
+menu. Opening is idle; collapse/navigation/target changes deactivate work even during exit
+animation. See [architecture](ARCHITECTURE.md) for bounded-source and heuristic-result limits.
 
 Implementation and independent source review are complete; the 113 new focused test methods
 were integrated but unexecuted at the 2026-10-15 pre-CI checkpoint. Actual build/test evidence is
