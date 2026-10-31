@@ -11,6 +11,13 @@ import moe.rukamori.archivetune.shared.domain.repository.TypedContentRepository
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.completeCatalogueList
 import moe.rukamori.archivetune.shared.ui.host.playableRows
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_list_empty
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_list_not_played
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_list_unreadable
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_row_not_playable
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_shelf_not_played
+import org.jetbrains.compose.resources.getString
 
 /**
  * The rows the iOS catalogue pages showed, so a tap plays the list or shelf the listener saw. A list page is read to
@@ -52,19 +59,19 @@ internal class IosCatalogueOwners(
         val shelfRows =
             shownShelves[collection]?.values?.firstOrNull { shelf -> shelf.any { it.occurrenceId == start.occurrenceId } }
         if (shelfRows != null) {
-            val playable = playableRows(shelfRows)
-            val startId = playable.firstOrNull { it.occurrenceId == start.occurrenceId }?.occurrenceId
-            if (startId == null) {
-                owners.report("the tapped row is not playable in its shelf")
-                return true
-            }
             owners.scope.launch {
+                val playable = playableRows(shelfRows)
+                val startId = playable.firstOrNull { it.occurrenceId == start.occurrenceId }?.occurrenceId
+                if (startId == null) {
+                    owners.report(getString(Res.string.ios_transports_row_not_playable))
+                    return@launch
+                }
                 try {
                     owners.queue.replace(playable, startId, playWhenReady = true)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    owners.report("the shelf could not be played")
+                    owners.report(getString(Res.string.ios_transports_shelf_not_played))
                 }
             }
             return true
@@ -81,10 +88,10 @@ internal class IosCatalogueOwners(
                 null
             }
             if (entries.isNullOrEmpty()) {
-                return@launch owners.report("the list could not be read to its end, so it was not played")
+                return@launch owners.report(getString(Res.string.ios_transports_list_unreadable))
             }
             val playable = playableRows(entries)
-            if (playable.isEmpty()) return@launch owners.report("the list holds no playable rows")
+            if (playable.isEmpty()) return@launch owners.report(getString(Res.string.ios_transports_list_empty))
             val startId = playable.firstOrNull { it.occurrenceId == start.occurrenceId }?.occurrenceId
                 ?: playable.firstOrNull { it.item.ref == start.item }?.occurrenceId
                 ?: playable.first().occurrenceId
@@ -93,7 +100,7 @@ internal class IosCatalogueOwners(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                owners.report("the list could not be played")
+                owners.report(getString(Res.string.ios_transports_list_not_played))
             }
         }
         return true

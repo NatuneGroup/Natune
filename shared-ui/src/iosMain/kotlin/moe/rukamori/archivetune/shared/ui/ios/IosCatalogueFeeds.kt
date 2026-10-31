@@ -33,6 +33,9 @@ import moe.rukamori.archivetune.shared.ui.home.HomeSource
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_explore_failed
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_feed_failed
+import moe.rukamori.archivetune.shared.ui.resources.ios_transports_releases_failed
 import moe.rukamori.archivetune.shared.ui.resources.m4_new_releases
 import moe.rukamori.archivetune.shared.ui.screens.BrowseShelfUi
 import moe.rukamori.archivetune.shared.ui.screens.DiscoveryTab
@@ -42,6 +45,7 @@ import moe.rukamori.archivetune.shared.ui.screens.PagedContentState
 import moe.rukamori.archivetune.shared.ui.screens.ReleaseCategory
 import moe.rukamori.archivetune.shared.ui.screens.ReleaseUi
 import moe.rukamori.archivetune.shared.ui.screens.ReleasesUi
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -121,7 +125,7 @@ internal class IosShelfFeed(
                 throw cancelled
             } catch (failure: Exception) {
                 if (current != generation) return@launch
-                report("catalogue feed failed: ${failure::class.simpleName}")
+                report(getString(Res.string.ios_transports_feed_failed))
                 failed = true
             } finally {
                 if (current == generation) {
@@ -164,7 +168,7 @@ internal class IosExploreFeed(
                 throw cancelled
             } catch (failure: Exception) {
                 if (current != generation) return@launch
-                report("explore feed failed: ${failure::class.simpleName}")
+                report(getString(Res.string.ios_transports_explore_failed))
                 failed = true
             } finally {
                 if (current == generation) loading = false
@@ -201,7 +205,7 @@ internal class IosReleasesFeed(
                 throw cancelled
             } catch (failure: Exception) {
                 if (current != generation) return@launch
-                report("new releases failed: ${failure::class.simpleName}")
+                report(getString(Res.string.ios_transports_releases_failed))
                 failed = true
             } finally {
                 if (current == generation) loading = false
