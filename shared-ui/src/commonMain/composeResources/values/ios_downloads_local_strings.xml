@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Downloads and imported local songs on the iOS host. -->
+    <string name="ios_download_refused">This source cannot be stored as a file on this device. Pick another source in Settings, or play the song online.</string>
+    <string name="local_songs_import_files">Import audio</string>
+</resources>
