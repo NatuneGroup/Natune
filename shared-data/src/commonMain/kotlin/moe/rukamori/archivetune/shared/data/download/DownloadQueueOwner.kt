@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.data.download
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,7 +30,8 @@ import kotlin.coroutines.cancellation.CancellationException
  * [DownloadTask] rows: `start` enqueues (a failed or stopped entry for the same song re-arms rather than
  * duplicating), `stop` marks STOPPED and cancels the worker the way `setStopReason` did, `resume` re-queues,
  * `remove` enters REMOVING and deletes the committed file plus its row. At most [maxParallel] transfers run at
- * once, matching the retained three-worker executor.
+ * once, matching the retained three-worker executor. A task is keyed by its provider and media id, because two
+ * providers can name one media id. [dispatcher] runs the workers and the persisted queue collector.
  */
 class DownloadQueueOwner(
     private val store: DownloadTaskStore,
@@ -40,6 +42,7 @@ class DownloadQueueOwner(
     private val timeMs: () -> Long,
     scope: CoroutineScope,
     private val maxParallel: Int = 3,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : DownloadActions {
 
     private val ownerScope = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
@@ -60,7 +63,7 @@ class DownloadQueueOwner(
                 else -> Unit
             }
         }
-        ownerScope.launch(Dispatchers.Default) {
+        ownerScope.launch(dispatcher) {
             store.observeTasks().collect { rows ->
                 queueGate.withLock { snapshot = rows.associateBy { it.id } }
             }
@@ -72,7 +75,7 @@ class DownloadQueueOwner(
     }
 
     override suspend fun start(ref: ContentRef, quality: String) {
-        val id = ref.id
+        val id = downloadTaskId(ref)
         queueGate.withLock {
             val current = snapshot[id]
             when {
@@ -137,7 +140,7 @@ class DownloadQueueOwner(
             .take(free)
         for (task in batch) {
             queued.remove(task.id)
-            workers[task.id] = ownerScope.launch(Dispatchers.Default) { runTask(task) }
+            workers[task.id] = ownerScope.launch(dispatcher) { runTask(task) }
         }
     }
 
@@ -193,6 +196,12 @@ class DownloadQueueOwner(
     private fun DownloadTask.toContentDownload() = ContentDownload(
         id = id, ref = ref, phase = phase, bytesDownloaded = bytesDownloaded, totalBytes = totalBytes)
 }
+
+/**
+ * The id of one download task: its provider and media id. The queue, its persisted rows and every page address a
+ * download by this id, so two providers that name one media id never share an entry or a file.
+ */
+fun downloadTaskId(ref: ContentRef): String = ref.provider + ":" + ref.id
 
 /** One measured byte rate, the retained ByteSample: a fresh sample overwrites one older than the hold window. */
 internal class DownloadSpeedSampler(private val holdMs: Long = SPEED_SAMPLE_HOLD_MS, private val timeMs: () -> Long) {
