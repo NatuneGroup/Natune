@@ -178,6 +178,7 @@ import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.utils.highRes
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import java.util.Locale
+import moe.rukamori.archivetune.ui.player.PlayerCoverImage
 import moe.rukamori.archivetune.ui.player.PlayerControlKind
 import moe.rukamori.archivetune.ui.player.playerControlMotion
 
@@ -719,9 +720,8 @@ private fun SimpMusicArtwork(
 ) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(topInset))
-        AsyncImage(
-            model = metadata.thumbnailUrl?.highRes(),
-            contentDescription = null,
+        PlayerCoverImage(
+            imageUrl = metadata.thumbnailUrl?.highRes(),
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(side).ordinarySleeve(LocalPlayerPresentation.current.hideSleeve).clip(RoundedCornerShape(LocalPlayerPresentation.current.radius(8.dp))).playerSeekDoubleTap(),
         )

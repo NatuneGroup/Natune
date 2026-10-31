@@ -53,7 +53,6 @@ import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.customartwork.CustomArtworkStore
 import moe.rukamori.archivetune.di.CanvasCacheEntryPoint
 import moe.rukamori.archivetune.utils.StreamClientUtils
@@ -551,9 +550,8 @@ private fun CustomImageCanvas(
     // this image, which is the right backdrop for a still canvas.
     LaunchedEffect(url) { frameCallback?.invoke(null) }
     if (!visible) return
-    AsyncImage(
-        model = url,
-        contentDescription = null,
+    PlayerCoverImage(
+        imageUrl = url,
         contentScale = resizeMode.toContentScale(),
         modifier = modifier.clipToBounds(),
     )
