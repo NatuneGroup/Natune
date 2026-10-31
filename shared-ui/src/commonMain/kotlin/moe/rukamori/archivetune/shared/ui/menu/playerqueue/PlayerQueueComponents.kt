@@ -210,17 +210,17 @@ internal fun PlayerQueueHeaderCard(
     val subtitle = track.artists.joinToString(separator = " • ") { it.name }
     val content: @Composable () -> Unit = {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val thumbnailShape = RoundedCornerShape(16.dp)
+            val thumbnailShape = RoundedCornerShape(12.dp)
             val thumbnailUrl = track.thumbnailUrl
             if (thumbnailUrl.isNullOrBlank()) {
                 Box(
                     modifier =
                         Modifier
-                            .size(56.dp)
+                            .size(48.dp)
                             .clip(thumbnailShape)
                             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                     contentAlignment = Alignment.Center,
@@ -228,7 +228,7 @@ internal fun PlayerQueueHeaderCard(
                     icon(PlayerQueueMenuIcon.MUSIC_NOTE, MaterialTheme.colorScheme.onSurfaceVariant, Modifier.size(22.dp))
                 }
             } else {
-                artwork(thumbnailUrl, Modifier.size(56.dp).clip(thumbnailShape))
+                artwork(thumbnailUrl, Modifier.size(48.dp).clip(thumbnailShape))
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -249,7 +249,7 @@ internal fun PlayerQueueHeaderCard(
                 if (subtitle.isNotBlank()) {
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
