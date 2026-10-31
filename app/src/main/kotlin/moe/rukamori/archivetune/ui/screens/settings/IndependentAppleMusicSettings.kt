@@ -7,10 +7,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.*
+import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
+import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.PreferenceGroupScope
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.rememberInterfaceStyle
+import moe.rukamori.archivetune.ui.component.rememberPlayerMenuStyleSetter
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
 
 private val appleMusicSurfaceOptions = listOf(
@@ -43,6 +47,7 @@ internal fun PreferenceGroupScope.independentAppleMusicPreferences(prefs: Prefer
     }
     appleMusicSurfaceOptions.forEach { (anchor, key, title) ->
         item {
+            val setMenuStyle = rememberPlayerMenuStyleSetter()
             SwitchPreference(
                 modifier = positions.modifierFor(anchor),
                 title = { Text(stringResource(title)) },
@@ -51,8 +56,14 @@ internal fun PreferenceGroupScope.independentAppleMusicPreferences(prefs: Prefer
                     else R.string.apple_music_independent_option_desc,
                 ),
                 icon = { Icon(painterResource(R.drawable.palette), null) },
-                checked = prefs[key, false],
-                onCheckedChange = { prefs.state(key, false).value = it },
+                checked = if (key == AppleMusicMenusKey) prefs.current.sharedSnapshot().appleMusicMenus() else prefs[key, false],
+                onCheckedChange = {
+                    if (key == AppleMusicMenusKey) {
+                        setMenuStyle(if (it) PlayerMenuStyle.APPLE_MUSIC else PlayerMenuStyle.MD3)
+                    } else {
+                        prefs.state(key, false).value = it
+                    }
+                },
             )
         }
     }
