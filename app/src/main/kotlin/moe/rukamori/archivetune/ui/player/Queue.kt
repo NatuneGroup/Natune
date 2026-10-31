@@ -36,22 +36,16 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingToolbarDefaults
-import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -81,6 +75,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -352,7 +347,9 @@ fun Queue(
         ) {
             playerConnection.service.sleepTimer.isActive
         }
-    var sleepTimerTimeLeft by remember { mutableStateOf(0L) }
+    val sleepTimerTimeLeft by rememberQueueSleepTimerRemainingMs(playerConnection.service.sleepTimer) {
+        playerConnection.player
+    }
 
     val (showCodecOnPlayer) =
         rememberPreference(
@@ -360,19 +357,6 @@ fun Queue(
             defaultValue = true,
         )
 
-    LaunchedEffect(sleepTimerEnabled) {
-        if (sleepTimerEnabled) {
-            while (isActive) {
-                sleepTimerTimeLeft =
-                    if (playerConnection.service.sleepTimer.pauseWhenSongEnd) {
-                        playerConnection.player.duration - playerConnection.player.currentPosition
-                    } else {
-                        playerConnection.service.sleepTimer.triggerTime - System.currentTimeMillis()
-                    }
-                delay(1000L)
-            }
-        }
-    }
     var scrollToCurrentRequested by remember { mutableStateOf(true) }
     val openQueue =
         remember(playerBottomSheetState, state) {
@@ -715,8 +699,21 @@ fun Queue(
             }
         }
 
-        val headerItems = 1
+        // The now-playing card and the selection spacer come before the rows.
+        val headerItems = 2
         val lazyListState = rememberLazyListState()
+        val density = LocalDensity.current
+        val compactHeaderOffsetPx = with(density) { QueueCompactHeaderHeight.toPx() }
+        val listScrolled by remember {
+            derivedStateOf {
+                lazyListState.firstVisibleItemIndex > 0 || lazyListState.firstVisibleItemScrollOffset > 0
+            }
+        }
+        val statusBarTopInset =
+            WindowInsets.systemBars
+                .only(WindowInsetsSides.Top)
+                .asPaddingValues()
+                .calculateTopPadding()
         var dragInfo by remember { mutableStateOf<QueueDragInfo?>(null) }
 
         val currentPlayingUid =
@@ -843,9 +840,69 @@ fun Queue(
                 val indexInMutableList = mutableQueueWindows.indexOfFirst { it.uid == currentPlayingUid }
                 if (indexInMutableList != -1) {
                     lazyListState.scrollToItem(indexInMutableList + headerItems)
+                    // The compact header covers the top of the viewport once the list has moved.
+                    lazyListState.scrollBy(-compactHeaderOffsetPx)
                     scrollToCurrentRequested = false
                 }
             }
+        }
+
+        // Shared by the expanded card and the compact header, so both surfaces run the same actions.
+        val onToggleLikeClick: () -> Unit = {
+            playerConnection.service.toggleLike()
+        }
+        val onQueueMenuClick: () -> Unit = {
+            menuState.show {
+                PlayerMenu(
+                    mediaMetadata = mediaMetadata,
+                    navController = navController,
+                    playerBottomSheetState = playerBottomSheetState,
+                    isQueueTrigger = true,
+                    onRemoveFromQueue = {
+                        currentWindow?.let { onRemoveWithUndo(it) }
+                    },
+                    onShowDetailsDialog = {
+                        mediaMetadata?.id?.let {
+                            bottomSheetPageState.show {
+                                ShowMediaInfo(it)
+                            }
+                        }
+                    },
+                    onDismiss = menuState::dismiss,
+                )
+            }
+        }
+        val onClearQueueAction: () -> Unit = {
+            infiniteQueueEnabled = false
+            playerConnection.service.clearQueueWithUndo()?.let {
+                showQueueUndo(it.ticket, it.count, null)
+            }
+            clearSelection()
+        }
+        val onRepeatQueueAction: () -> Unit = {
+            playerConnection.player.toggleRepeatMode()
+        }
+        val onShuffleQueueAction: () -> Unit = {
+            coroutineScope.launch(Dispatchers.Main) {
+                playerConnection.player.shuffleModeEnabled = !playerConnection.player.shuffleModeEnabled
+            }
+        }
+        val onLockQueueAction: () -> Unit = {
+            locked = !locked
+        }
+        val onInfiniteQueueAction: () -> Unit = {
+            val enabled = !infiniteQueueEnabled
+            infiniteQueueEnabled = enabled
+            if (!enabled) playerConnection.service.onInfiniteQueueDisabled()
+        }
+        val onSaveQueueAction: () -> Unit = {
+            clearSelection()
+            val songs = queueWindows.mapNotNull { it.mediaItem.metadata }
+            queuePlaylistSnapshot = songs
+            showCreateQueuePlaylistDialog = songs.isNotEmpty()
+        }
+        val onJumpToCurrentAction: () -> Unit = {
+            scrollToCurrentRequested = true
         }
 
         Box(
@@ -855,80 +912,10 @@ fun Queue(
                     .background(backgroundColor),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                CurrentSongHeader(
+                QueueSheetDragStrip(
                     sheetState = state,
-                    mediaMetadata = mediaMetadata,
-                    liked = currentSongLiked,
-                    isPlaying = isPlaying,
-                    repeatMode = repeatMode,
-                    shuffleModeEnabled = shuffleModeEnabled,
-                    locked = locked,
-                    songCount = queueWindows.size,
-                    queueDuration = queueLength,
-                    queueTitle = queueTitle,
-                    queueRemainingMs = queueWindows.drop(currentWindowIndex.coerceAtLeast(0)).takeIf { windows ->
-                        currentWindowIndex >= 0 && windows.all { (it.mediaItem.metadata?.duration ?: 0) > 0 }
-                    }?.let { windows ->
-                        (windows.sumOf { (it.mediaItem.metadata?.duration ?: 0) * 1_000L } - queuePositionMs).coerceAtLeast(0L)
-                    },
-                    infiniteQueueEnabled = infiniteQueueEnabled,
-                    infiniteQueueLoading = infiniteQueueLoading,
                     backgroundColor = backgroundColor,
                     onBackgroundColor = onBackgroundColor,
-                    onToggleLike = {
-                        playerConnection.service.toggleLike()
-                    },
-                    onMenuClick = {
-                        menuState.show {
-                            PlayerMenu(
-                                mediaMetadata = mediaMetadata,
-                                navController = navController,
-                                playerBottomSheetState = playerBottomSheetState,
-                                isQueueTrigger = true,
-                                onRemoveFromQueue = {
-                                    currentWindow?.let { onRemoveWithUndo(it) }
-                                },
-                                onShowDetailsDialog = {
-                                    mediaMetadata?.id?.let {
-                                        bottomSheetPageState.show {
-                                            ShowMediaInfo(it)
-                                        }
-                                    }
-                                },
-                                onDismiss = menuState::dismiss,
-                            )
-                        }
-                    },
-                    onClearQueueClick = {
-                        infiniteQueueEnabled = false
-                        playerConnection.service.clearQueueWithUndo()?.let {
-                            showQueueUndo(it.ticket, it.count, null)
-                        }
-                        clearSelection()
-                    },
-                    onRepeatClick = { playerConnection.player.toggleRepeatMode() },
-                    onShuffleClick = {
-                        coroutineScope.launch(Dispatchers.Main) {
-                            playerConnection.player.shuffleModeEnabled = !playerConnection.player.shuffleModeEnabled
-                        }
-                    },
-                    onLockClick = {
-                        locked = !locked
-                    },
-                    onInfiniteQueueClick = {
-                        val enabled = !infiniteQueueEnabled
-                        infiniteQueueEnabled = enabled
-                        if (!enabled) playerConnection.service.onInfiniteQueueDisabled()
-                    },
-                    onSaveQueueClick = {
-                        clearSelection()
-                        val songs = queueWindows.mapNotNull { it.mediaItem.metadata }
-                        queuePlaylistSnapshot = songs
-                        showCreateQueuePlaylistDialog = songs.isNotEmpty()
-                    },
-                    onJumpToCurrentClick = {
-                        scrollToCurrentRequested = true
-                    },
                 )
 
                 LazyColumn(
@@ -946,6 +933,39 @@ fun Queue(
                             .weight(1f)
                             .nestedScroll(state.preUpPostDownNestedScrollConnection),
                 ) {
+                    item(
+                        key = "queue_header",
+                        contentType = "queue_header",
+                    ) {
+                        QueueSongHeader(
+                            mediaMetadata = mediaMetadata,
+                            liked = currentSongLiked,
+                            repeatMode = repeatMode,
+                            shuffleModeEnabled = shuffleModeEnabled,
+                            locked = locked,
+                            songCount = queueWindows.size,
+                            queueDuration = queueLength,
+                            queueTitle = queueTitle,
+                            queueRemainingMs = queueWindows.drop(currentWindowIndex.coerceAtLeast(0)).takeIf { windows ->
+                                currentWindowIndex >= 0 && windows.all { (it.mediaItem.metadata?.duration ?: 0) > 0 }
+                            }?.let { windows ->
+                                (windows.sumOf { (it.mediaItem.metadata?.duration ?: 0) * 1_000L } - queuePositionMs).coerceAtLeast(0L)
+                            },
+                            infiniteQueueEnabled = infiniteQueueEnabled,
+                            infiniteQueueLoading = infiniteQueueLoading,
+                            onBackgroundColor = onBackgroundColor,
+                            onToggleLike = onToggleLikeClick,
+                            onMenuClick = onQueueMenuClick,
+                            onClearQueueClick = onClearQueueAction,
+                            onRepeatClick = onRepeatQueueAction,
+                            onShuffleClick = onShuffleQueueAction,
+                            onLockClick = onLockQueueAction,
+                            onInfiniteQueueClick = onInfiniteQueueAction,
+                            onSaveQueueClick = onSaveQueueAction,
+                            onJumpToCurrentClick = onJumpToCurrentAction,
+                        )
+                    }
+
                     item(
                         key = "queue_selection_spacer",
                         contentType = "queue_selection_spacer",
@@ -1123,6 +1143,33 @@ fun Queue(
                 }
             }
 
+            AnimatedVisibility(
+                visible = listScrolled,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = statusBarTopInset + QueueDragStripHeight),
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                QueueCompactHeader(
+                    mediaMetadata = mediaMetadata,
+                    locked = locked,
+                    shuffleModeEnabled = shuffleModeEnabled,
+                    repeatMode = repeatMode,
+                    infiniteQueueEnabled = infiniteQueueEnabled,
+                    backgroundColor = backgroundColor,
+                    onBackgroundColor = onBackgroundColor,
+                    onShuffleClick = onShuffleQueueAction,
+                    onRepeatClick = onRepeatQueueAction,
+                    onLockClick = onLockQueueAction,
+                    onInfiniteQueueClick = onInfiniteQueueAction,
+                    onSaveQueueClick = onSaveQueueAction,
+                    onJumpToCurrentClick = onJumpToCurrentAction,
+                    onClearQueueClick = onClearQueueAction,
+                )
+            }
+
             Box(modifier = Modifier.fillMaxSize()) {
                 SnackbarHost(
                     hostState = snackbarHostState,
@@ -1222,100 +1269,3 @@ private fun QueueDragDestination.resolveIndex(
             }
         }
     }
-
-@Composable
-private fun QueueSelectionFloatingToolbar(
-    allSelected: Boolean,
-    pureBlack: Boolean,
-    onClose: () -> Unit,
-    onToggleSelectAll: () -> Unit,
-    onAddToPlaylist: () -> Unit,
-    onCreatePlaylist: () -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colorScheme = MaterialTheme.colorScheme
-    val toolbarContainerColor = if (pureBlack) Color.Black else colorScheme.surfaceContainerHigh
-    val toolbarContentColor = if (pureBlack) Color.White else colorScheme.onSurface
-    val fabContainerColor = if (pureBlack) Color.White.copy(alpha = 0.12f) else colorScheme.surfaceContainerHighest
-    val fabContentColor = if (pureBlack) Color.White else colorScheme.onSurface
-
-    HorizontalFloatingToolbar(
-        expanded = true,
-        modifier = modifier.widthIn(max = 420.dp),
-        floatingActionButton = {
-            FloatingToolbarDefaults.VibrantFloatingActionButton(
-                onClick = onClose,
-                containerColor = fabContainerColor,
-                contentColor = fabContentColor,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.close),
-                    contentDescription = stringResource(R.string.close),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        },
-        colors =
-            FloatingToolbarDefaults.standardFloatingToolbarColors(
-                toolbarContainerColor = toolbarContainerColor,
-            ),
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .heightIn(min = 56.dp)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            QueueSelectionToolbarAction(
-                icon = if (allSelected) R.drawable.deselect else R.drawable.select_all,
-                contentDescription = null,
-                tint = toolbarContentColor,
-                onClick = onToggleSelectAll,
-            )
-
-            QueueSelectionToolbarAction(
-                icon = R.drawable.playlist_add,
-                contentDescription = stringResource(R.string.add_to_playlist),
-                tint = colorScheme.primary,
-                onClick = onAddToPlaylist,
-            )
-
-            QueueSelectionToolbarAction(
-                icon = R.drawable.queue_music,
-                contentDescription = stringResource(R.string.create_playlist),
-                tint = colorScheme.primary,
-                onClick = onCreatePlaylist,
-            )
-
-            QueueSelectionToolbarAction(
-                icon = R.drawable.delete,
-                contentDescription = stringResource(R.string.delete),
-                tint = colorScheme.error,
-                onClick = onDelete,
-            )
-        }
-    }
-}
-
-@Composable
-private fun QueueSelectionToolbarAction(
-    icon: Int,
-    contentDescription: String?,
-    onClick: () -> Unit,
-    tint: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.size(48.dp),
-    ) {
-        Icon(
-            painter = painterResource(icon),
-            contentDescription = contentDescription,
-            modifier = Modifier.size(22.dp),
-            tint = tint,
-        )
-    }
-}
