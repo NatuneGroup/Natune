@@ -1978,10 +1978,7 @@ class MusicService :
         scope.launch {
             while (isActive) {
                 pausedPlaybackGate.awaitPlaybackOrDelay(player.isPlaying, PERSISTENT_POSITION_SAVE_INTERVAL.inWholeMilliseconds)
-                val shouldSave = withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }
-                if (shouldSave && player.mediaItemCount > 0) {
-                    savePlayerStateToDisk()
-                }
+                savePlayerStateToDisk()
             }
         }
     }
@@ -12681,14 +12678,15 @@ class MusicService :
     private var lastPersistedQueue: PersistQueue? = null
 
     /**
-     * Writes just the resume position and transport flags, skipping the queue snapshot.
+     * Writes just the resume position and transport flags, skipping the queue snapshot, and only
+     * while [PersistentQueueKey] is on. The periodic save and paused changes from onEvents both use it.
      *
      * Deliberately not [saveQueueToDisk]: that maps every media item to persistable metadata on
-     * the main thread and writes two files. For the periodic save none of that changes between
-     * ticks — only the position does — and the queue file is already written by every handler that
-     * can change it.
+     * the main thread and writes two files. None of that changes here — only the position does —
+     * and the queue file is already written by every handler that can change it.
      */
     private suspend fun savePlayerStateToDisk() {
+        if (!withContext(Dispatchers.IO) { dataStore.get(PersistentQueueKey, true) }) return
         val saveGeneration = persistentSaveGeneration.get()
         val state =
             withContext(Dispatchers.Main.immediate) {
