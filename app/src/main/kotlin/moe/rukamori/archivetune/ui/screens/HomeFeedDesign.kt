@@ -95,6 +95,7 @@ import moe.rukamori.archivetune.ui.menu.YouTubeArtistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubePlaylistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
 import moe.rukamori.archivetune.ui.utils.preferredThumbnailRatio
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 // ============================================================================
@@ -189,13 +190,19 @@ fun HomeShimmerBox(modifier: Modifier = Modifier, shape: Shape = HomeBlockShape)
         MaterialTheme.colorScheme.onSurfaceVariant
             .copy(alpha = 0.16f)
             .compositeOver(base)
+    // The sweep runs only while the app is STARTED; in the background the block holds its flat base color.
+    val shimmerStarted by rememberLifecycleStarted()
     val sweep =
-        rememberInfiniteTransition(label = "home_skeleton").animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(HomeShimmerPeriodMs, easing = LinearEasing)),
-            label = "home_sweep",
-        )
+        if (shimmerStarted) {
+            rememberInfiniteTransition(label = "home_skeleton").animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(HomeShimmerPeriodMs, easing = LinearEasing)),
+                label = "home_sweep",
+            )
+        } else {
+            null
+        }
     Box(
         modifier
             .clip(shape)
@@ -204,7 +211,7 @@ fun HomeShimmerBox(modifier: Modifier = Modifier, shape: Shape = HomeBlockShape)
                 // leaves a beat of flat grey between passes rather than a highlight
                 // permanently parked somewhere on the block.
                 val band = size.width * 0.5f
-                val startX = -band + sweep.value * (size.width + band * 2)
+                val startX = -band + (sweep?.value ?: 0f) * (size.width + band * 2)
                 val brush =
                     Brush.horizontalGradient(
                         colors = listOf(base, highlight, base),

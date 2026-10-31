@@ -91,7 +91,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.exoplayer.offline.Download
 import androidx.navigation.NavController
-import com.valentinilk.shimmer.shimmer
 import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalDownloadUtil
@@ -124,6 +123,7 @@ import moe.rukamori.archivetune.ui.component.shimmer.ButtonPlaceholder
 import moe.rukamori.archivetune.ui.component.shimmer.ListItemPlaceHolder
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
+import moe.rukamori.archivetune.ui.component.shimmer.shimmerWhileStarted
 import moe.rukamori.archivetune.ui.menu.SelectionMediaMetadataMenu
 import moe.rukamori.archivetune.ui.menu.YouTubePlaylistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubePlaylistLoadDialog
@@ -375,7 +375,7 @@ fun OnlinePlaylistScreen(
                                     Modifier
                                         .fillMaxWidth()
                                         .heightIn(min = 560.dp)
-                                        .shimmer()
+                                        .shimmerWhileStarted()
                                         .background(MaterialTheme.colorScheme.surfaceContainerLow),
                             ) {
                                 Column(

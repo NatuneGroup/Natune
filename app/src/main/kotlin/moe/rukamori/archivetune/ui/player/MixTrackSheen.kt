@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.unit.Dp
 import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 
 /** How long the played fill takes to collapse, and to grow back, at 1x. */
 private const val MixMorphMs = 450
@@ -96,8 +97,10 @@ internal fun MixTrackSheen(
             ),
         exit = fadeOut(tween(durationMillis = MixMorphMs, easing = FastOutSlowInEasing)),
     ) {
-        val transition = rememberInfiniteTransition(label = "mixTrackSheen")
-        val phase by transition.animateFloat(
+        // The sweep runs only while the app is STARTED. In the background it parks off the bar, where it draws nothing.
+        val sheenStarted by rememberLifecycleStarted()
+        val transition = if (sheenStarted) rememberInfiniteTransition(label = "mixTrackSheen") else null
+        val phase = transition?.animateFloat(
             initialValue = -SheenBandFraction,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
@@ -114,7 +117,7 @@ internal fun MixTrackSheen(
                 .height(height),
         ) {
             val band = size.width * SheenBandFraction
-            val x = phase * size.width
+            val x = (phase?.value ?: -SheenBandFraction) * size.width
             drawRoundRect(
                 brush = Brush.horizontalGradient(
                     colorStops = arrayOf(
