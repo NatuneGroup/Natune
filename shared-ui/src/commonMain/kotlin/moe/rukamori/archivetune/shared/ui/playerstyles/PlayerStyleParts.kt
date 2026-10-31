@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -114,12 +113,12 @@ internal fun MarqueeText(
     maxLines: Int = 1,
     fade: Boolean = true,
 ) {
-    // Overflowing text only sweeps while motion is allowed (original marquee gated on it);
-    // a static clip stays behind when motion is off.
+    // Overflowing text makes one pass per text, and only while motion is allowed (that gate already includes visible
+    // and resumed). A static clip stays behind otherwise, so no frame clock runs for it.
     Text(
         text = text,
         modifier = modifier
-            .then(if (motionAllowed()) Modifier.basicMarquee() else Modifier)
+            .trackMarquee(trackKey = text, enabled = motionAllowed())
             .then(if (fade) Modifier.edgeFade() else Modifier),
         color = color,
         style = style,
