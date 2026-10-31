@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.shared.ui.marquee
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,11 +27,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.glass.motionAllowed
@@ -46,9 +50,8 @@ private val MarqueeVelocity = 30.dp
 private val MarqueeFadeWidth = 24.dp
 
 /**
- * One line of text. Text that overflows scrolls while [active] holds and fades at the edges; text that fits is neither
- * animated nor faded. The offset is read from the time elapsed since the phase began, inside the layer and draw
- * lambdas, so each frame moves the layer without recomposing and nothing runs while the line is not composed.
+ * One line of plain text. [centered] places text that fits in the middle of its box. See the [AnnotatedString] overload
+ * for how the line scrolls and fades.
  */
 @Composable
 internal fun MarqueeText(
@@ -68,12 +71,54 @@ internal fun MarqueeText(
     initialDelayMs: Long = TRACK_MARQUEE_DELAY_MS,
     restMs: Long = MARQUEE_REST_MS,
 ) {
+    val annotated = remember(text) { AnnotatedString(text) }
+    MarqueeText(
+        text = annotated,
+        modifier = modifier,
+        color = color,
+        style = style.merge(TextStyle(fontStyle = fontStyle, fontFamily = fontFamily, letterSpacing = letterSpacing)),
+        fontWeight = fontWeight,
+        textAlign = if (centered) TextAlign.Center else null,
+        fadeWidth = if (fade) MarqueeFadeWidth else 0.dp,
+        active = active,
+        phaseKey = phaseKey,
+        iterations = iterations,
+        initialDelayMs = initialDelayMs,
+        restMs = restMs,
+    )
+}
+
+/**
+ * One line of text. Text that overflows scrolls while [active] holds and fades at the edges; text that fits is neither
+ * animated nor faded. The offset is read from the time elapsed since the phase began, inside the layer and draw
+ * lambdas, so each frame moves the layer without recomposing and nothing runs while the line is not composed.
+ *
+ * [active] defaults to the shared optical policy, which only shared-ui roots provide. Hosts outside shared-ui pass it
+ * from their own motion gate. [phaseKey] with the text names the pass, so a line that is left and re-entered continues
+ * where it stopped.
+ */
+@Composable
+fun MarqueeText(
+    text: AnnotatedString,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    style: TextStyle = LocalTextStyle.current,
+    fontWeight: FontWeight? = null,
+    textAlign: TextAlign? = null,
+    inlineContent: Map<String, InlineTextContent> = emptyMap(),
+    fadeWidth: Dp = MarqueeFadeWidth,
+    active: Boolean = motionAllowed(),
+    phaseKey: Any? = null,
+    iterations: Int = 1,
+    initialDelayMs: Long = TRACK_MARQUEE_DELAY_MS,
+    restMs: Long = MARQUEE_REST_MS,
+) {
     val density = LocalDensity.current
     val spacingPx = with(density) { MarqueeSpacing.toPx() }
     val velocityPx = with(density) { MarqueeVelocity.toPx() }
-    val fadePx = with(density) { MarqueeFadeWidth.toPx() }
+    val fadePx = with(density) { fadeWidth.toPx() }
     val timing = MarqueeTiming(initialDelayMs = initialDelayMs, iterations = iterations, restMs = restMs)
-    val phase = MarqueePhaseKey(phaseKey, text)
+    val phase = MarqueePhaseKey(phaseKey, text.text)
     val startMs = remember(phase) { MarqueePhases.begin(phase) }
     DisposableEffect(phase) { onDispose { MarqueePhases.end(phase) } }
 
@@ -102,7 +147,7 @@ internal fun MarqueeText(
         } while (frameMs.longValue - startMs < endMs)
     }
 
-    val fadeModifier = if (fade && overflowing) {
+    val fadeModifier = if (fadeWidth > 0.dp && overflowing) {
         Modifier
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
@@ -135,7 +180,7 @@ internal fun MarqueeText(
             .onSizeChanged { viewportWidthPx = it.width }
             .clipToBounds()
             .then(fadeModifier),
-        contentAlignment = if (centered && !overflowing) Alignment.Center else Alignment.CenterStart,
+        contentAlignment = if (overflowing) Alignment.CenterStart else marqueeAlignment(textAlign),
     ) {
         // Unbounded width keeps the full text measurable; the clip above shows only the viewport.
         Text(
@@ -147,9 +192,7 @@ internal fun MarqueeText(
             color = color,
             style = style,
             fontWeight = fontWeight,
-            fontStyle = fontStyle,
-            fontFamily = fontFamily,
-            letterSpacing = letterSpacing,
+            inlineContent = inlineContent,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Clip,
@@ -164,15 +207,20 @@ internal fun MarqueeText(
                 color = color,
                 style = style,
                 fontWeight = fontWeight,
-                fontStyle = fontStyle,
-                fontFamily = fontFamily,
-                letterSpacing = letterSpacing,
+                inlineContent = inlineContent,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Clip,
             )
         }
     }
+}
+
+/** Where text that fits sits in its box. Overflowing text always starts at the left, so it scrolls from its start. */
+private fun marqueeAlignment(textAlign: TextAlign?): Alignment = when {
+    textAlign == TextAlign.Center -> Alignment.Center
+    textAlign == TextAlign.End || textAlign == TextAlign.Right -> Alignment.CenterEnd
+    else -> Alignment.CenterStart
 }
 
 /**
