@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.shared.data.backup.IosRestoreFileOps
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.localmedia.IosLocalMediaSource
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
@@ -276,39 +277,79 @@ internal class IosSessionGraph private constructor(
             val databasePath = iosPortableStateDatabasePath()
             val databaseDirectory = databasePath.substringBeforeLast('/')
             // A restore staged by an earlier launch applies before the owners open the files: the staged library is
-            // swapped in and validated before the staged settings merge. A section that fails rolls both back, keeps
-            // the pending set under restore-failed for diagnosis and surfaces on the backup page.
-            val pending = withContext(Dispatchers.Default) {
-                iosStagedRestore(databaseDirectory, report)
+            // swapped in and validated before the staged settings merge, and the transaction keeps the originals
+            // aside until the merge lands, so files and settings land or roll back together. A section that fails
+            // rolls both back, keeps the pending set under restore-failed for diagnosis and surfaces on the page.
+            val restoreStart = withContext(Dispatchers.Default) {
+                IosRestoreStartup.begin(databaseDirectory, DATABASE_FILE, report)
             }
+            val pending = restoreStart.pending
             var database = try {
                 withContext(Dispatchers.Default) {
-                    openGraphDatabase(databasePath, databaseDirectory, pending, report)
+                    openGraphDatabase(databasePath, databaseDirectory, restoreStart, settings, report)
                 }
             } catch (failure: Throwable) {
                 scope.cancel()
                 throw failure
             }
             if (pending != null && !pending.failed) {
-                try {
-                    pending.applySettings(settings)
-                } catch (cancelled: CancellationException) {
-                    database.close()
-                    scope.cancel()
-                    throw cancelled
-                } catch (failure: Exception) {
-                    report("restored settings not applied: ${failure::class.simpleName}")
-                    withContext(NonCancellable) {
-                        pending.rollbackSettings(settings)
-                        pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
-                        runCatching { pending.markFailed() }
-                    }
-                    database.close()
-                    database = try {
-                        withContext(Dispatchers.Default) { openPortableStateDatabase(databasePath) }
-                    } catch (reopen: Throwable) {
+                if (pending.legacyFormat) {
+                    try {
+                        pending.applySettings(settings)
+                    } catch (cancelled: CancellationException) {
+                        database.close()
                         scope.cancel()
-                        throw reopen
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        report("restored settings not applied: ${failure::class.simpleName}")
+                        withContext(NonCancellable) {
+                            pending.rollbackSettings(settings)
+                            pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
+                            runCatching { pending.markFailed() }
+                        }
+                        database.close()
+                        database = try {
+                            withContext(Dispatchers.Default) { openPortableStateDatabase(databasePath) }
+                        } catch (reopen: Throwable) {
+                            scope.cancel()
+                            throw reopen
+                        }
+                    }
+                } else if (restoreStart.transaction != null) {
+                    var applied = true
+                    if (restoreStart.needsSettingsApply) {
+                        try {
+                            IosRestoreStartup.applyPendingSettings(pending, IosRestoreFileOps(), settings)
+                        } catch (cancelled: CancellationException) {
+                            database.close()
+                            scope.cancel()
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            applied = false
+                            report("restored settings not applied: ${failure::class.simpleName}")
+                            withContext(NonCancellable) {
+                                runCatching {
+                                    IosRestoreStartup.rollbackPendingSettings(pending, IosRestoreFileOps(), settings)
+                                }
+                                runCatching { restoreStart.transaction.rollbackCommitted() }
+                                runCatching { pending.markFailed() }
+                            }
+                            database.close()
+                            database = try {
+                                withContext(Dispatchers.Default) { openPortableStateDatabase(databasePath) }
+                            } catch (reopen: Throwable) {
+                                scope.cancel()
+                                throw reopen
+                            }
+                        }
+                    }
+                    if (applied) {
+                        try {
+                            restoreStart.transaction.finalize()
+                        } catch (failure: Exception) {
+                            // The journal stays for the next start to finish or re-apply from.
+                            report("restore cleanup not finished: ${failure::class.simpleName}")
+                        }
                     }
                 }
             }
@@ -340,50 +381,26 @@ internal class IosSessionGraph private constructor(
         }
 
         /**
-         * The staged restore of an earlier backup session: it is read and its database swap completed, which also
-         * finishes an interrupted swap the journal still describes. A failed swap is rolled back and marked failed;
-         * the staged set is only finished once a graph assembles over it.
-         */
-        private suspend fun iosStagedRestore(
-            instanceDirectory: String,
-            report: (String) -> Unit,
-        ): IosPendingRestore? {
-            val pending = try {
-                IosPendingRestore.read(instanceDirectory)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                report("staged restore unreadable: ${failure::class.simpleName}")
-                return null
-            } ?: return null
-            try {
-                pending.swapDatabase(instanceDirectory, DATABASE_FILE)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                report("restored library not applied: ${failure::class.simpleName}")
-                try {
-                    pending.rollbackDatabase(instanceDirectory, DATABASE_FILE)
-                } catch (rollback: Exception) {
-                    report("library rollback failed: ${rollback::class.simpleName}")
-                }
-                runCatching { pending.markFailed() }
-            }
-            return pending
-        }
-
-        /**
          * Opens the portable state database; when a staged library was swapped in, it is opened now so a file Room
-         * refuses still lets the previous database come back instead of leaving a broken library.
+         * refuses still lets the previous database come back instead of leaving a broken library. A corrupt
+         * restore fails closed instead: the live file is never opened and a throwaway database keeps the session
+         * assembling so the restore-failed state can surface.
          */
         private suspend fun openGraphDatabase(
             databasePath: String,
             databaseDirectory: String,
-            pending: IosPendingRestore?,
+            start: IosRestoreStart,
+            settings: VaultSettingsStore,
             report: (String) -> Unit,
         ): PortableStateDatabase {
+            if (start.corrupt) {
+                // The corrupted live file stays exactly as the failed swap left it; nothing this session writes
+                // may land on it, so the throwaway database lives under a different name.
+                return openPortableStateDatabase("$databaseDirectory/${IosRestoreStartup.CORRUPT_DATABASE_FILE}")
+            }
             val database = openPortableStateDatabase(databasePath)
-            if (pending?.databaseSwapped != true) return database
+            val swapped = start.databaseSwapped || start.pending?.databaseSwapped == true
+            if (!swapped) return database
             try {
                 database.openNow()
                 return database
@@ -394,8 +411,18 @@ internal class IosSessionGraph private constructor(
                 report("restored library refused: ${failure::class.simpleName}")
                 database.close()
                 withContext(NonCancellable) {
-                    pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
-                    runCatching { pending.markFailed() }
+                    start.pending?.let { pending ->
+                        if (start.transaction != null) {
+                            // A vault merge that already landed goes back with the files it belongs to.
+                            runCatching {
+                                IosRestoreStartup.rollbackPendingSettings(pending, IosRestoreFileOps(), settings)
+                            }
+                            runCatching { start.transaction.rollbackCommitted() }
+                        } else {
+                            pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
+                        }
+                    }
+                    runCatching { start.pending?.markFailed() }
                 }
                 return openPortableStateDatabase(databasePath)
             }
