@@ -76,7 +76,9 @@ import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsDefaults
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.PreventDuplicateTracksInQueueKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
+import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.domain.settings.listenTogetherAvatarIndex
@@ -395,6 +397,8 @@ internal class IosSessionGraph private constructor(
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { iosRepeatMode(vault.snapshots.value) },
                 autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+                preventDuplicateTracksInQueue = { vault.snapshots.value?.get(PreventDuplicateTracksInQueueKey) ?: false },
+                queueLocked = { vault.snapshots.value?.get(QueueLockedKey) ?: false },
                 songMetadata = songMetadata,
                 autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
                 autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
