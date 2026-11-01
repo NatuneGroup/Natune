@@ -16,7 +16,11 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeoutOrNull
@@ -62,6 +66,11 @@ class TidalInstanceResolver(
     private val poolEnabled: () -> Boolean = { false },
     private val sourceProviderUrl: () -> String = { "" },
     private val sourceProviderKey: () -> String = { "" },
+    /**
+     * Carries the best-effort cancels of abandoned queued playback. It must outlive the attempt that
+     * abandoned the ticket, because the race does not wait for a cancel before returning a winner.
+     */
+    private val cancelScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     data class Query(
         val mediaId: String,
@@ -1162,16 +1171,7 @@ class TidalInstanceResolver(
 
         val reply = streamGet(url, STREAM_REQUEST_TIMEOUT_MS, params)
         if (reply.status == 429) {
-            val headerRetryAfterMs = reply.retryAfter?.toLongOrNull()?.times(1000L)?.coerceAtLeast(60_000L)
-            val bodyRetryAfterMs =
-                runCatching {
-                    Json.parseToJsonElement(reply.body).jsonObjectOrNull
-                        ?.long("retry_after")
-                        ?.takeIf { it > 0L }
-                        ?.times(1000L)
-                }.getOrNull()
-            val retryAfterMs = headerRetryAfterMs ?: bodyRetryAfterMs ?: RATE_LIMIT_COOLDOWN_MS
-            throw TidalRateLimitedException(retryAfterMs)
+            throw TidalRateLimitedException(rateLimitRetryAfterMs(reply))
         }
         if (reply.status !in 200..299) {
             val detail = "TIDAL ${endpoint.name} HTTP ${reply.status}: ${reply.body.take(180)}"
@@ -1180,8 +1180,10 @@ class TidalInstanceResolver(
             }
             throw TidalAudioResolutionException(detail)
         }
+        // 202 is a 2xx that carries a queue ticket instead of the playback payload.
+        val payload = if (reply.status == 202) awaitQueuedPlayback(endpoint, reply, deadlineMs) else reply.body
         val root =
-            Json.parseToJsonElement(reply.body).jsonObjectOrNull
+            Json.parseToJsonElement(payload).jsonObjectOrNull
                 ?: throw TidalAudioResolutionException("TIDAL FLAC resolver returned no data")
         val data = root.obj("data") ?: throw TidalAudioResolutionException("TIDAL FLAC resolver returned no data")
         val effectiveDurationMs = durationMs ?: track.durationMs
@@ -1833,6 +1835,115 @@ class TidalInstanceResolver(
     private fun String.hasToken(token: String): Boolean = split(' ').any { it == token }
     // endregion
 
+    // region queued playback (hifi-api 202 protocol)
+    /** Header seconds, else the body's retry_after, else the cooldown; shared by direct and polled 429s. */
+    private fun rateLimitRetryAfterMs(reply: Reply): Long {
+        val headerRetryAfterMs = reply.retryAfter?.toLongOrNull()?.times(1000L)?.coerceAtLeast(60_000L)
+        val bodyRetryAfterMs =
+            runCatching {
+                Json.parseToJsonElement(reply.body).jsonObjectOrNull
+                    ?.long("retry_after")
+                    ?.takeIf { it > 0L }
+                    ?.times(1000L)
+            }.getOrNull()
+        return headerRetryAfterMs ?: bodyRetryAfterMs ?: RATE_LIMIT_COOLDOWN_MS
+    }
+
+    /**
+     * Waits out a 202 ticket and returns the completed playback body. The status URL reports on the
+     * queued request and finishes with the payload a direct 200 would carry. Every exit that leaves the
+     * ticket open cancels it best-effort, including cancellation by the race, so the account's single
+     * in-flight slot is released rather than held until the server expires the record.
+     */
+    private suspend fun awaitQueuedPlayback(
+        endpoint: TidalDownloadEndpoint,
+        accepted: Reply,
+        deadlineMs: Long,
+    ): String {
+        val acceptedJson = runCatching { Json.parseToJsonElement(accepted.body).jsonObjectOrNull }.getOrNull()
+        val statusUrl =
+            TidalQueuedPlayback.requestUrl(endpoint.baseUrl, acceptedJson?.stringOrNull("statusUrl"))
+                ?: TidalQueuedPlayback.requestUrl(endpoint.baseUrl, accepted.location)
+        val cancelTarget =
+            TidalQueuedPlayback.requestUrl(endpoint.baseUrl, acceptedJson?.stringOrNull("cancelUrl")) ?: statusUrl
+        var settled = false
+        try {
+            val pollUrl =
+                statusUrl ?: throw TidalAudioResolutionException(
+                    "TIDAL ${endpoint.name} queued playback has no usable status URL",
+                )
+            var waitMs = TidalQueuedPlayback.pollDelayMs(accepted.retryAfter, nowMs())
+            while (true) {
+                // A poll that would land at or after the deadline cannot help, so give up and cancel now.
+                if (nowMs() + waitMs >= deadlineMs) throw queuedDeadlineException(endpoint)
+                delay(waitMs)
+                val remainingMs = deadlineMs - nowMs()
+                if (remainingMs <= 0L) throw queuedDeadlineException(endpoint)
+                val poll = streamGet(pollUrl, minOf(STREAM_REQUEST_TIMEOUT_MS, remainingMs))
+                if (poll.status == 429) {
+                    val retryAfterMs = rateLimitRetryAfterMs(poll)
+                    markInstanceRateLimited(endpoint.baseUrl, retryAfterMs)
+                    throw TidalRateLimitedException(retryAfterMs)
+                }
+                if (poll.status == 202) {
+                    waitMs = TidalQueuedPlayback.pollDelayMs(poll.retryAfter, nowMs())
+                    continue
+                }
+                if (poll.status == 404 || poll.status == 410) {
+                    // The server has already dropped the record, so a cancel would only add noise.
+                    settled = true
+                    throw TidalAudioResolutionException(
+                        "TIDAL ${endpoint.name} queued playback expired (HTTP ${poll.status})",
+                    )
+                }
+                if (poll.status !in 200..299) {
+                    throw TidalAudioResolutionException(
+                        "TIDAL ${endpoint.name} queued playback HTTP ${poll.status}: ${poll.body.take(180)}",
+                    )
+                }
+                val pollJson = runCatching { Json.parseToJsonElement(poll.body).jsonObjectOrNull }.getOrNull()
+                if (pollJson?.obj("data") != null) {
+                    settled = true
+                    return poll.body
+                }
+                val state = pollJson?.stringOrNull("status")
+                if (TidalQueuedPlayback.isFailedState(state)) {
+                    settled = true
+                    throw TidalAudioResolutionException("TIDAL ${endpoint.name} queued playback ended: $state")
+                }
+                waitMs = TidalQueuedPlayback.pollDelayMs(poll.retryAfter, nowMs())
+            }
+        } finally {
+            if (!settled && cancelTarget != null) cancelQueuedPlayback(cancelTarget)
+        }
+    }
+
+    private fun queuedDeadlineException(endpoint: TidalDownloadEndpoint): TidalAudioResolutionException =
+        TidalAudioResolutionException("TIDAL ${endpoint.name} queued playback did not finish before the attempt deadline")
+
+    /** Fire-and-forget on [cancelScope]: the race must not wait for it, and a failed cancel changes nothing. */
+    private fun cancelQueuedPlayback(cancelUrl: String) {
+        cancelScope.launch {
+            runCatching {
+                exchange(client, cancelUrl, QUEUED_CANCEL_TIMEOUT_MS, emptyList(), emptyMap(), HttpMethod.Delete)
+            }.onFailure { failure ->
+                // Best effort: a ticket that cannot be cancelled is left for the server to expire.
+                if (failure is CancellationException) throw failure
+            }
+        }
+    }
+
+    /** A rate limit is not a hard failure; the instance is only skipped for the length of its Retry-After. */
+    private suspend fun markInstanceRateLimited(
+        baseUrl: String,
+        retryAfterMs: Long,
+    ) {
+        stateMutex.withLock {
+            instanceCooldownUntilMs[baseUrl] = maxOf(instanceCooldownUntilMs[baseUrl] ?: 0L, nowMs() + retryAfterMs)
+        }
+    }
+    // endregion
+
     // region HTTP plumbing
     private class Reply(
         val status: Int,
@@ -1841,6 +1952,7 @@ class TidalInstanceResolver(
         val contentType: String?,
         val contentLength: Long?,
         val contentRange: String?,
+        val location: String? = null,
     )
 
     private class TidalTimeoutException : Exception("TIDAL request timed out")
@@ -1912,6 +2024,7 @@ class TidalInstanceResolver(
                         contentType = response.headers[HttpHeaders.ContentType],
                         contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull(),
                         contentRange = response.headers[HttpHeaders.ContentRange],
+                        location = response.headers[HttpHeaders.Location],
                     )
                 }
             } catch (cancel: CancellationException) {
@@ -2009,6 +2122,7 @@ class TidalInstanceResolver(
         private const val MIN_MATCH_SCORE = 90
         private const val PROVIDER_ATTEMPT_MS = 8_000L
         private const val STREAM_REQUEST_TIMEOUT_MS = 25_000L
+        private const val QUEUED_CANCEL_TIMEOUT_MS = 5_000L
         private const val HEALTH_TIMEOUT_MS = 6_000L
         private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L
         private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L
