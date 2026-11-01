@@ -140,3 +140,14 @@ interface DesktopSystemIntegration : AutoCloseable {
     val trayAvailable: Boolean
     fun update(snapshot: PlaybackSnapshot?, metadata: DesktopMediaMetadata?, transport: DesktopTransportState)
 }
+
+/**
+ * Whether a Listen Together guest may apply this transport action locally. A room guest leaves queue order and
+ * position to the room host, the same rule the Android room mode applies (a guest in a room cannot drive playback
+ * locally) and the same set Metrolist's desktop refuses: Next, Previous and every seek. Play, pause, toggle, stop,
+ * rate, shuffle, repeat and volume stay local; the host's next room action resyncs them.
+ */
+internal fun DesktopTransportAction.guestAllowed(): Boolean = when (this) {
+    DesktopTransportAction.Next, DesktopTransportAction.Previous, is DesktopTransportAction.SeekTo -> false
+    else -> true
+}
