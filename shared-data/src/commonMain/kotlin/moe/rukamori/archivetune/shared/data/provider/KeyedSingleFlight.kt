@@ -10,12 +10,14 @@ import kotlinx.coroutines.sync.withLock
  * the same account therefore cause exactly one refresh or re-lease, the way librespot's
  * synchronized getToken and python-tidal's refresh lock behave.
  *
- * Gates live for the lifetime of the instance; keys are bounded (a pool names a handful of
- * "service:id" pairs per host), so the map cannot grow without limit.
+ * Gates are reference-counted — waiters included — and removed when the count reaches zero, so the
+ * map never accumulates mutexes for accounts a host stops leasing.
  */
 class KeyedSingleFlight {
+    private class Gate(val mutex: Mutex, var holders: Int)
+
     private val gatesLock = Mutex()
-    private val gates = HashMap<String, Mutex>()
+    private val gates = HashMap<String, Gate>()
 
     /**
      * Serializes work per [key]. [satisfied] is re-answered inside the gate by every caller — the
@@ -23,7 +25,19 @@ class KeyedSingleFlight {
      * released it answer the fresh result and skip the work entirely.
      */
     suspend fun <T> run(key: String, satisfied: suspend () -> T?, block: suspend () -> T): T {
-        val gate = gatesLock.withLock { gates.getOrPut(key) { Mutex() } }
-        return gate.withLock { satisfied() ?: block() }
+        val gate = gatesLock.withLock {
+            gates.getOrPut(key) { Gate(Mutex(), holders = 0) }.also { it.holders += 1 }
+        }
+        try {
+            return gate.mutex.withLock { satisfied() ?: block() }
+        } finally {
+            gatesLock.withLock {
+                gate.holders -= 1
+                if (gate.holders <= 0 && gates[key] === gate) gates.remove(key)
+            }
+        }
     }
+
+    /** Test-only visibility into the live gate count; callers quiesce their flights first. */
+    internal fun trackedKeyCount(): Int = gates.size
 }
