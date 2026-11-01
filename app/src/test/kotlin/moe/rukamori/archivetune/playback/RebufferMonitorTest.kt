@@ -136,10 +136,26 @@ class RebufferMonitorTest {
         repeat(5) { stall("song") }
         assertTrue(monitor.shouldSuppressRetries("song"))
         // Repeat-one and duplicate occurrences transition without leaving READY.
-        monitor.onMediaItemChanged("song")
+        monitor.onMediaItemChanged("song", ready = true, buffering = false)
         assertFalse(monitor.shouldSuppressRetries("song"))
         assertFalse(monitor.shouldStepDownQuality("song"))
         repeat(2) { stall("song") }
+        assertFalse(monitor.shouldStepDownQuality("song"))
+    }
+
+    @Test
+    fun `a gapless transition seeds ready so the new track's stalls count`() {
+        // An AUTO transition can land without the player ever leaving READY; the seeded state
+        // must stand in for the state event the monitor will never see for this track.
+        monitor.onMediaItemChanged("song", ready = true, buffering = false)
+        repeat(3) { stall("song") }
+        assertTrue(monitor.shouldStepDownQuality("song"))
+    }
+
+    @Test
+    fun `an unseeded transition still waits for ready before counting`() {
+        monitor.onMediaItemChanged("song", ready = false, buffering = false)
+        repeat(3) { stall("song") }
         assertFalse(monitor.shouldStepDownQuality("song"))
     }
 
@@ -218,16 +234,61 @@ class RebufferMonitorTest {
     }
 
     @Test
-    fun `a stall the user paused inside is discarded`() {
+    fun `a pause inside a qualified stall still counts its pre-pause length`() {
         buffering("song")
         now += 1_000L
         ready("song")
         repeat(4) { stall("song") }
         buffering("song")
-        now += 5_000L
+        now += 2_000L
+        monitor.onPlayWhenReadyChanged(false)
+        // 2 s of genuine rebuffering already qualified: pausing must not erase it.
+        assertTrue(monitor.shouldSuppressRetries("song"))
+    }
+
+    @Test
+    fun `paused time is excluded and resuming while still buffering opens a fresh stall`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(3) { stall("song") }
+        buffering("song")
+        now += 2_000L
+        monitor.onPlayWhenReadyChanged(false)
+        // The paused stretch belongs to neither stall.
+        now += 60_000L
+        monitor.onPlayWhenReadyChanged(true)
+        now += 1_600L
+        ready("song")
+        // 3 + pre-pause stall + resumed stall = 5; without the resume reopen it would stay 4.
+        assertTrue(monitor.shouldSuppressRetries("song"))
+    }
+
+    @Test
+    fun `a pause inside a short stall discards it`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(3) { stall("song") }
+        buffering("song")
+        now += 400L
         monitor.onPlayWhenReadyChanged(false)
         ready("song")
-        assertFalse(monitor.shouldSuppressRetries("song"))
         assertTrue(monitor.shouldStepDownQuality("song"))
+        assertFalse(monitor.shouldSuppressRetries("song"))
+    }
+
+    @Test
+    fun `a resume while ready opens no stall`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(2) { stall("song") }
+        monitor.onPlayWhenReadyChanged(false)
+        monitor.onPlayWhenReadyChanged(true)
+        now += 1_600L
+        ready("song")
+        // Still 2: had the resume opened a stall, it would already have qualified and made 3.
+        assertFalse(monitor.shouldStepDownQuality("song"))
     }
 }
