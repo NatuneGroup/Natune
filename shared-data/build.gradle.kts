@@ -143,6 +143,9 @@ val prepareLegacyFixtureSources = tasks.register("prepareLegacySerializationTest
 kotlin.sourceSets.named("jvmTest") { kotlin.srcDir(legacyFixtureSources) }
 tasks.matching { it.name == "compileTestKotlinJvm" }.configureEach { dependsOn(prepareLegacyFixtureSources) }
 
+// One portable-backup test allocates an archive above the 512 MiB cap to prove the storage refusal.
+tasks.withType<Test>().configureEach { maxHeapSize = "4g" }
+
 // Reuse an unchanged retained font for valid-font restore tests; no invented/third-party fixture.
 val backupFontFixture = tasks.register<Copy>("prepareBackupFontTestResource") {
     from(rootProject.file("app/src/main/res/font/looper_jost_regular.ttf")) { rename { "retained-jost-fixture.ttf" } }
