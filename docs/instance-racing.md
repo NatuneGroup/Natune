@@ -80,6 +80,33 @@ DoH fallback so login and streaming survive an ISP that DNS-blocks `tidal.com`; 
 hardcoded provider IPs, so on a network that blocks the DoH hosts too, a VPN or a Private DNS
 resolver is the only route.
 
+## Queued playback (HTTP 202)
+
+hifi-api answers `202 Accepted` when the account's single playback slot is busy. The 202 is a ticket,
+not a stream: it carries `statusUrl` (or a `Location` header), `cancelUrl`, and usually `Retry-After`.
+The resolver polls the status URL until the completed playback payload (one with `data`) arrives, the
+ticket reports a failed state, or the attempt deadline passes.
+
+- The wait follows `Retry-After` in either form (delta-seconds or HTTP-date), clamped to 250 ms through
+  60 s. Without a usable value it polls every second.
+- A 404 or 410 on a poll means the server has already dropped the record. That is an error, and no
+  cancel is sent for it.
+- Unlike a direct 429, which is only counted (see Rate limiting above), a 429 on a poll also moves that
+  instance to the back of the race order for its `Retry-After` period, using the same cooldown that
+  failures use.
+- Every other exit that leaves the ticket open (a lost race, a deadline, a rate limit, a transport error)
+  sends a best-effort `DELETE` to `cancelUrl`. The cancel is fire-and-forget and its failure changes
+  nothing; the server expires unclaimed records on its own timer.
+- Status and cancel URLs must be on the instance's own origin and under `/playback/requests/`, and they
+  are rebuilt from a validated request id. Anything else is never contacted.
+
+The hifi-api response does not document the in-progress or failed status bodies, so an unrecognised 200
+keeps polling until the deadline. These shapes have not been checked against a live instance.
+
+Both resolvers implement these rules: `tidal/TidalAudioProvider.kt` on Android, with the URL and
+Retry-After rules in `tidal/TidalQueuedPlayback.kt`, and `shared-data/.../provider/TidalInstanceResolver.kt`
+on KMP, with its rules in `provider/TidalQueuedPlayback.kt`. Change them together.
+
 ## What the settings screen exposes
 
 Settings → Tidal lists the instances with a per-entry status and ping, and offers add, bulk paste,
