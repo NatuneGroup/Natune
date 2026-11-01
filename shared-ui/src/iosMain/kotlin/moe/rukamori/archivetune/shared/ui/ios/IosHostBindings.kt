@@ -125,7 +125,7 @@ internal fun iosHostBindings(
     val canvas = createIosCanvas(graph)
     val canvasFrames = IosCanvasFrames(graph, canvas, graph.canvasStore)
     val canvasControls = IosCanvasControls(controls, canvas, graph.scope)
-    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser, host.appleMusicSheet) { host.viewController }
+    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser, host.browser, host.appleMusicSheet) { host.viewController }
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     // Back requests a page answers itself, such as a chat's back port. The root pops the stack for them, as the gesture does.

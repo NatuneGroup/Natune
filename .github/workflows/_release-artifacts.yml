@@ -772,6 +772,8 @@ jobs:
       ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.POOL_CLIENT_KEY }}
       ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.FEEDBACK_API_URL }}
       ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.FEEDBACK_INGEST_KEY }}
+      # The registered public PKCE client id for the Librespot Spotify sign-in (repository variable, not a secret).
+      ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
       # The job builds only the Kotlin/Native iOS framework through xcodebuild; it never needs the
       # Android SDK. Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
       # :jiosaavn and :morideobfuscator load no build script and the shared modules skip their Android
@@ -862,6 +864,7 @@ jobs:
           write_setting ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN "$ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN"
           write_setting ARCHIVETUNE_POTOKEN_REQUEST_KEY "$ARCHIVETUNE_POTOKEN_REQUEST_KEY"
           write_setting ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY "$ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY"
+          write_setting ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID "$ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID"
 
       - name: Build unsigned device app and create IPA
         shell: bash

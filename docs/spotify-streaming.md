@@ -89,6 +89,14 @@ strict state match, five-minute deadline) instead of an activity. The client id 
 fingerprint binding and every `accessToken()` guard are the ones listed above, and the
 unofficial pipelines get no credentials while the effective engine is Librespot.
 
+On iOS `IosSpotifyLibrespot` runs the same flow through the system authentication sheet
+(`BrowserAuthPort` — `ASWebAuthenticationSession` with an ephemeral session per attempt): the
+registered `natune://spotify-callback` scheme returns the code inside the sheet with the port's
+strict redirect and state match, so no deep-link intake touches the grant. The client id comes
+through Info.plist into `IosProviderCredentials.spotifyOauthClientId`; the grant storage, the
+binding guards and the effective-engine gating are the same ones listed above — the iOS host
+carries no unofficial streaming transport at all, so the source stays unavailable regardless.
+
 The audio path itself (the librespot session and its byte stream) lands with the native bindings;
 until then the Librespot engine carries the sign-in and the credentials the session will need.
 
