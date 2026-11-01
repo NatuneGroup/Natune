@@ -1926,6 +1926,9 @@ class TidalInstanceResolver(
         cancelScope.launch {
             runCatching {
                 exchange(client, cancelUrl, QUEUED_CANCEL_TIMEOUT_MS, emptyList(), emptyMap(), HttpMethod.Delete)
+            }.onFailure { failure ->
+                // Best effort: a ticket that cannot be cancelled is left for the server to expire.
+                if (failure is CancellationException) throw failure
             }
         }
     }
