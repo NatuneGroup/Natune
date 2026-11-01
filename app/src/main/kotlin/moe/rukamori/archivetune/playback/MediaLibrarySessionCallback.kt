@@ -45,11 +45,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylist
-import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylistKind
-import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylists
-import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistShuffleKey
-import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistsJsonKey
 import moe.rukamori.archivetune.constants.HideExplicitKey
 import moe.rukamori.archivetune.constants.HideVideoKey
 import moe.rukamori.archivetune.constants.MediaSessionConstants
@@ -119,7 +114,7 @@ class MediaLibrarySessionCallback
             putInt(EXTRA_CONTENT_STYLE_PLAYABLE_HINT, playableHint)
         }
 
-        private fun playableExtras(playableHint: Int = CONTENT_STYLE_LIST_ITEM) =
+        internal fun playableExtras(playableHint: Int = CONTENT_STYLE_LIST_ITEM) =
             Bundle().apply {
                 putBoolean(EXTRA_CONTENT_STYLE_SUPPORTED, true)
                 putInt(EXTRA_CONTENT_STYLE_PLAYABLE_HINT, playableHint)
@@ -1085,128 +1080,6 @@ class MediaLibrarySessionCallback
                     }.toMutableList()
             }
 
-        private suspend fun currentQueueChildren(session: MediaLibrarySession): List<MediaItem> =
-            withContext(Dispatchers.Main) {
-                val player = session.player
-                (0 until player.mediaItemCount).map { index ->
-                    val item = player.getMediaItemAt(index)
-                    item
-                        .buildUpon()
-                        .setMediaId(AutoQueueMediaIds.mediaIdFor(index, item.mediaId))
-                        .setMediaMetadata(
-                            item.mediaMetadata
-                                .buildUpon()
-                                .setIsPlayable(true)
-                                .setIsBrowsable(false)
-                                .setExtras(playableExtras())
-                                .build(),
-                        ).build()
-                }
-            }
-
-        private suspend fun queueEntryItem(
-            session: MediaLibrarySession,
-            mediaId: String,
-        ): MediaItem? {
-            val entry = AutoQueueMediaIds.parse(mediaId) ?: return null
-            return withContext(Dispatchers.Main) {
-                val player = session.player
-                val queueMediaIds =
-                    List(player.mediaItemCount) { index -> player.getMediaItemAt(index).mediaId }
-                AutoQueueMediaIds.resolvePosition(entry, queueMediaIds)?.let { position ->
-                    player
-                        .getMediaItemAt(position)
-                        .buildUpon()
-                        .setMediaId(mediaId)
-                        .build()
-                }
-            }
-        }
-
-        private suspend fun pinnedPlaylistEntries(): List<AndroidAutoPinnedPlaylist> =
-            AndroidAutoPinnedPlaylists.decode(
-                context.dataStore.get(AndroidAutoPinnedPlaylistsJsonKey, "[]"),
-            )
-
-        private suspend fun pinnedPlaylistItems(): List<MediaItem> =
-            pinnedPlaylistEntries().mapNotNull(::pinnedPlaylistItem)
-
-        private suspend fun pinnedPlaylistItem(entry: AndroidAutoPinnedPlaylist): MediaItem? {
-            val source =
-                when (entry.kind) {
-                    AndroidAutoPinnedPlaylistKind.LOCAL ->
-                        playlistItem("${MusicService.PLAYLIST}/${entry.id}")
-
-                    AndroidAutoPinnedPlaylistKind.ONLINE ->
-                        onlinePlaylistItem("${MusicService.ONLINE_PLAYLIST}/${entry.id}")
-                } ?: return null
-            return source
-                .buildUpon()
-                .setMediaId(AndroidAutoPinnedPlaylists.mediaIdFor(entry))
-                .build()
-        }
-
-        private suspend fun pinnedMediaItem(mediaId: String): MediaItem? {
-            val ref = AndroidAutoPinnedPlaylists.parseMediaId(mediaId) ?: return null
-            val songMediaId =
-                ref.songMediaId
-                    ?: return pinnedPlaylistItem(AndroidAutoPinnedPlaylist(ref.kind, ref.playlistId))
-            val parentId = mediaId.substringBeforeLast('/')
-            return when (ref.kind) {
-                AndroidAutoPinnedPlaylistKind.LOCAL ->
-                    database.song(songMediaId).first()?.toMediaItem(parentId)
-
-                AndroidAutoPinnedPlaylistKind.ONLINE ->
-                    onlinePlaylistSongItem(
-                        playlistId = ref.playlistId,
-                        songId = songMediaId,
-                        parentId = parentId,
-                    )
-            }
-        }
-
-        private suspend fun pinnedPlaylistChildren(parentId: String): List<MediaItem> {
-            // Song-level ids are leaves: browsing below them yields nothing.
-            val ref = AndroidAutoPinnedPlaylists.parseMediaId(parentId) ?: return emptyList()
-            if (ref.songMediaId != null) return emptyList()
-            return when (ref.kind) {
-                AndroidAutoPinnedPlaylistKind.LOCAL ->
-                    playlistSongs(ref.playlistId).map { it.toMediaItem(parentId) }
-
-                AndroidAutoPinnedPlaylistKind.ONLINE ->
-                    onlinePlaylistSongs(ref.playlistId).map { it.toMediaItem(parentId) }
-            }
-        }
-
-        private suspend fun pinnedPlaylistPlayback(
-            mediaId: String,
-            startPositionMs: Long,
-        ): MediaSession.MediaItemsWithStartPosition? {
-            val ref = AndroidAutoPinnedPlaylists.parseMediaId(mediaId) ?: return null
-            val shufflePinned = context.dataStore.get(AndroidAutoPinnedPlaylistShuffleKey, false)
-            val songs =
-                when (ref.kind) {
-                    AndroidAutoPinnedPlaylistKind.LOCAL ->
-                        playlistSongs(ref.playlistId).map { it.toMediaItem() }
-
-                    AndroidAutoPinnedPlaylistKind.ONLINE ->
-                        onlinePlaylistSongs(ref.playlistId).map { it.toMediaItem() }
-                }
-            if (songs.isEmpty()) return null
-            // Pinned playlist taps honour the driving-playlist playback mode: shuffle starts a
-            // shuffled list from the top while play-in-order keeps the playlist's order. A tap on
-            // a specific song always starts at that song.
-            val startIndex =
-                ref.songMediaId?.let { songId ->
-                    songs.indexOfFirst { it.mediaId == songId }.takeIf { it != -1 }
-                } ?: 0
-            return if (ref.songMediaId == null && shufflePinned) {
-                MediaSession.MediaItemsWithStartPosition(songs.shuffled(), 0, startPositionMs)
-            } else {
-                MediaSession.MediaItemsWithStartPosition(songs, startIndex, startPositionMs)
-            }
-        }
-
         private suspend fun autoQueueSongPathItem(mediaId: String): MediaItem? {
             val path = mediaId.pathSegments()
             val root = path.getOrNull(0) ?: return null
@@ -1447,7 +1320,7 @@ class MediaLibrarySessionCallback
             }
         }
 
-        private suspend fun playlistItem(mediaId: String): MediaItem? {
+        internal suspend fun playlistItem(mediaId: String): MediaItem? {
             val path = mediaId.pathSegments()
             val playlistId = path.getOrNull(1) ?: return null
             return when (path.getOrNull(2)) {
@@ -1560,7 +1433,7 @@ class MediaLibrarySessionCallback
                 }
             }
 
-        private suspend fun playlistSongs(
+        internal suspend fun playlistSongs(
             playlistId: String,
             sortOption: AutoPlaylistSortOption? = null,
         ): List<Song> =
@@ -1753,7 +1626,7 @@ class MediaLibrarySessionCallback
             }
         }
 
-        private suspend fun onlinePlaylistItem(mediaId: String): MediaItem? {
+        internal suspend fun onlinePlaylistItem(mediaId: String): MediaItem? {
             val path = mediaId.pathSegments()
             val playlistId = path.getOrNull(1) ?: return null
             return when (path.getOrNull(2)) {
@@ -1799,7 +1672,7 @@ class MediaLibrarySessionCallback
             }
         }
 
-        private suspend fun onlinePlaylistSongs(playlistId: String): List<SongItem> =
+        internal suspend fun onlinePlaylistSongs(playlistId: String): List<SongItem> =
             YouTube
                 .playlist(playlistId)
                 .getOrNull()
@@ -1809,7 +1682,7 @@ class MediaLibrarySessionCallback
                 .take(AUTO_BROWSE_LIMIT)
                 .onEach { onlineSearchItemCache[it.id] = it.toMediaItem() }
 
-        private suspend fun onlinePlaylistSongItem(
+        internal suspend fun onlinePlaylistSongItem(
             playlistId: String,
             songId: String,
             parentId: String,
@@ -1876,7 +1749,7 @@ class MediaLibrarySessionCallback
             startPositionMs,
         )
 
-        private fun SongItem.toMediaItem(path: String): MediaItem =
+        internal fun SongItem.toMediaItem(path: String): MediaItem =
             toMediaItem()
                 .buildUpon()
                 .setMediaId("$path/$id")
@@ -1949,7 +1822,7 @@ class MediaLibrarySessionCallback
 
         private fun String.pathSegments(): List<String> = split("/").filter { it.isNotBlank() }
 
-        private fun drawableUri(
+        internal fun drawableUri(
             @DrawableRes id: Int,
         ) = Uri
             .Builder()
@@ -1959,7 +1832,7 @@ class MediaLibrarySessionCallback
             .appendPath(context.resources.getResourceEntryName(id))
             .build()
 
-        private fun browsableMediaItem(
+        internal fun browsableMediaItem(
             id: String,
             title: String,
             subtitle: String?,
@@ -1982,7 +1855,7 @@ class MediaLibrarySessionCallback
                     .build(),
             ).build()
 
-        private fun queueMediaItem(
+        internal fun queueMediaItem(
             id: String,
             title: String,
             subtitle: String?,
@@ -2020,161 +1893,7 @@ class MediaLibrarySessionCallback
                         .build(),
                 ).build()
 
-        /**
-         * The fixed top-level and Home folder items — identical whether reached as a child of
-         * [MusicService.ROOT]/[MusicService.HOME] in [onGetChildren] or looked up directly by id
-         * in [onGetItem]. Returns null for any other id.
-         */
-        private fun staticFolderItem(id: String): MediaItem? =
-            when (id) {
-                MusicService.HOME ->
-                    browsableMediaItem(
-                        MusicService.HOME,
-                        context.getString(R.string.home),
-                        null,
-                        drawableUri(R.drawable.home_filled),
-                        MediaMetadata.MEDIA_TYPE_FOLDER_MIXED,
-                    )
-
-                MusicService.HOME_QUICK_PICKS ->
-                    queueMediaItem(
-                        MusicService.HOME_QUICK_PICKS,
-                        context.getString(R.string.quick_picks),
-                        null,
-                        drawableUri(R.drawable.playlist_play),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.HOME_FORGOTTEN_FAVORITES ->
-                    queueMediaItem(
-                        MusicService.HOME_FORGOTTEN_FAVORITES,
-                        context.getString(R.string.forgotten_favorites),
-                        null,
-                        drawableUri(R.drawable.favorite),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.HOME_KEEP_LISTENING ->
-                    queueMediaItem(
-                        MusicService.HOME_KEEP_LISTENING,
-                        context.getString(R.string.keep_listening),
-                        null,
-                        drawableUri(R.drawable.history),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.HOME_SUGGESTED_SONGS ->
-                    queueMediaItem(
-                        MusicService.HOME_SUGGESTED_SONGS,
-                        context.getString(R.string.android_auto_suggested_songs),
-                        null,
-                        drawableUri(R.drawable.music_note),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.HOME_MIXES_AND_RADIOS ->
-                    browsableMediaItem(
-                        MusicService.HOME_MIXES_AND_RADIOS,
-                        context.getString(R.string.android_auto_mixes_and_radios),
-                        null,
-                        drawableUri(R.drawable.radio),
-                        MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS,
-                    )
-
-                MusicService.QUICK_PICKS ->
-                    queueMediaItem(
-                        MusicService.QUICK_PICKS,
-                        context.getString(R.string.quick_picks),
-                        null,
-                        drawableUri(R.drawable.playlist_play),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.RECENT ->
-                    queueMediaItem(
-                        MusicService.RECENT,
-                        context.getString(R.string.history),
-                        null,
-                        drawableUri(R.drawable.history),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.LIKED ->
-                    queueMediaItem(
-                        MusicService.LIKED,
-                        context.getString(R.string.liked_songs),
-                        null,
-                        drawableUri(R.drawable.favorite),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.DOWNLOADED ->
-                    queueMediaItem(
-                        MusicService.DOWNLOADED,
-                        context.getString(R.string.downloaded_songs),
-                        null,
-                        drawableUri(R.drawable.download),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.SONG ->
-                    browsableMediaItem(
-                        MusicService.SONG,
-                        context.getString(R.string.songs),
-                        null,
-                        drawableUri(R.drawable.music_note),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.ARTIST ->
-                    browsableMediaItem(
-                        MusicService.ARTIST,
-                        context.getString(R.string.artists),
-                        null,
-                        drawableUri(R.drawable.artist),
-                        MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
-                    )
-
-                MusicService.ALBUM ->
-                    browsableMediaItem(
-                        MusicService.ALBUM,
-                        context.getString(R.string.albums),
-                        null,
-                        drawableUri(R.drawable.album),
-                        MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
-                    )
-
-                MusicService.PLAYLIST ->
-                    browsableMediaItem(
-                        MusicService.PLAYLIST,
-                        context.getString(R.string.playlists),
-                        null,
-                        drawableUri(R.drawable.queue_music),
-                        MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS,
-                    )
-
-                MusicService.QUEUE ->
-                    browsableMediaItem(
-                        MusicService.QUEUE,
-                        context.getString(R.string.queue),
-                        null,
-                        drawableUri(R.drawable.queue_music),
-                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                    )
-
-                MusicService.PINNED_PLAYLISTS ->
-                    browsableMediaItem(
-                        MusicService.PINNED_PLAYLISTS,
-                        context.getString(R.string.android_auto_driving_playlists),
-                        null,
-                        drawableUri(R.drawable.push_pin),
-                        MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS,
-                    )
-
-                else -> null
-            }
-
-        private fun Song.toMediaItem(path: String) =
+        internal fun Song.toMediaItem(path: String) =
             MediaItem
                 .Builder()
                 .setMediaId("$path/$id")

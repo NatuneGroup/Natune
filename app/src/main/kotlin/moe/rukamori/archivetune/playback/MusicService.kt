@@ -29,7 +29,6 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.audiofx.AudioEffect
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
@@ -139,8 +138,6 @@ import moe.rukamori.archivetune.cast.CastMediaItemResolver
 import moe.rukamori.archivetune.cast.CastPlaybackRepository
 import moe.rukamori.archivetune.cast.CastPlaybackRepositoryLocator
 import moe.rukamori.archivetune.cast.CastScreenState
-import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylists
-import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistsJsonKey
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
 import moe.rukamori.archivetune.constants.DefaultMetadataSourceKey
 import moe.rukamori.archivetune.constants.MetadataSource
@@ -1106,7 +1103,7 @@ class MusicService :
         private set
     private val pausedPlaybackGate = PausedPlaybackGate()
     private lateinit var castPlaybackRepository: CastPlaybackRepository
-    private lateinit var mediaSession: MediaLibrarySession
+    internal lateinit var mediaSession: MediaLibrarySession
 
     private var isAudioEffectSessionOpened = false
     private var openedAudioSessionId: Int? = null
@@ -5511,28 +5508,6 @@ class MusicService :
         onUpdateNotification(mediaSession, hasResumablePlaybackNotification())
     }
 
-    /**
-     * Re-publishes the automotive browse tree so a head unit that already attached sees current
-     * queue, pinned driving playlists and library content. Triggered by
-     * [ACTION_REFRESH_AUTOMOTIVE_LIBRARY].
-     */
-    private fun refreshAutomotiveLibrary() {
-        if (!::mediaSession.isInitialized) return
-        val pinnedCount =
-            runCatching {
-                AndroidAutoPinnedPlaylists
-                    .decode(dataStore.get(AndroidAutoPinnedPlaylistsJsonKey, "[]"))
-                    .size
-            }.getOrDefault(0)
-        runCatching {
-            mediaSession.notifyChildrenChanged(ROOT, AUTOMOTIVE_ROOT_ITEM_COUNT, null)
-            mediaSession.notifyChildrenChanged(QUEUE, player.mediaItemCount, null)
-            mediaSession.notifyChildrenChanged(PINNED_PLAYLISTS, pinnedCount, null)
-        }.onFailure { error ->
-            Timber.tag(TAG).w(error, "Failed to refresh automotive library")
-        }
-    }
-
     private suspend fun enrichFromAppleMusic(metadata: MediaMetadata): MediaMetadata {
         val artistName = metadata.artists.firstOrNull()?.name
         val query = listOfNotNull(metadata.title, artistName).joinToString(" ")
@@ -6874,35 +6849,6 @@ class MusicService :
         openedAudioSessionId = newSessionId
         ensureAudioEffects(newSessionId)
         sendOpenAudioEffectSessionBroadcast(newSessionId)
-    }
-
-    private fun sendOpenAudioEffectSessionBroadcast(sessionId: Int) {
-        try {
-            sendBroadcast(
-                Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
-                    putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
-                    putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
-                    putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                },
-            )
-        } catch (e: SecurityException) {
-            // Some OEM builds restrict the audio-effect control-session broadcasts.
-            Timber.tag(TAG).w(e, "OPEN_AUDIO_EFFECT_CONTROL_SESSION broadcast denied")
-        }
-    }
-
-    private fun sendCloseAudioEffectSessionBroadcast(sessionId: Int) {
-        try {
-            sendBroadcast(
-                Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
-                    putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
-                    putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
-                    putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                },
-            )
-        } catch (e: SecurityException) {
-            Timber.tag(TAG).w(e, "CLOSE_AUDIO_EFFECT_CONTROL_SESSION broadcast denied")
-        }
     }
 
     private fun historyThresholdMs(): Long =
@@ -13134,7 +13080,6 @@ class MusicService :
             "moe.rukamori.archivetune.action.MEDIA_NOTIFICATION_DISMISSED"
         const val ACTION_REFRESH_AUTOMOTIVE_LIBRARY =
             "moe.rukamori.archivetune.action.REFRESH_AUTOMOTIVE_LIBRARY"
-        private const val AUTOMOTIVE_ROOT_ITEM_COUNT = 11
         const val EXTRA_MEDIA_NOTIFICATION_DELETE_INTENT =
             "moe.rukamori.archivetune.extra.MEDIA_NOTIFICATION_DELETE_INTENT"
         const val NOTIFICATION_ID = 888
