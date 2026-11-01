@@ -294,6 +294,7 @@ import moe.rukamori.archivetune.constants.ArtworkProviderOrderKey
 import moe.rukamori.archivetune.constants.DefaultArtworkProviderOrder
 import moe.rukamori.archivetune.constants.deserializeArtworkProviderOrder
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolAccountRecovery
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.constants.PlayerVolumeKey
@@ -10351,19 +10352,18 @@ class MusicService :
 
             // 2) Shared premium Tidal accounts contributed to the community Source Pool (premium
             //    first). These are genuine subscriber tokens, so they stream full-quality FLAC via
-            //    the official API without anyone hosting a restream instance.
+            //    the official API without anyone hosting a restream instance. Pooled access tokens
+            //    live ~an hour while the cache lives a day, so re-lease once up front instead of
+            //    paying for a sure 401 that would then report a healthy account dead.
+            if (PoolAccountManager.tidalAccounts().any { TidalAccountManager.isAccessTokenExpired(it.token) }) {
+                runCatching { runBlocking(Dispatchers.IO) { PoolAccountManager.refresh(applicationContext, force = true) } }
+            }
             for (poolAccount in PoolAccountManager.tidalAccounts()) {
                 val poolCountry = poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
                 val poolStream =
-                    runCatching { attempt(poolAccount.token, poolCountry) }
-                        .onFailure {
-                            if (TidalAccountManager.isUnauthorized(it)) {
-                                PoolAccountManager.report("tidal", "account", poolAccount.id, "dead")
-                            } else {
-                                Timber.tag("MusicService").w(it, "Tidal pool account resolve failed for %s", query.mediaId)
-                            }
-                        }
-                        .getOrNull()
+                    runBlocking(Dispatchers.IO) {
+                        PoolAccountRecovery.resolvePooledTidal(applicationContext, poolAccount, poolCountry) { token, country -> attempt(token, country) }
+                    }
                 if (poolStream != null) {
                     Timber.tag("MusicService").d("Tidal resolved via pool account (premium=%s)", poolAccount.premium)
                     PoolAccountManager.noteAccountSuccess("tidal", poolAccount.id)

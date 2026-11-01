@@ -33,6 +33,8 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.desktop.DesktopCredentials
 import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
+import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
+import moe.rukamori.archivetune.shared.data.provider.PoolDeadReporter
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.SecureCredentialStore
@@ -93,6 +95,9 @@ internal class DesktopPlaybackPool(
     @Volatile private var discovered: List<String> = emptyList()
     @Volatile private var discoveredAtMs = 0L
 
+    /** The shared dead-report policy: recover-then-retry once, dedupe per account per window. */
+    internal val deadReports = PoolDeadReporter(nowMs)
+
     /** "service:id" to the time the account is worth trying first again. */
     private val cooldownUntil = ConcurrentHashMap<String, Long>()
     private val reportedAt = ConcurrentHashMap<String, Long>()
@@ -129,6 +134,13 @@ internal class DesktopPlaybackPool(
         ensureLoaded()
         return qobuz.sortedWith(compareBy({ coolingDown(QOBUZ, it.id) }, { !it.premium }))
     }
+
+    /** The credential the feed last served, with no load or refresh — the marker a recovery compares. */
+    fun tidalSnapshot(): List<TidalPoolAccount> = tidal
+
+    fun deezerSnapshot(): List<DeezerPoolAccount> = deezer
+
+    fun qobuzSnapshot(): List<QobuzPoolAccount> = qobuz
 
     /** A replaced feed credential must revoke an already-prepared source, not only the next pool lookup. */
     fun admitsQobuz(account: QobuzPoolAccount): Boolean = enabled() && qobuz.any {
@@ -444,7 +456,7 @@ internal class DesktopPlaybackPool(
         private const val PARTIAL_INTERVAL_MS = 5L * 60L * 60L * 1000L
         private const val DISCOVERY_INTERVAL_MS = 30L * 60L * 1000L
         private const val ACCOUNT_COOLDOWN_MS = 10L * 60L * 1000L
-        private const val REPORT_DEDUPE_MS = 10L * 60L * 1000L
+        private const val REPORT_DEDUPE_MS = PoolDeadReportPolicy.REPORT_DEDUPE_MS
         private const val REQUEST_TIMEOUT_MS = 10_000L
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
