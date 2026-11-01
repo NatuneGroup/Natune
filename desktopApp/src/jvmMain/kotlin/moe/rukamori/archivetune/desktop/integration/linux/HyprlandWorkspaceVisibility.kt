@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.desktop.integration.linux
 
 import java.io.ByteArrayOutputStream
+import java.net.StandardProtocolFamily
 import java.net.UnixDomainSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
@@ -53,14 +54,19 @@ class HyprlandWorkspaceVisibility(
     @Volatile private var hidden: Boolean? = null
     @Volatile private var closed = false
 
+    // The event reader blocks on the socket, so it gets its own thread; the single scheduler
+    // thread stays free for evaluations or they would never run.
+    private val eventThread = Thread({ eventLoop() }, "hyprland-events").apply { isDaemon = true }
+
     init {
-        scheduler.execute { eventLoop() }
+        eventThread.start()
         scheduler.execute { evaluate() }
     }
 
     private fun eventLoop() {
         try {
-            SocketChannel.open(UnixDomainSocketAddress.of(directory.resolve(EVENT_SOCKET).toString())).use { channel ->
+            SocketChannel.open(StandardProtocolFamily.UNIX).use { channel ->
+                channel.connect(UnixDomainSocketAddress.of(directory.resolve(EVENT_SOCKET).toString()))
                 eventSocket = channel
                 val buffer = ByteBuffer.allocate(IO_BUFFER)
                 while (!closed && channel.read(buffer) >= 0) {
@@ -93,7 +99,7 @@ class HyprlandWorkspaceVisibility(
     /** One bounded request to the query socket; a deadline miss leaves the last answer in place. */
     private fun request(command: String): String {
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(QUERY_DEADLINE_MS)
-        val channel = SocketChannel.open()
+        val channel = SocketChannel.open(StandardProtocolFamily.UNIX)
         try {
             channel.configureBlocking(false)
             channel.connect(UnixDomainSocketAddress.of(directory.resolve(QUERY_SOCKET).toString()))
@@ -133,6 +139,11 @@ class HyprlandWorkspaceVisibility(
         closed = true
         runCatching { eventSocket?.close() }
         scheduler.shutdownNow()
+        try {
+            eventThread.join(QUERY_DEADLINE_MS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         hidden = null
         onHidden(false)
     }

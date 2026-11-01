@@ -704,6 +704,8 @@ class DesktopPlaybackPort(
                 failureMappers[index].failure(state) { engine.lastError() }
                     ?.let { publishedFailures.tryEmit(it) }
                 watchStall(mix, index, timing, state, now)
+                // A stall recovery rebuilt the output under this poll; the snapshot's decks are dead now.
+                if (mixer !== mix) return true
                 if (state.hasSource && (state.isBuffering || (state.playWhenReady && !state.isEnded))) busy = true
             }
             busy

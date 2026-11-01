@@ -32,6 +32,8 @@ private const val DISCORD_HEX = "0123456789ABCDEF"
 
 private val discordProtocolJson = Json { ignoreUnknownKeys = true }
 
+private const val DISCORD_OP_HELLO = 10
+
 /**
  * The authorize URL the host's browser surface loads: PKCE S256, the public application id and the fixed scopes the
  * AGENTS.md Discord invariant prescribes. [state] and [challenge] come from the host's secure generator.
@@ -115,9 +117,11 @@ data class DiscordGatewayEvent(val op: Int, val heartbeatIntervalMs: Long?, val 
 fun parseDiscordGatewayEvent(frame: String): DiscordGatewayEvent? = runCatching {
     val event = discordProtocolJson.parseToJsonElement(frame).jsonObject
     val op = event["op"]?.jsonPrimitive?.intOrNull ?: return null
+    // `d` is an object only on HELLO; ACKs send null and heartbeat requests the sequence number.
+    val data = event["d"] as? JsonObject
     DiscordGatewayEvent(
         op = op,
-        heartbeatIntervalMs = event["d"]?.jsonObject?.get("heartbeat_interval")?.jsonPrimitive?.longOrNull,
+        heartbeatIntervalMs = if (op == DISCORD_OP_HELLO) data?.get("heartbeat_interval")?.jsonPrimitive?.longOrNull else null,
         sequence = event["s"]?.jsonPrimitive?.intOrNull,
     )
 }.getOrNull()
