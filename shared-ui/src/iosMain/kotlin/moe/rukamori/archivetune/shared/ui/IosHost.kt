@@ -15,6 +15,7 @@ import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
 import moe.rukamori.archivetune.shared.data.platform.ios.*
 import moe.rukamori.archivetune.shared.data.provider.TIDAL_PKCE_REDIRECT_URI
+import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogStore
 import moe.rukamori.archivetune.shared.domain.diagnostics.CrashReport
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLogStore
@@ -96,6 +97,9 @@ class IosHost {
     val tidalPkceSheet = IosTidalPkceSheet({ viewController }, TIDAL_PKCE_REDIRECT_URI)
     val cookieBrowser = IosCookieOnlyBrowserAuth { viewController }
 
+    /** The JS-evaluating WKWebView sheet that harvests the MusicKit pair, as Android's login WebView does. */
+    val appleMusicSheet = IosAppleMusicLoginSheet { viewController }
+
     /** Stateless: each evaluation owns a fresh bounded QuickJS runtime, so there is nothing to close. */
     val challenges: ChallengeEvaluator = IosChallengeEvaluator()
     private val settingsOpen = MutableStateFlow<IosSettingsOpenState>(IosSettingsOpenState.Opening)
@@ -162,6 +166,9 @@ class IosHost {
             sessionHeader = "Natune session ${iosDiagnosticTime(started)} version=${iosApplicationVersion()}",
         )
     }
+
+    /** The bounded store of crash records the settings page lists, beside the reports it replaces nothing of. */
+    val crashLogs: CrashLogStore? = diagnosticsRoot?.let { IosCrashLogStore("$it/records") }
 
     init {
         // First, so a failure while the rest of the host starts is still captured for the next launch.
