@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
 import moe.rukamori.archivetune.constants.MetrolistPresentationKey
@@ -54,6 +55,8 @@ import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.shared.ui.player.MetrolistPresentation
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
+import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
+import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.player.ClickableArtists
@@ -574,4 +577,69 @@ private fun MetrolistBottomControls(
             )
         }
     }
+}
+/**
+ * Player.kt dispatch shim: collects the connection-driven state here so both mount sites
+ * stay a single call, then forwards the host-resolved colors, seek plumbing and callbacks.
+ */
+@Composable
+fun MetrolistPlayerDispatch(
+    mediaMetadata: MediaMetadata?,
+    navController: NavController,
+    state: BottomSheetState,
+    isPlaying: Boolean,
+    isLoading: Boolean,
+    sliderPosition: Long?,
+    positionProvider: () -> Long,
+    duration: Long,
+    textButtonColor: Color,
+    iconButtonColor: Color,
+    textBackgroundColor: Color,
+    contentBottomPadding: Dp,
+    onSleepTimerClick: () -> Unit,
+    onQueueClick: () -> Unit,
+    onLyricsClick: () -> Unit,
+    onSliderValueChange: (Long) -> Unit,
+    onSliderValueChangeFinished: () -> Unit,
+    landscape: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val playerConnection = LocalPlayerConnection.current ?: return
+    val metadata = mediaMetadata ?: return
+    val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
+    val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
+    val canSkipNext by playerConnection.canSkipNext.collectAsStateWithLifecycle()
+    val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
+    val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle()
+
+    MetrolistPlayerContent(
+        mediaMetadata = metadata,
+        playbackState = playbackState,
+        isPlaying = isPlaying,
+        isLoading = isLoading,
+        canSkipPrevious = canSkipPrevious,
+        canSkipNext = canSkipNext,
+        sliderPosition = sliderPosition,
+        positionProvider = positionProvider,
+        duration = duration,
+        playerConnection = playerConnection,
+        navController = navController,
+        state = state,
+        menuState = LocalMenuState.current,
+        bottomSheetPageState = LocalBottomSheetPageState.current,
+        currentSongLiked = currentSong?.song?.liked == true,
+        sleepTimerEnabled = playerConnection.service.sleepTimer.isActive,
+        repeatMode = repeatMode,
+        textButtonColor = textButtonColor,
+        iconButtonColor = iconButtonColor,
+        textBackgroundColor = textBackgroundColor,
+        contentBottomPadding = contentBottomPadding,
+        onSleepTimerClick = onSleepTimerClick,
+        onQueueClick = onQueueClick,
+        onLyricsClick = onLyricsClick,
+        onSliderValueChange = onSliderValueChange,
+        onSliderValueChangeFinished = onSliderValueChangeFinished,
+        landscape = landscape,
+        modifier = modifier,
+    )
 }

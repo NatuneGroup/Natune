@@ -37,7 +37,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -49,7 +48,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -57,7 +55,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -158,7 +155,6 @@ import moe.rukamori.archivetune.constants.UiScaleFactorKey
 import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
 import moe.rukamori.archivetune.ui.component.restartState
 import moe.rukamori.archivetune.ui.component.restartEnumState
-import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.LibraryChipOrderDialog
@@ -805,55 +801,11 @@ private fun appearancePlayerRows(
     }
 
     if (showSliderOptionDialog && playerDesignStyle.supportsSharedSeekStyle) {
-        val sliderStyles =
-            remember {
-                listOf(
-                    SliderStyle.Standard,
-                    SliderStyle.Wavy,
-                    SliderStyle.Thick,
-                    SliderStyle.Circular,
-                    SliderStyle.Simple,
-                )
-            }
-        DefaultDialog(
-            buttons = {
-                TextButton(
-                    onClick = { showSliderOptionDialog = false },
-                    shapes = ButtonDefaults.shapes(),
-                ) {
-                    Text(text = stringResource(android.R.string.cancel))
-                }
-            },
-            onDismiss = {
-                showSliderOptionDialog = false
-            },
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                sliderStyles.chunked(3).forEach { styleRow ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        styleRow.forEach { style ->
-                            SliderStyleOptionCard(
-                                sliderStyle = style,
-                                selected = sliderStyle == style,
-                                onClick = {
-                                    onSliderStyleChange(style)
-                                    showSliderOptionDialog = false
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        repeat(3 - styleRow.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-        }
+        PlayerSliderOptionDialog(
+            sliderStyle = sliderStyle,
+            onSliderStyleChange = onSliderStyleChange,
+            onDismiss = { showSliderOptionDialog = false },
+        )
     }
 
     val playerTitle = stringResource(R.string.player)
@@ -1549,7 +1501,7 @@ private fun homeSourcesLabel(sources: List<HomeSource>): String {
 }
 
 @Composable
-private fun SliderStyleOptionCard(
+internal fun SliderStyleOptionCard(
     sliderStyle: SliderStyle,
     selected: Boolean,
     onClick: () -> Unit,
