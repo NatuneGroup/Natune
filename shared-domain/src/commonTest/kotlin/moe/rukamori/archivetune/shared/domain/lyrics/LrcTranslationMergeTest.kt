@@ -59,4 +59,44 @@ class LrcTranslationMergeTest {
         assertEquals("Eins", lines[0].providerTranslationText)
         assertEquals("Zwei", lines[1].providerTranslationText)
     }
+
+    @Test
+    fun saveableTranslationKeepsARebuiltBilingualDocumentVerbatim() {
+        // The translator rebuild keeps each source row and appends its translation at the same
+        // timestamp; re-merging that result must not emit a second [translatedLyrics] section.
+        val rebuilt =
+            "[ti:Song]\n" +
+                "[00:01.00]First line\n" +
+                "[00:01.00]Premiere ligne\n" +
+                "[00:05.50]Second line\n" +
+                "[00:05.50]Deuxieme ligne\n" +
+                "[00:10.00]\n"
+        assertEquals(rebuilt, LrcTranslationMerge.saveableTranslation(source, rebuilt))
+        val lines = LyricsParser.parse(LrcTranslationMerge.saveableTranslation(source, rebuilt))
+        assertEquals("First line", lines[0].text)
+        assertEquals("Premiere ligne", lines[0].providerTranslationText)
+    }
+
+    @Test
+    fun saveableTranslationMergesAPlainTranslation() {
+        val merged = LrcTranslationMerge.saveableTranslation(source, "Premiere ligne\nDeuxieme ligne")
+        assertTrue("[translatedLyrics]" in merged)
+        assertTrue("[00:01.00]Premiere ligne" in merged)
+        assertTrue("[00:05.50]Deuxieme ligne" in merged)
+    }
+
+    @Test
+    fun saveableTranslationKeepsAnAlreadyMergedDocumentVerbatim() {
+        val once = LrcTranslationMerge.mergeTranslationIntoLrc(source, listOf("Un", "Deux"))!!
+        assertEquals(once, LrcTranslationMerge.saveableTranslation(source, once))
+    }
+
+    @Test
+    fun saveableTranslationFallsBackToTheResultWithoutASource() {
+        assertEquals("plain translation", LrcTranslationMerge.saveableTranslation(null, "plain translation"))
+        assertEquals(
+            "plain translation",
+            LrcTranslationMerge.saveableTranslation("unsynced source\ntext", "plain translation"),
+        )
+    }
 }
