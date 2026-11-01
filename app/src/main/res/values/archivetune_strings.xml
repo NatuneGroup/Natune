@@ -1300,6 +1300,13 @@
     <string name="youtube_playlist_reload">Reload playlist from beginning</string>
     <string name="youtube_playlist_cancel">Cancel playlist loading</string>
     <string name="playlist_add_incomplete">Could not finish adding songs. Retry or cancel. Songs already added are kept.</string>
+    <string name="playlist_add_progress">Processed %1$d of %2$d tracks</string>
+    <string name="playlist_add_uncertain">The last request may have succeeded. Check the playlist before retrying.</string>
+    <string name="playlist_add_stopped">%1$d tracks completed or already present; %2$d tracks remain unconfirmed. Completed additions were kept.</string>
+    <string name="could_not_add_to_playlist">Couldn\'t add to %1$s: %2$s</string>
+    <string name="already_in_playlist_name">Already in %1$s</string>
+    <string name="move_to_top">Move to top</string>
+    <string name="move_to_bottom">Move to bottom</string>
     <string name="queue_infinite">Infinite queue</string>
     <string name="queue_infinite_description">Automatically add related music near the end of the queue. Repeat modes keep the current queue.</string>
     <string name="queue_autoplay_off">Autoplay is off</string>

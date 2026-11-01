@@ -130,9 +130,19 @@ internal fun iosHostBindings(
     val catalogOwners = IosCatalogOwners(graph)
     val playlistCreation = IosPlaylistCreation(graph.scope, graph.libraryContent, openOwnRoute)
     val playlistTags = IosPlaylistTagsState(openOwnRoute)
+    // The playlist overflow menu's host: pins, tags, covers and deletion run against the same owners as the page.
+    val playlistMenus = IosPlaylistMenuHost(graph, itemMenu, playlistTags, openOwnRoute)
     return ArchiveTuneHostBindings(
         queue = graph.queue,
         songMetadata = graph.library.songMetadata,
+        customArtwork = graph.customArtwork,
+        // The multi-playlist add picker reads the one library repository's candidates.
+        playlistPicker = object : moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource {
+            override fun candidates(
+                occurrences: List<ContentOccurrence>,
+            ): Flow<List<moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate>> =
+                graph.library.observePlaylistPicker(occurrences)
+        },
         settings = graph.settings,
         actionScope = graph.scope,
         // `archivetune://` links the Swift app session hands in merge with the host's own route opens. The system back
@@ -154,7 +164,7 @@ internal fun iosHostBindings(
             }
         },
         overlays = { route ->
-            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute)
+            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, playlistMenus)
             IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
         },
         playerSlots = { expanded, active, _ -> iosPlayerSlots(host, graph, expanded, active) },

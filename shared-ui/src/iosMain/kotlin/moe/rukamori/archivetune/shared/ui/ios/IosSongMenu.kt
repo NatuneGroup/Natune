@@ -289,7 +289,7 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, inLibrary: 
         add("remove_playlist")
     }
 
-private fun iosMenuSharing(state: IosItemMenuState, host: IosHost): MenuSharing = object : MenuSharing {
+internal fun iosMenuSharing(state: IosItemMenuState, host: IosHost): MenuSharing = object : MenuSharing {
     override suspend fun shareLink(url: String) = withContext(Dispatchers.Main) { iosShareText(host, url) }
     override suspend fun copyLink(url: String) = withContext(Dispatchers.Main) { copyToIosClipboard(url) }
     override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) = state.unavailable()

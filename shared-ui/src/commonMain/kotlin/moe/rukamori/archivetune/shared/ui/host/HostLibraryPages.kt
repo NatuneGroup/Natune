@@ -236,6 +236,7 @@ private fun localPlaylistPage(owners: LibraryPageOwners, more: (ContentOccurrenc
         page = page,
         actions = playlistActions(owners, more, request) { attempt += 1 },
         control = control,
+        headerMosaicItems = loaded?.previewItems.orEmpty(),
     )
 }
 
