@@ -61,6 +61,26 @@ class LyprioEndpoint private constructor(
     }
 }
 
+/**
+ * The endpoint a Lyprio lookup uses. A user's own pair always wins once either field is entered: a
+ * partial entry is still theirs, so the built-in key never signs requests to a user-chosen server.
+ * Only when both user fields are blank does the build-time pair apply, and only when both build
+ * values are present and parse — a missing or malformed build value simply leaves Lyprio
+ * unconfigured. The build values are read at lookup time and are never written to preferences.
+ */
+fun resolveLyprioEndpoint(
+    userBaseUrl: String,
+    userSigningKeyBase64: String,
+    buildBaseUrl: String,
+    buildSigningKeyBase64: String,
+): LyprioEndpoint? {
+    if (userBaseUrl.isNotBlank() || userSigningKeyBase64.isNotBlank()) {
+        return LyprioEndpoint.parse(userBaseUrl, userSigningKeyBase64)
+    }
+    if (buildBaseUrl.isBlank() || buildSigningKeyBase64.isBlank()) return null
+    return LyprioEndpoint.parse(buildBaseUrl, buildSigningKeyBase64)
+}
+
 @Serializable
 internal data class LyprioLyricsRequest(
     val title: String,

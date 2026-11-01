@@ -315,8 +315,8 @@ val PaxsenixApiKeyKey = stringPreferencesKey("paxsenixApiKey")
 // endpoint is used. When set, all Paxsenix API requests go to this URL.
 val PaxsenixEndpointKey = stringPreferencesKey("paxsenixEndpoint")
 val EnableUnisonLyricsKey = booleanPreferencesKey("enableUnisonLyrics")
-// The user's self-hosted Lyprio server (Metrolist's lyrics service). Off until the user enables it and enters the
-// server URL and its base64 32-byte signing key; nothing is bundled.
+// The user's self-hosted Lyprio server (Metrolist's lyrics service). Off until the user enables it; a
+// user-entered URL and key always win, else a build-time pair (BuildConfig.LYPRIO_*) supplies the endpoint.
 val EnableLyprioLyricsKey = booleanPreferencesKey("enableLyprioLyrics")
 val LyprioEndpointKey = stringPreferencesKey("lyprioEndpoint")
 val LyprioSigningKeyKey = stringPreferencesKey("lyprioSigningKey")

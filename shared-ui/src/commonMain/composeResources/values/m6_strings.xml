@@ -32,6 +32,8 @@
     <string name="m6_lyprio">Lyprio (self-hosted)</string>
     <string name="m6_lyprio_endpoint">Lyprio server URL</string>
     <string name="m6_lyprio_signing_key">Lyprio signing key</string>
+    <string name="m6_lyprio_builtin_server">Built-in server</string>
+    <string name="m6_lyprio_custom_endpoint">Custom Lyprio server URL</string>
     <string name="m6_bini">BiniLyrics</string>
     <string name="m6_lrc_red">lrc.red</string>
     <string name="m6_genius">Genius</string>

@@ -88,6 +88,10 @@ jobs:
           # Canonical names first; the legacy secrets remain a fallback for repositories that still hold them.
           ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY || secrets.LASTFM_API_KEY }}
           ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET || secrets.LASTFM_SECRET }}
+          # Built-in Lyprio server pair. Fork pull requests get neither variable nor secret, so the
+          # fields resolve blank and the build still succeeds.
+          ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
+          ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
           # Public ArchivePool base URL. The pool's /api/sources and /api/discovery/*
           # endpoints reject unauthenticated reads with HTTP 401, so without these
           # three values baked into BuildConfig the app silently gets 0 accounts

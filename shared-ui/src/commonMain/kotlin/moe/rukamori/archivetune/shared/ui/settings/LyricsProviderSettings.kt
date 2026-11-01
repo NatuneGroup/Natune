@@ -31,6 +31,8 @@ fun LyricsProviderSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    /** True when the host baked a Lyprio endpoint pair into the build; the page then shows it as a built-in server. */
+    lyprioBuiltInServer: Boolean = false,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -41,9 +43,10 @@ fun LyricsProviderSettings(
     LaunchedEffect(paxVisible) {
         if (!paxVisible && dialog != ProviderDialog.ORDER) dialog = null
     }
+    val lyprioBuiltInLabel = if (lyprioBuiltInServer) stringResource(Res.string.m6_lyprio_builtin_server) else ""
     SettingsPage(
         lyricsProviderSettingsRows(preferences, { dialog = ProviderDialog.ORDER }, { dialog = ProviderDialog.STATS },
-            { dialog = ProviderDialog.ENDPOINTS }),
+            { dialog = ProviderDialog.ENDPOINTS }, lyprioBuiltInLabel),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
     )
     if (dialog == ProviderDialog.ORDER) {

@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.data.platform.ios
 
+import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.shared.data.provider.TidalClientCredentials
 import platform.Foundation.NSBundle
 
@@ -62,6 +63,17 @@ object IosProviderCredentials {
 
     /** The HTTPS origin the Turnstile sitekey is locked to, without a trailing slash. Blank means not configured. */
     val amazonTurnstileOrigin: String get() = iosBuildSetting("ArchiveTuneAmazonTurnstileOrigin").trimEnd('/')
+
+    /**
+     * The built-in Lyprio lyrics server pair; both values must be present for [lyprioEndpoint] to
+     * exist, and a user's own server entry in settings always wins over it. The key is never logged
+     * or written to settings.
+     */
+    val lyprioBaseUrl: String get() = iosBuildSetting("ArchiveTuneLyprioBaseUrl")
+
+    val lyprioHmacKey: String get() = iosBuildSetting("ArchiveTuneLyprioHmacKey")
+
+    val lyprioEndpoint: LyprioEndpoint? get() = LyprioEndpoint.parse(lyprioBaseUrl, lyprioHmacKey)
 
     private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
 }

@@ -43,6 +43,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosMediaImporter
 import moe.rukamori.archivetune.shared.data.platform.ios.IosNetworkOwner
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
+import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
@@ -447,6 +448,7 @@ internal class IosSessionGraph private constructor(
                 preferences = vault.snapshots,
                 repository = KtorSponsorBlockRepository(http),
             )
+            // The build-time Lyprio pair only supplies a bundled server while the user has entered neither field.
             val lyrics = HostLyrics(
                 scope = scope,
                 http = http,
@@ -455,6 +457,8 @@ internal class IosSessionGraph private constructor(
                 queue = queue.state,
                 networkAvailable = { iosNetworkAvailable() },
                 report = report,
+                lyprioBuildBaseUrl = IosProviderCredentials.lyprioBaseUrl,
+                lyprioBuildHmacKey = IosProviderCredentials.lyprioHmacKey,
             )
             val libraryContent = LibraryContentOwner(
                 settings = vault,

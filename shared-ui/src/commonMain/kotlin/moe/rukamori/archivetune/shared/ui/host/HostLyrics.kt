@@ -18,8 +18,8 @@ import moe.rukamori.archivetune.shared.data.lyrics.KuGouLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LrcLibLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LrcRedLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.MegalobizLyricsProvider
-import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.resolveLyprioEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsRequest
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixAppleMusicLyricsProvider
@@ -61,6 +61,10 @@ data class HostLyricsDocument(
  * The host lyrics owner: the shared provider runtime over the settings owner, fed by the one queue. It follows the
  * occurrence the player reports, preloads the next ones in play order, and parses the winning document once. The
  * app-only providers (account Apple Music, TIDAL, Deezer, YouTube captions and the like) are Android-only.
+ *
+ * [lyprioBuildBaseUrl]/[lyprioBuildHmacKey] are the host's build-time Lyprio server pair: when both are
+ * present and the user has entered neither preference value, the bundled endpoint serves the lookup.
+ * The pair never enters preferences, so it stays out of backups and diagnostics.
  */
 class HostLyrics(
     private val scope: CoroutineScope,
@@ -70,13 +74,15 @@ class HostLyrics(
     private val queue: StateFlow<QueueState>,
     private val networkAvailable: () -> Boolean,
     private val report: (String) -> Unit,
+    lyprioBuildBaseUrl: String = "",
+    lyprioBuildHmacKey: String = "",
 ) {
     private val runtime = SettingsLyricsRuntime(
         scope = scope,
         store = settings,
         availableProviderNames = MutableStateFlow(SHARED_PROVIDER_NAMES),
         providerRevision = MutableStateFlow(0L),
-        providerFactory = { preferences -> sharedLyricsProviders(http, preferences) },
+        providerFactory = { preferences -> sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) },
         networkAvailable = networkAvailable,
         reportFailure = { name, failure -> report("lyrics provider $name failed: ${failure::class.simpleName}") },
     )
@@ -153,12 +159,22 @@ fun paxsenixSettingsOf(preferences: PreferenceSnapshot): PaxsenixSettings = Paxs
 )
 
 /**
- * Shared providers in canonical order. Paxsenix uses the user's endpoint and key when they are set. Lyprio exists only
- * once the user has entered a valid server URL and signing key; its toggle is applied by the runtime like the others.
+ * Shared providers in canonical order. Paxsenix uses the user's endpoint and key when they are set. Lyprio resolves
+ * through [resolveLyprioEndpoint]: the user's own server pair wins whenever either field is entered, and the
+ * host's build-time pair ([lyprioBuildBaseUrl]/[lyprioBuildHmacKey]) applies only while both user fields are
+ * blank. Its toggle is applied by the runtime like the others.
  */
-fun sharedLyricsProviders(http: HttpClient, preferences: PreferenceSnapshot): List<LyricsProvider> {
+fun sharedLyricsProviders(
+    http: HttpClient,
+    preferences: PreferenceSnapshot,
+    lyprioBuildBaseUrl: String = "",
+    lyprioBuildHmacKey: String = "",
+): List<LyricsProvider> {
     val paxsenix = paxsenixSettingsOf(preferences)
-    val lyprio = LyprioEndpoint.parse(preferences[LyprioEndpointKey].orEmpty(), preferences[LyprioSigningKeyKey].orEmpty())
+    val lyprio = resolveLyprioEndpoint(
+        preferences[LyprioEndpointKey].orEmpty(), preferences[LyprioSigningKeyKey].orEmpty(),
+        lyprioBuildBaseUrl, lyprioBuildHmacKey,
+    )
     return listOfNotNull(
         lyprio?.let { LyprioLyricsProvider(http, it) },
         // Same relative order as the Android baseProviders list; account-bound providers

@@ -90,6 +90,9 @@ val desktopCredentialNames = listOf(
     "ARCHIVETUNE_JIOSAAVN_DES_KEY",
     "ARCHIVETUNE_LASTFM_API_KEY",
     "ARCHIVETUNE_LASTFM_API_SECRET",
+    // The built-in Lyprio lyrics server pair; both values must be present for the host to offer it.
+    "ARCHIVETUNE_LYPRIO_BASE_URL",
+    "ARCHIVETUNE_LYPRIO_HMAC_KEY",
     "ARCHIVETUNE_LISTENER_PRESENCE_URL",
     "ARCHIVETUNE_TELEGRAM_API_ID",
     "ARCHIVETUNE_TELEGRAM_API_HASH",
@@ -115,6 +118,8 @@ val desktopCredentialNames = listOf(
 val desktopLegacyCredentialNames = mapOf(
     "ARCHIVETUNE_LASTFM_API_KEY" to arrayOf("LASTFM_API_KEY"),
     "ARCHIVETUNE_LASTFM_API_SECRET" to arrayOf("LASTFM_SECRET"),
+    "ARCHIVETUNE_LYPRIO_BASE_URL" to arrayOf("LYPRIO_BASE_URL"),
+    "ARCHIVETUNE_LYPRIO_HMAC_KEY" to arrayOf("LYPRIO_HMAC_KEY"),
     "ARCHIVETUNE_TELEGRAM_API_ID" to arrayOf("TELEGRAM_API_ID"),
     "ARCHIVETUNE_TELEGRAM_API_HASH" to arrayOf("TELEGRAM_API_HASH"),
     "ARCHIVETUNE_SOURCE_PROVIDER_URL" to arrayOf("SOURCE_PROVIDER_URL"),

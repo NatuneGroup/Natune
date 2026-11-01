@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.desktop
 
 import moe.rukamori.archivetune.desktop.backup.GoogleDesktopClient
+import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.shared.data.provider.TidalClientCredentials
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramApiCredentials
 
@@ -87,6 +88,20 @@ internal object DesktopCredentials {
     val amazonTurnstileOrigin: String?
         get() = value("ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN").trimEnd('/').takeIf { HTTPS_ORIGIN.matches(it) }
 
+    /**
+     * The built-in Lyprio lyrics server pair; the unprefixed names are accepted at run time like the
+     * other desktop credentials. Both values must be present for [lyprioEndpoint] to exist, and a
+     * user's own server entry in settings always wins over it. The key is never logged or persisted.
+     */
+    val lyprioBaseUrl: String
+        get() = value("ARCHIVETUNE_LYPRIO_BASE_URL").ifBlank { runtime("LYPRIO_BASE_URL") }
+
+    val lyprioHmacKey: String
+        get() = value("ARCHIVETUNE_LYPRIO_HMAC_KEY").ifBlank { runtime("LYPRIO_HMAC_KEY") }
+
+    val lyprioEndpoint: LyprioEndpoint?
+        get() = LyprioEndpoint.parse(lyprioBaseUrl, lyprioHmacKey)
+
     private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
 
     private val HTTPS_ORIGIN = Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
@@ -110,6 +125,8 @@ internal object DesktopCredentials {
         "ARCHIVETUNE_JIOSAAVN_DES_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_JIOSAAVN_DES_KEY
         "ARCHIVETUNE_LASTFM_API_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_LASTFM_API_KEY
         "ARCHIVETUNE_LASTFM_API_SECRET" -> DesktopBuildCredentials.ARCHIVETUNE_LASTFM_API_SECRET
+        "ARCHIVETUNE_LYPRIO_BASE_URL" -> DesktopBuildCredentials.ARCHIVETUNE_LYPRIO_BASE_URL
+        "ARCHIVETUNE_LYPRIO_HMAC_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_LYPRIO_HMAC_KEY
         "ARCHIVETUNE_LISTENER_PRESENCE_URL" -> DesktopBuildCredentials.ARCHIVETUNE_LISTENER_PRESENCE_URL
         "ARCHIVETUNE_TELEGRAM_API_ID" -> DesktopBuildCredentials.ARCHIVETUNE_TELEGRAM_API_ID
         "ARCHIVETUNE_TELEGRAM_API_HASH" -> DesktopBuildCredentials.ARCHIVETUNE_TELEGRAM_API_HASH

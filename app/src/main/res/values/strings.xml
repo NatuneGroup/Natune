@@ -646,6 +646,7 @@
     <string name="lyprio_signing_key_hint">Base64 of the server\'s 32-byte key</string>
     <string name="lyprio_signing_key_set">Signing key is set</string>
     <string name="lyprio_not_configured">Not configured</string>
+    <string name="lyprio_builtin_server">Built-in server</string>
     <string name="prioritize_word_synced_lyrics">Prioritize Word Synced Lyrics</string>
     <string name="prioritize_word_synced_lyrics_desc">Only accept word-synced lyrics, from BetterLyrics, YouLyPlus and Unison.</string>
     <string name="enable_simpmusic_lyrics">Enable SimpMusic lyrics</string>

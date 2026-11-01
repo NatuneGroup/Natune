@@ -33,6 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTidalPkceSheet
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramNativeAdmission
+import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccountVerifier
 import moe.rukamori.archivetune.shared.data.provider.QobuzBundleScrape
@@ -592,6 +593,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 },
                 onFailure = onFailure,
                 scrollTo = scrollTo,
+                lyprioBuiltInServer = IosProviderCredentials.lyprioEndpoint != null,
             )
             "settings/lyrics/romanisation" -> {
                 // Until the host has a pack manager there is no state flow; the page then treats the pack as not installed.
