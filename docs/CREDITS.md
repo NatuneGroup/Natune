@@ -99,7 +99,8 @@ Its native code is published separately in `tryptify-audio-core` under GPL-3.0; 
 
 Packaged desktop distributions carry their notice texts from
 `desktopApp/packaging/notices/` (the QuickJS notices and the Apache-2.0 licence text); the iOS
-app bundles the same QuickJS notice as an app resource from `iosApp/ArchiveTune/Notices/`.
+app bundles the same QuickJS notice and the Apache-2.0 licence text it names as app resources
+from `iosApp/ArchiveTune/Notices/`.
 Each notice travels with the binary it covers.
 
 ## Japanese romanization data
