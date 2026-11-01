@@ -56,6 +56,8 @@ import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogStore
 import moe.rukamori.archivetune.shared.domain.diagnostics.MAX_CRASH_LOG_RECORDS
 import moe.rukamori.archivetune.shared.domain.diagnostics.isValidCrashLogRecordId
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.m4_icon_arrow_back
+import moe.rukamori.archivetune.shared.ui.resources.m4lf_icon_copy
 import moe.rukamori.archivetune.shared.ui.resources.m6_crash_copy
 import moe.rukamori.archivetune.shared.ui.resources.m6_crash_kind_anr
 import moe.rukamori.archivetune.shared.ui.resources.m6_crash_kind_java
@@ -88,6 +90,7 @@ import moe.rukamori.archivetune.shared.ui.resources.m6_crash_time
 import moe.rukamori.archivetune.shared.ui.resources.m6_crash_type
 import moe.rukamori.archivetune.shared.ui.resources.m6_crash_version
 import moe.rukamori.archivetune.shared.ui.resources.m6_crash_version_unknown
+import moe.rukamori.archivetune.shared.ui.resources.m6yp_icon_share
 import moe.rukamori.archivetune.shared.ui.resources.m11_copied_to_clipboard
 import moe.rukamori.archivetune.shared.ui.resources.m11_error_unknown
 import org.jetbrains.compose.resources.StringResource

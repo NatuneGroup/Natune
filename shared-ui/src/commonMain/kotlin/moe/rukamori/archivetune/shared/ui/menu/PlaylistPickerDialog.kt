@@ -44,6 +44,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
 import moe.rukamori.archivetune.shared.domain.repository.LibraryRepository
 import moe.rukamori.archivetune.shared.ui.component.LibrarySortHeader
+import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.m4_empty
 import moe.rukamori.archivetune.shared.ui.resources.m4_loading
 import moe.rukamori.archivetune.shared.ui.resources.m4_name
@@ -185,7 +186,7 @@ fun PlaylistPickerDialog(
 
     AlertDialog(
         onDismissRequest = { if (running) job?.cancel() else onFinished(progress.completedNames) },
-        title = { Text(stringResource(m6_add_playlist)) },
+        title = { Text(stringResource(Res.string.m6_add_playlist)) },
         text = {
             Column {
                 LibrarySortHeader(
@@ -193,19 +194,19 @@ fun PlaylistPickerDialog(
                     sortTypes = PlaylistPickerSortType.entries,
                     sortTypeLabel = { type ->
                         when (type) {
-                            PlaylistPickerSortType.NAME -> m4_name
-                            PlaylistPickerSortType.CREATE_DATE -> m4_recently_added
-                            PlaylistPickerSortType.LAST_UPDATED -> m4_recently_updated
-                            PlaylistPickerSortType.SONG_COUNT -> m4_track_count
+                            PlaylistPickerSortType.NAME -> Res.string.m4_name
+                            PlaylistPickerSortType.CREATE_DATE -> Res.string.m4_recently_added
+                            PlaylistPickerSortType.LAST_UPDATED -> Res.string.m4_recently_updated
+                            PlaylistPickerSortType.SONG_COUNT -> Res.string.m4_track_count
                         }
                     },
                     onSortStateChange = { next -> context.onSort(next.type, next.descending) },
                 )
                 LazyColumn(Modifier.heightIn(max = 400.dp)) {
                     if (candidates == null) {
-                        item("loading") { Text(stringResource(m4_loading)) }
+                        item("loading") { Text(stringResource(Res.string.m4_loading)) }
                     } else if (ordered.isEmpty()) {
-                        item("empty") { Text(stringResource(m4_empty)) }
+                        item("empty") { Text(stringResource(Res.string.m4_empty)) }
                     } else {
                         items(ordered, key = { it.item.ref.id }) { candidate ->
                             val playlistId = candidate.item.ref.id
@@ -229,7 +230,7 @@ fun PlaylistPickerDialog(
                                     Text(candidate.item.title, style = MaterialTheme.typography.bodyLarge)
                                     if (candidate.memberRefs.isNotEmpty()) {
                                         Text(
-                                            stringResource(playlist_already_in, candidate.item.title),
+                                            stringResource(Res.string.playlist_already_in, candidate.item.title),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -250,14 +251,14 @@ fun PlaylistPickerDialog(
                 }
                 if (running || progress.processed > 0) {
                     Text(
-                        stringResource(playlist_add_progress, progress.processed, progress.total),
+                        stringResource(Res.string.playlist_add_progress, progress.processed, progress.total),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
                 if (progress.stopped) {
                     Text(
-                        stringResource(playlist_add_stopped, progress.settled, progress.unconfirmed),
+                        stringResource(Res.string.playlist_add_stopped, progress.settled, progress.unconfirmed),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 4.dp),
@@ -265,14 +266,14 @@ fun PlaylistPickerDialog(
                 }
                 progress.failed.forEach { failure ->
                     Text(
-                        stringResource(playlist_add_failed, failure.name, failure.reason),
+                        stringResource(Res.string.playlist_add_failed, failure.name, failure.reason),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 if (progress.uncertain.isNotEmpty() && !progress.stopped) {
                     Text(
-                        stringResource(playlist_add_uncertain),
+                        stringResource(Res.string.playlist_add_uncertain),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 4.dp),
@@ -292,20 +293,20 @@ fun PlaylistPickerDialog(
                         run(retry)
                     },
                 ) {
-                    Text(stringResource(playlist_add_retry))
+                    Text(stringResource(Res.string.playlist_add_retry))
                 }
                 else -> TextButton(
                     enabled = selected.isNotEmpty(),
                     onClick = { run(ordered.filter { it.item.ref.id in selected }) },
                     modifier = Modifier.testTag("playlist-picker-add"),
                 ) {
-                    Text(stringResource(playlist_add))
+                    Text(stringResource(Res.string.playlist_add))
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = { if (running) job?.cancel() else onFinished(progress.completedNames) }) {
-                Text(stringResource(m6_cancel))
+                Text(stringResource(Res.string.m6_cancel))
             }
         },
     )

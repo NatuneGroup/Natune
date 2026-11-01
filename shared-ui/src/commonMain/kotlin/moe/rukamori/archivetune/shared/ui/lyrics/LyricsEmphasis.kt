@@ -56,7 +56,18 @@ object LyricsEmphasis {
         if (wordText.isEmpty() || UnicodeBidi.isRtlText(wordText)) return false
         var index = 0
         while (index < wordText.length) {
-            val codePoint = wordText.codePointAt(index)
+            // String.codePointAt is internal to the JVM stdlib; decoding the surrogate pair by hand
+            // keeps the same scan on every target.
+            val high = wordText[index]
+            val codePoint =
+                if (index + 1 < wordText.length &&
+                    high.code in 0xD800..0xDBFF &&
+                    wordText[index + 1].code in 0xDC00..0xDFFF
+                ) {
+                    ((high.code - 0xD800) shl 10) + (wordText[index + 1].code - 0xDC00) + 0x10000
+                } else {
+                    high.code
+                }
             if (UnicodeScripts.scriptOf(codePoint) !in SAFE_SCRIPTS) return false
             index += if (codePoint >= 0x10000) 2 else 1
         }
