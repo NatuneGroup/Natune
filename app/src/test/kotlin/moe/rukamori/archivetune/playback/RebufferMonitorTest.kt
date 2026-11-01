@@ -129,15 +129,103 @@ class RebufferMonitorTest {
     }
 
     @Test
-    fun `an open stall counts provisionally and is dropped when it closes short`() {
+    fun `a transition onto the same id starts a fresh count too`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(5) { stall("song") }
+        assertTrue(monitor.shouldSuppressRetries("song"))
+        // Repeat-one and duplicate occurrences transition without leaving READY.
+        monitor.onMediaItemChanged("song")
+        assertFalse(monitor.shouldSuppressRetries("song"))
+        assertFalse(monitor.shouldStepDownQuality("song"))
+        repeat(2) { stall("song") }
+        assertFalse(monitor.shouldStepDownQuality("song"))
+    }
+
+    @Test
+    fun `an open stall does not count until it reaches the minimum duration`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(4) { stall("song") }
+        // The fifth stall has barely begun: it must not tip the count yet.
+        buffering("song")
+        now += 500L
+        assertFalse(monitor.shouldSuppressRetries("song"))
+        assertTrue(monitor.shouldStepDownQuality("song"))
+    }
+
+    @Test
+    fun `an open stall counts once it reaches the minimum duration`() {
         buffering("song")
         now += 1_000L
         ready("song")
         repeat(4) { stall("song") }
         buffering("song")
+        now += 1_600L
         assertTrue(monitor.shouldSuppressRetries("song"))
-        // The fifth stall clears inside the seek-flicker bound: it never was a rebuffer.
-        now += 500L
+    }
+
+    @Test
+    fun `an open stall older than the window does not count`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(4) { stall("song") }
+        buffering("song")
+        now += 91_000L
+        assertFalse(monitor.shouldSuppressRetries("song"))
+    }
+
+    @Test
+    fun `a stall opened right after a seek is discarded`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(5) {
+            monitor.onSeek()
+            stall("song")
+            now += 10_000L
+        }
+        assertFalse(monitor.shouldStepDownQuality("song"))
+        assertFalse(monitor.shouldSuppressRetries("song"))
+    }
+
+    @Test
+    fun `a stall opened well after a seek is real`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(3) {
+            monitor.onSeek()
+            now += 10_000L
+            stall("song")
+        }
+        assertTrue(monitor.shouldStepDownQuality("song"))
+    }
+
+    @Test
+    fun `a seek inside an open stall closes it instead of discarding it`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(4) { stall("song") }
+        buffering("song")
+        now += 5_000L
+        monitor.onSeek()
+        assertTrue(monitor.shouldSuppressRetries("song"))
+    }
+
+    @Test
+    fun `a stall the user paused inside is discarded`() {
+        buffering("song")
+        now += 1_000L
+        ready("song")
+        repeat(4) { stall("song") }
+        buffering("song")
+        now += 5_000L
+        monitor.onPlayWhenReadyChanged(false)
         ready("song")
         assertFalse(monitor.shouldSuppressRetries("song"))
         assertTrue(monitor.shouldStepDownQuality("song"))
