@@ -7,6 +7,7 @@ import kotlinx.cinterop.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlinx.coroutines.channels.receiveAsFlow
 import kotlinx.coroutines.flow.*
 import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.nativeaudio.*
@@ -79,21 +80,41 @@ class IosPlaybackPort : PlaybackPort {
     override val snapshots: StateFlow<PlaybackSnapshot?> = state.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = errors.asSharedFlow()
 
-    /** Every command the loop accepted, with its origin and a monotonic id, in submit order. */
-    val commandEvents: SharedFlow<PlaybackCommandEvent> get() = commandEventFlow
-    private val commandEventFlow = MutableSharedFlow<PlaybackCommandEvent>(extraBufferCapacity = 16)
+    /**
+     * Every command the loop accepted, with its origin and a monotonic id, in submit order. The
+     * handoff is an unbounded channel: accepting a command can never block on a slow consumer, and
+     * no listener intent is ever dropped. There is one consumer, the output-mute policy.
+     */
+    val commandEvents: Flow<PlaybackCommandEvent> = commandEventChannel.receiveAsFlow()
+    private val commandEventChannel = Channel<PlaybackCommandEvent>(Channel.UNLIMITED)
     private var commandSequence = 0L
+
+    /**
+     * How many USER Pause/Stop/Play/Load commands the loop has dispatched. A policy submit tags the
+     * count it observed, and the loop drops it when the count has moved — so a policy command can
+     * never apply over a user command that was queued first.
+     */
+    val userIntentGeneration: Long get() = intentGeneration
+    private var intentGeneration = 0L
 
     init {
         scope.launch {
             for (item in inbox) {
                 when (item) {
                     is Inbound.Command -> {
-                        // The command notice goes out as the command reaches the loop: every
-                        // accepted submit emits exactly one event, in submit order, with the origin
-                        // the submitter declared, and a dropped submit emits nothing.
-                        commandEvents.emit(PlaybackCommandEvent(item.command, item.origin, ++commandSequence))
-                        apply(item.command)
+                        // A policy command whose tagged intent generation is stale: the listener
+                        // queued a Pause, Stop, Play or Load ahead of it, so it must not apply.
+                        val stalePolicy = item.origin == PlaybackCommandOrigin.POLICY &&
+                            outputMuteIntentIsStale(item.intentGeneration, intentGeneration)
+                        if (!stalePolicy) {
+                            commandEventChannel.trySend(
+                                PlaybackCommandEvent(item.command, item.origin, ++commandSequence),
+                            )
+                            apply(item.command)
+                        }
+                        if (item.origin == PlaybackCommandOrigin.USER && tracksUserIntent(item.command)) {
+                            intentGeneration++
+                        }
                     }
                     is Inbound.Prepare -> beginPreparation(item)
                     is Inbound.Prepared -> applyPrepared(item)
@@ -113,17 +134,30 @@ class IosPlaybackPort : PlaybackPort {
         }
     }
 
-    override fun submit(command: PlaybackCommand) = submit(command, PlaybackCommandOrigin.USER)
+    override fun submit(command: PlaybackCommand) =
+        submit(command, PlaybackCommandOrigin.USER, intentGeneration)
 
     /**
-     * Submits [command] with an explicit [origin]. Every caller but a session policy is the
-     * listener; the output-mute policy submits with POLICY so its own pause and play never read as
-     * manual intent on [commandEvents].
+     * A session policy's tagged submit: [observedIntentGeneration] is the USER intent count the
+     * policy reduced against, and the loop drops the command when the count has moved — so the
+     * policy's own pause and play never read as manual intent on [commandEvents] and never apply
+     * over a user command that was queued first.
      */
-    fun submit(command: PlaybackCommand, origin: PlaybackCommandOrigin) {
+    fun submitPolicy(command: PlaybackCommand, observedIntentGeneration: Long) =
+        submit(command, PlaybackCommandOrigin.POLICY, observedIntentGeneration)
+
+    private fun submit(command: PlaybackCommand, origin: PlaybackCommandOrigin, intentGeneration: Long) {
         val occurrence = (command as? PlaybackCommand.Load)?.request?.occurrenceId ?: state.value?.occurrenceId
         val attempt = if (command is PlaybackCommand.Load) command.request.attemptId else request?.attemptId
-        enqueue(Inbound.Command(command, origin), occurrence, attempt)
+        enqueue(Inbound.Command(command, origin, intentGeneration), occurrence, attempt)
+    }
+
+    /** Commands that change what the listener asked the engine to do: pause, stop, play, load. */
+    private fun tracksUserIntent(command: PlaybackCommand): Boolean = when (command) {
+        is PlaybackCommand.Load,
+        PlaybackCommand.Play, PlaybackCommand.Pause, PlaybackCommand.Stop,
+        -> true
+        is PlaybackCommand.SeekTo, is PlaybackCommand.SetSpeed, is PlaybackCommand.SetPitch -> false
     }
 
     /**
@@ -793,7 +827,11 @@ class IosPlaybackPort : PlaybackPort {
 
     /** Work for the one command loop, which runs it in arrival order: a command, a preparation to start, or its result. */
     private sealed interface Inbound {
-        class Command(val command: PlaybackCommand, val origin: PlaybackCommandOrigin) : Inbound
+        class Command(
+            val command: PlaybackCommand,
+            val origin: PlaybackCommandOrigin,
+            val intentGeneration: Long,
+        ) : Inbound
 
         class Prepare(
             val occurrenceId: String,
