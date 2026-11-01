@@ -19,7 +19,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 
 /**
- * Imports an Android `song.db` backup file (up to Room schema 38) into the portable state database the desktop
+ * Imports an Android `song.db` backup file (up to Room schema 39) into the portable state database the desktop
  * and iOS hosts keep. Every table the baseline persists is mapped, so a restored archive loses nothing the portable
  * schema can express:
  *
@@ -43,12 +43,14 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
  * from events instead) are deliberately not imported: they are caches and server state the host re-fetches.
  * `isHidden` is kept on `portable_playlist` so a hidden playlist survives a round trip even though no portable
  * surface reads the flag yet.
+ * - `song.lyricsOffset` becomes `portable_song_lyrics_offset`, keeping the per-song sync correction across
+ *   hosts; the column exists only from schema 39 on, so older backups simply carry no offsets.
  *
  * The result is written to a scratch file, verified and then moved onto [target] in one rename, so a failed import
  * never leaves a partial database behind.
  */
 object LegacySongDbImport {
-    const val ANDROID_SCHEMA_VERSION = 38
+    const val ANDROID_SCHEMA_VERSION = 39
 
     /** Number of source rows the importer wrote and could not write. */
     data class Outcome(
@@ -65,6 +67,7 @@ object LegacySongDbImport {
         val setVideoIds: Int,
         val droppedEntries: Int,
         val podcastProgress: Int = 0,
+        val lyricsOffsets: Int = 0,
     )
 
     /**
@@ -114,6 +117,7 @@ object LegacySongDbImport {
         val setVideoIds: List<PortableSetVideoIdRow>,
         val podcastProgress: List<PortablePodcastProgressRow>,
         val songMetadata: List<PortableSongMetadataOverrideRow>,
+        val lyricsOffsets: List<PortableSongLyricsOffsetRow>,
         val droppedEntries: Int,
     ) {
         val outcome = Outcome(
@@ -122,7 +126,7 @@ object LegacySongDbImport {
             playlists = playlists.size, playlistEntries = entries.values.sumOf { it.size },
             listenEvents = listens.size, tags = tags.size, tagAssignments = assignments.size,
             searches = searches.size, setVideoIds = setVideoIds.size, droppedEntries = droppedEntries,
-            podcastProgress = podcastProgress.size,
+            podcastProgress = podcastProgress.size, lyricsOffsets = lyricsOffsets.size,
         )
     }
 
@@ -170,10 +174,13 @@ object LegacySongDbImport {
             val songs = HashMap<String, ImportedSong>()
             val providersBySong = HashMap<String, String>()
             val metadataBySong = LinkedHashMap<String, PortableSongMetadataOverrideRow>()
+            val lyricsOffsets = ArrayList<PortableSongLyricsOffsetRow>()
             val hasLegacyTitleFlag = connection.columnExists("song", "titleOverride")
+            val hasLyricsOffset = connection.columnExists("song", "lyricsOffset")
             connection.prepare(
                 "SELECT id, title, duration, thumbnailUrl, albumId, albumName, explicit, liked, likedDate, " +
-                    "inLibrary, isLocal, ${if (hasLegacyTitleFlag) "titleOverride" else "0"} FROM song",
+                    "inLibrary, isLocal, ${if (hasLegacyTitleFlag) "titleOverride" else "0"}, " +
+                    "${if (hasLyricsOffset) "lyricsOffset" else "0"} FROM song",
             ).use { statement ->
                 while (statement.step()) {
                     val id = statement.getText(0)
@@ -184,6 +191,9 @@ object LegacySongDbImport {
                         ContentProvider.YOUTUBE.id
                     }
                     providersBySong[id] = provider
+                    statement.getLong(12).takeIf { it != 0L }?.let { offsetMs ->
+                        lyricsOffsets += PortableSongLyricsOffsetRow(provider, id, offsetMs)
+                    }
                     if (statement.getLong(11) != 0L) {
                         // Older Android versions replaced the title in place; the original cannot be
                         // recovered from that backup. Preserve the explicit edit until a provider refresh.
@@ -464,7 +474,8 @@ object LegacySongDbImport {
             }
 
             return Source(songs, likedAlbums, bookmarkedArtists, blockedArtists, playlists, entries, listens,
-                tags, assignments, searches, setVideoIds, progress, metadataBySong.values.toList(), droppedEntries)
+                tags, assignments, searches, setVideoIds, progress, metadataBySong.values.toList(),
+                lyricsOffsets, droppedEntries)
         } finally {
             connection.close()
         }
@@ -518,6 +529,8 @@ object LegacySongDbImport {
         val progress = database.podcastProgress()
         for (row in source.podcastProgress) progress.put(row)
         for (row in source.songMetadata) database.songMetadataOverrides().put(row)
+        val offsets = database.songLyricsOffsets()
+        for (row in source.lyricsOffsets) offsets.put(row)
     }
 
     private fun SQLiteConnection.tableExists(name: String): Boolean =

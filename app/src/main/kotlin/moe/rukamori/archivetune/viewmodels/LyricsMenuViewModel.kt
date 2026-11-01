@@ -277,9 +277,10 @@ class LyricsMenuViewModel
                         -> {
                             val usable = usableTranslatedLyrics(lyrics) ?: return@launch
                             // A stored line-synced document keeps its source rows: the translation
-                            // lands in a [translatedLyrics] section instead of replacing the doc.
+                            // lands in a [translatedLyrics] section instead of replacing the doc —
+                            // unless it is already bilingual, in which case it saves verbatim.
                             val existing = database.withTransaction { getLyricsById(mediaMetadata.id) }?.lyrics
-                            existing?.let { LrcTranslationMerge.mergeTranslationIntoLrc(it, usable.lines()) } ?: usable
+                            LrcTranslationMerge.saveableTranslation(existing, usable)
                         }
                     }
                 database.query {
@@ -367,8 +368,10 @@ class LyricsMenuViewModel
                             _translationUndo.value = LyricsTranslationUndoSnapshot(
                                 expected.id, expected.lyrics, expected.source, expected.providerName)
                         }
+                        // The translator's rebuild already interleaves source and translated rows;
+                        // only a plain-text result needs the merge's re-stamped section.
                         val merged =
-                            LrcTranslationMerge.mergeTranslationIntoLrc(expected?.lyrics ?: lyrics, usable.lines()) ?: usable
+                            LrcTranslationMerge.saveableTranslation(expected?.lyrics ?: lyrics, usable)
                         replaceLyrics(mediaMetadata.id, merged, LyricsEntity.Source.AI_TRANSLATION.value,
                             expected?.providerName.orEmpty())
                         true
