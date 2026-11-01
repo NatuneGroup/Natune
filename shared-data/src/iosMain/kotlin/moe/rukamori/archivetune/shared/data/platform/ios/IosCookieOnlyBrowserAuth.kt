@@ -3,6 +3,7 @@
 package moe.rukamori.archivetune.shared.data.platform.ios
 
 import kotlin.coroutines.resume
+import kotlinx.cinterop.ObjCAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -34,8 +35,6 @@ import platform.UIKit.presentationController
 import platform.WebKit.WKNavigation
 import platform.WebKit.WKNavigationAction
 import platform.WebKit.WKNavigationActionPolicy
-import platform.WebKit.WKNavigationActionPolicy.WKNavigationActionPolicyAllow
-import platform.WebKit.WKNavigationActionPolicy.WKNavigationActionPolicyCancel
 import platform.WebKit.WKNavigationDelegateProtocol
 import platform.WebKit.WKWebView
 import platform.WebKit.WKWebViewConfiguration
@@ -85,11 +84,10 @@ class IosCookieOnlyBrowserAuth(
                                 decisionHandler: (WKNavigationActionPolicy) -> Unit,
                             ) {
                                 decisionHandler(
-                                    if (allows(decidePolicyForNavigationAction.request.URL, request.authorizedOrigins)) {
-                                        WKNavigationActionPolicyAllow
-                                    } else {
-                                        WKNavigationActionPolicyCancel
-                                    }
+                                    webView.authPopupNavigationPolicy(
+                                        decidePolicyForNavigationAction,
+                                        allows(decidePolicyForNavigationAction.request.URL, request.authorizedOrigins),
+                                    )
                                 )
                             }
                             override fun presentationControllerDidDismiss(presentationController: UIPresentationController) = cancel()
@@ -160,12 +158,16 @@ class IosCookieOnlyBrowserAuth(
         }
     }
 
-    /** The bar-button target. Methods of a named NSObject subclass are ObjC-visible under their Kotlin names. */
+    // A Kotlin method only reaches an ObjC selector through @ObjCAction; without it the button
+    // reports respondsToSelector = false and taps do nothing — a dead Done on the sign-in sheet.
     private class CookieSheetActions(
         val onDone: () -> Unit,
         val onCancel: () -> Unit,
     ) : NSObject() {
+        @ObjCAction
         fun doneTapped() = onDone()
+
+        @ObjCAction
         fun cancelTapped() = onCancel()
     }
 

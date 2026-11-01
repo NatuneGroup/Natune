@@ -4,6 +4,7 @@ package moe.rukamori.archivetune.shared.ui.ios
 
 import kotlin.coroutines.resume
 import kotlin.time.Clock
+import kotlinx.cinterop.ObjCAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -11,6 +12,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
+import moe.rukamori.archivetune.shared.data.platform.ios.authPopupNavigationPolicy
 import moe.rukamori.archivetune.shared.data.provider.KtorAmazonAuthorization
 import moe.rukamori.archivetune.shared.data.provider.amazonTurnstileExpiry
 import moe.rukamori.archivetune.shared.domain.settings.AmazonBypassTokenKey
@@ -38,8 +40,6 @@ import platform.UIKit.topAnchor
 import platform.UIKit.trailingAnchor
 import platform.WebKit.WKNavigationAction
 import platform.WebKit.WKNavigationActionPolicy
-import platform.WebKit.WKNavigationActionPolicy.WKNavigationActionPolicyAllow
-import platform.WebKit.WKNavigationActionPolicy.WKNavigationActionPolicyCancel
 import platform.WebKit.WKNavigationDelegateProtocol
 import platform.WebKit.WKScriptMessage
 import platform.WebKit.WKScriptMessageHandlerProtocol
@@ -340,11 +340,10 @@ internal class IosAmazonAuthorize(
                             decisionHandler: (WKNavigationActionPolicy) -> Unit,
                         ) {
                             decisionHandler(
-                                if (IosAmazonChallenge.allows(decidePolicyForNavigationAction.request.URL, origin)) {
-                                    WKNavigationActionPolicyAllow
-                                } else {
-                                    WKNavigationActionPolicyCancel
-                                }
+                                webView.authPopupNavigationPolicy(
+                                    decidePolicyForNavigationAction,
+                                    IosAmazonChallenge.allows(decidePolicyForNavigationAction.request.URL, origin),
+                                )
                             )
                         }
                         override fun presentationControllerDidDismiss(presentationController: UIPresentationController) = cancel()
@@ -384,8 +383,9 @@ internal class IosAmazonAuthorize(
         }
     }
 
-    /** The bar-button target. Methods of a named NSObject subclass are ObjC-visible under their Kotlin names. */
+    // @ObjCAction is what exports the method as a selector; without it cancelTapped was a no-op button.
     private class ChallengeSheetActions(val onCancel: () -> Unit) : NSObject() {
+        @ObjCAction
         fun cancelTapped() = onCancel()
     }
 }
