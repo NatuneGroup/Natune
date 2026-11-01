@@ -32,6 +32,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.desktop.DesktopCredentials
+import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.SecureCredentialStore
@@ -140,10 +141,10 @@ internal class DesktopPlaybackPool(
      */
     suspend fun tidalInstances(): List<String> {
         if (!enabled()) return emptyList()
-        val base = baseUrl ?: return emptyList()
+        if (baseUrl == null) return emptyList()
         if (discoveredAtMs > 0L && nowMs() - discoveredAtMs < DISCOVERY_INTERVAL_MS) return discovered
         discoveredAtMs = nowMs()
-        val body = fetch("$base/api/discovery/tidal")
+        val body = fetch("/api/discovery/tidal")
         if (body == null || body.first != 200 || !enabled()) return discovered
         discovered = parseDiscoveredInstances(body.second).mapNotNull(::normalizeInstanceUrl).distinct()
         return discovered
@@ -174,7 +175,7 @@ internal class DesktopPlaybackPool(
      */
     fun report(service: String, id: Long?, type: String) {
         if (id == null || id <= 0L || !enabled()) return
-        val base = baseUrl ?: return
+        if (baseUrl == null) return
         val key = "$service:$id:$type"
         val now = nowMs()
         val last = reportedAt[key]
@@ -190,14 +191,18 @@ internal class DesktopPlaybackPool(
                     put("report", type)
                 }.toString()
                 val response = withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
-                    http.post("$base/api/report") {
-                        poolHeaders()
-                        contentType(ContentType.Application.Json)
-                        setBody(body)
+                    ArchivePoolEndpoints.acrossEndpoints(baseUrl, report = true) { base ->
+                        val reply =
+                            http.post("$base/api/report") {
+                                poolHeaders()
+                                contentType(ContentType.Application.Json)
+                                setBody(body)
+                            }
+                        reply.status.value to if (reply.status.value in 200..299) reply.bodyAsText() else ""
                     }
                 } ?: return@launch
-                if (response.status.value !in 200..299) return@launch
-                val root = parseObject(response.bodyAsText()) ?: return@launch
+                if (response.first !in 200..299) return@launch
+                val root = parseObject(response.second) ?: return@launch
                 if ((root["ok"] as? JsonPrimitive)?.booleanOrNull == true && enabled()) mergeReplacement(root, service, id)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -230,14 +235,14 @@ internal class DesktopPlaybackPool(
      */
     suspend fun refresh(force: Boolean): Boolean {
         if (!enabled()) return false
-        val base = baseUrl ?: return false
+        if (baseUrl == null) return false
         ensureLoaded()
         return mutex.withLock {
             if (!enabled()) return@withLock false
             if (!shouldRefresh(nowMs(), lastAttemptAtMs, refreshIntervalMs(), force)) return@withLock hasAccounts()
             lastAttemptAtMs = nowMs()
-            var result = fetch("$base/api/accounts")
-            if (result?.first == 404) result = fetch("$base/api/sources")
+            var result = fetch("/api/accounts")
+            if (result?.first == 404) result = fetch("/api/sources")
             val root = result?.takeIf { it.first == 200 }?.second?.let(::parseObject)
             when {
                 root != null && enabled() -> {
@@ -360,10 +365,12 @@ internal class DesktopPlaybackPool(
         }
     }
 
-    private suspend fun fetch(url: String): Pair<Int, String>? = try {
+    private suspend fun fetch(path: String): Pair<Int, String>? = try {
         withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
-            val response = http.get(url) { poolHeaders() }
-            response.status.value to if (response.status.value == 200) response.bodyAsText() else ""
+            ArchivePoolEndpoints.acrossEndpoints(baseUrl) { base ->
+                val response = http.get("$base$path") { poolHeaders() }
+                response.status.value to if (response.status.value == 200) response.bodyAsText() else ""
+            }
         }
     } catch (cancelled: CancellationException) {
         throw cancelled

@@ -113,7 +113,7 @@ class QobuzInstanceResolver(
 
     fun hasInstances(): Boolean =
         manualInstances.isNotEmpty() ||
-            (poolEnabled() && (poolInstances.isNotEmpty() || discoveryCacheExpiresAt == 0L) && poolFeedUrl() != null)
+            (poolEnabled() && (poolInstances.isNotEmpty() || discoveryCacheExpiresAt == 0L) && poolFeedUrls().isNotEmpty())
 
     fun normalizeInstanceUrl(raw: String): String? {
         val trimmed = raw.trim().trimEnd('/')
@@ -317,12 +317,8 @@ class QobuzInstanceResolver(
         }
 
     // region discovery
-    private fun poolFeedUrl(): String? =
-        sourceProviderUrl()
-            .trim()
-            .trimEnd('/')
-            .takeIf { it.isNotEmpty() }
-            ?.let { "$it/api/discovery/qobuz" }
+    private fun poolFeedUrls(): List<String> =
+        ArchivePoolEndpoints.candidates(sourceProviderUrl()).map { "$it/api/discovery/qobuz" }
 
     /**
      * Best-effort discovery of community Qobuz proxy instances from the Source Pool website.
@@ -330,7 +326,6 @@ class QobuzInstanceResolver(
      */
     suspend fun discoverInstances(): List<String> {
         if (!poolEnabled()) return emptyList()
-        val url = poolFeedUrl() ?: return emptyList()
         val now = nowMs()
         if (now < discoveryCacheExpiresAt && discoveryCache.isNotEmpty()) return discoveryCache
         val discovered = LinkedHashSet<String>()
@@ -340,30 +335,42 @@ class QobuzInstanceResolver(
                     sourceProviderKey().takeIf { it.isNotBlank() }
                         ?.let { mapOf("Authorization" to "Bearer $it") }
                         ?: emptyMap()
-                val reply = http.json(url, headers = headers)
-                if (!poolEnabled()) {
+                var root: JsonObject? = null
+                for (url in poolFeedUrls()) {
+                    val reply =
+                        try {
+                            http.json(url, headers = headers)
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (failure: ProviderHttpFailure) {
+                            if (ArchivePoolEndpoints.isFailoverStatus(failure.status)) continue
+                            ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
+                            break
+                        } catch (_: Exception) {
+                            continue
+                        }
+                    ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
+                    root = runCatching { reply.jsonObject }.getOrNull()
+                    break
+                }
+                if (!poolEnabled() || root == null) {
                     emptyList()
                 } else {
-                    val root = runCatching { reply.jsonObject }.getOrNull()
-                    if (root == null) {
-                        emptyList()
-                    } else {
-                        for (key in listOf("streaming", "instances", "api")) {
-                            val arr = root[key] as? JsonArray ?: continue
-                            for (item in arr) {
-                                when (item) {
-                                    is JsonObject ->
-                                        (item["url"] ?: item["baseUrl"])
-                                            ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-                                            ?.let { normalizeInstanceUrl(it)?.let(discovered::add) }
-                                    else ->
-                                        item.jsonPrimitive.content.takeIf { it.isNotBlank() && it != "null" }
-                                            ?.let { normalizeInstanceUrl(it)?.let(discovered::add) }
-                                }
+                    for (key in listOf("streaming", "instances", "api")) {
+                        val arr = root[key] as? JsonArray ?: continue
+                        for (item in arr) {
+                            when (item) {
+                                is JsonObject ->
+                                    (item["url"] ?: item["baseUrl"])
+                                        ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                                        ?.let { normalizeInstanceUrl(it)?.let(discovered::add) }
+                                else ->
+                                    item.jsonPrimitive.content.takeIf { it.isNotBlank() && it != "null" }
+                                        ?.let { normalizeInstanceUrl(it)?.let(discovered::add) }
                             }
                         }
-                        discovered.toList()
                     }
+                    discovered.toList()
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
