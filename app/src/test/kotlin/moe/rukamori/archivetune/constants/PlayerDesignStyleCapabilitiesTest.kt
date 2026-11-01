@@ -22,6 +22,7 @@ class PlayerDesignStyleCapabilitiesTest {
             PlayerDesignStyle.SPATIALFLOW,
             PlayerDesignStyle.LOOPER,
             PlayerDesignStyle.FLAMINGO,
+            PlayerDesignStyle.METROLIST_KMP,
             PlayerDesignStyle.APPLE_MUSIC,
         )
 
@@ -31,6 +32,7 @@ class PlayerDesignStyleCapabilitiesTest {
             listOf(
                 "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "APPLE_MUSIC", "V10",
                 "BITCHORD", "TIKTOK", "SIMPMUSIC", "SPATIALFLOW", "LOOPER", "FLAMINGO",
+                "METROLIST_KMP",
             ),
             PlayerDesignStyle.entries.map { it.name },
         )
@@ -52,6 +54,7 @@ class PlayerDesignStyleCapabilitiesTest {
         assertEquals(PlayerBackgroundStyle.GLOW_ANIMATED, PlayerDesignStyle.TIKTOK.resolveBackground(PlayerBackgroundStyle.DEFAULT))
         assertEquals(PlayerBackgroundStyle.BLUR, PlayerDesignStyle.SPATIALFLOW.resolveBackground(PlayerBackgroundStyle.DEFAULT))
         assertEquals(PlayerBackgroundStyle.BLUR, PlayerDesignStyle.FLAMINGO.resolveBackground(PlayerBackgroundStyle.DEFAULT))
+        assertEquals(PlayerBackgroundStyle.DEFAULT, PlayerDesignStyle.METROLIST_KMP.resolveBackground(PlayerBackgroundStyle.DEFAULT))
         assertFalse(PlayerDesignStyle.FLAMINGO.usesSharedBackground(PlayerBackgroundStyle.DEFAULT))
     }
 

@@ -242,6 +242,7 @@ import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.player.looper.LooperPlayerContent
 import moe.rukamori.archivetune.ui.player.flamingo.FlamingoPlayerContent
+import moe.rukamori.archivetune.ui.player.metrolist.MetrolistPlayerContent
 import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private const val SeekbarSettleToleranceMs = 1_500L
@@ -2175,6 +2176,52 @@ fun BottomSheetPlayer(
                                     .nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
+                } else if (playerDesignStyle == PlayerDesignStyle.METROLIST_KMP) {
+                    // Metrolist's now-playing surface: header, square sleeve, metadata, thin seek,
+                    // native transport and its six-button row. It draws no backdrop, so the
+                    // background reader treats it like the numbered styles and keeps the shared
+                    // queue peek underneath.
+                    enrichedMetadata?.let { metadata ->
+                        MetrolistPlayerContent(
+                            mediaMetadata = metadata,
+                            playbackState = playbackState,
+                            isPlaying = isPlaying && !isLyricsScreenVisible,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            positionProvider = positionProvider,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            menuState = menuState,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentSongLiked = currentSongLiked,
+                            sleepTimerEnabled = sleepTimerTimeLeft > 0L,
+                            repeatMode = repeatMode,
+                            textButtonColor = textButtonColor,
+                            iconButtonColor = iconButtonColor,
+                            textBackgroundColor = TextBackgroundColor,
+                            contentBottomPadding = queueSheetState.collapsedBound + 20.dp,
+                            onSleepTimerClick = {
+                                if (sleepTimerTimeLeft > 0L) {
+                                    playerConnection.service.sleepTimer.clear()
+                                } else {
+                                    showSleepTimerDialog = true
+                                }
+                            },
+                            onQueueClick = openQueue,
+                            onLyricsClick = { isLyricsScreenVisible = true },
+                            onSliderValueChange = onSliderValueChange,
+                            onSliderValueChangeFinished = onSliderValueChangeFinished,
+                            landscape = true,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
             } else {
                     Row(
                         modifier =
@@ -2780,6 +2827,51 @@ fun BottomSheetPlayer(
                             onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             // Full-bleed: the artwork runs under the status bar by design, so no
                             // top inset here (mirrors the reference layout).
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
+                } else if (playerDesignStyle == PlayerDesignStyle.METROLIST_KMP) {
+                    // Metrolist's now-playing surface: header, square sleeve, metadata, thin seek,
+                    // native transport and its six-button row. It draws no backdrop, so the
+                    // background reader treats it like the numbered styles and keeps the shared
+                    // queue peek underneath.
+                    enrichedMetadata?.let { metadata ->
+                        MetrolistPlayerContent(
+                            mediaMetadata = metadata,
+                            playbackState = playbackState,
+                            isPlaying = isPlaying && !isLyricsScreenVisible,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            positionProvider = positionProvider,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            menuState = menuState,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentSongLiked = currentSongLiked,
+                            sleepTimerEnabled = sleepTimerTimeLeft > 0L,
+                            repeatMode = repeatMode,
+                            textButtonColor = textButtonColor,
+                            iconButtonColor = iconButtonColor,
+                            textBackgroundColor = TextBackgroundColor,
+                            contentBottomPadding = queueSheetState.collapsedBound + 20.dp,
+                            onSleepTimerClick = {
+                                if (sleepTimerTimeLeft > 0L) {
+                                    playerConnection.service.sleepTimer.clear()
+                                } else {
+                                    showSleepTimerDialog = true
+                                }
+                            },
+                            onQueueClick = openQueue,
+                            onLyricsClick = { isLyricsScreenVisible = true },
+                            onSliderValueChange = onSliderValueChange,
+                            onSliderValueChangeFinished = onSliderValueChangeFinished,
                             modifier =
                                 Modifier
                                     .fillMaxSize()

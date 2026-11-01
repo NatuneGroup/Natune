@@ -1331,6 +1331,14 @@ enum class PlayerDesignStyle(
      * peek, which Flamingo does not need because its own queue page replaces the sheet.
      */
     FLAMINGO(nativeBackground = PlayerBackgroundStyle.BLUR),
+
+    /**
+     * The Metrolist player (MetrolistGroup/Metrolist, GPL-3.0) — the clean column look the shared
+     * port already ships: framed square sleeve, thin seek bar, native transport and the six-button
+     * utility row, with a Modern/Vintage presentation choice. Like LOOPER it paints no backdrop of
+     * its own, so the background choice stays with the reader.
+     */
+    METROLIST_KMP,
     ;
 
     /** DEFAULT preserves the native recipe; explicit choices never rewrite storage. */
@@ -1385,7 +1393,7 @@ enum class PlayerDesignStyle(
         private val OrdinarySleeveStyles = setOf(BITCHORD, SIMPMUSIC, SPATIALFLOW, LOOPER, FLAMINGO, APPLE_MUSIC)
         private val HorizontalArtworkSkipStyles = setOf(SIMPMUSIC, SPATIALFLOW, LOOPER)
         private val ArtworkCanvasStyles = setOf(APPLE_MUSIC, SPATIALFLOW, LOOPER, FLAMINGO)
-        private val SharedBackgroundHosts = setOf(V1, V2, V3, V4, V6, V10, LOOPER)
+        private val SharedBackgroundHosts = setOf(V1, V2, V3, V4, V6, V10, LOOPER, METROLIST_KMP)
 
         /**
          * What a fresh install opens with. Seven readers — the player, its thumbnail, the queue, the
@@ -1403,6 +1411,10 @@ enum class PlayerDesignStyle(
  */
 val FlamingoShowVolumeBarKey = booleanPreferencesKey("flamingoNowPlayingShowVolumeBar")
 val FlamingoBackgroundEffectKey = booleanPreferencesKey("flamingoNowPlayingBackgroundEffect")
+
+// Same wire name and values as the shared-domain MetrolistPresentationKey so a stored MODERN or
+// VINTAGE reads identically on every host.
+val MetrolistPresentationKey = stringPreferencesKey("metrolistKmpPresentation")
 
 enum class PlayerBackgroundStyle {
     DEFAULT,

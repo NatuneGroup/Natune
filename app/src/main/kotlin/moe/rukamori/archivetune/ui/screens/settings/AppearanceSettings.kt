@@ -106,6 +106,7 @@ import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.DynamicThemeKey
 import moe.rukamori.archivetune.constants.FlamingoBackgroundEffectKey
+import moe.rukamori.archivetune.constants.MetrolistPresentationKey
 import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.HideStatusBarKey
 import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
@@ -143,6 +144,7 @@ import moe.rukamori.archivetune.constants.PlayerButtonsStyle
 import moe.rukamori.archivetune.constants.PlayerButtonsStyleKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
+import moe.rukamori.archivetune.shared.ui.player.MetrolistPresentation
 import moe.rukamori.archivetune.constants.PlayerStyleSetting
 import moe.rukamori.archivetune.constants.honors
 import moe.rukamori.archivetune.constants.PureBlackKey
@@ -717,6 +719,8 @@ private fun appearancePlayerRows(
     // player is not in.
     val (flamingoBackgroundEffect, onFlamingoBackgroundEffectChange) =
         prefs.state(FlamingoBackgroundEffectKey, defaultValue = false)
+    val (metrolistPresentation, onMetrolistPresentationChange) =
+        prefs.enumState(MetrolistPresentationKey, defaultValue = MetrolistPresentation.MODERN)
     val (showPlayerVolumeBar, onShowPlayerVolumeBarChange) =
         prefs.playerVolumeVisibility(playerDesignStyle)
     val (hidePlayerThumbnail, onHidePlayerThumbnailChange) =
@@ -979,6 +983,23 @@ private fun appearancePlayerRows(
                     checked = appleMusicSeekGrow,
                     onCheckedChange = onAppleMusicSeekGrowChange,
                 )
+            }
+        }
+
+        // Only for the Metrolist style: the Modern/Vintage presentation switch is that style's
+        // own look choice, hidden for other styles like the same row on the other hosts.
+        if (playerDesignStyle == PlayerDesignStyle.METROLIST_KMP) {
+            item {
+                Column(modifier = positions.modifierFor("metrolist_presentation")) {
+                    EnumListPreference(
+                        title = { Text(stringResource(R.string.metrolist_presentation)) },
+                        description = stringResource(R.string.metrolist_presentation_desc),
+                        icon = { Icon(painterResource(R.drawable.palette), null) },
+                        selectedValue = metrolistPresentation,
+                        onValueSelected = onMetrolistPresentationChange,
+                        valueText = { metrolistPresentationLabel(it) },
+                    )
+                }
             }
         }
 
