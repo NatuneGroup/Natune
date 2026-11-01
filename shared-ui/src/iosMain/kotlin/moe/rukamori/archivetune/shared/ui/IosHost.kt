@@ -169,7 +169,8 @@ class IosHost {
             IosCrashCapture.install(root, iosApplicationVersion(), NSBundle.mainBundle.bundleIdentifier.orEmpty())
         }
         scope.launch { openSettingsAndPack() }
-        scope.launch { player.failures.collect { failure.value = it } }
+        // Queue-owned loads report only exhausted recovery through IosSessionGraph; standalone loads still report here.
+        scope.launch { player.failures.collect { if (it.attemptId == null) failure.value = it } }
         listenerPresence?.let { store ->
             ListenerPresenceController(
                 scope = presenceScope,

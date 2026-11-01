@@ -69,6 +69,7 @@ class KtorQobuzRepository(
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         if (access != null && !access.isActive()) throw UnsupportedContentOperation()
+        if (request.forceFreshStream) instanceResolver.invalidate(request.mediaId)
         // Per the original's orderedBackends: the signed-in Qobuz API token runs first, then the
         // proxy-instance backends.
         if (access != null) resolveViaAccount(request)?.let { return it }

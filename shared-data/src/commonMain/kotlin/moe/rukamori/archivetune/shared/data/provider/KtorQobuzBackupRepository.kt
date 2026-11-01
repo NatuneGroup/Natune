@@ -95,7 +95,7 @@ class KtorQobuzBackupRepository(client: HttpClient, base: String = "https://mls.
                 probe.length, "Qobuz backup", source, matched?.item?.title ?: request.target.title,
                 matched?.artists?.joinToString(", ") ?: request.target.artists.joinToString(", "),
                 matched?.album ?: request.target.album, matched?.item?.durationMs ?: request.target.durationMs,
-                directId != null, probe.sampleRate, probe.bitDepth))
+                directId != null, probe.sampleRate, probe.bitDepth, expiresAtEpochMs = StreamUrlExpiry.fromUrl(url)))
         }
         return null
     }
