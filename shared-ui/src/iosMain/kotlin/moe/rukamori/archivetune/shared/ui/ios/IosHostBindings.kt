@@ -119,7 +119,9 @@ internal fun iosHostBindings(
 ): ArchiveTuneHostBindings {
     val itemMenu = IosItemMenuState()
     val sleepSheet = IosSleepTimerSheetState()
-    val controls = IosPlayerControls(graph, sleepSheet)
+    val tempoSheet = IosTempoPitchSheetState()
+    val tempoPitchActions = IosTempoPitchActions(graph)
+    val controls = IosPlayerControls(graph, sleepSheet, itemMenu)
     // The canvas owner resolves the current occurrence's loop behind the same gates the settings page shows;
     // its controls report availability so a canvas-capable style knows a loop answered.
     val canvas = createIosCanvas(graph)
@@ -171,9 +173,10 @@ internal fun iosHostBindings(
             }
         },
         overlays = { route ->
-            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, playlistMenus, sleepSheet)
+            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, playlistMenus, sleepSheet, tempoSheet)
             IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
             IosSleepTimerOverlay(sleepSheet, graph.sleepTimer)
+            IosTempoPitchOverlay(tempoSheet, graph, tempoPitchActions)
         },
         playerSlots = { expanded, active, _ ->
             iosPlayerSlots(host, graph, canvas, canvasFrames, expanded, active)
