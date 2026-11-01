@@ -172,6 +172,11 @@ class IosDownloadFiles(private val root: String) {
     fun removeCommitted(path: String) {
         NSFileManager.defaultManager.removeItemAtPath(path, null)
     }
+
+    /** Drops the whole staging tree; the clear-all path removes every download's staged bytes at once. */
+    fun removeStagingRoot() {
+        NSFileManager.defaultManager.removeItemAtPath("$root/staging", null)
+    }
 }
 
 /**

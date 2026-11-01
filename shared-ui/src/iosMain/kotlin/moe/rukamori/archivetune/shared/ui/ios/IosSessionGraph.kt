@@ -33,7 +33,9 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsReposito
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
+import moe.rukamori.archivetune.shared.data.persistence.openNow
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
+import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCrossfadeHandoff
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
@@ -134,6 +136,8 @@ internal class IosSessionGraph private constructor(
     val uploads: IosYouTubeUploads,
     /** Downloads: the shared portable queue over this host's source chain, stored in the app container. */
     val downloads: IosDownloadsOwner,
+    /** Backup and restore: the portable-format gateway, the prepared-restore registry and the restart request. */
+    val backup: IosBackupOwner,
     /** The imported local songs: the Files picker, the shared scan pipeline and the `local` library rows. */
     val localMedia: IosLocalMediaOwner,
     /** The Last.fm, Libre.fm and custom-endpoint scrobbler over the one player and queue, closed with the graph. */
@@ -251,6 +255,9 @@ internal class IosSessionGraph private constructor(
         const val RESTART_THRESHOLD_MS = 3_000L
         private const val POSITION_CHECKPOINT_INTERVAL_MS = 10_000L
 
+        /** The portable state file the staged restore swaps under its sidecar files. */
+        private const val DATABASE_FILE = "portable-state.db"
+
         /**
          * Opens the database, then builds the owners over it and the host's settings, accounts and player. A failure
          * releases what was opened and is rethrown. A saved queue that cannot be restored stays on disk.
@@ -266,8 +273,17 @@ internal class IosSessionGraph private constructor(
                     report("background command failed: ${failure::class.simpleName}")
                 },
             )
+            val databasePath = iosPortableStateDatabasePath()
+            val databaseDirectory = databasePath.substringBeforeLast('/')
+            // A restore staged by an earlier launch applies before the owners open the files: the staged library is
+            // swapped in, the staged settings merge through the vault, and a file Room refuses rolls the library back.
+            val pending = withContext(Dispatchers.Default) {
+                iosStagedRestore(databaseDirectory, settings, report)
+            }
             val database = try {
-                withContext(Dispatchers.Default) { openPortableStateDatabase(iosPortableStateDatabasePath()) }
+                withContext(Dispatchers.Default) {
+                    openGraphDatabase(databasePath, databaseDirectory, pending, report)
+                }
             } catch (failure: Throwable) {
                 scope.cancel()
                 throw failure
@@ -278,7 +294,16 @@ internal class IosSessionGraph private constructor(
             val http = HttpClient(Darwin) { engine { network.configure(this) } }
             report(network.describe())
             return try {
-                assemble(host, scope, settings, accounts, database, http, network, report)
+                assemble(host, scope, settings, accounts, database, databaseDirectory, http, network, report).also {
+                    // The staged files are in place now; the pending directory and the previous library go away.
+                    if (pending != null) {
+                        try {
+                            pending.finish()
+                        } catch (failure: Exception) {
+                            report("restore staging not removed: ${failure::class.simpleName}")
+                        }
+                    }
+                }
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
                     http.close()
@@ -289,12 +314,79 @@ internal class IosSessionGraph private constructor(
             }
         }
 
+        /**
+         * The staged restore of an earlier backup session: it is read and its database swapped in, then its settings
+         * merge through the vault, matching the desktop host's order. Every failure is reported and leaves the live
+         * files as they were; the staged set is only finished once a graph assembles over it.
+         */
+        private suspend fun iosStagedRestore(
+            instanceDirectory: String,
+            settings: VaultSettingsStore,
+            report: (String) -> Unit,
+        ): IosPendingRestore? {
+            val pending = try {
+                IosPendingRestore.read(instanceDirectory)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report("staged restore unreadable: ${failure::class.simpleName}")
+                return null
+            } ?: return null
+            try {
+                pending.swapDatabase(instanceDirectory, DATABASE_FILE)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report("restored library not applied: ${failure::class.simpleName}")
+                try {
+                    pending.rollbackDatabase(instanceDirectory, DATABASE_FILE)
+                } catch (rollback: Exception) {
+                    report("library rollback failed: ${rollback::class.simpleName}")
+                }
+            }
+            try {
+                pending.applySettings(settings)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report("restored settings not applied: ${failure::class.simpleName}")
+            }
+            return pending
+        }
+
+        /**
+         * Opens the portable state database; when a staged library was swapped in, it is opened now so a file Room
+         * refuses still lets the previous database come back instead of leaving a broken library.
+         */
+        private suspend fun openGraphDatabase(
+            databasePath: String,
+            databaseDirectory: String,
+            pending: IosPendingRestore?,
+            report: (String) -> Unit,
+        ): PortableStateDatabase {
+            val database = openPortableStateDatabase(databasePath)
+            if (pending?.databaseSwapped != true) return database
+            try {
+                database.openNow()
+                return database
+            } catch (cancelled: CancellationException) {
+                database.close()
+                throw cancelled
+            } catch (failure: Exception) {
+                report("restored library refused: ${failure::class.simpleName}")
+                database.close()
+                withContext(NonCancellable) { pending.rollbackDatabase(databaseDirectory, DATABASE_FILE) }
+                return openPortableStateDatabase(databasePath)
+            }
+        }
+
         private suspend fun assemble(
             host: IosHost,
             scope: CoroutineScope,
             vault: VaultSettingsStore,
             accounts: VaultProviderAccountStore,
             database: PortableStateDatabase,
+            databaseDirectory: String,
             http: HttpClient,
             network: IosNetworkOwner,
             report: (String) -> Unit,
@@ -375,6 +467,14 @@ internal class IosSessionGraph private constructor(
                 scope = scope,
                 nowMs = ::iosNowMillis,
                 report = report,
+            )
+            // The one image cache this host keeps: the saved limit applies to the shared URL cache at open.
+            iosApplyImageCacheLimit(vault.snapshots.value)
+            // Backup archives hold a VACUUM INTO snapshot of this same database, staged beside it on restore.
+            val backup = IosBackupOwner(
+                settings = vault,
+                snapshotDatabase = { target -> database.snapshotTo(target) },
+                instanceDirectory = databaseDirectory,
             )
             val locators = IosQueueLocatorResolver(
                 audio = audioResolver,
@@ -565,6 +665,7 @@ internal class IosSessionGraph private constructor(
                 listenTogether = listenTogether,
                 uploads = uploads,
                 downloads = downloads,
+                backup = backup,
                 localMedia = localMedia,
                 lastFm = lastFm,
                 owner = owner,
