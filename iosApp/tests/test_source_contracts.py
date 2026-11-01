@@ -153,6 +153,24 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("NativeChrome.swift", project)
         self.assertIn("SystemLyrics.swift", project)
 
+    def test_native_lyrics_motion_dynamic_type_and_completion(self):
+        swift = (IOS / "ArchiveTune/SystemLyrics.swift").read_text()
+        # The saved point size follows Dynamic Type, as the retired @ScaledMetric did.
+        self.assertIn("UIFontMetrics(forTextStyle:", swift)
+        self.assertIn("scaledValue(for:", swift)
+        # The sweep share and the emphasis bump are the shared math, reduced motion honoured.
+        self.assertIn("LyricsSweepGeometry.shared.progressAt(", swift)
+        self.assertIn("LyricsEmphasis.shared.bumpAt(", swift)
+        self.assertIn("reduceMotion: reduceMotion", swift)
+        # A fully swept word draws lit to its bounds; the feather never leaves a dim tail.
+        self.assertIn("LyricsSweepGeometry.shared.sweepComplete(", swift)
+        # A reading or translation slides in when its text publishes, not when the row starts singing.
+        self.assertIn(".task(id: text)", swift)
+        self.assertNotIn("onChange(of: active)", swift)
+        # The renderer's inout context arguments match the declaration labels.
+        self.assertNotIn("context: &context", swift)
+        self.assertIn("in: &context", swift)
+
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()
         self.assertIn("prefersEphemeralWebBrowserSession = true", auth)

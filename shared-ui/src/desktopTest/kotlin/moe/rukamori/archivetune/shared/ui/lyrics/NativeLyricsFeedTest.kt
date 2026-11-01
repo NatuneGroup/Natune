@@ -91,8 +91,18 @@ class NativeLyricsFeedTest {
         val sung = frame.depth(frame.primaryLine, reduceMotion = false)
         assertEquals(NativeLyricsDepth(1f, 0f, 1f), sung)
         val far = frame.depth(frame.primaryLine + 6, reduceMotion = false)
-        val shared = LyricsDepth.of(LyricsDepth.MAX_STEPS, reduceMotion = false)
-        assertEquals(NativeLyricsDepth(shared.scale, shared.blurDp, shared.alpha), far)
+        // The platform view stands in for the refined Enhanced look: the veil is the uniform blur
+        // and the far row waits the full stagger before it follows a line change.
+        val shared = LyricsDepth.of(
+            LyricsDepth.MAX_STEPS,
+            reduceMotion = false,
+            uniformBlurDp = LyricsDepth.UNIFORM_BLUR_DP,
+        )
+        assertEquals(
+            NativeLyricsDepth(shared.scale, shared.blurDp, shared.alpha, LyricsDepth.staggerMs(LyricsDepth.MAX_STEPS)),
+            far,
+        )
         assertEquals(1f, frame.depth(frame.primaryLine + 1, reduceMotion = true).scale)
+        assertEquals(0f, frame.depth(frame.primaryLine + 1, reduceMotion = true).blurPoints)
     }
 }
