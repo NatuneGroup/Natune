@@ -12,6 +12,7 @@ import moe.rukamori.archivetune.shared.data.backup.RestoreTarget
 import moe.rukamori.archivetune.shared.data.backup.decodeRestoreResolution
 import moe.rukamori.archivetune.shared.data.backup.decideRestoreResolution
 import moe.rukamori.archivetune.shared.data.backup.encodeRestoreResolution
+import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import platform.Foundation.NSFileManager
 
 /**
@@ -19,7 +20,8 @@ import platform.Foundation.NSFileManager
  * decisions startup makes before it touches a file: `abort` inside the pending set says the joint apply is being
  * undone (files rolled back AND the vault restored from `settings-before`), and `restore-blocked` inside the
  * instance directory says the live database is unresolvable until the user picks a resolution. Both are written
- * atomically so a kill never leaves a half-written marker.
+ * atomically so a kill never leaves a half-written marker, and the blocked marker's content doubles as the
+ * block's id: a resolution journal that survives from an earlier block can never resolve a different one.
  *
  * The two user resolutions never delete: everything they move aside lands in a `restore-quarantine-<stamp>`
  * directory that survives for diagnosis.
@@ -35,8 +37,6 @@ internal object IosRestoreRecovery {
     private const val QUARANTINE_PREFIX = "restore-quarantine-"
     private const val RESOLUTION_FILE = "restore-resolution"
 
-    private val BLOCK_SENTINEL = byteArrayOf(1)
-
     fun abortMarkerPath(pendingDirectory: String): String = "$pendingDirectory/$ABORT_FILE"
 
     fun settingsBeforePath(pendingDirectory: String): String = "$pendingDirectory/$SETTINGS_BEFORE_FILE"
@@ -49,9 +49,12 @@ internal object IosRestoreRecovery {
     /** The instance-level marker every database open checks first; while set, only recovery mode runs. */
     fun isBlocked(instanceDirectory: String): Boolean = exists(blockedMarkerPath(instanceDirectory))
 
-    /** Persists the blocked decision atomically; the file's presence is the whole marker. */
+    /**
+     * Persists the blocked decision atomically. The file's presence is the marker and its content — the write
+     * instant — is the block's id, which every resolution journal records to bind itself to this block.
+     */
     fun block(ops: RestoreFileOps, instanceDirectory: String) {
-        ops.writeAtomically(blockedMarkerPath(instanceDirectory), BLOCK_SENTINEL)
+        ops.writeAtomically(blockedMarkerPath(instanceDirectory), iosNowMillis().toString().encodeToByteArray())
     }
 
     /** The resolution a kill left in flight, or null while none was chosen or the journal does not parse. */
@@ -75,8 +78,10 @@ internal object IosRestoreRecovery {
             .firstOrNull { exists("$it/$databaseFile") }
 
     /**
-     * Finishes a journaled resolution on a cold start, before Room opens. True means the markers cleared and
-     * startup may continue; false — no journal, an unfinished pass, or a failure — leaves the block standing.
+     * Finishes a journaled resolution on a cold start, before Room opens — or, when its block is already gone,
+     * settles just the journal's own tail. True means startup may continue. False — no journal, a journal bound
+     * to a different block (stale: left untouched so it can never act on the new block), an unfinished pass or
+     * a failure — leaves whatever block stands for recovery mode or the next start.
      */
     fun resumeResolution(
         ops: RestoreFileOps,
@@ -84,15 +89,30 @@ internal object IosRestoreRecovery {
         databaseFile: String,
         nowMillis: Long,
     ): Boolean {
-        val recorded = recordedResolution(ops, instanceDirectory) ?: return false
-        return resolveRestore(ops, instanceDirectory, databaseFile, recorded.resolution, nowMillis)
+        val entry = recordedResolution(ops, instanceDirectory) ?: return false
+        if (!isBlocked(instanceDirectory)) {
+            // The block this journal served is gone: a finished resolution owes only its own delete; a
+            // half-finished one is stale state and must never move files against the new state.
+            if (entry.stage != RestoreResolutionStage.CLEANUP) return false
+            return try {
+                deleteItem(resolutionJournalPath(instanceDirectory))
+                true
+            } catch (failure: Exception) {
+                false
+            }
+        }
+        if (entry.blockToken == null || entry.blockToken != blockedMarkerToken(ops, instanceDirectory)) {
+            return false
+        }
+        return resolveRestore(ops, instanceDirectory, databaseFile, entry.resolution, nowMillis)
     }
 
     /**
-     * Runs a blocked restore's resolution to its end: the choice is journaled before a file moves, the journal
-     * advances between passes, and every pass is idempotent — a kill anywhere resumes the same choice in the
-     * same phase instead of re-prompting or half-applying the other action. False leaves the blocked marker,
-     * the journal and the recovery surface standing for the next start.
+     * Runs a blocked restore's resolution to its end: the choice is journaled — bound to the blocked marker's
+     * content and, for restore-previous, pinned to the originals directory and the exact file names it must
+     * leave live — before a file moves; the journal advances between passes and every pass is idempotent, so a
+     * kill anywhere resumes the same choice in the same phase instead of re-prompting or half-applying the
+     * other action. False leaves the blocked marker, the journal and the recovery surface standing.
      */
     fun resolveRestore(
         ops: RestoreFileOps,
@@ -102,33 +122,56 @@ internal object IosRestoreRecovery {
         nowMillis: Long,
     ): Boolean {
         val journalPath = resolutionJournalPath(instanceDirectory)
-        val recorded = recordedResolution(ops, instanceDirectory)
+        val blockToken = blockedMarkerToken(ops, instanceDirectory)
+        // A journal is honored only while it belongs to the block on disk; a stale one is another block's
+        // record and loses to the fresh pick entirely.
+        val recorded = recordedResolution(ops, instanceDirectory)?.takeIf {
+            it.blockToken != null && it.blockToken == blockToken
+        }
         val step = decideRestoreResolution(
             RestoreResolutionFacts(
                 recorded = recorded,
                 chosen = resolution,
+                journalBound = recorded != null,
                 originalsInPending = exists("$instanceDirectory/$PENDING_DIRECTORY/$PREVIOUS_DIRECTORY/$databaseFile"),
                 originalsInFailed = exists("$instanceDirectory/$FAILED_DIRECTORY/$PREVIOUS_DIRECTORY/$databaseFile"),
             ),
         )
-        if (step == RestoreResolutionStep.UNRESOLVABLE) return false
-        val chosen = recorded?.resolution ?: resolution
-        var stage = recorded?.stage
+        val chosen = when (step) {
+            RestoreResolutionStep.RESOLVE_PREVIOUS -> RestoreResolution.RESTORE_PREVIOUS
+            RestoreResolutionStep.RESOLVE_EMPTY -> RestoreResolution.START_EMPTY
+            RestoreResolutionStep.UNRESOLVABLE -> return false
+        }
+        // A pick different from the journaled action starts a fresh record at the first pass.
+        var entry = recorded?.takeIf { it.resolution == chosen }
+        var stage = entry?.stage
+        fun advance(current: RestoreResolutionEntry, to: RestoreResolutionStage): RestoreResolutionEntry {
+            val next = current.copy(stage = to)
+            writeResolution(ops, instanceDirectory, next)
+            return next
+        }
         try {
             if (stage == null) {
-                writeResolution(ops, instanceDirectory, RestoreResolutionEntry(chosen, RestoreResolutionStage.QUARANTINING))
+                val fresh = freshResolutionEntry(chosen, instanceDirectory, databaseFile, blockToken)
+                writeResolution(ops, instanceDirectory, fresh)
+                entry = fresh
                 stage = RestoreResolutionStage.QUARANTINING
             }
             when (chosen) {
                 RestoreResolution.RESTORE_PREVIOUS -> {
                     if (stage == RestoreResolutionStage.QUARANTINING) {
                         quarantineLive(instanceDirectory, databaseFile, freshQuarantine(instanceDirectory, nowMillis))
-                        writeResolution(ops, instanceDirectory, RestoreResolutionEntry(chosen, RestoreResolutionStage.RESTORING))
+                        entry = advance(entry ?: return false, RestoreResolutionStage.RESTORING)
                         stage = RestoreResolutionStage.RESTORING
                     }
                     if (stage == RestoreResolutionStage.RESTORING) {
-                        restoreOriginals(instanceDirectory, databaseFile, originalsDirectory(instanceDirectory, databaseFile))
-                        writeResolution(ops, instanceDirectory, RestoreResolutionEntry(chosen, RestoreResolutionStage.CLEANUP))
+                        if (!restoreRecordedOriginals(entry ?: return false, instanceDirectory)) return false
+                        entry = advance(entry ?: return false, RestoreResolutionStage.RETIRING)
+                        stage = RestoreResolutionStage.RETIRING
+                    }
+                    if (stage == RestoreResolutionStage.RETIRING) {
+                        retirePending(instanceDirectory, freshQuarantine(instanceDirectory, nowMillis))
+                        entry = advance(entry ?: return false, RestoreResolutionStage.CLEANUP)
                         stage = RestoreResolutionStage.CLEANUP
                     }
                 }
@@ -137,7 +180,7 @@ internal object IosRestoreRecovery {
                         val quarantine = freshQuarantine(instanceDirectory, nowMillis)
                         quarantineLive(instanceDirectory, databaseFile, quarantine)
                         quarantineSets(instanceDirectory, quarantine)
-                        writeResolution(ops, instanceDirectory, RestoreResolutionEntry(chosen, RestoreResolutionStage.CLEANUP))
+                        entry = advance(entry ?: return false, RestoreResolutionStage.CLEANUP)
                         stage = RestoreResolutionStage.CLEANUP
                     }
                 }
@@ -159,6 +202,56 @@ internal object IosRestoreRecovery {
         )
     }
 
+    /** The content the block marker was written with — the id a resolution journal binds to. */
+    private fun blockedMarkerToken(ops: RestoreFileOps, instanceDirectory: String): String? =
+        try {
+            ops.readBytes(blockedMarkerPath(instanceDirectory))?.decodeToString()
+        } catch (failure: Exception) {
+            null
+        }
+
+    /**
+     * The record for a resolution just chosen: bound to the block on disk, and for restore-previous pinned to
+     * the originals directory and the exact file names that must end up live — so a half-consumed originals
+     * set can never read as "nothing to put back" on resume.
+     */
+    private fun freshResolutionEntry(
+        chosen: RestoreResolution,
+        instanceDirectory: String,
+        databaseFile: String,
+        blockToken: String?,
+    ): RestoreResolutionEntry {
+        val source = if (chosen == RestoreResolution.RESTORE_PREVIOUS) {
+            originalsDirectory(instanceDirectory, databaseFile)
+        } else {
+            null
+        }
+        val files = source?.let { dir ->
+            RestoreTarget.DATABASE_SIDECARS.map { "$databaseFile$it" }.filter { exists("$dir/$it") }
+        }.orEmpty()
+        return RestoreResolutionEntry(chosen, RestoreResolutionStage.QUARANTINING, blockToken, source, files)
+    }
+
+    /**
+     * Promotes every recorded original still waiting in the pinned source, then proves each expected file sits
+     * at its live slot. False — files missing on both sides with nothing to promote — is unresolvable, not
+     * success: the journal stays at RESTORING and the block stands.
+     */
+    private fun restoreRecordedOriginals(entry: RestoreResolutionEntry, instanceDirectory: String): Boolean {
+        val source = entry.source ?: return false
+        entry.files.forEach { name ->
+            val backed = "$source/$name"
+            if (exists(backed)) moveItem(backed, "$instanceDirectory/$name")
+        }
+        return entry.files.all { exists("$instanceDirectory/$it") }
+    }
+
+    /** The resolved pending transaction set into quarantine so the next startup does not replay it. */
+    private fun retirePending(instanceDirectory: String, quarantine: String) {
+        val path = "$instanceDirectory/$PENDING_DIRECTORY"
+        if (exists(path)) moveItem(path, "$quarantine/$PENDING_DIRECTORY")
+    }
+
     /** Every live database file into the quarantine; a suffix that never existed is simply skipped. */
     private fun quarantineLive(instanceDirectory: String, databaseFile: String, quarantine: String) {
         RestoreTarget.DATABASE_SIDECARS.forEach { suffix ->
@@ -172,15 +265,6 @@ internal object IosRestoreRecovery {
         listOf(PENDING_DIRECTORY, FAILED_DIRECTORY).forEach { name ->
             val path = "$instanceDirectory/$name"
             if (exists(path)) moveItem(path, "$quarantine/$name")
-        }
-    }
-
-    /** Originals back over the empty live slots; already-restored suffixes (backup gone) are left alone. */
-    private fun restoreOriginals(instanceDirectory: String, databaseFile: String, previous: String?) {
-        if (previous == null) return
-        RestoreTarget.DATABASE_SIDECARS.forEach { suffix ->
-            val backed = "$previous/$databaseFile$suffix"
-            if (exists(backed)) moveItem(backed, "$instanceDirectory/$databaseFile$suffix")
         }
     }
 
