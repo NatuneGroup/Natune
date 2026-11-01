@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Clock
 import moe.rukamori.archivetune.shared.data.persistence.AlbumCompletionIndex
 import moe.rukamori.archivetune.shared.data.repository.QueueStreamRecovery.Prepared
 import moe.rukamori.archivetune.shared.domain.persistence.PositionRestorePolicy
@@ -88,10 +89,7 @@ class PortableQueueOwner(
     private val autoSkipNextOnError: () -> Boolean = { false },
     /** The `preventDuplicateTracksInQueue` setting; the insert path applies [QueueDedupePolicy]. */
     private val preventDuplicateTracksInQueue: () -> Boolean = { false },
-    /**
-     * The `queueLocked` setting: user removes, moves and clears report no change while locked.
-     * Adding, select/skip, shuffle, undo and every programmatic change are never gated.
-     */
+    /** The queueLocked setting: user removes, moves and clears are refused; adds and programmatic edits are not. */
     private val queueLocked: () -> Boolean = { false },
     /**
      * Mirrors the Android `AutoLoadMoreKey` setting. On, an exhausted finite queue seeds a watch-next tail
@@ -114,6 +112,8 @@ class PortableQueueOwner(
     monotonicTimeMs: () -> Long = queueMonotonicClock(),
     /** Wall clock for checkpoint stamps; the monotonic clock above must not measure wall-time ages. */
     private val wallTimeMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    /** The wall clock for locator expiresAtEpochMs: an epoch instant, never the monotonic clock's ticks. */
+    epochNowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : TypedQueueOwnerPort, QueueEditingCommands {
     private val lock = Mutex()
     private val finitePlaylists = FinitePlaylistLoader(content, albumCompletion)
@@ -135,7 +135,7 @@ class PortableQueueOwner(
 
     private val resolutionFailureFlow = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 8)
     private val finalFailureFlow = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 8)
-    private val streamRecovery = QueueStreamRecovery(player, locators, monotonicTimeMs)
+    private val streamRecovery = QueueStreamRecovery(player, locators, monotonicTimeMs, epochNowMs)
 
     /**
      * The failures the error dialog and skip-on-error act on: the engine's, and those of songs no source resolved. An

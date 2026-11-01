@@ -41,6 +41,25 @@ class QueueDedupePolicyTest {
     }
 
     @Test
+    fun aShuffledPlayOrderDedupesAndEvictsByMediaReference() {
+        val queue = queueOf(listOf("a" to "songA", "b" to "songB", "c" to "songC"), current = "b")
+            .copy(playOrder = listOf("c", "b", "a"), shuffleEnabled = true)
+        val incoming = listOf(
+            occurrence("i1", "songC"),
+            occurrence("i2", "songD"),
+            occurrence("i3", "songC"),
+        )
+        // Identity rules ignore play order: the first incoming copy survives and so does the current song.
+        assertEquals(listOf("i1", "i2"), QueueDedupePolicy.incoming(queue, incoming).map { it.occurrenceId })
+        assertEquals(setOf("c"), QueueDedupePolicy.evictable(queue, incoming))
+        val after = QueueDedupePolicy.evict(queue, setOf("c"))
+        assertEquals(listOf("a", "b"), after.entries.map { it.occurrenceId })
+        assertEquals(listOf("b", "a"), after.playOrder)
+        assertEquals("b", after.currentOccurrenceId)
+        assertEquals(true, after.shuffleEnabled)
+    }
+
+    @Test
     fun anEmptyQueueStillDedupesTheBatch() {
         val queue = QueueState(0L, emptyList(), null, emptyList())
         val incoming = listOf(occurrence("i1", "songA"), occurrence("i2", "songA"), occurrence("i3", "songB"))
