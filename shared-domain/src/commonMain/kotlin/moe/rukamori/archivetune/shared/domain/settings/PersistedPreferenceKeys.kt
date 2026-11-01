@@ -473,6 +473,7 @@ val SpotifyLibrespotAccessTokenKey = StringPreferenceKey("spotify_librespot_acce
 val SpotifyLibrespotAccessTokenExpiresAtKey = LongPreferenceKey("spotify_librespot_access_token_expires_at")
 val SpotifyLibrespotUserIdKey = StringPreferenceKey("spotify_librespot_user_id")
 val SpotifyLibrespotAccountNameKey = StringPreferenceKey("spotify_librespot_account_name")
+val SpotifyLibrespotCatalogSpDcKey = StringPreferenceKey("spotify_librespot_catalog_sp_dc")
 val ShowSpotifyPlaylistsKey = BooleanPreferenceKey("show_spotify_playlists")
 val LibrarySourceKey = StringPreferenceKey("library_source")
 val AppleMusicExperienceKey = BooleanPreferenceKey("apple_music_experience")

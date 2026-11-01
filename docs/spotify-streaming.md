@@ -70,8 +70,12 @@ Sign-in is a registered OAuth authorization-code flow with PKCE (`spotify/Spotif
   must read `product == "premium"`. A free plan or a different account is refused with its own
   message and nothing is stored.
 - The grant persists as `spotify_librespot_*` keys (refresh token, cached access token + expiry,
-  user id, display name — the refresh token alone is the session). Signing out of the catalog or of
-  the Librespot session clears them, and turns streaming off while the stored engine is Librespot.
+  user id, display name, and the catalog sp_dc it was minted under — the refresh token alone is the
+  session). That stored cookie binds the grant to the catalog session: `accessToken()` refuses
+  every cached or minted token once the cookie differs, the refresh commit re-checks it inside the
+  same edit, and a catalog credential replacement clears the grant atomically. Signing out of the
+  catalog or of the Librespot session clears them, and turns streaming off while the stored engine
+  is Librespot.
 - `SpotifyLibrespotAccount.accessToken()` is the hand-off the engine consumes as
   `Credentials::with_access_token`: it returns the stored token while fresh and otherwise runs the
   refresh grant (Spotify rotates refresh tokens; a new one replaces the stored one) and re-checks

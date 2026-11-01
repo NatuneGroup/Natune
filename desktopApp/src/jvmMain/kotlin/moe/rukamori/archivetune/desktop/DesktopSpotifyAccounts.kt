@@ -564,6 +564,7 @@ internal class DesktopSpotifyAccounts(
                 if (changed) {
                     this[SpotifyAccessTokenKey] = null
                     this[SpotifyAccessTokenExpiresAtKey] = null
+                    clearSpotifyLibrespotSession()
                     clearCatalogSnapshots()
                 }
             }

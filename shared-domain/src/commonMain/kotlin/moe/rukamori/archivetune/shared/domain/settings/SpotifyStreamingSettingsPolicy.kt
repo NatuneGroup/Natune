@@ -130,12 +130,15 @@ fun PreferenceEditor.setSpotifyLibrespotSession(
     accessTokenExpiresAtMs: Long,
     userId: String,
     accountName: String,
+    catalogSpDc: String,
 ) {
     this[SpotifyLibrespotRefreshTokenKey] = refreshToken
     this[SpotifyLibrespotAccessTokenKey] = accessToken
     this[SpotifyLibrespotAccessTokenExpiresAtKey] = accessTokenExpiresAtMs
     this[SpotifyLibrespotUserIdKey] = userId
     this[SpotifyLibrespotAccountNameKey] = accountName
+    // The catalog cookie the grant was minted under; the session dies with that cookie.
+    this[SpotifyLibrespotCatalogSpDcKey] = catalogSpDc
 }
 
 /**
@@ -148,6 +151,7 @@ fun PreferenceEditor.clearSpotifyLibrespotSession() {
     this[SpotifyLibrespotAccessTokenExpiresAtKey] = null
     this[SpotifyLibrespotUserIdKey] = null
     this[SpotifyLibrespotAccountNameKey] = null
+    this[SpotifyLibrespotCatalogSpDcKey] = null
     if (SpotifyStreamEngine.fromPreference(this[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT) {
         this[SpotifyStreamEnabledKey] = false
     }

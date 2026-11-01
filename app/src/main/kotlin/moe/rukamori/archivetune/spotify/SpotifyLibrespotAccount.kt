@@ -228,6 +228,9 @@ object SpotifyLibrespotAccount {
                             now + grant.expiresInSeconds * 1000L
                         it[SpotifyLibrespotUserIdKey] = me.userId
                         it[SpotifyLibrespotAccountNameKey] = me.displayName.orEmpty()
+                        // The catalog cookie this grant was minted under is its binding: the grant
+                        // dies with that cookie even if this sign-out lands late.
+                        it[SpotifyLibrespotCatalogSpDcKey] = catalogSpDc
                         // The grant is the library account, so its product read refreshes the library
                         // account's own Premium observation.
                         me.product
@@ -250,6 +253,37 @@ object SpotifyLibrespotAccount {
         withContext(Dispatchers.IO) {
             tokenMutex.withLock {
                 val prefs = context.dataStore.data.first()
+                val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
+                // The stored fingerprint is the catalog sp_dc the grant was minted under. The grant
+                // dies with that cookie — a replaced catalog session invalidates it here, before
+                // any cached or refreshed token can leave, even if the repository's own sign-out
+                // has not landed yet. An unbound grant (catalog signed out at authorization) falls
+                // back to the account-id check.
+                val boundCatalogSpDc = prefs[SpotifyLibrespotCatalogSpDcKey].orEmpty()
+                if (boundCatalogSpDc.isNotBlank() && boundCatalogSpDc != catalogSpDc) {
+                    context.dataStore.edit { it.clearLibrespotSession() }
+                    return@withLock null
+                }
+                if (boundCatalogSpDc.isBlank() && catalogSpDc.isNotBlank()) {
+                    val librespotUserId = prefs[SpotifyLibrespotUserIdKey].orEmpty()
+                    if (librespotUserId.isNotBlank()) {
+                        if (comparedCatalogSpDc != catalogSpDc) {
+                            val catalogUserId =
+                                SpotifyStreamingAccount.catalogToken(context)
+                                    ?.let(SpotifyStreamingAccount::fetchProfile)
+                                    ?.userId
+                            // Unverifiable denies the token for now without destroying the grant.
+                            if (catalogUserId == null) return@withLock null
+                            catalogMatchesLibrespot = catalogUserId == librespotUserId
+                            comparedCatalogSpDc = catalogSpDc
+                        }
+                        if (!catalogMatchesLibrespot) {
+                            context.dataStore.edit { it.clearLibrespotSession() }
+                            return@withLock null
+                        }
+                    }
+                }
+
                 val stored = prefs[SpotifyLibrespotAccessTokenKey].orEmpty()
                 val expiresAt = prefs[SpotifyLibrespotAccessTokenExpiresAtKey] ?: 0L
                 if (
@@ -261,38 +295,29 @@ object SpotifyLibrespotAccount {
                 val refresh = prefs[SpotifyLibrespotRefreshTokenKey].orEmpty()
                 if (refresh.isBlank()) return@withLock null
 
-                // The catalog account can have been replaced after the grant was stored, and the
-                // grant only streams while it is still the catalog's own account. A proven
-                // mismatch clears it; a catalog identity that cannot be read denies the token for
-                // now without destroying the grant.
-                val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
-                val librespotUserId = prefs[SpotifyLibrespotUserIdKey].orEmpty()
-                if (catalogSpDc.isNotBlank() && librespotUserId.isNotBlank()) {
-                    if (comparedCatalogSpDc != catalogSpDc) {
-                        val catalogUserId =
-                            SpotifyStreamingAccount.catalogToken(context)
-                                ?.let(SpotifyStreamingAccount::fetchProfile)
-                                ?.userId
-                        if (catalogUserId == null) return@withLock null
-                        catalogMatchesLibrespot = catalogUserId == librespotUserId
-                        comparedCatalogSpDc = catalogSpDc
-                    }
-                    if (!catalogMatchesLibrespot) {
-                        context.dataStore.edit { it.clearLibrespotSession() }
-                        return@withLock null
-                    }
-                }
-
                 val grant = refreshAccessToken(refresh) ?: return@withLock null
                 val now = System.currentTimeMillis()
+                // The catalog cookie is re-read inside the commit edit: a session swapped
+                // mid-refresh must not leave a token minted under the old binding, so the
+                // grant goes with it instead.
+                var catalogChanged = false
                 context.dataStore.edit {
-                    it[SpotifyLibrespotAccessTokenKey] = grant.accessToken
-                    it[SpotifyLibrespotAccessTokenExpiresAtKey] =
-                        now + grant.expiresInSeconds * 1000L
-                    grant.refreshToken
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { rotated -> it[SpotifyLibrespotRefreshTokenKey] = rotated }
+                    if (it[SpotifySpDcKey].orEmpty() != catalogSpDc) {
+                        it.clearLibrespotSession()
+                        catalogChanged = true
+                    } else {
+                        it[SpotifyLibrespotAccessTokenKey] = grant.accessToken
+                        it[SpotifyLibrespotAccessTokenExpiresAtKey] =
+                            now + grant.expiresInSeconds * 1000L
+                        grant.refreshToken
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { rotated -> it[SpotifyLibrespotRefreshTokenKey] = rotated }
+                        if (boundCatalogSpDc.isBlank() && catalogSpDc.isNotBlank()) {
+                            it[SpotifyLibrespotCatalogSpDcKey] = catalogSpDc
+                        }
+                    }
                 }
+                if (catalogChanged) return@withLock null
                 refreshLibraryProductIfDue(context, grant.accessToken)
                 grant.accessToken
             }
@@ -304,17 +329,6 @@ object SpotifyLibrespotAccount {
         catalogMatchesLibrespot = false
         context.dataStore.edit { it.clearLibrespotSession() }
         Unit
-    }
-
-    private fun MutablePreferences.clearLibrespotSession() {
-        remove(SpotifyLibrespotRefreshTokenKey)
-        remove(SpotifyLibrespotAccessTokenKey)
-        remove(SpotifyLibrespotAccessTokenExpiresAtKey)
-        remove(SpotifyLibrespotUserIdKey)
-        remove(SpotifyLibrespotAccountNameKey)
-        if (SpotifyStreamEngine.fromPreference(this[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT) {
-            this[SpotifyStreamEnabledKey] = false
-        }
     }
 
     /**
@@ -412,5 +426,22 @@ object SpotifyLibrespotAccount {
             .getUrlEncoder()
             .withoutPadding()
             .encodeToString(bytes)
+    }
+}
+
+/**
+ * Removes the whole Librespot grant inside a caller's datastore edit, so a catalog credential
+ * replacement and the grant's death commit atomically. Streaming turns off when the stored engine
+ * is the one losing its session — the same rule the shared settings policy encodes.
+ */
+internal fun MutablePreferences.clearLibrespotSession() {
+    remove(SpotifyLibrespotRefreshTokenKey)
+    remove(SpotifyLibrespotAccessTokenKey)
+    remove(SpotifyLibrespotAccessTokenExpiresAtKey)
+    remove(SpotifyLibrespotUserIdKey)
+    remove(SpotifyLibrespotAccountNameKey)
+    remove(SpotifyLibrespotCatalogSpDcKey)
+    if (SpotifyStreamEngine.fromPreference(this[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT) {
+        this[SpotifyStreamEnabledKey] = false
     }
 }
