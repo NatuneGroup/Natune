@@ -736,9 +736,7 @@ fun PlayerTopActions(
         PlayerDesignStyle.SIMPMUSIC,
         PlayerDesignStyle.SPATIALFLOW,
         PlayerDesignStyle.LOOPER,
-        PlayerDesignStyle.FLAMINGO,
-        PlayerDesignStyle.METROLIST_KMP,
-        -> {
+        PlayerDesignStyle.FLAMINGO, PlayerDesignStyle.METROLIST_KMP, -> {
             Unit
         }
     }
@@ -1713,9 +1711,7 @@ fun PlayerPlaybackControls(
         PlayerDesignStyle.SIMPMUSIC,
         PlayerDesignStyle.SPATIALFLOW,
         PlayerDesignStyle.LOOPER,
-        PlayerDesignStyle.FLAMINGO,
-        PlayerDesignStyle.METROLIST_KMP,
-        -> {
+        PlayerDesignStyle.FLAMINGO, PlayerDesignStyle.METROLIST_KMP, -> {
             Unit
         }
     }

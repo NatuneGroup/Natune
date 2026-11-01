@@ -1332,12 +1332,8 @@ enum class PlayerDesignStyle(
      */
     FLAMINGO(nativeBackground = PlayerBackgroundStyle.BLUR),
 
-    /**
-     * The Metrolist player (MetrolistGroup/Metrolist, GPL-3.0) — the clean column look the shared
-     * port already ships: framed square sleeve, thin seek bar, native transport and the six-button
-     * utility row, with a Modern/Vintage presentation choice. Like LOOPER it paints no backdrop of
-     * its own, so the background choice stays with the reader.
-     */
+    // Metrolist's clean column player (MetrolistGroup/Metrolist, GPL-3.0); like LOOPER it
+    // leaves the backdrop to the reader instead of painting one of its own.
     METROLIST_KMP,
     ;
 
@@ -1404,17 +1400,6 @@ enum class PlayerDesignStyle(
         val Default = V4
     }
 }
-
-/**
- * Flamingo player settings. Upstream reads both with the same defaults written here — the volume
- * bar on, the backdrop effect off — so a fresh install looks the way the style's reference does.
- */
-val FlamingoShowVolumeBarKey = booleanPreferencesKey("flamingoNowPlayingShowVolumeBar")
-val FlamingoBackgroundEffectKey = booleanPreferencesKey("flamingoNowPlayingBackgroundEffect")
-
-// Same wire name and values as the shared-domain MetrolistPresentationKey so a stored MODERN or
-// VINTAGE reads identically on every host.
-val MetrolistPresentationKey = stringPreferencesKey("metrolistKmpPresentation")
 
 enum class PlayerBackgroundStyle {
     DEFAULT,
