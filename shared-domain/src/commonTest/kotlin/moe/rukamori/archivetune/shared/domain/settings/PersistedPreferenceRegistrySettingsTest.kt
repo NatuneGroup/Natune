@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 class PersistedPreferenceRegistrySettingsTest {
     @Test
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
-        assertEquals(649, PersistedPreferenceKeys.size)
+        assertEquals(647, PersistedPreferenceKeys.size)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
     }
 

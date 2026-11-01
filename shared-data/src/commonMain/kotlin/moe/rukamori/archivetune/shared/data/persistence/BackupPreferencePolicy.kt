@@ -30,7 +30,10 @@ object BackupPreferencePolicy {
         "listenTogetherSessionToken",
     )
     private val deviceKeys = setOf("scheduledBackupEnabled", "scheduledBackupDirectoryUri", "scheduledBackupDirectoryName",
-        "spotifyStreamDeviceId")
+        "spotifyStreamDeviceId",
+        // Retired preferences whose leftovers never export: the user-entered Lyprio server pair is gone
+        // (the provider is build-configured now) and its signing key was a credential.
+        "lyprioEndpoint", "lyprioSigningKey")
 
     fun includes(name: String, selected: Set<BackupCategory>): Boolean {
         if (name in deviceKeys) return false

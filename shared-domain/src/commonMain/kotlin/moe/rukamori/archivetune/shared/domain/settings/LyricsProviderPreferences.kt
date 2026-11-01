@@ -2,8 +2,8 @@ package moe.rukamori.archivetune.shared.domain.settings
 
 /** Persisted order ids and provider names are wire identities, never translated picker captions. */
 enum class LyricsProviderPreference(val providerName: String, val key: BooleanPreferenceKey?, val defaultEnabled: Boolean = true) {
-    /** A server the user hosts; off until enabled with its URL and signing key. First, as in Metrolist's default order. */
-    LYPRIO("Lyprio", EnableLyprioLyricsKey, false),
+    /** Metrolist's hosted lyrics server, bundled at build time. On and first by default, as in Metrolist. */
+    LYPRIO("Lyprio", EnableLyprioLyricsKey),
     BETTER_LYRICS("BetterLyrics", EnableBetterLyricsKey),
     BETTER_LYRICS_PORTATO("BetterLyrics Portato", EnableBetterLyricsPortatoKey),
     YOULY_PLUS("YouLyPlus", EnableYouLyPlusLyricsKey),

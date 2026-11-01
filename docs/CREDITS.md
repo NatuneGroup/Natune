@@ -120,7 +120,7 @@ their approaches were followed.
 - [maxrave-dev/SimpMusic](https://github.com/maxrave-dev/SimpMusic): the liquid glass
   backdrop and crossfade scheduling.
 - **Metrolist KMP**: the design reference for the additive `METROLIST_KMP` player style,
-  the Enhanced lyrics animation and the self-hosted Lyprio lyrics protocol. The recovered
+  the Enhanced lyrics animation and the bundled Lyprio lyrics protocol. The recovered
   Metrolist 14.0.0-rc3 material was read as reference only; the Kotlin here is written
   fresh.
 - **Metrolist 14.0.0-rc6**: several 2026-10 player, lyrics, theme and playback refinements

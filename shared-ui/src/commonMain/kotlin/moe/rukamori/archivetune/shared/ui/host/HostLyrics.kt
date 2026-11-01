@@ -37,8 +37,6 @@ import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
-import moe.rukamori.archivetune.shared.domain.settings.LyprioEndpointKey
-import moe.rukamori.archivetune.shared.domain.settings.LyprioSigningKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.PaxsenixApiKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.PaxsenixEndpointKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -62,8 +60,9 @@ data class HostLyricsDocument(
  * occurrence the player reports, preloads the next ones in play order, and parses the winning document once. The
  * app-only providers (account Apple Music, TIDAL, Deezer, YouTube captions and the like) are Android-only.
  *
- * [lyprioBuildBaseUrl]/[lyprioBuildHmacKey] are the host's build-time Lyprio server pair: when both are
- * present and the user has entered neither preference value, the bundled endpoint serves the lookup.
+ * [lyprioBuildBaseUrl]/[lyprioBuildHmacKey] are the host's build-time Lyprio server pair — the only
+ * endpoint the provider can have, since the server is run by the Metrolist developers and is not
+ * user-configurable. When both are present and parse, the bundled endpoint serves the lookup.
  * The pair never enters preferences, so it stays out of backups and diagnostics.
  */
 class HostLyrics(
@@ -159,10 +158,10 @@ fun paxsenixSettingsOf(preferences: PreferenceSnapshot): PaxsenixSettings = Paxs
 )
 
 /**
- * Shared providers in canonical order. Paxsenix uses the user's endpoint and key when they are set. Lyprio resolves
- * through [resolveLyprioEndpoint]: the user's own server pair wins whenever either field is entered, and the
- * host's build-time pair ([lyprioBuildBaseUrl]/[lyprioBuildHmacKey]) applies only while both user fields are
- * blank. Its toggle is applied by the runtime like the others.
+ * Shared providers in canonical order. Paxsenix uses the user's endpoint and key when they are set. Lyprio
+ * resolves through [resolveLyprioEndpoint] from the host's build-time pair
+ * ([lyprioBuildBaseUrl]/[lyprioBuildHmacKey]) — its only endpoint, like Metrolist; a build without a
+ * valid pair simply has no Lyprio provider. Its toggle is applied by the runtime like the others.
  */
 fun sharedLyricsProviders(
     http: HttpClient,
@@ -171,10 +170,7 @@ fun sharedLyricsProviders(
     lyprioBuildHmacKey: String = "",
 ): List<LyricsProvider> {
     val paxsenix = paxsenixSettingsOf(preferences)
-    val lyprio = resolveLyprioEndpoint(
-        preferences[LyprioEndpointKey].orEmpty(), preferences[LyprioSigningKeyKey].orEmpty(),
-        lyprioBuildBaseUrl, lyprioBuildHmacKey,
-    )
+    val lyprio = resolveLyprioEndpoint(lyprioBuildBaseUrl, lyprioBuildHmacKey)
     return listOfNotNull(
         lyprio?.let { LyprioLyricsProvider(http, it) },
         // Same relative order as the Android baseProviders list; account-bound providers
