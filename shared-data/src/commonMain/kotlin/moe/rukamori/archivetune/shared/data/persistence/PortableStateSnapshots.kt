@@ -1,6 +1,5 @@
 package moe.rukamori.archivetune.shared.data.persistence
 
-import androidx.room.usePrepared
 import androidx.room.useWriterConnection
 import androidx.sqlite.SQLiteConnection
 

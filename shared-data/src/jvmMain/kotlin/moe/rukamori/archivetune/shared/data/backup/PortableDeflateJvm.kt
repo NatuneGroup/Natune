@@ -7,7 +7,7 @@ import java.util.zip.Deflater
 import java.util.zip.Inflater
 
 internal actual fun portableDeflate(data: ByteArray): ByteArray {
-    if (data.isEmpty()) return data
+    if (data.isEmpty()) return EMPTY_RAW_STREAM
     val deflater = Deflater(Deflater.DEFAULT_COMPRESSION, true)
     try {
         deflater.setInput(data)
@@ -50,5 +50,8 @@ internal actual fun portableInflate(data: ByteArray, size: Int): ByteArray {
         inflater.end()
     }
 }
+
+/** The shortest valid raw DEFLATE stream: one final fixed-Huffman block holding only its end-of-block code. */
+private val EMPTY_RAW_STREAM = byteArrayOf(0x03, 0x00)
 
 private const val COPY_BUFFER_BYTES = 64 * 1024

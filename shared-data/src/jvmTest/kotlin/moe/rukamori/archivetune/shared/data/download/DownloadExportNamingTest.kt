@@ -19,6 +19,17 @@ class DownloadExportNamingTest {
     }
 
     @Test
+    fun collisionSuffixFitsTheByteBudget() {
+        val title = "夜に駆けるアイドル群青ララバイ怪物祝福勇者ミラージュ決意スパークルハルジオン" +
+            "夜に駆けるアイドル群青ララバイ怪物祝福勇者ミラージュ決意スパークルハルジオン" +
+            "夜に駆けるアイドル群青ララバイ怪物祝福勇者ミラージュ決意スパークルハルジオン"
+        val base = DownloadExportNaming.fileBaseName(title, "アーティスト名")
+        // A taken name retries as "name (n).ext"; the largest marker and extension must still fit the cap.
+        assertTrue("$base (2).webm".encodeToByteArray().size <= 255)
+        assertTrue("$base (9999).webm".encodeToByteArray().size <= 255)
+    }
+
+    @Test
     fun asciiLongNameFitsTheByteBudget() {
         val base = DownloadExportNaming.fileBaseName("a".repeat(500), "artist")
         assertTrue("$base.flac".encodeToByteArray().size <= 255)
@@ -27,7 +38,7 @@ class DownloadExportNamingTest {
     @Test
     fun forbiddenCharsBlankAndTrailingDot() {
         assertEquals("a_b", DownloadExportNaming.fileBaseName("a/b", ""))
-        assertEquals("_", DownloadExportNaming.fileBaseName("a:b", "artist").substringAfterLast(' '))
+        assertEquals("a_b", DownloadExportNaming.fileBaseName("a:b", "artist").substringAfterLast(' '))
         assertEquals("song", DownloadExportNaming.fileBaseName("...", ""))
         assertEquals("song", DownloadExportNaming.fileBaseName("   ", ""))
         assertEquals("artist - title", DownloadExportNaming.fileBaseName("title", "artist"))

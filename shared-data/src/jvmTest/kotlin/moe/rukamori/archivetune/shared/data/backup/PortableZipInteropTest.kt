@@ -102,6 +102,10 @@ class PortableZipInteropTest {
 
     @Test
     fun emptyEntryRoundTripsBothWays() {
+        // An empty deflated entry is still a real stream: the shortest valid raw DEFLATE block, never zero bytes.
+        assertContentEquals(byteArrayOf(0x03, 0x00), portableDeflate(byteArrayOf()))
+        assertContentEquals(byteArrayOf(), portableInflate(byteArrayOf(0x03, 0x00), 0))
+
         val archive = PortableZip.write(
             listOf("empty.bin" to byteArrayOf(), "full.bin" to ByteArray(64) { it.toByte() }), nowMillis = 0L,
         )
