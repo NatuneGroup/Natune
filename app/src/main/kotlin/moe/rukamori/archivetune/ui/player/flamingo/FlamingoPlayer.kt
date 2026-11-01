@@ -3263,6 +3263,7 @@ private fun FlamingoQueueMusicListItem(
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     val addedToQueueToast = stringResource(id = R.string.flamingo_queue_added_toast)
+    val queueLocked = moe.rukamori.archivetune.utils.rememberPreference(moe.rukamori.archivetune.constants.QueueLockedKey, defaultValue = false)
     val music = window.mediaItem.metadata
     var rowWidthPx by remember(window.uid) {
         mutableFloatStateOf(0f)
@@ -3337,13 +3338,9 @@ private fun FlamingoQueueMusicListItem(
 
                 resetAnimationJob?.cancel()
                 resetAnimationJob = coroutineScope.launch {
-                    if (shouldRemove && onRemove != null) {
+                    if (shouldRemove && onRemove != null && !queueLocked.value) {
                         deleteAnimating = true
-                        deleteHeightPx = if (rowHeightPx > 0f) {
-                            rowHeightPx
-                        } else {
-                            with(density) { QueueRowHeight.toPx() }
-                        }
+                        deleteHeightPx = if (rowHeightPx > 0f) rowHeightPx else with(density) { QueueRowHeight.toPx() }
 
                         androidx.compose.animation.core.animate(
                             initialValue = swipeOffsetPx,
@@ -3372,6 +3369,8 @@ private fun FlamingoQueueMusicListItem(
 
                         onRemove.invoke()
                         return@launch
+                    } else if (shouldRemove && onRemove != null) {
+                        Toast.makeText(context, R.string.queue_locked_toast, Toast.LENGTH_SHORT).show()
                     }
 
                     if (shouldMoveToNextQueue && onMoveToNextQueue?.invoke() == true) {
