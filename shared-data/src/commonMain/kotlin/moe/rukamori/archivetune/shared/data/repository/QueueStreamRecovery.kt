@@ -115,11 +115,15 @@ internal class QueueStreamRecovery(
                 budgets.remove(mediaId)
                 return null
             }
-            // Same-resource actions keep the resolved locator: a timeout is retried as-is and a network
-            // or renderer rejection is reloaded by the engine, never re-resolving a cached URL.
+            // Same-resource actions keep the resolved locator while it can still be opened: a timeout is
+            // retried as-is and a network or renderer rejection is reloaded by the engine, never
+            // re-resolving a cached URL. A lease already out of its authorization window or a consumed
+            // single-use view falls through to re-resolution instead of replaying a refused locator.
             PlaybackRecoveryAction.RETRY_SAME_URL,
             PlaybackRecoveryAction.INVALIDATE_NETWORK,
-            PlaybackRecoveryAction.REBUILD_RENDERER -> return recovered(current.locator)
+            PlaybackRecoveryAction.REBUILD_RENDERER -> {
+                if (reusable(current.locator, now)) return recovered(current.locator)
+            }
             else -> Unit
         }
         return try {
@@ -145,6 +149,14 @@ internal class QueueStreamRecovery(
             budgets[mediaId] = remaining
         }
     }
+
+    /**
+     * A locator another load may reuse: inside its authorization window and not a single-use prepared
+     * view. One [PlaybackLocator.PreparedPlaintext] handle is one engine load, so any retry of it —
+     * even a same-locator one — resolves a fresh preparation instead of returning the consumed view.
+     */
+    private fun reusable(locator: PlaybackLocator, now: Long): Boolean =
+        locator !is PlaybackLocator.PreparedPlaintext && locator.expiresAtEpochMs?.let { it > now } != false
 
     private suspend fun locate(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator? =
         try {

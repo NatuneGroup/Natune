@@ -23,6 +23,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackOutputRoute
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackPort
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
+import moe.rukamori.archivetune.shared.domain.playback.PreparedPlaintextHandle
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -81,14 +82,65 @@ class PortableQueueRecoveryPolicyTest {
     }
 
     @Test
-    fun anUndocumentedDecodeFailureRebuildsAroundTheSameResource() = runTest(UnconfinedTestDispatcher()) {
+    fun anUndocumentedDecodeFailureResolvesAFreshLocator() = runTest(UnconfinedTestDispatcher()) {
         val h = Harness(backgroundScope)
         h.start(2)
         runCurrent()
+        // Native engines collapse expired leases and refused reads into DECODE_FAILED without evidence.
+        // With nothing naming the decode stage, recovery re-resolves instead of replaying the locator.
         h.port.failures.emit(h.failure(reason = PlaybackFailureReason.DECODE_FAILED, status = null))
+        runCurrent()
+        assertEquals(AudioSourceType.TIDAL, h.locators.recoveries.single().refreshSource)
+        assertEquals("https://cdn.invalid/fresh", (h.loads.last().request.locator as PlaybackLocator.Remote).url)
+        assertTrue(h.finalFailures.isEmpty())
+    }
+
+    @Test
+    fun aNamedDecodeStageFailureRebuildsAroundTheSameResource() = runTest(UnconfinedTestDispatcher()) {
+        val h = Harness(backgroundScope)
+        h.start(2)
+        runCurrent()
+        // A cause naming the decode stage is evidence the locator itself is still valid.
+        h.port.failures.emit(h.failure(
+            reason = PlaybackFailureReason.DECODE_FAILED, status = null,
+            causes = listOf("MediaCodecDecoderException: codec failed"),
+        ))
         runCurrent()
         assertTrue(h.locators.recoveries.isEmpty())
         assertSame(h.locators.initial, h.loads.last().request.locator)
+        assertTrue(h.finalFailures.isEmpty())
+    }
+
+    @Test
+    fun anExpiredRemoteLocatorIsRefreshedInsteadOfRebuilt() = runTest(UnconfinedTestDispatcher()) {
+        val h = Harness(backgroundScope,
+            initial = remote(AudioSourceType.TIDAL, "stale", expiresAtEpochMs = 5_000L))
+        h.now = 10_000L
+        h.start(2)
+        runCurrent()
+        // Decode-stage evidence alone would rebuild around the locator, but its window already closed.
+        h.port.failures.emit(h.failure(
+            reason = PlaybackFailureReason.DECODE_FAILED, status = null,
+            causes = listOf("MediaCodecDecoderException: codec failed"),
+        ))
+        runCurrent()
+        assertEquals(AudioSourceType.TIDAL, h.locators.recoveries.single().refreshSource)
+        assertEquals("https://cdn.invalid/fresh", (h.loads.last().request.locator as PlaybackLocator.Remote).url)
+        assertTrue(h.finalFailures.isEmpty())
+    }
+
+    @Test
+    fun aConsumedPreparedLocatorIsRepreparedOnAnyRetry() = runTest(UnconfinedTestDispatcher()) {
+        val h = Harness(backgroundScope,
+            initial = PlaybackLocator.PreparedPlaintext(FakePreparedHandle(), AudioSourceType.TIDAL))
+        h.start(2)
+        runCurrent()
+        // One handle is one view: even a same-URL retry resolves a fresh preparation, because the
+        // consumed view would only be refused again.
+        h.port.failures.emit(h.failure(status = 408))
+        runCurrent()
+        assertEquals(AudioSourceType.TIDAL, h.locators.recoveries.single().refreshSource)
+        assertEquals("https://cdn.invalid/fresh", (h.loads.last().request.locator as PlaybackLocator.Remote).url)
         assertTrue(h.finalFailures.isEmpty())
     }
 
@@ -264,6 +316,12 @@ class PortableQueueRecoveryPolicyTest {
         override fun close() = Unit
     }
 
+    private class FakePreparedHandle(override val expiresAtEpochMs: Long? = null) : PreparedPlaintextHandle {
+        override val mimeType: String = "audio/flac"
+        override val codec: String = "flac"
+        override val lengthBytes: Long = 1_024L
+    }
+
     private class Locators(val initial: PlaybackLocator) : QueueLocatorResolver {
         val recoveries = mutableListOf<QueueSourceRecovery>()
         var refreshAvailable = true
@@ -362,11 +420,12 @@ class PortableQueueRecoveryPolicyTest {
         fun failure(
             reason: PlaybackFailureReason = PlaybackFailureReason.OPEN_FAILED,
             status: Int? = 403,
+            causes: List<String> = emptyList(),
         ): PlaybackFailure {
             val loaded = loads.last().request
             return PlaybackFailure(
                 loaded.occurrenceId, reason, "fixture failure",
-                httpStatus = status, attemptId = loaded.attemptId,
+                httpStatus = status, causes = causes, attemptId = loaded.attemptId,
             )
         }
     }
@@ -377,7 +436,7 @@ class PortableQueueRecoveryPolicyTest {
         fun item(mediaId: String) =
             ContentItem(ContentRef("youtube", ContentKind.SONG, mediaId), "Song")
 
-        fun remote(source: AudioSourceType, suffix: String) =
-            PlaybackLocator.Remote("https://cdn.invalid/$suffix", source = source)
+        fun remote(source: AudioSourceType, suffix: String, expiresAtEpochMs: Long? = null) =
+            PlaybackLocator.Remote("https://cdn.invalid/$suffix", source = source, expiresAtEpochMs = expiresAtEpochMs)
     }
 }
