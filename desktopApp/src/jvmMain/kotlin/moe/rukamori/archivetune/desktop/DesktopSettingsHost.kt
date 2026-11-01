@@ -515,6 +515,7 @@ internal fun DesktopSettingsScreen(
                 checkEndpoints = { preferences -> PaxsenixDiagnostics(graph.http, paxsenixSettingsOf(preferences)).checkProviderPaths() },
                 onFailure = onFailure,
                 scrollTo = scrollTo,
+                lyprioBuiltInServer = DesktopCredentials.lyprioEndpoint != null,
             )
             "settings/ai_integration" -> AiIntegrationSettings(
                 controller = owners.controller,

@@ -339,6 +339,7 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
     )
     // The JVM publishes no network events; a lookup offline simply misses, and a cached answer still shows.
+    // The build-time Lyprio pair only supplies a bundled server while the user has entered neither field.
     val lyrics = HostLyrics(
         scope = scope,
         http = http,
@@ -347,6 +348,8 @@ internal suspend fun assembleDesktopSessionOwners(
         queue = queue.state,
         networkAvailable = { true },
         report = ::desktopDiagnostic,
+        lyprioBuildBaseUrl = DesktopCredentials.lyprioBaseUrl,
+        lyprioBuildHmacKey = DesktopCredentials.lyprioHmacKey,
     )
     val pack = try {
         jvmJapaneseLanguagePackManager(
