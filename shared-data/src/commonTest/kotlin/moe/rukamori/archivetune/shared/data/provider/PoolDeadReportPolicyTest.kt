@@ -1,8 +1,10 @@
 package moe.rukamori.archivetune.shared.data.provider
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlin.test.*
@@ -52,16 +54,18 @@ class PoolDeadReportPolicyTest {
         val reporter = reporter(clock)
         var credential = "stale"
         var recoveries = 0
+        var retries = 0
         val reports = mutableListOf<String>()
         suspend fun fail(): String? = reporter.recoverAndReport(
             "tidal", 9L, PoolFailureKind.AUTH_REJECTED, stale = credential,
             current = { credential },
-            recover = { recoveries++ },
-            retry = { PoolRetryOutcome.Failure(PoolFailureKind.AUTH_REJECTED) },
+            recover = { recoveries++; credential = "fresh" },
+            retry = { retries++; PoolRetryOutcome.Failure(PoolFailureKind.AUTH_REJECTED) },
         ) { type -> reports += type }
-        assertNull(fail())          // the lease never moved, so dead is reported
-        assertNull(fail())          // and a second failure inside the window stays deduped
+        assertNull(fail())          // the lease moved, and the fresh credential is refused too
+        assertNull(fail())          // a second failure inside the window stays deduped
         assertEquals(listOf("dead"), reports)
+        assertEquals(1, retries)    // the report fired only after the bounded retry refused again
         assertEquals(1, recoveries) // the second failure was inside the recovery window too
     }
 
@@ -87,11 +91,14 @@ class PoolDeadReportPolicyTest {
         assertEquals(0, reports)
 
         reports = 0
+        var arl = "arl"
         val dead = awaitAll(
             async { reporter.recoverAndReport<String, String>("deezer", 8L, PoolFailureKind.AUTH_REJECTED, "arl",
-                current = { "arl" }, recover = { }, retry = { PoolRetryOutcome.Failure(PoolFailureKind.AUTH_REJECTED) }) { reports++ } },
+                current = { arl }, recover = { arl = "rotated" },
+                retry = { PoolRetryOutcome.Failure(PoolFailureKind.AUTH_REJECTED) }) { reports++ } },
             async { reporter.recoverAndReport<String, String>("deezer", 8L, PoolFailureKind.AUTH_REJECTED, "arl",
-                current = { "arl" }, recover = { }, retry = { PoolRetryOutcome.Failure(PoolFailureKind.AUTH_REJECTED) }) { reports++ } },
+                current = { arl }, recover = { arl = "rotated2" },
+                retry = { PoolRetryOutcome.Failure(PoolFailureKind.AUTH_REJECTED) }) { reports++ } },
         )
         assertTrue(dead.all { it == null })
         assertEquals(1, reports)      // concurrent dead verdicts collapse into one report
@@ -144,5 +151,81 @@ class PoolDeadReportPolicyTest {
         assertTrue(gate.allow("tidal", 1L, "dead"))           // the window lapsed
         assertFalse(gate.allow("tidal", null, "dead"))        // manual accounts never report
         assertFalse(gate.allow("tidal", 0L, "dead"))
+    }
+
+    @Test fun unmovedOrUnavailableLeaseNeverReports() = runTest {
+        val clock = TestClock()
+        val reporter = reporter(clock)
+        var retries = 0
+        val reports = mutableListOf<String>()
+        // The feed still serves the credential that failed: it believes the account healthy, so
+        // the refusal the caller saw was the stale token — nothing about the account is proven.
+        assertNull(
+            reporter.recoverAndReport<String, String>(
+                "tidal", 11L, PoolFailureKind.AUTH_REJECTED, "stale",
+                current = { "stale" }, recover = { },
+                retry = { retries++; PoolRetryOutcome.Success(it) },
+            ) { type -> reports += type },
+        )
+        // The feed cannot even name the credential — no round-trip completed — so no verdict.
+        assertNull(
+            reporter.recoverAndReport<String, String>(
+                "tidal", 12L, PoolFailureKind.AUTH_REJECTED, "stale",
+                current = { null }, recover = { },
+                retry = { retries++; PoolRetryOutcome.Success(it) },
+            ) { type -> reports += type },
+        )
+        assertEquals(0, retries)
+        assertTrue(reports.isEmpty())
+    }
+
+    @Test fun cancelledLeaderRollsBackAndWaiterRecovers() = runTest {
+        val clock = TestClock()
+        val reporter = reporter(clock)
+        var credential = "stale"
+        var recoveries = 0
+        val reports = mutableListOf<String>()
+        val leader = async {
+            reporter.recoverAndReport<String, String>(
+                "tidal", 6L, PoolFailureKind.AUTH_REJECTED, "stale",
+                current = { credential },
+                recover = { delay(Long.MAX_VALUE) },
+                retry = { PoolRetryOutcome.Success(it) },
+            ) { type -> reports += type }
+        }
+        runCurrent() // the leader admits the recovery window, then parks inside the round-trip
+        val waiter = async {
+            reporter.recoverAndReport<String, String>(
+                "tidal", 6L, PoolFailureKind.AUTH_REJECTED, "stale",
+                current = { credential },
+                recover = { recoveries++; credential = "fresh" },
+                retry = { PoolRetryOutcome.Success("stream:$it") },
+            ) { type -> reports += type }
+        }
+        runCurrent() // the waiter queues on the flight gate behind the leader
+        leader.cancel()
+        assertEquals("stream:fresh", waiter.await())
+        assertFailsWith<CancellationException> { leader.await() }
+        assertEquals(1, recoveries)
+        assertTrue(reports.isEmpty())
+    }
+
+    @Test fun flightsArePerKeyAndTheirMapEmptiesAfterward() = runTest {
+        val flights = KeyedSingleFlight()
+        val order = mutableListOf<String>()
+        val first = async {
+            flights.run("tidal:1", satisfied = { null }) { delay(10); order += "one"; "one" }
+        }
+        val second = async {
+            flights.run("tidal:2", satisfied = { null }) { delay(5); order += "two"; "two" }
+        }
+        val waiter = async {
+            flights.run("tidal:1", satisfied = { null }) { delay(1); order += "waiter"; "waiter" }
+        }
+        assertEquals(listOf("one", "two", "waiter"), awaitAll(first, second, waiter))
+        // "two" finished before "one" — distinct keys never shared a gate; the same-key waiter
+        // queued behind its leader and ran last.
+        assertEquals(listOf("two", "one", "waiter"), order)
+        assertEquals(0, flights.trackedKeyCount())
     }
 }

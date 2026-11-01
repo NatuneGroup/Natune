@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.data.provider
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.rukamori.archivetune.shared.domain.repository.TerminalPlaybackAuthentication
@@ -86,9 +87,15 @@ class PoolReportGate(
             val last = admittedAt[key]
             if (last != null && now - last < windowMs) return@withLock false
             admittedAt[key] = now
-            admittedAt.entries.removeIf { now - it.value > windowMs }
+            admittedAt.entries.removeAll { now - it.value > windowMs }
             true
         }
+    }
+
+    /** Removes an admission: the caller that took it never finished the work it paid for. */
+    suspend fun rollback(service: String, id: Long?, type: String) {
+        if (id == null || id <= 0L) return
+        lock.withLock { admittedAt.remove("$service:$id:$type") }
     }
 }
 
@@ -99,6 +106,24 @@ sealed interface PoolRetryOutcome<out R> {
 
     /** The retry failed; [kind] decides whether that now means a dead account. */
     data class Failure(val kind: PoolFailureKind) : PoolRetryOutcome<Nothing>
+}
+
+/**
+ * What one recovery round-trip actually produced. Only [Recovered] proves the server re-leased a
+ * live credential; [Unchanged] means the feed still serves the same credential — it believes the
+ * account healthy, so the refusal the caller saw was the old token, not a dead account — and
+ * [Unavailable] means no recovery round-trip completed at all (no context, a throttled or failed
+ * feed fetch, a skipped gate). Neither justifies reporting an account dead.
+ */
+sealed interface PoolRecovery<out C> {
+    /** The lease moved: [credential] is what the server now serves for the account. */
+    data class Recovered<C>(val credential: C) : PoolRecovery<C>
+
+    /** The lease still serves the same credential it was tried with. */
+    object Unchanged : PoolRecovery<Nothing>
+
+    /** No recovery could run or the current credential could not be read back. */
+    object Unavailable : PoolRecovery<Nothing>
 }
 
 /**
@@ -135,7 +160,10 @@ class PoolDeadReporter(
      * Runs [recover] at most once at a time per account and at most once per recovery window.
      * Callers that queued behind an in-flight recovery re-check [current] inside the flight and
      * reuse the winner's result instead of recovering again — the tidalapi compare-inside-lock
-     * pattern. Answers the fresh credential marker, or null when the lease did not move.
+     * pattern. The answer is explicit: [PoolRecovery.Recovered] when the lease moved,
+     * [PoolRecovery.Unchanged] when it did not, [PoolRecovery.Unavailable] when no round-trip
+     * could run. A leader cancelled inside [recover] gives its admission back so a queued waiter
+     * can take over immediately instead of waiting out the window.
      */
     suspend fun <C : Any> reLease(
         service: String,
@@ -143,14 +171,30 @@ class PoolDeadReporter(
         stale: C,
         current: suspend () -> C?,
         recover: suspend () -> Unit,
-    ): C? = flights.run(
+    ): PoolRecovery<C> = flights.run(
         key = "$service:${id ?: 0L}",
-        satisfied = { current()?.takeIf { it != stale } },
+        satisfied = { current()?.takeIf { it != stale }?.let { PoolRecovery.Recovered(it) } },
         block = {
             // Only the first caller inside the window pays for the round-trip; a caller that
             // arrives after a completed run just re-reads whatever it left.
-            if (recoveryGate.allow(service, id, "recover")) recover()
-            current()?.takeIf { it != stale }
+            if (recoveryGate.allow(service, id, "recover")) {
+                try {
+                    recover()
+                } catch (cancelled: CancellationException) {
+                    recoveryGate.rollback(service, id, "recover")
+                    throw cancelled
+                } catch (_: Exception) {
+                    // A failed round-trip leaves the marker read to answer Unavailable/Unchanged.
+                }
+            }
+            val marker = runCatching { current() }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
+            when {
+                marker == null -> PoolRecovery.Unavailable
+                marker == stale -> PoolRecovery.Unchanged
+                else -> PoolRecovery.Recovered(marker)
+            }
         },
     )
 
@@ -177,12 +221,13 @@ class PoolDeadReporter(
             return null
         }
         if (!PoolDeadReportPolicy.needsRecovery(kind)) return null
-        val fresh = reLease(service, id, stale, current, recover)
-        if (fresh == null) {
-            report(service, id, PoolDeadReportPolicy.DEAD) { report(PoolDeadReportPolicy.DEAD) }
-            return null
-        }
-        return when (val outcome = retry(fresh)) {
+        val recovery = reLease(service, id, stale, current, recover)
+        // Only a moved lease earns a verdict: the credential the server now serves is retried
+        // exactly once, and only the retry's own rejection — another auth refusal, or an
+        // entitlement loss — is real evidence the account is dead. An unmoved lease just means
+        // the old token was stale; an unavailable recovery proves nothing.
+        if (recovery !is PoolRecovery.Recovered) return null
+        return when (val outcome = retry(recovery.credential)) {
             is PoolRetryOutcome.Success -> outcome.value
             is PoolRetryOutcome.Failure -> {
                 PoolDeadReportPolicy.reportTypeFor(outcome.kind)?.let { type ->
