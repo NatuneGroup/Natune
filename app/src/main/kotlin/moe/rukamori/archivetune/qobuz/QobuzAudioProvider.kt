@@ -223,7 +223,7 @@ object QobuzAudioProvider {
     @Volatile
     private var discoveryCacheExpiresAt: Long = 0L
 
-    private const val DISCOVERY_CACHE_MS = 10 * 60 * 1000L
+    private const val DISCOVERY_CACHE_MS = 30 * 60 * 1000L
 
     fun discoverInstances(): List<String> {
         if (!PoolAccountManager.isPoolEnabled()) {
@@ -232,7 +232,7 @@ object QobuzAudioProvider {
         }
         if (instanceDiscoverySources.isEmpty()) return emptyList()
         val now = System.currentTimeMillis()
-        if (now < discoveryCacheExpiresAt && discoveryCache.isNotEmpty()) return discoveryCache
+        if (now < discoveryCacheExpiresAt) return discoveryCache
         val discovered = LinkedHashSet<String>()
         for (source in instanceDiscoverySources) {
             if (!PoolAccountManager.isPoolEnabled()) break
@@ -293,8 +293,8 @@ object QobuzAudioProvider {
         if (result.isNotEmpty()) {
             discoveryCache = result
             poolDiscoveredUrls = result
-            discoveryCacheExpiresAt = System.currentTimeMillis() + DISCOVERY_CACHE_MS
         }
+        discoveryCacheExpiresAt = System.currentTimeMillis() + DISCOVERY_CACHE_MS
         return result
     }
 

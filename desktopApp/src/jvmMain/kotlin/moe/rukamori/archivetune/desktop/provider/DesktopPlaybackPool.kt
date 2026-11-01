@@ -33,6 +33,7 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.desktop.DesktopCredentials
 import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
+import moe.rukamori.archivetune.shared.data.provider.PoolAuthBackoff
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReporter
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
@@ -101,6 +102,8 @@ internal class DesktopPlaybackPool(
     /** "service:id" to the time the account is worth trying first again. */
     private val cooldownUntil = ConcurrentHashMap<String, Long>()
     private val reportedAt = ConcurrentHashMap<String, Long>()
+    private val expiredReLeaseAt = ConcurrentHashMap<String, Long>()
+    private val authBackoff = PoolAuthBackoff()
 
     /** The Playback Pool switch, on by default as on Android, and only while a deployment is configured. */
     fun enabled(): Boolean = configured && (preferences()?.get(UsePoolAccountsKey) ?: true)
@@ -118,7 +121,7 @@ internal class DesktopPlaybackPool(
     suspend fun tidalAccounts(): List<TidalPoolAccount> {
         if (!enabled()) return emptyList()
         ensureLoaded()
-        if (tidal.any { accessTokenExpired(it.token, nowMs()) }) refresh(force = true)
+        if (tidal.any { accessTokenExpired(it.token, nowMs()) }) reLeaseExpired(TIDAL)
         if (!enabled()) return emptyList()
         return tidal.sortedWith(compareBy({ coolingDown(TIDAL, it.id) }, { !it.premium }))
     }
@@ -133,6 +136,19 @@ internal class DesktopPlaybackPool(
         if (!enabled()) return emptyList()
         ensureLoaded()
         return qobuz.sortedWith(compareBy({ coolingDown(QOBUZ, it.id) }, { !it.premium }))
+    }
+
+    /**
+     * One forced re-lease per service inside [PoolDeadReportPolicy.RECOVERY_DEDUPE_MS]. A token
+     * already known expired still earns a feed fetch, but a feed that keeps serving expiring
+     * leases can no longer turn every resolve into a request.
+     */
+    private suspend fun reLeaseExpired(service: String) {
+        val now = nowMs()
+        val admitted = expiredReLeaseAt.merge(service, now) { last, fresh ->
+            if (now - last < PoolDeadReportPolicy.RECOVERY_DEDUPE_MS) last else fresh
+        } == now
+        if (admitted) refresh(force = true)
     }
 
     /** The credential the feed last served, with no load or refresh — the marker a recovery compares. */
@@ -257,6 +273,11 @@ internal class DesktopPlaybackPool(
         ensureLoaded()
         return mutex.withLock {
             if (!enabled()) return@withLock false
+            // A refused read key earns a persisted exponential backoff even forced calls respect;
+            // it lifts on its own success or when the presented key changes.
+            val keyHash = readKey.hashCode()
+            if (authBackoff.clearsFor(keyHash)) authBackoff.reset()
+            if (authBackoff.blocked(nowMs())) return@withLock hasAccounts()
             if (!shouldRefresh(nowMs(), lastAttemptAtMs, refreshIntervalMs(), force)) return@withLock hasAccounts()
             lastAttemptAtMs = nowMs()
             var result = fetch("/api/accounts")
@@ -264,6 +285,7 @@ internal class DesktopPlaybackPool(
             val root = result?.takeIf { it.first == 200 }?.second?.let(::parseObject)
             when {
                 root != null && enabled() -> {
+                    authBackoff.reset()
                     val decrypt = decryptorFor(root)
                     val nextTidal = parseTidal(accountsArray(root, TIDAL), decrypt)
                     val nextDeezer = parseDeezer(accountsArray(root, DEEZER), decrypt)
@@ -277,7 +299,10 @@ internal class DesktopPlaybackPool(
                     }
                 }
                 result == null -> log("Playback Pool could not be reached")
-                result.first == 401 -> log("Playback Pool rejected the read key (HTTP 401)")
+                result.first == 401 -> {
+                    authBackoff.onAuthRejected(nowMs(), keyHash)
+                    log("Playback Pool rejected the read key (HTTP 401)")
+                }
                 result.first == 404 -> log("Playback Pool: no pool API at the configured deployment (HTTP 404)")
                 else -> log("Playback Pool feed returned HTTP ${result.first}")
             }
@@ -308,6 +333,11 @@ internal class DesktopPlaybackPool(
                 vault.read(CACHE_KEY)?.let(::parseObject)?.let { cached ->
                     val passthrough: (String) -> String? = { it }
                     lastAttemptAtMs = (cached["attemptAt"] as? JsonPrimitive)?.longOrNull ?: 0L
+                    authBackoff.restore(
+                        (cached["authFailAt"] as? JsonPrimitive)?.longOrNull ?: 0L,
+                        (cached["authBackoffMs"] as? JsonPrimitive)?.longOrNull ?: 0L,
+                        (cached["authKeyHash"] as? JsonPrimitive)?.longOrNull?.toInt() ?: 0,
+                    )
                     if (enabled()) {
                         tidal = parseTidal(cached[TIDAL] as? JsonArray, passthrough)
                         deezer = parseDeezer(cached[DEEZER] as? JsonArray, passthrough)
@@ -327,6 +357,9 @@ internal class DesktopPlaybackPool(
     private suspend fun persist() {
         val document = buildJsonObject {
             put("attemptAt", lastAttemptAtMs)
+            put("authFailAt", authBackoff.failedAtMs)
+            put("authBackoffMs", authBackoff.windowMs)
+            put("authKeyHash", authBackoff.failedKeyHash)
             put(TIDAL, buildJsonArray {
                 tidal.forEach { account ->
                     add(buildJsonObject {

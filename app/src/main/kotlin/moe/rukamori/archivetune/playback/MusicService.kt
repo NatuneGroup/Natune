@@ -10356,7 +10356,7 @@ class MusicService :
             //    live ~an hour while the cache lives a day, so re-lease once up front instead of
             //    paying for a sure 401 that would then report a healthy account dead.
             if (PoolAccountManager.tidalAccounts().any { TidalAccountManager.isAccessTokenExpired(it.token) }) {
-                runCatching { runBlocking(Dispatchers.IO) { PoolAccountManager.refresh(applicationContext, force = true) } }
+                runCatching { runBlocking(Dispatchers.IO) { PoolAccountManager.reLeaseExpired(applicationContext, "tidal") } }
             }
             for (poolAccount in PoolAccountManager.tidalAccounts()) {
                 val poolCountry = poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
