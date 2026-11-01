@@ -34,14 +34,16 @@ data class PlaylistPickerCandidate(
 /** The ordering the add-to-playlist picker applies to its candidates. */
 object PlaylistPickerOrder {
     /**
-     * The candidates in [sort]'s order. [collation] orders names as the device collator does; every other key comes
-     * from the stored values. Descending reverses the ascending order, as the baseline picker does.
+     * The candidates in [sort]'s order. [collation] orders names as the device collator does and defaults to a
+     * case-insensitive order; every other key comes from the stored values. Descending reverses the ascending
+     * order, as the baseline picker does.
      */
     fun sorted(
         candidates: List<PlaylistPickerCandidate>,
         sort: PlaylistPickerSortType,
         descending: Boolean,
-        collation: Comparator<String> = naturalOrder(),
+        collation: Comparator<String> =
+            Comparator { left, right -> left.compareTo(right, ignoreCase = true) },
     ): List<PlaylistPickerCandidate> {
         val ascending =
             when (sort) {

@@ -162,6 +162,11 @@ private struct SystemLyricsList: View {
                 following = true
                 scroll(proxy, to: primary, animated: false)
             }
+            .onChange(of: frame.reanchor) { _, _ in
+                // A feed jump on the same timeline snaps rather than animates, but it is not a
+                // seek — it never ends a listener's hold.
+                if following { scroll(proxy, to: primary, animated: false) }
+            }
             .task(id: resumeToken) {
                 // The list follows the song again once the listener has left it alone for the shared hold.
                 guard resumeToken > 0 else { return }

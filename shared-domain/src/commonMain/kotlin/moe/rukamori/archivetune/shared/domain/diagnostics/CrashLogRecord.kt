@@ -39,8 +39,9 @@ private const val RECORD_SUFFIX = ".txt"
 /** Two reports of the same death inside a minute count once, as on Android. */
 private const val SAME_EVENT_WINDOW_MS = 60_000L
 
+/** A report that captured no pid (0) is indistinguishable, so pid matching stays open on both sides. */
 fun CrashLogRecord.isSameEventAs(pid: Int, kind: CrashLogKind, timestampMs: Long): Boolean =
-    this.kind == kind && (this.pid == pid || this.pid == 0) &&
+    this.kind == kind && (this.pid == pid || this.pid == 0 || pid == 0) &&
         abs(this.timestampMs - timestampMs) <= SAME_EVENT_WINDOW_MS
 
 /** The on-disk form: single-line fields, then the body after its separator, bounded at encode. */

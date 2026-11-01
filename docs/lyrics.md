@@ -162,9 +162,10 @@ them skipped under reduced motion:
   motion, and ends at once on a drag, a seek or a hidden surface. Without a glide, a line at hand
   eases to the anchor on a fixed 350 ms ease-in-out scroll; a far one keeps the distance-covering
   animation. The line settles at 35% of the box, about a third from the top, and the manual-scroll
-  hold is 4.5 s. A feed jump past 1 s is treated as a seek and re-anchors at once.
-- The reading and translation slide in under the line over about 0.6 s when the line activates,
-  and stay once revealed.
+  hold is 4.5 s. A feed jump past 1 s re-anchors at once like a seek, but it does not end the hold —
+  only a seek or a new session does.
+- The reading and translation slide in under the line over about 0.6 s when they publish to the
+  row — a reading is for reading ahead, so it does not wait for the line to activate.
 - A TTML document's songwriters and its machine-made translation/transliteration flags
   (`LyricsParser.parseTtmlCredits`) close the list as a dim credits footer; a provider-supplied
   reading is never badged.
