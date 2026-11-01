@@ -90,7 +90,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
+
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -98,12 +98,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
+
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -158,6 +156,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -165,6 +164,7 @@ import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -175,7 +175,7 @@ private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
 /** The shortest span the karaoke sweep animates for; the slowest idle re-poll below it. */
 private const val ENHANCED_SWEEP_MIN_MS = 150L
 private const val IDLE_POLL_MS = 250L
-private const val MANUAL_SCROLL_TIMEOUT_MS = 3000L
+private const val MANUAL_SCROLL_TIMEOUT_MS = 4500L
 private const val MANUAL_SCROLL_DEBOUNCE_MS = 50L
 private const val LYRIC_FIRST_FOCUS_SETTLE_FRAMES = 42
 private const val LYRIC_FIRST_FOCUS_EMPTY_FRAMES = 6
@@ -200,12 +200,12 @@ private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 900L
 private const val LINE_SYNCED_MAX_FOCUS_HOLD_MS = 5_000L
 // The last line has no successor to butt against, so give it a fixed window.
 private const val LINE_SYNCED_TRAILING_LINE_DURATION_MS = 4_000L
-// Minimum backward position jump (in ms) that we treat as a "reset" trigger —
-// large enough to ride through ExoPlayer's normal position jitter (which is
-// well under 200ms even on a stuttering device) and minor playback corrections,
-// small enough to catch any real seek-backward or REPEAT_MODE_ONE wrap (which
-// is typically a jump from near the end of the song back to 0, i.e. minutes).
-private const val POSITION_RESET_BACKWARD_THRESHOLD_MS = 1000L
+// Minimum position jump in either direction (in ms) that we treat as a "reset"
+// trigger — large enough to ride through ExoPlayer's normal position jitter
+// (which is well under 200ms even on a stuttering device) and minor playback
+// corrections, small enough to catch any real seek or REPEAT_MODE_ONE wrap
+// (which is typically a jump from near the end of the song back to 0, i.e. minutes).
+private const val POSITION_RESET_THRESHOLD_MS = 1000L
 
 // How long the first build waits for the built-in romanisation pass before publishing without it. Romanising is
 // local work that normally lands inside this, so the first placement already measures the phonetic rows; a later
@@ -345,6 +345,11 @@ fun LyricsEnhanced(
 
     val isSynced = remember(lyrics) { lyrics != null && (isLineSyncedLrc(lyrics!!) || isTtml(lyrics!!)) }
     val isTtmlFormat = remember(lyrics) { lyrics != null && isTtml(lyrics!!) }
+    // The document's credits: songwriters close the list; machine-made lines carry the badge.
+    val lyricsCredits =
+        remember(lyrics) {
+            lyrics?.takeIf { isTtml(it) }?.let { LyricsParser.parseTtmlCredits(it) }
+        }
 
     // Parsed off the composition thread. `null` means "not parsed yet" — the render `when` below
     // keeps the shimmer up on that state instead of falling through to "lyrics not found".
@@ -613,12 +618,13 @@ fun LyricsEnhanced(
         var anchorPlayerPositionMs = player.currentPosition.coerceAtLeast(0L)
         var anchorFrameNanos = 0L
         var lastRawPositionMs = player.currentPosition.coerceAtLeast(0L)
-        // Cache the current line index + boundary timestamps to avoid calling
-        // findLastStartedLineIndex (binary search) every frame.
+        // Cache the current line index + activation boundary timestamps to avoid
+        // the binary search every frame.
         var lastLyricsRef: SyncedLyrics? = null
         var cachedLineIdx = -1
         var cachedCurrentLineStart = Int.MIN_VALUE
         var cachedNextLineStart = Int.MAX_VALUE
+        var cachedActivationStarts: IntArray? = null
         // Parks the frame loop while the screen is not resumed, so a paused or backgrounded lyrics view stops polling.
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (isActive) {
@@ -630,18 +636,19 @@ fun LyricsEnhanced(
                 wasSliderActive = isSliderActive
 
                 val rawPosition = (sliderPosition ?: player.currentPosition).coerceAtLeast(0L)
-                // Detect a backward position discontinuity, measured against the
-                // PLAYER's clock rather than the slider-provided value. This catches
-                // both REPEAT_MODE_ONE wraps (duration -> 0) and explicit backward
-                // seeks, while the 1s threshold excludes playback jitter and minor
-                // ExoPlayer position corrections.
+                // Detect a position discontinuity in either direction, measured
+                // against the PLAYER's clock rather than the slider-provided value. This
+                // catches REPEAT_MODE_ONE wraps (duration -> 0) and explicit seeks both
+                // backward and forward, while the 1s threshold excludes playback jitter
+                // and minor ExoPlayer position corrections. A forward jump re-keys the
+                // list the same way so the new line snaps in rather than scrolling the gap.
                 //
                 // Do NOT gate this on `sliderPosition == null`: the Apple Music player always installs
                 // a slider provider, so the gate would disable restart detection there and the lyrics
                 // would snap back to the first line without re-animating until the overlay was
                 // reopened.
                 val rawPlayerPosition = player.currentPosition.coerceAtLeast(0L)
-                if (lastRawPositionMs - rawPlayerPosition > POSITION_RESET_BACKWARD_THRESHOLD_MS) {
+                if (abs(rawPlayerPosition - lastRawPositionMs) > POSITION_RESET_THRESHOLD_MS) {
                     positionResetCounter += 1
                 }
                 lastRawPositionMs = rawPlayerPosition
@@ -737,6 +744,7 @@ fun LyricsEnhanced(
                     if (lyricsChanged) {
                         lastLyricsRef = syncedLyricsNow
                         cachedLineIdx = -1
+                        cachedActivationStarts = null
                     }
                     val pos = effectivePositionMs.toInt()
                     val needsResearch =
@@ -744,12 +752,20 @@ fun LyricsEnhanced(
                             pos >= cachedNextLineStart ||
                             pos < cachedCurrentLineStart
                     if (needsResearch) {
-                        val newLineIdx = syncedLyricsNow.findLastStartedLineIndex(pos)
+                        // The lit line opens its activation-lead early; the word sweep still
+                        // follows the real starts, which the pane reads for itself.
+                        val activationStarts =
+                            cachedActivationStarts
+                                ?: enhancedActivationStarts(
+                                    IntArray(syncedLyricsNow.lines.size) { syncedLyricsNow.lines[it].start },
+                                    IntArray(syncedLyricsNow.lines.size) { syncedLyricsNow.lines[it].end },
+                                ).also { cachedActivationStarts = it }
+                        val newLineIdx = activeSyncedLineIndex(activationStarts, pos)
                         cachedLineIdx = newLineIdx
                         cachedCurrentLineStart =
-                            if (newLineIdx >= 0) syncedLyricsNow.lines[newLineIdx].start else Int.MIN_VALUE
+                            if (newLineIdx >= 0) activationStarts[newLineIdx] else Int.MIN_VALUE
                         cachedNextLineStart =
-                            syncedLyricsNow.lines.getOrNull(newLineIdx + 1)?.start ?: Int.MAX_VALUE
+                            activationStarts.getOrNull(newLineIdx + 1) ?: Int.MAX_VALUE
                         if (newLineIdx != currentLineIndexState.intValue) {
                             currentLineIndexState.intValue = newLineIdx
                         }
@@ -1181,6 +1197,7 @@ fun LyricsEnhanced(
                         // not mid-scroll). This passes only the user's line-blur choice.
                         useBlurEffect = lyricsLineBlur,
                         manualScrolling = isManualScrolling,
+                        credits = lyricsCredits,
                         showTranslation = showTranslations,
                         showPhonetic = romanizationPreferences.showsRomanization,
                         maxContentWidth = if (spotifyStyle) 760.dp else 860.dp,
@@ -1586,24 +1603,6 @@ private fun ISyncedLine.lineText(): String =
 
 private fun ISyncedLine.selectionKey(text: String = lineText()): String = "$start:$end:${text.hashCode()}"
 
-private fun SyncedLyrics.findLastStartedLineIndex(time: Int): Int {
-    var low = 0
-    var high = lines.lastIndex
-    var result = -1
-
-    while (low <= high) {
-        val mid = low + (high - low) / 2
-        if (lines[mid].start <= time) {
-            result = mid
-            low = mid + 1
-        } else {
-            high = mid - 1
-        }
-    }
-
-    return result
-}
-
 private fun List<WordTimestamp>.toKaraokeSyllables(phonetics: List<String?>): List<KaraokeSyllable> =
     mapIndexed { index, word ->
         val start = word.startTime.toMilliseconds()
@@ -1881,94 +1880,4 @@ private fun SingleActiveLineCluster(
     }
 }
 
-/**
- * Word-timed karaoke sweep: each syllable's colour interpolates from the dimmed rest colour to the
- * full text colour across its own [start, end].
- */
-@Composable
-internal fun KaraokeSweepText(
-    syllables: List<KaraokeSyllable>,
-    currentPosition: () -> Int,
-    textColor: Color,
-    textStyle: TextStyle,
-) {
-    val position = currentPosition()
-    val unsungColor = textColor.copy(alpha = 0.45f)
-    val annotated =
-        buildAnnotatedString {
-            syllables.forEachIndexed { index, syllable ->
-                val span = (syllable.end - syllable.start).coerceAtLeast(1)
-                val progress = ((position - syllable.start).toFloat() / span).coerceIn(0f, 1f)
-                val color = lerp(unsungColor, textColor, progress)
-                withStyle(SpanStyle(color = color)) {
-                    append(syllable.content)
-                    val next = syllables.getOrNull(index + 1)
-                    if (next != null && needsLatinWordGap(syllable.content, next.content)) {
-                        append(" ")
-                    }
-                }
-            }
-        }
-    Text(text = annotated, style = textStyle)
-}
 
-/** The phonetic (romanisation) and translation rows stacked under the main line. */
-@Composable
-internal fun TranslationStack(
-    translation: String?,
-    textColor: Color,
-    phoneticTextStyle: TextStyle,
-) {
-    if (translation.isNullOrBlank()) return
-    translation
-        .split('\n')
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .forEach { row ->
-            Text(
-                text = row,
-                style = phoneticTextStyle,
-                color = textColor.copy(alpha = 0.85f),
-            )
-        }
-}
-
-/** A separating space only between Latin-script words — CJK syllables join seamlessly. */
-internal fun needsLatinWordGap(previous: String, next: String): Boolean {
-    val prevTail = previous.lastOrNull() ?: return false
-    val nextHead = next.firstOrNull() ?: return false
-    if (!isLatinWordChar(nextHead) || prevTail.isWhitespace() || nextHead.isWhitespace()) return false
-    return isLatinWordChar(prevTail) || prevTail in SENTENCE_PUNCTUATION
-}
-
-private const val SENTENCE_PUNCTUATION = ".,!?;:…"
-
-private fun isLatinWordChar(ch: Char): Boolean =
-    ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '\''
-
-internal fun List<KaraokeSyllable>.joinSyllableContents(): String {
-    val builder = StringBuilder()
-    forEachIndexed { index, syllable ->
-        builder.append(syllable.content)
-        val next = getOrNull(index + 1)
-        if (next != null && needsLatinWordGap(syllable.content, next.content)) {
-            builder.append(' ')
-        }
-    }
-    return builder.toString()
-}
-
-internal fun extractTtmlWriters(lyrics: String?): String {
-    if (lyrics.isNullOrBlank()) return ""
-    val writerTagPattern =
-        Regex(
-            pattern = "<(songwriter|composer|lyricist|writer|ar)(?:\\s[^>]*)?>([^<]+)</\\1>",
-            options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-        )
-    val writers = LinkedHashSet<String>()
-    writerTagPattern.findAll(lyrics).forEach { match ->
-        val name = match.groupValues.getOrNull(2)?.trim()
-        if (!name.isNullOrBlank()) writers.add(name)
-    }
-    return writers.joinToString(", ").trim()
-}
