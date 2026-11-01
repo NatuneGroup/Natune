@@ -28,6 +28,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
@@ -44,6 +45,7 @@ object QobuzAudioProvider {
     private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L
     private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L
     private const val AUDIO_FLAC_MIME_TYPE = "audio/flac"
+    private const val AUDIO_MPEG_MIME_TYPE = "audio/mpeg"
     private const val HEALTH_PROBE_TRACK_ID = "5966783"
     private const val HEALTH_PROBE_FORMAT_ID = 5
 
@@ -500,12 +502,14 @@ object QobuzAudioProvider {
                     mimeType = download.mimeType,
                     codecs = download.codecs,
                     contentLength = null,
-                    label = "Qobuz ${qualityLabel(formatId)}",
+                    label = download.served.label(),
                     source = AudioSourceType.QOBUZ,
                     matchedTitle = match.title,
                     matchedArtist = match.artist,
                     matchedAlbum = match.album,
                     matchedDurationMs = match.durationMs,
+                    sampleRate = download.served.sampleRateHz,
+                    bitDepth = download.served.bitDepth,
                 )
             streamCache[cacheKey] = CachedStream(stream, now + STREAM_CACHE_MS)
             Timber.tag("Qobuz").i("resolved \"%s\" via %s [%s]", query.title, backend.label, stream.label)
@@ -633,14 +637,6 @@ object QobuzAudioProvider {
             }
         return tokenBackends + proxyBackends
     }
-
-    private fun qualityLabel(formatId: Int): String =
-        when (formatId) {
-            6 -> "FLAC"
-            7 -> "HI_RES"
-            27 -> "MAX"
-            else -> "FLAC"
-        }
 
     /**
      * Drops any cached stream/failure entry for [query], forcing the next [resolve] to hit the
@@ -794,7 +790,76 @@ object QobuzAudioProvider {
         val mimeType: String,
         val codecs: String,
         val isPreview: Boolean,
+        val served: ServedAudio,
     )
+
+    /**
+     * What a download response states about the file it serves. A field stays null unless the response,
+     * or for the mime type alone the stream URL, actually says so. Nothing falls back to the requested tier.
+     */
+    private data class ServedAudio(
+        /** audio/flac or audio/mpeg when the response or the stream URL says so, otherwise null. */
+        val mimeType: String?,
+        /** Qobuz format id the response reports (5, 6, 7 or 27). */
+        val formatId: Int?,
+        /** Sample rate in Hz, converted from the kHz the response reports. */
+        val sampleRateHz: Int?,
+        /** Null for MPEG streams: a PCM bit depth is not a property of a lossy stream. */
+        val bitDepth: Int?,
+    ) {
+        /** Tier named from the served facts only; a bare "Qobuz" when nothing usable is reported. */
+        fun label(): String {
+            val tier =
+                when (mimeType) {
+                    AUDIO_MPEG_MIME_TYPE -> if (formatId == 5) "MP3_320" else "MP3"
+                    AUDIO_FLAC_MIME_TYPE ->
+                        when (formatId) {
+                            7 -> "HI_RES"
+                            27 -> "MAX"
+                            else -> "FLAC"
+                        }
+                    else ->
+                        when (formatId) {
+                            5 -> "MP3_320"
+                            6 -> "FLAC"
+                            7 -> "HI_RES"
+                            27 -> "MAX"
+                            else -> null
+                        }
+                }
+            return if (tier == null) "Qobuz" else "Qobuz $tier"
+        }
+    }
+
+    /** Reads what the response reports. The stream URL is consulted only to identify the mime type. */
+    private fun JSONObject.servedAudio(streamUrl: String): ServedAudio {
+        val data = optJSONObject("data") ?: this
+        val reportedMime = data.stringOrNull("mime_type")?.lowercase().orEmpty()
+        val mimeType =
+            when {
+                "flac" in reportedMime -> AUDIO_FLAC_MIME_TYPE
+                "mpeg" in reportedMime || "mp3" in reportedMime -> AUDIO_MPEG_MIME_TYPE
+                streamUrl.contains(".flac", true) -> AUDIO_FLAC_MIME_TYPE
+                streamUrl.contains(".mp3", true) -> AUDIO_MPEG_MIME_TYPE
+                else -> null
+            }
+        // Qobuz reports the rate in kHz (44.1, 96); DirectStream carries Hz.
+        val sampleRateHz =
+            data.optDouble("sampling_rate", 0.0).takeIf { it > 0.0 }?.let { reported ->
+                (if (reported < 1_000.0) reported * 1_000.0 else reported).roundToInt().takeIf { it > 0 }
+            }
+        // A lossy MPEG stream has no PCM bit depth to report, so a reported value is dropped for it.
+        val reportedBitDepth = data.optInt("bit_depth", 0).takeIf { it in 1..32 }
+        return ServedAudio(
+            mimeType = mimeType,
+            formatId = data.optInt("format_id", 0).takeIf { it > 0 },
+            sampleRateHz = sampleRateHz,
+            bitDepth = reportedBitDepth.takeUnless { mimeType == AUDIO_MPEG_MIME_TYPE },
+        )
+    }
+
+    /** MPEG audio is labelled mp3, never AAC; any other mime keeps the legacy FLAC default. */
+    private fun codecsFor(mimeType: String): String = if (mimeType == AUDIO_MPEG_MIME_TYPE) "mp3" else "flac"
 
     /** Calls download-music and extracts the direct URL + a best-effort preview flag. */
     private fun fetchDownload(
@@ -826,14 +891,9 @@ object QobuzAudioProvider {
             val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
             val streamUrl = root.findStreamUrl() ?: return null
             val isPreview = root.looksLikePreview()
-            val mime =
-                when {
-                    streamUrl.contains(".flac", ignoreCase = true) -> AUDIO_FLAC_MIME_TYPE
-                    streamUrl.contains(".mp3", ignoreCase = true) -> "audio/mpeg"
-                    else -> AUDIO_FLAC_MIME_TYPE
-                }
-            val codecs = if (mime == AUDIO_FLAC_MIME_TYPE) "flac" else "mp4a.40.2"
-            return DownloadResult(streamUrl, mime, codecs, isPreview)
+            val served = root.servedAudio(streamUrl)
+            val mime = served.mimeType ?: AUDIO_FLAC_MIME_TYPE
+            return DownloadResult(streamUrl, mime, codecsFor(mime), isPreview, served)
         }
     }
 
@@ -915,17 +975,9 @@ object QobuzAudioProvider {
                 ?: return null
         // Qobuz sets "sample":true for 30s previews (unsubscribed, or track unavailable at quality).
         val isPreview = root.optBoolean("sample", false) || root.looksLikePreview()
-        val apiMime = root.stringOrNull("mime_type")
-        val mime =
-            when {
-                apiMime?.contains("flac", true) == true -> AUDIO_FLAC_MIME_TYPE
-                apiMime?.contains("mpeg", true) == true || apiMime?.contains("mp3", true) == true -> "audio/mpeg"
-                streamUrl.contains(".flac", true) -> AUDIO_FLAC_MIME_TYPE
-                streamUrl.contains(".mp3", true) -> "audio/mpeg"
-                else -> AUDIO_FLAC_MIME_TYPE
-            }
-        val codecs = if (mime == AUDIO_FLAC_MIME_TYPE) "flac" else "mp4a.40.2"
-        return DownloadResult(streamUrl, mime, codecs, isPreview)
+        val served = root.servedAudio(streamUrl)
+        val mime = served.mimeType ?: AUDIO_FLAC_MIME_TYPE
+        return DownloadResult(streamUrl, mime, codecsFor(mime), isPreview, served)
     }
 
     private fun directRequest(
