@@ -13,14 +13,21 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowState
+import java.awt.AWTEvent
 import java.awt.EventQueue
 import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
+import java.awt.Toolkit
 import java.awt.Window
+import java.awt.event.AWTEventListener
 import java.awt.event.KeyEvent
+import java.awt.event.MouseEvent
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.SwingUtilities
@@ -123,12 +130,13 @@ internal fun DesktopSessionWindowRoot(
     window: Window,
     sessions: DesktopSessionLoader,
     closeRequests: DesktopCloseRequests,
+    windowState: WindowState,
     quit: () -> Unit,
 ) {
     LaunchedEffect(sessions) { sessions.start() }
     val session by sessions.state.collectAsState()
     when (val current = session) {
-        is DesktopSessionState.Ready -> DesktopMountedRoot(window, current.graph, closeRequests, quit)
+        is DesktopSessionState.Ready -> DesktopMountedRoot(window, current.graph, closeRequests, quit, windowState)
         DesktopSessionState.Loading -> DesktopLoadingRoot()
         DesktopSessionState.Unavailable -> DesktopUnavailableRoot()
     }
@@ -140,7 +148,13 @@ internal fun DesktopSessionWindowRoot(
  * feeds the root's visible and resumed inputs. Hiding the window never pauses playback.
  */
 @Composable
-internal fun DesktopMountedRoot(window: Window, graph: DesktopSessionGraph, closeRequests: DesktopCloseRequests, quit: () -> Unit) {
+internal fun DesktopMountedRoot(
+    window: Window,
+    graph: DesktopSessionGraph,
+    closeRequests: DesktopCloseRequests,
+    quit: () -> Unit,
+    windowState: WindowState,
+) {
     val services = remember(window, graph) {
         DesktopHostServices(
             window = window,
@@ -176,6 +190,8 @@ internal fun DesktopMountedRoot(window: Window, graph: DesktopSessionGraph, clos
             setVolume = { volume -> graph.setVolume(volume) },
             openUri = { uri -> openDesktopUri(uri, graph::report) },
             quit = quit,
+            // A room guest leaves queue order and position to the room host, matching the Android room rule.
+            guestLocked = { graph.listenTogether.isGuestInRoom() },
             reportUnavailable = graph::report,
         )
     }
@@ -198,7 +214,19 @@ internal fun DesktopMountedRoot(window: Window, graph: DesktopSessionGraph, clos
         }
         val focus = KeyboardFocusManager.getCurrentKeyboardFocusManager()
         focus.addKeyEventDispatcher(dispatcher)
-        onDispose { focus.removeKeyEventDispatcher(dispatcher) }
+        // The mouse's side buttons are no key event; button 4 is the platform's back gesture like Alt+Left.
+        val mouse = AWTEventListener { event ->
+            val press = event as? MouseEvent
+            if (press != null && press.getID() == MouseEvent.MOUSE_PRESSED && press.button == 4 &&
+                press.component?.let { SwingUtilities.getWindowAncestor(it) } === window) {
+                backRequests.tryEmit(Unit)
+            }
+        }
+        Toolkit.getDefaultToolkit().addAWTEventListener(mouse, AWTEvent.MOUSE_EVENT_MASK)
+        onDispose {
+            focus.removeKeyEventDispatcher(dispatcher)
+            Toolkit.getDefaultToolkit().removeAWTEventListener(mouse)
+        }
     }
     // Recognition runs on this window's UI scope and gives the microphone back when the window's composition leaves.
     val uiScope = rememberCoroutineScope()
@@ -208,19 +236,34 @@ internal fun DesktopMountedRoot(window: Window, graph: DesktopSessionGraph, clos
     val feedback = remember(graph, uiScope) { DesktopFeedbackMount(graph, uiScope) }
     DisposableEffect(feedback) { onDispose { feedback.close() } }
     val host = remember(graph, backRequests, recognition, feedback) {
-        desktopHostBindings(graph, backRequests, recognition, feedback, quit)
+        desktopHostBindings(graph, backRequests, recognition, feedback, quit,
+            toggleFullscreen = {
+                windowState.placement =
+                    if (windowState.placement == WindowPlacement.Fullscreen) WindowPlacement.Floating
+                    else WindowPlacement.Fullscreen
+            })
     }
     val activity by services.windowActivity.activity.collectAsState()
-    CompositionLocalProvider(LocalDesktopWindowShown provides (activity.visible && !activity.minimized)) {
+    val platformDark by services.systemDark.collectAsState()
+    // The platform watcher wins where it reports; everywhere else Compose's own reading answers.
+    val effectiveDark = platformDark ?: isSystemInDarkTheme()
+    CompositionLocalProvider(
+        LocalDesktopWindowShown provides (activity.visible && !activity.minimized),
+        LocalDesktopSystemDark provides effectiveDark,
+    ) {
         ArchiveTuneRoot(
             host = host,
             // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
             visible = activity.visible && !activity.minimized && !activity.occluded,
             resumed = activity.resumed,
             opticalCapabilities = DesktopOpticalCapabilities,
+            systemDark = effectiveDark,
         )
     }
 }
+
+/** The OS light/dark reading as the host watchers report it, or null where no watcher answered yet. */
+internal val LocalDesktopSystemDark = compositionLocalOf<Boolean?> { null }
 
 /**
  * Whether this window is showing and not minimized. Occlusion is left out on purpose: a fullscreen video is its own

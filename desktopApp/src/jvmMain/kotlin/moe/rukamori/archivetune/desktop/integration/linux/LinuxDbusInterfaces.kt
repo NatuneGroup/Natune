@@ -100,6 +100,20 @@ class MenuItemProperties(
     @field:Position(1) val properties: Map<String, Variant<*>>,
 ) : Struct()
 
+/** The xdg-desktop-portal settings object; GNOME color-scheme is read and watched through it. */
+@DBusInterfaceName("org.freedesktop.portal.Settings")
+interface PortalSettings : DBusInterface {
+    fun Read(namespace: String, key: String): Variant<*>
+    fun ReadAll(namespace: String): Map<String, Variant<*>>
+    @DBusInterfaceName("org.freedesktop.portal.Settings")
+    class SettingChanged(
+        path: String,
+        @JvmField val namespace: String,
+        @JvmField val key: String,
+        @JvmField val value: Variant<*>,
+    ) : DBusSignal(path, namespace, key, value)
+}
+
 @DBusInterfaceName("com.canonical.dbusmenu")
 interface DbusMenu : DBusInterface {
     fun GetLayout(parentId: Int, recursionDepth: Int, propertyNames: List<String>): MenuLayoutReply<UInt32, MenuLayout>

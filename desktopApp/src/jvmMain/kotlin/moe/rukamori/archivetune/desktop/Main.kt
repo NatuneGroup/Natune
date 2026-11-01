@@ -7,10 +7,12 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import moe.rukamori.archivetune.desktop.integration.DESKTOP_WINDOWS_AUMID
 import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
 import moe.rukamori.archivetune.desktop.integration.DesktopSingleInstance
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.integration.DesktopProtocolRegistration
+import moe.rukamori.archivetune.desktop.integration.NativeDesktopBridge
 import java.nio.file.Path
 
 fun main(args: Array<String>) {
@@ -31,6 +33,11 @@ fun main(args: Array<String>) {
     DesktopLaunchIntake.registerAppleEvents()
     if (System.getProperty("os.name").startsWith("Windows")) {
         try {
+            NativeDesktopBridge.ensureLoaded()
+            // The AppUserModelID groups the taskbar entry and attributes SMTC to this app instead of the launcher.
+            if (!NativeDesktopBridge.setAppIdentity(DESKTOP_WINDOWS_AUMID, DesktopStrings["app_name"])) {
+                System.err.println("app identity registration: unavailable on this host")
+            }
             if (!DesktopProtocolRegistration.registerPackagedWindows()) System.err.println("URI registration unavailable outside packaged launcher")
         } catch (error: LinkageError) { System.err.println("URI registration: ${error.javaClass.simpleName}") }
     }
@@ -60,7 +67,7 @@ fun main(args: Array<String>) {
                 DesktopLaunchIntake.attachWindow(window)
                 onDispose { DesktopLaunchIntake.detachWindow(window) }
             }
-            DesktopSessionWindowRoot(window, sessions, closeRequests) { exitApplication() }
+            DesktopSessionWindowRoot(window, sessions, closeRequests, state) { exitApplication() }
         }
     } } finally {
         windowState?.let { DesktopWindowBounds.save(instanceDirectory, it) }

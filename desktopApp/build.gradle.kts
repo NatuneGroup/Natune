@@ -33,6 +33,8 @@ kotlin {
             implementation(libs.innertubex.desktop)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
+            // The Hyprland visibility watcher parses the compositor's IPC replies with it.
+            implementation(libs.kotlinx.serialization.json)
             implementation(project(":core"))
             implementation(libs.metrolist.extractor)
             implementation(compose.desktop.currentOs)
