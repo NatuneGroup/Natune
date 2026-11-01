@@ -542,6 +542,7 @@ fun SongMenu(
     val bottomSheetPageState = LocalBottomSheetPageState.current
     val isLocalSong = song.song.isLocal
     val shareSong = rememberSongShareAction(song.id, isLocalSong, song.format?.mimeType, onDismiss)
+    val copySongLink = rememberSongCopyLinkAction(song.id, isLocalSong, onDismiss)
     // Telegram tracks have no YouTube watch endpoint, so YouTube-only actions (e.g. Start radio)
     // are hidden for them — they still support play next / add to queue / add to playlist.
     val isTelegramSong = song.song.id.isTelegramMediaId()
@@ -551,6 +552,7 @@ fun SongMenu(
     val addToQueueText = stringResource(R.string.add_to_queue)
     val addToPlaylistText = stringResource(R.string.add_to_playlist)
     val shareText = stringResource(R.string.share)
+    val copyLinkText = stringResource(R.string.copy_link)
     val editText = stringResource(R.string.edit_song_info)
 
     val primaryActions =
@@ -560,7 +562,9 @@ fun SongMenu(
             playNextText,
             addToQueueText,
             shareText,
+            copyLinkText,
             shareSong,
+            copySongLink,
             editText,
             isLocalSong,
             isTelegramSong,
@@ -635,6 +639,23 @@ fun SongMenu(
                         onClick = shareSong,
                     ),
                 )
+                // Local files have no link to copy; a Telegram song resolves its real message link.
+                if (!isLocalSong || isTelegramSong) {
+                    add(
+                        NewAction(
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.link),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(28.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            text = copyLinkText,
+                            onClick = copySongLink,
+                        ),
+                    )
+                }
                 add(
                     NewAction(
                         icon = {

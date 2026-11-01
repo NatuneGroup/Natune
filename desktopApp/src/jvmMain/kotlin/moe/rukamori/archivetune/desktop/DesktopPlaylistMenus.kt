@@ -180,6 +180,7 @@ internal class DesktopPlaylistMenuState(
     /** A local playlist has no share link, so the export row stands in for share; a link is copied when one exists. */
     val sharing = MenuShareHandler(object : MenuSharing {
         override suspend fun shareLink(url: String) = copyToDesktopClipboard(url)
+        override suspend fun copyLink(url: String) = copyToDesktopClipboard(url)
         override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) { unavailable() }
         override suspend fun telegramMessageLink(mediaId: String): String? {
             val track = TelegramTrackRef.fromMediaId(mediaId) ?: return null

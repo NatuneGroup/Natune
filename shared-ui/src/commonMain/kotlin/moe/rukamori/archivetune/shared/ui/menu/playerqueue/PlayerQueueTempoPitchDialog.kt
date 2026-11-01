@@ -2,6 +2,7 @@
 
 package moe.rukamori.archivetune.shared.ui.menu.playerqueue
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,12 +13,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -33,10 +36,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import moe.rukamori.archivetune.shared.domain.settings.TempoPitchPreset
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -65,20 +70,31 @@ private fun multiplierLabel(value: Float): String = stringResource(Res.string.m5
 private fun semitoneLabel(semitones: Int): String =
     if (semitones > 0) stringResource(Res.string.m5pq_semitones_positive, semitones) else semitones.toString()
 
+/** Which name entry the preset dialog is editing: a new preset, or the rename of an existing one. */
+private sealed interface PlayerQueuePresetNameEdit {
+    data object New : PlayerQueuePresetNameEdit
+
+    data class Rename(val preset: TempoPitchPreset) : PlayerQueuePresetNameEdit
+}
+
 /**
  * The tempo and pitch dialog. Edits apply to the playback parameters immediately, through
  * [PlayerQueueMenuActions.applyPlaybackParameters], which receives values clamped to the baseline ranges. [initialSpeed]
  * and [initialPitch] seed the local edit state once, so later host updates do not override a dialog in progress. Reset
- * returns both to 1, and OK only closes the dialog.
+ * returns both to 1, and OK only closes the dialog. [presets] are the host-decoded saved pairs, and [remembered]
+ * mirrors the persisted opt-in flag; both round-trip through [PlayerQueueMenuActions].
  */
 @Composable
 fun PlayerQueueTempoPitchDialog(
     initialSpeed: Float,
     initialPitch: Float,
+    presets: List<TempoPitchPreset>,
+    remembered: Boolean,
     actions: PlayerQueueMenuActions,
     icon: PlayerQueueMenuIconSlot,
     onDismiss: () -> Unit,
 ) {
+    var nameEdit by remember { mutableStateOf<PlayerQueuePresetNameEdit?>(null) }
     var tempo by remember {
         mutableFloatStateOf(initialSpeed.safeCoerceIn(PLAYER_QUEUE_TEMPO_MIN, PLAYER_QUEUE_TEMPO_MAX, fallback = 1f))
     }
@@ -353,7 +369,127 @@ fun PlayerQueueTempoPitchDialog(
                         }
                     }
                 }
+
+                HorizontalDivider()
+
+                // The owner persists the flag; while it holds, every applied pair is stored for the next launch.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { actions.setTempoPitchRemembered(!remembered) },
+                ) {
+                    Checkbox(
+                        checked = remembered,
+                        onCheckedChange = { actions.setTempoPitchRemembered(it) },
+                    )
+                    Text(
+                        text = stringResource(Res.string.share_tempo_remember_speed_and_pitch),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+
+                Text(
+                    text = stringResource(Res.string.share_tempo_presets),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+
+                presets.forEach { preset ->
+                    // A tap applies speed then pitch through the same clamped path the sliders use.
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    tempo = preset.speed.coerceIn(PLAYER_QUEUE_TEMPO_MIN, PLAYER_QUEUE_TEMPO_MAX)
+                                    pitch = preset.pitch.coerceIn(PLAYER_QUEUE_PITCH_MIN, PLAYER_QUEUE_PITCH_MAX)
+                                    applyPlayback()
+                                },
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = preset.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text =
+                                    stringResource(
+                                        Res.string.share_tempo_preset_values,
+                                        formatMultiplier(preset.speed),
+                                        formatMultiplier(preset.pitch),
+                                    ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { nameEdit = PlayerQueuePresetNameEdit.Rename(preset) }) {
+                            icon(PlayerQueueMenuIcon.EDIT, LocalContentColor.current, Modifier.size(22.dp))
+                        }
+                        IconButton(onClick = { actions.deleteTempoPitchPreset(preset.id) }) {
+                            icon(PlayerQueueMenuIcon.DELETE, MaterialTheme.colorScheme.error, Modifier.size(22.dp))
+                        }
+                    }
+                }
+
+                TextButton(
+                    onClick = { nameEdit = PlayerQueuePresetNameEdit.New },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(Res.string.share_tempo_save_current_as_preset))
+                }
             }
         },
     )
+
+    nameEdit?.let { edit ->
+        var name by remember(edit) {
+            mutableStateOf((edit as? PlayerQueuePresetNameEdit.Rename)?.preset?.name.orEmpty())
+        }
+        AlertDialog(
+            onDismissRequest = { nameEdit = null },
+            title = {
+                Text(
+                    stringResource(
+                        when (edit) {
+                            is PlayerQueuePresetNameEdit.Rename -> Res.string.share_tempo_rename_preset
+                            PlayerQueuePresetNameEdit.New -> Res.string.share_tempo_new_preset
+                        },
+                    ),
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text(stringResource(Res.string.share_tempo_preset_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank(),
+                    onClick = {
+                        when (edit) {
+                            is PlayerQueuePresetNameEdit.Rename -> actions.renameTempoPitchPreset(edit.preset.id, name.trim())
+                            PlayerQueuePresetNameEdit.New -> actions.saveTempoPitchPreset(name, tempo, pitch)
+                        }
+                        nameEdit = null
+                    },
+                ) {
+                    Text(stringResource(Res.string.m6_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { nameEdit = null }) {
+                    Text(stringResource(Res.string.m5pq_cancel))
+                }
+            },
+        )
+    }
 }

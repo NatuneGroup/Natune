@@ -191,8 +191,11 @@ import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleRep
 import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleShuffle
 import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleStartRadio
 import moe.rukamori.archivetune.constants.PauseListenHistoryKey
+import moe.rukamori.archivetune.constants.PlaybackPitchKey
+import moe.rukamori.archivetune.constants.PlaybackSpeedKey
 import moe.rukamori.archivetune.constants.SyncPlaybackToYouTubeHistoryKey
 import moe.rukamori.archivetune.constants.PauseOnDeviceMuteKey
+import moe.rukamori.archivetune.constants.TempoPitchRememberedKey
 import moe.rukamori.archivetune.constants.PermanentShuffleKey
 import moe.rukamori.archivetune.constants.PersistentQueueKey
 import moe.rukamori.archivetune.constants.PlayerStreamClient
@@ -265,6 +268,8 @@ import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimedOutException
 import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.shared.domain.settings.TEMPO_PITCH_VALUE_MAX
+import moe.rukamori.archivetune.shared.domain.settings.TEMPO_PITCH_VALUE_MIN
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 import moe.rukamori.archivetune.audiosource.PlaybackSourceChain
@@ -1399,6 +1404,19 @@ class MusicService :
                 }
         _playerFlow.value = player
         playerInitialized.value = true
+        // The opt-in "remember speed and pitch" restore from the tempo-and-pitch dialog; without the
+        // flag the player keeps neutral parameters and the stored values stay unread.
+        if (dataStore.get(TempoPitchRememberedKey, false)) {
+            player.playbackParameters =
+                androidx.media3.common.PlaybackParameters(
+                    dataStore.get(PlaybackSpeedKey, 1f).let {
+                        if (it.isFinite()) it.coerceIn(TEMPO_PITCH_VALUE_MIN, TEMPO_PITCH_VALUE_MAX) else 1f
+                    },
+                    dataStore.get(PlaybackPitchKey, 1f).let {
+                        if (it.isFinite()) it.coerceIn(TEMPO_PITCH_VALUE_MIN, TEMPO_PITCH_VALUE_MAX) else 1f
+                    },
+                )
+        }
         scope.launch {
             dataStore.data
                 .map { it[UsePoolAccountsKey] ?: true }
