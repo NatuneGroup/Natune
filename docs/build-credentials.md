@@ -30,7 +30,7 @@ name is blank, so existing local setups keep working.
 | `ARCHIVETUNE_LASTFM_API_KEY` (legacy `LASTFM_API_KEY`) | Last.fm sign-in and the default Last.fm API key for scrobbling. Read by `:app` (`BuildConfig.LASTFM_API_KEY`) and `:lastfm` (`ProviderBuildCredentials`). | Last.fm sign-in reports not configured unless the user has entered their own key in Last.fm settings. Libre.fm and custom endpoints keep their own keys or the compatibility pair. |
 | `ARCHIVETUNE_LASTFM_API_SECRET` (legacy `LASTFM_SECRET`) | Signing secret for the same Last.fm calls. Same consumers as above. | As above. A key without a secret does not count as configured. |
 | `ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY` | Cloudflare Turnstile verification for Amazon Music instances (`AmazonAudioProvider`, `AmazonTurnstileActivity`; desktop `DesktopAmazonAuthorize`, which runs the challenge in its native window). | "Authorize with Turnstile" shows "not configured" and loads nothing. Operator bypass tokens keep working. |
-| `ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN` | Origin the Turnstile sitekey is locked to, sent as the `Origin` header and used as the WebView base URL. | Same as the sitekey. With the origin blank, no `Origin` header is sent. |
+| `ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN` | Origin the Turnstile sitekey is locked to: the `Origin` header of the instance requests and the document the challenge runs on (the Android WebView base URL, the desktop challenge window). Desktop accepts only a plain `https://host[:port]` origin. iOS does not read this value yet and keeps its built-in origin. | Same as the sitekey: the sign-in reports not configured. Android and desktop then send no `Origin` header. |
 | `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID` | YouTube device-code sign-in (`YouTubeOAuthRepository`, `YouTubeOAuthLoginScreen`; desktop `DesktopYouTubeOAuth`). | The sign-in shows "not configured" and sends no request. Stored sessions are not cleared. |
 | `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET` | Client secret for the same flow. | As above. |
 | `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY` | WebClient PO token generation (`PoTokenWebView`) and BotGuard token minting (`BotGuardTokenGenerator`, as its `API_KEY`). The same value feeds both. | No WebClient PO token is minted; the existing client fallbacks continue. |
@@ -80,14 +80,15 @@ auth, WebView or Media3 classes are included.
   `moe.rukamori.archivetune.desktop.DesktopBuildCredentials` (TIDAL OAuth clients, the JioSaavn key,
   Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed, the feedback service,
   the Google Drive desktop client, Spotify Echo protocol configuration, the YouTube device-code
-  client pair and the Amazon Turnstile sitekey). `DesktopCredentials` reads each value from an environment variable of the
+  client pair and the Amazon Turnstile sitekey and origin). `DesktopCredentials` reads each value from an environment variable of the
   same name, then a JVM system property of the same name (`-D<NAME>=<value>`), then the build-time value, so a
   packaged desktop build can be configured at launch without rebuilding.
-- The iOS host reads the Telegram pair and `ARCHIVETUNE_LISTENER_PRESENCE_URL` so far. Xcode takes them from the
-  untracked `iosApp/Configuration/Credentials.xcconfig` (included by `Native.xcconfig`) or from build settings,
-  and writes them into `Info.plist`. An xcconfig file treats `//` as a comment, so write the presence origin as
-  `https:/$()/host` there. The other variables must be wired through the same build configuration before the
-  dependent features work there.
+- **iOS** maps the Telegram pair, the TIDAL client pairs, `ARCHIVETUNE_LISTENER_PRESENCE_URL` and the Last.fm
+  pair into `Info.plist`. Xcode takes them from the untracked `iosApp/Configuration/Credentials.xcconfig`
+  (included last by `Native.xcconfig`) or from build settings. The release workflow's iOS job writes that file from
+  the same secrets before it builds (step `Write iOS provider credentials`). An xcconfig file treats `//` as a
+  comment, so a value such as the presence origin is written with `/$()/` in place of `//`. The Turnstile sitekey
+  and origin are written to the file too, but no iOS code reads them yet.
 
 ## GitHub Actions
 
@@ -117,11 +118,16 @@ env:
   ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
   ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID }}
   ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET }}
+  ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID }}
+  ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID }}
+  ARCHIVETUNE_SPOTIFY_AUDIO_IV: ${{ secrets.ARCHIVETUNE_SPOTIFY_AUDIO_IV }}
 ```
 
-The two Telegram variables reuse the existing `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` secrets of the Android build. The repository owner creates these secrets. A secret that does not exist resolves to an empty string,
-so the build still succeeds and the matching feature reports not configured. The workflow files in this
-repository are not changed by this document; the workflow owner applies the mapping.
+The two Telegram variables reuse the existing `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` secrets of the Android build.
+The repository owner creates the secrets. A secret that does not exist resolves to an empty string, so the build still
+succeeds and the matching feature reports not configured. `.github/workflows/_release-artifacts.yml` passes these values
+to its Android, desktop and iOS jobs. The pull-request and test workflows read the Last.fm pair under the canonical
+names and fall back to the legacy `LASTFM_*` secrets.
 
 ## Local setup
 
@@ -155,7 +161,11 @@ remain literals in source:
 
 - Telegram: the public Telegram Desktop api_id and api_hash used when no value is injected
   (`app/build.gradle.kts`).
-- Start.io app ID, Discord application ID and the Source Pool URL defaults (`app/build.gradle.kts`).
+- Start.io app ID and the Source Pool URL defaults (`app/build.gradle.kts`).
+- Discord application ID: Android reads `DISCORD_APPLICATION_ID` from `local.properties` or the environment, else the
+  public default (`app/build.gradle.kts`). Desktop keeps a literal of the same value in `desktopApp/build.gradle.kts`
+  (`desktopDiscordApplicationId`, which names the macOS `discord-<id>` URL scheme) and in `DesktopDiscordPresence`.
+  Desktop does not read the environment for it, so a local override of the Android value must be mirrored there.
 - Spotify public web and desktop client IDs (`SpotifyWebStreamer`, `SpotifyDesktopAuth`), QQ Music and
   Musixmatch app IDs.
 - No TIDAL catalog token is shipped or injected. TIDAL catalog reads use the signed-in account's bearer or a

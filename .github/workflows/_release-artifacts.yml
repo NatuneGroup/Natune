@@ -385,6 +385,10 @@ jobs:
       ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.FEEDBACK_INGEST_KEY }}
       ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID }}
       ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET }}
+      # Desktop-only Echo protocol configuration (docs/build-credentials.md). The audio IV keeps the name the desktop reads.
+      ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID }}
+      ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID }}
+      ARCHIVETUNE_SPOTIFY_AUDIO_IV: ${{ secrets.ARCHIVETUNE_SPOTIFY_AUDIO_IV }}
     steps:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
@@ -791,6 +795,38 @@ jobs:
       - name: Build the iOS native dependency closure
         shell: bash
         run: bash scripts/build_ios_native_core.sh iphoneos
+
+      # Native.xcconfig includes Credentials.xcconfig last, so these values reach Info.plist as build settings without
+      # appearing on the xcodebuild command line. They pass through the environment and are never echoed. xcconfig
+      # reads // as a comment, so each // is written as /$()/, which expands to nothing.
+      - name: Write iOS provider credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          target="iosApp/Configuration/Credentials.xcconfig"
+          : > "$target"
+          write_setting() {
+            local name="$1" value="${2:-}"
+            if [[ "$value" == *$'\n'* || "$value" == *'$('* || "$value" == *'${'* ]]; then
+              echo "::error::$name cannot be written to an xcconfig file; correct the value of its secret."
+              exit 1
+            fi
+            printf '%s = %s\n' "$name" "$(printf '%s' "$value" | sed 's#//#/$()/#g')" >> "$target"
+          }
+          write_setting ARCHIVETUNE_TELEGRAM_API_ID "$ARCHIVETUNE_TELEGRAM_API_ID"
+          write_setting ARCHIVETUNE_TELEGRAM_API_HASH "$ARCHIVETUNE_TELEGRAM_API_HASH"
+          write_setting ARCHIVETUNE_TIDAL_CLIENT_ID "$ARCHIVETUNE_TIDAL_CLIENT_ID"
+          write_setting ARCHIVETUNE_TIDAL_CLIENT_SECRET "$ARCHIVETUNE_TIDAL_CLIENT_SECRET"
+          write_setting ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID "$ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID"
+          write_setting ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET "$ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET"
+          write_setting ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID "$ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID"
+          write_setting ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET "$ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET"
+          write_setting ARCHIVETUNE_LISTENER_PRESENCE_URL "$ARCHIVETUNE_LISTENER_PRESENCE_URL"
+          write_setting ARCHIVETUNE_LASTFM_API_KEY "$ARCHIVETUNE_LASTFM_API_KEY"
+          write_setting ARCHIVETUNE_LASTFM_API_SECRET "$ARCHIVETUNE_LASTFM_API_SECRET"
+          write_setting ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY "$ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY"
+          write_setting ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN "$ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN"
 
       - name: Build unsigned device app and create IPA
         shell: bash
