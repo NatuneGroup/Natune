@@ -48,12 +48,14 @@ class SettingsPoTokens(
  * The narrow JavaScript surface the engine needs from the host's QuickJS runtime. [evaluate] awaits the
  * evaluated promise to a string; [evaluateUnit] discards the result. One instance is one BotGuard session:
  * the challenge interpreter, webPoSignalOutput and minter live on it, so minting stays on that runtime
- * until it expires or fails.
+ * until it expires or fails. A QuickJS instance is thread-confined and its evaluation runs on the
+ * calling thread, so the implementation performs every call, [close] included, on the single worker
+ * dispatcher it owns rather than on the caller's.
  */
 interface PoTokenJsRuntime {
     suspend fun evaluate(code: String): String
     suspend fun evaluateUnit(code: String)
-    fun close()
+    suspend fun close()
 }
 
 /**
@@ -70,7 +72,7 @@ interface PoTokenJsRuntime {
 class BotGuardPoTokenEngine(
     private val http: HttpClient,
     private val credentials: () -> PoTokenCredentials?,
-    private val runtimeFactory: () -> PoTokenJsRuntime,
+    private val runtimeFactory: suspend () -> PoTokenJsRuntime,
     private val report: (String) -> Unit = {},
 ) {
     private val mutex = Mutex()
@@ -111,7 +113,8 @@ class BotGuardPoTokenEngine(
                     mintTokenLocked(identifier, sessionId).also { cacheIdentifier(identifier, it.playerToken) }
                 }
             } catch (timeout: TimeoutCancellationException) {
-                report("PoToken mint timed out after ${timeout}ms")
+                // The caller's own shorter budget can fire first, so the report names no duration.
+                report("PoToken mint timed out")
                 destroyEngineLocked()
                 null
             } catch (cancelled: CancellationException) {
@@ -169,9 +172,14 @@ class BotGuardPoTokenEngine(
                 mintOn(rt, identifier)
             } catch (failure: Throwable) {
                 if (failure is CancellationException) throw failure
-                if (wasNew) throw failure
+                if (wasNew) throw classifyJsFailure(failure)
                 val (freshRuntime, freshSessionToken) = getOrCreateEngineLocked(sessionId, forceNew = true)
-                return MintedPoTokens(playerToken = mintOn(freshRuntime, identifier), sessionToken = freshSessionToken)
+                return try {
+                    MintedPoTokens(playerToken = mintOn(freshRuntime, identifier), sessionToken = freshSessionToken)
+                } catch (retry: Throwable) {
+                    if (retry is CancellationException) throw retry
+                    throw classifyJsFailure(retry)
+                }
             }
         return MintedPoTokens(playerToken = playerToken, sessionToken = sessionToken)
     }
@@ -213,8 +221,10 @@ class BotGuardPoTokenEngine(
             ?: throw PoTokenMintException("BotGuard credentials are not configured")
         val rt = try {
             runtimeFactory()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: Exception) {
-            throw BrokenPoTokenRuntimeException("QuickJS runtime cannot start: ${failure.message}")
+            throw BrokenPoTokenRuntimeException("QuickJS runtime cannot start")
         }
         try {
             rt.evaluateUnit(BOTGUARD_ENV_PROGRAM)
@@ -237,7 +247,7 @@ class BotGuardPoTokenEngine(
             val integrityToken = parseIntegrityToken(generateItBody)
 
             val minterState = rt.evaluate("__bgCreateMinter(${bytesToJsUint8Array(integrityToken.tokenBytes)})")
-            check(minterState == "ok") { "BotGuard minter answered $minterState" }
+            if (minterState != "ok") throw PoTokenMintException("BotGuard minter did not initialize")
 
             val sessionToken = mintOn(rt, sessionId)
             val expiry =
@@ -275,7 +285,7 @@ class BotGuardPoTokenEngine(
         return response.bodyAsText()
     }
 
-    private fun destroyEngineLocked() {
+    private suspend fun destroyEngineLocked() {
         val rt = runtime
         runtime = null
         engineSessionId = null
@@ -290,12 +300,16 @@ class BotGuardPoTokenEngine(
         }
     }
 
-    /** Like Android's `classifyJsError`: interpreter SyntaxErrors mark the engine permanently unusable. */
+    /**
+     * Like Android's `classifyJsError`: interpreter SyntaxErrors mark the engine permanently unusable.
+     * Anything else gets one fixed classification — a raw engine message can echo the remote BotGuard
+     * program or a response fragment, so it never reaches a report line or an exception message.
+     */
     private fun classifyJsFailure(failure: Throwable): Exception =
         if (failure.message?.contains("SyntaxError") == true) {
-            BrokenPoTokenRuntimeException(failure.message ?: "BotGuard JS failed")
+            BrokenPoTokenRuntimeException("BotGuard interpreter rejected its program")
         } else {
-            failure as? Exception ?: PoTokenMintException("BotGuard mint failed", failure)
+            PoTokenMintException("BotGuard minting failed")
         }
 
     companion object {

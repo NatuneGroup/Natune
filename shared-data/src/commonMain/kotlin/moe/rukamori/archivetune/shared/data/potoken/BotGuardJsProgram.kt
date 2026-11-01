@@ -149,10 +149,14 @@ internal const val BOTGUARD_ENV_PROGRAM: String = """
   // WebCrypto: only getRandomValues is synchronous-usable; subtle stays an empty, honest absence.
   var cryptoObj = {
     getRandomValues: function (view) {
-      if (!view || typeof view.byteLength !== "number") throw new TypeError("expected a typed array");
-      var src = __hostRandom(view.byteLength);
+      if (!view || !view.buffer || typeof view.byteLength !== "number") throw new TypeError("expected a typed array");
+      // Bytes go in through a Uint8Array view over the same buffer: a wider element view
+      // (Uint16Array/Uint32Array/…) rejects a Uint8Array source on set(), but a byte view
+      // of its own buffer fills correctly for every element width.
+      var dst = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+      var src = __hostRandom(dst.byteLength);
       var arr = src && src.buffer && typeof src.length === "number" ? src : new Uint8Array(src);
-      view.set(new Uint8Array(arr.buffer, arr.byteOffset || 0, Math.min(arr.byteLength, view.byteLength)));
+      dst.set(new Uint8Array(arr.buffer, arr.byteOffset || 0, Math.min(arr.byteLength, dst.byteLength)));
       return view;
     },
     subtle: {},

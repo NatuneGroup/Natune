@@ -45,6 +45,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
+import moe.rukamori.archivetune.shared.data.potoken.poTokenSessionId
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.download.DownloadKey
 import moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository
@@ -218,6 +219,19 @@ internal suspend fun assembleDesktopSessionOwners(
         signIn = { vault.snapshots.value.youTubeSignIn() },
         poTokens = poTokens,
     )
+    // The shipped app warms BotGuard once the auth state names a session, so a cold mint never
+    // lands inside a bounded tier; the same warm runs off the graph scope and stays a no-op while
+    // the poToken preference is off or no session id exists yet.
+    scope.launch {
+        val signIn = vault.snapshots.value.youTubeSignIn()
+        val sessionId =
+            poTokenSessionId(
+                signIn?.dataSyncId,
+                signIn?.visitorData,
+                hasLoginContext = signIn != null && !signIn.dataSyncId.isNullOrBlank(),
+            )
+        if (sessionId != null) poTokens.preWarm(sessionId)
+    }
     // One resolver for playback and downloads alike, over the same providers and source chain.
     val audioResolver = OrderedAudioResolver(
         providers = audioSources.providers,
