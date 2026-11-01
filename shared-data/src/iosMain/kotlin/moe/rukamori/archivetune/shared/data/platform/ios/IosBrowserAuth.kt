@@ -8,7 +8,6 @@ import platform.AuthenticationServices.*
 import platform.Foundation.*
 import platform.UIKit.*
 import platform.WebKit.*
-import platform.WebKit.WKNavigationActionPolicy.WKNavigationActionPolicyAllow
 import platform.WebKit.WKNavigationActionPolicy.WKNavigationActionPolicyCancel
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
@@ -171,9 +170,10 @@ class IosEmbeddedBrowserAuthPort(
                                     catch (failure: IllegalArgumentException) { continuation.resumeWithException(failure) }
                                 }
                             } else {
-                                // No arbitrary app schemes, file/javascript/data top-level redirects or popups.
+                                // No arbitrary app schemes or file/javascript/data top-level redirects;
+                                // an https popup loads in place instead of vanishing with no uiDelegate.
                                 val scheme = decidePolicyForNavigationAction.request.URL?.scheme?.lowercase()
-                                decisionHandler(if (scheme == "https") WKNavigationActionPolicyAllow else WKNavigationActionPolicyCancel)
+                                decisionHandler(webView.authPopupNavigationPolicy(decidePolicyForNavigationAction, scheme == "https"))
                             }
                         }
                         override fun presentationControllerDidDismiss(presentationController: UIPresentationController) = cancel()

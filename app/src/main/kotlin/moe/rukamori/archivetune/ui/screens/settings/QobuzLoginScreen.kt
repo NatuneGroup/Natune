@@ -14,7 +14,6 @@ package moe.rukamori.archivetune.ui.screens.settings
 import android.annotation.SuppressLint
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -39,6 +38,7 @@ import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.qobuz.QobuzBundleSecrets
 import moe.rukamori.archivetune.qobuz.QobuzToken
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
@@ -46,8 +46,6 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
-import android.webkit.HttpAuthHandler
-import moe.rukamori.archivetune.utils.AppProxy
 
 const val QOBUZ_LOGIN_ROUTE = "settings/qobuz/login"
 
@@ -204,6 +202,7 @@ fun QobuzLoginScreen(navController: NavController) {
 
     AuthWebViewScreen(
         navController = navController,
+        provider = "qobuz",
         title = stringResource(R.string.qobuz_login),
         subtitle = stringResource(R.string.auth_webview_qobuz_subtitle),
         // A leaked WebView keeps its in-flight bundle re-fetches alive for the rest of the process,
@@ -212,17 +211,7 @@ fun QobuzLoginScreen(navController: NavController) {
         factory = { ctx ->
             createAuthWebView(ctx).apply {
                 webViewClient =
-                    object : WebViewClient() {
-                        override fun onReceivedHttpAuthRequest(
-                            view: WebView?,
-                            handler: HttpAuthHandler?,
-                            host: String?,
-                            realm: String?,
-                        ) {
-                            if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-                            super.onReceivedHttpAuthRequest(view, handler, host, realm)
-                        }
-
+                    object : AuthSignInWebViewClient("qobuz", setOf("qobuz.com")) {
                         // onPageFinished and nothing earlier, unlike the YouTube screen's extra
                         // doUpdateVisitedHistory hook: the scan enumerates script[src] once and then
                         // latches window.__atQobuzHook, so injecting at commit time would enumerate a
