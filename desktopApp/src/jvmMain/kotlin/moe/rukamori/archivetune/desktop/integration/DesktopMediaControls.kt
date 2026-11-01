@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.desktop.integration
 
 import java.security.MessageDigest
+import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackClock
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
@@ -16,6 +17,9 @@ sealed interface DesktopTransportAction {
     data object Previous : DesktopTransportAction
     data class SeekTo(val occurrenceId: String, val positionMs: Long) : DesktopTransportAction
     data class Speed(val speed: Float) : DesktopTransportAction
+    data class SetShuffle(val enabled: Boolean) : DesktopTransportAction
+    data class SetRepeat(val repeat: QueueRepeatMode) : DesktopTransportAction
+    data class SetVolume(val volume: Float) : DesktopTransportAction
 }
 
 /** All callbacks, including the occurrence check, execute on the existing queue owner's dispatcher. */
@@ -49,11 +53,18 @@ class DesktopMediaControls(
     private fun clamp(snapshot: PlaybackSnapshot, ms: Long) = ms.coerceIn(0, snapshot.durationMs ?: Long.MAX_VALUE)
 }
 
-/** Called on the queue owner's dispatcher; next/previous remain that owner's decisions. */
+/**
+ * Called on the queue owner's dispatcher; next/previous remain that owner's decisions. Shuffle, repeat and volume are
+ * not controller commands: they belong to the queue owner, the repeat preference and the output volume, so the host
+ * hands them to those owners through the set* callbacks.
+ */
 fun MusicPlayerController.consumeDesktopTransport(
     action: DesktopTransportAction,
     next: () -> Unit,
     previous: () -> Unit,
+    setShuffle: (Boolean) -> Unit = {},
+    setRepeat: (QueueRepeatMode) -> Unit = {},
+    setVolume: (Float) -> Unit = {},
 ) {
     when (action) {
         DesktopTransportAction.Play -> play()
@@ -64,6 +75,9 @@ fun MusicPlayerController.consumeDesktopTransport(
         DesktopTransportAction.Previous -> previous()
         is DesktopTransportAction.SeekTo -> if (snapshot.value?.occurrenceId == action.occurrenceId) seekTo(action.positionMs)
         is DesktopTransportAction.Speed -> if (action.speed.isFinite() && action.speed in 0.25f..4f) setPlaybackSpeed(action.speed)
+        is DesktopTransportAction.SetShuffle -> setShuffle(action.enabled)
+        is DesktopTransportAction.SetRepeat -> setRepeat(action.repeat)
+        is DesktopTransportAction.SetVolume -> if (action.volume.isFinite()) setVolume(action.volume.coerceIn(0f, 1f))
     }
 }
 
@@ -93,7 +107,36 @@ data class DesktopMediaMetadata(
     val canPrevious: Boolean = false,
 )
 
+/** Player-level controls state beside the per-track [DesktopMediaMetadata]; it is never track-scoped. */
+data class DesktopTransportState(
+    val shuffleEnabled: Boolean = false,
+    val repeat: QueueRepeatMode = QueueRepeatMode.OFF,
+    val volume: Float = 1f,
+)
+
+/** MPRIS LoopStatus accepts exactly "None", "Track" and "Playlist". */
+fun QueueRepeatMode.mprisLoopStatus(): String = when (this) {
+    QueueRepeatMode.OFF -> "None"
+    QueueRepeatMode.ONE -> "Track"
+    QueueRepeatMode.ALL -> "Playlist"
+}
+
+/** Null for any string outside the three MPRIS LoopStatus values, so the caller rejects the write. */
+fun mprisLoopStatusRepeat(status: String): QueueRepeatMode? = when (status) {
+    "None" -> QueueRepeatMode.OFF
+    "Track" -> QueueRepeatMode.ONE
+    "Playlist" -> QueueRepeatMode.ALL
+    else -> null
+}
+
+/**
+ * MPRIS volume writes above 1.0 ask for amplification the output has no stage for, and a negative write
+ * is a mute request; both clamp into the engine's 0..1. A non-finite value is rejected, never applied.
+ */
+fun mprisVolumeLevel(value: Double): Float? =
+    if (value.isFinite()) value.coerceIn(0.0, 1.0).toFloat() else null
+
 interface DesktopSystemIntegration : AutoCloseable {
     val trayAvailable: Boolean
-    fun update(snapshot: PlaybackSnapshot?, metadata: DesktopMediaMetadata?)
+    fun update(snapshot: PlaybackSnapshot?, metadata: DesktopMediaMetadata?, transport: DesktopTransportState)
 }
