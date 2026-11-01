@@ -20,23 +20,20 @@ import moe.rukamori.archivetune.shared.domain.repository.AudioResolveRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.QueueLocatorResolver
+import moe.rukamori.archivetune.shared.domain.repository.QueueSourceRecovery
 import moe.rukamori.archivetune.shared.domain.repository.toPlaybackLocator
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
+import moe.rukamori.archivetune.shared.domain.source.toPlaybackLocator
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
-import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzBackupVideoIdKey
-import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzTrackIdKey
-import moe.rukamori.archivetune.shared.domain.settings.SongSourceAmazonPickKey
 import moe.rukamori.archivetune.shared.domain.source.SongSourceOverride
-import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzBackupVideoId
-import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzTrackId
-import moe.rukamori.archivetune.shared.domain.source.SongSourceAmazonPick
 import moe.rukamori.archivetune.shared.ui.host.hostSourceSnapshot
 import moe.rukamori.archivetune.shared.ui.host.toAudioResolveRequest
 import moe.rukamori.archivetune.shared.ui.host.unresolvedSourceReason
+import moe.rukamori.archivetune.shared.ui.host.withSourcePins as sharedWithSourcePins
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 
 /** The local-file provider id. A local song has no provider to search, so it is refused until a local owner exists. */
@@ -68,7 +65,12 @@ internal class DesktopQueueLocatorResolver(
     private val issued = ArrayDeque<PreparedPlaintextHandle>()
     private var closed = false
 
-    override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator {
+    override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator = locate(occurrence, QueueSourceRecovery())
+
+    override suspend fun recover(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator =
+        locate(occurrence, recovery)
+
+    private suspend fun locate(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator {
         check(synchronized(lock) { !closed }) { "the desktop source resolver is closed" }
         if (occurrence.item.ref.provider == LOCAL_PROVIDER) {
             // A local ref's id is its absolute path. A missing file fails instead of naming another song.
@@ -85,12 +87,14 @@ internal class DesktopQueueLocatorResolver(
             return PlaybackLocator.TelegramFile(track)
         }
         val request = occurrence.toResolveRequest(preferences()).withSourcePins(preferences(), occurrence.item.ref.id)
+            .copy(forceFreshStream = recovery.refreshSource != null)
         // A "play from" pin forces the attempt chain for this one song, as the Android service's per-song
         // source override does; a refused pinned source falls through to the ordinary chain.
         val pinned = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
-        var refused = emptySet<AudioSourceType>()
+        var refused = recovery.rejectedSources
         while (true) {
-            val resolution = audio.resolve(request, desktopSourceSnapshot(preferences()), pinned = pinned, rejected = refused)
+            val resolution = audio.resolve(request, recovery.settings(desktopSourceSnapshot(preferences())),
+                pinned = recovery.pinned(pinned), rejected = refused)
             val prepared = when (resolution) {
                 is AudioResolution.Resolved -> resolution.audio
                 is AudioResolution.Unavailable ->
@@ -100,13 +104,13 @@ internal class DesktopQueueLocatorResolver(
             // Anonymous progressive audio keeps its ordinary locator. A personal stream reads its cookies only
             // through the admitted route, so the engine never receives it as a bare remote URL.
             if (prepared is PreparedAudio.Progressive && !prepared.requiresAdmittedRoute()) {
-                return PlaybackLocator.Remote(prepared.stream.uri, prepared.stream.headers)
+                return prepared.stream.toPlaybackLocator()
             }
             when (prepared) {
                 is PreparedAudio.DeezerEncrypted -> return prepared.toPlaybackLocator()
                 is PreparedAudio.Progressive, is PreparedAudio.Native, is PreparedAudio.TidalManifest ->
                     when (val outcome = port.prepareNative(prepared)) {
-                        is NativeRouteOutcome.Ready -> return remember(outcome.handle)
+                        is NativeRouteOutcome.Ready -> return remember(outcome.handle, prepared.source)
                         is NativeRouteOutcome.Refused -> refused = refused + prepared.source
                     }
             }
@@ -117,7 +121,7 @@ internal class DesktopQueueLocatorResolver(
      * Keeps a view until its lease claims it or it expires. Expired views and the oldest views beyond the cap are
      * released here, so a dropped occurrence never holds its transport open for the rest of the session.
      */
-    private fun remember(handle: PreparedPlaintextHandle): PlaybackLocator {
+    private fun remember(handle: PreparedPlaintextHandle, source: AudioSourceType): PlaybackLocator {
         val released = mutableListOf<PreparedPlaintextHandle>()
         val accepted = synchronized(lock) {
             if (closed) return@synchronized false
@@ -140,7 +144,7 @@ internal class DesktopQueueLocatorResolver(
             port.releasePrepared(handle)
             error("the desktop source resolver is closed")
         }
-        return PlaybackLocator.PreparedPlaintext(handle)
+        return PlaybackLocator.PreparedPlaintext(handle, source)
     }
 
     /**
@@ -177,7 +181,7 @@ internal fun desktopAudioProviders(
 ): List<AudioProviderRepository> = listOfNotNull(
     DesktopTidalSource(http, accounts, preferences, tidalSessionRefresh, pool),
     KtorQobuzBackupRepository(http),
-    DesktopDeezerSource(http, accounts, pool),
+    DesktopDeezerSource(http, accounts, pool, preferences),
     desktopJioSaavnSource(http),
     DesktopQqMusicSource(http, accounts),
 )
@@ -185,19 +189,9 @@ internal fun desktopAudioProviders(
 private fun ContentOccurrence.toResolveRequest(preferences: PreferenceSnapshot?): AudioResolveRequest =
     toAudioResolveRequest(preferences)
 
-/** The per-source catalogue ids the menu's source chooser stored, added to the request's authoritative ids. */
-internal fun AudioResolveRequest.withSourcePins(preferences: PreferenceSnapshot?, songId: String): AudioResolveRequest {
-    val qobuzTrack = preferences?.get(SongSourceQobuzTrackIdKey)?.let { SongSourceQobuzTrackId.get(it, songId) }
-    val backupVideo = preferences?.get(SongSourceQobuzBackupVideoIdKey)?.let { SongSourceQobuzBackupVideoId.get(it, songId) }
-    val extras = listOfNotNull(
-        qobuzTrack?.let { AudioSourceType.QOBUZ to it },
-        backupVideo?.let { AudioSourceType.QOBUZ_BACKUP to it },
-    )
-    val amazon = if (SongSourceOverride.get(preferences?.get(SongSourceOverrideKey), songId) == AudioSourceType.AMAZON) {
-        SongSourceAmazonPick.get(preferences?.get(SongSourceAmazonPickKey), songId)
-    } else null
-    return if (extras.isEmpty() && amazon == null) this else copy(directIds = directIds + extras.toMap(), amazonPick = amazon)
-}
+/** The per-source catalogue ids the menu's source chooser stored; the shared host owns the rule on every platform. */
+internal fun AudioResolveRequest.withSourcePins(preferences: PreferenceSnapshot?, songId: String): AudioResolveRequest =
+    sharedWithSourcePins(preferences, songId)
 
 private fun unavailableReason(occurrence: ContentOccurrence, attempts: List<AudioAttempt>): String =
     unresolvedSourceReason(occurrence, attempts, host = "desktop")

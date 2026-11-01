@@ -66,8 +66,8 @@ internal enum class IosSpotifyCatalogError { SIGN_IN_FAILED, BROWSER_UNAVAILABLE
  * The iOS Spotify catalog account: the same cookie-window sign-in the desktop host runs, over the in-memory
  * WKWebView sheet of [IosCookieOnlyBrowserAuth]. The sp_dc cookie mints a web-player token through
  * [KtorSpotifyAuth], and the account name, avatar and playlist count come from Spotify's own REST profile, so the
- * row never names an account Spotify has not confirmed. Streaming sign-in is a separate account and stays
- * unavailable on this host.
+ * row never names an account Spotify has not confirmed. Streaming sign-in is the separate account of
+ * [IosSpotifyStreamingAccount]; it shares this sheet shape but not its cookie scope or settings keys.
  */
 internal class IosSpotifyCatalogAccount(
     private val graph: IosSessionGraph,

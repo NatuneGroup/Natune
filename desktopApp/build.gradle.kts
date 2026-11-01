@@ -73,6 +73,10 @@ val prepareDesktopPlayPlaySources = tasks.register<Sync>("prepareDesktopPlayPlay
 kotlin.sourceSets.named("jvmMain") { kotlin.srcDir(desktopPlayPlaySources) }
 tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(prepareDesktopPlayPlaySources) }
 
+// The public Discord application id, which DesktopDiscordPresence.APPLICATION_ID must also hold. macOS hands the
+// OAuth callback to a bundle only when its CFBundleURLSchemes names discord-<id>, so the macOS block below reads it.
+val desktopDiscordApplicationId = "1165706613961789445"
+
 // Provider credentials for the desktop host are injected at build time and never committed (see
 // docs/build-credentials.md). The generated DesktopBuildCredentials object is read through DesktopCredentials,
 // which lets an environment variable or system property of the same name override it at run time.
@@ -103,8 +107,10 @@ val desktopCredentialNames = listOf(
     // Without it the code sign-in reads as not configured.
     "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID",
     "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET",
-    // The Amazon Turnstile sitekey, under the name Android's BuildConfig reads; without it sign-in is not configured.
+    // The Amazon Turnstile sitekey and the origin it is locked to, under the names Android's BuildConfig reads; without
+    // both, sign-in is not configured.
     "ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY",
+    "ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN",
 )
 val desktopLegacyCredentialNames = mapOf(
     "ARCHIVETUNE_LASTFM_API_KEY" to arrayOf("LASTFM_API_KEY"),
@@ -252,7 +258,9 @@ compose.desktop {
                     extraKeysRawXml = """
                         <key>CFBundleURLTypes</key><array><dict>
                         <key>CFBundleURLName</key><string>ArchiveTune</string>
-                        <key>CFBundleURLSchemes</key><array><string>archivetune</string></array>
+                        <key>CFBundleURLSchemes</key><array>
+                        <string>archivetune</string><string>discord-$desktopDiscordApplicationId</string>
+                        </array>
                         </dict></array>
                         <key>NSMicrophoneUsageDescription</key><string>Natune uses the microphone for audio recognition.</string>
                     """.trimIndent()

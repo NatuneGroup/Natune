@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.desktop.provider
 
+import moe.rukamori.archivetune.shared.data.provider.youTubeLoginCookieValue
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
 import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot

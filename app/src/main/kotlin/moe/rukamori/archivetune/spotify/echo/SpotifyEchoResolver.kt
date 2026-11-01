@@ -14,6 +14,9 @@
 
 package moe.rukamori.archivetune.spotify.echo
 
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
+
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,7 +52,7 @@ object SpotifyEchoResolver {
     @Volatile
     private var cachedDeviceId: String? = null
 
-    private val trackCache = java.util.concurrent.ConcurrentHashMap<String, ResolvedEchoStream>()
+    private val trackCache = StreamUrlCache<String, ResolvedEchoStream>()
 
     private const val CACHE_TTL_MS = 10L * 60 * 1000
 
@@ -124,9 +127,11 @@ object SpotifyEchoResolver {
     ): ResolvedEchoStream? {
         val trackUri = if (trackId.startsWith("spotify:track:")) trackId else "spotify:track:$trackId"
         trackCache[trackUri]?.let { cached ->
-            if (System.currentTimeMillis() - cached.resolvedAtMs < CACHE_TTL_MS) return cached
-            trackCache.remove(trackUri)
+            val expiry = cached.cdnUrls.mapNotNull(StreamUrlExpiry::fromUrl).minOrNull()
+            if (System.currentTimeMillis() < StreamUrlExpiry.cacheDeadline(cached.resolvedAtMs, CACHE_TTL_MS, expiry)) return cached
+            trackCache.discard(trackUri, cached)
         }
+        val generation = trackCache.generation
         val token = SpotifyDesktopAuth.desktopToken(spDc) ?: run {
             Timber.tag(TAG).w("Echo resolve: no desktop token (device authorization failed)")
             return null
@@ -141,7 +146,7 @@ object SpotifyEchoResolver {
         val cdnUrls = resolveStorageCdn(token, clientToken, chosen) ?: return null
         val keyHex = fetchPlayPlayKey(token, clientToken, chosen.fileIdHex) ?: return null
         val stream = ResolvedEchoStream(trackUri, files, chosen, cdnUrls, keyHex, durationMs, System.currentTimeMillis())
-        trackCache[trackUri] = stream
+        if (!trackCache.putIfCurrent(trackUri, stream, generation)) return null
         return stream
     }
 

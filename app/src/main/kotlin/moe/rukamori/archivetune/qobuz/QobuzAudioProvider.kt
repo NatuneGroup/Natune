@@ -7,6 +7,9 @@
 
 package moe.rukamori.archivetune.qobuz
 
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
+
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
@@ -43,7 +46,6 @@ object QobuzAudioProvider {
     private const val FAILURE_CACHE_MS = 10 * 60 * 1000L
     private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L
     private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L
-    private const val AUDIO_FLAC_MIME_TYPE = "audio/flac"
     private const val HEALTH_PROBE_TRACK_ID = "5966783"
     private const val HEALTH_PROBE_FORMAT_ID = 5
 
@@ -171,8 +173,8 @@ object QobuzAudioProvider {
     private data class CachedStream(val stream: DirectStream, val expiresAt: Long)
 
     private val searchCache = ConcurrentHashMap<String, CachedSearch>()
-    private val streamCache = ConcurrentHashMap<String, CachedStream>()
-    private val failureCache = ConcurrentHashMap<String, Long>()
+    private val streamCache = StreamUrlCache<String, CachedStream>()
+    private val failureCache = StreamUrlCache<String, Long>()
     private val instanceCooldownUntilMs = ConcurrentHashMap<String, Long>()
 
     /** Replaces the active instance list. Invalid/duplicate URLs are dropped. Empty stays empty. */
@@ -427,18 +429,20 @@ object QobuzAudioProvider {
             return null
         }
         val now = System.currentTimeMillis()
-        val cacheKey = query.cacheKey() + ":" + formatId
+        val cacheKey = query.streamCacheKey(formatId)
         streamCache[cacheKey]?.let { cached ->
             if (cached.expiresAt > now) {
                 Timber.tag("Qobuz").d("stream cache hit for %s", query.title)
                 return cached.stream
             }
-            streamCache.remove(cacheKey)
+            streamCache.discard(cacheKey, cached)
         }
         failureCache[cacheKey]?.let { failedUntil ->
             if (failedUntil > now) return null
-            failureCache.remove(cacheKey)
+            failureCache.discard(cacheKey, failedUntil)
         }
+        val streamGeneration = streamCache.generation
+        val failureGeneration = failureCache.generation
 
         val available = backends.filterNot { isInstanceCoolingDown(it.id, now) }.ifEmpty { backends }
         for (backend in available) {
@@ -500,19 +504,27 @@ object QobuzAudioProvider {
                     mimeType = download.mimeType,
                     codecs = download.codecs,
                     contentLength = null,
-                    label = "Qobuz ${qualityLabel(formatId)}",
+                    label = download.served.label(),
                     source = AudioSourceType.QOBUZ,
                     matchedTitle = match.title,
                     matchedArtist = match.artist,
                     matchedAlbum = match.album,
                     matchedDurationMs = match.durationMs,
+                    sampleRate = download.served.sampleRateHz,
+                    bitDepth = download.served.bitDepth,
+                    expiresAtEpochMs = StreamUrlExpiry.fromUrl(download.url),
                 )
-            streamCache[cacheKey] = CachedStream(stream, now + STREAM_CACHE_MS)
+            if (!streamCache.putIfCurrent(
+                    cacheKey,
+                    CachedStream(stream, StreamUrlExpiry.cacheDeadline(now, STREAM_CACHE_MS, stream.expiresAtEpochMs)),
+                    streamGeneration,
+                )
+            ) return null
             Timber.tag("Qobuz").i("resolved \"%s\" via %s [%s]", query.title, backend.label, stream.label)
             return stream
         }
         if (AudioSourceAttemptScope.current()?.isExpired() != true) {
-            failureCache[cacheKey] = now + FAILURE_CACHE_MS
+            failureCache.putIfCurrent(cacheKey, now + FAILURE_CACHE_MS, failureGeneration)
         }
         return null
     }
@@ -634,14 +646,6 @@ object QobuzAudioProvider {
         return tokenBackends + proxyBackends
     }
 
-    private fun qualityLabel(formatId: Int): String =
-        when (formatId) {
-            6 -> "FLAC"
-            7 -> "HI_RES"
-            27 -> "MAX"
-            else -> "FLAC"
-        }
-
     /**
      * Drops any cached stream/failure entry for [query], forcing the next [resolve] to hit the
      * network.
@@ -654,10 +658,18 @@ object QobuzAudioProvider {
         query: Query,
         formatId: Int,
     ) {
-        val key = query.cacheKey() + ":" + formatId
+        val key = query.streamCacheKey(formatId)
         streamCache.remove(key)
         failureCache.remove(key)
     }
+
+    fun invalidate(mediaId: String) {
+        streamCache.invalidateWhere { it.startsWith("$mediaId::") }
+        failureCache.invalidateWhere { it.startsWith("$mediaId::") }
+    }
+
+    private fun Query.streamCacheKey(formatId: Int): String =
+        "$mediaId::${directTrackId.orEmpty()}::${cacheKey()}:$formatId"
 
     /**
      * Clears the transient (process-lived) failure cache and per-instance cooldowns. Called on app
@@ -794,6 +806,7 @@ object QobuzAudioProvider {
         val mimeType: String,
         val codecs: String,
         val isPreview: Boolean,
+        val served: ServedAudio,
     )
 
     /** Calls download-music and extracts the direct URL + a best-effort preview flag. */
@@ -826,14 +839,9 @@ object QobuzAudioProvider {
             val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
             val streamUrl = root.findStreamUrl() ?: return null
             val isPreview = root.looksLikePreview()
-            val mime =
-                when {
-                    streamUrl.contains(".flac", ignoreCase = true) -> AUDIO_FLAC_MIME_TYPE
-                    streamUrl.contains(".mp3", ignoreCase = true) -> "audio/mpeg"
-                    else -> AUDIO_FLAC_MIME_TYPE
-                }
-            val codecs = if (mime == AUDIO_FLAC_MIME_TYPE) "flac" else "mp4a.40.2"
-            return DownloadResult(streamUrl, mime, codecs, isPreview)
+            val served = root.servedAudio(streamUrl)
+            val mime = served.mimeType ?: AUDIO_FLAC_MIME_TYPE
+            return DownloadResult(streamUrl, mime, codecsFor(mime), isPreview, served)
         }
     }
 
@@ -915,17 +923,9 @@ object QobuzAudioProvider {
                 ?: return null
         // Qobuz sets "sample":true for 30s previews (unsubscribed, or track unavailable at quality).
         val isPreview = root.optBoolean("sample", false) || root.looksLikePreview()
-        val apiMime = root.stringOrNull("mime_type")
-        val mime =
-            when {
-                apiMime?.contains("flac", true) == true -> AUDIO_FLAC_MIME_TYPE
-                apiMime?.contains("mpeg", true) == true || apiMime?.contains("mp3", true) == true -> "audio/mpeg"
-                streamUrl.contains(".flac", true) -> AUDIO_FLAC_MIME_TYPE
-                streamUrl.contains(".mp3", true) -> "audio/mpeg"
-                else -> AUDIO_FLAC_MIME_TYPE
-            }
-        val codecs = if (mime == AUDIO_FLAC_MIME_TYPE) "flac" else "mp4a.40.2"
-        return DownloadResult(streamUrl, mime, codecs, isPreview)
+        val served = root.servedAudio(streamUrl)
+        val mime = served.mimeType ?: AUDIO_FLAC_MIME_TYPE
+        return DownloadResult(streamUrl, mime, codecsFor(mime), isPreview, served)
     }
 
     private fun directRequest(
@@ -1022,33 +1022,6 @@ object QobuzAudioProvider {
         optJSONArray("items")?.let { return it }
         optJSONArray("tracks")?.let { return it }
         return null
-    }
-
-    /** Recursively searches for the first plausible stream URL field. */
-    private fun JSONObject.findStreamUrl(): String? {
-        for (key in listOf("url", "downloadUrl", "download_url", "stream_url", "streamUrl", "link")) {
-            stringOrNull(key)?.takeIf { it.startsWith("http") }?.let { return it }
-        }
-        optJSONObject("data")?.findStreamUrl()?.let { return it }
-        val names = keys()
-        while (names.hasNext()) {
-            val value = opt(names.next())
-            when (value) {
-                is JSONObject -> value.findStreamUrl()?.let { return it }
-                is String -> if (value.startsWith("http") && (value.contains(".flac", true) || value.contains(".mp3", true))) return value
-            }
-        }
-        return null
-    }
-
-    /** Best-effort preview/sample detection from the download payload. */
-    private fun JSONObject.looksLikePreview(): Boolean {
-        val data = optJSONObject("data") ?: this
-        if (data.optBoolean("sample", false)) return true
-        if (data.optBoolean("preview", false)) return true
-        // Some proxies signal an unsubscribed account via a short duration or an explicit flag.
-        data.stringOrNull("type")?.let { if (it.equals("preview", true) || it.equals("sample", true)) return true }
-        return false
     }
 
     private fun JSONObject.trackId(): String? =

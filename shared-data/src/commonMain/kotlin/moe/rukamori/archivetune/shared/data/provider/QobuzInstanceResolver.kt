@@ -14,6 +14,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 
 /**
  * A faithful port of the proxy-instance side of the retained `QobuzAudioProvider`: manual plus
@@ -69,8 +71,8 @@ class QobuzInstanceResolver(
     private var instances: List<Instance> = emptyList()
 
     private val searchCache = mutableMapOf<String, CachedSearch>()
-    private val streamCache = mutableMapOf<String, CachedStream>()
-    private val failureCache = mutableMapOf<String, Long>()
+    private val streamCache = StreamUrlCache<String, CachedStream>()
+    private val failureCache = StreamUrlCache<String, Long>()
     private val instanceCooldownUntilMs = mutableMapOf<String, Long>()
 
     private var discoveryCache: List<String> = emptyList()
@@ -207,16 +209,18 @@ class QobuzInstanceResolver(
         if (available.isEmpty()) {
             if (instances.isEmpty()) return null
             // All cooling down: a rate-limited miss should not burn a search round trip.
-            if (failureCache[query.cacheKey() + ":" + formatId]?.let { it > nowMs() } == true) return null
+            if (failureCache[query.streamCacheKey(formatId)]?.let { it > nowMs() } == true) return null
         }
-        val cacheKey = query.cacheKey() + ":" + formatId
+        val cacheKey = query.streamCacheKey(formatId)
         stateMutex.withLock {
             streamCache[cacheKey]?.let { cached ->
                 if (cached.expiresAt > nowMs()) return cached.stream
-                streamCache.remove(cacheKey)
+                streamCache.discard(cacheKey, cached)
             }
             failureCache[cacheKey]?.let { failedUntil -> if (failedUntil > nowMs()) return null }
         }
+        val streamGeneration = streamCache.generation
+        val failureGeneration = failureCache.generation
 
         for (instance in available) {
             // When directTrackId is set (a specific Qobuz search result), skip the title/artist
@@ -267,28 +271,42 @@ class QobuzInstanceResolver(
                         matchedAlbum = match.album,
                         matchedDurationMs = match.durationMs,
                         trustedDirectId = query.directTrackId == trackId,
+                        expiresAtEpochMs = StreamUrlExpiry.fromUrl(download.url),
                     ),
                     trackId = trackId,
                     label = label,
                 )
             stateMutex.withLock {
-                streamCache[cacheKey] = CachedStream(resolved, nowMs() + STREAM_CACHE_MS)
+                if (!streamCache.putIfCurrent(
+                        cacheKey,
+                        CachedStream(resolved, StreamUrlExpiry.cacheDeadline(nowMs(), STREAM_CACHE_MS, resolved.stream.expiresAtEpochMs)),
+                        streamGeneration,
+                    )
+                ) return null
             }
             return resolved
         }
 
-        stateMutex.withLock { failureCache[cacheKey] = nowMs() + FAILURE_CACHE_MS }
+        stateMutex.withLock { failureCache.putIfCurrent(cacheKey, nowMs() + FAILURE_CACHE_MS, failureGeneration) }
         return null
     }
 
     /** Drops any cached stream/failure entry for [query], forcing the next resolve to hit the network. */
     suspend fun invalidate(query: Query, formatId: Int) {
-        val key = query.cacheKey() + ":" + formatId
+        val key = query.streamCacheKey(formatId)
         stateMutex.withLock {
             streamCache.remove(key)
             failureCache.remove(key)
         }
     }
+
+    suspend fun invalidate(mediaId: String) = stateMutex.withLock {
+        streamCache.invalidateWhere { it.startsWith("$mediaId::") }
+        failureCache.invalidateWhere { it.startsWith("$mediaId::") }
+    }
+
+    private fun Query.streamCacheKey(formatId: Int): String =
+        "$mediaId::${directTrackId.orEmpty()}::${cacheKey()}:$formatId"
 
     private fun qualityLabel(formatId: Int): String =
         when (formatId) {

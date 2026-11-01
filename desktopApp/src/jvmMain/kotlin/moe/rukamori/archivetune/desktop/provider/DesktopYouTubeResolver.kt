@@ -12,6 +12,7 @@ import moe.rukamori.archivetune.desktop.DesktopDiagnosticLog
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowse
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeResolutionPort
+import moe.rukamori.archivetune.shared.data.provider.fetchYouTubeVisitorData
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
 import moe.rukamori.archivetune.shared.domain.repository.AudioResolveRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind

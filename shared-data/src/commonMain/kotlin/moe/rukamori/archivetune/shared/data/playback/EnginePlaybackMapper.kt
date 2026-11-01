@@ -85,7 +85,7 @@ class EnginePlaybackMapper(
             return null
         }
         failureReported = true
-        return PlaybackFailure(current.occurrenceId, reasonFor(state.errorCode), message())
+        return PlaybackFailure(current.occurrenceId, reasonFor(state.errorCode), message(), attemptId = current.attemptId)
     }
 
     /**

@@ -1,5 +1,8 @@
 package moe.rukamori.archivetune.shared.data.provider
 
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
+
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -13,6 +16,9 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -59,6 +65,11 @@ class TidalInstanceResolver(
     private val poolEnabled: () -> Boolean = { false },
     private val sourceProviderUrl: () -> String = { "" },
     private val sourceProviderKey: () -> String = { "" },
+    /**
+     * Carries the best-effort cancels of abandoned queued playback. It must outlive the attempt that
+     * abandoned the ticket, because the race does not wait for a cancel before returning a winner.
+     */
+    private val cancelScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     data class Query(
         val mediaId: String,
@@ -439,8 +450,8 @@ class TidalInstanceResolver(
     private val stateMutex = Mutex()
     private val trackCache = mutableMapOf<String, CachedTrack>()
     private val searchCache = mutableMapOf<String, CachedSearch>()
-    private val streamCache = mutableMapOf<String, Resolved>()
-    private val streamFailureCache = mutableMapOf<String, CachedFailure>()
+    private val streamCache = StreamUrlCache<String, Resolved>()
+    private val streamFailureCache = StreamUrlCache<String, CachedFailure>()
 
     @kotlin.concurrent.Volatile
     private var resolverRateLimitedUntilMs = 0L
@@ -503,6 +514,8 @@ class TidalInstanceResolver(
             throw TidalRateLimitedException(cooldownRemainingMs)
         }
         val directTrackId = query.mediaId.toTidalTrackIdOrNull()
+        val streamGeneration = streamCache.generation
+        val failureGeneration = streamFailureCache.generation
         val trackCacheKey = query.trackCacheKey()
         val tracks = selectTracks(query, directTrackId, trackCacheKey, now, deadlineMs)
 
@@ -516,7 +529,7 @@ class TidalInstanceResolver(
         for (track in tracks.take(streamCandidateLimit)) {
             for (quality in streamQualityCandidates(track, preferAtmos, audioQuality)) {
                 if (nowMs() >= deadlineMs) break
-                val streamCacheKey = "${query.mediaId}::${track.trackId}::$quality::live"
+                val streamCacheKey = "${query.mediaId}::${accountScope.orEmpty()}::${track.trackId}::$quality::live"
                 val trackFailureCacheKey = "track:${track.trackId}::$quality::live"
                 val cachedStream = stateMutex.withLock { streamCache[streamCacheKey]?.takeIf { it.expiresAtMs > now + 20_000L } }
                 if (cachedStream != null) {
@@ -550,13 +563,15 @@ class TidalInstanceResolver(
                         if (error is CancellationException) throw error
                         errors += "${track.trackId}/$quality: ${error.message ?: error::class.simpleName}"
                         if (nowMs() < deadlineMs) {
-                            cacheStreamFailure(now, error, streamCacheKey, trackFailureCacheKey)
+                            cacheStreamFailure(now, error, failureGeneration, streamCacheKey, trackFailureCacheKey)
                         }
                     }
 
                 streamAttempt.getOrNull()?.let { resolved ->
                     stateMutex.withLock {
-                        streamCache[streamCacheKey] = resolved
+                        if (!streamCache.putIfCurrent(streamCacheKey, resolved, streamGeneration)) {
+                            throw TidalAudioResolutionException("TIDAL stream resolution was invalidated")
+                        }
                         if (directTrackId == null) {
                             trackCache[trackCacheKey] = CachedTrack(track, now + TRACK_CACHE_MS)
                         }
@@ -611,8 +626,13 @@ class TidalInstanceResolver(
     suspend fun invalidate(mediaId: String) {
         val prefix = "$mediaId::"
         stateMutex.withLock {
-            streamCache.keys.filter { it.startsWith(prefix) }.toList().forEach { streamCache.remove(it) }
-            streamFailureCache.keys.filter { it.startsWith(prefix) }.toList().forEach { streamFailureCache.remove(it) }
+            val tracks = (streamCache.keys.filter { it.startsWith(prefix) }.mapNotNull { streamCache[it]?.trackId } +
+                streamFailureCache.keys.filter { it.startsWith(prefix) }
+                    .map { it.removePrefix(prefix).substringAfter("::").substringBefore("::") }).toSet()
+            streamCache.invalidateWhere { it.startsWith(prefix) }
+            streamFailureCache.invalidateWhere { key ->
+                key.startsWith(prefix) || tracks.any { key.startsWith("track:$it::") }
+            }
             trackCache.remove(mediaId.trackCacheKeyFallback())
         }
     }
@@ -625,7 +645,7 @@ class TidalInstanceResolver(
             for (key in keys.distinct()) {
                 val failure = streamFailureCache[key] ?: continue
                 if (failure.expiresAtMs > now) return@withLock failure
-                streamFailureCache.remove(key)
+                streamFailureCache.discard(key, failure)
             }
             null
         }
@@ -633,6 +653,7 @@ class TidalInstanceResolver(
     private suspend fun cacheStreamFailure(
         now: Long,
         error: Throwable,
+        generation: StreamUrlCache.Generation,
         vararg keys: String,
     ) {
         val message = error.message ?: error::class.simpleName.orEmpty()
@@ -640,7 +661,9 @@ class TidalInstanceResolver(
         stateMutex.withLock {
             keys
                 .distinct()
-                .forEach { key -> streamFailureCache[key] = CachedFailure(message = message, expiresAtMs = expiresAtMs) }
+                .forEach { key ->
+                    streamFailureCache.putIfCurrent(key, CachedFailure(message = message, expiresAtMs = expiresAtMs), generation)
+                }
         }
     }
 
@@ -1147,16 +1170,7 @@ class TidalInstanceResolver(
 
         val reply = streamGet(url, STREAM_REQUEST_TIMEOUT_MS, params)
         if (reply.status == 429) {
-            val headerRetryAfterMs = reply.retryAfter?.toLongOrNull()?.times(1000L)?.coerceAtLeast(60_000L)
-            val bodyRetryAfterMs =
-                runCatching {
-                    Json.parseToJsonElement(reply.body).jsonObjectOrNull
-                        ?.long("retry_after")
-                        ?.takeIf { it > 0L }
-                        ?.times(1000L)
-                }.getOrNull()
-            val retryAfterMs = headerRetryAfterMs ?: bodyRetryAfterMs ?: RATE_LIMIT_COOLDOWN_MS
-            throw TidalRateLimitedException(retryAfterMs)
+            throw TidalRateLimitedException(rateLimitRetryAfterMs(reply.retryAfter, reply.body, RATE_LIMIT_COOLDOWN_MS))
         }
         if (reply.status !in 200..299) {
             val detail = "TIDAL ${endpoint.name} HTTP ${reply.status}: ${reply.body.take(180)}"
@@ -1165,8 +1179,14 @@ class TidalInstanceResolver(
             }
             throw TidalAudioResolutionException(detail)
         }
+        // 202 is a 2xx that carries a queue ticket instead of the playback payload.
+        val payload = if (reply.status == 202) {
+            queuedPlaybackWaiter.await(endpoint, reply.body, reply.retryAfter, reply.location, deadlineMs)
+        } else {
+            reply.body
+        }
         val root =
-            Json.parseToJsonElement(reply.body).jsonObjectOrNull
+            Json.parseToJsonElement(payload).jsonObjectOrNull
                 ?: throw TidalAudioResolutionException("TIDAL FLAC resolver returned no data")
         val data = root.obj("data") ?: throw TidalAudioResolutionException("TIDAL FLAC resolver returned no data")
         val effectiveDurationMs = durationMs ?: track.durationMs
@@ -1275,7 +1295,8 @@ class TidalInstanceResolver(
                 else -> "TIDAL FLAC"
             }
         val losslessDowngradedBitrateKbps = if (isLosslessDowngrade) ((bitrate ?: 320_000) / 1000).coerceAtLeast(1) else null
-        val expiresAtMs = extractExpiryMs(manifest.expiryUrl ?: manifest.url, now)
+        val authorizationExpiry = manifest.authorizationExpiry()
+        val expiresAtMs = StreamUrlExpiry.cacheDeadline(now, STREAM_CACHE_MS, authorizationExpiry)
         val providerTrack = track.toProviderTrack()
 
         val prepared: PreparedAudio =
@@ -1304,6 +1325,7 @@ class TidalInstanceResolver(
                         sampleRate = sampleRate,
                         bitDepth = dataBitDepth,
                         accountScope = accountScope,
+                        expiresAtEpochMs = authorizationExpiry,
                     ),
                 )
             }
@@ -1349,6 +1371,7 @@ class TidalInstanceResolver(
                         matchedDurationMs = track?.durationMs,
                         trustedDirectId = trustedDirectId,
                         accountScope = accountScope,
+                        expiresAtEpochMs = manifest.authorizationExpiry(),
                     ),
                 )
             }
@@ -1583,26 +1606,8 @@ class TidalInstanceResolver(
         }.takeIf { it > 0 }
     }
 
-    private fun extractExpiryMs(
-        url: String,
-        now: Long,
-    ): Long {
-        val httpUrl = runCatching { Url(url) }.getOrNull() ?: return now + STREAM_CACHE_MS
-        val params = httpUrl.parameters
-        val expiresSeconds =
-            params.entries().firstOrNull { it.key.equals("X-Amz-Expires", ignoreCase = true) }
-                ?.value?.firstOrNull()?.toLongOrNull()
-        val date =
-            params.entries().firstOrNull { it.key.equals("X-Amz-Date", ignoreCase = true) }
-                ?.value?.firstOrNull()
-        if (expiresSeconds != null && date != null) {
-            runCatching {
-                val issuedAt = parseAmazonDateMs(date)
-                return (issuedAt + expiresSeconds * 1000L - 30_000L).coerceAtLeast(now + 60_000L)
-            }
-        }
-        return now + STREAM_CACHE_MS
-    }
+    private fun ParsedManifest.authorizationExpiry(): Long? =
+        (segmentUrls + listOfNotNull(expiryUrl ?: url)).mapNotNull(StreamUrlExpiry::fromUrl).minOrNull()
     // endregion
 
     // region quality helpers
@@ -1833,6 +1838,47 @@ class TidalInstanceResolver(
     private fun String.hasToken(token: String): Boolean = split(' ').any { it == token }
     // endregion
 
+    // region queued playback (hifi-api 202 protocol)
+    /**
+     * The live wait of the 202 protocol. The resolver lends it the stream exchange, the ticket cancel,
+     * the cooldown book and the deadline clock; the poll cadence and ticket URLs stay with
+     * [TidalQueuedPlayback] like on the Android side.
+     */
+    private val queuedPlaybackWaiter =
+        TidalQueuedPlaybackWaiter(
+            nowMs = nowMs,
+            streamRequestTimeoutMs = STREAM_REQUEST_TIMEOUT_MS,
+            get = { url, timeoutMs ->
+                streamGet(url, timeoutMs).let { TidalQueuedPlaybackWaiter.Poll(it.status, it.body, it.retryAfter) }
+            },
+            cancel = ::cancelQueuedPlayback,
+            onRateLimited = { baseUrl, retryAfterMs -> markInstanceRateLimited(baseUrl, retryAfterMs) },
+            rateLimitCooldownMs = RATE_LIMIT_COOLDOWN_MS,
+        )
+
+    /** Fire-and-forget on [cancelScope]: the race must not wait for it, and a failed cancel changes nothing. */
+    private fun cancelQueuedPlayback(cancelUrl: String) {
+        cancelScope.launch {
+            runCatching {
+                exchange(client, cancelUrl, QUEUED_CANCEL_TIMEOUT_MS, emptyList(), emptyMap(), HttpMethod.Delete)
+            }.onFailure { failure ->
+                // Best effort: a ticket that cannot be cancelled is left for the server to expire.
+                if (failure is CancellationException) throw failure
+            }
+        }
+    }
+
+    /** A rate limit is not a hard failure; the instance is only skipped for the length of its Retry-After. */
+    private suspend fun markInstanceRateLimited(
+        baseUrl: String,
+        retryAfterMs: Long,
+    ) {
+        stateMutex.withLock {
+            instanceCooldownUntilMs[baseUrl] = maxOf(instanceCooldownUntilMs[baseUrl] ?: 0L, nowMs() + retryAfterMs)
+        }
+    }
+    // endregion
+
     // region HTTP plumbing
     private class Reply(
         val status: Int,
@@ -1841,6 +1887,7 @@ class TidalInstanceResolver(
         val contentType: String?,
         val contentLength: Long?,
         val contentRange: String?,
+        val location: String? = null,
     )
 
     private class TidalTimeoutException : Exception("TIDAL request timed out")
@@ -1912,6 +1959,7 @@ class TidalInstanceResolver(
                         contentType = response.headers[HttpHeaders.ContentType],
                         contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull(),
                         contentRange = response.headers[HttpHeaders.ContentRange],
+                        location = response.headers[HttpHeaders.Location],
                     )
                 }
             } catch (cancel: CancellationException) {
@@ -1921,35 +1969,6 @@ class TidalInstanceResolver(
                 throw TidalAudioResolutionException("TIDAL request failed: ${error::class.simpleName}", error)
             }
         } ?: throw TidalTimeoutException()
-    // endregion
-
-    // region JSON helpers
-    private fun JsonObject.stringOrNull(key: String): String? =
-        (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
-
-    private fun JsonObject.longOrNull(key: String): Long? =
-        if (containsKey(key)) (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull?.takeIf { it > 0L } else null
-
-    private fun JsonObject.doubleOrNull(key: String): Double? =
-        if (containsKey(key)) {
-            (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.doubleOrNull?.takeIf { it > 0.0 && !it.isNaN() }
-        } else {
-            null
-        }
-
-    private val kotlinx.serialization.json.JsonElement.jsonObjectOrNull: JsonObject?
-        get() = this as? JsonObject
-
-    private val kotlinx.serialization.json.JsonElement.jsonPrimitiveOrNull: kotlinx.serialization.json.JsonPrimitive?
-        get() = this as? kotlinx.serialization.json.JsonPrimitive
-
-    private fun JsonArray.firstStringOrNull(): String? {
-        for (element in this) {
-            val value = element.jsonPrimitiveOrNull?.content?.takeIf { it.isNotBlank() }
-            if (value != null) return value
-        }
-        return null
-    }
     // endregion
 
     // region XML helpers
@@ -1982,37 +2001,6 @@ class TidalInstanceResolver(
     private fun String.sanitizeXmlEntities(): String = replace(XML_UNESCAPED_AMPERSAND_REGEX, "&amp;")
     // endregion
 
-    // region transport-error classification hook
-    private fun parseAmazonDateMs(value: String): Long {
-        // X-Amz-Date "yyyyMMdd'T'HHmmss'Z'" — fixed-width parse to keep common code date-lib free.
-        require(value.length >= 16)
-        val year = value.substring(0, 4).toInt()
-        val month = value.substring(4, 6).toInt()
-        val day = value.substring(6, 8).toInt()
-        val hour = value.substring(9, 11).toInt()
-        val minute = value.substring(11, 13).toInt()
-        val second = value.substring(13, 15).toInt()
-        val epochDay = daysFromCivil(year, month, day)
-        return (epochDay * 86_400L + hour * 3600L + minute * 60L + second) * 1000L
-    }
-
-    private fun daysFromCivil(
-        y0: Int,
-        m: Int,
-        d: Int,
-    ): Long {
-        var y = y0
-        if (m <= 2) y -= 1
-        val era = if (y >= 0) y else y - 399
-        val eraYears = era / 400
-        val yoe = y - eraYears * 400
-        val mp = (m + 9) % 12
-        val doy = (153 * mp + 2) / 5 + d - 1
-        val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
-        return (eraYears * 146097L + doe - 719468L)
-    }
-    // endregion
-
     private companion object {
         internal const val PROGRESSIVE_DASH_SCHEME = "tidal-dash"
         private const val API_BASE_URL = "https://tidal.com/v1"
@@ -2040,6 +2028,7 @@ class TidalInstanceResolver(
         private const val MIN_MATCH_SCORE = 90
         private const val PROVIDER_ATTEMPT_MS = 8_000L
         private const val STREAM_REQUEST_TIMEOUT_MS = 25_000L
+        private const val QUEUED_CANCEL_TIMEOUT_MS = 5_000L
         private const val HEALTH_TIMEOUT_MS = 6_000L
         private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L
         private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L

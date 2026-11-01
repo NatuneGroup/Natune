@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.ProviderTrack
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 import moe.rukamori.archivetune.shared.domain.source.TrackMatching
 import moe.rukamori.archivetune.spotify.SpotifyHashProvider
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoProto
@@ -92,7 +93,8 @@ internal class DesktopSpotifyEchoClient(
         val stream = DirectStream(url, if (flac) "audio/flac" else "audio/ogg", if (flac) "flac" else "vorbis",
             null, AudioSourceType.SPOTIFY.name, AudioSourceType.SPOTIFY, track.item.title,
             track.artists.joinToString(", "), track.album, track.item.durationMs,
-            trustedDirectId = request.directIds[AudioSourceType.SPOTIFY] == id, accountScope = scope)
+            trustedDirectId = request.directIds[AudioSourceType.SPOTIFY] == id, accountScope = scope,
+            expiresAtEpochMs = StreamUrlExpiry.fromUrl(url))
         return PreparedAudio.Native(stream,
             NativeAudioRecipe.SpotifyPlayPlay(url, AudioSecret(keyHex), AudioSecret(configuration.audioIv), flac, scope))
     }

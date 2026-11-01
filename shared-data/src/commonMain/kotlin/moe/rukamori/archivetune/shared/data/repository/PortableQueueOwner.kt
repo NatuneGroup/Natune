@@ -1,6 +1,5 @@
 package moe.rukamori.archivetune.shared.data.repository
 
-import io.ktor.client.plugins.ResponseException
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -24,13 +23,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.persistence.AlbumCompletionIndex
+import moe.rukamori.archivetune.shared.data.repository.QueueStreamRecovery.Prepared
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
-import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureReason
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
-import moe.rukamori.archivetune.shared.domain.playback.playbackCauses
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistPhase
 import moe.rukamori.archivetune.shared.domain.queue.IncompleteFinitePlaylistException
@@ -124,12 +122,14 @@ class PortableQueueOwner(
     val automaticAdvanceFailures: SharedFlow<Throwable> = advanceFailureFlow.asSharedFlow()
 
     private val resolutionFailureFlow = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 8)
+    private val finalFailureFlow = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 8)
+    private val streamRecovery = QueueStreamRecovery(player, locators)
 
     /**
      * The failures the error dialog and skip-on-error act on: the engine's, and those of songs no source resolved. An
      * unresolved song never reaches the engine, so without the second kind it would stop silently.
      */
-    val failures: Flow<PlaybackFailure> = merge(player.failures, resolutionFailureFlow)
+    val failures: Flow<PlaybackFailure> = finalFailureFlow.asSharedFlow()
 
     /** The occurrence and generation whose end was already acted on, so one end advances exactly once. */
     private var lastEnded: Pair<String, Long>? = null
@@ -179,7 +179,7 @@ class PortableQueueOwner(
     }
 
     private val failureWatcher: Job = scope.launch {
-        failures.collect { failure -> onFailure(failure) }
+        merge(player.failures, resolutionFailureFlow).collect { failure -> onFailure(failure) }
     }
 
     private val infinitePreferenceWatcher: Job = scope.launch {
@@ -674,6 +674,7 @@ class PortableQueueOwner(
         if (queue.currentOccurrenceId != handoff.state.fromOccurrenceId) return
         if (queue.entries.none { it.occurrenceId == incoming }) return
         currentState = queue.copy(revision = queue.revision + 1, currentOccurrenceId = incoming)
+        streamRecovery.loaded(handoff.request, 0L, player.snapshot.value?.playWhenReady ?: true)
     }
 
     /**
@@ -750,8 +751,10 @@ class PortableQueueOwner(
             remainingMs >= HANDOFF_MIN_OVERLAP_MS -> remainingMs
             else -> return
         }
-        if (!engine.arm(request, overlapMs)) return
+        val attempted = streamRecovery.nextAttempt(request)
+        if (!engine.arm(attempted, overlapMs)) return
         val handoff = ArmedHandoff(
+            request = attempted,
             state = QueueHandoffState(key.occurrenceId, next.occurrenceId, durationMs - overlapMs, overlapMs),
             playbackGeneration = key.playbackGeneration,
             discontinuityGeneration = key.discontinuityGeneration,
@@ -835,16 +838,30 @@ class PortableQueueOwner(
         select(next, 0L)
     }
 
-    private fun onFailure(failure: PlaybackFailure) {
-        if (!autoSkipNextOnError()) return
-        scope.launch {
-            try {
-                withQueueAccess { skipAfterFailure(failure.occurrenceId) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                advanceFailureFlow.tryEmit(error)
+    private suspend fun onFailure(failure: PlaybackFailure) {
+        try {
+            withQueueAccess {
+                if (failure.occurrenceId != currentState.currentOccurrenceId || !streamRecovery.accepts(failure)) {
+                    return@withQueueAccess
+                }
+                val occurrence = currentState.entries.firstOrNull {
+                    it.occurrenceId == failure.occurrenceId && it.occurrenceId == currentState.currentOccurrenceId
+                }
+                val recovered = occurrence?.let {
+                    streamRecovery.recover(failure, it.copy(item = it.item.canonicalSong()))
+                }
+                if (recovered != null) {
+                    startPrepared(Prepared.Ready(recovered.request), recovered.positionMs, recovered.playWhenReady, recovering = true)
+                    return@withQueueAccess
+                }
+                finalFailureFlow.tryEmit(failure)
+                if (autoSkipNextOnError()) skipAfterFailure(failure.occurrenceId)
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            finalFailureFlow.tryEmit(failure)
+            advanceFailureFlow.tryEmit(error)
         }
     }
 
@@ -877,39 +894,26 @@ class PortableQueueOwner(
      * A song no source resolves still becomes current, as a Media3 item that fails to open does on Android: the player
      * stops and the failure goes out with the engine's, rather than the queue command failing with nothing shown.
      */
-    private suspend fun requestFor(occurrence: ContentOccurrence): Prepared = try {
-        Prepared.Ready(PlaybackRequest(occurrence.occurrenceId, occurrence.item.ref.id, locators.locate(occurrence.copy(item = occurrence.item.canonicalSong()))))
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (error: Exception) {
-        Prepared.Unresolved(
-            PlaybackFailure(
-                occurrenceId = occurrence.occurrenceId,
-                reason = PlaybackFailureReason.SOURCE_UNAVAILABLE,
-                message = error.message.orEmpty(),
-                httpStatus = error.httpStatusOrNull(),
-                causes = error.playbackCauses(),
-            ),
-        )
-    }
+    private suspend fun requestFor(occurrence: ContentOccurrence): Prepared = streamRecovery.prepare(occurrence)
 
-    private fun startPrepared(prepared: Prepared, positionMs: Long, playWhenReady: Boolean) {
+    private fun startPrepared(prepared: Prepared, positionMs: Long, playWhenReady: Boolean, recovering: Boolean = false) {
         forgetHandoff()
         when (prepared) {
-            is Prepared.Ready -> player.load(prepared.request, positionMs, playWhenReady)
+            is Prepared.Ready -> {
+                val attempted = streamRecovery.nextAttempt(prepared.request)
+                streamRecovery.loaded(attempted, positionMs, playWhenReady, recovering)
+                player.load(attempted, positionMs, playWhenReady)
+            }
             is Prepared.Unresolved -> {
+                streamRecovery.unresolved()
                 player.stop()
                 resolutionFailureFlow.tryEmit(prepared.failure)
             }
         }
     }
 
-    private sealed interface Prepared {
-        class Ready(val request: PlaybackRequest) : Prepared
-        class Unresolved(val failure: PlaybackFailure) : Prepared
-    }
-
     private data class ArmedHandoff(
+        val request: PlaybackRequest,
         val state: QueueHandoffState,
         val playbackGeneration: Long,
         val discontinuityGeneration: Long,

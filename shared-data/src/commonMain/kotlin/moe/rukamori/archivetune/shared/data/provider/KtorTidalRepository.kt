@@ -67,6 +67,7 @@ class KtorTidalRepository(
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         if (!access.isActive()) throw UnsupportedContentOperation()
+        if (request.forceFreshStream) instanceResolver.invalidate(request.mediaId)
         val quality = request.qualities[source] ?: "LOSSLESS"
         require(quality in setOf("HIGH", "LOW", "LOSSLESS", "HI_RES_LOSSLESS", "HI_RES", "DOLBY_ATMOS"))
         val query = TidalInstanceResolver.Query(

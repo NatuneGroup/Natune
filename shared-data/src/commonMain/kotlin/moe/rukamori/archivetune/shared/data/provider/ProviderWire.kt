@@ -34,6 +34,27 @@ internal fun JsonObject.preview(): Boolean = flag("sample") || flag("preview") |
     text("type")?.lowercase() in setOf("preview", "sample") ||
     text("assetPresentation").equals("PREVIEW", true) || text("trackPresentation").equals("PREVIEW", true) ||
     (obj("data")?.preview() == true)
+internal fun JsonObject.stringOrNull(key: String): String? =
+    (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+internal fun JsonObject.longOrNull(key: String): Long? =
+    if (containsKey(key)) (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull?.takeIf { it > 0L } else null
+internal fun JsonObject.doubleOrNull(key: String): Double? =
+    if (containsKey(key)) {
+        (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.doubleOrNull?.takeIf { it > 0.0 && !it.isNaN() }
+    } else {
+        null
+    }
+internal val kotlinx.serialization.json.JsonElement.jsonObjectOrNull: JsonObject?
+    get() = this as? JsonObject
+internal val kotlinx.serialization.json.JsonElement.jsonPrimitiveOrNull: kotlinx.serialization.json.JsonPrimitive?
+    get() = this as? kotlinx.serialization.json.JsonPrimitive
+internal fun JsonArray.firstStringOrNull(): String? {
+    for (element in this) {
+        val value = element.jsonPrimitiveOrNull?.content?.takeIf { it.isNotBlank() }
+        if (value != null) return value
+    }
+    return null
+}
 internal fun streamUrl(value: String): String = value.also {
     val url = Url(it)
     require(url.protocol == URLProtocol.HTTPS && url.host.isNotBlank() &&
@@ -151,7 +172,7 @@ abstract class PagedAudioProvider(private val cursorScope: String) : TypedConten
         require(page.total == null || page.hasMore == null || page.hasMore == (end < page.total))
         require(!more || page.tracks.isNotEmpty()) { "Empty nonterminal provider page" }
         return ContentPage(page.tracks.mapIndexed { index, track ->
-            ContentOccurrence("${provider.id}:$hash:${offset + index}", track.item)
+            ContentOccurrence("${provider.id}:$hash:${offset + index}", track.queueItem())
         }, if (more) "v1:$hash:$end" else null)
     }
     protected suspend fun match(request: AudioResolveRequest): ProviderTrack? {
@@ -167,6 +188,7 @@ abstract class PagedAudioProvider(private val cursorScope: String) : TypedConten
         accountScope: String? = null): DirectStream =
         DirectStream(streamUrl(uri), mime, codecs, length, source.name, source,
             track.item.title, track.artists.joinToString(", "), track.album, track.item.durationMs,
-            request.directIds[source] == track.item.ref.id, sampleRate, bitDepth, accountScope = accountScope)
+            request.directIds[source] == track.item.ref.id, sampleRate, bitDepth, accountScope = accountScope,
+            expiresAtEpochMs = StreamUrlExpiry.fromUrl(uri))
     private companion object { const val PAGE_SIZE = 50 }
 }

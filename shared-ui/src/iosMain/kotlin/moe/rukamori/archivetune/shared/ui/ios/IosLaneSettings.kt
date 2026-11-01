@@ -84,11 +84,11 @@ import platform.Foundation.localizedStringForLanguageCode
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on
- * this host (YouTube account and backup, hidden playlists, song export, the palette picker and the icon picker,
+ * this host (backup, hidden playlists, song export, the palette picker and the icon picker,
  * Android Auto) mount an honest unavailable page instead of the unbound boundary.
  */
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
-    "settings/account", "account", "login", "settings/hidden_playlists", "settings/po_token",
+    "settings/hidden_playlists", "settings/po_token",
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
     "settings/appearance/icon", "settings/appearance/aod_customized", "settings/appearance/navigation_bar",
     "settings/android_auto", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
@@ -99,7 +99,7 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
 
 /** Routes that mount the unavailable page: their owners do not exist on this host. */
 private val IOS_LANE_UNAVAILABLE_ROUTES = setOf(
-    "settings/account", "account", "login", "settings/hidden_playlists", "settings/backup_restore",
+    "settings/hidden_playlists", "settings/backup_restore",
     "settings/storage/export_songs", "settings/appearance/palette_picker", "settings/appearance/icon",
     "settings/android_auto",
 )
@@ -340,6 +340,8 @@ private fun IosLaneSourceSettingsPage(
     SourceSettings(
         controller = owners.controller,
         spotifyStreamingReady = preferences.spotifyStreamingSignedIn(),
+        // This host has no Spotify streaming transport, so the row reads as not available here.
+        spotifyStreamingPlatformSupported = false,
         poolConfigured = owners.poolConfigured,
         refreshPool = { iosLaneRefreshPool(owners) },
         checkSource = { type, prefs -> iosLaneCheckSource(owners.graph.http, type, prefs) },
@@ -380,7 +382,8 @@ internal suspend fun iosLaneCheckSource(
     AudioSourceType.AMAZON -> preferences.amazonInstanceList().firstOrNull()
         ?.let { iosLaneProbe(http, it) } ?: false
     AudioSourceType.QQ -> iosLaneProbe(http, "https://c.y.qq.com/")
-    AudioSourceType.SPOTIFY -> preferences.spotifyStreamingSignedIn()
+    // This host has no Spotify streaming transport, so a signed-in streaming account is still not a reachable source here.
+    AudioSourceType.SPOTIFY -> false
     AudioSourceType.JIOSAAVN ->
         iosLaneProbe(http, "https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")
     AudioSourceType.YOUTUBE -> iosLaneProbe(http, "https://music.youtube.com/generate_204")

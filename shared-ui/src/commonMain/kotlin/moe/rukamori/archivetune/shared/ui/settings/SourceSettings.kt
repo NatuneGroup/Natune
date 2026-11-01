@@ -32,6 +32,8 @@ fun SourceSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    /** False on a host with no Spotify streaming transport: the source reads as not available there, never as ready. */
+    spotifyStreamingPlatformSupported: Boolean = true,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -39,10 +41,11 @@ fun SourceSettings(
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf<SourceDialog?>(null) }
     val poolEnabled = poolConfigured && preferences[UsePoolAccountsKey, true]
+    val spotifyReady = spotifyStreamingReady && spotifyStreamingPlatformSupported
     LaunchedEffect(poolEnabled) { if (!poolEnabled && dialog == SourceDialog.POOL) dialog = null }
     SettingsPage(sourceSettingsRows(preferences, spotifyStreamingReady, navigate,
         { dialog = SourceDialog.ORDER }, { dialog = SourceDialog.CHECK },
-        if (poolEnabled) ({ dialog = SourceDialog.POOL }) else null),
+        if (poolEnabled) ({ dialog = SourceDialog.POOL }) else null, spotifyStreamingPlatformSupported),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { change ->
             val poolSources = listOf(QobuzEnabledKey, DeezerEnabledKey, AppleMusicSourceEnabledKey, AmazonEnabledKey)
@@ -62,7 +65,7 @@ fun SourceSettings(
                     Row(Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(source.settingsLabel()))
-                            Text(stringResource(if (preferences.audioSourceEnabled(source, spotifyStreamingReady))
+                            Text(stringResource(if (preferences.audioSourceEnabled(source, spotifyReady))
                                 Res.string.m6_source_enabled else Res.string.m6_source_disabled))
                         }
                         TextButton(enabled = !saving && index > 0, onClick = {
@@ -93,16 +96,16 @@ fun SourceSettings(
     }
     val operation = dialog
     if (operation == SourceDialog.CHECK || operation == SourceDialog.POOL && poolEnabled) {
-        var checks by remember(operation, preferences, spotifyStreamingReady) { mutableStateOf<Map<AudioSourceType, Boolean>?>(null) }
+        var checks by remember(operation, preferences, spotifyReady) { mutableStateOf<Map<AudioSourceType, Boolean>?>(null) }
         var refresh by remember(operation, preferences) { mutableStateOf<SourcePoolRefreshOutcome?>(null) }
         var failed by remember(operation, preferences) { mutableStateOf(false) }
-        LaunchedEffect(operation, preferences, spotifyStreamingReady) {
+        LaunchedEffect(operation, preferences, spotifyReady) {
             try {
                 if (operation == SourceDialog.POOL) refresh = refreshPool()
                 else {
                     val results = linkedMapOf<AudioSourceType, Boolean>()
                     for (source in AudioSourceConfig.parseOrder(preferences[AudioSourceOrderKey])) {
-                        if (preferences.audioSourceEnabled(source, spotifyStreamingReady))
+                        if (preferences.audioSourceEnabled(source, spotifyReady))
                             results[source] = checkSource(source, preferences)
                     }
                     checks = results
@@ -140,6 +143,7 @@ fun sourceSettingsRows(
     reorder: () -> Unit,
     checkSources: () -> Unit,
     refreshPool: (() -> Unit)?,
+    spotifyStreamingPlatformSupported: Boolean = true,
 ): List<SettingsRow> = buildList {
     refreshPool?.let { add(SettingsRow.Action("youtube_music", Res.string.m6_refresh_pool, it)) }
     add(SettingsRow.Action("preferred_sources", Res.string.m6_preferred_sources, reorder))
@@ -179,9 +183,13 @@ fun sourceSettingsRows(
     add(SettingsRow.Action("amazon_settings", Res.string.m6_source_amazon, { navigate("settings/amazon") }))
     add(SettingsRow.Toggle("qq_music_enable", Res.string.m6_source_qq, QqMusicEnabledKey, false))
     add(SettingsRow.Action("qq_music_settings", Res.string.m6_source_qq, { navigate("settings/qqmusic") }))
+    // A host with no Spotify streaming transport shows the row as not available and cannot switch it on. The stored
+    // choice itself is left as it is, so a later host that has the transport reads the same saved value.
+    val spotifyReady = spotifyStreamingReady && spotifyStreamingPlatformSupported
     add(SettingsRow.Toggle("spotify_stream_enable", Res.string.m6_source_spotify_stream, SpotifyStreamEnabledKey, false,
-        enabled = spotifyStreamingReady || preferences[SpotifyStreamEnabledKey, false],
-        write = { selected -> require(!selected || spotifyStreamingReady); this[SpotifyStreamEnabledKey] = selected }))
+        description = if (spotifyStreamingPlatformSupported) null else Res.string.m6_spotify_stream_platform_unavailable,
+        enabled = spotifyStreamingPlatformSupported && (spotifyReady || preferences[SpotifyStreamEnabledKey, false]),
+        write = { selected -> require(!selected || spotifyReady); this[SpotifyStreamEnabledKey] = selected }))
     add(SettingsRow.Action("spotify_stream_settings", Res.string.m6_source_spotify_stream, { navigate("settings/spotify_streaming") }))
     add(SettingsRow.Toggle("jiosaavn_enable", Res.string.m6_source_jio, JioSaavnEnabledKey, false))
     add(SettingsRow.Choice("jiosaavn_audio_quality", Res.string.m6_audio_quality, SaavnAudioQualityKey, "QUALITY_320",

@@ -25,6 +25,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -40,10 +41,20 @@ import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
 import moe.rukamori.archivetune.shared.domain.update.UpdateRepository
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_authorize_busy
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_authorize_cancelled
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_authorize_done
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_authorize_failed
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_authorize_no_instance
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_authorize_not_configured
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_challenge_checking
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_challenge_opening
+import moe.rukamori.archivetune.shared.ui.resources.ios_lane_amazon_challenge_title
 import moe.rukamori.archivetune.shared.ui.resources.ios_lane_spotify_streaming_note
 import moe.rukamori.archivetune.shared.ui.resources.ios_lane_storage_note
 import moe.rukamori.archivetune.shared.ui.resources.ios_services_internet_applies_next_launch
 import moe.rukamori.archivetune.shared.ui.resources.ios_services_internet_note
+import moe.rukamori.archivetune.shared.ui.resources.m6_provider_sign_in_cancel
 import moe.rukamori.archivetune.shared.ui.settings.AmazonSettings
 import moe.rukamori.archivetune.shared.ui.settings.CanvasSettings
 import moe.rukamori.archivetune.shared.ui.settings.ChangelogRelease
@@ -69,9 +80,10 @@ import platform.Foundation.dateWithTimeIntervalSince1970
 
 /**
  * The lane pages that need a host service behind them: reachability probes, the release-notes checker, the Discord
- * token check, the proxy probe and Last.fm scrobbling are real; cache clearing, storage moves, PO-token extraction
- * and Spotify streaming sign-in have no owner on this host and report themselves unavailable rather than faking a
- * result. The internet page mounts the saved static route with the limits the Darwin engine imposes.
+ * token check, the proxy probe, Last.fm scrobbling, the Amazon Turnstile challenge and the Spotify streaming
+ * sign-in are real; cache clearing, storage moves and PO-token extraction have no owner on this host and report
+ * themselves unavailable rather than faking a result. The internet page mounts the saved static route with the
+ * limits the Darwin engine imposes.
  */
 @Composable
 internal fun IosLaneServiceSettingsPage(
@@ -88,12 +100,37 @@ internal fun IosLaneServiceSettingsPage(
     when (path) {
         "settings/amazon" -> {
             val snapshot by owners.controller.store.snapshots.collectAsState()
+            val amazonTitle = stringResource(Res.string.ios_lane_amazon_challenge_title)
+            val amazonChecking = stringResource(Res.string.ios_lane_amazon_challenge_checking)
+            val amazonCancel = stringResource(Res.string.m6_provider_sign_in_cancel)
             AmazonSettings(
                 controller = owners.controller,
                 poolInstanceCount = snapshot?.amazonInstanceList()?.size ?: 0,
                 currentTimeMillis = { Clock.System.now().toEpochMilliseconds() },
                 formatExpiry = ::iosLaneFormatExpiry,
-                onAuthorize = unavailable,
+                onAuthorize = {
+                    owners.graph.scope.launch {
+                        onNotice(SettingsNotice.Message(Res.string.ios_lane_amazon_challenge_opening))
+                        onNotice(
+                            when (val outcome = owners.amazonAuthorize.authorize(amazonTitle, amazonChecking, amazonCancel)) {
+                                is IosAmazonAuthorizeOutcome.Authorized ->
+                                    SettingsNotice.Message(Res.string.ios_lane_amazon_authorize_done)
+                                IosAmazonAuthorizeOutcome.Cancelled ->
+                                    SettingsNotice.Message(Res.string.ios_lane_amazon_authorize_cancelled)
+                                IosAmazonAuthorizeOutcome.NotConfigured ->
+                                    SettingsNotice.Message(Res.string.ios_lane_amazon_authorize_not_configured)
+                                IosAmazonAuthorizeOutcome.NoInstance ->
+                                    SettingsNotice.Message(Res.string.ios_lane_amazon_authorize_no_instance)
+                                IosAmazonAuthorizeOutcome.Busy ->
+                                    SettingsNotice.Message(Res.string.ios_lane_amazon_authorize_busy)
+                                is IosAmazonAuthorizeOutcome.Failed -> {
+                                    owners.graph.report("amazon authorization failed: ${outcome.reason}")
+                                    SettingsNotice.Message(Res.string.ios_lane_amazon_authorize_failed)
+                                }
+                            }
+                        )
+                    }
+                },
                 onFailure = onFailure,
                 onNotice = onNotice,
                 scrollTo = scrollTo,
@@ -229,17 +266,22 @@ internal fun IosLaneServiceSettingsPage(
             onFailure = onFailure,
             scrollTo = scrollTo,
         )
-        "settings/spotify_streaming" -> SpotifyStreamingSettings(
-            controller = owners.controller,
-            signInInProgress = false,
-            signInRefusal = null,
-            onSignIn = unavailable,
-            onDismissSignInRefusal = { },
-            onSignOut = { },
-            onFailure = onFailure,
-            scrollTo = scrollTo,
-            hostNote = stringResource(Res.string.ios_lane_spotify_streaming_note),
-        )
+        "settings/spotify_streaming" -> {
+            val streamingBusy by owners.spotifyStreaming.signInInProgress.collectAsState()
+            val streamingRefusal by owners.spotifyStreaming.refusal.collectAsState()
+            SpotifyStreamingSettings(
+                controller = owners.controller,
+                signInInProgress = streamingBusy,
+                signInRefusal = streamingRefusal,
+                onSignIn = owners.spotifyStreaming::signIn,
+                onDismissSignInRefusal = owners.spotifyStreaming::dismissRefusal,
+                onSignOut = owners.spotifyStreaming::signOut,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+                onCancelSignIn = owners.spotifyStreaming::cancelSignIn,
+                hostNote = stringResource(Res.string.ios_lane_spotify_streaming_note),
+            )
+        }
         "settings/storage" -> StorageSettings(
             controller = owners.controller,
             usedBytes = emptyMap(),

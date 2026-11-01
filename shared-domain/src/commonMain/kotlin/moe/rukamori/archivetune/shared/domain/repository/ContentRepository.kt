@@ -41,6 +41,8 @@ data class ContentItem(
     val isVideo: Boolean = false,
     /** A display projection retains its provider names so refresh, persistence and audio lookup stay canonical. */
     val canonicalSongMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.CanonicalSongMetadata? = null,
+    /** The recording's ISRC when the provider gave one. An audio lookup matches a recording by it before its title. */
+    val isrc: String? = null,
 ) {
     init {
         require(albumId == null || albumId.isNotBlank())

@@ -44,6 +44,8 @@ data class DirectStream(
      */
     val sampleRate: Int? = null,
     val bitDepth: Int? = null,
+    /** Absolute authorization expiry in epoch milliseconds; null is an unknown window, not a fresh TTL. */
+    val expiresAtEpochMs: Long? = null,
 )
 
 /**

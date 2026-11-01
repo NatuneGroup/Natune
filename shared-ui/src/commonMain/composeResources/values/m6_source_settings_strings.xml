@@ -12,6 +12,7 @@
     <string name="m6_source_qq">QQ Music</string>
     <string name="m6_source_jio">JioSaavn</string>
     <string name="m6_source_spotify_stream">Spotify streaming account</string>
+    <string name="m6_spotify_stream_platform_unavailable">Not available on this platform</string>
     <string name="m6_source_spotify_catalog">Spotify catalog account</string>
     <string name="m6_source_youtube">YouTube Music</string>
     <string name="m6_metadata_source">Default metadata source</string>

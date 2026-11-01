@@ -43,6 +43,8 @@ data class DirectStream(
      * stream always states its scope, and a missing scope is never inferred.
      */
     val accountScope: String? = null,
+    /** Absolute authorization expiry in epoch milliseconds. Null means the provider did not report a known window. */
+    val expiresAtEpochMs: Long? = null,
 ) {
     init {
         require(accountScope == null || accountScope.isNotBlank()) { "a stream account scope must not be blank" }
@@ -50,7 +52,8 @@ data class DirectStream(
 }
 
 /** The ordinary locator for this stream, with its headers attached. */
-fun DirectStream.toPlaybackLocator(): PlaybackLocator.Remote = PlaybackLocator.Remote(uri, headers)
+fun DirectStream.toPlaybackLocator(): PlaybackLocator.Remote =
+    PlaybackLocator.Remote(uri, headers, expiresAtEpochMs, source)
 
 /**
  * Uncompressed PCM bitrate in bits per second, or null when either input is unknown or not positive.

@@ -7,6 +7,9 @@ import moe.rukamori.archivetune.shared.domain.source.*
 data class ProviderTrack(val item: ContentItem, val artists: List<String>, val album: String?,
     val isrc: String?, val rawJson: String) {
     fun candidate() = TrackMatching.Candidate(item.ref.id, item.title, artists, album, item.durationMs)
+
+    /** The item a queue occurrence carries: the catalog item with the ISRC the provider gave, when it gave one. */
+    fun queueItem(): ContentItem = item.copy(isrc = isrc?.takeIf { it.isNotBlank() })
 }
 enum class AudioPurpose { PLAYBACK, DOWNLOAD }
 data class AudioResolveRequest(
@@ -17,6 +20,8 @@ data class AudioResolveRequest(
     val qualities: Map<AudioSourceType, String> = emptyMap(),
     val purpose: AudioPurpose = AudioPurpose.PLAYBACK,
     val amazonPick: AmazonTrackPick? = null,
+    /** Retire this request's cached stream URL before resolving. Catalogue/account caches keep their meaning. */
+    val forceFreshStream: Boolean = false,
 )
 
 /** Only Progressive is acceptable to the existing progressive downloader/ordinary Remote locator. */
@@ -61,7 +66,9 @@ sealed interface PreparedAudio {
  * from it, so the engine host can decrypt without a side channel. This is never a [PlaybackLocator.Remote].
  */
 fun PreparedAudio.DeezerEncrypted.toPlaybackLocator(): PlaybackLocator.DeezerEncrypted =
-    PlaybackLocator.DeezerEncrypted(trackId = trackId, url = stream.uri, headers = stream.headers)
+    PlaybackLocator.DeezerEncrypted(
+        trackId = trackId, url = stream.uri, headers = stream.headers, expiresAtEpochMs = stream.expiresAtEpochMs,
+    )
 
 /** Short-lived provider material in memory, not another vault or credential owner. */
 class AudioSecret(private val value: String) {
