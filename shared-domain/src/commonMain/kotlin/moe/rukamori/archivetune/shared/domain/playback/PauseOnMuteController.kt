@@ -90,3 +90,12 @@ class PauseOnMuteController {
         return action
     }
 }
+
+/**
+ * Whether a host should keep sampling the muted output. While the listener wants playback the watch
+ * is continuous; after a policy-caused mute pause it continues only while [mutePausePending] holds,
+ * because the unmute still owes a resume. A pause or stop the listener caused, a media end, or a
+ * play they asked for while still muted clears the pending watch and hands the pause back to them.
+ */
+fun shouldPollOutputMute(playWhenReady: Boolean, isEnded: Boolean, mutePausePending: Boolean): Boolean =
+    (playWhenReady && !isEnded) || mutePausePending

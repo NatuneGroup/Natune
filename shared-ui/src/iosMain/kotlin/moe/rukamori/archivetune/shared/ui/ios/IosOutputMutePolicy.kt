@@ -15,6 +15,7 @@ import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.MuteTransitionAction
 import moe.rukamori.archivetune.shared.domain.playback.PauseOnMuteController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
+import moe.rukamori.archivetune.shared.domain.playback.shouldPollOutputMute
 import moe.rukamori.archivetune.shared.domain.settings.DeviceMutePlaybackRecoveryVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PauseOnDeviceMuteKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
@@ -35,6 +36,7 @@ private data class IosMuteSample(
     val enabled: Boolean,
     val muted: Boolean,
     val playing: Boolean,
+    val ended: Boolean,
     val volumeRestoreAvailable: Boolean,
     val recoveryVolume: Float,
 )
@@ -48,10 +50,13 @@ private data class IosMuteSample(
  * player and volume the listener drives.
  *
  * The policy is a collector, not a command hook: a play request while muted needs no interception,
- * because the resulting playing sample is the edge the controller acts on. A paused or ended
- * session does not poll: only a playing one can act on a mute, and the first read after play
- * resumes catches whatever the level became meanwhile. The system output level cannot be lifted
- * programmatically, so a stored recovery volume only answers a mute that came from the app level.
+ * because the resulting playing sample is the edge the controller acts on. The poll runs while
+ * playback is expected and while a mute pause the policy itself made still awaits its unmute —
+ * otherwise a paused session would stop sampling and never see the level lift. A pause or stop the
+ * listener caused, a media end, or a play they asked for while still muted clears that wait and
+ * stops the poll; each new play request polls once on its playing edge, so a stale muted sample
+ * cannot hold a manual play back. The system output level cannot be lifted programmatically, so a
+ * stored recovery volume only answers a mute that came from the app level.
  */
 internal class IosOutputMutePolicy(
     scope: CoroutineScope,
@@ -64,20 +69,28 @@ internal class IosOutputMutePolicy(
     private val controller = PauseOnMuteController()
     private val systemVolume = MutableStateFlow(AVAudioSession.sharedInstance().outputVolume)
     private var volumePoll: Job? = null
+    // Whether a pause the policy itself made still waits for the unmute that resumes it.
+    private var mutePausePending = false
+    private var lastMuted = false
+    private var lastPlaying = false
     private var closed = false
 
     init {
         scope.launch {
             player.snapshot.collect { snapshot ->
-                val playing = snapshot?.let { it.playWhenReady && !it.isEnded } == true
-                if (playing && !closed && volumePoll == null) {
+                val watching = !closed && shouldPollOutputMute(
+                    playWhenReady = snapshot?.playWhenReady == true,
+                    isEnded = snapshot == null || snapshot.isEnded,
+                    mutePausePending = mutePausePending,
+                )
+                if (watching && volumePoll == null) {
                     volumePoll = launch(Dispatchers.Main) {
                         while (true) {
                             systemVolume.value = AVAudioSession.sharedInstance().outputVolume
                             delay(VOLUME_POLL_MS)
                         }
                     }
-                } else if (!playing) {
+                } else if (!watching) {
                     volumePoll?.cancel()
                     volumePoll = null
                 }
@@ -91,15 +104,16 @@ internal class IosOutputMutePolicy(
             ) { preferences, playbackNow, volume -> sampleOf(preferences, playbackNow, volume) }
                 .distinctUntilChanged()
                 .collect { sample ->
-                    apply(
-                        controller.observe(
-                            enabled = sample.enabled,
-                            muted = sample.muted,
-                            playing = sample.playing,
-                            volumeRestoreAvailable = sample.volumeRestoreAvailable,
-                        ),
-                        sample,
+                    val action = controller.observe(
+                        enabled = sample.enabled,
+                        muted = sample.muted,
+                        playing = sample.playing,
+                        volumeRestoreAvailable = sample.volumeRestoreAvailable,
                     )
+                    updateMutePausePending(sample, action)
+                    lastMuted = sample.muted
+                    lastPlaying = sample.playing
+                    apply(action, sample)
                 }
         }
     }
@@ -108,8 +122,25 @@ internal class IosOutputMutePolicy(
     fun close() {
         if (closed) return
         closed = true
+        mutePausePending = false
         volumePoll?.cancel()
         volumePoll = null
+    }
+
+    /**
+     * [mutePausePending] latches only behind a pause the mute itself caused, so the volume watch can
+     * outlive the pause it made. Every way the listener takes the pause back clears it — pausing or
+     * stopping by hand, reaching a media end, or pressing play while still muted — and so do the
+     * resume and the volume restore the wait exists to serve.
+     */
+    private fun updateMutePausePending(sample: IosMuteSample, action: MuteTransitionAction) {
+        mutePausePending = when {
+            sample.ended -> false
+            action == MuteTransitionAction.PAUSE -> sample.muted && !lastMuted
+            action == MuteTransitionAction.RESUME || action == MuteTransitionAction.RESTORE_VOLUME -> false
+            !sample.playing && lastPlaying && !sample.muted -> false
+            else -> mutePausePending
+        }
     }
 
     private fun sampleOf(
@@ -123,6 +154,7 @@ internal class IosOutputMutePolicy(
             enabled = preferences?.get(PauseOnDeviceMuteKey) ?: false,
             muted = systemVolume <= 0f || appVolume <= 0f,
             playing = playbackNow?.let { it.playWhenReady && !it.isEnded } == true,
+            ended = playbackNow == null || playbackNow.isEnded,
             // Restoring the app level cannot lift a mute the system volume itself owns.
             volumeRestoreAvailable = recoveryPercent > 0 && systemVolume > 0f,
             recoveryVolume = recoveryPercent / 100f,
