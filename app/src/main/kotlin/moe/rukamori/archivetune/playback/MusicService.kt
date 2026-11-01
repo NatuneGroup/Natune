@@ -11378,7 +11378,7 @@ class MusicService :
                 if (cacheSource != null && cacheSource in authenticityRejectedSources) {
                     return@firstNotNullOfOrNull null
                 }
-                val transportRejected = cacheSource in transportRejectedSources
+                val transportRejected = cacheSource != null && cacheSource in transportRejectedSources
                 if (transportRejected) {
                     // A network URL rejection says nothing about a complete saved copy. Partial spans must not
                     // stitch old bytes into the refreshed stream, but a complete offline download still plays.
