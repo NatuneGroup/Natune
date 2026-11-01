@@ -58,11 +58,13 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccountNameK
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductCheckedAtKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpDcKey
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamEngine
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamUserIdKey
 import moe.rukamori.archivetune.shared.domain.settings.clearSpotifyLibrespotSession
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInDecision
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
@@ -153,6 +155,18 @@ internal class DesktopSpotifyAccounts(
     private val generations = AtomicLong()
     private val catalogLock = Mutex()
     private val streamingLock = Mutex()
+
+    // The Librespot engine's catalog-bound OAuth grant. Its own lock serializes browser
+    // authorizations and token refreshes; it only ever reads the catalog session for the
+    // binding checks, never writes it.
+    private val librespot =
+        DesktopSpotifyLibrespot(
+            graph = graph,
+            controller = controller,
+            catalogUserId = { prefs ->
+                catalogTokenForComparison(prefs)?.let { fetchSpotifyProfile(graph.http, it) }?.userId
+            },
+        )
     private var playlists: List<SpotifyPlaylist>? = null
     private var catalogAttempt: Job? = null
     private var streamingAttempt: Job? = null
@@ -485,14 +499,40 @@ internal class DesktopSpotifyAccounts(
         catalogErrorState.value = null
     }
 
-    /** Opens the streaming sign-in window. [show] receives the hint and any window failure. */
+    /** Whether this build carries the registered PKCE client id the Librespot browser flow needs. */
+    val librespotConfigured: Boolean
+        get() = librespot.isConfigured
+
+    /** A bearer for the Librespot engine's grant, or null while it has no usable session. */
+    suspend fun librespotAccessToken(): String? = librespot.accessToken()
+
+    /** Opens the streaming sign-in window — the browser OAuth flow for Librespot, the cookie window otherwise. */
     fun signInStreaming(show: (String) -> Unit) {
         if (streamingBusyState.value) return
         refusalState.value = null
         streamingBusyState.value = true
-        show(DesktopStrings["spotify_login_window_hint"])
+        val librespotEngine = snapshot().spotifyStreamEngine() == SpotifyStreamEngine.LIBRESPOT
+        show(DesktopStrings[if (librespotEngine) "spotify_librespot_browser_hint" else "spotify_login_window_hint"])
         streamingAttempt = graph.scope.launch {
             try {
+                if (librespotEngine) {
+                    refusalState.value =
+                        when (val outcome = librespot.authorize()) {
+                            is LibrespotSignInOutcome.Refused -> outcome.refusal
+                            LibrespotSignInOutcome.ListenerBusy -> {
+                                show(DesktopStrings["spotify_librespot_listener_busy"])
+                                null
+                            }
+                            LibrespotSignInOutcome.BrowserUnavailable -> {
+                                show(DesktopStrings["native_browser_unavailable"])
+                                null
+                            }
+                            LibrespotSignInOutcome.Cancelled,
+                            LibrespotSignInOutcome.SignedIn,
+                            -> null
+                        }
+                    return@launch
+                }
                 when (val result = captureCookies(CredentialScope.SPOTIFY_STREAMING)) {
                     is SpotifyCookieResult.Captured -> refusalState.value = verifyAndStoreStreaming(result.cookies)
                     SpotifyCookieResult.Cancelled -> Unit
@@ -522,6 +562,7 @@ internal class DesktopSpotifyAccounts(
     /** The page commits the stored streaming session away after this; only an open window is left to close. */
     suspend fun signOutStreaming() {
         streamingAttempt?.cancel()
+        librespot.signOut()
         browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_STREAMING)
     }
 

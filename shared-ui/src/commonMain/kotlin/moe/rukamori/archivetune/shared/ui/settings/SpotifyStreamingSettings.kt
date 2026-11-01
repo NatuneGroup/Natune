@@ -46,6 +46,7 @@ fun SpotifyStreamingSettings(
     modifier: Modifier = Modifier,
     onCancelSignIn: (() -> Unit)? = null,
     hostNote: String? = null,
+    librespotSignInAvailable: Boolean = false,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -58,10 +59,22 @@ fun SpotifyStreamingSettings(
             catch (_: Exception) { onFailure() }
         }
     }
-    val signedIn = preferences.spotifyStreamingSignedIn()
-    val accountLabel = preferences[SpotifyStreamAccountNameKey]?.takeIf { it.isNotBlank() }
-        ?: preferences[SpotifyStreamUserIdKey]?.takeIf { it.isNotBlank() }
-        ?: "?"
+    // The account section manages the session for the stored engine's binding: the dedicated
+    // streaming sign-in for Unofficial, the catalog-bound Librespot grant for Librespot.
+    val storedEngine = preferences.spotifyStreamEngine()
+    val binding = storedEngine.streamAccountBinding()
+    val sessionPresent = preferences.spotifyStreamSessionPresent(storedEngine)
+    val signedIn = sessionPresent
+    val accountLabel = when (binding) {
+        SpotifyStreamAccountBinding.LIBRARY ->
+            preferences[SpotifyLibrespotAccountNameKey]?.takeIf { it.isNotBlank() }
+                ?: preferences[SpotifyLibrespotUserIdKey]?.takeIf { it.isNotBlank() }
+                ?: "?"
+        SpotifyStreamAccountBinding.DEDICATED ->
+            preferences[SpotifyStreamAccountNameKey]?.takeIf { it.isNotBlank() }
+                ?: preferences[SpotifyStreamUserIdKey]?.takeIf { it.isNotBlank() }
+                ?: "?"
+    }
     val rows = buildList<SettingsRow> {
         add(SettingsRow.Status(
             "spotify_stream_warning", Res.string.m6_spotify_stream_warning_title,
@@ -79,7 +92,13 @@ fun SpotifyStreamingSettings(
             add(SettingsRow.Action("spotify_stream_sign_out", Res.string.m6_spotify_stream_sign_out, run = {
                 hostAction {
                     onSignOut()
-                    controller.edit { clearSpotifyStreamingSession() }
+                    controller.edit {
+                        if (binding == SpotifyStreamAccountBinding.LIBRARY) {
+                            clearSpotifyLibrespotSession()
+                        } else {
+                            clearSpotifyStreamingSession()
+                        }
+                    }
                 }
             }))
         } else if (signInInProgress) {
@@ -94,12 +113,13 @@ fun SpotifyStreamingSettings(
             add(SettingsRow.Action(
                 "spotify_stream_sign_in", Res.string.m6_spotify_stream_sign_in, run = onSignIn,
                 description = Res.string.m6_spotify_stream_sign_in_desc,
+                // Librespot signs the catalog account in through the browser OAuth flow; the row
+                // needs a host that implements it and a catalog session to bind against.
+                enabled = binding == SpotifyStreamAccountBinding.DEDICATED ||
+                    (librespotSignInAvailable && preferences.spotifyLibrarySignedIn()),
             ))
         }
         add(SettingsRow.Header("spotify_stream_playback", Res.string.m6_integration_spotify_streaming))
-        val storedEngine = preferences.spotifyStreamEngine()
-        val binding = storedEngine.streamAccountBinding()
-        val sessionPresent = preferences.spotifyStreamSessionPresent(storedEngine)
         val toggleDescription = when {
             sessionPresent -> Res.string.m6_spotify_stream_enabled_desc
             binding == SpotifyStreamAccountBinding.LIBRARY -> Res.string.m6_spotify_stream_needs_library
