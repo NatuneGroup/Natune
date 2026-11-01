@@ -5,8 +5,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.EnableBundledLyricsKey
-import moe.rukamori.archivetune.constants.BundledEndpointKey
-import moe.rukamori.archivetune.constants.BundledSigningKeyKey
 import moe.rukamori.archivetune.shared.data.lyrics.BundledEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.resolveBundledEndpoint
 import moe.rukamori.archivetune.utils.dataStore
@@ -15,11 +13,11 @@ import moe.rukamori.archivetune.utils.withAppProxy
 import moe.rukamori.archivetune.shared.data.lyrics.BundledLyricsProvider as SharedBundledLyricsProvider
 
 /**
- * The user's self-hosted Bundled server, through the shared client. The server URL and signing key are read when the
- * helper asks [isEnabled], which it does right before every lookup, so an edit in Settings applies to the next song.
- * When the user has entered neither value, the pair baked in at build time (BuildConfig.BUNDLED_BASE_URL /
- * BUNDLED_HMAC_KEY) is used instead; those values never reach preferences, logs or backups. The shared provider is
- * kept while the endpoint is unchanged because it remembers a server without protocol 2.
+ * Metrolist's hosted Bundled lyrics server, through the shared client. Its endpoint comes only from the build
+ * (BuildConfig.BUNDLED_BASE_URL / BUNDLED_HMAC_KEY) — the service is run by the Metrolist developers and has no
+ * user setting, so those values never reach preferences, logs or backups. Enabled by default like Metrolist;
+ * the settings toggle is the only control. [isEnabled] re-resolves the endpoint right before every lookup, and
+ * the shared provider is kept while it is unchanged because it remembers a server without protocol 2.
  */
 object BundledLyricsProvider : LyricsProvider {
     override val name = SharedBundledLyricsProvider.NAME
@@ -43,11 +41,10 @@ object BundledLyricsProvider : LyricsProvider {
     private var currentEndpoint: BundledEndpoint? = null
 
     override fun isEnabled(context: Context): Boolean {
-        if (context.dataStore[EnableBundledLyricsKey] != true) return false
+        // Enabled unless the user opted out: Metrolist ships its bundled providers on, Bundled first.
+        if (context.dataStore[EnableBundledLyricsKey] == false) return false
         val endpoint =
             resolveBundledEndpoint(
-                context.dataStore[BundledEndpointKey].orEmpty(),
-                context.dataStore[BundledSigningKeyKey].orEmpty(),
                 BuildConfig.BUNDLED_BASE_URL,
                 BuildConfig.BUNDLED_HMAC_KEY,
             )

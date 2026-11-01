@@ -315,11 +315,9 @@ val PaxsenixApiKeyKey = stringPreferencesKey("paxsenixApiKey")
 // endpoint is used. When set, all Paxsenix API requests go to this URL.
 val PaxsenixEndpointKey = stringPreferencesKey("paxsenixEndpoint")
 val EnableUnisonLyricsKey = booleanPreferencesKey("enableUnisonLyrics")
-// The user's self-hosted Bundled server (Metrolist's lyrics service). Off until the user enables it; a
-// user-entered URL and key always win, else a build-time pair (BuildConfig.BUNDLED_*) supplies the endpoint.
+// The bundled Bundled lyrics server (the service the Metrolist developers run). On by default, like
+// Metrolist; its endpoint comes only from the build (BuildConfig.BUNDLED_*) and is never a preference.
 val EnableBundledLyricsKey = booleanPreferencesKey("enableBundledLyrics")
-val BundledEndpointKey = stringPreferencesKey("bundledEndpoint")
-val BundledSigningKeyKey = stringPreferencesKey("bundledSigningKey")
 val EnableTidalLyricsKey = booleanPreferencesKey("enableTidalLyrics")
 val EnableDeezerLyricsKey = booleanPreferencesKey("enableDeezerLyrics")
 // When ON, lyrics lookup first queries the four word-sync-capable providers

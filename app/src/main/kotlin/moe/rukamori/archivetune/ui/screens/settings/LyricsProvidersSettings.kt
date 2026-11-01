@@ -61,8 +61,6 @@ import moe.rukamori.archivetune.constants.EnableBetterLyricsPortatoKey
 import moe.rukamori.archivetune.constants.EnableKugouKey
 import moe.rukamori.archivetune.constants.EnableLrcLibKey
 import moe.rukamori.archivetune.constants.EnableBundledLyricsKey
-import moe.rukamori.archivetune.constants.BundledEndpointKey
-import moe.rukamori.archivetune.constants.BundledSigningKeyKey
 import moe.rukamori.archivetune.constants.EnableMegalobizLyricsKey
 import moe.rukamori.archivetune.constants.EnableMusixmatchExperimentalKey
 import moe.rukamori.archivetune.constants.EnablePaxsenixAppleMusicLyricsKey
@@ -83,7 +81,6 @@ import moe.rukamori.archivetune.constants.PrioritizeWordSyncedLyricsKey
 import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
 import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
 import moe.rukamori.archivetune.shared.data.lyrics.BundledEndpoint
-import moe.rukamori.archivetune.shared.ui.settings.validBundledSigningKey
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
@@ -142,14 +139,10 @@ fun LyricsProvidersSettings(
     val (enableUnisonLyrics, onEnableUnisonLyricsChange) =
         prefs.state(key = EnableUnisonLyricsKey, defaultValue = true)
     val (enableBundledLyrics, onEnableBundledLyricsChange) =
-        prefs.state(key = EnableBundledLyricsKey, defaultValue = false)
-    val (bundledEndpoint, onBundledEndpointChange) =
-        prefs.state(key = BundledEndpointKey, defaultValue = "")
-    val (bundledSigningKey, onBundledSigningKeyChange) =
-        prefs.state(key = BundledSigningKeyKey, defaultValue = "")
-    // A build-time Bundled pair (BuildConfig.BUNDLED_BASE_URL / BUNDLED_HMAC_KEY) counts as a built-in
-    // server only when both values parse; the user's own entries always win and the build key is
-    // never written to preferences or displayed.
+        prefs.state(key = EnableBundledLyricsKey, defaultValue = true)
+    // A build-time Bundled pair (BuildConfig.BUNDLED_BASE_URL / BUNDLED_HMAC_KEY) is the only endpoint the
+    // provider can have: the Metrolist developers run the server, so there is no URL or key to enter and
+    // the build key is never written to preferences or displayed. Without a pair the toggle greys out.
     val bundledBuiltIn =
         remember { BundledEndpoint.parse(BuildConfig.BUNDLED_BASE_URL, BuildConfig.BUNDLED_HMAC_KEY) != null }
     val (enableTidalLyrics, onEnableTidalLyricsChange) =
@@ -261,82 +254,20 @@ fun LyricsProvidersSettings(
 
                 val providerTogglesEnabled = true
 
+                // The bundled server is the only endpoint Bundled can have; a build without the
+                // pair keeps the row listed but greyed out, like the other unavailable controls.
                 item {
                     SwitchPreference(
                         modifier = positions.modifierFor("enable_bundled_lyrics", "bundled_lyrics"),
                         title = { Text(stringResource(R.string.enable_bundled_lyrics)) },
-                        description = stringResource(R.string.enable_bundled_lyrics_desc),
+                        description = stringResource(
+                            if (bundledBuiltIn) R.string.enable_bundled_lyrics_desc else R.string.bundled_not_available,
+                        ),
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        checked = enableBundledLyrics,
+                        checked = enableBundledLyrics && bundledBuiltIn,
                         onCheckedChange = onEnableBundledLyricsChange,
-                        isEnabled = providerTogglesEnabled,
+                        isEnabled = providerTogglesEnabled && bundledBuiltIn,
                     )
-                }
-
-                item(visible = enableBundledLyrics) {
-                    var showEndpointDialog by remember { mutableStateOf(false) }
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("bundled_endpoint"),
-                        title = { Text(stringResource(R.string.bundled_endpoint)) },
-                        // "Built-in server" only while the bundled endpoint is the effective one —
-                        // both user fields blank, matching resolveBundledEndpoint's precedence.
-                        description = bundledEndpoint.ifBlank {
-                            stringResource(
-                                if (bundledBuiltIn && bundledSigningKey.isBlank()) {
-                                    R.string.bundled_builtin_server
-                                } else {
-                                    R.string.bundled_not_configured
-                                },
-                            )
-                        },
-                        icon = { Icon(painterResource(R.drawable.solar_server_linear), null) },
-                        onClick = { showEndpointDialog = true },
-                        isEnabled = providerTogglesEnabled,
-                    )
-                    if (showEndpointDialog) {
-                        TextFieldDialog(
-                            onDismiss = { showEndpointDialog = false },
-                            title = { Text(stringResource(R.string.bundled_endpoint)) },
-                            placeholder = { Text(stringResource(R.string.bundled_endpoint_hint)) },
-                            textFieldValue = bundledEndpoint,
-                            onTextFieldValueChange = onBundledEndpointChange,
-                            singleLine = true,
-                            isInputValid = {
-                                it.isBlank() ||
-                                    (it.startsWith("http://") || it.startsWith("https://")) && it.none(Char::isWhitespace)
-                            },
-                        )
-                    }
-                }
-
-                // The built-in key is never displayed; the row returns when the user enters their
-                // own endpoint (their pair wins) or when no built-in exists.
-                item(visible = enableBundledLyrics && (!bundledBuiltIn || bundledEndpoint.isNotBlank() || bundledSigningKey.isNotBlank())) {
-                    var showKeyDialog by remember { mutableStateOf(false) }
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("bundled_signing_key"),
-                        title = { Text(stringResource(R.string.bundled_signing_key)) },
-                        description = if (bundledSigningKey.isNotBlank()) {
-                            stringResource(R.string.bundled_signing_key_set)
-                        } else {
-                            stringResource(R.string.bundled_not_configured)
-                        },
-                        icon = { Icon(painterResource(R.drawable.token), null) },
-                        onClick = { showKeyDialog = true },
-                        isEnabled = providerTogglesEnabled,
-                    )
-                    if (showKeyDialog) {
-                        TextFieldDialog(
-                            onDismiss = { showKeyDialog = false },
-                            title = { Text(stringResource(R.string.bundled_signing_key)) },
-                            placeholder = { Text(stringResource(R.string.bundled_signing_key_hint)) },
-                            textFieldValue = bundledSigningKey,
-                            onTextFieldValueChange = onBundledSigningKeyChange,
-                            singleLine = true,
-                            masked = true,
-                            isInputValid = ::validBundledSigningKey,
-                        )
-                    }
                 }
 
                 item {
