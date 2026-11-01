@@ -34,9 +34,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -95,7 +93,6 @@ import moe.rukamori.archivetune.shared.ui.resources.stats_range_all
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSURL
-import platform.Foundation.NSURLComponents
 import platform.Foundation.NSUUID
 import platform.UIKit.UIApplication
 import platform.UIKit.UIPasteboard
@@ -135,7 +132,7 @@ internal fun iosHostBindings(
         songMetadata = graph.library.songMetadata,
         settings = graph.settings,
         actionScope = graph.scope,
-        // `archivetune://` links the Swift app session hands in merge with the host's own route opens. The system back
+        // Links the Swift app session hands in merge with the host's own route opens. The system back
         // gesture is handled by the shell itself.
         routes = merge(iosLaunchRoutes(host, graph), ownRoutes.receiveAsFlow()),
         backRequests = backChannel.receiveAsFlow(),
@@ -214,32 +211,6 @@ private fun iosGraphPage(
                 ?: ArchiveGraphPage.Host
         }
     }
-
-/**
- * The `archivetune://` links the host receives, resolved into routes the root may open. A link that names no openable
- * page is reported once and dropped.
- */
-private fun iosLaunchRoutes(host: IosHost, graph: IosSessionGraph): Flow<String> =
-    host.linkRequests.mapNotNull { link ->
-        iosLaunchRoute(link) ?: run {
-            graph.report("link not opened: it names no page that a link may open")
-            null
-        }
-    }
-
-/**
- * The route an `archivetune://open/...` link opens, or null when it opens none. The path and query are passed on as
- * they arrived, and [ArchiveRoutes] decides the destination. A link starts no action: a recognition auto-start
- * request and the sign-in page are refused, so another program cannot open the microphone or start a sign-in.
- */
-internal fun iosLaunchRoute(link: String): String? {
-    val components = NSURLComponents.componentsWithString(link) ?: return null
-    val route = components.path.orEmpty().removePrefix("/") +
-        components.percentEncodedQuery?.let { "?$it" }.orEmpty()
-    val resolved = ArchiveRoutes.resolve(route) ?: return null
-    val opensAction = resolved.destination == ArchiveDestination.LOGIN || resolved.arguments.containsKey("autoStart")
-    return route.takeUnless { opensAction }
-}
 
 /**
  * The player's media slots. Lyrics come from the graph's lyrics owner and render through the shared renderers on the
