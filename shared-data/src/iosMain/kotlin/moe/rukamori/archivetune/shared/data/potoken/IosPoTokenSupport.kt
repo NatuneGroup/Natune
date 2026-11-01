@@ -6,6 +6,8 @@ import com.metrolist.innertubex.extraction.TokenProvider
 import com.metrolist.innertubex.extraction.TokenProviderCapabilities
 import com.metrolist.innertubex.extraction.strategy.PoTokenProviderKind
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.platform.ios.iosBuildSetting
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.fetchYouTubeVisitorData
@@ -24,7 +26,7 @@ class IosPoTokenSupport(
     private val enabled: () -> Boolean,
     private val report: (String) -> Unit = {},
 ) {
-    private val engine by lazy {
+    private val engineRef = lazy {
         BotGuardPoTokenEngine(
             http = http,
             credentials = { credentials() },
@@ -32,6 +34,7 @@ class IosPoTokenSupport(
             report = report,
         )
     }
+    private val engine get() = engineRef.value
 
     private fun credentials(): PoTokenCredentials? =
         PoTokenCredentials(
@@ -53,6 +56,29 @@ class IosPoTokenSupport(
     }
 
     /**
+     * The shipped preWarm, mirroring the shipped app's warm on first auth state: the session id
+     * comes from the live transport session exactly like [mintForPlayback] binds it. A no-op while
+     * the poToken preference is off or the session has nothing to bind yet.
+     */
+    suspend fun preWarm() {
+        if (!enabled()) return
+        val session = transport.innerTubeSession.sessionSnapshot()
+        val signedIn = session.sapisid?.isNotBlank() == true
+        val sessionId =
+            poTokenSessionId(
+                session.dataSyncId,
+                session.visitorData,
+                hasLoginContext = signedIn && !session.dataSyncId.isNullOrBlank(),
+            ) ?: return
+        engine.preWarm(sessionId)
+    }
+
+    /** Drops the QuickJS runtime and the token caches, if a session ever minted. */
+    suspend fun close() {
+        if (engineRef.isInitialized()) engine.invalidate()
+    }
+
+    /**
      * The settings "regenerate" action, mirroring `PoTokenExtractionActivity` without a WebView:
      * the visitor data comes from the persisted session (or one network fetch, like the recipe's
      * own page), the GVS token binds to the session id and the player token to the literal
@@ -67,7 +93,13 @@ class IosPoTokenSupport(
         val hasLoginContext = signedIn && !session.dataSyncId.isNullOrBlank()
         val visitor =
             session.visitorData?.takeIf(String::isNotBlank)
-                ?: runCatching { fetchYouTubeVisitorData(http) }.getOrNull()
+                ?: try {
+                    fetchYouTubeVisitorData(http)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
                 ?: return null
         // tokenBindingId = sessionId ?: visitorData, as the Android extraction activity binds it.
         val sessionId =
@@ -102,7 +134,19 @@ class IosPoTokenSupport(
             ): PoTokenResult? {
                 if (!enabled()) return null
                 val sessionId = poTokenSessionId(null, visitorData, hasLoginContext = false) ?: return null
-                val minted = engine.mintToken(identifier = videoId, sessionId = sessionId) ?: return null
+                // InnerTubeX calls this inside its own 12 s tier bound, so the mint keeps a short
+                // budget of its own: a stalled BotGuard endpoint leaves the request untokened
+                // instead of eating the whole tier.
+                val minted =
+                    try {
+                        withTimeoutOrNull(MINT_BUDGET_MS) {
+                            engine.mintToken(identifier = videoId, sessionId = sessionId)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        null
+                    } ?: return null
                 return PoTokenResult(
                     playerRequestToken = minted.sessionToken,
                     streamingDataToken = minted.playerToken,
@@ -114,4 +158,9 @@ class IosPoTokenSupport(
 
             override suspend fun close() = engine.invalidate()
         }
+
+    private companion object {
+        /** The mint allowance a bounded extractor tier grants, leaving the rest to extraction. */
+        const val MINT_BUDGET_MS = 3_000L
+    }
 }

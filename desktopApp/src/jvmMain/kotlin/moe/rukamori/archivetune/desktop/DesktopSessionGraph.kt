@@ -353,6 +353,7 @@ class DesktopSessionGraph internal constructor(
         telegram.close()
         uploads.close()
         audioSources.close()
+        poTokens.close()
         http.close()
         player.close()
         network.close()

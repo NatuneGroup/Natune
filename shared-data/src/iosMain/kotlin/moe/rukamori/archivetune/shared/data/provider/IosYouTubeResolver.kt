@@ -160,7 +160,14 @@ class IosYouTubeResolver(
         if (VIDEO_ID_REGEX.matches(request.mediaId)) return IosYouTubeTarget(request.mediaId, trusted = true)
         searchedIds[request.mediaId]?.let { return IosYouTubeTarget(it, trusted = false) }
         val query = searchQuery(request)
-        val videoId = runCatching { transport.firstSongVideoId(query) }.getOrNull() ?: return null
+        val videoId =
+            try {
+                transport.firstSongVideoId(query)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            } ?: return null
         rememberSearchedId(request.mediaId, videoId)
         return IosYouTubeTarget(videoId, trusted = false)
     }

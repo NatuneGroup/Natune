@@ -285,6 +285,7 @@ internal class IosSessionGraph private constructor(
         localMedia.close()
         checkpointNow(queue, reportLine)
         owner.close()
+        poTokens.close()
         http.close()
         database.close()
         scope.cancel()
@@ -387,6 +388,10 @@ internal class IosSessionGraph private constructor(
                 enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
                 report = report,
             )
+            // The shipped app warms BotGuard once the auth state names a session, so a cold mint
+            // never lands inside a resolve; the owner derives the session id from the transport
+            // itself and stays a no-op while the poToken preference is off.
+            scope.launch { poTokens.preWarm() }
             // The shelf feeds read the same session, so a signed-in home feed and the account listings agree.
             val youtubeCatalogue = youtubeTransport.catalogueTransport()
             val youtubeAccount = YouTubeAccountBinding(
