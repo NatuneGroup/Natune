@@ -2,8 +2,12 @@ package moe.rukamori.archivetune.shared.domain.persistence
 
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
 
-/** Captured by the queue owner only when stable. Position belongs to this exact queue revision. */
-data class QueueCheckpoint(val queue: QueueState, val positionMs: Long) {
+/**
+ * Captured by the queue owner only when stable. Position belongs to this exact queue revision.
+ * [savedAtEpochMs] is the wall-clock time of the capture; checkpoints written before it existed
+ * carry null, which restore treats as "too old to trust" under [PositionRestorePolicy].
+ */
+data class QueueCheckpoint(val queue: QueueState, val positionMs: Long, val savedAtEpochMs: Long? = null) {
     init {
         require(queue.revision >= 0 && positionMs >= 0)
         val ids = queue.entries.map { it.occurrenceId }

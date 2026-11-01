@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.domain.queue
 
 import kotlin.random.Random
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
 
@@ -45,5 +46,17 @@ object QueueEditPolicy {
             queue.currentOccurrenceId?.let { remove(it); add(0, it) }
         } else timeline
         return queue.copy(revision = queue.revision + 1, playOrder = order, shuffleEnabled = enabled)
+    }
+
+    fun requireUnique(entries: List<ContentOccurrence>) {
+        require(entries.mapTo(HashSet()) { it.occurrenceId }.size == entries.size) {
+            "Queue occurrence ids must be unique"
+        }
+    }
+
+    fun requireNewOccurrences(existing: List<ContentOccurrence>, incoming: List<ContentOccurrence>) {
+        requireUnique(incoming)
+        val known = existing.mapTo(HashSet()) { it.occurrenceId }
+        require(incoming.none { it.occurrenceId in known }) { "Occurrence is already queued" }
     }
 }
