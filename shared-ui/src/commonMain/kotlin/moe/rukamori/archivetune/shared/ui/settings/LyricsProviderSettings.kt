@@ -31,6 +31,8 @@ fun LyricsProviderSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    /** True when the host baked a Bundled endpoint pair into the build; the page then shows it as a built-in server. */
+    bundledBuiltInServer: Boolean = false,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -41,9 +43,10 @@ fun LyricsProviderSettings(
     LaunchedEffect(paxVisible) {
         if (!paxVisible && dialog != ProviderDialog.ORDER) dialog = null
     }
+    val bundledBuiltInLabel = if (bundledBuiltInServer) stringResource(Res.string.m6_bundled_builtin_server) else ""
     SettingsPage(
         lyricsProviderSettingsRows(preferences, { dialog = ProviderDialog.ORDER }, { dialog = ProviderDialog.STATS },
-            { dialog = ProviderDialog.ENDPOINTS }),
+            { dialog = ProviderDialog.ENDPOINTS }, bundledBuiltInLabel),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
     )
     if (dialog == ProviderDialog.ORDER) {

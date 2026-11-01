@@ -225,6 +225,19 @@ android {
             "LASTFM_SECRET",
             providerCredentialLiteral("ARCHIVETUNE_LASTFM_API_SECRET", "LASTFM_SECRET"),
         )
+        // The built-in Bundled lyrics server pair follows the same pattern: canonical ARCHIVETUNE_*
+        // names first, unprefixed names as the fallback. Both values must be present for the app to
+        // offer the bundled endpoint; the user's own server entry always wins (see BundledEndpoint).
+        buildConfigField(
+            "String",
+            "BUNDLED_BASE_URL",
+            providerCredentialLiteral("ARCHIVETUNE_BUNDLED_BASE_URL", "BUNDLED_BASE_URL"),
+        )
+        buildConfigField(
+            "String",
+            "BUNDLED_HMAC_KEY",
+            providerCredentialLiteral("ARCHIVETUNE_BUNDLED_HMAC_KEY", "BUNDLED_HMAC_KEY"),
+        )
 
         // Telegram (TDLib) app credentials. Baked in at build time so users sign in with just
         // their phone number + login code — no my.telegram.org api_id/api_hash entry. Override via

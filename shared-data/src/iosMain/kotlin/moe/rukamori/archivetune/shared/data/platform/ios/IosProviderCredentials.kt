@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.data.platform.ios
 
+import moe.rukamori.archivetune.shared.data.lyrics.BundledEndpoint
 import moe.rukamori.archivetune.shared.data.provider.TidalClientCredentials
 import platform.Foundation.NSBundle
 
@@ -62,6 +63,17 @@ object IosProviderCredentials {
 
     /** The HTTPS origin the Turnstile sitekey is locked to, without a trailing slash. Blank means not configured. */
     val amazonTurnstileOrigin: String get() = iosBuildSetting("ArchiveTuneAmazonTurnstileOrigin").trimEnd('/')
+
+    /**
+     * The built-in Bundled lyrics server pair; both values must be present for [bundledEndpoint] to
+     * exist, and a user's own server entry in settings always wins over it. The key is never logged
+     * or written to settings.
+     */
+    val bundledBaseUrl: String get() = iosBuildSetting("ArchiveTuneBundledBaseUrl")
+
+    val bundledHmacKey: String get() = iosBuildSetting("ArchiveTuneBundledHmacKey")
+
+    val bundledEndpoint: BundledEndpoint? get() = BundledEndpoint.parse(bundledBaseUrl, bundledHmacKey)
 
     private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
 }
