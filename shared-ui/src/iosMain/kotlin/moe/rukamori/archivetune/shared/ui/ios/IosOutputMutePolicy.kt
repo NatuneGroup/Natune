@@ -27,6 +27,8 @@ import moe.rukamori.archivetune.shared.domain.settings.PauseOnDeviceMuteKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 import platform.AVFAudio.AVAudioSession
+import platform.Foundation.NSNumber
+import platform.Foundation.NSSelectorFromString
 
 /** How often the watched session samples the system output level. */
 private const val VOLUME_POLL_MS = 1_000L
@@ -74,7 +76,7 @@ internal class IosOutputMutePolicy(
 ) {
     private val signals = Channel<OutputMuteSignal>(Channel.UNLIMITED)
     private val state = MutableStateFlow(OutputMuteState(pending = false, polling = false))
-    private val systemVolume = MutableStateFlow(AVAudioSession.sharedInstance().outputVolume)
+    private val systemVolume = MutableStateFlow(systemOutputVolume())
     private var volumePoll: Job? = null
 
     // The last stored picture; the settings collector maintains it on its own queue.
@@ -195,7 +197,7 @@ internal class IosOutputMutePolicy(
             if (volumePoll != null) return
             volumePoll = scope.launch(Dispatchers.Main) {
                 while (true) {
-                    systemVolume.value = AVAudioSession.sharedInstance().outputVolume
+                    systemVolume.value = systemOutputVolume()
                     signals.send(OutputMuteSignal.Event(OutputMuteEvent.VolumeSample(mutedNow())))
                     delay(VOLUME_POLL_MS)
                 }
@@ -208,7 +210,7 @@ internal class IosOutputMutePolicy(
 
     /** The ManualPlay a play-resolution signal carries, muted on the actor's own fresh read. */
     private fun manualPlay(): OutputMuteEvent.ManualPlay {
-        val freshSystemVolume = AVAudioSession.sharedInstance().outputVolume
+        val freshSystemVolume = systemOutputVolume()
         systemVolume.value = freshSystemVolume
         return OutputMuteEvent.ManualPlay(
             freshMuted = enabled && (freshSystemVolume <= 0f || appVolume <= 0f),
@@ -218,4 +220,16 @@ internal class IosOutputMutePolicy(
 
     /** Whether the output counts as muted under the option right now: either level at zero. */
     private fun mutedNow(): Boolean = enabled && (systemVolume.value <= 0f || appVolume <= 0f)
+
+    /**
+     * The system output level, read through key-value coding: the iOS 26 SDK headers no longer
+     * bind `AVAudioSession.outputVolume`, so a property reference cannot compile, while the
+     * getter still answers the Objective-C runtime on device. A session that cannot answer reads
+     * as full volume — a missing probe must not fabricate a mute.
+     */
+    private fun systemOutputVolume(): Float {
+        val session = AVAudioSession.sharedInstance()
+        if (!session.respondsToSelector(NSSelectorFromString("outputVolume"))) return 1f
+        return (session.valueForKey("outputVolume") as? NSNumber)?.floatValue ?: 1f
+    }
 }
