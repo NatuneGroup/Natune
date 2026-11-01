@@ -5,6 +5,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import moe.rukamori.archivetune.desktop.DesktopCredentials
 import moe.rukamori.archivetune.shared.data.provider.DeezerAccess
+import moe.rukamori.archivetune.shared.data.provider.DeezerInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.JvmJioSaavnUrlDecoder
 import moe.rukamori.archivetune.shared.data.provider.KtorDeezerRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorJioSaavnRepository
@@ -13,6 +14,7 @@ import moe.rukamori.archivetune.shared.data.provider.KtorTidalRepository
 import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalAccess
+import moe.rukamori.archivetune.shared.data.provider.TidalInstanceResolver
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.AudioProviderRepository
@@ -26,6 +28,7 @@ import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.TerminalPlaybackAuthentication
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.TidalAccountFirstKey
+import moe.rukamori.archivetune.shared.domain.settings.deezerInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.tidalCountryCode
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
@@ -53,8 +56,17 @@ internal class DesktopTidalSource(
 
     private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false)
 
-    private suspend fun attempts(): List<Attempt> {
-        val snapshot = preferences()
+    /** The session's one anonymous racing route. It is rebuilt only when its merged list, country or Pool switch changes. */
+    private class AnonymousRoute(val instances: List<String>, val country: String, val poolOn: Boolean,
+        val repository: KtorTidalRepository)
+    private var anonymous: AnonymousRoute? = null
+
+    /**
+     * The attempts in shipped order. A resolve gets one anonymous attempt over the whole merged instance list, because the
+     * racing resolver keeps its health, cooldown and rate-limit state across that list. A search has no racer, so each
+     * instance answers its own `/search` in turn.
+     */
+    private suspend fun attempts(snapshot: PreferenceSnapshot?, search: Boolean): List<Attempt> {
         val country = snapshot?.tidalCountryCode()?.takeIf { it.length == 2 } ?: "US"
         val personal = personalRepository(country)?.let { Attempt(it) }
         val pooled = pool?.tidalAccounts().orEmpty().map { account ->
@@ -73,28 +85,43 @@ internal class DesktopTidalSource(
                 pooled = true,
             )
         }
-        val instanceBases = LinkedHashSet<String>().apply {
+        val bases = LinkedHashSet<String>().apply {
             addAll(snapshot?.tidalInstanceList().orEmpty())
             addAll(pool?.tidalInstances().orEmpty())
-        }
-        val instances = instanceBases.map { base ->
-            Attempt(
-                KtorTidalRepository(
-                    http,
-                    TidalAccess(scope = ANONYMOUS_ACCOUNT_SCOPE),
-                    instanceBase = base,
-                    countryCode = country,
-                ),
-            )
+        }.toList()
+        val instances: List<Attempt> = when {
+            search -> bases.map { base ->
+                Attempt(KtorTidalRepository(http, TidalAccess(scope = ANONYMOUS_ACCOUNT_SCOPE), instanceBase = base,
+                    countryCode = country))
+            }
+            bases.isEmpty() -> emptyList()
+            else -> listOf(Attempt(anonymousRepository(bases, country)))
         }
         val accountFirst = snapshot?.get(TidalAccountFirstKey) ?: true
         val accountAttempts = listOfNotNull(personal) + pooled
         return if (accountFirst) accountAttempts + instances else instances + accountAttempts
     }
 
+    /**
+     * The anonymous repository for this list. Its resolver is created once and reused, so a resolve that follows another
+     * still knows which instances failed, which are cooling down and which answered 429. A changed list, country or Pool
+     * switch replaces it.
+     */
+    private fun anonymousRepository(instances: List<String>, country: String): KtorTidalRepository = synchronized(this) {
+        val poolOn = pool?.enabled() == true
+        anonymous?.takeIf { it.instances == instances && it.country == country && it.poolOn == poolOn }?.repository
+            ?: KtorTidalRepository(
+                http,
+                TidalAccess(scope = ANONYMOUS_ACCOUNT_SCOPE),
+                countryCode = country,
+                resolver = TidalInstanceResolver(http),
+                instances = { instances },
+            ).also { anonymous = AnonymousRoute(instances, country, poolOn, it) }
+    }
+
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         var failure: Exception? = null
-        for (attempt in attempts()) {
+        for (attempt in attempts(preferences(), search = false)) {
             try {
                 attempt.repository.resolve(request)?.let { resolved ->
                     if (attempt.pooled) pool?.noteSuccess(DesktopPlaybackPool.TIDAL, attempt.poolId)
@@ -121,7 +148,7 @@ internal class DesktopTidalSource(
     suspend fun search(query: String): List<ContentItem> {
         val request = ContentRequest(ContentProvider.TIDAL, ContentSurface.SEARCH,
             text = query, filter = ContentSearchFilter.SONGS)
-        for (attempt in attempts()) {
+        for (attempt in attempts(preferences(), search = true)) {
             try {
                 val rows = attempt.repository.page(request, null).items.map { it.item }
                 if (rows.isNotEmpty()) return rows
@@ -152,30 +179,74 @@ internal class DesktopTidalSource(
 }
 
 /**
- * Deezer over the personal ARL lease, then the Playback Pool ARLs. Deezer media needs a signed-in session, so with
- * neither the source answers no match. One repository is kept per lease generation, so its gateway session is reused
- * until the account changes; pooled ARLs get one repository per ARL for the same reason.
+ * Deezer over the personal ARL lease, then the Playback Pool ARLs, then the user's own instances and the pool's discovered
+ * ones. Each stage that answers no match or fails for a transient reason hands over to the next. A terminal authentication
+ * failure of the personal account still stops the source. One repository is kept per lease generation, so its gateway
+ * session is reused until the account changes; pooled ARLs get one repository per ARL for the same reason. The instance
+ * stage keeps one resolver for the session and reads the current instance list and Pool switch on every resolve.
  */
 internal class DesktopDeezerSource(
     private val http: HttpClient,
     private val accounts: VaultProviderAccountStore,
     private val pool: DesktopPlaybackPool? = null,
+    private val preferences: () -> PreferenceSnapshot? = { null },
 ) : AudioProviderRepository {
     override val source = AudioSourceType.DEEZER
     private var cached: Pair<Long, KtorDeezerRepository>? = null
     private val pooledRepositories = HashMap<String, KtorDeezerRepository>()
+    private val instanceResolver = DeezerInstanceResolver(
+        http,
+        System::currentTimeMillis,
+        poolEnabled = { pool?.enabled() == true },
+        sourceProviderUrl = { pool?.discoveryBaseUrl().orEmpty() },
+        sourceProviderKey = { pool?.discoveryReadKey().orEmpty() },
+    )
+    private val instanceRepository = KtorDeezerRepository(
+        http,
+        nowMs = System::currentTimeMillis,
+        resolver = instanceResolver,
+        instances = { preferences()?.deezerInstanceList().orEmpty() },
+    )
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
+        var failure: Exception? = null
         val scope = providerAccountScope(ContentProvider.DEEZER.id, CredentialScope.PERSONAL)
-        val lease = scope?.let { accounts.personalDeezerLease(it) } ?: return resolvePooled(request)
-        val repository = synchronized(this) {
-            cached?.takeIf { it.first == lease.generation }?.second ?: KtorDeezerRepository(
-                http,
-                nowMs = System::currentTimeMillis,
-                access = DeezerAccess(lease.accountScope, lease.arl.reveal(), CredentialScope.PERSONAL, lease::isStillAdmitted),
-            ).also { cached = lease.generation to it }
+        val lease = scope?.let { accounts.personalDeezerLease(it) }
+        if (lease != null) {
+            try {
+                val repository = synchronized(this) {
+                    cached?.takeIf { it.first == lease.generation }?.second ?: KtorDeezerRepository(
+                        http,
+                        nowMs = System::currentTimeMillis,
+                        access = DeezerAccess(lease.accountScope, lease.arl.reveal(), CredentialScope.PERSONAL, lease::isStillAdmitted),
+                    ).also { cached = lease.generation to it }
+                }
+                repository.resolve(request)?.let { return it }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (auth: TerminalPlaybackAuthentication) {
+                throw auth
+            } catch (error: Exception) {
+                // A transient personal failure must not end Deezer while the pool and the instances can still answer.
+                failure = error
+            }
         }
-        return repository.resolve(request)
+        try {
+            resolvePooled(request)?.let { return it }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            failure = error
+        }
+        try {
+            instanceRepository.resolve(request)?.let { return it }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            failure = error
+        }
+        failure?.let { throw it }
+        return null
     }
 
     private suspend fun resolvePooled(request: AudioResolveRequest): PreparedAudio? {

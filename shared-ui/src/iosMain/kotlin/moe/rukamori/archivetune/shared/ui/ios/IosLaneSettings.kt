@@ -340,6 +340,8 @@ private fun IosLaneSourceSettingsPage(
     SourceSettings(
         controller = owners.controller,
         spotifyStreamingReady = preferences.spotifyStreamingSignedIn(),
+        // This host has no Spotify streaming transport, so the row reads as not available here.
+        spotifyStreamingPlatformSupported = false,
         poolConfigured = owners.poolConfigured,
         refreshPool = { iosLaneRefreshPool(owners) },
         checkSource = { type, prefs -> iosLaneCheckSource(owners.graph.http, type, prefs) },
@@ -380,7 +382,8 @@ internal suspend fun iosLaneCheckSource(
     AudioSourceType.AMAZON -> preferences.amazonInstanceList().firstOrNull()
         ?.let { iosLaneProbe(http, it) } ?: false
     AudioSourceType.QQ -> iosLaneProbe(http, "https://c.y.qq.com/")
-    AudioSourceType.SPOTIFY -> preferences.spotifyStreamingSignedIn()
+    // This host has no Spotify streaming transport, so a signed-in streaming account is still not a reachable source here.
+    AudioSourceType.SPOTIFY -> false
     AudioSourceType.JIOSAAVN ->
         iosLaneProbe(http, "https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")
     AudioSourceType.YOUTUBE -> iosLaneProbe(http, "https://music.youtube.com/generate_204")

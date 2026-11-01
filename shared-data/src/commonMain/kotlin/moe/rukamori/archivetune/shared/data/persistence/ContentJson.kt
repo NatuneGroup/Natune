@@ -18,10 +18,11 @@ internal object ContentJson {
             buildJsonObject { put("name", credit.name); put("id", credit.id?.let(::JsonPrimitive) ?: JsonNull) }
         }))
         put("albumId", item.albumId?.let(::JsonPrimitive) ?: JsonNull)
+        put("isrc", item.isrc?.let(::JsonPrimitive) ?: JsonNull)
     }
     /**
-     * `album`, the artist credits and `albumId` are optional, so a document written before they existed still decodes
-     * with those fields unknown.
+     * `album`, the artist credits, `albumId` and `isrc` are optional, so a document written before they existed still
+     * decodes with those fields unknown.
      */
     fun decode(entry: JsonObject): ContentOccurrence = ContentOccurrence(entry.string("occurrence"),
         ContentItem(ContentRef(entry.string("provider"), ContentKind.valueOf(entry.string("kind")), entry.string("id")),
@@ -31,7 +32,7 @@ internal object ContentJson {
             artists = entry.optionalArray("artists")?.map { credit ->
                 ContentCredit(credit.jsonObject.string("name"), credit.jsonObject.optionalString("id"))
             }.orEmpty(),
-            albumId = entry.optionalString("albumId")),
+            albumId = entry.optionalString("albumId"), isrc = entry.optionalString("isrc")),
         entry.nullableString("setVideoId"))
 
     private fun JsonObject.optionalArray(name: String): JsonArray? =

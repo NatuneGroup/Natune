@@ -151,7 +151,7 @@ abstract class PagedAudioProvider(private val cursorScope: String) : TypedConten
         require(page.total == null || page.hasMore == null || page.hasMore == (end < page.total))
         require(!more || page.tracks.isNotEmpty()) { "Empty nonterminal provider page" }
         return ContentPage(page.tracks.mapIndexed { index, track ->
-            ContentOccurrence("${provider.id}:$hash:${offset + index}", track.item)
+            ContentOccurrence("${provider.id}:$hash:${offset + index}", track.queueItem())
         }, if (more) "v1:$hash:$end" else null)
     }
     protected suspend fun match(request: AudioResolveRequest): ProviderTrack? {
