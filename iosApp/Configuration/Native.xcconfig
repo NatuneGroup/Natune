@@ -51,8 +51,8 @@ ARCHIVETUNE_LISTENER_PRESENCE_URL =
 // sign-in not configured. Libre.fm uses the built-in compatibility pair, and a custom endpoint can enter its own.
 ARCHIVETUNE_LASTFM_API_KEY =
 ARCHIVETUNE_LASTFM_API_SECRET =
-// The Amazon Turnstile sitekey and origin are a pair: set both or neither. CI writes them into Credentials.xcconfig,
-// but no Info.plist key reads them yet, so they stay blank here.
+// The Amazon Turnstile sitekey and origin are a pair: set both or neither. CI writes them into Credentials.xcconfig;
+// Info.plist forwards them to IosProviderCredentials for the authorization sheet.
 ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY =
 ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN =
 #include? "Credentials.xcconfig"

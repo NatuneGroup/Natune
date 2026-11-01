@@ -81,7 +81,17 @@
 
     <string name="ios_lane_spotify_sign_in_failed">Spotify sign-in could not be completed. Try again.</string>
     <string name="ios_lane_spotify_browser_unavailable">The sign-in window is not available on this device.</string>
-    <string name="ios_lane_spotify_streaming_note">Spotify streaming sign-in is not available on the iOS app yet. The catalog account above still feeds Spotify playlists and artwork.</string>
+    <string name="ios_lane_spotify_streaming_note">The streaming account is separate from the catalog account above. Signing in stores the session on this device, but the iOS player cannot resolve Spotify audio from it yet.</string>
+
+    <string name="ios_lane_amazon_challenge_title">Amazon Music authorization</string>
+    <string name="ios_lane_amazon_challenge_checking">Checking that this device may use the instance…</string>
+    <string name="ios_lane_amazon_challenge_opening">Opening the Amazon Music challenge…</string>
+    <string name="ios_lane_amazon_authorize_done">Amazon Music is authorized.</string>
+    <string name="ios_lane_amazon_authorize_cancelled">Amazon authorization was cancelled.</string>
+    <string name="ios_lane_amazon_authorize_no_instance">Add an instance before authorizing Amazon Music.</string>
+    <string name="ios_lane_amazon_authorize_busy">An Amazon authorization window is already open.</string>
+    <string name="ios_lane_amazon_authorize_failed">Amazon Music could not be authorized. Try again.</string>
+    <string name="ios_lane_amazon_authorize_not_configured">Amazon Music authorization is not configured in this build.</string>
 
     <string name="ios_lane_aod_note">These settings are saved, but the iOS app has no always-on display.</string>
     <string name="ios_lane_storage_note">The iOS app keeps its data in the app container; choosing another storage location is not available.</string>
