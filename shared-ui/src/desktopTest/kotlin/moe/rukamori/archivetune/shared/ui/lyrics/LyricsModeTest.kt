@@ -318,7 +318,8 @@ class LyricsModeTest {
     fun aPassedLineReadsAsTheActiveColourAtSeventyPercent() {
         val palette = LyricsPalette(dim = Color.Black, bright = Color.White, glow = Color.Red)
 
-        assertEquals(LyricsPalette.PASSED_ALPHA, palette.passed.alpha, 0.0001f)
+        // The desktop color backend stores alpha in 8 bits, so 0.7 lands within one 1/255 step.
+        assertEquals(LyricsPalette.PASSED_ALPHA, palette.passed.alpha, 1f / 255f)
         assertEquals(palette.bright.copy(alpha = LyricsPalette.PASSED_ALPHA), palette.passed)
         assertEquals(LyricsPalette.PASSED_ALPHA, 0.7f, 0.0001f)
     }

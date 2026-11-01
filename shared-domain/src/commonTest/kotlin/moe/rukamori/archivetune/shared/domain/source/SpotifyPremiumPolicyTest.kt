@@ -57,7 +57,7 @@ class SpotifyPremiumPolicyTest {
 
     @Test
     fun aStaleObservationRechecksOnlyOnTokenRefresh() {
-        val now = 1_000_000L
+        val now = SpotifyPremiumPolicy.PRODUCT_RECHECK_TTL_MS + 1_000_000L
         val stale = now - SpotifyPremiumPolicy.PRODUCT_RECHECK_TTL_MS - 1L
         assertTrue(SpotifyPremiumPolicy.recheckDue(SpotifyProduct.PREMIUM, stale, now, tokenJustMinted = true))
         assertFalse(SpotifyPremiumPolicy.recheckDue(SpotifyProduct.PREMIUM, stale, now, tokenJustMinted = false))
