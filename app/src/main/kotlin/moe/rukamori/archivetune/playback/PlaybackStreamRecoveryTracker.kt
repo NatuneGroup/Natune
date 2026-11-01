@@ -30,6 +30,9 @@ internal class PlaybackStreamRecoveryTracker(
         return true
     }
 
+    /** Attempts already spent on [mediaId]; the backoff curve reads it after [registerRetryAttempt]. */
+    fun attemptCount(mediaId: String): Int = if (attemptedMediaId == mediaId) attemptCount else 0
+
     fun onPlaybackRecovered(mediaId: String?) {
         if (mediaId != null && attemptedMediaId == mediaId) {
             attemptedMediaId = null

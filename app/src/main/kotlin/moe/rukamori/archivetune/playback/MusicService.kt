@@ -746,7 +746,8 @@ class MusicService :
 
     @Volatile
     private var lastLoginRecoveryPrompt: Pair<String, Long>? = null
-    private val playbackStreamRecoveryTracker = PlaybackStreamRecoveryTracker()
+    private val playbackStreamRecoveryTracker =
+        PlaybackStreamRecoveryTracker(maxAttemptsPerMediaItem = PlaybackRetryBackoff.DEFAULT_MAX_ATTEMPTS)
 
     /**
      * The shared recovery-policy driver consulted once every specialised in-place recovery has
@@ -754,6 +755,9 @@ class MusicService :
      * item, bounded at the budget's two resolve requests per failure stretch.
      */
     private val playbackErrorRecovery = PlaybackErrorRecovery()
+    private val rebufferMonitor = RebufferMonitor()
+    private val recoveryRetry =
+        PlaybackRecoveryRetry({ scope }, { player }, playbackStreamRecoveryTracker, rebufferMonitor)
 
     // Initial-buffer-stall recovery (ported from Metrolist).
     // A stream can stall in STATE_BUFFERING forever without surfacing an HTTP error the
@@ -5273,9 +5277,7 @@ class MusicService :
             YTPlayerUtils.markStreamClientFailed(mediaId, requestProfile.clientKey, responseException.responseCode)
         }
 
-        if (!playbackStreamRecoveryTracker.registerRetryAttempt(mediaId)) {
-            return false
-        }
+        if (!recoveryRetry.allow(mediaId)) return false
 
         Timber.tag("MusicService").i(
             "Retrying playback for %s after stream HTTP %d from %s failed",
@@ -5283,9 +5285,7 @@ class MusicService :
             responseException.responseCode,
             requestProfile.variantLabel,
         )
-        val shouldResume = player.playWhenReady
-        player.prepare()
-        if (shouldResume) player.play()
+        recoveryRetry.prepare(mediaId, player.playWhenReady)
         return true
     }
 
@@ -5332,10 +5332,7 @@ class MusicService :
                 )
                 playbackUrlCache.remove(mediaId)
                 YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
-                if (playbackStreamRecoveryTracker.registerRetryAttempt(mediaId)) {
-                    player.prepare()
-                    if (player.playWhenReady) player.play()
-                }
+                if (recoveryRetry.allow(mediaId)) recoveryRetry.prepare(mediaId, player.playWhenReady)
             }
     }
 
@@ -7502,7 +7499,7 @@ class MusicService :
                         retryWithoutPlaybackLoginContext {
                             YTPlayerUtils.playerResponseForPlayback(
                                 mediaId,
-                                audioQuality = if (lowData) AudioQuality.LOW else audioQuality,
+                                audioQuality = recoveryRetry.audioQuality(mediaId, lowData, audioQuality),
                                 connectivityManager = connectivityManager,
                                 preferredStreamClient = preferredStreamClient,
                                 networkMetered = lowData,
@@ -7563,6 +7560,8 @@ class MusicService :
 
         updateHistoryTrackingPlaybackState()
         updateInitialBufferRecovery(playbackState)
+        rebufferMonitor.onPlaybackStateChanged(
+            player.currentMediaItem?.mediaId, playbackState == Player.STATE_BUFFERING, playbackState == Player.STATE_READY, player.playWhenReady)
         if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
             enqueueCurrentHistorySessionForFinalization()
             // IDLE also follows a playback error that the source chain retries in place; resetting
@@ -8187,8 +8186,8 @@ class MusicService :
             // Invalidate any stale stream URL cache so the resolver is forced
             // to consult the cache first on the next prepare.
             playbackUrlCache.remove(currentMediaId)
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
-                player.prepare()
+            if (recoveryRetry.allow(currentMediaId)) {
+                recoveryRetry.prepare(currentMediaId, resumePlaying = false)
                 return
             }
         }
@@ -8262,7 +8261,7 @@ class MusicService :
                 // Re-prepare ONLY after the purge completes, back on the Main thread, so the
                 // fresh prepare cannot re-read the spans we just deleted.
                 withContext(Dispatchers.Main) {
-                    if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
+                    if (recoveryRetry.allow(currentMediaId)) {
                         player.seekTo(mediaItemIndex, resumePosition)
                         player.prepare()
                     } else {
@@ -8278,9 +8277,9 @@ class MusicService :
             playbackUrlCache.remove(currentMediaId)
             YTPlayerUtils.invalidateCachedStreamUrls(currentMediaId)
             YTPlayerUtils.clearPlaybackAuthCaches()
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
+            if (recoveryRetry.allow(currentMediaId)) {
                 Timber.tag("MusicService").i("Retrying playback for %s after bot-detection source error", currentMediaId)
-                player.prepare()
+                recoveryRetry.prepare(currentMediaId, resumePlaying = false)
                 return
             }
         }
@@ -8288,7 +8287,7 @@ class MusicService :
         if (!isLocalMedia && !isFullyDownloadedMedia && YTPlayerUtils.isBadStreamPlayerResponseException(error)) {
             playbackUrlCache.remove(currentMediaId)
             YTPlayerUtils.invalidateCachedStreamUrls(currentMediaId)
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
+            if (recoveryRetry.allow(currentMediaId)) {
                 scope.launch(Dispatchers.IO) {
                     runCatching {
                         YTPlayerUtils.recoverFromBadStreamPlayerResponse(currentMediaId)
@@ -8331,13 +8330,13 @@ class MusicService :
                         httpStatusCode = null,
                     )
                 }
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
+            if (recoveryRetry.allow(currentMediaId)) {
                 Timber.tag("MusicService").i(
                     "Retrying playback for %s after parser source error %d",
                     currentMediaId,
                     error.errorCode,
                 )
-                player.prepare()
+                recoveryRetry.prepare(currentMediaId, resumePlaying = false)
                 return
             }
         }
@@ -8409,7 +8408,7 @@ class MusicService :
         if (
             !isLocalMedia &&
                 !isFullyDownloadedMedia &&
-                playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)
+                recoveryRetry.allow(currentMediaId)
         ) {
             val shouldResume = player.playWhenReady
             playbackUrlCache.remove(currentMediaId)
@@ -8422,8 +8421,7 @@ class MusicService :
                 error.errorCodeName,
                 describeCauseChain(error),
             )
-            player.prepare()
-            if (shouldResume) player.play()
+            recoveryRetry.prepare(currentMediaId, shouldResume)
             return
         }
 
@@ -11059,7 +11057,7 @@ class MusicService :
                 retryWithoutPlaybackLoginContext {
                     YTPlayerUtils.playerResponseForPlayback(
                         mediaId,
-                        audioQuality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
+                        audioQuality = recoveryRetry.audioQuality(mediaId, lowDataModeActive, audioQuality),
                         connectivityManager = connectivityManager,
                         preferredStreamClient = preferredStreamClient,
                         networkMetered = lowDataModeActive,
@@ -11085,7 +11083,7 @@ class MusicService :
                         mediaId = mediaId,
                         primaryFailure = primaryFailure,
                         shippedStartedAtMs = youtubeResolveStartedAt,
-                        audioQuality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
+                        audioQuality = recoveryRetry.audioQuality(mediaId, lowDataModeActive, audioQuality),
                         networkMetered = lowDataModeActive,
                         purpose = moe.rukamori.archivetune.playback.stream.StreamPurpose.PLAYBACK,
                         connectivityManager = connectivityManager,
