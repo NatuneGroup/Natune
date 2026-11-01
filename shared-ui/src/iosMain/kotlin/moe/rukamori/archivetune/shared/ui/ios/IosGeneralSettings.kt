@@ -84,6 +84,8 @@ internal fun IosGeneralSettingsPage(
             arrangeArtworkProviders = { arrangeDialog = IosArrangeDialogKind.ARTWORK_PROVIDERS },
             // The tag manager is the library's own tags page, so the row opens the page that edits this graph's tags.
             managePlaylistTags = { navigate("library/tags") },
+            // The pause-on-mute rows stay off this host until its policy lands on its own branch.
+            deviceMuteSupported = false,
             onFailure = onFailure,
             scrollTo = scrollTo,
         )
