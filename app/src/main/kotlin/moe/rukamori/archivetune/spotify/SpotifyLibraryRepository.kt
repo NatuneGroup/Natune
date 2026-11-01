@@ -271,6 +271,8 @@ class SpotifyLibraryRepository
                     prefs.remove(SpotifyAccessTokenExpiresAtKey)
                     prefs.remove(SpotifyAccountNameKey)
                     prefs.remove(SpotifyAccountAvatarUrlKey)
+                    prefs.remove(SpotifyProductKey)
+                    prefs.remove(SpotifyProductCheckedAtKey)
                     prefs.remove(SpotifyLibraryPlaylistsCacheKey)
                     SpotifyProfileCache.clearSnapshot(prefs)
                 }
@@ -794,6 +796,10 @@ class SpotifyLibraryRepository
                             ?.url
                             ?.let { prefs[SpotifyAccountAvatarUrlKey] = it }
                             ?: prefs.remove(SpotifyAccountAvatarUrlKey)
+                        user.product
+                            ?.let { prefs[SpotifyProductKey] = it }
+                            ?: prefs.remove(SpotifyProductKey)
+                        prefs[SpotifyProductCheckedAtKey] = System.currentTimeMillis()
                     }
                 }.onFailure { error ->
                     if (error is CancellationException) throw error

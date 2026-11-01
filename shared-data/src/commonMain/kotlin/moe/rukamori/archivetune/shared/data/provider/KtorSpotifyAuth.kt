@@ -27,6 +27,9 @@ private data class SpotifyNuance(val v: Int, val s: String)
 @Serializable
 private data class SpotifyServerTime(val serverTime: Long)
 
+@Serializable
+private data class SpotifyMeProduct(val product: String? = null)
+
 /**
  * Pure-Kotlin SHA-1, needed by the Spotify web-player TOTP (RFC 6238, HMAC-SHA1). Kept in common
  * code like the rest of the provider crypto so every platform produces bit-identical output.
@@ -145,6 +148,22 @@ class KtorSpotifyAuth(private val client: HttpClient) {
             Result.failure(error)
         }
 
+    /**
+     * The account's subscription product ("premium", "free", ...) as the public REST profile reports it, or
+     * null when it cannot be read. This is the Web API half of the Premium check the Librespot engine gates
+     * on; the engine-side twin is the product attribute an access-point login reports.
+     */
+    suspend fun fetchProduct(accessToken: String): String? =
+        try {
+            json.decodeFromString<SpotifyMeProduct>(
+                spotifyGet(ME_URL, mapOf("Authorization" to "Bearer $accessToken")),
+            ).product?.takeIf { it.isNotBlank() }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            null
+        }
+
     private suspend fun fetchNuance(nowMs: () -> Long): SpotifyNuance =
         nuanceMutex.withLock {
             val now = nowMs()
@@ -220,6 +239,7 @@ class KtorSpotifyAuth(private val client: HttpClient) {
 
     companion object {
         private const val TOKEN_URL = "https://open.spotify.com/api/token"
+        private const val ME_URL = "https://api.spotify.com/v1/me"
         private const val SERVER_TIME_URL = "https://open.spotify.com/api/server-time"
         private const val NUANCE_URL =
             "https://gist.githubusercontent.com/sonic-liberation/22ed9c6ba463899e933427f7de1f0eef/raw/nuances.json"

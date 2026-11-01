@@ -38,6 +38,8 @@ import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethodKey
 import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.constants.SpotifyStreamUserIdKey
+import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
+import moe.rukamori.archivetune.shared.domain.source.SpotifyProduct
 import moe.rukamori.archivetune.spotify.echo.SpotifyDesktopAuth
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
 import moe.rukamori.archivetune.utils.dataStore
@@ -163,6 +165,7 @@ object SpotifyStreamingAccount {
                 it[SpotifyStreamAccessTokenKey] = fresh.accessToken
                 it[SpotifyStreamAccessTokenExpiresAtKey] = fresh.accessTokenExpirationTimestampMs
             }
+            refreshProductIfDue(context, fresh.accessToken)
             currentCoroutineContext().ensureActive()
             fresh.accessToken
         }
@@ -228,6 +231,7 @@ object SpotifyStreamingAccount {
                         if (catalogProfile.userId == profile.userId) throw SignInError.SameAsCatalog()
                     }
 
+                    val product = fetchProduct(token.accessToken)
                     currentCoroutineContext().ensureActive()
                     resetSessions()
                     comparedCatalogSpDc = catalogSpDc.ifBlank { null }
@@ -239,6 +243,10 @@ object SpotifyStreamingAccount {
                         it[SpotifyStreamAccessTokenExpiresAtKey] = token.accessTokenExpirationTimestampMs
                         it[SpotifyStreamUserIdKey] = profile.userId
                         it[SpotifyStreamAccountNameKey] = profile.displayName.orEmpty()
+                        product
+                            ?.let { value -> it[SpotifyStreamProductKey] = value }
+                            ?: it.remove(SpotifyStreamProductKey)
+                        it[SpotifyStreamProductCheckedAtKey] = System.currentTimeMillis()
                     }
                     profile
                 }.onFailure { if (it is CancellationException) throw it }
@@ -272,6 +280,8 @@ object SpotifyStreamingAccount {
             it.remove(SpotifyStreamAccessTokenExpiresAtKey)
             it.remove(SpotifyStreamUserIdKey)
             it.remove(SpotifyStreamAccountNameKey)
+            it.remove(SpotifyStreamProductKey)
+            it.remove(SpotifyStreamProductCheckedAtKey)
             it[SpotifyStreamEnabledKey] = false
         }
         Unit
@@ -283,6 +293,53 @@ object SpotifyStreamingAccount {
         SpotifyDesktopAuth.reset()
         SpotifyEchoResolver.clearCache()
     }
+
+    /**
+     * Re-reads the streaming account's plan on the refresh path only: a fresh token just minted is the
+     * moment the product is checked again, and only once the stored observation is stale per
+     * [SpotifyPremiumPolicy.recheckDue]. A failed read keeps the stored product, so an outage cannot
+     * masquerade as a lost subscription.
+     */
+    private suspend fun refreshProductIfDue(
+        context: Context,
+        accessToken: String,
+    ) {
+        val prefs = context.dataStore.data.first()
+        val now = System.currentTimeMillis()
+        if (
+            !SpotifyPremiumPolicy.recheckDue(
+                SpotifyProduct.of(prefs[SpotifyStreamProductKey]),
+                prefs[SpotifyStreamProductCheckedAtKey] ?: 0L,
+                now,
+                tokenJustMinted = true,
+            )
+        ) {
+            return
+        }
+        val product = fetchProduct(accessToken) ?: return
+        context.dataStore.edit {
+            it[SpotifyStreamProductKey] = product
+            it[SpotifyStreamProductCheckedAtKey] = now
+        }
+    }
+
+    /** The account's subscription product as the public REST profile reports it, or null. */
+    private fun fetchProduct(token: String): String? =
+        runCatching {
+            val request =
+                Request
+                    .Builder()
+                    .url(REST_ME_URL)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json")
+                    .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                JSONObject(response.body?.string().orEmpty())
+                    .optString("product")
+                    .takeIf { it.isNotBlank() }
+            }
+        }.getOrNull()
 
     fun fetchProfile(token: String): Profile? = fetchProfileGraphQl(token) ?: fetchProfileRest(token)
 

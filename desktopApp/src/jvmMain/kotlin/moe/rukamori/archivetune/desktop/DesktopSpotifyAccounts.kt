@@ -1,14 +1,5 @@
 package moe.rukamori.archivetune.desktop
 
-import io.ktor.client.HttpClient
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -28,11 +19,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.serializer
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopCookieOnlyBrowserAuth
@@ -60,6 +46,8 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccessTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccountAvatarUrlKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccountNameKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyLibraryPlaylistsCacheKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyProductCheckedAtKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyProductKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyRecentlyPlayedCacheFetchedAtKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyRecentlyPlayedCacheKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
@@ -67,6 +55,8 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifySpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccessTokenExpiresAtKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccessTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccountNameKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductCheckedAtKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamUserIdKey
@@ -78,7 +68,6 @@ import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
 import moe.rukamori.archivetune.spotify.SPOTIFY_HISTORY_ARCHIVE_LIMIT
 import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyAuth
-import moe.rukamori.archivetune.spotify.SpotifyHashProvider
 import moe.rukamori.archivetune.spotify.historyRetryWaitMillis
 import moe.rukamori.archivetune.spotify.mergePlayHistory
 import moe.rukamori.archivetune.spotify.models.SpotifyAlbum
@@ -107,11 +96,6 @@ private const val SEARCH_PAGE_SIZE = 20
 /** In-flight parallel track-count fetches in [DesktopSpotifyAccounts.fetchAllPlaylists] — the Android cap. */
 private const val COUNT_FETCH_CONCURRENCY = 8
 private const val SPOTIFY_PAGE_CONCURRENCY = 8
-private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
-private const val REST_ME_URL = "https://api.spotify.com/v1/me"
-private const val WEB_PLAYER_USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-
 /** The session cookies are set for .spotify.com, so the web player origin carries them after the sign-in returns. */
 private val PLAYER_ORIGIN = AuthorizedHttpsOrigin("open.spotify.com")
 
@@ -138,7 +122,7 @@ private class CachedRecentlyPlayed(val items: List<SpotifyPlayHistory>, val fetc
 private class CachedSearch(val result: SpotifySearchResult, val expiresAtMs: Long)
 
 /** A Spotify account as its own profile reports it. */
-internal data class SpotifyAccountProfile(val userId: String, val displayName: String?)
+internal data class SpotifyAccountProfile(val userId: String, val displayName: String?, val product: String? = null)
 
 private class SpotifyCookies(val spDc: String, val spKey: String)
 
@@ -479,6 +463,8 @@ internal class DesktopSpotifyAccounts(
                 this[SpotifyAccessTokenExpiresAtKey] = null
                 this[SpotifyAccountNameKey] = null
                 this[SpotifyAccountAvatarUrlKey] = null
+                this[SpotifyProductKey] = null
+                this[SpotifyProductCheckedAtKey] = null
                 this[SpotifyLibraryPlaylistsCacheKey] = null
                 clearCatalogSnapshots()
             }
@@ -764,6 +750,8 @@ internal class DesktopSpotifyAccounts(
         controller.edit {
             this[SpotifyAccountNameKey] = user.displayName.orEmpty()
             this[SpotifyAccountAvatarUrlKey] = user.images.firstOrNull()?.url
+            this[SpotifyProductKey] = user.product
+            this[SpotifyProductCheckedAtKey] = System.currentTimeMillis()
         }
     }
 
@@ -811,6 +799,8 @@ internal class DesktopSpotifyAccounts(
                     this[SpotifyStreamAccessTokenExpiresAtKey] = accepted.accessTokenExpirationTimestampMs
                     this[SpotifyStreamUserIdKey] = account.userId
                     this[SpotifyStreamAccountNameKey] = account.displayName.orEmpty()
+                    this[SpotifyStreamProductKey] = account.product
+                    this[SpotifyStreamProductCheckedAtKey] = System.currentTimeMillis()
                 }
                 null
             }
@@ -907,74 +897,6 @@ private fun PreferenceEditor.clearCatalogSnapshots() {
 private fun cookieValue(cookies: List<PrivateCookie>, name: String): String =
     cookies.filter { it.name == name }.maxByOrNull { it.domain.removePrefix(".").length }?.value?.reveal().orEmpty()
 
-/**
- * Reads the profile of the account behind [token]: the web player's GraphQL profile first, with the previous query hash
- * as a fallback, then the public REST profile. Null when neither answers.
- */
-internal suspend fun fetchSpotifyProfile(http: HttpClient, token: String): SpotifyAccountProfile? =
-    profileFromGraphQl(http, token) ?: profileFromRest(http, token)
-
-private suspend fun profileFromGraphQl(http: HttpClient, token: String): SpotifyAccountProfile? {
-    val primary = SpotifyHashProvider.getHash("profileAttributes")
-    val hashes = listOfNotNull(primary, SpotifyHashProvider.getPreviousHash("profileAttributes")?.takeIf { it != primary })
-    for (hash in hashes) {
-        val body = buildJsonObject {
-            put("variables", JsonObject(emptyMap()))
-            put("operationName", "profileAttributes")
-            putJsonObject("extensions") {
-                putJsonObject("persistedQuery") {
-                    put("version", 1)
-                    put("sha256Hash", hash)
-                }
-            }
-        }
-        val text = spotifyRequest {
-            http.post(GQL_URL) {
-                header("Authorization", "Bearer $token")
-                header("Accept", "application/json")
-                header("app-platform", "WebPlayer")
-                header("Origin", "https://open.spotify.com")
-                header("Referer", "https://open.spotify.com/")
-                header("User-Agent", WEB_PLAYER_USER_AGENT)
-                contentType(ContentType.Application.Json)
-                setBody(body.toString())
-            }.takeIf { it.status.isSuccess() }?.bodyAsText()
-        } ?: continue
-        val profile = parseObject(text)?.child("data")?.child("me")?.child("profile") ?: continue
-        val userId = profile.text("uri")?.substringAfterLast(':')?.takeIf { it.isNotBlank() } ?: continue
-        return SpotifyAccountProfile(userId, profile.text("name")?.takeIf { it.isNotBlank() })
-    }
-    return null
-}
-
-private suspend fun profileFromRest(http: HttpClient, token: String): SpotifyAccountProfile? {
-    val text = spotifyRequest {
-        http.get(REST_ME_URL) {
-            header("Authorization", "Bearer $token")
-            header("Accept", "application/json")
-        }.takeIf { it.status.isSuccess() }?.bodyAsText()
-    } ?: return null
-    val json = parseObject(text) ?: return null
-    val userId = json.text("id")?.takeIf { it.isNotBlank() } ?: return null
-    return SpotifyAccountProfile(userId, json.text("display_name")?.takeIf { it.isNotBlank() })
-}
-
-private suspend fun spotifyRequest(block: suspend () -> String?): String? =
-    try {
-        block()
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        null
-    }
-
-private fun parseObject(text: String): JsonObject? =
-    try {
-        Json.parseToJsonElement(text) as? JsonObject
-    } catch (_: Exception) {
-        null
-    }
-
 /* Spotify's raw 429 body is not a reader-facing message; this matches Android's history retry detection. */
 private fun isSpotifyRateLimitMessage(message: String?): Boolean =
     message != null &&
@@ -984,6 +906,3 @@ private fun isSpotifyRateLimitMessage(message: String?): Boolean =
                 message.contains("Rate limit", ignoreCase = true)
             )
 
-private fun JsonObject.child(name: String): JsonObject? = this[name] as? JsonObject
-
-private fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
