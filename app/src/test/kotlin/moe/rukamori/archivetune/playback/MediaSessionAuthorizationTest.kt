@@ -85,6 +85,8 @@ class MediaSessionAuthorizationTest {
                 MediaSessionConstants.ACTION_TOGGLE_LIBRARY,
                 MediaSessionConstants.ACTION_TOGGLE_SHUFFLE,
                 MediaSessionConstants.ACTION_TOGGLE_REPEAT_MODE,
+                MediaSessionConstants.ACTION_SEEK_BACK_30,
+                MediaSessionConstants.ACTION_SEEK_FORWARD_30,
             )
         assertEquals(all, MediaSessionAuthorization.ALL_CUSTOM_ACTIONS)
         assertEquals(all, MediaSessionAuthorization.allowedCustomActions(MediaControllerTier.PRIVILEGED))
