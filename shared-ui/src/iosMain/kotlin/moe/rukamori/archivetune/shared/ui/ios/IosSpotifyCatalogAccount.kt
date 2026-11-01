@@ -35,10 +35,13 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccessTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccountAvatarUrlKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccountNameKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyLibraryPlaylistsCacheKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyProductCheckedAtKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyProductKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyRecentlyPlayedCacheFetchedAtKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyRecentlyPlayedCacheKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpKeyKey
+import moe.rukamori.archivetune.shared.domain.settings.clearSpotifyLibrespotSession
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
 import moe.rukamori.archivetune.shared.ui.settings.preferredCookieValue
 
@@ -197,6 +200,7 @@ internal class IosSpotifyCatalogAccount(
                 if (changed) {
                     this[SpotifyAccessTokenKey] = null
                     this[SpotifyAccessTokenExpiresAtKey] = null
+                    clearSpotifyLibrespotSession()
                     clearCatalogSnapshots()
                 }
             }
@@ -244,8 +248,11 @@ internal class IosSpotifyCatalogAccount(
                 this[SpotifyAccessTokenExpiresAtKey] = null
                 this[SpotifyAccountNameKey] = null
                 this[SpotifyAccountAvatarUrlKey] = null
+                this[SpotifyProductKey] = null
+                this[SpotifyProductCheckedAtKey] = null
                 this[SpotifyLibraryPlaylistsCacheKey] = null
                 clearCatalogSnapshots()
+                clearSpotifyLibrespotSession()
             }
         }
         browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_CATALOG)
@@ -279,6 +286,8 @@ internal class IosSpotifyCatalogAccount(
             this[SpotifyAccountNameKey] = me.text("display_name").orEmpty()
             this[SpotifyAccountAvatarUrlKey] =
                 (me["images"] as? JsonArray)?.firstOrNull()?.let { (it as? JsonObject)?.text("url") }
+            this[SpotifyProductKey] = me.text("product")?.takeIf { it.isNotBlank() }
+            this[SpotifyProductCheckedAtKey] = Clock.System.now().toEpochMilliseconds()
         }
     }
 

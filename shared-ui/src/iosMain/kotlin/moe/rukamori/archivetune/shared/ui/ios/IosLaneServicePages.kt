@@ -274,6 +274,7 @@ internal fun IosLaneServiceSettingsPage(
                 signInInProgress = streamingBusy,
                 signInRefusal = streamingRefusal,
                 onSignIn = owners.spotifyStreaming::signIn,
+                librespotSignInAvailable = owners.spotifyStreaming.librespotConfigured,
                 onDismissSignInRefusal = owners.spotifyStreaming::dismissRefusal,
                 onSignOut = owners.spotifyStreaming::signOut,
                 onFailure = onFailure,
