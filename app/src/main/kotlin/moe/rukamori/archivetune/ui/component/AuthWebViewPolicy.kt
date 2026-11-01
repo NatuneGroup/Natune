@@ -68,13 +68,53 @@ internal fun authLogHost(rawUrl: String?): String? {
 }
 
 /**
- * scheme+host+path and nothing else: no query (OAuth codes, tokens), no fragment, no userinfo.
- * Diagnostic lines keep enough of the failing URL to identify the endpoint and nothing in it.
+ * scheme/host/path as separate fields and nothing else: no query (OAuth codes, tokens), no
+ * fragment, no userinfo. Field form rather than "https://…" because the shared redactor blanks
+ * whole URLs — this keeps the failing endpoint readable while staying credential-free.
  */
-internal fun authLogUrl(rawUrl: String?): String {
-    if (rawUrl.isNullOrBlank()) return "(none)"
-    val uri = runCatching { java.net.URI(rawUrl) }.getOrNull() ?: return "(unparseable)"
-    val scheme = uri.scheme?.lowercase() ?: return "(unparseable)"
-    val host = uri.host?.lowercase() ?: return "$scheme://"
-    return "$scheme://$host${uri.rawPath.orEmpty()}"
+internal fun authLogTarget(rawUrl: String?): String {
+    if (rawUrl.isNullOrBlank()) return "url=(none)"
+    val uri = runCatching { java.net.URI(rawUrl) }.getOrNull() ?: return "url=(unparseable)"
+    val scheme = uri.scheme?.lowercase() ?: return "url=(unparseable)"
+    val host = uri.host?.lowercase() ?: return "scheme=$scheme"
+    return "scheme=$scheme host=$host path=${uri.rawPath.orEmpty()}"
 }
+
+internal fun authNavErrorLine(
+    errorCode: Int,
+    isMainFrame: Boolean,
+    url: String?,
+): String = "error code=$errorCode frame=${if (isMainFrame) "main" else "sub"} ${authLogTarget(url)}"
+
+internal fun authHttpErrorLine(
+    statusCode: Int,
+    isMainFrame: Boolean,
+    url: String?,
+): String = "http=$statusCode frame=${if (isMainFrame) "main" else "sub"} ${authLogTarget(url)}"
+
+// The console *message* never enters the line: it is page text and can carry anything the site
+// chooses to print, including data a redactor cannot classify.
+internal fun authConsoleLine(
+    level: String,
+    sourceUrl: String?,
+    lineNumber: Int,
+): String = "console.$level ${authLogTarget(sourceUrl)} line=$lineNumber"
+
+private val SIGN_IN_POPUP_PROVIDERS = setOf("spotify")
+
+/**
+ * Multi-window belongs only to sign-ins that need gesture popups (Spotify's social-login buttons).
+ * Every other provider keeps the original single window: a popup with the shared diagnostic client
+ * would bypass the provider's own redirect interception, cookie capture and JS bridges.
+ */
+internal fun authPopupsEnabled(provider: String): Boolean = provider in SIGN_IN_POPUP_PROVIDERS
+
+/**
+ * Only a verified main-frame GET may be replayed into the parent window. A form_post OAuth return
+ * or an unknown-method navigation reissued as loadUrl would arrive as a bare GET and silently lose
+ * its body — it stays in the popup, which shares the session jar and cookie capture.
+ */
+internal fun authPopupHandoffAllowed(
+    isMainFrame: Boolean,
+    method: String?,
+): Boolean = isMainFrame && method?.equals("GET", ignoreCase = true) == true

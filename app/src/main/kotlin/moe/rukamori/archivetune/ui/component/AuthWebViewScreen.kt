@@ -29,9 +29,7 @@
 package moe.rukamori.archivetune.ui.component
 
 import android.content.Context
-import android.view.ViewGroup
 import android.webkit.WebView
-import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
@@ -59,9 +57,10 @@ import androidx.navigation.NavController
 import moe.rukamori.archivetune.shared.ui.component.AuthWebViewLayout
 
 /**
- * Renders [factory]'s WebView inside the shared Spotify-style sign-in sheet. [provider] tags the
- * diagnostic lines the shared popup chrome and [factory]'s client emit. The WebView sits in a
- * [FrameLayout] host so a gesture-opened popup can stack on top of it without covering the sheet.
+ * Renders [factory]'s WebView inside the shared Spotify-style sign-in sheet. The WebView stays
+ * single-windowed: a popup running the shared diagnostic client would bypass the provider's own
+ * redirect interception, cookie capture and JS bridges, so only [authPopupsEnabled] providers may
+ * opt in — and none of the routed sign-ins does. Spotify's own sheet keeps its popup host.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,10 +76,9 @@ fun AuthWebViewScreen(
     statusContent: (@Composable () -> Unit)? = null,
     factory: (Context) -> WebView,
 ) {
-    // The sheet's own view plus the top-most window: a gesture-opened popup when one is stacked.
+    // In state, not a plain var: a plain var resets to null on recomposition (the factory runs
+    // once) and never triggers one, leaving BackHandler permanently disabled.
     var webView by remember { mutableStateOf<WebView?>(null) }
-    var activeWebView by remember { mutableStateOf<WebView?>(null) }
-    var popupClient by remember { mutableStateOf<AuthPopupWebChromeClient?>(null) }
 
     AuthWebViewSheet(
         title = title,
@@ -96,62 +94,28 @@ fun AuthWebViewScreen(
                     .weight(1f)
                     .clip(MaterialTheme.shapes.large),
             factory = { ctx ->
-                val host = FrameLayout(ctx)
-                val main = factory(ctx)
-                // Gesture popups were silently dying here: with multiple windows off, window.open
-                // returned null to the page and a "Sign in with …" substitute had nowhere to go.
-                main.settings.setSupportMultipleWindows(true)
-                val chrome =
-                    AuthPopupWebChromeClient(
-                        container = host,
-                        parentWebView = main,
-                        provider = provider,
-                        onActiveWebViewChanged = { active -> activeWebView = active },
-                    )
-                main.webChromeClient = chrome
-                host.addView(
-                    main,
-                    FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    ),
-                )
-                popupClient = chrome
-                webView = main
-                activeWebView = main
-                host
+                factory(ctx).apply {
+                    // The routed providers all sign in inside one window; multi-window is a policy
+                    // decision the flow opts into, never a default the shell applies.
+                    settings.setSupportMultipleWindows(authPopupsEnabled(provider))
+                    webView = this
+                }
             },
-            onRelease = {
-                popupClient?.closePopups()
-                webView?.let { released -> onRelease?.invoke(released) }
-                webView = null
-                activeWebView = null
-                popupClient = null
+            onRelease = { released ->
+                onRelease?.invoke(released)
+                if (webView === released) webView = null
             },
         )
     }
 
     // Enabled purely on presence: canGoBack() is polled at press time because it changes during
-    // in-page navigation without recomposing. A stacked popup closes first instead of the sheet.
+    // in-page navigation without recomposing, so keying `enabled` on it goes stale either way.
     BackHandler(enabled = webView != null) {
-        val active = activeWebView
-        val main = webView
-        when {
-            active != null && main != null && active !== main -> {
-                if (active.canGoBack()) {
-                    active.goBack()
-                } else {
-                    popupClient?.closePopups()
-                }
-            }
-
-            navigateBackInWebView && main?.canGoBack() == true -> {
-                main.goBack()
-            }
-
-            else -> {
-                onDismiss?.invoke() ?: run { navController.navigateUp() }
-            }
+        val view = webView
+        if (navigateBackInWebView && view?.canGoBack() == true) {
+            view.goBack()
+        } else {
+            onDismiss?.invoke() ?: run { navController.navigateUp() }
         }
     }
 }
