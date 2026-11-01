@@ -38,6 +38,7 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.toKString
+import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,11 +86,15 @@ import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeControls
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeState
 import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.content_canvas_failed
+import moe.rukamori.archivetune.shared.ui.resources.content_canvas_network_unknown
+import moe.rukamori.archivetune.shared.ui.resources.content_canvas_not_found
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.skia.Image as SkiaImage
 import platform.AVFoundation.AVAssetImageGenerator
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.AVURLAsset
+import platform.AVFoundation.URLAssetWithURL
 import platform.CoreGraphics.CGImageRelease
 import platform.CoreMedia.CMTime
 import platform.CoreMedia.CMTimeGetSeconds
@@ -103,9 +108,11 @@ import platform.Foundation.NSFileType
 import platform.Foundation.NSFileTypeRegular
 import platform.Foundation.NSLocale
 import platform.Foundation.NSLocaleCountryCode
+import platform.Foundation.NSLock
 import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
+import platform.Foundation.currentLocale
 import platform.UIKit.UIImage
 import platform.UIKit.UIImagePNGRepresentation
 import platform.posix.free
@@ -332,20 +339,32 @@ internal class IosCanvasFrames(
     }
 
     private val feeds = HashMap<IosCanvasTarget, Feed>()
+    private val feedsLock = NSLock()
 
-    fun acquire(target: IosCanvasTarget): Feed = synchronized(feeds) {
-        val feed = feeds.getOrPut(target) { Feed(target) }
-        feed.users++
-        if (feed.job == null) feed.job = owner.scope.launch(Dispatchers.Default) { run(feed) }
-        feed
+    fun acquire(target: IosCanvasTarget): Feed {
+        feedsLock.lock()
+        try {
+            val feed = feeds.getOrPut(target) { Feed(target) }
+            feed.users++
+            if (feed.job == null) feed.job = owner.scope.launch(Dispatchers.Default) { run(feed) }
+            return feed
+        } finally {
+            feedsLock.unlock()
+        }
     }
 
     fun release(feed: Feed) {
-        val stop = synchronized(feeds) {
+        feedsLock.lock()
+        val stop = try {
             feed.users--
-            if (feed.users > 0) return
-            feeds.remove(feed.target, feed)
-            feed.job.also { feed.job = null }
+            if (feed.users > 0) {
+                null
+            } else {
+                if (feeds[feed.target] == feed) feeds.remove(feed.target)
+                feed.job.also { feed.job = null }
+            }
+        } finally {
+            feedsLock.unlock()
         }
         stop?.cancel()
     }
@@ -354,7 +373,7 @@ internal class IosCanvasFrames(
         val target = feed.target
         try {
             val path = canvasLocalPath(target.uri) ?: error("canvas loop has no local file")
-            val asset = AVURLAsset(URL = NSURL.fileURLWithPath(path))
+            val asset = AVURLAsset.URLAssetWithURL(NSURL.fileURLWithPath(path), null)
             if (asset.tracksWithMediaType(AVMediaTypeVideo).isEmpty()) error("canvas loop has no video track")
             val generator = AVAssetImageGenerator(asset = asset)
             generator.appliesPreferredTrackTransform = true

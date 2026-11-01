@@ -41,6 +41,7 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifySpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.comparableSongTitle
 import moe.rukamori.archivetune.shared.domain.settings.parseCanvasResolverEndpoints
 import platform.Foundation.NSString
+import platform.Foundation.decomposedStringWithCompatibilityMapping
 
 /**
  * One resolved canvas for the current occurrence: the fields the providers answer and the two URLs the owner picks

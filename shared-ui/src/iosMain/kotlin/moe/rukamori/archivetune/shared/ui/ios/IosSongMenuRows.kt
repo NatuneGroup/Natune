@@ -11,6 +11,7 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
 import moe.rukamori.archivetune.shared.data.provider.YouTubeEntry
 import moe.rukamori.archivetune.shared.domain.mediainfo.AudioContainer
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
@@ -29,6 +30,9 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
+import platform.Foundation.create
+import platform.Foundation.fileHandleForReadingAtPath
+import platform.Foundation.writeToFile
 
 /**
  * The song rows this host gained owners for: speed-dial pins, library removal, download export, cover
