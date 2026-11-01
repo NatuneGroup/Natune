@@ -283,6 +283,8 @@ class SpotifyLibraryRepository
                 clearRecentlyPlayed()
                 runCatching { clearWebAuthSession(context) }
                     .onFailure(::reportException)
+                // The Librespot grant is this account's streaming session: it leaves with it.
+                SpotifyLibrespotAccount.signOut(context)
             }
         }
 

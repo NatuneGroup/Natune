@@ -238,6 +238,14 @@ android {
             "LYPRIO_HMAC_KEY",
             providerCredentialLiteral("ARCHIVETUNE_LYPRIO_HMAC_KEY", "LYPRIO_HMAC_KEY"),
         )
+        // The Librespot sign-in is a public OAuth client: PKCE proves the caller, so only the
+        // application id is baked in — never a secret. A blank build leaves the sign-in disabled
+        // and reporting "not configured".
+        buildConfigField(
+            "String",
+            "ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID",
+            providerCredentialLiteral("ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID", "SPOTIFY_CLIENT_ID"),
+        )
 
         // Telegram (TDLib) app credentials. Baked in at build time so users sign in with just
         // their phone number + login code — no my.telegram.org api_id/api_hash entry. Override via

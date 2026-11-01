@@ -15,7 +15,8 @@ import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
 class SpotifyStreamingSettingsPolicyTest {
     @Test
     fun theStreamSessionFollowsTheEngineBinding() {
-        val bothSignedIn = PreferenceSnapshot.of(SpotifyStreamSpDcKey to "s", SpotifySpDcKey to "c")
+        val bothSignedIn =
+            PreferenceSnapshot.of(SpotifyStreamSpDcKey to "s", SpotifyLibrespotRefreshTokenKey to "r")
         assertTrue(bothSignedIn.spotifyStreamSessionPresent(SpotifyStreamEngine.UNOFFICIAL))
         assertTrue(bothSignedIn.spotifyStreamSessionPresent(SpotifyStreamEngine.LIBRESPOT))
 
@@ -23,9 +24,15 @@ class SpotifyStreamingSettingsPolicyTest {
         assertTrue(dedicatedOnly.spotifyStreamSessionPresent(SpotifyStreamEngine.UNOFFICIAL))
         assertFalse(dedicatedOnly.spotifyStreamSessionPresent(SpotifyStreamEngine.LIBRESPOT))
 
-        val libraryOnly = PreferenceSnapshot.of(SpotifySpDcKey to "c")
-        assertFalse(libraryOnly.spotifyStreamSessionPresent(SpotifyStreamEngine.UNOFFICIAL))
-        assertTrue(libraryOnly.spotifyStreamSessionPresent(SpotifyStreamEngine.LIBRESPOT))
+        // A catalog sign-in alone is not a streaming session: Librespot plays through its OAuth grant.
+        val catalogOnly = PreferenceSnapshot.of(SpotifySpDcKey to "c")
+        assertFalse(catalogOnly.spotifyStreamSessionPresent(SpotifyStreamEngine.UNOFFICIAL))
+        assertFalse(catalogOnly.spotifyStreamSessionPresent(SpotifyStreamEngine.LIBRESPOT))
+
+        val librespotOnly = PreferenceSnapshot.of(SpotifyLibrespotRefreshTokenKey to "r")
+        assertFalse(librespotOnly.spotifyStreamSessionPresent(SpotifyStreamEngine.UNOFFICIAL))
+        assertTrue(librespotOnly.spotifyStreamSessionPresent(SpotifyStreamEngine.LIBRESPOT))
+        assertTrue(librespotOnly.spotifyLibrespotSignedIn())
     }
 
     @Test
@@ -45,7 +52,7 @@ class SpotifyStreamingSettingsPolicyTest {
         val librespotSignedIn =
             PreferenceSnapshot.of(
                 SpotifyStreamEngineKey to SpotifyStreamEngine.LIBRESPOT.name,
-                SpotifySpDcKey to "c",
+                SpotifyLibrespotRefreshTokenKey to "r",
             ).toEditor()
         librespotSignedIn.setSpotifyStreamingEnabled(true)
         assertEquals(true, librespotSignedIn.snapshot()[SpotifyStreamEnabledKey])
@@ -56,7 +63,7 @@ class SpotifyStreamingSettingsPolicyTest {
         val librespotEnabled = PreferenceSnapshot.of(
             SpotifyStreamEngineKey to SpotifyStreamEngine.LIBRESPOT.name,
             SpotifyStreamEnabledKey to true,
-            SpotifySpDcKey to "c",
+            SpotifyLibrespotRefreshTokenKey to "r",
         )
         assertTrue(librespotEnabled.spotifyStreamingEnabledForSettings())
 
@@ -130,5 +137,35 @@ class SpotifyStreamingSettingsPolicyTest {
         assertEquals(SpotifyProduct.UNKNOWN, cleared.spotifyStreamProduct())
         // The engine is a user preference, not session data, so signing out keeps it.
         assertEquals(SpotifyStreamEngine.LIBRESPOT, cleared.spotifyStreamEngine())
+    }
+
+    @Test
+    fun theLibrespotSessionStoresAndClearsWithTheEngineGate() {
+        val editor = PreferenceSnapshot.of(
+            SpotifyStreamEngineKey to SpotifyStreamEngine.LIBRESPOT.name,
+            SpotifyStreamEnabledKey to true,
+        ).toEditor()
+        editor.setSpotifyLibrespotSession("refresh", "access", 1000L, "uid", "Main Account")
+        val stored = editor.snapshot()
+        assertTrue(stored.spotifyLibrespotSignedIn())
+        assertTrue(stored.spotifyStreamSessionPresent(SpotifyStreamEngine.LIBRESPOT))
+        assertEquals("uid", stored[SpotifyLibrespotUserIdKey])
+
+        stored.toEditor().apply { clearSpotifyLibrespotSession() }.snapshot().let { cleared ->
+            assertFalse(cleared.spotifyLibrespotSignedIn())
+            assertEquals(null, cleared[SpotifyLibrespotAccessTokenKey])
+            assertEquals(null, cleared[SpotifyLibrespotAccountNameKey])
+            // Signing out of the engine that was selected turns streaming off, like every sign-out.
+            assertEquals(false, cleared[SpotifyStreamEnabledKey])
+        }
+
+        // A stored Unofficial choice keeps its own flag when a stale Librespot grant is cleared.
+        val unofficialEditor = PreferenceSnapshot.of(
+            SpotifyStreamEngineKey to SpotifyStreamEngine.UNOFFICIAL.name,
+            SpotifyStreamEnabledKey to true,
+            SpotifyLibrespotRefreshTokenKey to "r",
+        ).toEditor()
+        unofficialEditor.clearSpotifyLibrespotSession()
+        assertEquals(true, unofficialEditor.snapshot()[SpotifyStreamEnabledKey])
     }
 }

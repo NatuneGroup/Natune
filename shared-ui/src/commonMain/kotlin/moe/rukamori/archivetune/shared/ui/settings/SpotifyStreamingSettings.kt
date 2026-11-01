@@ -206,4 +206,6 @@ private fun SpotifySignInRefusal.messageResource(): StringResource = when (this)
     SpotifySignInRefusal.CATALOG_UNVERIFIABLE -> Res.string.m6_spotify_stream_error_catalog_unverifiable
     SpotifySignInRefusal.INVALID_SESSION -> Res.string.m6_spotify_stream_error_session
     SpotifySignInRefusal.PROFILE_UNAVAILABLE -> Res.string.m6_spotify_stream_error_profile
+    SpotifySignInRefusal.DIFFERENT_FROM_CATALOG -> Res.string.m6_spotify_stream_error_different_account
+    SpotifySignInRefusal.NOT_PREMIUM -> Res.string.m6_spotify_stream_error_not_premium
 }

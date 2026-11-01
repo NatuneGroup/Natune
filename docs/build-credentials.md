@@ -42,6 +42,7 @@ name is blank, so existing local setups keep working. Lyprio reads `LYPRIO_BASE_
 | `ARCHIVETUNE_TIDAL_CLIENT_SECRET` | Client secret for the TIDAL OAuth flow. | As above. |
 | `ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID` | TIDAL PKCE sign-in flow (`TidalAccountManager`, `TidalLoginScreen`). | The PKCE flow is skipped and the login screen uses the web-player capture fallback. |
 | `ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET` | Client secret for the TIDAL PKCE flow. | As above. |
+| `ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID` (legacy `SPOTIFY_CLIENT_ID`) | Librespot streaming sign-in (`SpotifyLibrespotAccount`): the registered public OAuth client id for the authorization-code PKCE flow. No client secret is injected — PKCE proves the caller. | The Librespot sign-in reports not configured and sends no request. A stored session keeps refreshing only while the same client id is configured. |
 | `ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN` | TIDAL Canvas lookups (`:canvas`, `TidalCanvasProvider`, via `ProviderBuildCredentials`). | Canvas lookups return nothing and the provider reports not configured. |
 | `ARCHIVETUNE_TIDAL_DEVICE_CLIENT_ID` | Desktop only: the TIDAL device-flow client for "Link this device" and its token refresh (`TidalAccountAuth`). Falls back to `ARCHIVETUNE_TIDAL_CLIENT_ID`. | With neither set, "Link this device" shows unavailable and refresh is skipped; pasting a refresh token still needs a client. |
 | `ARCHIVETUNE_TIDAL_DEVICE_CLIENT_SECRET` | Client secret for the same device flow. Falls back to `ARCHIVETUNE_TIDAL_CLIENT_SECRET`. | As above. |

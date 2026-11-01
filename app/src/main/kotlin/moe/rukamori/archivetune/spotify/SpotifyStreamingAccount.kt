@@ -16,6 +16,7 @@
 package moe.rukamori.archivetune.spotify
 
 import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.Dispatchers
@@ -40,9 +41,11 @@ import moe.rukamori.archivetune.constants.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.constants.SpotifyStreamUserIdKey
 import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
 import moe.rukamori.archivetune.shared.domain.source.SpotifyProduct
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
 import moe.rukamori.archivetune.spotify.echo.SpotifyDesktopAuth
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
 import moe.rukamori.archivetune.utils.dataStore
+import moe.rukamori.archivetune.utils.get
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -84,6 +87,17 @@ object SpotifyStreamingAccount {
 
     @Volatile
     private var catalogIsStreamingAccount = false
+
+    /**
+     * Whether a streaming session exists for the stored engine: the dedicated sp_dc for the
+     * Unofficial engine, the Librespot OAuth grant for the Librespot engine — the same rule the
+     * shared settings policy encodes. Synchronous like every dataStore.get at the call site.
+     */
+    fun streamingSessionPresent(dataStore: DataStore<Preferences>): Boolean =
+        when (SpotifyStreamEngine.fromPreference(dataStore[SpotifyStreamEngineKey])) {
+            SpotifyStreamEngine.UNOFFICIAL -> !dataStore[SpotifyStreamSpDcKey].isNullOrBlank()
+            SpotifyStreamEngine.LIBRESPOT -> !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
+        }
 
     data class Profile(
         val userId: String,
@@ -254,11 +268,12 @@ object SpotifyStreamingAccount {
         }
 
     /**
-     * The catalog account's token, for the one-off identity comparison at sign-in. A stored token
-     * that is still valid is used as is; otherwise one is minted from the catalog cookie and
-     * thrown away, so the catalog's own session state is never touched from here.
+     * The catalog account's token, for the one-off identity comparisons at sign-in: the dedicated
+     * account's same-account refusal and the Librespot grant's must-be-the-catalog-account rule.
+     * A stored token that is still valid is used as is; otherwise one is minted from the catalog
+     * cookie and thrown away, so the catalog's own session state is never touched from here.
      */
-    private suspend fun catalogToken(context: Context): String? {
+    internal suspend fun catalogToken(context: Context): String? {
         val prefs = context.dataStore.data.first()
         val stored = prefs[SpotifyAccessTokenKey].orEmpty()
         if (stored.isNotBlank() && (prefs[SpotifyAccessTokenExpiresAtKey] ?: 0L) - TOKEN_REFRESH_MARGIN_MS > System.currentTimeMillis()) {
