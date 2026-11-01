@@ -79,11 +79,22 @@ class IosPlaybackPort : PlaybackPort {
     override val snapshots: StateFlow<PlaybackSnapshot?> = state.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = errors.asSharedFlow()
 
+    /** Every command the loop accepted, with its origin and a monotonic id, in submit order. */
+    val commandEvents: SharedFlow<PlaybackCommandEvent> get() = commandEventFlow
+    private val commandEventFlow = MutableSharedFlow<PlaybackCommandEvent>(extraBufferCapacity = 16)
+    private var commandSequence = 0L
+
     init {
         scope.launch {
             for (item in inbox) {
                 when (item) {
-                    is Inbound.Command -> apply(item.command)
+                    is Inbound.Command -> {
+                        // The command notice goes out as the command reaches the loop: every
+                        // accepted submit emits exactly one event, in submit order, with the origin
+                        // the submitter declared, and a dropped submit emits nothing.
+                        commandEvents.emit(PlaybackCommandEvent(item.command, item.origin, ++commandSequence))
+                        apply(item.command)
+                    }
                     is Inbound.Prepare -> beginPreparation(item)
                     is Inbound.Prepared -> applyPrepared(item)
                     is Inbound.TelegramResolved -> applyTelegram(item)
@@ -102,10 +113,17 @@ class IosPlaybackPort : PlaybackPort {
         }
     }
 
-    override fun submit(command: PlaybackCommand) {
+    override fun submit(command: PlaybackCommand) = submit(command, PlaybackCommandOrigin.USER)
+
+    /**
+     * Submits [command] with an explicit [origin]. Every caller but a session policy is the
+     * listener; the output-mute policy submits with POLICY so its own pause and play never read as
+     * manual intent on [commandEvents].
+     */
+    fun submit(command: PlaybackCommand, origin: PlaybackCommandOrigin) {
         val occurrence = (command as? PlaybackCommand.Load)?.request?.occurrenceId ?: state.value?.occurrenceId
         val attempt = if (command is PlaybackCommand.Load) command.request.attemptId else request?.attemptId
-        enqueue(Inbound.Command(command), occurrence, attempt)
+        enqueue(Inbound.Command(command, origin), occurrence, attempt)
     }
 
     /**
@@ -775,7 +793,7 @@ class IosPlaybackPort : PlaybackPort {
 
     /** Work for the one command loop, which runs it in arrival order: a command, a preparation to start, or its result. */
     private sealed interface Inbound {
-        class Command(val command: PlaybackCommand) : Inbound
+        class Command(val command: PlaybackCommand, val origin: PlaybackCommandOrigin) : Inbound
 
         class Prepare(
             val occurrenceId: String,

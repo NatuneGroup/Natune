@@ -177,6 +177,19 @@ internal class IosSessionGraph private constructor(
     val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause, ::iosNowMillis)
 
     /**
+     * The "pause on device mute" policy: it watches the system output volume and the app-level output
+     * level and pauses/resumes through the port the way the Android stream-mute policy does.
+     */
+    val outputMutePolicy = IosOutputMutePolicy(
+        scope = scope,
+        settings = settings,
+        port = playbackPort,
+        player = player,
+        restoreVolume = ::setVolume,
+        report = ::report,
+    )
+
+    /**
      * Next/previous enablement for the system transport: the same successors the on-screen controls compute, so the
      * lock screen offers a skip exactly when the queue reports one.
      */
@@ -270,6 +283,7 @@ internal class IosSessionGraph private constructor(
      * released. The host's player, port and settings belong to the host, which closes them afterwards.
      */
     suspend fun close() = withContext(NonCancellable) {
+        outputMutePolicy.close()
         playbackPort.cancelNext()
         discord.close()
         lastFm.close()
