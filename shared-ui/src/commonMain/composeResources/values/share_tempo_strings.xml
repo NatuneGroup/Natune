@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_tempo_copy_url_at_current_time">Copy URL at current time</string>
+    <string name="share_tempo_remember_speed_and_pitch">Remember speed and pitch</string>
+    <string name="share_tempo_presets">Presets</string>
+    <string name="share_tempo_preset_values">x%1$s • x%2$s</string>
+    <string name="share_tempo_save_current_as_preset">Save current as preset</string>
+    <string name="share_tempo_preset_name">Preset name</string>
+    <string name="share_tempo_new_preset">New preset</string>
+    <string name="share_tempo_rename_preset">Rename preset</string>
+</resources>

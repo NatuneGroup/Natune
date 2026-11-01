@@ -63,6 +63,8 @@ private fun copyDesktopMenuText(text: String) {
 
 internal fun desktopMenuSharing(state: DesktopItemMenuState): MenuSharing = object : MenuSharing {
     override suspend fun shareLink(url: String) = copyDesktopMenuText(url)
+
+    override suspend fun copyLink(url: String) = copyDesktopMenuText(url)
     override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) =
         state.unavailable("content_menu_local_share_unavailable")
     override suspend fun telegramMessageLink(mediaId: String): String? = null

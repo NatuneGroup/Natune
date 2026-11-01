@@ -1396,7 +1396,7 @@ class MusicService :
                     sleepTimer = SleepTimer(scope, this, this@MusicService)
                     addListener(sleepTimer)
                 }
-        _playerFlow.value = player
+        _playerFlow.value = player.apply { restorePersistedTempoPitch(this@MusicService) }
         playerInitialized.value = true
         scope.launch {
             dataStore.data

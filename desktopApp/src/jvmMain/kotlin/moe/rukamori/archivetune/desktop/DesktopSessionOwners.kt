@@ -76,9 +76,14 @@ import moe.rukamori.archivetune.shared.domain.settings.ContentCountryKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentLanguageKey
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
 import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
+import moe.rukamori.archivetune.shared.domain.settings.PlaybackPitchKey
+import moe.rukamori.archivetune.shared.domain.settings.PlaybackSpeedKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.PreventDuplicateTracksInQueueKey
+import moe.rukamori.archivetune.shared.domain.settings.TEMPO_PITCH_VALUE_MAX
+import moe.rukamori.archivetune.shared.domain.settings.TEMPO_PITCH_VALUE_MIN
+import moe.rukamori.archivetune.shared.domain.settings.TempoPitchRememberedKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
@@ -143,6 +148,17 @@ internal suspend fun assembleDesktopSessionOwners(
     val playback = DesktopPlaybackPort(accounts = sourceAdmissions, cookies = sourceAdmissions)
     vault.snapshots.value?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.let { playback.setVolume(it.coerceIn(0f, 1f)) }
     val player = MusicPlayerController(playback, scope)
+    // The opt-in "remember speed and pitch" restore: without the flag the port keeps neutral parameters.
+    vault.snapshots.value?.takeIf { it[TempoPitchRememberedKey] == true }?.let { persisted ->
+        persisted[PlaybackSpeedKey]
+            ?.takeIf(Float::isFinite)
+            ?.coerceIn(TEMPO_PITCH_VALUE_MIN, TEMPO_PITCH_VALUE_MAX)
+            ?.let(player::setPlaybackSpeed)
+        persisted[PlaybackPitchKey]
+            ?.takeIf(Float::isFinite)
+            ?.coerceIn(TEMPO_PITCH_VALUE_MIN, TEMPO_PITCH_VALUE_MAX)
+            ?.let(player::setPlaybackPitch)
+    }
     val telegramRoot = directory.resolve(TELEGRAM_DIRECTORY).toFile()
     val telegram = TdlightClientSession(
         credentials = DesktopCredentials.telegramApi,

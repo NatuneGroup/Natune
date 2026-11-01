@@ -348,6 +348,7 @@ fun YouTubeSongMenu(
     val addToQueueText = stringResource(R.string.add_to_queue)
     val addToPlaylistText = stringResource(R.string.add_to_playlist)
     val shareText = stringResource(R.string.share)
+    val copyLinkText = stringResource(R.string.copy_link)
 
     val primaryActions =
         remember(
@@ -357,6 +358,7 @@ fun YouTubeSongMenu(
             addToQueueText,
             addToPlaylistText,
             shareText,
+            copyLinkText,
             onDismiss,
             playerConnection,
             navController,
@@ -377,36 +379,14 @@ fun YouTubeSongMenu(
                         playerConnection.playQueue(YouTubeQueue.radio(song.toMediaMetadata()))
                     },
                 ),
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.playlist_play),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    text = playNextText,
-                    onClick = {
-                        onDismiss()
-                        playerConnection.playNext(song.toMediaItem())
-                    },
-                ),
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.queue_music),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    text = addToQueueText,
-                    onClick = {
-                        onDismiss()
-                        playerConnection.addToQueue(song.toMediaItem())
-                    },
-                ),
+                menuGridAction(R.drawable.playlist_play, playNextText) {
+                    onDismiss()
+                    playerConnection.playNext(song.toMediaItem())
+                },
+                menuGridAction(R.drawable.queue_music, addToQueueText) {
+                    onDismiss()
+                    playerConnection.addToQueue(song.toMediaItem())
+                },
                 NewAction(
                     icon = {
                         Icon(
@@ -428,6 +408,10 @@ fun YouTubeSongMenu(
                         onDismiss()
                     },
                 ),
+                copyLinkMenuAction(copyLinkText) {
+                    context.copyLinkToClipboard(song.shareLink)
+                    onDismiss()
+                },
             )
         }
 
