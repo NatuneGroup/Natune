@@ -48,12 +48,14 @@ class SettingsPoTokens(
  * The narrow JavaScript surface the engine needs from the host's QuickJS runtime. [evaluate] awaits the
  * evaluated promise to a string; [evaluateUnit] discards the result. One instance is one BotGuard session:
  * the challenge interpreter, webPoSignalOutput and minter live on it, so minting stays on that runtime
- * until it expires or fails.
+ * until it expires or fails. A QuickJS instance is thread-confined and its evaluation runs on the
+ * calling thread, so the implementation performs every call, [close] included, on the single worker
+ * dispatcher it owns rather than on the caller's.
  */
 interface PoTokenJsRuntime {
     suspend fun evaluate(code: String): String
     suspend fun evaluateUnit(code: String)
-    fun close()
+    suspend fun close()
 }
 
 /**
@@ -70,7 +72,7 @@ interface PoTokenJsRuntime {
 class BotGuardPoTokenEngine(
     private val http: HttpClient,
     private val credentials: () -> PoTokenCredentials?,
-    private val runtimeFactory: () -> PoTokenJsRuntime,
+    private val runtimeFactory: suspend () -> PoTokenJsRuntime,
     private val report: (String) -> Unit = {},
 ) {
     private val mutex = Mutex()
@@ -213,8 +215,10 @@ class BotGuardPoTokenEngine(
             ?: throw PoTokenMintException("BotGuard credentials are not configured")
         val rt = try {
             runtimeFactory()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: Exception) {
-            throw BrokenPoTokenRuntimeException("QuickJS runtime cannot start: ${failure.message}")
+            throw BrokenPoTokenRuntimeException("QuickJS runtime cannot start")
         }
         try {
             rt.evaluateUnit(BOTGUARD_ENV_PROGRAM)
@@ -275,7 +279,7 @@ class BotGuardPoTokenEngine(
         return response.bodyAsText()
     }
 
-    private fun destroyEngineLocked() {
+    private suspend fun destroyEngineLocked() {
         val rt = runtime
         runtime = null
         engineSessionId = null
