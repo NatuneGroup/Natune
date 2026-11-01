@@ -62,4 +62,7 @@ data class PlaybackCommandEvent(
     val command: PlaybackCommand,
     val origin: PlaybackCommandOrigin,
     val id: Long,
+    /** The user-intent generation as it stood after this command dispatched; consumers tag their
+     * own POLICY submits with the newest value they have processed. */
+    val intentGeneration: Long,
 )
