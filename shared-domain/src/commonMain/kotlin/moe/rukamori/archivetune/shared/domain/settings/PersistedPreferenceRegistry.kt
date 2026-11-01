@@ -160,8 +160,6 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         PaxsenixEndpointKey,
         EnableUnisonLyricsKey,
         EnableLyprioLyricsKey,
-        LyprioEndpointKey,
-        LyprioSigningKeyKey,
         EnableTidalLyricsKey,
         EnableDeezerLyricsKey,
         PrioritizeWordSyncedLyricsKey,

@@ -26,7 +26,6 @@ class SettingsLyricsRuntime(
     private data class Config(
         val order: List<String>, val enabled: Map<String, Boolean>, val wordSync: Boolean,
         val preloadCount: Int, val credential: String, val endpoint: String, val available: Set<String>, val providerRevision: Long,
-        val selfHostedEndpoint: String = "", val selfHostedKey: String = "",
     ) {
         override fun toString(): String = "LyricsConfig(<redacted>)"
     }
@@ -46,7 +45,6 @@ class SettingsLyricsRuntime(
                     prefs[PrioritizeWordSyncedLyricsKey, false],
                     prefs[QueueLyricsPreloadCountKey, 3].coerceIn(0, 10),
                     prefs[PaxsenixApiKeyKey].orEmpty(), prefs[PaxsenixEndpointKey].orEmpty(), available.toSet(), revision,
-                    prefs[LyprioEndpointKey].orEmpty(), prefs[LyprioSigningKeyKey].orEmpty(),
                 )
             }.distinctUntilChangedBy { it.second }.collectLatest { (prefs, config) ->
                 coroutineScope {

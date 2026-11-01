@@ -518,7 +518,7 @@ internal class IosSessionGraph private constructor(
                 preferences = vault.snapshots,
                 repository = KtorSponsorBlockRepository(http),
             )
-            // The build-time Lyprio pair only supplies a bundled server while the user has entered neither field.
+            // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
             val lyrics = HostLyrics(
                 scope = scope,
                 http = http,

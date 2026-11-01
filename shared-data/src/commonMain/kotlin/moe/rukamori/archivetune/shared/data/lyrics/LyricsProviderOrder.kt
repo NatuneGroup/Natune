@@ -2,7 +2,7 @@ package moe.rukamori.archivetune.shared.data.lyrics
 
 /**
  * The provider order of the Android `LyricsHelper.baseProviders` list, restricted to the providers
- * ported into this module, with the user's self-hosted Lyprio server first as in Metrolist's default order. The app-only providers (LRC.red, Bini, Megalobiz, Apple Music account,
+ * ported into this module, with the built-in Lyprio server first as in Metrolist's default order. The app-only providers (LRC.red, Bini, Megalobiz, Apple Music account,
  * Tidal, Deezer, YouTube, Musixmatch experimental, Genius) keep their Android positions in the app.
  * Relative order is what matters: a host that merges app providers keeps this subsequence intact.
  */

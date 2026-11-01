@@ -24,8 +24,8 @@ import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.shared.domain.crypto.HmacSha256
 
 /**
- * A self-hosted Lyprio server: its base URL and the 32-byte request signing key the server shares with its clients.
- * The string form is redacted so the key never reaches a log line.
+ * The bundled Lyprio server: its base URL and the 32-byte request signing key the server shares with its
+ * clients. The string form is redacted so the key never reaches a log line.
  */
 class LyprioEndpoint private constructor(
     val baseUrl: String,
@@ -40,16 +40,15 @@ class LyprioEndpoint private constructor(
 
     companion object {
         /**
-         * Null unless [baseUrl] is an absolute http(s) URL without credentials and [signingKeyBase64] decodes to
-         * exactly 32 bytes. Metrolist's bundled endpoint only accepted HTTPS on port 443; a server the user hosts
-         * may sit on a LAN address or another port, so plain HTTP and any port are allowed here.
+         * Null unless [baseUrl] is an absolute HTTPS URL on port 443 without credentials and [signingKeyBase64]
+         * decodes to exactly 32 bytes — the only shape Metrolist's bundled endpoint accepts.
          */
         @OptIn(ExperimentalEncodingApi::class)
         fun parse(baseUrl: String, signingKeyBase64: String): LyprioEndpoint? {
             val normalized = baseUrl.trim().trimEnd('/')
             if (normalized.isEmpty() || normalized.any(Char::isWhitespace)) return null
             val parsed = runCatching { Url(normalized) }.getOrNull() ?: return null
-            if (parsed.protocol != URLProtocol.HTTPS && parsed.protocol != URLProtocol.HTTP) return null
+            if (parsed.protocol != URLProtocol.HTTPS || parsed.port != URLProtocol.HTTPS.defaultPort) return null
             if (parsed.host.isBlank() || parsed.user != null || parsed.password != null) return null
             if (!normalized.startsWith("${parsed.protocol.name}://", ignoreCase = true)) return null
             val key = runCatching { Base64.Default.decode(signingKeyBase64.trim()) }.getOrNull() ?: return null
@@ -62,21 +61,16 @@ class LyprioEndpoint private constructor(
 }
 
 /**
- * The endpoint a Lyprio lookup uses. A user's own pair always wins once either field is entered: a
- * partial entry is still theirs, so the built-in key never signs requests to a user-chosen server.
- * Only when both user fields are blank does the build-time pair apply, and only when both build
- * values are present and parse — a missing or malformed build value simply leaves Lyprio
- * unconfigured. The build values are read at lookup time and are never written to preferences.
+ * The endpoint a Lyprio lookup uses. Lyprio is a built-in provider: the only server it can reach is the
+ * pair baked into the build ([buildBaseUrl]/[buildSigningKeyBase64]), matching Metrolist, whose server
+ * is run by its developers and has no user setting. A missing or malformed build value simply leaves
+ * Lyprio unconfigured — the provider is then never created and never called. The build values are read
+ * at lookup time and are never written to preferences.
  */
 fun resolveLyprioEndpoint(
-    userBaseUrl: String,
-    userSigningKeyBase64: String,
     buildBaseUrl: String,
     buildSigningKeyBase64: String,
 ): LyprioEndpoint? {
-    if (userBaseUrl.isNotBlank() || userSigningKeyBase64.isNotBlank()) {
-        return LyprioEndpoint.parse(userBaseUrl, userSigningKeyBase64)
-    }
     if (buildBaseUrl.isBlank() || buildSigningKeyBase64.isBlank()) return null
     return LyprioEndpoint.parse(buildBaseUrl, buildSigningKeyBase64)
 }
@@ -108,7 +102,7 @@ internal data class LyprioLyricsResult(
 )
 
 /**
- * Port of Metrolist's Lyprio client for a server the user runs. Requests are signed POSTs: the signature is the
+ * Port of Metrolist's Lyprio client for the bundled server. Requests are signed POSTs: the signature is the
  * hex HMAC-SHA256 of "timestamp\nbody" under the shared key. Protocol 2 (`/v2/lyrics/search`) may answer
  * pending/unavailable with a retry delay; a server without protocol 2 is asked over `/v1` for ten minutes.
  *

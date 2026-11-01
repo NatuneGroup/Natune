@@ -24,7 +24,8 @@ class SettingsRoutingTest {
 
     @Test fun wordSyncKeepsFallbackAndManualProviderControlsUsable() {
         val prefs = PreferenceSnapshot.of(PrioritizeWordSyncedLyricsKey to true, EnableLrcLibKey to false)
-        val rows = lyricsProviderSettingsRows(prefs, {}, {}, {})
+        // A built-in Lyprio pair keeps every provider toggle usable; without one that row alone greys out.
+        val rows = lyricsProviderSettingsRows(prefs, {}, {}, {}, lyprioBuiltInServer = true)
         assertTrue(rows.single { it.anchor == "prioritize_word_synced_lyrics" }.enabled)
         assertTrue(rows.all { it.enabled })
         assertNotNull(rows.single { it.anchor == "prioritize_word_synced_lyrics" }.description)

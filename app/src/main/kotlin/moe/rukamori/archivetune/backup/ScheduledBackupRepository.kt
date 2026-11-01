@@ -140,6 +140,11 @@ class ScheduledBackupRepository
                     ENABLED_KEY.name,
                     DIRECTORY_URI_KEY.name,
                     DIRECTORY_NAME_KEY.name,
+                    // Retired preferences whose leftovers never export: the user-entered Lyprio server
+                    // pair is gone (the provider is build-configured now) and its signing key was a
+                    // credential.
+                    "lyprioEndpoint",
+                    "lyprioSigningKey",
                 )
 
             private fun androidx.datastore.preferences.core.Preferences.toScheduledBackupSettings(): ScheduledBackupSettings =

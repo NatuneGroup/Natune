@@ -5,8 +5,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.EnableLyprioLyricsKey
-import moe.rukamori.archivetune.constants.LyprioEndpointKey
-import moe.rukamori.archivetune.constants.LyprioSigningKeyKey
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.resolveLyprioEndpoint
 import moe.rukamori.archivetune.utils.dataStore
@@ -15,11 +13,11 @@ import moe.rukamori.archivetune.utils.withAppProxy
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioLyricsProvider as SharedLyprioLyricsProvider
 
 /**
- * The user's self-hosted Lyprio server, through the shared client. The server URL and signing key are read when the
- * helper asks [isEnabled], which it does right before every lookup, so an edit in Settings applies to the next song.
- * When the user has entered neither value, the pair baked in at build time (BuildConfig.LYPRIO_BASE_URL /
- * LYPRIO_HMAC_KEY) is used instead; those values never reach preferences, logs or backups. The shared provider is
- * kept while the endpoint is unchanged because it remembers a server without protocol 2.
+ * Metrolist's hosted Lyprio lyrics server, through the shared client. Its endpoint comes only from the build
+ * (BuildConfig.LYPRIO_BASE_URL / LYPRIO_HMAC_KEY) — the service is run by the Metrolist developers and has no
+ * user setting, so those values never reach preferences, logs or backups. Enabled by default like Metrolist;
+ * the settings toggle is the only control. [isEnabled] re-resolves the endpoint right before every lookup, and
+ * the shared provider is kept while it is unchanged because it remembers a server without protocol 2.
  */
 object LyprioLyricsProvider : LyricsProvider {
     override val name = SharedLyprioLyricsProvider.NAME
@@ -43,11 +41,10 @@ object LyprioLyricsProvider : LyricsProvider {
     private var currentEndpoint: LyprioEndpoint? = null
 
     override fun isEnabled(context: Context): Boolean {
-        if (context.dataStore[EnableLyprioLyricsKey] != true) return false
+        // Enabled unless the user opted out: Metrolist ships its bundled providers on, Lyprio first.
+        if (context.dataStore[EnableLyprioLyricsKey] == false) return false
         val endpoint =
             resolveLyprioEndpoint(
-                context.dataStore[LyprioEndpointKey].orEmpty(),
-                context.dataStore[LyprioSigningKeyKey].orEmpty(),
                 BuildConfig.LYPRIO_BASE_URL,
                 BuildConfig.LYPRIO_HMAC_KEY,
             )

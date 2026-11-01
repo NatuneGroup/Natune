@@ -226,8 +226,8 @@ android {
             providerCredentialLiteral("ARCHIVETUNE_LASTFM_API_SECRET", "LASTFM_SECRET"),
         )
         // The built-in Lyprio lyrics server pair follows the same pattern: canonical ARCHIVETUNE_*
-        // names first, unprefixed names as the fallback. Both values must be present for the app to
-        // offer the bundled endpoint; the user's own server entry always wins (see LyprioEndpoint).
+        // names first, unprefixed names as the fallback. Both values must be present for the bundled
+        // endpoint to exist; it is the only endpoint Lyprio can have (see LyprioEndpoint).
         buildConfigField(
             "String",
             "LYPRIO_BASE_URL",

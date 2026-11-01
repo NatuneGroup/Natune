@@ -21,38 +21,35 @@ fun lyricsSettingsRows(navigate: (String) -> Unit): List<SettingsRow> = listOf(
 
 /**
  * Word-sync is a preliminary sweep, not an override of the fallback or manual provider controls.
- * [lyprioBuiltInServerLabel] is the localized "built-in server" label when the host baked a Lyprio
- * endpoint into the build, or empty when there is none: while the user has entered no endpoint of
- * their own the row reports the bundled server instead of asking for one, and the signing-key row —
- * which would only ever show the user's own key — stays hidden.
+ * [lyprioBuiltInServer] is true when the host baked a Lyprio endpoint pair into the build — the only
+ * endpoint the provider can have, since the Metrolist developers run the server and there is no user
+ * setting for it. A build without the pair still lists the provider, toggled off and disabled, so the
+ * row reads unavailable instead of pretending a server can be entered.
  */
 fun lyricsProviderSettingsRows(
     preferences: PreferenceSnapshot,
     showOrder: () -> Unit,
     showStats: () -> Unit,
     checkEndpoints: () -> Unit,
-    lyprioBuiltInServerLabel: String = "",
+    lyprioBuiltInServer: Boolean = false,
 ): List<SettingsRow> = buildList {
     val enabled = true
     add(SettingsRow.Action("lyrics_provider_order", Res.string.m6_provider_order, showOrder, enabled))
     add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, false,
         description = Res.string.m6_word_sync_fallback))
     LyricsProviderPreference.entries.filter { !it.name.startsWith("PAXSENIX_") }.forEach { provider ->
-        provider.key?.let { add(SettingsRow.Toggle(provider.anchor(), provider.label(), it, provider.defaultEnabled, enabled = enabled)) }
-        if (provider == LyricsProviderPreference.LYPRIO && preferences[EnableLyprioLyricsKey, false]) {
-            // Mirrors resolveLyprioEndpoint: the bundled endpoint applies only while both user
-            // fields are blank, so the status row and the hidden key row follow the same condition.
-            val builtIn = lyprioBuiltInServerLabel.isNotEmpty() &&
-                preferences[LyprioEndpointKey].orEmpty().isBlank() &&
-                preferences[LyprioSigningKeyKey].orEmpty().isBlank()
-            if (builtIn) {
-                // The build supplies the endpoint; the user's own entry still wins once they set one.
-                add(SettingsRow.Status("lyprio_endpoint", Res.string.m6_lyprio_endpoint, lyprioBuiltInServerLabel))
-                add(SettingsRow.Text("lyprio_endpoint_custom", Res.string.m6_lyprio_custom_endpoint, LyprioEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
-            } else {
-                add(SettingsRow.Text("lyprio_endpoint", Res.string.m6_lyprio_endpoint, LyprioEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
-                add(SettingsRow.Text("lyprio_signing_key", Res.string.m6_lyprio_signing_key, LyprioSigningKeyKey, masked = true, valid = ::validLyprioSigningKey, enabled = enabled))
-            }
+        provider.key?.let { key ->
+            // With no bundled endpoint the toggle stays listed but reports unavailable, like the other
+            // controls that grey out while their backing feature is absent.
+            val lyprioMissing = provider == LyricsProviderPreference.LYPRIO && !lyprioBuiltInServer
+            add(
+                SettingsRow.Toggle(
+                    provider.anchor(), provider.label(), key, provider.defaultEnabled,
+                    description = Res.string.m6_lyprio_not_available.takeIf { lyprioMissing },
+                    enabled = enabled && !lyprioMissing,
+                    read = { snapshot -> !lyprioMissing && snapshot[key, provider.defaultEnabled] },
+                ),
+            )
         }
     }
     add(SettingsRow.Toggle("enable_bini_lyrics", Res.string.m6_bini, EnableBiniLyricsKey, true, enabled = enabled))
@@ -98,14 +95,6 @@ fun romanizationSettingsRows(
 fun validLyricsEndpoint(value: String): Boolean =
     value.isBlank() || (value.startsWith("https://") || value.startsWith("http://")) &&
         value.substringAfter("://").substringBefore('/').isNotBlank() && value.none(Char::isWhitespace)
-
-/** Blank (not configured yet) or base64 of exactly 32 bytes, the key length a Lyprio server signs with. */
-fun validLyprioSigningKey(value: String): Boolean {
-    val trimmed = value.trim()
-    if (trimmed.isEmpty()) return true
-    if (trimmed.length != 44 || !trimmed.endsWith("=") || trimmed.endsWith("==")) return false
-    return trimmed.dropLast(1).all { it.isLetterOrDigit() && it.code < 128 || it == '+' || it == '/' }
-}
 
 internal fun LyricsProviderPreference.label() = when (this) {
     LyricsProviderPreference.LYPRIO -> Res.string.m6_lyprio
