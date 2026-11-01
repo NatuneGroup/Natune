@@ -41,7 +41,8 @@ class LyprioEndpoint private constructor(
     companion object {
         /**
          * Null unless [baseUrl] is an absolute HTTPS URL on port 443 without credentials and [signingKeyBase64]
-         * decodes to exactly 32 bytes — the only shape Metrolist's bundled endpoint accepts.
+         * decodes to exactly 32 bytes — the only shape Metrolist's bundled endpoint accepts. An explicit
+         * `:443` names that same default port, so the stored base URL drops it.
          */
         @OptIn(ExperimentalEncodingApi::class)
         fun parse(baseUrl: String, signingKeyBase64: String): LyprioEndpoint? {
@@ -53,7 +54,13 @@ class LyprioEndpoint private constructor(
             if (!normalized.startsWith("${parsed.protocol.name}://", ignoreCase = true)) return null
             val key = runCatching { Base64.Default.decode(signingKeyBase64.trim()) }.getOrNull() ?: return null
             if (key.size != SIGNING_KEY_BYTES) return null
-            return LyprioEndpoint(normalized, key)
+            val canonical =
+                if (parsed.specifiedPort == URLProtocol.HTTPS.defaultPort) {
+                    normalized.replaceFirst("${parsed.host}:${parsed.specifiedPort}", parsed.host)
+                } else {
+                    normalized
+                }
+            return LyprioEndpoint(canonical, key)
         }
 
         private const val SIGNING_KEY_BYTES = 32
