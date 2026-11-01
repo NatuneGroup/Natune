@@ -83,7 +83,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -116,10 +115,8 @@ import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
-import kotlinx.coroutines.flow.flowOf
-import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
-import moe.rukamori.archivetune.constants.GlobalLyricsOffsetMsKey
+import moe.rukamori.archivetune.ui.player.rememberLyricsSyncOffset
 import moe.rukamori.archivetune.constants.LyricsMode
 import moe.rukamori.archivetune.constants.LyricsModeKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
@@ -243,26 +240,8 @@ internal fun SimpMusicFullscreenLyricsSheet(
     }
 
     var sliderPosition by remember { mutableLongStateOf(-1L) }
-    // Per-song sync offset, adjustable from the lyrics overflow menu; persisted on the song
-    // row so the correction survives restarts, applied on top of the global preference.
-    val lyricsOffsetSongId = mediaMetadata?.id
-    val database = LocalDatabase.current
-    val storedLyricsSyncOffset by remember(lyricsOffsetSongId) {
-        lyricsOffsetSongId?.let(database::lyricsOffset) ?: flowOf(null)
-    }.collectAsStateWithLifecycle(initialValue = null)
-    val (globalLyricsOffsetMs) = rememberPreference(GlobalLyricsOffsetMsKey, 0)
-    val lyricsSyncOffset = (storedLyricsSyncOffset ?: 0) + globalLyricsOffsetMs
-    val onLyricsSyncOffsetChange = remember(lyricsOffsetSongId, globalLyricsOffsetMs, mediaMetadata) {
-        { newOffset: Int ->
-            lyricsOffsetSongId?.let { songId ->
-                database.query {
-                    mediaMetadata?.let { dao.insert(it.toSongEntity()) }
-                    dao.setLyricsOffset(songId, newOffset - globalLyricsOffsetMs)
-                }
-            }
-            Unit
-        }
-    }
+    // Per-song sync offset, adjustable from the lyrics overflow menu.
+    val (lyricsSyncOffset, onLyricsSyncOffsetChange) = rememberLyricsSyncOffset(mediaMetadata)
     var isScrubbing by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(-1L) }
     val lifecycleOwner = LocalLifecycleOwner.current

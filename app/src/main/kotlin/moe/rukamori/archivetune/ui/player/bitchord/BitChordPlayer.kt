@@ -165,7 +165,7 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
-import moe.rukamori.archivetune.constants.GlobalLyricsOffsetMsKey
+import moe.rukamori.archivetune.ui.player.rememberLyricsSyncOffset
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
@@ -186,7 +186,6 @@ import moe.rukamori.archivetune.ui.player.LosslessOrStats
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.MutableFloatState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.navigation.NavController
@@ -566,22 +565,8 @@ fun BitChordPlayerContent(
     // Sync offset for the lyrics, held per track exactly as the standalone lyrics
     // screen holds it (Player.kt). The lyrics options bottom sheet (LyricsMenu)
     // edits it, and the panel + the current-lyric strip both read it so a nudge
-    // moves the highlight the way it does everywhere else in the app. The correction
-    // is persisted on the song row; the renderer-facing value adds the global offset.
-    val storedLyricsSyncOffset by remember(mediaMetadata.id) {
-        database.lyricsOffset(mediaMetadata.id)
-    }.collectAsStateWithLifecycle(initialValue = null)
-    val (globalLyricsOffsetMs) = rememberPreference(GlobalLyricsOffsetMsKey, 0)
-    val lyricsSyncOffset = (storedLyricsSyncOffset ?: 0) + globalLyricsOffsetMs
-    val onLyricsSyncOffsetChange = remember(mediaMetadata.id, globalLyricsOffsetMs, mediaMetadata) {
-        { newOffset: Int ->
-            database.query {
-                dao.insert(mediaMetadata.toSongEntity())
-                dao.setLyricsOffset(mediaMetadata.id, newOffset - globalLyricsOffsetMs)
-            }
-            Unit
-        }
-    }
+    // moves the highlight the way it does everywhere else in the app.
+    val (lyricsSyncOffset, onLyricsSyncOffsetChange) = rememberLyricsSyncOffset(mediaMetadata)
 
     // Not [isPlaying]: that one is true through a buffer and through a suppressed
     // (focus-lost) stretch, and the lyric clock free-runs on it while the track is

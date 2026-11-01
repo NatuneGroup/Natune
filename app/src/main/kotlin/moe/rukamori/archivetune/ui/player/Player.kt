@@ -158,7 +158,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalAnimationsDisabled
@@ -179,9 +178,7 @@ import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.BlurRadiusKey
 import moe.rukamori.archivetune.constants.DarkModeKey
-import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.constants.EnableVideoPlaybackKey
-import moe.rukamori.archivetune.constants.GlobalLyricsOffsetMsKey
 import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
@@ -514,27 +511,7 @@ fun BottomSheetPlayer(
     var duration by rememberSaveable(mediaMetadata?.id) {
         mutableLongStateOf(playerConnection.player.duration)
     }
-    // The offset a surface applies is the song's persisted correction plus the global preference.
-    // The menu commits the effective shift back minus the global share, so a global offset is
-    // never double-counted into the per-song row.
-    val lyricsOffsetSongId = mediaMetadata?.id
-    val database = LocalDatabase.current
-    val storedLyricsSyncOffset by remember(lyricsOffsetSongId) {
-        lyricsOffsetSongId?.let(database::lyricsOffset) ?: flowOf(null)
-    }.collectAsStateWithLifecycle(initialValue = null)
-    val (globalLyricsOffsetMs) = rememberPreference(GlobalLyricsOffsetMsKey, 0)
-    val lyricsSyncOffset = (storedLyricsSyncOffset ?: 0) + globalLyricsOffsetMs
-    val onLyricsSyncOffsetChange = remember(lyricsOffsetSongId, globalLyricsOffsetMs, mediaMetadata) {
-        { newOffset: Int ->
-            lyricsOffsetSongId?.let { songId ->
-                database.query {
-                    mediaMetadata?.let { dao.insert(it.toSongEntity()) }
-                    dao.setLyricsOffset(songId, newOffset - globalLyricsOffsetMs)
-                }
-            }
-            Unit
-        }
-    }
+    val (lyricsSyncOffset, onLyricsSyncOffsetChange) = rememberLyricsSyncOffset(mediaMetadata)
     var sliderPosition by remember(mediaMetadata?.id) {
         mutableStateOf<Long?>(null)
     }

@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.lyrics
 
+import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
 
 /**
@@ -70,4 +71,18 @@ class LyricsDeadlineSchedule(
             )
         }
     }
+}
+
+/**
+ * Suspends until the next deadline boundary (bounded by [idlePollMs]) — the app renderers park
+ * their position loop on this while the drawn state is static between a word's sweep end and the
+ * next word/line edge.
+ */
+internal suspend fun LyricsDeadlineSchedule.sleepUntilNext(
+    feedMs: Long,
+    minSleepMs: Long = 1L,
+    idlePollMs: Long = 250L,
+) {
+    val next = nextChangeAfter(feedMs)
+    delay(if (next == null) idlePollMs else (next - feedMs).coerceIn(minSleepMs, idlePollMs))
 }

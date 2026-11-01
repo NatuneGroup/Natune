@@ -85,7 +85,7 @@ private fun <T> List<T>.sortedByCollated(keySelector: (T) -> String): List<T> {
 }
 
 @Dao
-interface DatabaseDao {
+interface DatabaseDao : LyricsOffsetDao {
     @Transaction
     @Query("SELECT * FROM song WHERE inLibrary IS NOT NULL ORDER BY rowId")
     fun songsByRowIdAsc(): Flow<List<Song>>
@@ -1555,12 +1555,6 @@ interface DatabaseDao {
 
     @Query("UPDATE song SET blockedAt = :blockedAt WHERE id = :songId")
     suspend fun setSongBlockedAt(songId: String, blockedAt: LocalDateTime?)
-
-    @Query("SELECT lyricsOffset FROM song WHERE id = :songId")
-    fun lyricsOffset(songId: String): Flow<Int?>
-
-    @Query("UPDATE song SET lyricsOffset = :offset WHERE id = :songId")
-    fun setLyricsOffset(songId: String, offset: Int)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     fun insert(song: SongEntity): Long

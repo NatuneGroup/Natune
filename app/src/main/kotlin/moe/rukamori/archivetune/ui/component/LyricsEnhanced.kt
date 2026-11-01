@@ -194,7 +194,6 @@ private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 900L
 // A line-synced "syllable" is only a peg to hang a romanisation on, so it gets the shortest window
 // the library will accept rather than a share of the line's duration — see
 // buildWrappingKaraokeSyllables.
-private const val MIN_KARAOKE_SYLLABLE_DURATION_MS = 1
 
 // How long a line-synced line may keep focus after its own timestamp before it hands over to the
 // interlude dots. A shorter gap to the next line simply holds the line until that line starts.
@@ -1735,43 +1734,6 @@ private fun buildSyncedLyrics(
     return SyncedLyrics(lines = lines)
 }
 
-private fun buildLineSyncedLrcLine(
-    entry: LyricsEntry,
-    romanizedText: String?,
-    start: Int,
-    end: Int,
-): ISyncedLine {
-    val translation = providedTranslationTextForEntry(entry)
-    val normalizedRomanizedText = romanizedText?.trim()?.takeIf { it.isNotEmpty() }
-
-    if (normalizedRomanizedText == null) {
-        return SyncedLine(
-            content = entry.text,
-            translation = translation,
-            start = start,
-            end = end,
-        )
-    }
-
-    // Keep the existing wrapping units, but never manufacture timed phonetic alignment.
-    val syllables = entry.text.toLyricsWrappingUnits().ifEmpty { listOf(entry.text) }.map { unit ->
-        KaraokeSyllable(
-            content = unit,
-            start = start,
-            end = start + MIN_KARAOKE_SYLLABLE_DURATION_MS,
-            phonetic = null,
-        )
-    }
-
-    return KaraokeLine.MainKaraokeLine(
-        syllables = syllables,
-        translation = translation,
-        alignment = KaraokeAlignment.Start,
-        start = start,
-        end = end,
-        phonetic = normalizedRomanizedText,
-    )
-}
 
 /**
  * Renders exactly one karaoke line cluster — the joined phonetic (romanisation) row above, the
