@@ -7,7 +7,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveException
 import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveProblem
 import moe.rukamori.archivetune.shared.domain.backup.DriveAppDataLimits
@@ -21,6 +23,10 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_title
 import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restore_failed_dismiss
 import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restore_failed_message
 import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restore_failed_title
+import moe.rukamori.archivetune.shared.ui.resources.ios_restore_blocked_empty
+import moe.rukamori.archivetune.shared.ui.resources.ios_restore_blocked_message
+import moe.rukamori.archivetune.shared.ui.resources.ios_restore_blocked_previous
+import moe.rukamori.archivetune.shared.ui.resources.ios_restore_blocked_title
 import moe.rukamori.archivetune.shared.ui.settings.BackupAndRestoreSettings
 import moe.rukamori.archivetune.shared.ui.settings.BackupExportResult
 import moe.rukamori.archivetune.shared.ui.settings.BackupRestoreCandidate
@@ -61,6 +67,7 @@ internal fun IosBackupRestorePage(
     )
     IosBackupRestartDialog(graph)
     IosBackupRestoreFailedDialog(graph)
+    IosRestoreBlockedDialog(graph)
 }
 
 /**
@@ -145,6 +152,40 @@ internal fun IosBackupRestoreFailedDialog(graph: IosSessionGraph) {
         confirmButton = {
             TextButton(onClick = { graph.backup.dismissRestoreFailed() }) {
                 Text(stringResource(Res.string.ios_backup_restore_failed_dismiss))
+            }
+        },
+    )
+}
+
+/**
+ * The recovery surface for a restore that left the library unresolvable: the session runs on a throwaway
+ * database, so this dialog replaces the normal state until the user picks a resolution. Both actions move the
+ * displaced files into a dated quarantine — nothing is deleted — and the restart dialog then carries the
+ * session out.
+ */
+@Composable
+internal fun IosRestoreBlockedDialog(graph: IosSessionGraph) {
+    val blocked by graph.backup.recoveryMode.collectAsState()
+    if (!blocked) return
+    val scope = rememberCoroutineScope()
+    AlertDialog(
+        onDismissRequest = { /* a blocked library resolves only by choosing */ },
+        title = { Text(stringResource(Res.string.ios_restore_blocked_title)) },
+        text = { Text(stringResource(Res.string.ios_restore_blocked_message)) },
+        confirmButton = {
+            if (graph.backup.previousLibraryAvailable) {
+                TextButton(
+                    onClick = { scope.launch { graph.backup.resolveRestoreRecovery(restorePrevious = true) } },
+                ) {
+                    Text(stringResource(Res.string.ios_restore_blocked_previous))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { scope.launch { graph.backup.resolveRestoreRecovery(restorePrevious = false) } },
+            ) {
+                Text(stringResource(Res.string.ios_restore_blocked_empty))
             }
         },
     )

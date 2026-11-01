@@ -7,6 +7,10 @@
     <string name="ios_backup_restore_failed_title">Restore failed</string>
     <string name="ios_backup_restore_failed_message">The staged backup could not be applied. Your previous library and settings were kept.</string>
     <string name="ios_backup_restore_failed_dismiss">OK</string>
+    <string name="ios_restore_blocked_title">Library unavailable</string>
+    <string name="ios_restore_blocked_message">A restore left the library in an inconsistent state, so this session is running without it. Choose how to continue; displaced files are moved aside for diagnosis, never deleted.</string>
+    <string name="ios_restore_blocked_previous">Restore previous library</string>
+    <string name="ios_restore_blocked_empty">Start with an empty library</string>
     <string name="ios_hidden_playlists_title">Hidden playlists</string>
     <string name="ios_hidden_playlists_empty">No hidden playlists</string>
     <string name="ios_hidden_playlists_unhide">Unhide</string>

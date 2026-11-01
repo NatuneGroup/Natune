@@ -284,15 +284,48 @@ internal class IosSessionGraph private constructor(
                 IosRestoreStartup.begin(databaseDirectory, DATABASE_FILE, report)
             }
             val pending = restoreStart.pending
+            // Recovery mode means a throwaway database only: the host shows the resolution surface and the
+            // library files stay exactly as the failed restore left them until the user decides.
+            var recoveryMode = restoreStart.blocked
+            if (restoreStart.needsSettingsRollback && pending != null) {
+                // The file rollback already ran; the vault still holds the merged settings and owes its
+                // pre-apply snapshot. A failed restore of it keeps every marker — the resolution actions or
+                // a later start finish the job rather than opening a mismatched pair.
+                val vaultRestored = try {
+                    IosRestoreStartup.rollbackPendingSettings(pending, IosRestoreFileOps(), settings)
+                    true
+                } catch (cancelled: CancellationException) {
+                    scope.cancel()
+                    throw cancelled
+                } catch (failure: Exception) {
+                    report("restored settings rollback failed: ${failure::class.simpleName}")
+                    false
+                }
+                if (vaultRestored) {
+                    runCatching {
+                        IosRestoreFileOps().delete(IosRestoreRecovery.abortMarkerPath(pending.directory))
+                    }
+                    runCatching { pending.markFailed() }
+                } else {
+                    runCatching { IosRestoreRecovery.block(IosRestoreFileOps(), databaseDirectory) }
+                    recoveryMode = true
+                }
+            }
+            var restoreSettled = restoreStart.transaction == null
             var database = try {
                 withContext(Dispatchers.Default) {
-                    openGraphDatabase(databasePath, databaseDirectory, restoreStart, settings, report)
+                    if (recoveryMode) {
+                        openPortableStateDatabase(":memory:")
+                    } else {
+                        openGraphDatabase(databasePath, databaseDirectory, restoreStart, settings, report)
+                            ?: openPortableStateDatabase(":memory:").also { recoveryMode = true }
+                    }
                 }
             } catch (failure: Throwable) {
                 scope.cancel()
                 throw failure
             }
-            if (pending != null && !pending.failed) {
+            if (pending != null && !pending.failed && !recoveryMode) {
                 if (pending.legacyFormat) {
                     try {
                         pending.applySettings(settings)
@@ -303,11 +336,12 @@ internal class IosSessionGraph private constructor(
                     } catch (failure: Exception) {
                         report("restored settings not applied: ${failure::class.simpleName}")
                         withContext(NonCancellable) {
+                            // Room releases the files before the rollback replaces them.
+                            runCatching { database.close() }
                             pending.rollbackSettings(settings)
                             pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
                             runCatching { pending.markFailed() }
                         }
-                        database.close()
                         database = try {
                             withContext(Dispatchers.Default) { openPortableStateDatabase(databasePath) }
                         } catch (reopen: Throwable) {
@@ -327,16 +361,42 @@ internal class IosSessionGraph private constructor(
                         } catch (failure: Exception) {
                             applied = false
                             report("restored settings not applied: ${failure::class.simpleName}")
+                            val ops = IosRestoreFileOps()
+                            var vaultOk = true
                             withContext(NonCancellable) {
+                                // Room releases the files before the rollback replaces them, and the abort
+                                // decision is durable first: a kill re-enters the joint undo next start.
+                                runCatching { database.close() }
                                 runCatching {
-                                    IosRestoreStartup.rollbackPendingSettings(pending, IosRestoreFileOps(), settings)
+                                    ops.writeAtomically(
+                                        IosRestoreRecovery.abortMarkerPath(pending.directory),
+                                        byteArrayOf(1),
+                                    )
+                                }
+                                if (pending.hasSettingsBefore) {
+                                    vaultOk = runCatching {
+                                        IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
+                                    }.isSuccess
+                                    if (!vaultOk) report("restored settings rollback failed")
                                 }
                                 runCatching { restoreStart.transaction.rollbackCommitted() }
-                                runCatching { pending.markFailed() }
+                                if (vaultOk) {
+                                    runCatching { pending.markFailed() }
+                                } else {
+                                    // Keep the markers; recovery mode owns the session and the resolution
+                                    // actions or a later start finish the undo.
+                                    runCatching { IosRestoreRecovery.block(ops, databaseDirectory) }
+                                }
                             }
-                            database.close()
                             database = try {
-                                withContext(Dispatchers.Default) { openPortableStateDatabase(databasePath) }
+                                withContext(Dispatchers.Default) {
+                                    if (vaultOk) {
+                                        openPortableStateDatabase(databasePath)
+                                    } else {
+                                        recoveryMode = true
+                                        openPortableStateDatabase(":memory:")
+                                    }
+                                }
                             } catch (reopen: Throwable) {
                                 scope.cancel()
                                 throw reopen
@@ -346,6 +406,7 @@ internal class IosSessionGraph private constructor(
                     if (applied) {
                         try {
                             restoreStart.transaction.finalize()
+                            restoreSettled = true
                         } catch (failure: Exception) {
                             // The journal stays for the next start to finish or re-apply from.
                             report("restore cleanup not finished: ${failure::class.simpleName}")
@@ -359,10 +420,14 @@ internal class IosSessionGraph private constructor(
             val http = HttpClient(Darwin) { engine { network.configure(this) } }
             report(network.describe())
             return try {
-                assemble(host, scope, settings, accounts, database, databaseDirectory, http, network, report,
-                    pending?.failed == true).also {
-                    // A fully applied restore's staging goes away; a failed one already rests under restore-failed.
-                    if (pending != null && !pending.failed) {
+                assemble(
+                    host, scope, settings, accounts, database, databaseDirectory, http, network, report,
+                    restoreFailed = pending?.failed == true && !recoveryMode,
+                    recoveryMode = recoveryMode,
+                ).also {
+                    // A fully applied restore's staging goes away; a failed one rests under restore-failed,
+                    // and an unfinished journal stays so the next start settles it instead of being deleted.
+                    if (pending != null && !pending.failed && restoreSettled && !recoveryMode) {
                         try {
                             pending.finish()
                         } catch (failure: Exception) {
@@ -382,9 +447,9 @@ internal class IosSessionGraph private constructor(
 
         /**
          * Opens the portable state database; when a staged library was swapped in, it is opened now so a file Room
-         * refuses still lets the previous database come back instead of leaving a broken library. A corrupt
-         * restore fails closed instead: the live file is never opened and a throwaway database keeps the session
-         * assembling so the restore-failed state can surface.
+         * refuses still lets the previous database come back instead of leaving a broken library. Null means the
+         * vault rollback failed beside it: markers and the blocked flag stay, and the caller assembles recovery
+         * mode instead of a mismatched pair.
          */
         private suspend fun openGraphDatabase(
             databasePath: String,
@@ -392,12 +457,7 @@ internal class IosSessionGraph private constructor(
             start: IosRestoreStart,
             settings: VaultSettingsStore,
             report: (String) -> Unit,
-        ): PortableStateDatabase {
-            if (start.corrupt) {
-                // The corrupted live file stays exactly as the failed swap left it; nothing this session writes
-                // may land on it, so the throwaway database lives under a different name.
-                return openPortableStateDatabase("$databaseDirectory/${IosRestoreStartup.CORRUPT_DATABASE_FILE}")
-            }
+        ): PortableStateDatabase? {
             val database = openPortableStateDatabase(databasePath)
             val swapped = start.databaseSwapped || start.pending?.databaseSwapped == true
             if (!swapped) return database
@@ -409,21 +469,39 @@ internal class IosSessionGraph private constructor(
                 throw cancelled
             } catch (failure: Exception) {
                 report("restored library refused: ${failure::class.simpleName}")
-                database.close()
+                val ops = IosRestoreFileOps()
+                var vaultOk = true
                 withContext(NonCancellable) {
+                    // Room releases the files before the rollback replaces them; the abort marker is durable
+                    // first so a kill re-enters the joint undo instead of a fresh interpretation.
+                    runCatching { database.close() }
                     start.pending?.let { pending ->
                         if (start.transaction != null) {
-                            // A vault merge that already landed goes back with the files it belongs to.
                             runCatching {
-                                IosRestoreStartup.rollbackPendingSettings(pending, IosRestoreFileOps(), settings)
+                                ops.writeAtomically(
+                                    IosRestoreRecovery.abortMarkerPath(pending.directory),
+                                    byteArrayOf(1),
+                                )
+                            }
+                            // A vault merge that already landed goes back with the files it belongs to.
+                            if (pending.hasSettingsBefore) {
+                                vaultOk = runCatching {
+                                    IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
+                                }.isSuccess
+                                if (!vaultOk) report("restored settings rollback failed")
                             }
                             runCatching { start.transaction.rollbackCommitted() }
                         } else {
                             pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
                         }
                     }
-                    runCatching { start.pending?.markFailed() }
+                    if (vaultOk) {
+                        runCatching { start.pending?.markFailed() }
+                    } else {
+                        runCatching { IosRestoreRecovery.block(ops, databaseDirectory) }
+                    }
                 }
+                if (!vaultOk) return null
                 return openPortableStateDatabase(databasePath)
             }
         }
@@ -439,6 +517,7 @@ internal class IosSessionGraph private constructor(
             network: IosNetworkOwner,
             report: (String) -> Unit,
             restoreFailed: Boolean,
+            recoveryMode: Boolean,
         ): IosSessionGraph {
             val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
             // The device and PKCE clients come from the build's Info.plist keys; a build without them keeps
@@ -525,6 +604,7 @@ internal class IosSessionGraph private constructor(
                 snapshotDatabase = { target -> database.snapshotTo(target) },
                 instanceDirectory = databaseDirectory,
                 initialRestoreFailed = restoreFailed,
+                initialRecoveryMode = recoveryMode,
             )
             val locators = IosQueueLocatorResolver(
                 audio = audioResolver,

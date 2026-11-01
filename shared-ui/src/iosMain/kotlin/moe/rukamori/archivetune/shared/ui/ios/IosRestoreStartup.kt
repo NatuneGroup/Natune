@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package moe.rukamori.archivetune.shared.ui.ios
 
 import kotlinx.coroutines.CancellationException
@@ -5,8 +7,11 @@ import moe.rukamori.archivetune.shared.data.backup.IosRestoreFileOps
 import moe.rukamori.archivetune.shared.data.backup.PortableBackupFormat
 import moe.rukamori.archivetune.shared.data.backup.RecoveryOutcome
 import moe.rukamori.archivetune.shared.data.backup.RestoreFileOps
+import moe.rukamori.archivetune.shared.data.backup.RestoreStartFacts
+import moe.rukamori.archivetune.shared.data.backup.RestoreStartStep
 import moe.rukamori.archivetune.shared.data.backup.RestoreTarget
 import moe.rukamori.archivetune.shared.data.backup.RestoreTransaction
+import moe.rukamori.archivetune.shared.data.backup.decideRestoreStart
 import moe.rukamori.archivetune.shared.data.backup.mergedRestoredSettings
 import moe.rukamori.archivetune.shared.data.backup.readPortableFileBytes
 import moe.rukamori.archivetune.shared.data.persistence.BackupCategory
@@ -17,11 +22,11 @@ import platform.Foundation.NSFileManager
 /** The [RestoreTransaction] journal inside a staged restore, beside the `journal` format it replaces. */
 internal const val RESTORE_TRANSACTION_FILE = "transaction"
 
-/** The pre-apply vault snapshot a two-phase restore keeps until the staged settings merge succeeds. */
-private const val RESTORE_SETTINGS_BEFORE = "settings-before"
-
 /** The originals a retained commit sets aside, inside the staged restore so a failure can keep them. */
 private const val RESTORE_PREVIOUS_DIRECTORY = "previous"
+
+/** Presence is the whole marker; a single byte keeps the atomic write honest. */
+private val RESTORE_ABORT_SENTINEL = byteArrayOf(1)
 
 /**
  * What [IosRestoreStartup.begin] settled before the session's database may open. A legacy pending set keeps
@@ -35,37 +40,45 @@ internal class IosRestoreStart(
     val databaseSwapped: Boolean = false,
     /** Staged settings still owe the vault the owned-section merge. */
     val needsSettingsApply: Boolean = false,
-    /** Fail closed: the live database file may not be opened at all. */
-    val corrupt: Boolean = false,
+    /**
+     * The file rollback is done but the vault still holds the merged settings — the vault rollback
+     * owes it the `settings-before` snapshot before the old library may open.
+     */
+    val needsSettingsRollback: Boolean = false,
+    /**
+     * Fail closed: an unresolved-corruption marker holds the instance and only recovery mode may run — no
+     * database open, no backup work — until the user picks a resolution.
+     */
+    val blocked: Boolean = false,
 )
 
 /**
  * The startup half of a staged restore on top of [RestoreTransaction]. [begin] runs before Room opens: it
- * finishes or undoes whatever an earlier process journaled, starts the retained commit for a fresh staged set,
- * and reports back which outcome the caller owes next. The vault apply then ends it: the settings merge runs
- * while the original files are still set aside, and only then are the backups and journal dropped.
+ * finishes or undoes whatever an earlier process journaled, completes a persisted abort jointly — files then
+ * vault — and refuses to open at all while the blocked marker stands. The vault apply then ends a healthy
+ * commit: the settings merge runs while the original files are still set aside, and only then are the backups
+ * and journal dropped.
  */
 internal object IosRestoreStartup {
-    /**
-     * The throwaway database Room opens when the live file may not be touched. It sits next to the live file so
-     * the session can still assemble and surface the restore-failed state; nothing it owns ever lands on the
-     * real path.
-     */
-    const val CORRUPT_DATABASE_FILE = "restore-corrupt.db"
-
-    fun transactionJournalPath(pendingDirectory: String): String = "$pendingDirectory/$RESTORE_TRANSACTION_FILE"
-
-    private fun settingsBeforePath(pendingDirectory: String): String = "$pendingDirectory/$RESTORE_SETTINGS_BEFORE"
+    fun transactionJournalPath(pendingDirectory: String): String =
+        "$pendingDirectory/$RESTORE_TRANSACTION_FILE"
 
     private fun stagedSettingsPath(pendingDirectory: String): String =
         "$pendingDirectory/${PortableBackupFormat.SETTINGS}"
 
     /**
      * Resolves the staged restore of an earlier backup session while Room is still closed. A killed swap is
-     * completed or rolled back from the journal, a fresh staged set starts its retained commit, and a pending
-     * set the old journal format already began is left for the legacy helpers — never both.
+     * completed or rolled back from the journal, a fresh staged set starts its retained commit, a pending set
+     * the old journal format already began is left for the legacy helpers — never both — and a persisted abort
+     * finishes undoing the joint apply instead of being re-read as a new restore. The instance-level blocked
+     * marker outranks all of it: set by an unresolvable journal or a failed joint undo, it holds recovery mode
+     * until the user resolves it.
      */
     fun begin(instanceDirectory: String, databaseFile: String, report: (String) -> Unit): IosRestoreStart {
+        if (IosRestoreRecovery.isBlocked(instanceDirectory)) {
+            report("restore blocked; recovery mode until the user resolves it")
+            return IosRestoreStart(blocked = true)
+        }
         val pending = try {
             IosPendingRestore.read(instanceDirectory)
         } catch (cancelled: CancellationException) {
@@ -98,25 +111,35 @@ internal object IosRestoreStartup {
             report("restore journal unreadable: ${failure::class.simpleName}")
             RecoveryOutcome.CORRUPT
         }
-        return when (outcome) {
-            RecoveryOutcome.NOTHING ->
+        val step = decideRestoreStart(
+            RestoreStartFacts(
+                blocked = false,
+                pending = true,
+                legacyFormat = false,
+                abortMarker = ops.exists(IosRestoreRecovery.abortMarkerPath(pending.directory)),
+                settingsBefore = pending.hasSettingsBefore,
+                stagedSettings = pending.hasStagedSettings,
+                ownedSettingsEmpty = ownedSettingCategories(pending).isEmpty(),
+                outcome = outcome,
+            ),
+        )
+        return when (step) {
+            RestoreStartStep.START_COMMIT ->
                 startCommit(ops, pending, instanceDirectory, databaseFile, journalPath, report)
-            RecoveryOutcome.PENDING_APPLY -> resumeApply(ops, pending, journalPath, report)
-            RecoveryOutcome.COMMITTED -> {
+            RestoreStartStep.RESUME_APPLY -> resumeApply(ops, pending, instanceDirectory, journalPath, report)
+            RestoreStartStep.FINISH_COMMITTED -> {
                 // A cleanup kill: the new files are live and only the staging directory is left to drop.
                 runCatching { deleteTree(pending.directory) }
                 IosRestoreStart()
             }
-            RecoveryOutcome.ROLLED_BACK -> {
+            RestoreStartStep.FAILED_ROLLBACK -> {
                 report("interrupted restore rolled back")
                 runCatching { pending.markFailed() }
                 IosRestoreStart(pending = pending)
             }
-            RecoveryOutcome.CORRUPT -> {
-                report("restore corrupt; pending set kept for diagnosis")
-                runCatching { pending.markFailed() }
-                IosRestoreStart(pending = pending, corrupt = true)
-            }
+            RestoreStartStep.JOINT_ABORT, RestoreStartStep.VAULT_ROLLBACK ->
+                jointAbort(ops, pending, instanceDirectory, journalPath, outcome, report)
+            else -> blockedStart(ops, instanceDirectory, pending, report)
         }
     }
 
@@ -155,26 +178,80 @@ internal object IosRestoreStartup {
         )
     }
 
+    /**
+     * The undo of the joint apply, whether the abort marker is fresh or already persisted: the database
+     * rollback finishes first — a still-committed journal goes through [RestoreTransaction.rollbackCommitted] —
+     * then the graph owes the vault its `settings-before` snapshot while [IosRestoreStart.needsSettingsRollback]
+     * stands. Without a snapshot the vault never merged and the plain failed surface is enough.
+     */
+    private fun jointAbort(
+        ops: RestoreFileOps,
+        pending: IosPendingRestore,
+        instanceDirectory: String,
+        journalPath: String,
+        outcome: RecoveryOutcome,
+        report: (String) -> Unit,
+    ): IosRestoreStart {
+        try {
+            ops.writeAtomically(IosRestoreRecovery.abortMarkerPath(pending.directory), RESTORE_ABORT_SENTINEL)
+        } catch (failure: Exception) {
+            report("restore abort marker not written: ${failure::class.simpleName}")
+            return blockedStart(ops, instanceDirectory, pending, report)
+        }
+        when (outcome) {
+            RecoveryOutcome.PENDING_APPLY, RecoveryOutcome.COMMITTED -> {
+                val transaction = RestoreTransaction.resume(ops, journalPath)
+                val rolledBack = transaction != null && try {
+                    transaction.rollbackCommitted()
+                    true
+                } catch (failure: Exception) {
+                    report("joint abort rollback failed: ${failure::class.simpleName}")
+                    false
+                }
+                if (!rolledBack) return blockedStart(ops, instanceDirectory, pending, report)
+            }
+            RecoveryOutcome.CORRUPT -> return blockedStart(ops, instanceDirectory, pending, report)
+            else -> Unit // NOTHING or ROLLED_BACK: the file rollback already settled.
+        }
+        return if (pending.hasSettingsBefore) {
+            IosRestoreStart(pending = pending, needsSettingsRollback = true)
+        } else {
+            runCatching { pending.markFailed() }
+            IosRestoreStart(pending = pending)
+        }
+    }
+
+    /**
+     * Fail closed, durably: the blocked marker goes down before the pending set is quarantined, and when the
+     * marker itself cannot be written the set stays in place so the next start re-detects the state rather
+     * than opening files nobody can vouch for.
+     */
+    private fun blockedStart(
+        ops: RestoreFileOps,
+        instanceDirectory: String,
+        pending: IosPendingRestore?,
+        report: (String) -> Unit,
+    ): IosRestoreStart {
+        val marked = runCatching { IosRestoreRecovery.block(ops, instanceDirectory) }.isSuccess
+        if (!marked) {
+            report("restore blocked marker not written; pending set kept for the next start")
+        }
+        if (marked) runCatching { pending?.markFailed() }
+        return IosRestoreStart(pending = pending, blocked = true)
+    }
+
     /** A retained commit an earlier process left behind; the vault apply is owed again, then [finalize]. */
     private fun resumeApply(
         ops: RestoreFileOps,
         pending: IosPendingRestore,
+        instanceDirectory: String,
         journalPath: String,
         report: (String) -> Unit,
     ): IosRestoreStart {
         val transaction = RestoreTransaction.resume(ops, journalPath)
         if (transaction == null) {
             report("restore journal lost mid-apply")
-            runCatching { pending.markFailed() }
-            return IosRestoreStart(pending = pending, corrupt = true)
-        }
-        // Staged settings whose owning categories are gone cannot be merged honestly; the all-or-nothing answer
-        // is to put the files back rather than ship a half-applied restore.
-        if (pending.hasStagedSettings && ownedSettingCategories(pending).isEmpty()) {
-            report("restored settings lack their categories; rolling back")
-            runCatching { transaction.rollbackCommitted() }
-            runCatching { pending.markFailed() }
-            return IosRestoreStart(pending = pending)
+            return blockedStart(ops, instanceDirectory, pending, report)
         }
         return IosRestoreStart(
             pending = pending,
@@ -213,7 +290,7 @@ internal object IosRestoreStartup {
             readPortableFileBytes(staged, PortableBackupFormat.MAX_SETTINGS_BYTES),
         )
         val current = settings.snapshot()
-        val before = settingsBeforePath(pending.directory)
+        val before = IosRestoreRecovery.settingsBeforePath(pending.directory)
         if (!ops.exists(before)) {
             ops.writeAtomically(before, PortableBackupFormat.encodeSettings(current))
         }
@@ -226,7 +303,7 @@ internal object IosRestoreStartup {
         ops: RestoreFileOps,
         settings: VaultSettingsStore,
     ) {
-        val bytes = ops.readBytes(settingsBeforePath(pending.directory)) ?: return
+        val bytes = ops.readBytes(IosRestoreRecovery.settingsBeforePath(pending.directory)) ?: return
         settings.replaceAll(PortableBackupFormat.decodeSettings(bytes))
     }
 }
