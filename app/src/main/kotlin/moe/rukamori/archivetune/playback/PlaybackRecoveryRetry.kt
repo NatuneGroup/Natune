@@ -3,15 +3,11 @@ package moe.rukamori.archivetune.playback
 import android.os.SystemClock
 import androidx.media3.common.C
 import androidx.media3.common.Player
-import androidx.media3.datasource.cache.Cache
-import androidx.media3.datasource.cache.ContentMetadata
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.constants.AudioQuality
-import moe.rukamori.archivetune.constants.DownloadSourceConfig
 
 /**
  * The one gate every in-place playback-recovery retry passes through, fusing the small policies
@@ -20,16 +16,15 @@ import moe.rukamori.archivetune.constants.DownloadSourceConfig
  * Stream-resolution retries and player-error recovery therefore share one bounded backoff, and a
  * track that keeps rebuffering can no longer loop re-prepares.
  *
- * [scope], [player] and [playerCache] are read lazily: the service recreates its scope after a
- * destroy, and the session-facing player is replaced when a crossfade promotes the incoming
- * player — a captured reference would re-prepare the released instance.
+ * [scope] and [player] are read lazily: the service recreates its scope after a destroy, and the
+ * session-facing player is replaced when a crossfade promotes the incoming player — a captured
+ * reference would re-prepare the released instance.
  */
 internal class PlaybackRecoveryRetry(
     private val scope: () -> CoroutineScope,
     private val player: () -> Player,
     private val tracker: PlaybackStreamRecoveryTracker,
     private val rebuffer: RebufferMonitor,
-    private val playerCache: () -> Cache,
     private val backoff: PlaybackRetryBackoff = PlaybackRetryBackoff(),
     private val nowMs: () -> Long = { SystemClock.elapsedRealtime() },
     private val fire: ((mediaId: String, resumePlaying: Boolean, seekIndex: Int, seekPositionMs: Long) -> Unit)? = null,
@@ -162,15 +157,8 @@ internal class PlaybackRecoveryRetry(
      * transition never leaves READY, so the monitor could not learn it from a state callback.
      */
     fun onMediaItemTransition(mediaId: String?, ready: Boolean = false, buffering: Boolean = false) {
-        // The outgoing item's streak is about to reset; retiring its partial player-cache spans
-        // is only safe once the player no longer holds it, which is exactly now.
-        val retiredMediaId =
-            rebuffer.currentMediaId()?.takeIf { it != mediaId && rebuffer.shouldStepDownQuality(it) }
         rebuffer.onMediaItemChanged(mediaId, ready, buffering)
         cancelPending()
-        if (retiredMediaId != null) {
-            scope().launch(Dispatchers.IO) { retirePartialPlayerCacheSpans(retiredMediaId) }
-        }
     }
 
     /** A seek is user intent catching up, not evidence against the link; it also supersedes retries. */
@@ -201,23 +189,13 @@ internal class PlaybackRecoveryRetry(
         if (lowData || rebuffer.shouldStepDownQuality(mediaId)) AudioQuality.LOW else configured
 
     /**
-     * Drop the partial playback-cache spans of a track that just left the player while degraded,
-     * so a later LOW re-resolve under the same key does not mix its bytes with the partial HIGH
-     * fetch. Called only once the item is no longer current — deleting spans of an item the
-     * player may still be reading is not safe — and never touches complete items or the user's
-     * downloads, which live in a different cache entirely.
+     * The ephemeral playback-cache key a (re-)resolve writes under. A degraded track fetches its
+     * LOW rendition under [baseKey] suffixed with `#low`, so its bytes never mix with the HIGH
+     * spans cached under the ordinary key — no span surgery, no cross-key races. Download and
+     * offline keys are a different list entirely and stay untouched.
      */
-    private fun retirePartialPlayerCacheSpans(mediaId: String) {
-        val cache = runCatching { playerCache() }.getOrNull() ?: return
-        for (key in DownloadSourceConfig.cacheKeysFor(mediaId)) {
-            val complete =
-                runCatching {
-                    val length = cache.getContentMetadata(key).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
-                    length > 0L && cache.isCached(key, 0L, length)
-                }.getOrDefault(false)
-            if (!complete) runCatching { cache.removeResource(key) }
-        }
-    }
+    fun playbackCacheKey(mediaId: String, baseKey: String): String =
+        if (rebuffer.shouldStepDownQuality(mediaId)) "$baseKey#low" else baseKey
 
     private companion object {
         /** The longest a recovery seek's deferred discontinuity may take before its mark expires. */
