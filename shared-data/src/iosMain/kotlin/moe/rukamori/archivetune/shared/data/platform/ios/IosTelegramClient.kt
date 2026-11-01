@@ -219,6 +219,36 @@ class IosTelegramClient(
         }
     }
 
+    /**
+     * The t.me link of one channel message, resolved through the admitted TDLib session the same way
+     * the Android `TdApi.GetMessageLink` call resolves it: TDLib builds the link for its opaque message
+     * id, never the app. Null while no verified account runs or when TDLib cannot build the link.
+     */
+    suspend fun messageLink(chatId: Long, messageId: Long): String? {
+        val admitted = lock.guarded {
+            !closeRequested && client != null &&
+                admissionFlow.value is IosTelegramNativeAdmission.Admitted &&
+                stateFlow.value is TelegramAuthState.Ready
+        }
+        if (!admitted) return null
+        return try {
+            request(
+                "getMessageLink",
+                buildJsonObject {
+                    put("@type", "getMessageLink")
+                    put("chat_id", chatId)
+                    put("message_id", messageId)
+                },
+                AUTH_REQUEST_TIMEOUT_MS,
+            ).telegramText("link")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            log("getMessageLink failed: ${failure.message ?: failure::class.simpleName}")
+            null
+        }
+    }
+
     /** Sends one request and returns its reply. A TDLib `error` reply throws, as does a missing reply within [timeoutMs]. */
     internal suspend fun request(operation: String, query: JsonObject, timeoutMs: Long): JsonObject {
         val answer = exchange(operation, query, timeoutMs)

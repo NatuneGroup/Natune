@@ -52,6 +52,13 @@ class RoomLibraryRepository(
         combine(pages, metadataEdits()) { page, edits -> page.withSongMetadataOverrides(edits) }
     /** Deletes the local playlist [id], its songs list and its tags. An unknown id throws and changes nothing. */
     suspend fun deletePlaylist(id: String) = dao.deletePlaylist(id)
+
+    /**
+     * Removes saved items from the library, the same cascade the Android store performs on a saved song:
+     * the membership row and its like go, while playlist entries, downloads, listens and metadata edits
+     * keep their own tables. An unknown ref throws and changes nothing.
+     */
+    suspend fun removeItems(refs: List<ContentRef>) = dao.removeItems(refs)
     suspend fun createPlaylist(id: String, title: String) {
         require(id.isNotBlank() && title.isNotBlank())
         dao.createPlaylist(PortablePlaylistRow(id, title))
