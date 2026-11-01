@@ -53,6 +53,42 @@ object LrcTranslationMerge {
         return out.toString().trimEnd()
     }
 
+    /**
+     * The document to persist for a translation result: [translatedResult] verbatim when it already
+     * carries both languages — a `[translatedLyrics]` section, or a translator rebuild that kept the
+     * source rows (interleaved pairs repeat the source row at its own timestamp) — and the merged
+     * source+section otherwise. Merging a bilingual result again would duplicate every sung row
+     * under a fresh translation header.
+     */
+    fun saveableTranslation(sourceLrc: String?, translatedResult: String): String {
+        if (alreadyBilingual(translatedResult, sourceLrc)) return translatedResult
+        return sourceLrc
+            ?.let { mergeTranslationIntoLrc(it, translatedResult.lines()) }
+            ?: translatedResult
+    }
+
+    /**
+     * True when [result] already holds a translation section or reuses at least one synced row of
+     * [sourceLrc], the signature of a rebuilt bilingual document. A plain translation reusing one
+     * source row verbatim (timestamp and text) still counts: re-stamping it could only corrupt it.
+     */
+    private fun alreadyBilingual(result: String, sourceLrc: String?): Boolean {
+        if (SECTION_HEADER.containsMatchIn(result)) return true
+        if (sourceLrc == null) return false
+        val sourceRows =
+            sourceLrc
+                .lineSequence()
+                .mapNotNull(LrcParser::parseLineSyncedLrcLine)
+                .flatten()
+                .mapTo(mutableSetOf()) { it.time to it.text }
+        if (sourceRows.isEmpty()) return false
+        return result
+            .lineSequence()
+            .mapNotNull(LrcParser::parseLineSyncedLrcLine)
+            .flatten()
+            .any { (it.time to it.text) in sourceRows }
+    }
+
     /** `mm:ss.xx`, the centisecond stamp the LRC parser accepts. */
     internal fun formatLrcTimestamp(timeMs: Long): String {
         val total = timeMs.coerceAtLeast(0L)
