@@ -160,7 +160,7 @@ their approaches were followed.
   request lineage behind `core`.
 - [MetrolistGroup/innertubex](https://github.com/MetrolistGroup/innertubex) and
   [MetrolistGroup/quackjs](https://github.com/MetrolistGroup/quackjs) (GPL-3.0): used
-  unmodified as libraries by the InnerTubeX extractor tier on Android and desktop.
+  unmodified as libraries by the InnerTubeX extractor tier on Android, desktop and iOS.
 - The Shazam discovery wire shapes in `shared-data` (`recognition/`) are ported from the
   baseline `shazamkit` module.
 

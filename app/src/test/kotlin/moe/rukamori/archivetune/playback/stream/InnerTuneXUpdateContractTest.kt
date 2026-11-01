@@ -31,8 +31,8 @@ class InnerTuneXUpdateContractTest {
     @Test
     fun mapsTargetDirectAudioAndMetadataWithoutChangingRequestIdentity() = runTest {
         val target = directStream()
-        // These library-owned enrichment setters are internal in Kotlin, public in the saved
-        // v0.9.2 binary contract. Reflection seeds the real model, not an alternate adapter.
+        // These library-owned enrichment setters are internal in Kotlin, public in the
+        // v0.11.2 binary contract. Reflection seeds the real model, not an alternate adapter.
         val metadata = ExtractedMediaMetadata(
             title = "Fixture title", author = "Fixture author", channelId = "fixture-channel",
             durationSeconds = 187L, musicVideoType = null, viewCount = null,
