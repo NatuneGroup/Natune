@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.domain.playback
 
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
+import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 
 /**
  * One queue occurrence to play. [occurrenceId] distinguishes two copies of the same media, which
@@ -10,6 +11,8 @@ data class PlaybackRequest(
     val occurrenceId: String,
     val mediaId: String,
     val locator: PlaybackLocator,
+    /** Queue-owned load identity, including reloads of the same occurrence. Not persisted. */
+    val attemptId: Long? = null,
 ) {
     init {
         require(occurrenceId.isNotBlank()) { "occurrenceId must not be blank" }
@@ -22,6 +25,10 @@ data class PlaybackRequest(
  * locators: the app resolves them to one of these before any engine sees them.
  */
 sealed interface PlaybackLocator {
+    /** Resolution evidence for remote-source recovery, never inferred from a URL or a catalogue provider. */
+    val source: AudioSourceType? get() = null
+    val expiresAtEpochMs: Long? get() = null
+
     /** A file on this machine. The path must be absolute. */
     data class LocalFile(val path: String) : PlaybackLocator {
         init {
@@ -34,7 +41,12 @@ sealed interface PlaybackLocator {
      * so the URL itself carries no format promise. [headers] must accompany every request for [url];
      * public resources leave them empty, which keeps the header-free locator unchanged.
      */
-    data class Remote(val url: String, val headers: PlaybackHeaders = PlaybackHeaders.NONE) : PlaybackLocator {
+    data class Remote(
+        val url: String,
+        val headers: PlaybackHeaders = PlaybackHeaders.NONE,
+        override val expiresAtEpochMs: Long? = null,
+        override val source: AudioSourceType? = null,
+    ) : PlaybackLocator {
         init {
             require(url.isNotBlank()) { "remote url must not be blank" }
         }
@@ -49,6 +61,8 @@ sealed interface PlaybackLocator {
         val trackId: String,
         val url: String,
         val headers: PlaybackHeaders = PlaybackHeaders.NONE,
+        override val expiresAtEpochMs: Long? = null,
+        override val source: AudioSourceType = AudioSourceType.DEEZER,
     ) : PlaybackLocator {
         init {
             require(trackId.isNotBlank()) { "deezer track id must not be blank" }
@@ -71,7 +85,11 @@ sealed interface PlaybackLocator {
      * handle is the only way in and there is no URL, so a refused preparation can never reach an engine as a
      * progressive locator. One handle is one view, so a second play needs a fresh preparation.
      */
-    data class PreparedPlaintext(val handle: PreparedPlaintextHandle) : PlaybackLocator {
+    data class PreparedPlaintext(
+        val handle: PreparedPlaintextHandle,
+        override val source: AudioSourceType? = null,
+    ) : PlaybackLocator {
+        override val expiresAtEpochMs: Long? get() = handle.expiresAtEpochMs
         override fun toString(): String =
             "PreparedPlaintext(mimeType=${handle.mimeType}, codec=${handle.codec}, lengthBytes=${handle.lengthBytes})"
     }

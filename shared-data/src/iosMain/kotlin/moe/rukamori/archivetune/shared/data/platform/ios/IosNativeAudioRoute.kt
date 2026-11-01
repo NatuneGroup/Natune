@@ -178,7 +178,7 @@ internal class IosNativeAudioRoute(
             permittedOrigins = setOf(origin),
             // The query string carries a per-request signature, so it never becomes part of the cache key.
             cacheKey = stream.uri.substringBefore('?'),
-            expiresAtEpochMs = null,
+            expiresAtEpochMs = stream.expiresAtEpochMs,
             lengthBytes = null,
         )
         val recheck = PersonalCookieRecheck(accounts, cookies, admission, lease)

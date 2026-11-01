@@ -36,7 +36,7 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
             return AudioResolution.NativeRoute(nativeUri)
         }
         val attempts = mutableListOf<AudioAttempt>()
-        for (source in PlaybackSourceChain.configuredChain(settings, pinned, rejected).distinct()) {
+        for (source in PlaybackSourceChain.configuredChain(settings, pinned?.takeUnless { it in rejected }, rejected).distinct()) {
             if (source in rejected || source !in settings.enabled ||
                 request.purpose == AudioPurpose.DOWNLOAD && source == AudioSourceType.SPOTIFY) continue
             val provider = providers[source]

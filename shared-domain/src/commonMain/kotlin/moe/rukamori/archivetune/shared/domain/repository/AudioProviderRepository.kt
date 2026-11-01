@@ -17,6 +17,8 @@ data class AudioResolveRequest(
     val qualities: Map<AudioSourceType, String> = emptyMap(),
     val purpose: AudioPurpose = AudioPurpose.PLAYBACK,
     val amazonPick: AmazonTrackPick? = null,
+    /** Retire this request's cached stream URL before resolving. Catalogue/account caches keep their meaning. */
+    val forceFreshStream: Boolean = false,
 )
 
 /** Only Progressive is acceptable to the existing progressive downloader/ordinary Remote locator. */
@@ -61,7 +63,9 @@ sealed interface PreparedAudio {
  * from it, so the engine host can decrypt without a side channel. This is never a [PlaybackLocator.Remote].
  */
 fun PreparedAudio.DeezerEncrypted.toPlaybackLocator(): PlaybackLocator.DeezerEncrypted =
-    PlaybackLocator.DeezerEncrypted(trackId = trackId, url = stream.uri, headers = stream.headers)
+    PlaybackLocator.DeezerEncrypted(
+        trackId = trackId, url = stream.uri, headers = stream.headers, expiresAtEpochMs = stream.expiresAtEpochMs,
+    )
 
 /** Short-lived provider material in memory, not another vault or credential owner. */
 class AudioSecret(private val value: String) {

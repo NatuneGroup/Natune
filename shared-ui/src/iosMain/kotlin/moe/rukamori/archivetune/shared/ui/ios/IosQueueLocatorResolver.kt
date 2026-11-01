@@ -46,6 +46,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.repository.QueueLocatorResolver
+import moe.rukamori.archivetune.shared.domain.repository.QueueSourceRecovery
 import moe.rukamori.archivetune.shared.domain.repository.TerminalPlaybackAuthentication
 import moe.rukamori.archivetune.shared.domain.repository.toPlaybackLocator
 import moe.rukamori.archivetune.shared.domain.settings.AmazonBypassTokenKey
@@ -94,7 +95,12 @@ internal class IosQueueLocatorResolver(
     /** The stored file of a completed download, or null when the song is not a stored download. */
     private val downloadedFile: suspend (moe.rukamori.archivetune.shared.domain.repository.ContentRef) -> String? = { null },
 ) : QueueLocatorResolver {
-    override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator {
+    override suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator = locate(occurrence, QueueSourceRecovery())
+
+    override suspend fun recover(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator =
+        locate(occurrence, recovery)
+
+    private suspend fun locate(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator {
         if (occurrence.item.ref.provider == LOCAL_PROVIDER) {
             val path = localFile(occurrence.item.ref)
                 ?: throw IllegalStateException("the imported file of this local song is gone")
@@ -108,10 +114,11 @@ internal class IosQueueLocatorResolver(
                 ?: throw IllegalStateException("invalid Telegram media id: ${occurrence.item.ref.id}")
             return PlaybackLocator.TelegramFile(track)
         }
-        val request = occurrence.toAudioResolveRequest(preferences())
-        var refused = emptySet<AudioSourceType>()
+        val request = occurrence.toAudioResolveRequest(preferences()).copy(forceFreshStream = recovery.refreshSource != null)
+        var refused = recovery.rejectedSources
         while (true) {
-            val prepared = when (val resolution = audio.resolve(request, hostSourceSnapshot(preferences()), rejected = refused)) {
+            val prepared = when (val resolution = audio.resolve(request, recovery.settings(hostSourceSnapshot(preferences())),
+                pinned = recovery.refreshSource, rejected = refused)) {
                 is AudioResolution.Resolved -> resolution.audio
                 is AudioResolution.Unavailable ->
                     throw IllegalStateException(unresolvedSourceReason(occurrence, resolution.attempts, host = "iOS"))

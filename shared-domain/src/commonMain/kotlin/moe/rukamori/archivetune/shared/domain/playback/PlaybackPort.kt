@@ -36,6 +36,8 @@ data class PlaybackFailure(
     val message: String,
     val httpStatus: Int? = null,
     val causes: List<String> = emptyList(),
+    /** The load that failed, when supplied by the host; late failures must not recover or skip its replacement. */
+    val attemptId: Long? = null,
 )
 
 /** Why playback failed, in terms the app can act on without parsing [PlaybackFailure.message]. */

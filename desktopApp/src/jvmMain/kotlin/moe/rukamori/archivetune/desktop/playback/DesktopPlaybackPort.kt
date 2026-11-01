@@ -662,7 +662,7 @@ class DesktopPlaybackPort(
     }
 
     private fun fail(request: PlaybackRequest, reason: PlaybackFailureReason, message: String) {
-        publishedFailures.tryEmit(PlaybackFailure(request.occurrenceId, reason, message))
+        publishedFailures.tryEmit(PlaybackFailure(request.occurrenceId, reason, message, attemptId = request.attemptId))
     }
 
     /**

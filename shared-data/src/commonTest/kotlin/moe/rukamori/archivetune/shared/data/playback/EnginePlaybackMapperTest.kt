@@ -127,6 +127,19 @@ class EnginePlaybackMapperTest {
     }
 
     @Test
+    fun failureRetainsTheQueueAttemptEvenWhenTheSameOccurrenceWasReloaded() {
+        val mapper = EnginePlaybackMapper()
+        mapper.beginRequest(request.copy(attemptId = 7L), engineLoadGeneration = 1L)
+        val failed = state(errorCode = EnginePlaybackState.ERROR_OPEN, errorSequence = 1L)
+        assertEquals(7L, assertNotNull(mapper.failure(failed) { "fixture" }).attemptId)
+        mapper.beginRequest(request.copy(attemptId = 8L), engineLoadGeneration = 2L)
+        assertNull(mapper.failure(failed) { "stale" })
+        assertEquals(8L, assertNotNull(mapper.failure(
+            state(load = 2L, errorCode = EnginePlaybackState.ERROR_DECODE),
+        ) { "fixture" }).attemptId)
+    }
+
+    @Test
     fun otherLoadsAndCleanStatesProduceNoFailure() {
         val mapper = EnginePlaybackMapper()
         mapper.beginRequest(request, engineLoadGeneration = 2L)

@@ -50,7 +50,6 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
-import androidx.media3.common.ParserException
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Player.EVENT_POSITION_DISCONTINUITY
@@ -266,6 +265,8 @@ import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimedOutException
 import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 import moe.rukamori.archivetune.audiosource.PlaybackSourceChain
 import moe.rukamori.archivetune.audiosource.PlaybackSourceSnapshot
 import moe.rukamori.archivetune.audiosource.AmazonTrackPick
@@ -435,7 +436,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import timber.log.Timber
-import java.io.EOFException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.Serializable
@@ -5322,104 +5322,36 @@ class MusicService :
         player.pause()
     }
 
-    private fun findStreamHttpFailure(
-        error: PlaybackException,
-    ): androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException? {
-        var throwable: Throwable? = error.cause
-        while (throwable != null) {
-            if (throwable is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
-                return throwable
-            }
-            throwable = throwable.cause
-        }
-        return null
-    }
-
-    private fun isRetryableRemoteParserFailure(error: PlaybackException): Boolean {
-        if (
-            error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
-            error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
-        ) {
-            return true
-        }
-
-        var throwable: Throwable? = error.cause
-        while (throwable != null) {
-            if (
-                throwable.message?.contains("Skipping atom with length", ignoreCase = true) == true ||
-                    throwable.isMedia3ExtractorBoundsFailure()
-            ) {
-                return true
-            }
-            throwable = throwable.cause
-        }
-        return false
-    }
-
-    private fun isCacheCorruptionError(
-        error: PlaybackException,
-        isContentCached: Boolean,
-    ): Boolean {
-        val isIoError =
-            error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
-                error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
-        val isContainerParseError =
-            error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
-
-        if (!isIoError && !isContainerParseError) {
-            return false
-        }
-
-        var throwable: Throwable? = error.cause
-        while (throwable != null) {
-            when {
-                throwable is EOFException -> {
-                    return true
-                }
-
-                throwable is IOException &&
-                    throwable.message?.contains("unexpected end of stream", ignoreCase = true) == true -> {
-                    return true
-                }
-
-                throwable is IllegalStateException || throwable is IllegalArgumentException -> {
-                    if (throwable.stackTrace.any { it.className.startsWith("androidx.media3.extractor") }) {
-                        return true
-                    }
-                }
-
-                isContentCached && throwable.isMedia3ExtractorBoundsFailure() -> {
-                    return true
-                }
-
-                isContainerParseError && isContentCached && throwable is ParserException -> {
-                    return true
-                }
-
-                isContainerParseError && isContentCached &&
-                    throwable.message?.let {
-                        it.contains("Invalid integer size", ignoreCase = true) ||
-                            it.contains("Skipping atom with length", ignoreCase = true) ||
-                            it.contains("contentIsMalformed=true", ignoreCase = true)
-                    } == true -> {
-                    return true
-                }
-            }
-            throwable = throwable.cause
-        }
-        return false
-    }
-
-    private fun Throwable.isMedia3ExtractorBoundsFailure(): Boolean =
-        this is ArrayIndexOutOfBoundsException &&
-            stackTrace.any { it.className.startsWith("androidx.media3.extractor") }
-
     private fun retryPlaybackAfterStreamFailure(
         mediaId: String,
         isFullyDownloadedMedia: Boolean,
         responseException: androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException,
     ): Boolean {
         if (isFullyDownloadedMedia) return false
+
+        val externalSource = selectedPlaybackSourceByMediaId[mediaId]
+        if (externalStreamRecovery.onHttpFailure(mediaId, externalSource, responseException.responseCode) {
+                invalidateExternalStream(mediaId, requireNotNull(externalSource))
+            }
+        ) {
+            val recoveryEpoch = ++externalStreamRecoveryEpoch
+            val recoveryPlayer = player
+            val mediaItemIndex = player.currentMediaItemIndex
+            val positionMs = player.currentPosition.coerceAtLeast(0L)
+            scope.launch(Dispatchers.IO) {
+                // Retire only ephemeral bytes. Complete offline downloads and cache-corruption recovery are unchanged.
+                runCatching { playerCache.removeResource(sourceCacheKey(requireNotNull(externalSource), mediaId)) }
+                withContext(Dispatchers.Main) {
+                    if (externalStreamRecoveryEpoch != recoveryEpoch || player !== recoveryPlayer ||
+                        player.currentMediaItemIndex != mediaItemIndex || player.currentMediaItem?.mediaId != mediaId
+                    ) return@withContext
+                    player.seekTo(mediaItemIndex, positionMs)
+                    player.prepare()
+                }
+            }
+            return true
+        }
+        if (externalSource != null && externalSource != AudioSourceType.YOUTUBE) return false
 
         val failedUrl = responseException.dataSpec.uri.toString()
         val requestProfile = StreamClientUtils.resolveRequestProfile(failedUrl)
@@ -5456,6 +5388,14 @@ class MusicService :
         player.prepare()
         if (shouldResume) player.play()
         return true
+    }
+
+    private fun invalidateExternalStream(mediaId: String, source: AudioSourceType) {
+        directStreamCache.remove(mediaId)
+        contentLengthCache.remove(mediaId)
+        contentLengthCache.remove(sourceCacheKey(source, mediaId))
+        val spotifyTrack = spotifyStreamTrackByMediaId[mediaId]
+        externalStreamRecovery.invalidateProviderUrls(mediaId, source, spotifyTrack?.trackUri, spotifyTrack?.method)
     }
 
     private fun updateInitialBufferRecovery(@Player.State playbackState: Int) {
@@ -6346,6 +6286,8 @@ class MusicService :
         remotePlaybackTrackingUrlCache.clear()
         contentLengthCache.clear()
         directStreamCache.clear()
+        externalStreamRecoveryEpoch++
+        externalStreamRecovery.clear()
         audioNormalizationFactorCache.clear()
         resolvedSourcesByMediaId.clear()
         if (clearPersistentState) {
@@ -6385,7 +6327,8 @@ class MusicService :
         }
         val isKept: (String) -> Boolean = { key -> keep.any { id -> key == id || key.endsWith(":$id") } }
         playbackUrlCache.keys.retainAll(isKept)
-        directStreamCache.keys.retainAll(isKept)
+        directStreamCache.retainKeys(isKept)
+        externalStreamRecovery.retainSongs(isKept)
         contentLengthCache.keys.retainAll(isKept)
         remotePlaybackTrackingUrlCache.keys.retainAll(isKept)
         audioNormalizationFactorCache.keys.retainAll(isKept)
@@ -7422,6 +7365,8 @@ class MusicService :
         reason: Int,
     ) {
         super.onMediaItemTransition(mediaItem, reason)
+        externalStreamRecoveryEpoch++
+        mediaItem?.mediaId?.let(externalStreamRecovery::clear)
         crossfadeFailureTracker.reset()
         setAudioAuthenticityContext(localPlayer, mediaItem?.mediaId)
         if (_currentStreamInfo.value?.mediaId != mediaItem?.mediaId) {
@@ -7527,7 +7472,9 @@ class MusicService :
      * [prefetchNextMediaItemStream] so the next song's lossless stream URL is already known when
      * the user skips to it — turning a ~1-3 second Qobuz/Tidal resolution into a cache hit.
      */
-    private val directStreamCache = ConcurrentHashMap<String, CachedDirectStream>()
+    private val directStreamCache = StreamUrlCache<String, CachedDirectStream>()
+    private val externalStreamRecovery = ExternalStreamRecovery()
+    private var externalStreamRecoveryEpoch = 0L
     private val selectedPlaybackSourceByMediaId = ConcurrentHashMap<String, AudioSourceType>()
     private val authenticitySampleRateByMediaId = ConcurrentHashMap<String, Int>()
     private val authenticityClaimedLosslessByMediaId = ConcurrentHashMap<String, Boolean>()
@@ -8362,7 +8309,8 @@ class MusicService :
 
         val streamHttpFailure = findStreamHttpFailure(error)
         if (streamHttpFailure != null) {
-            if (streamHttpFailure.responseCode in RETRYABLE_STREAM_RESPONSE_CODES &&
+            if ((streamHttpFailure.responseCode in RETRYABLE_STREAM_RESPONSE_CODES ||
+                    externalStreamRecovery.handles(selectedPlaybackSourceByMediaId[currentMediaId], streamHttpFailure.responseCode)) &&
                 retryPlaybackAfterStreamFailure(currentMediaId, isFullyDownloadedMedia, streamHttpFailure)
             ) {
                 return
@@ -9147,6 +9095,8 @@ class MusicService :
         newSource: AudioSourceType? = null,
     ) {
         rememberSourceSwitchFallback(mediaId, newSource)
+        externalStreamRecoveryEpoch++
+        externalStreamRecovery.clear(mediaId)
         authenticityRejectedSourcesByMediaId.remove(mediaId)
         selectedPlaybackSourceByMediaId.remove(mediaId)
         authenticitySampleRateByMediaId.remove(mediaId)
@@ -9464,7 +9414,10 @@ class MusicService :
         // A song can only be pinned to one source at a time, so at most one of these is
         // set; `isDirectPick` is the shared "the user chose this exact track" signal.
         val isDirectPick = isDirectQobuzTrack || isDirectQobuzBackupTrack
-        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
+        val authenticityRejectedSources = rejectedPlaybackSources(mediaId)
+        val refreshSource = externalStreamRecovery.refreshSource(mediaId)?.takeIf {
+            it in prefs.enabled && it !in authenticityRejectedSources
+        }
         // Read the source override FRESH from DataStore — not from the stale
         // PreferenceStore cache. The PreferenceStore collector is async and
         // may not have received the write from setSongSourceOverride yet.
@@ -9481,7 +9434,7 @@ class MusicService :
         // re-resolve through Qobuz even if a cached YouTube stream exists.
         val now = System.currentTimeMillis()
         val cached = directStreamCache[mediaId]
-        if (!isDirectPick && cached != null && cached.expiresAtMs > now &&
+        if (refreshSource == null && !isDirectPick && cached != null && cached.expiresAtMs > now &&
             canUseCachedPlaybackSource(cached.stream.source, cached.stream.source in prefs.enabled, authenticityRejectedSources)
         ) {
             val override = SongSourceOverride.get(sourceOverrideRaw, mediaId)
@@ -9521,10 +9474,10 @@ class MusicService :
             }
             // Cache entry doesn't match the per-song override or low-data
             // mode flipped on — evict and fall through to the slow path.
-            directStreamCache.remove(mediaId, cached)
+            directStreamCache.discard(mediaId, cached)
         } else if (cached != null) {
             // Expired entry — evict.
-            directStreamCache.remove(mediaId, cached)
+            directStreamCache.discard(mediaId, cached)
         }
         // A per-song "play from" override (set via the player's Source chooser, or auto-pinned by a
         // previous successful lossless resolution — see the Source WIN block below) takes
@@ -9576,7 +9529,12 @@ class MusicService :
                 override != null &&
                 override != AudioSourceType.YOUTUBE &&
                 switchFallback.source !in baseChain
-        val chain = if (switchFallbackAppended) baseChain + switchFallback!!.source else baseChain
+        val ordinaryChain = if (switchFallbackAppended) baseChain + switchFallback!!.source else baseChain
+        // The failed source gets one fresh attempt, then the unchanged permitted order, including after a pin fails.
+        val chain = if (refreshSource != null) {
+            (listOf(refreshSource) + ordinaryChain + PlaybackSourceChain.baseChain(prefs))
+                .distinct().filterNot(authenticityRejectedSources::contains)
+        } else ordinaryChain
         Timber.tag("MusicService").d("Multi-source resolve for %s | chain=%s", mediaId, chain.joinToString(",") { it.name })
         if (chain.isEmpty()) {
             Timber.tag("MusicService").d("Multi-source skip: no sources to try (chain empty)")
@@ -9614,6 +9572,7 @@ class MusicService :
         var best: DirectStream? = null
         var bestSource: AudioSourceType? = null
         var bestScore = 0.0
+        val cacheGeneration = directStreamCache.generation
         val chainDeadline =
             AudioSourceAttemptScope.current()
                 ?: AudioSourceAttemptDeadline.start(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS)
@@ -9668,6 +9627,7 @@ class MusicService :
             // A stream that arrives after the deadline is kept: Amazon and QQ download a matched
             // file on their own transfer deadline, and on a slow link that ends after the search
             // budget. Discarding it would fall back to a worse source after the wait was paid.
+            if (cacheGeneration !== directStreamCache.generation) return null
             val stream = attemptResult
             Timber.tag("PlaybackDiagnostics").d(
                 "Source attempt provider=%s resolved=%s timedOut=%s elapsedMs=%d",
@@ -9677,7 +9637,14 @@ class MusicService :
                 android.os.SystemClock.elapsedRealtime() - sourceAttemptStartedAtMs,
             )
             if (stream == null) {
+                if (source == refreshSource) externalStreamRecovery.reject(mediaId, source)
                 Timber.tag("MusicService").d("Source %s did not resolve \"%s\"", source.name, query.title)
+                continue
+            }
+            if (StreamUrlExpiry.cacheDeadline(System.currentTimeMillis(), DIRECT_STREAM_CACHE_TTL_MS, stream.expiresAtEpochMs) <=
+                System.currentTimeMillis()
+            ) {
+                if (source == refreshSource) externalStreamRecovery.reject(mediaId, source)
                 continue
             }
             val match =
@@ -9702,6 +9669,7 @@ class MusicService :
                     )
                 }
             if (!match.accepted) {
+                if (source == refreshSource) externalStreamRecovery.reject(mediaId, source)
                 Timber.tag("MusicService").i(
                     "Source %s rejected for \"%s\": %s score=%.1f%% title=%.1f%% artist=%s duration=%s matched=\"%s\"",
                     source.name,
@@ -9732,6 +9700,7 @@ class MusicService :
             if (best != null) break
         }
 
+        if (cacheGeneration !== directStreamCache.generation) return null
         val winningStream = best
         val winningSource = bestSource
         if (winningStream != null && winningSource != null) {
@@ -9765,7 +9734,8 @@ class MusicService :
                     }
                 }
             }
-            return applyDirectStream(dataSpec, mediaId, winningStream)
+            externalStreamRecovery.resolved(mediaId)
+            return applyDirectStream(dataSpec, mediaId, winningStream, cacheGeneration)
         }
 
         // A non-YouTube source was requested but none matched the title accurately enough; silently
@@ -10250,6 +10220,7 @@ class MusicService :
                             trustedDirectId = trustedId,
                             sampleRate = null,
                             bitDepth = null,
+                            expiresAtEpochMs = echo.cdnUrls.mapNotNull(StreamUrlExpiry::fromUrl).minOrNull(),
                         )
                     }
                     Timber.tag("MusicService").w("Spotify Echo: falling back to the web-player method for \"%s\"", query.title)
@@ -10275,6 +10246,7 @@ class MusicService :
                     trustedDirectId = trustedId,
                     sampleRate = null,
                     bitDepth = null,
+                    expiresAtEpochMs = StreamUrlExpiry.fromUrl(cdnUrl),
                 )
             }
         }.getOrElse { error ->
@@ -10430,6 +10402,7 @@ class MusicService :
                         audioQuality = apiQuality,
                         cacheDir = cacheDir,
                         countryCode = countryCode,
+                        preferLiveDash = true,
                     )
                 }
 
@@ -10549,6 +10522,9 @@ class MusicService :
             matchedArtist = resolved.matchedArtist,
             matchedAlbum = resolved.matchedAlbum,
             matchedDurationMs = resolved.matchedDurationMs,
+            sampleRate = resolved.sampleRate,
+            bitDepth = resolved.bitDepth,
+            expiresAtEpochMs = resolved.expiresAtEpochMs,
         )
     }
 
@@ -10659,6 +10635,7 @@ class MusicService :
             // prefer it over the catalogue duration so the Details card and the measured bitrate
             // are both computed from the real file.
             matchedDurationMs = resolved.durationMs ?: query.durationMs,
+            expiresAtEpochMs = resolved.expiresAtEpochMs,
         )
     }
 
@@ -10713,6 +10690,7 @@ class MusicService :
                             matchedDurationMs = resolved.matchedDurationMs,
                             sampleRate = resolved.sampleRate,
                             bitDepth = resolved.bitDepth,
+                            expiresAtEpochMs = resolved.expiresAtEpochMs,
                         )
                     }
             }
@@ -10819,7 +10797,16 @@ class MusicService :
         dataSpec: DataSpec,
         mediaId: String,
         stream: DirectStream,
+        cacheGeneration: StreamUrlCache.Generation,
     ): DataSpec {
+        val now = System.currentTimeMillis()
+        val entry = CachedDirectStream(
+            stream,
+            StreamUrlExpiry.cacheDeadline(now, DIRECT_STREAM_CACHE_TTL_MS, stream.expiresAtEpochMs),
+        )
+        if (entry.expiresAtMs <= now || !directStreamCache.putIfCurrent(mediaId, entry, cacheGeneration)) {
+            throw IOException(getString(R.string.error_no_stream))
+        }
         Timber.tag("MusicService").i("Using %s stream for %s: %s", stream.source, mediaId, stream.label)
         selectedPlaybackSourceByMediaId[mediaId] = stream.source
         authenticityClaimedLosslessByMediaId[mediaId] = isClaimedLosslessFormat(stream.mimeType, stream.codecs)
@@ -10839,13 +10826,6 @@ class MusicService :
         // itag = 0 is a sentinel for "not a YouTube itag" and is hidden in the UI.
         persistDirectStreamFormat(mediaId, stream)
         publishDirectStreamInfo(mediaId, stream)
-        // Cache the resolved DirectStream so the next playback / prefetch for
-        // this media id skips the slow Qobuz/Tidal resolution. The TTL matches
-        // the typical signed-URL lifetime on those providers (~5 min).
-        directStreamCache[mediaId] = CachedDirectStream(
-            stream = stream,
-            expiresAtMs = System.currentTimeMillis() + DIRECT_STREAM_CACHE_TTL_MS,
-        )
         return dataSpec
             .buildUpon()
             .setUri(stream.uri.toUri())
@@ -10981,9 +10961,7 @@ class MusicService :
         }
 
     private fun evictAudioAuthenticityRejectedSource(mediaId: String, source: AudioSourceType) {
-        directStreamCache.computeIfPresent(mediaId) { _, cached ->
-            cached.takeUnless { it.stream.source == source }
-        }
+        directStreamCache[mediaId]?.takeIf { it.stream.source == source }?.let { directStreamCache.remove(mediaId, it) }
         if (source == AudioSourceType.YOUTUBE) {
             playbackUrlCache.remove(mediaId)
             YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
@@ -11000,6 +10978,9 @@ class MusicService :
         if (key == mediaId) return AudioSourceType.YOUTUBE
         return AudioSourceType.values().firstOrNull { sourceCacheKey(it, mediaId) == key }
     }
+
+    private fun rejectedPlaybackSources(mediaId: String): Set<AudioSourceType> =
+        authenticityRejectedSourcesByMediaId[mediaId].orEmpty() + externalStreamRecovery.rejectedSources(mediaId)
 
     /**
      * Cheap check (no network) for whether an external source should be preferred for [mediaId].
@@ -11030,7 +11011,7 @@ class MusicService :
         // chain, the pins and the terminal YouTube gate below all read the same order and
         // toggles, so they cannot disagree with each other or with the settings UI.
         val prefs = sourcePrefsSnapshot()
-        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
+        val authenticityRejectedSources = rejectedPlaybackSources(mediaId)
         val storedFormat =
             runBlocking(Dispatchers.IO) {
                 database.format(mediaId).first()
@@ -11389,13 +11370,25 @@ class MusicService :
         // plays those bytes again.
         val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId)
         val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
+        val transportRejectedSources = externalStreamRecovery.rejectedSources(mediaId) +
+            listOfNotNull(externalStreamRecovery.refreshSource(mediaId))
         val (matchingKey, matchingWindow) =
             candidateKeys.firstNotNullOfOrNull { key ->
                 val cacheSource = sourceForCacheKey(key, mediaId)
                 if (cacheSource != null && cacheSource in authenticityRejectedSources) {
                     return@firstNotNullOfOrNull null
                 }
-                val recordedLength = recordedContentLength(key, includePlayerCache)
+                val transportRejected = cacheSource in transportRejectedSources
+                if (transportRejected) {
+                    // A network URL rejection says nothing about a complete saved copy. Partial spans must not
+                    // stitch old bytes into the refreshed stream, but a complete offline download still plays.
+                    val complete = runCatching {
+                        val length = downloadCache.getContentMetadata(key).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+                        length > 0L && downloadCache.isCached(key, 0L, length)
+                    }.getOrDefault(false)
+                    if (!complete) return@firstNotNullOfOrNull null
+                }
+                val recordedLength = recordedContentLength(key, includePlayerCache && !transportRejected)
                 val keyWindow =
                     resolveCachedReadWindow(
                         position = dataSpec.position,
@@ -11407,7 +11400,7 @@ class MusicService :
                         key = key,
                         position = keyWindow.position,
                         requestedLength = keyWindow.length,
-                        includePlayerCache = includePlayerCache,
+                        includePlayerCache = includePlayerCache && !transportRejected,
                     )
                 if (cachedLength >= keyWindow.length) key to keyWindow else null
             } ?: return null
