@@ -426,6 +426,8 @@ class AboutViewModel
                             url = "https://discord.gg/XF2fpb9rTq",
                         ),
                     ),
+                // Member lists read in the docs/CREDITS.md lineage order on screen:
+                // InnerTune -> Metrolist -> ArchiveTune -> the Natune KMP port.
                 leadDevelopers =
                     TeamMemberCollection.of(
                         TeamMember(
@@ -453,21 +455,6 @@ class AboutViewModel
                 collaborators =
                     TeamMemberCollection.of(
                         TeamMember(
-                            avatarUrl = "https://avatars.githubusercontent.com/u/89002922?v=4",
-                            name = "Miko",
-                            positionResId = R.string.about_position_developers,
-                            profileUrl = "https://github.com/mikooochi",
-                            links =
-                                AboutLinkCollection.of(
-                                    AboutLinkUiModel(
-                                        id = "github",
-                                        iconResId = R.drawable.github,
-                                        labelResId = R.string.about_content_desc_github,
-                                        url = "https://github.com/mikooochi",
-                                    ),
-                                ),
-                        ),
-                        TeamMember(
                             avatarUrl = "https://avatars.githubusercontent.com/vossgraves",
                             name = "VossGraves",
                             positionResId = R.string.about_position_vossgraves,
@@ -479,6 +466,21 @@ class AboutViewModel
                                         iconResId = R.drawable.github,
                                         labelResId = R.string.about_content_desc_github,
                                         url = "https://github.com/vossgraves",
+                                    ),
+                                ),
+                        ),
+                        TeamMember(
+                            avatarUrl = "https://avatars.githubusercontent.com/u/89002922?v=4",
+                            name = "Miko",
+                            positionResId = R.string.about_position_developers,
+                            profileUrl = "https://github.com/mikooochi",
+                            links =
+                                AboutLinkCollection.of(
+                                    AboutLinkUiModel(
+                                        id = "github",
+                                        iconResId = R.drawable.github,
+                                        labelResId = R.string.about_content_desc_github,
+                                        url = "https://github.com/mikooochi",
                                     ),
                                 ),
                         ),
@@ -522,21 +524,6 @@ class AboutViewModel
                 respecters =
                     TeamMemberCollection.of(
                         TeamMember(
-                            avatarUrl = "https://avatars.githubusercontent.com/u/80542861?v=4",
-                            name = "MO AGAMY",
-                            positionResId = R.string.about_position_mo_agamy,
-                            profileUrl = "https://github.com/mostafaalagamy",
-                            links =
-                                AboutLinkCollection.of(
-                                    AboutLinkUiModel(
-                                        id = "github",
-                                        iconResId = R.drawable.github,
-                                        labelResId = R.string.about_content_desc_github,
-                                        url = "https://github.com/mostafaalagamy",
-                                    ),
-                                ),
-                        ),
-                        TeamMember(
                             avatarUrl = "https://avatars.githubusercontent.com/u/110614797?v=4",
                             name = "Zion Huang",
                             positionResId = R.string.about_position_zion_huang,
@@ -548,6 +535,21 @@ class AboutViewModel
                                         iconResId = R.drawable.github,
                                         labelResId = R.string.about_content_desc_github,
                                         url = "https://github.com/z-huang",
+                                    ),
+                                ),
+                        ),
+                        TeamMember(
+                            avatarUrl = "https://avatars.githubusercontent.com/u/80542861?v=4",
+                            name = "MO AGAMY",
+                            positionResId = R.string.about_position_mo_agamy,
+                            profileUrl = "https://github.com/mostafaalagamy",
+                            links =
+                                AboutLinkCollection.of(
+                                    AboutLinkUiModel(
+                                        id = "github",
+                                        iconResId = R.drawable.github,
+                                        labelResId = R.string.about_content_desc_github,
+                                        url = "https://github.com/mostafaalagamy",
                                     ),
                                 ),
                         ),

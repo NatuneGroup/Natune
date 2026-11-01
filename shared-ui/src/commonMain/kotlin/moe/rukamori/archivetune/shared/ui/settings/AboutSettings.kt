@@ -96,7 +96,12 @@ private class AboutCredit(
     val links: List<AboutLink>,
 )
 
-/** Fixed product destinations and credits, copied from the baseline About view model. */
+/**
+ * Fixed product destinations and credits. The people groups read in the docs/CREDITS.md
+ * lineage order: InnerTune (Zion Huang) -> Metrolist (MO AGAMY) -> ArchiveTune (morie) ->
+ * the Natune Kotlin Multiplatform port (vossgraves). The GitHub row points at the public
+ * NatuneGroup/ArchiveTune project; the KMP port repository is private.
+ */
 private val communityLinks = listOf(
     AboutLink(Res.string.m6_about_github, "https://github.com/NatuneGroup/ArchiveTune"),
     AboutLink(Res.string.m6_about_telegram, "https://t.me/ArchiveTuneGC"),
@@ -118,18 +123,18 @@ private val leadDevelopers = listOf(
 
 private val teamMembers = listOf(
     AboutCredit(
-        name = "Miko",
-        position = Res.string.m6_about_position_developers,
-        avatarUrl = "https://avatars.githubusercontent.com/u/89002922?v=4",
-        profileUrl = "https://github.com/mikooochi",
-        links = listOf(AboutLink(Res.string.m6_about_github, "https://github.com/mikooochi")),
-    ),
-    AboutCredit(
         name = "VossGraves",
         position = Res.string.m6_about_position_vossgraves,
         avatarUrl = "https://avatars.githubusercontent.com/vossgraves",
         profileUrl = "https://github.com/vossgraves",
         links = listOf(AboutLink(Res.string.m6_about_github, "https://github.com/vossgraves")),
+    ),
+    AboutCredit(
+        name = "Miko",
+        position = Res.string.m6_about_position_developers,
+        avatarUrl = "https://avatars.githubusercontent.com/u/89002922?v=4",
+        profileUrl = "https://github.com/mikooochi",
+        links = listOf(AboutLink(Res.string.m6_about_github, "https://github.com/mikooochi")),
     ),
     AboutCredit(
         name = "WTTexe",
@@ -152,26 +157,27 @@ private val teamMembers = listOf(
 
 private val acknowledgements = listOf(
     AboutCredit(
-        name = "MO AGAMY",
-        position = Res.string.m6_about_position_mo_agamy,
-        avatarUrl = "https://avatars.githubusercontent.com/u/80542861?v=4",
-        profileUrl = "https://github.com/mostafaalagamy",
-        links = listOf(AboutLink(Res.string.m6_about_github, "https://github.com/mostafaalagamy")),
-    ),
-    AboutCredit(
         name = "Zion Huang",
         position = Res.string.m6_about_position_zion_huang,
         avatarUrl = "https://avatars.githubusercontent.com/u/110614797?v=4",
         profileUrl = "https://github.com/z-huang",
         links = listOf(AboutLink(Res.string.m6_about_github, "https://github.com/z-huang")),
     ),
+    AboutCredit(
+        name = "MO AGAMY",
+        position = Res.string.m6_about_position_mo_agamy,
+        avatarUrl = "https://avatars.githubusercontent.com/u/80542861?v=4",
+        profileUrl = "https://github.com/mostafaalagamy",
+        links = listOf(AboutLink(Res.string.m6_about_github, "https://github.com/mostafaalagamy")),
+    ),
 )
 
 /**
- * About keeps the baseline section order, the community links and the updater row gated by
- * [updaterAvailable]. Build identity, the logo and member avatars are host slots, and the remote
- * contributor, translator and license lists arrive as host states. The page never starts a network
- * request and never opens a URI itself; every outward action is a callback.
+ * About keeps the baseline non-credit section order, the community links and the updater row gated
+ * by [updaterAvailable]; the credit sections read in lineage order as noted on the lists below.
+ * Build identity, the logo and member avatars are host slots, and the remote contributor,
+ * translator and license lists arrive as host states. The page never starts a network request and
+ * never opens a URI itself; every outward action is a callback.
  */
 @Composable
 fun AboutSettings(
@@ -237,6 +243,13 @@ fun AboutSettings(
                 }
             }
 
+            item(key = "label_acknowledgements") {
+                AboutSectionLabel(stringResource(Res.string.m6_about_acknowledgements))
+            }
+            acknowledgements.forEachIndexed { index, credit ->
+                item(key = "ack_$index") { AboutCreditRow(credit, memberAvatar, onOpenUri) }
+            }
+
             item(key = "label_lead") { AboutSectionLabel(stringResource(Res.string.m6_about_lead_developer)) }
             leadDevelopers.forEachIndexed { index, credit ->
                 item(key = "lead_$index") { AboutCreditRow(credit, memberAvatar, onOpenUri) }
@@ -245,13 +258,6 @@ fun AboutSettings(
             item(key = "label_team") { AboutSectionLabel(stringResource(Res.string.m6_about_team)) }
             teamMembers.forEachIndexed { index, credit ->
                 item(key = "team_$index") { AboutCreditRow(credit, memberAvatar, onOpenUri) }
-            }
-
-            item(key = "label_acknowledgements") {
-                AboutSectionLabel(stringResource(Res.string.m6_about_acknowledgements))
-            }
-            acknowledgements.forEachIndexed { index, credit ->
-                item(key = "ack_$index") { AboutCreditRow(credit, memberAvatar, onOpenUri) }
             }
 
             item(key = "label_translators") { AboutSectionLabel(stringResource(Res.string.m6_about_translators)) }
