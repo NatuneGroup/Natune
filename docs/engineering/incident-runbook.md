@@ -48,11 +48,21 @@ If the previous startup never stayed resumed for five seconds, this activity
 shows Safe mode rather than automatically retrying Hilt, Room, preferences,
 playback or native initialization. An interrupted startup is not proof of a
 crash: force-stop, reboot, background-only starts and memory pressure can also
-leave the marker. **Continue normally** clears only recovery state and explicitly
-retries. The recovery screen never resets settings, accounts or the library;
-normal startup's existing database repair/reset policy is unchanged.
-An unreviewed incomplete attempt survives main-process service/provider restarts;
-only its own healthy callback or the explicit recovery action clears it.
+leave the marker. **Continue normally** clears recovery state and explicitly
+retries; **Close** dismisses after clearing and acknowledging too, so the report
+cannot reappear every launch. The recovery screen never resets settings, accounts
+or the library; normal startup's existing database repair/reset policy is unchanged.
+An unreviewed incomplete attempt from this install survives main-process
+service/provider restarts; only its own healthy callback or the explicit recovery
+action clears it. A marker whose recorded build/install identity differs from the
+current one never enters safe mode: it is reported once for diagnosis, and the new
+build's first healthy launch retires it. Identity is checked from fields stamped
+at marker write time, not the wall clock, so a backward clock correction cannot
+hide a current-build failure; markers written before identity was recorded still
+fall back to comparing the install time and version label. An install stamp only
+counts when both sides recorded one, so a failed read cannot orphan a marker.
+Crash records keep the same stamp: an equal version code still counts as an
+earlier build when the name or a proven install stamp differs.
 
 Java exceptions are synchronously saved under `noBackupFilesDir/startup_recovery`
 (16,000 characters, timestamp and thread included), starting before providers in

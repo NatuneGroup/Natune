@@ -12,7 +12,11 @@ import moe.rukamori.archivetune.R
 
 internal fun currentInstall(context: Context): InstallWindow {
     val installedSince = runCatching { packageInfo(context).lastUpdateTime }.getOrDefault(0L)
-    return InstallWindow(installedSinceMs = installedSince, versionCode = BuildConfig.VERSION_CODE.toLong())
+    return InstallWindow(
+        installedSinceMs = installedSince,
+        versionCode = BuildConfig.VERSION_CODE.toLong(),
+        versionName = BuildConfig.VERSION_NAME,
+    )
 }
 
 @Suppress("DEPRECATION")
@@ -85,6 +89,7 @@ private fun exitRecord(context: Context, exit: HistoricalProcessExit, install: I
         truncated = exit.trace?.truncated == true || exit.tombstone?.incomplete == true,
         versionName = if (earlier) "" else BuildConfig.VERSION_NAME,
         versionCode = if (earlier) UNKNOWN_VERSION_CODE else install.versionCode,
+        installedSinceMs = if (earlier) 0L else install.installedSinceMs,
     )
 }
 
