@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.backup.PortableBackupArchive
 import moe.rukamori.archivetune.shared.data.backup.PortableBackupFormat
 import moe.rukamori.archivetune.shared.data.backup.RestoreJournal
+import moe.rukamori.archivetune.shared.data.backup.RestoreTransaction
 import moe.rukamori.archivetune.shared.data.backup.mergedRestoredSettings
 import moe.rukamori.archivetune.shared.data.backup.readPortableFileBytes
 import moe.rukamori.archivetune.shared.data.backup.settingsSubset
@@ -130,17 +131,23 @@ internal class IosBackupGateway(
 /**
  * A restore staged by [IosBackupGateway.restore], applied by the next process before its owners open the files. The
  * staging directory is renamed into place only when complete, so a crash while staging leaves no pending restore.
- * Every swap step journals itself through [RestoreJournal] before the move it names, so a killed process finds the
- * interrupted swap, completes it and can still put back the files `previous/` kept. Applying is idempotent: a
- * restarted apply skips files already moved and writes the settings again.
+ * New restores swap through a [RestoreTransaction] journaled at `restore-pending/transaction`, which keeps the
+ * originals under `previous/` until the vault settings are applied too, so files and settings land or roll back
+ * together. A pending set the older `journal` format already started is finished by the legacy helpers here —
+ * the two formats never mix inside one restore.
  */
 internal class IosPendingRestore private constructor(
-    private val directory: String,
-    private val categories: Set<BackupDataCategory>,
+    val directory: String,
+    val categories: Set<BackupDataCategory>,
     private val journal: RestoreJournal,
+    /** True when the old `journal` file drives this restore; false for the [RestoreTransaction] format. */
+    val legacyFormat: Boolean,
 ) {
     /** True once the staged database is the live file, until [rollbackDatabase] puts the previous one back. */
     val databaseSwapped: Boolean get() = journal.swapped
+
+    /** The staged settings snapshot the vault apply still owes; false for library-only restores. */
+    val hasStagedSettings: Boolean get() = existsAt("$directory/${PortableBackupFormat.SETTINGS}")
 
     /** A swap or apply step failed and [markFailed] moved the pending set aside; nothing may apply it again. */
     var failed = false
@@ -301,7 +308,9 @@ internal class IosPendingRestore private constructor(
             } catch (_: Exception) {
                 null
             }
-            if (categories == null) {
+            // A transaction journal still drives file recovery even when the marker is lost — the journal knows
+            // its own targets — so only a staging directory without one is discarded here.
+            if (categories == null && !existsAt("$directory/$RESTORE_TRANSACTION_FILE")) {
                 deleteTree(directory)
                 return null
             }
@@ -319,7 +328,12 @@ internal class IosPendingRestore private constructor(
             } catch (_: Exception) {
                 RestoreJournal()
             }
-            return IosPendingRestore(directory, categories, journal)
+            return IosPendingRestore(
+                directory,
+                categories.orEmpty(),
+                journal,
+                legacyFormat = existsAt("$directory/$JOURNAL") && !existsAt("$directory/$RESTORE_TRANSACTION_FILE"),
+            )
         }
 
         fun stage(
