@@ -19,3 +19,5 @@ internal val SpotifyLibrespotAccessTokenKey = stringPreferencesKey("spotify_libr
 internal val SpotifyLibrespotAccessTokenExpiresAtKey = longPreferencesKey("spotify_librespot_access_token_expires_at")
 internal val SpotifyLibrespotUserIdKey = stringPreferencesKey("spotify_librespot_user_id")
 internal val SpotifyLibrespotAccountNameKey = stringPreferencesKey("spotify_librespot_account_name")
+
+internal val SpotifyLibrespotCatalogSpDcKey = stringPreferencesKey("spotify_librespot_catalog_sp_dc")

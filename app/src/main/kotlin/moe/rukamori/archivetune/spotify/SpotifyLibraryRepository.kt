@@ -243,6 +243,7 @@ class SpotifyLibraryRepository
                     if (credentialsChanged) {
                         prefs.remove(SpotifyAccessTokenKey)
                         prefs.remove(SpotifyAccessTokenExpiresAtKey)
+                        prefs.clearLibrespotSession()
                         SpotifyProfileCache.clearSnapshot(prefs)
                     }
                 }
@@ -250,7 +251,6 @@ class SpotifyLibraryRepository
                     Spotify.accessToken = null
                     clearCatalogCaches()
                     clearRecentlyPlayed()
-                    SpotifyLibrespotAccount.signOut(context)
                 }
                 _playlists.value = null
                 _errorMessage.value = null

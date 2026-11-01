@@ -298,6 +298,7 @@ class BackupArchiveRepository
                     "spotify_librespot_access_token_expires_at",
                     "spotify_librespot_user_id",
                     "spotify_librespot_account_name",
+                    "spotify_librespot_catalog_sp_dc",
                     // The dedicated streaming session was missing here; same sensitivity class.
                     "spotifyStreamSpDc",
                     "spotifyStreamSpKey",

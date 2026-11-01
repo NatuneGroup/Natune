@@ -145,16 +145,18 @@ class SpotifyStreamingSettingsPolicyTest {
             SpotifyStreamEngineKey to SpotifyStreamEngine.LIBRESPOT.name,
             SpotifyStreamEnabledKey to true,
         ).toEditor()
-        editor.setSpotifyLibrespotSession("refresh", "access", 1000L, "uid", "Main Account")
+        editor.setSpotifyLibrespotSession("refresh", "access", 1000L, "uid", "Main Account", "spdc")
         val stored = editor.snapshot()
         assertTrue(stored.spotifyLibrespotSignedIn())
         assertTrue(stored.spotifyStreamSessionPresent(SpotifyStreamEngine.LIBRESPOT))
         assertEquals("uid", stored[SpotifyLibrespotUserIdKey])
+        assertEquals("spdc", stored[SpotifyLibrespotCatalogSpDcKey])
 
         stored.toEditor().apply { clearSpotifyLibrespotSession() }.snapshot().let { cleared ->
             assertFalse(cleared.spotifyLibrespotSignedIn())
             assertEquals(null, cleared[SpotifyLibrespotAccessTokenKey])
             assertEquals(null, cleared[SpotifyLibrespotAccountNameKey])
+            assertEquals(null, cleared[SpotifyLibrespotCatalogSpDcKey])
             // Signing out of the engine that was selected turns streaming off, like every sign-out.
             assertEquals(false, cleared[SpotifyStreamEnabledKey])
         }

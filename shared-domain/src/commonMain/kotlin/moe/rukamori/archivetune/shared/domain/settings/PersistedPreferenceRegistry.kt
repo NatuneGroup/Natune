@@ -452,6 +452,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         SpotifyLibrespotAccessTokenExpiresAtKey,
         SpotifyLibrespotUserIdKey,
         SpotifyLibrespotAccountNameKey,
+        SpotifyLibrespotCatalogSpDcKey,
         ShowSpotifyPlaylistsKey,
         LibrarySourceKey,
         AppleMusicExperienceKey,
