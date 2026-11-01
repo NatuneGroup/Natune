@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -34,14 +33,13 @@ import moe.rukamori.archivetune.constants.DeezerAccountPremiumKey
 import moe.rukamori.archivetune.constants.DeezerArlKey
 import moe.rukamori.archivetune.constants.DeezerEnabledKey
 import moe.rukamori.archivetune.deezer.DeezerAudioProvider
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
-import android.webkit.HttpAuthHandler
-import moe.rukamori.archivetune.utils.AppProxy
 
 const val DEEZER_LOGIN_ROUTE = "settings/deezer/login"
 
@@ -118,6 +116,7 @@ fun DeezerLoginScreen(navController: NavController) {
 
     AuthWebViewScreen(
         navController = navController,
+        provider = "deezer",
         title = stringResource(R.string.deezer_login),
         subtitle = stringResource(R.string.auth_webview_deezer_subtitle),
         // Stops the pending retry when the sheet closes, so a dismissed Deezer sheet leaves nothing
@@ -158,17 +157,7 @@ fun DeezerLoginScreen(navController: NavController) {
  */
 private class DeezerArlWebViewClient(
     private val onArl: (String) -> Unit,
-) : WebViewClient() {
-    override fun onReceivedHttpAuthRequest(
-        view: WebView?,
-        handler: HttpAuthHandler?,
-        host: String?,
-        realm: String?,
-    ) {
-        if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-        super.onReceivedHttpAuthRequest(view, handler, host, realm)
-    }
-
+) : AuthSignInWebViewClient("deezer", setOf("deezer.com")) {
     private var extractionRunnable: Runnable? = null
 
     override fun onPageFinished(

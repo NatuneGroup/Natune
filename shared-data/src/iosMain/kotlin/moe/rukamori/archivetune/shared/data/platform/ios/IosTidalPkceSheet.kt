@@ -19,7 +19,6 @@ import platform.UIKit.presentationController
 import platform.WebKit.WKNavigation
 import platform.WebKit.WKNavigationAction
 import platform.WebKit.WKNavigationActionPolicy
-import platform.WebKit.WKNavigationActionPolicy.WKNavigationActionPolicyAllow
 import platform.WebKit.WKNavigationActionPolicy.WKNavigationActionPolicyCancel
 import platform.WebKit.WKNavigationDelegateProtocol
 import platform.WebKit.WKWebView
@@ -73,7 +72,7 @@ class IosTidalPkceSheet(
                                 if (continuation.isActive) continuation.resume(code)
                             } else {
                                 val scheme = decidePolicyForNavigationAction.request.URL?.scheme?.lowercase()
-                                decisionHandler(if (scheme == "https") WKNavigationActionPolicyAllow else WKNavigationActionPolicyCancel)
+                                decisionHandler(webView.authPopupNavigationPolicy(decidePolicyForNavigationAction, scheme == "https"))
                             }
                         }
                         override fun presentationControllerDidDismiss(presentationController: UIPresentationController) = cancel()

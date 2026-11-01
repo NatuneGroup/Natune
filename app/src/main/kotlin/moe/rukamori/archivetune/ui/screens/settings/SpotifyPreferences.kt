@@ -13,14 +13,11 @@ package moe.rukamori.archivetune.ui.screens.settings
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
-import android.os.Message
 import android.view.ViewGroup
 import android.webkit.CookieManager
-import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -63,19 +60,25 @@ import coil3.request.ImageRequest
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.spotify.SpotifyAccountUiState
 import moe.rukamori.archivetune.spotify.SpotifyAuth
+import moe.rukamori.archivetune.ui.component.AuthPopupWebChromeClient
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewSheet
+import moe.rukamori.archivetune.ui.component.authPopupHandoffAllowed
+import moe.rukamori.archivetune.ui.component.authPopupsEnabled
+import moe.rukamori.archivetune.ui.component.hostInLoginFlow
+import moe.rukamori.archivetune.ui.component.sanitizeAuthWebViewUserAgent
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroupScope
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
-import android.webkit.HttpAuthHandler
-import moe.rukamori.archivetune.utils.AppProxy
 
 private val SpotifyAccountIconSize = 44.dp
-private const val SpotifyLoginUserAgent =
-    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+
+// The hosts a sign-in popup belongs to: social-login pages get their own window, but anything
+// landing back on Spotify continues in the parent instead of stacking a second WebView over it.
+private val SPOTIFY_FLOW_HOSTS = setOf("spotify.com")
 
 /** Renders the Spotify account / playlist preferences inside a [PreferenceGroupScope]. */
 internal fun PreferenceGroupScope.spotifyAccountPreferences(
@@ -316,17 +319,7 @@ internal fun SpotifyLoginSheet(
                         }
 
                         webViewClient =
-                            object : WebViewClient() {
-                                override fun onReceivedHttpAuthRequest(
-                                    view: WebView?,
-                                    handler: HttpAuthHandler?,
-                                    host: String?,
-                                    realm: String?,
-                                ) {
-                                    if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-                                    super.onReceivedHttpAuthRequest(view, handler, host, realm)
-                                }
-
+                            object : AuthSignInWebViewClient("spotify", SPOTIFY_FLOW_HOSTS) {
                                 override fun shouldOverrideUrlLoading(
                                     view: WebView,
                                     request: WebResourceRequest,
@@ -363,13 +356,17 @@ internal fun SpotifyLoginSheet(
                                     captureCookies(url)
                                 }
                             }
+                        val popupProfile = isolatedProfile.takeIf { profileCookieManager != null }
                         webChromeClient =
-                            SpotifyLoginWebChromeClient(
+                            AuthPopupWebChromeClient(
                                 container = container,
                                 parentWebView = this,
-                                captureCookies = { url -> captureCookies(url) },
+                                provider = "spotify",
                                 onActiveWebViewChanged = { activeWebView -> webView = activeWebView },
-                                isolatedProfile = isolatedProfile.takeIf { profileCookieManager != null },
+                                consoleLoggedHosts = SPOTIFY_FLOW_HOSTS,
+                                createPopup = { parent ->
+                                    createSpotifyLoginPopup(parent, popupProfile) { url -> captureCookies(url) }
+                                },
                             )
                         webView = this
                         mainWebView = this
@@ -432,121 +429,88 @@ private fun WebView.destroySpotifyLoginWebView() {
 @SuppressLint("SetJavaScriptEnabled")
 private fun WebView.configureSpotifyLoginWebView() {
     settings.apply {
-        javaScriptCanOpenWindowsAutomatically = true
-        setSupportMultipleWindows(true)
+        setSupportMultipleWindows(authPopupsEnabled("spotify"))
         mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        userAgentString = SpotifyLoginUserAgent
+        // The engine's own UA minus the WebView-only tokens — the frozen Chrome/131 string this
+        // replaced contradicted the runtime Sec-CH-UA hints, which is exactly the kind of
+        // automation tell Spotify's bot check answers with "Something went wrong".
+        userAgentString = sanitizeAuthWebViewUserAgent(WebSettings.getDefaultUserAgent(context))
     }
 }
 
-private class SpotifyLoginWebChromeClient(
-    private val container: FrameLayout,
-    private val parentWebView: WebView,
-    private val captureCookies: (String?) -> Boolean,
-    private val onActiveWebViewChanged: (WebView) -> Unit,
-    private val isolatedProfile: String? = null,
-) : WebChromeClient() {
-    override fun onCreateWindow(
-        view: WebView,
-        isDialog: Boolean,
-        isUserGesture: Boolean,
-        resultMsg: Message,
-    ): Boolean {
-        closePopupWebViews()
+/**
+ * Builds the gesture-opened popup for the shared chrome client: same isolated profile as the
+ * parent when one is in use, same cookie acceptance, same sign-in client — plus the rule that a
+ * Spotify-hosted navigation belongs to the parent window, not to a stacked popup.
+ */
+private fun AuthPopupWebChromeClient.createSpotifyLoginPopup(
+    parent: WebView,
+    profileName: String?,
+    captureCookies: (String?) -> Boolean,
+): WebView {
+    var popupProfileCookies: CookieManager? = null
+    return createAuthWebView(
+        parent.context,
+        beforeConfigure = { popup ->
+            popupProfileCookies = profileName?.let { useIsolatedSpotifyProfile(popup, it) }
+        },
+    ).apply {
+        // A popup outside the parent's profile would sign in against the shared jar.
+        val cookieManager = popupProfileCookies ?: CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(this, true)
+        configureSpotifyLoginWebView()
+        webViewClient =
+            object : AuthSignInWebViewClient("spotify", SPOTIFY_FLOW_HOSTS) {
+                // Only a main-frame GET whose method is on the request may be replayed into the
+                // parent: a form_post OAuth return reissued as loadUrl would drop code/state.
+                private fun movesToParent(
+                    view: WebView,
+                    request: WebResourceRequest,
+                ): Boolean =
+                    authPopupHandoffAllowed(request.isForMainFrame, request.method) &&
+                        hostInLoginFlow(request.url?.host, SPOTIFY_FLOW_HOSTS) &&
+                        moveToParent(view, request.url?.toString())
 
-        var selectedProfileCookies: CookieManager? = null
-        val popupWebView =
-            createAuthWebView(
-                view.context,
-                beforeConfigure = { popup ->
-                    selectedProfileCookies = isolatedProfile?.let { useIsolatedSpotifyProfile(popup, it) }
-                },
-            ).apply {
-                // A popup outside the parent's profile would sign in against the shared jar.
-                val cookieManager =
-                    selectedProfileCookies ?: CookieManager.getInstance()
-                cookieManager.setAcceptCookie(true)
-                cookieManager.setAcceptThirdPartyCookies(this, true)
-                configureSpotifyLoginWebView()
-                webViewClient =
-                    object : WebViewClient() {
-                        override fun onReceivedHttpAuthRequest(
-                            view: WebView?,
-                            handler: HttpAuthHandler?,
-                            host: String?,
-                            realm: String?,
-                        ) {
-                            if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-                            super.onReceivedHttpAuthRequest(view, handler, host, realm)
-                        }
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest,
+                ): Boolean =
+                    movesToParent(view, request) ||
+                        shouldOverrideSpotifyLoginUrl(
+                            view = view,
+                            url = request.url?.toString(),
+                            captureCookies = captureCookies,
+                        )
 
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView,
-                            request: WebResourceRequest,
-                        ): Boolean =
-                            shouldOverrideSpotifyLoginUrl(
-                                view = view,
-                                url = request.url?.toString(),
-                                captureCookies = captureCookies,
-                            )
+                @Deprecated("Deprecated in Java")
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    url: String?,
+                ): Boolean =
+                    shouldOverrideSpotifyLoginUrl(
+                        view = view,
+                        url = url,
+                        captureCookies = captureCookies,
+                    )
 
-                        @Deprecated("Deprecated in Java")
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView,
-                            url: String?,
-                        ): Boolean =
-                            shouldOverrideSpotifyLoginUrl(
-                                view = view,
-                                url = url,
-                                captureCookies = captureCookies,
-                            )
+                override fun onPageStarted(
+                    view: WebView,
+                    url: String?,
+                    favicon: android.graphics.Bitmap?,
+                ) {
+                    // No method info here, so no handoff: the popup shares the session jar and the
+                    // capture, so a Spotify-hosted load completes in place either way.
+                    captureCookies(url)
+                }
 
-                        override fun onPageStarted(
-                            view: WebView,
-                            url: String?,
-                            favicon: android.graphics.Bitmap?,
-                        ) {
-                            captureCookies(url)
-                        }
-
-                        override fun onPageFinished(
-                            view: WebView,
-                            url: String?,
-                        ) {
-                            captureCookies(url)
-                        }
-                    }
+                override fun onPageFinished(
+                    view: WebView,
+                    url: String?,
+                ) {
+                    captureCookies(url)
+                }
             }
-
-        val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
-        container.addView(
-            popupWebView,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            ),
-        )
-        popupWebView.bringToFront()
-        popupWebView.requestFocus()
-        onActiveWebViewChanged(popupWebView)
-        transport.webView = popupWebView
-        resultMsg.sendToTarget()
-        return true
-    }
-
-    override fun onCloseWindow(window: WebView) {
-        window.destroySpotifyLoginWebView()
-        onActiveWebViewChanged(parentWebView)
-    }
-
-    private fun closePopupWebViews() {
-        for (index in container.childCount - 1 downTo 0) {
-            val child = container.getChildAt(index) as? WebView ?: continue
-            if (child !== parentWebView) {
-                child.destroySpotifyLoginWebView()
-            }
-        }
-        onActiveWebViewChanged(parentWebView)
     }
 }
 

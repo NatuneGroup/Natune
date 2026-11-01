@@ -17,7 +17,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -26,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBars
@@ -56,12 +56,11 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.potoken.BotGuardTokenGenerator
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
-import android.webkit.HttpAuthHandler
-import moe.rukamori.archivetune.utils.AppProxy
 
 class PoTokenExtractionActivity : ComponentActivity() {
     companion object {
@@ -293,14 +292,33 @@ class PoTokenExtractionActivity : ComponentActivity() {
             }
         }
 
-        Box(modifier = Modifier.fillMaxSize()) {
-            AndroidView(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .windowInsetsPadding(WindowInsets.systemBars)
-                        .imePadding(),
-                factory = { ctx ->
+        // Column, not a stacked Box: a sibling composable drawn after a fillMaxSize AndroidView
+        // paints over the page and blocks its input, which is what hid the top of the form.
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .imePadding(),
+        ) {
+            SettingsTopAppBar(
+                title = { Text(stringResource(R.string.extracting_from_url)) },
+                navigationIcon = {
+                    IconButton(
+                        onClick = { closeCanceled() },
+                        onLongClick = { closeCanceled() },
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.arrow_back),
+                            contentDescription = null,
+                        )
+                    }
+                },
+            )
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
                     createAuthWebView(ctx).apply {
                         addJavascriptInterface(
                             object {
@@ -324,17 +342,7 @@ class PoTokenExtractionActivity : ComponentActivity() {
                         )
 
                         webViewClient =
-                            object : WebViewClient() {
-                                override fun onReceivedHttpAuthRequest(
-                                    view: WebView?,
-                                    handler: HttpAuthHandler?,
-                                    host: String?,
-                                    realm: String?,
-                                ) {
-                                    if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-                                    super.onReceivedHttpAuthRequest(view, handler, host, realm)
-                                }
-
+                            object : AuthSignInWebViewClient("potoken", setOf("youtube.com", "google.com")) {
                                 override fun onPageFinished(
                                     view: WebView,
                                     url: String?,
@@ -400,21 +408,6 @@ class PoTokenExtractionActivity : ComponentActivity() {
                     },
                 )
             }
-
-            SettingsTopAppBar(
-                title = { Text(stringResource(R.string.extracting_from_url)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = { closeCanceled() },
-                        onLongClick = { closeCanceled() },
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.arrow_back),
-                            contentDescription = null,
-                        )
-                    }
-                },
-            )
         }
     }
 }
