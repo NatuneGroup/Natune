@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.repository
 
 import kotlinx.coroutines.CancellationException
+import kotlin.time.Clock
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureClassifier
@@ -32,6 +33,11 @@ internal class QueueStreamRecovery(
     private val player: MusicPlayerController,
     private val locators: QueueLocatorResolver,
     private val nowMs: () -> Long,
+    /**
+     * The wall clock for locator authorization windows: [PlaybackLocator.expiresAtEpochMs] is an epoch
+     * timestamp, so it can never be measured against [nowMs]'s monotonic ticks.
+     */
+    private val epochNowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val attempts = StreamRecoveryTracker<AudioSourceType>()
     /** Recovery budget per media id, as the host's per-video budget map; cleared with the load lineage. */
@@ -115,11 +121,15 @@ internal class QueueStreamRecovery(
                 budgets.remove(mediaId)
                 return null
             }
-            // Same-resource actions keep the resolved locator: a timeout is retried as-is and a network
-            // or renderer rejection is reloaded by the engine, never re-resolving a cached URL.
+            // Same-resource actions keep the resolved locator while it can still be opened: a timeout is
+            // retried as-is and a network or renderer rejection is reloaded by the engine, never
+            // re-resolving a cached URL. A lease already out of its authorization window or a consumed
+            // single-use view falls through to re-resolution instead of replaying a refused locator.
             PlaybackRecoveryAction.RETRY_SAME_URL,
             PlaybackRecoveryAction.INVALIDATE_NETWORK,
-            PlaybackRecoveryAction.REBUILD_RENDERER -> return recovered(current.locator)
+            PlaybackRecoveryAction.REBUILD_RENDERER -> {
+                if (reusable(current.locator, epochNowMs())) return recovered(current.locator)
+            }
             else -> Unit
         }
         return try {
@@ -145,6 +155,15 @@ internal class QueueStreamRecovery(
             budgets[mediaId] = remaining
         }
     }
+
+    /**
+     * A locator another load may reuse: inside its authorization window (an epoch instant read on the
+     * wall clock, never the monotonic budget clock) and not a single-use prepared view. One
+     * [PlaybackLocator.PreparedPlaintext] handle is one engine load, so any retry of it — even a
+     * same-locator one — resolves a fresh preparation instead of returning the consumed view.
+     */
+    private fun reusable(locator: PlaybackLocator, epochNow: Long): Boolean =
+        locator !is PlaybackLocator.PreparedPlaintext && locator.expiresAtEpochMs?.let { it > epochNow } != false
 
     private suspend fun locate(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator? =
         try {
