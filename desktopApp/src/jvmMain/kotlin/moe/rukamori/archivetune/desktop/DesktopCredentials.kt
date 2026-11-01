@@ -79,7 +79,17 @@ internal object DesktopCredentials {
         get() = value("ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID").takeIf { it.isNotBlank() }
             ?.let { GoogleDesktopClient(it, value("ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET")) }
 
+    /**
+     * The origin the Amazon Turnstile sitekey is locked to, without a trailing slash, or null when the build names none.
+     * The docs pair it with the sitekey, so a blank value leaves the Amazon sign-in not configured. A value that is not
+     * a plain https origin reads as blank too, because the challenge window and the instance requests both send it.
+     */
+    val amazonTurnstileOrigin: String?
+        get() = value("ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN").trimEnd('/').takeIf { HTTPS_ORIGIN.matches(it) }
+
     private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
+
+    private val HTTPS_ORIGIN = Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
 
     private fun runtime(name: String): String =
         System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() } ?: System.getProperty(name)?.trim().orEmpty()
@@ -116,6 +126,7 @@ internal object DesktopCredentials {
         "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID" -> DesktopBuildCredentials.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID
         "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET" -> DesktopBuildCredentials.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET
         "ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY" -> DesktopBuildCredentials.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY
+        "ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN" -> DesktopBuildCredentials.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN
         else -> ""
     }
 }

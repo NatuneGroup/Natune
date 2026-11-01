@@ -73,9 +73,11 @@ object AmazonInstances {
 }
 
 /** First authorization does not require constructing an already-authorized playback repository. */
-class KtorAmazonAuthorization(client: HttpClient, instanceBase: String) {
+class KtorAmazonAuthorization(client: HttpClient, instanceBase: String, turnstileOrigin: String? = TURNSTILE_ORIGIN) {
     private val http = ProviderHttp(client)
     private val base = endpoint(instanceBase)
+    // The origin the sitekey is locked to, without a trailing slash; a blank origin sends no Origin header.
+    private val origin = turnstileOrigin?.trimEnd('/')?.takeIf { it.isNotEmpty() }
     companion object {
         /** Cloudflare Turnstile sitekey + origin, domain-locked to monochrome.tf (see original). */
         const val TURNSTILE_SITEKEY = "0x4AAAAAADgxqF6QVMm0GLHH"
@@ -88,7 +90,7 @@ class KtorAmazonAuthorization(client: HttpClient, instanceBase: String) {
     suspend fun exchangeTurnstile(responseToken: String, operatorToken: String? = null): String {
         require(responseToken.isNotBlank())
         val root = http.json("$base/api/auth/turnstile", headers = buildMap {
-            put("Origin", "https://monochrome.tf")
+            origin?.let { put("Origin", it) }
             operatorToken?.takeIf { it.isNotBlank() }?.let { put("Authorization", "Bearer $it") }
         }, body = buildJsonObject {
             put("cf_turnstile_response", responseToken); put("turnstile_token", responseToken)
@@ -133,14 +135,17 @@ fun amazonTurnstileExpiry(jwt: String, nowMs: Long): Long {
 class KtorAmazonRepository(client: HttpClient, instanceBase: String, private val access: AmazonInstanceAccess,
     private val nowMs: () -> Long = { 0L },
     private val pooled: () -> List<AmazonPoolInstance> = { emptyList() },
+    turnstileOrigin: String? = KtorAmazonAuthorization.TURNSTILE_ORIGIN,
 ) : AudioProviderRepository {
     override val source = AudioSourceType.AMAZON
     private val base = endpoint(instanceBase)
     private val http = ProviderHttp(client)
+    // The origin the sitekey is locked to, without a trailing slash; a blank origin sends no Origin header.
+    private val origin = turnstileOrigin?.trimEnd('/')?.takeIf { it.isNotEmpty() }
     suspend fun exchangeTurnstile(responseToken: String): String {
         require(responseToken.isNotBlank() && access.isActive())
         val root = http.json("$base/api/auth/turnstile", headers = buildMap {
-            put("Origin", "https://monochrome.tf")
+            origin?.let { put("Origin", it) }
             access.operatorToken?.let { put("Authorization", "Bearer $it") }
         }, body = buildJsonObject {
             put("cf_turnstile_response", responseToken); put("turnstile_token", responseToken)
@@ -171,7 +176,7 @@ class KtorAmazonRepository(client: HttpClient, instanceBase: String, private val
         wantedAlbum?.takeIf { it.isNotBlank() }?.let { params["album"] = it }
         wantedDuration?.takeIf { it > 0 }?.let { params["duration"] = "${it / 1000 + if (it % 1000 >= 500) 1 else 0}" }
         val headers = buildMap {
-            put("Origin", "https://monochrome.tf")
+            origin?.let { put("Origin", it) }
             access.turnstileJwt?.takeIf { it.isNotBlank() }?.let { put("X-Turnstile-JWT", it) }
         }
         var root: JsonObject? = null

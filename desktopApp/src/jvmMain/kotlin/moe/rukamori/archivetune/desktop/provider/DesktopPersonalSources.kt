@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.desktop.provider
 
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
+import moe.rukamori.archivetune.desktop.DesktopCredentials
 import moe.rukamori.archivetune.shared.data.provider.AmazonInstanceAccess
 import moe.rukamori.archivetune.shared.data.provider.AppleMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.KtorAmazonRepository
@@ -73,6 +74,8 @@ internal class DesktopAmazonSource(
         if (bases.isEmpty() || authorization == null) {
             throw AudioProviderUnavailable(AudioProviderUnavailableReason.ACCOUNT_REQUIRED)
         }
+        // Sent as the Origin the sitekey is locked to; a build that names none sends no Origin header, as Android does.
+        val turnstileOrigin = DesktopCredentials.amazonTurnstileOrigin
         var failure: Exception? = null
         for ((index, base) in bases.withIndex()) {
             // A JWT is issued by the first instance's authorization flow and never sent to another host.
@@ -93,7 +96,8 @@ internal class DesktopAmazonSource(
                 },
             )
             try {
-                KtorAmazonRepository(http, base, access, nowMs).resolve(request)?.let { return it }
+                KtorAmazonRepository(http, base, access, nowMs, turnstileOrigin = turnstileOrigin)
+                    .resolve(request)?.let { return it }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
