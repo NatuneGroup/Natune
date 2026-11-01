@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.desktop
 
 import moe.rukamori.archivetune.desktop.backup.GoogleDesktopClient
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
+import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
 import moe.rukamori.archivetune.shared.data.provider.TidalClientCredentials
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramApiCredentials
 
@@ -53,7 +54,11 @@ internal object DesktopCredentials {
      */
     val poolBaseUrl: String?
         get() {
-            val configured = value("ARCHIVETUNE_SOURCE_PROVIDER_URL").ifBlank { runtime("SOURCE_PROVIDER_URL") }
+            val configured =
+                value("ARCHIVETUNE_ARCHIVEPOOL_BASE_URL")
+                    .ifBlank { runtime("ARCHIVEPOOL_BASE_URL") }
+                    .ifBlank { value("ARCHIVETUNE_SOURCE_PROVIDER_URL") }
+                    .ifBlank { runtime("SOURCE_PROVIDER_URL") }
             if (configured.equals("off", ignoreCase = true)) return null
             return configured.ifBlank { DEFAULT_POOL_BASE_URL }.trimEnd('/').takeIf { it.startsWith("https://") }
         }
@@ -102,7 +107,7 @@ internal object DesktopCredentials {
     val lyprioEndpoint: LyprioEndpoint?
         get() = LyprioEndpoint.parse(lyprioBaseUrl, lyprioHmacKey)
 
-    private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
+    private const val DEFAULT_POOL_BASE_URL = ArchivePoolEndpoints.FALLBACK_BASE_URL
 
     private val HTTPS_ORIGIN = Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
 
@@ -130,6 +135,7 @@ internal object DesktopCredentials {
         "ARCHIVETUNE_LISTENER_PRESENCE_URL" -> DesktopBuildCredentials.ARCHIVETUNE_LISTENER_PRESENCE_URL
         "ARCHIVETUNE_TELEGRAM_API_ID" -> DesktopBuildCredentials.ARCHIVETUNE_TELEGRAM_API_ID
         "ARCHIVETUNE_TELEGRAM_API_HASH" -> DesktopBuildCredentials.ARCHIVETUNE_TELEGRAM_API_HASH
+        "ARCHIVETUNE_ARCHIVEPOOL_BASE_URL" -> DesktopBuildCredentials.ARCHIVETUNE_ARCHIVEPOOL_BASE_URL
         "ARCHIVETUNE_SOURCE_PROVIDER_URL" -> DesktopBuildCredentials.ARCHIVETUNE_SOURCE_PROVIDER_URL
         "ARCHIVETUNE_SOURCE_PROVIDER_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_SOURCE_PROVIDER_KEY
         "ARCHIVETUNE_POOL_CLIENT_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_POOL_CLIENT_KEY

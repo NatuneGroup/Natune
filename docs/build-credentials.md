@@ -22,7 +22,8 @@ For each variable, the first non-blank value wins:
 
 Last.fm also reads the legacy names `LASTFM_API_KEY` and `LASTFM_SECRET` when the `ARCHIVETUNE_LASTFM_*`
 name is blank, so existing local setups keep working. Lyprio reads `LYPRIO_BASE_URL` and
-`LYPRIO_HMAC_KEY` the same way when the `ARCHIVETUNE_LYPRIO_*` names are blank.
+`LYPRIO_HMAC_KEY` the same way when the `ARCHIVETUNE_LYPRIO_*` names are blank, and the pool's
+deployment override reads `ARCHIVEPOOL_BASE_URL` when `ARCHIVETUNE_ARCHIVEPOOL_BASE_URL` is blank.
 
 ## Variables
 
@@ -49,6 +50,7 @@ name is blank, so existing local setups keep working. Lyprio reads `LYPRIO_BASE_
 | `ARCHIVETUNE_LISTENER_PRESENCE_URL` | Opt-in listener presence heartbeat origin (`:app` `BuildConfig.ARCHIVETUNE_LISTENER_PRESENCE_URL`, desktop `DesktopCredentials`, iOS `Info.plist` `ArchiveTuneListenerPresenceUrl`). Must be the https:// origin of `services/listener-presence`, for example the deployed public endpoint `https://natune-listener-presence.vercel.app` (not a secret). Every client appends `/api/heartbeat` itself, so give the origin only. | No heartbeat is sent and the feature stays silent. |
 | `ARCHIVETUNE_TELEGRAM_API_ID` (legacy `TELEGRAM_API_ID`) | Desktop only: the Telegram api_id of the TDLight session (`DesktopCredentials.telegramApi`). The Android app keeps its own `TELEGRAM_API_ID` build value. | The desktop Telegram session is not configured: no TDLight client starts and the sign-in page says so. |
 | `ARCHIVETUNE_TELEGRAM_API_HASH` (legacy `TELEGRAM_API_HASH`) | Desktop only: the api_hash paired with the api_id above. | As above. Both values are required. |
+| `ARCHIVETUNE_ARCHIVEPOOL_BASE_URL` (legacy `ARCHIVEPOOL_BASE_URL`) | The dedicated ArchivePool deployment for the Playback Pool and Pool instance discovery; when set and https it wins over `SOURCE_PROVIDER_URL` as the primary on every host — Android `BuildConfig.ARCHIVEPOOL_BASE_URL`, desktop `DesktopCredentials.poolBaseUrl`, iOS `Info.plist` `ArchiveTuneArchivePoolBaseUrl`. | The `SOURCE_PROVIDER_URL` value is used, then the public `https://archivepool.vercel.app` fallback (which every host still retries after the primary on a host failure). |
 | `ARCHIVETUNE_SOURCE_PROVIDER_URL` (legacy `SOURCE_PROVIDER_URL`) | Desktop: the ArchivePool deployment the Playback Pool reads (`DesktopPlaybackPool`). Android keeps its own `SOURCE_PROVIDER_URL` build value. | The desktop uses the same public default as Android, `https://archivepool.vercel.app`. Set `-DARCHIVETUNE_SOURCE_PROVIDER_URL=off` to turn the feed off for a launch. |
 | `ARCHIVETUNE_SOURCE_PROVIDER_KEY` (legacy `SOURCE_PROVIDER_KEY`) | Desktop: the per-app read key sent as a bearer token to the pool feed, discovery and report calls; the v2 feed derives its decryption key from it. | The feed is read without a key, which works while the pool does not enforce one. Encrypted fields that need the key are dropped. |
 | `ARCHIVETUNE_POOL_CLIENT_KEY` (legacy `POOL_CLIENT_KEY`) | Desktop: the legacy base64 AES-256 key for pool deployments older than the v2 feed. | Only v2 decryption is tried. |
@@ -108,6 +110,7 @@ env:
   ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
   ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
   ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
+  ARCHIVETUNE_ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL }}
   ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
   ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
   ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
@@ -137,8 +140,9 @@ The repository owner creates the secrets. A secret that does not exist resolves 
 succeeds and the matching feature reports not configured. `.github/workflows/_release-artifacts.yml` passes these values
 to its Android, desktop and iOS jobs. The pull-request and test workflows read the Last.fm pair under the canonical
 names and fall back to the legacy `LASTFM_*` secrets. The Lyprio pair comes from the `LYPRIO_BASE_URL` Actions
-variable and the `LYPRIO_HMAC_KEY` secret in every job that receives the Last.fm secrets; fork pull requests get
-neither, so the bundled endpoint simply stays unconfigured there.
+variable and the `LYPRIO_HMAC_KEY` secret in every job that receives the Last.fm secrets, and the pool
+deployment override comes from the `ARCHIVEPOOL_BASE_URL` Actions variable in the same jobs; fork pull requests get
+none of these, so the bundled endpoint and the override simply stay unconfigured there.
 
 ## Local setup
 

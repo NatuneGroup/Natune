@@ -290,6 +290,16 @@ android {
                 ).trim().trimEnd('/')
         buildConfigField("String", "SOURCE_PROVIDER_URL", "\"$sourceProviderUrl\"")
 
+        // The dedicated ArchivePool deployment override. Same canonical/legacy env pair as the
+        // other build credentials: ARCHIVETUNE_ARCHIVEPOOL_BASE_URL first, unprefixed
+        // ARCHIVEPOOL_BASE_URL as the fallback. When set and https it wins over
+        // SOURCE_PROVIDER_URL as the primary; the public default remains the ordered fallback.
+        buildConfigField(
+            "String",
+            "ARCHIVEPOOL_BASE_URL",
+            providerCredentialLiteral("ARCHIVETUNE_ARCHIVEPOOL_BASE_URL", "ARCHIVEPOOL_BASE_URL"),
+        )
+
         // Per-app read key for the Source Pool. Sent as a Bearer token on discovery requests so the
         // pool can gate access. Optional: blank works fine while the pool runs unenforced.
         val sourceProviderKey =

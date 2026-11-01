@@ -201,13 +201,7 @@ class TidalInstanceResolver(
     private val DEFAULT_DOWNLOAD_API_ENDPOINTS = emptyList<TidalDownloadEndpoint>()
 
     private val INSTANCE_DISCOVERY_SOURCES: List<String>
-        get() =
-            sourceProviderUrl()
-                .trim()
-                .trimEnd('/')
-                .takeIf { it.isNotEmpty() }
-                ?.let { listOf("$it/api/discovery/tidal") }
-                ?: emptyList()
+        get() = ArchivePoolEndpoints.candidates(sourceProviderUrl()).map { "$it/api/discovery/tidal" }
 
     @kotlin.concurrent.Volatile
     private var customEndpoints: List<TidalDownloadEndpoint> = emptyList()
@@ -386,19 +380,22 @@ class TidalInstanceResolver(
         val discovered = LinkedHashSet<String>()
         for (source in INSTANCE_DISCOVERY_SOURCES) {
             if (!poolEnabled()) break
-            runCatching {
+            val answered = runCatching {
                 val headers =
                     sourceProviderKey()
                         .takeIf { it.isNotBlank() }
                         ?.let { mapOf("Authorization" to "Bearer $it") }
                         ?: emptyMap()
                 val reply = healthGet(source, HEALTH_TIMEOUT_MS, headers = headers)
-                if (!poolEnabled()) return@runCatching
-                if (reply.status !in 200..299) return@runCatching
+                if (!poolEnabled() || ArchivePoolEndpoints.isFailoverStatus(reply.status)) return@runCatching false
+                ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
+                if (reply.status !in 200..299) return@runCatching true
                 parseDiscoveredInstances(reply.body).forEach { url ->
                     normalizeInstanceUrl(url)?.let(discovered::add)
                 }
-            }
+                true
+            }.getOrDefault(false)
+            if (answered) break
         }
         return discovered.toList()
     }
