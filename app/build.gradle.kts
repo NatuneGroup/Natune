@@ -226,8 +226,8 @@ android {
             providerCredentialLiteral("ARCHIVETUNE_LASTFM_API_SECRET", "LASTFM_SECRET"),
         )
         // The built-in Bundled lyrics server pair follows the same pattern: canonical ARCHIVETUNE_*
-        // names first, unprefixed names as the fallback. Both values must be present for the app to
-        // offer the bundled endpoint; the user's own server entry always wins (see BundledEndpoint).
+        // names first, unprefixed names as the fallback. Both values must be present for the bundled
+        // endpoint to exist; it is the only endpoint Bundled can have (see BundledEndpoint).
         buildConfigField(
             "String",
             "BUNDLED_BASE_URL",

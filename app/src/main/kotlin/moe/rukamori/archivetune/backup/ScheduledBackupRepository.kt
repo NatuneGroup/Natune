@@ -140,6 +140,11 @@ class ScheduledBackupRepository
                     ENABLED_KEY.name,
                     DIRECTORY_URI_KEY.name,
                     DIRECTORY_NAME_KEY.name,
+                    // Retired preferences whose leftovers never export: the user-entered Bundled server
+                    // pair is gone (the provider is build-configured now) and its signing key was a
+                    // credential.
+                    "bundledEndpoint",
+                    "bundledSigningKey",
                 )
 
             private fun androidx.datastore.preferences.core.Preferences.toScheduledBackupSettings(): ScheduledBackupSettings =

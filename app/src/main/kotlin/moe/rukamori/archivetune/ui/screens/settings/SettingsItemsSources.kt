@@ -328,9 +328,7 @@ internal fun lyricsProvidersSettingsItem(
         hidden = true,
         children = listOf(
             SettingsChild("Prioritize word synced lyrics", "prioritize_word_synced_lyrics", listOf("word synced", "word by word", "karaoke lyrics")),
-            SettingsChild("Enable Bundled lyrics (self-hosted)", "enable_bundled_lyrics", listOf("bundled", "self-hosted lyrics", "lyrics server")),
-            SettingsChild("Bundled server URL", "bundled_endpoint", listOf("bundled url", "bundled server", "lyrics server url")),
-            SettingsChild("Bundled signing key", "bundled_signing_key", listOf("bundled key", "signing key")),
+            SettingsChild("Enable Bundled lyrics", "enable_bundled_lyrics", listOf("bundled", "lyrics server")),
             SettingsChild("Enable BetterLyrics", "enable_betterlyrics", listOf("betterlyrics", "better lyrics", "enable betterlyrics")),
             SettingsChild("Enable BetterLyrics Portato", "enable_betterlyrics_portato", listOf("portato", "betterlyrics portato", "portato lyrics")),
             SettingsChild("Enable YouLyPlus lyrics", "enable_youlyplus_lyrics", listOf("youlyplus", "youly plus", "youlyplus lyrics")),

@@ -302,7 +302,7 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
     )
     // The JVM publishes no network events; a lookup offline simply misses, and a cached answer still shows.
-    // The build-time Bundled pair only supplies a bundled server while the user has entered neither field.
+    // The build-time Bundled pair is the only endpoint the provider can have; there is no user setting.
     val lyrics = HostLyrics(
         scope = scope,
         http = http,

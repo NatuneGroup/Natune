@@ -15,7 +15,7 @@ class LyricsProviderOrderTest {
         // Android LyricsHelper.baseProviders, restricted to the providers ported here:
         // BetterLyrics, BetterLyrics Portato, YouLyPlus, LrcLib, Kugou, SimpMusic, Unison,
         // Paxsenix Apple Music, Paxsenix NetEase, Paxsenix Spotify, Paxsenix Musixmatch, Paxsenix YouTube.
-        // The self-hosted Bundled server leads, as in Metrolist's default order.
+        // The bundled Bundled server leads, as in Metrolist's default order.
         assertEquals(
             listOf(
                 "Bundled",
@@ -39,10 +39,10 @@ class LyricsProviderOrderTest {
     @Test
     fun theShippedProviderClassesCarryTheCanonicalNames() {
         val client = client()
-        val selfHosted = checkNotNull(BundledEndpoint.parse("https://lyrics.example.invalid", "A".repeat(43) + "="))
+        val bundled = checkNotNull(BundledEndpoint.parse("https://lyrics.example.invalid", "A".repeat(43) + "="))
         val providers =
             listOf(
-                BundledLyricsProvider(client, selfHosted),
+                BundledLyricsProvider(client, bundled),
                 BetterLyricsProvider(client),
                 BetterLyricsProvider.portato(client),
                 YouLyPlusLyricsProvider(client),
