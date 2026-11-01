@@ -138,6 +138,8 @@ internal class IosSessionGraph private constructor(
     val localMedia: IosLocalMediaOwner,
     /** The Last.fm, Libre.fm and custom-endpoint scrobbler over the one player and queue, closed with the graph. */
     val lastFm: IosLastFm,
+    /** The Discord owner: PKCE sheet sign-in and playback-driven presence, closed with the graph. */
+    val discord: IosDiscordPresence,
     private val owner: PortableQueueOwner,
     private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
@@ -229,6 +231,7 @@ internal class IosSessionGraph private constructor(
      */
     suspend fun close() = withContext(NonCancellable) {
         playbackPort.cancelNext()
+        discord.close()
         lastFm.close()
         listenTogether.close()
         uploads.close()
@@ -411,6 +414,17 @@ internal class IosSessionGraph private constructor(
             } catch (failure: Exception) {
                 report("saved queue was not restored: ${failure::class.simpleName}")
             }
+            // The Discord owner borrows the host's ephemeral OAuth sheet and the shared websocket wrapper; it only
+            // acts on playback and settings reads, so it costs nothing until the settings page starts its driver.
+            val discord = IosDiscordPresence(
+                scope = scope,
+                http = http,
+                settings = vault,
+                browser = host.browser,
+                player = player,
+                queue = queue.state,
+                report = report,
+            )
             // The scrobbler sits on the one player and queue, so a like written below is mirrored to Last.fm by the
             // same owner that queues the scrobbles.
             val lastFm = IosLastFm(
@@ -567,6 +581,7 @@ internal class IosSessionGraph private constructor(
                 downloads = downloads,
                 localMedia = localMedia,
                 lastFm = lastFm,
+                discord = discord,
                 owner = owner,
                 playbackPort = host.playbackPort,
                 database = database,
