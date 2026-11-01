@@ -9,6 +9,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.DesktopDiagnosticLog
+import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
+import moe.rukamori.archivetune.shared.data.potoken.appendPoTokenToStreamUrl
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowse
 import moe.rukamori.archivetune.shared.data.provider.YouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeResolutionPort
@@ -50,8 +52,13 @@ internal class DesktopYouTubeResolver(
     private val search: YouTubeBrowseTransport? = null,
     private val locale: () -> Locale = { Locale.getDefault() },
     private val signIn: () -> DesktopYouTubeSignIn? = { null },
-    private val innerTubeX: DesktopInnerTubeXTier = DesktopInnerTubeXTier(http),
-    private val newPipe: DesktopNewPipeTier = DesktopNewPipeTier(http, locale),
+    private val poTokens: DesktopPoTokenOwner? = null,
+    private val innerTubeX: DesktopInnerTubeXTier = DesktopInnerTubeXTier(http, tokenProvider = poTokens?.tokenProvider),
+    private val newPipe: DesktopNewPipeTier = DesktopNewPipeTier(
+        http,
+        locale,
+        mint = { videoId, visitorData -> poTokens?.mintForPlayback(videoId, signIn(), visitorData) },
+    ),
     private val log: (String) -> Unit = { DesktopDiagnosticLog.playbackTier(it) },
 ) : YouTubeResolutionPort {
     private val visitorLock = Mutex()
@@ -185,6 +192,9 @@ internal class DesktopYouTubeResolver(
         val session = signIn()
         // The account's own visitor identity travels with its cookie; a fetched visitor id belongs to no account.
         val visitorData = session?.visitorData ?: visitor()
+        // One BotGuard mint per resolve, as the shipped chain does for its main client: the pair below then
+        // fills the web clients' serviceIntegrityDimensions and pot= like PlaybackAuthState does.
+        val minted = poTokens?.mintForPlayback(videoId, session, visitorData)
         val region = locale().country.takeIf { it.length == 2 }?.uppercase(Locale.US) ?: "US"
         val language = locale().toLanguageTag().ifBlank { "en" }
         val failed = linkedSetOf<String>()
@@ -196,7 +206,10 @@ internal class DesktopYouTubeResolver(
                 if (client.loginRequired && session == null) continue
                 if (client.key in failed) continue
                 val response = try {
-                    requestYouTubePlayer(http, videoId, null, client, null, visitorData, region, language, session)
+                    requestYouTubePlayer(
+                        http, videoId, null, client, null, visitorData, region, language, session,
+                        poToken = poTokens?.tokenFor(client.clientName, minted),
+                    )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -224,7 +237,10 @@ internal class DesktopYouTubeResolver(
                 val details = response.videoDetails()
                 return PreparedAudio.Progressive(
                     format.toDirectStream(
-                        uri = requireNotNull(format.url),
+                        uri = appendPoTokenToStreamUrl(
+                            requireNotNull(format.url),
+                            poTokens?.tokenFor(client.clientName, minted),
+                        ),
                         label = "YouTube ${client.friendlyName ?: client.clientName} ${format.bitrate / 1000} kbps",
                         title = details?.stringOf("title"),
                         author = details?.stringOf("author"),

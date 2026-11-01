@@ -48,6 +48,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
+import moe.rukamori.archivetune.shared.data.potoken.IosPoTokenSupport
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalPkceClient
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeResolver
@@ -82,6 +83,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PreventDuplicateTracksInQ
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
+import moe.rukamori.archivetune.shared.domain.settings.WebClientPoTokenEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.domain.settings.listenTogetherAvatarIndex
 import moe.rukamori.archivetune.shared.ui.IosHost
@@ -118,6 +120,8 @@ internal class IosSessionGraph private constructor(
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
     val youtubeTransport: IosYouTubeBrowseTransport,
+    /** The one BotGuard poToken owner; the settings page and the YouTube resolver share it. */
+    internal val poTokens: IosPoTokenSupport,
     /** The typed YouTube catalogue over [youtubeTransport] and the account binding: search, albums, playlists, sections. */
     val youtubeContent: YouTubeContentRepository,
     /** The shelf feeds over the same InnerTubeX session: the home feed, charts, explore and new releases. */
@@ -342,6 +346,14 @@ internal class IosSessionGraph private constructor(
             // player clients first and keeps InnerTubeX as the bounded extractor tier, like the desktop host.
             val youtubeTransport = IosYouTubeBrowseTransport(http)
             youtubeTransport.refreshSession(vault.snapshots.value)
+            // One BotGuard owner feeds the resolver's minting and the settings generation, like the
+            // shared BotGuardTokenGenerator object on Android.
+            val poTokens = IosPoTokenSupport(
+                http = http,
+                transport = youtubeTransport,
+                enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+                report = report,
+            )
             // The shelf feeds read the same session, so a signed-in home feed and the account listings agree.
             val youtubeCatalogue = youtubeTransport.catalogueTransport()
             val youtubeAccount = YouTubeAccountBinding(
@@ -359,6 +371,7 @@ internal class IosSessionGraph private constructor(
                     personalScope = {
                         providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
                     },
+                    poTokens = poTokens,
                 ),
             )
             // Both media owners write into the app container, which the host creates once here.
@@ -566,6 +579,7 @@ internal class IosSessionGraph private constructor(
                 library = library,
                 artistBlocks = artistBlocks,
                 youtubeTransport = youtubeTransport,
+                poTokens = poTokens,
                 youtubeContent = youtubeContent,
                 youtubeCatalogue = youtubeCatalogue,
                 libraryContent = libraryContent,

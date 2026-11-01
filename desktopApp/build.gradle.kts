@@ -113,6 +113,10 @@ val desktopCredentialNames = listOf(
     // both, sign-in is not configured.
     "ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY",
     "ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN",
+    // The BotGuard attestation pair, under the names Android's BuildConfig reads; without both, web-client
+    // PO token generation and resolver minting report not configured and send untokened requests.
+    "ARCHIVETUNE_POTOKEN_REQUEST_KEY",
+    "ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY",
 )
 val desktopLegacyCredentialNames = mapOf(
     "ARCHIVETUNE_LASTFM_API_KEY" to arrayOf("LASTFM_API_KEY"),

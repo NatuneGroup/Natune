@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImport
 import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
 import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
@@ -88,6 +89,7 @@ import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
 import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
+import moe.rukamori.archivetune.shared.domain.settings.WebClientPoTokenEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
@@ -203,11 +205,18 @@ internal suspend fun assembleDesktopSessionOwners(
         tidalSessionRefresh = tidalSessionRefresh,
         pool = playbackPool,
     )
+    // One BotGuard owner feeds the primary walk, the InnerTubeX provider and settings generation,
+    // as Android's BotGuardTokenGenerator object feeds every resolver there.
+    val poTokens = DesktopPoTokenOwner(
+        http = http,
+        enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+    )
     val youtubeResolver = DesktopYouTubeResolver(
         http,
         preferences = { vault.snapshots.value },
         search = youtubeTransport,
         signIn = { vault.snapshots.value.youTubeSignIn() },
+        poTokens = poTokens,
     )
     // One resolver for playback and downloads alike, over the same providers and source chain.
     val audioResolver = OrderedAudioResolver(
@@ -492,6 +501,7 @@ internal suspend fun assembleDesktopSessionOwners(
     val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
     val graph = DesktopSessionGraph(
         youtubeResolver = youtubeResolver,
+        poTokens = poTokens,
         instanceDirectory = directory,
         scope = scope,
         settings = vault,

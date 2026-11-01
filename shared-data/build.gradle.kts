@@ -60,6 +60,8 @@ kotlin {
             implementation("androidx.sqlite:sqlite-bundled:2.6.2")
             // TidalDns ports the original's OkHttp bootstrap-resolver + DoH client verbatim.
             implementation(libs.okhttp)
+            // The desktop BotGuard runtime shares the pinned quickjs-kt artifact iosMain already uses.
+            implementation(libs.quickjs.kt)
         }
         if (hasAndroidSdk) {
             androidMain.dependencies {
