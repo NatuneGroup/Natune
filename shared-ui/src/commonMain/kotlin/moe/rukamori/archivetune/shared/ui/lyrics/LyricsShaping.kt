@@ -90,7 +90,58 @@ private fun wordBox(
     val last = layout.getBoundingBox(end - 1)
     val left = minOf(first.left, last.left)
     val right = if (lastLine == line) maxOf(first.right, last.right) else layout.getLineRight(line)
-    return LyricsWordBox(timing.startMs, timing.endMs, left, right, line)
+    return LyricsWordBox(
+        startMs = timing.startMs,
+        endMs = timing.endMs,
+        leftPx = left,
+        rightPx = right,
+        line = line,
+        letters =
+            emphasisLetters(
+                text, starts, start, end, line, lastLine, left, right,
+                timing.endMs - timing.startMs, layout,
+            ),
+    )
+}
+
+/**
+ * The (left, right) slice of each grapheme cluster in a word that earned the [LyricsEmphasis] ripple,
+ * in sung order, or null when the word keeps the plain sweep. A word that wraps to a second visual
+ * line keeps the plain sweep, because its slices could not stay on one band.
+ */
+private fun emphasisLetters(
+    text: String,
+    clusterStarts: IntArray,
+    start: Int,
+    end: Int,
+    line: Int,
+    lastLine: Int,
+    boxLeft: Float,
+    boxRight: Float,
+    durationMs: Long,
+    layout: TextLayoutResult,
+): FloatArray? {
+    if (line != lastLine) return null
+    // Edge clusters that only carry whitespace leave no letter to move.
+    var first = start
+    var last = end
+    while (first < last && text[first].isWhitespace()) first++
+    while (last > first && text[last - 1].isWhitespace()) last--
+    if (first >= last) return null
+    val count = clusterStarts.count { it in first until last }
+    if (!LyricsEmphasis.isEmphasized(text.substring(first, last), count, durationMs)) return null
+    val slices = FloatArray(count * 2)
+    var index = 0
+    for (clusterStart in clusterStarts) {
+        if (clusterStart < first || clusterStart >= last) continue
+        val clusterEnd = clusterStarts.firstOrNull { it > clusterStart }?.let { minOf(it, last) } ?: last
+        val head = layout.getBoundingBox(clusterStart)
+        val tail = layout.getBoundingBox(clusterEnd - 1)
+        slices[index * 2] = minOf(head.left, tail.left).coerceIn(boxLeft, boxRight)
+        slices[index * 2 + 1] = maxOf(head.right, tail.right).coerceIn(boxLeft, boxRight)
+        index++
+    }
+    return slices
 }
 
 private const val SHAPE_CACHE_ENTRIES = 256

@@ -1,11 +1,10 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
-import kotlin.math.PI
-import kotlin.math.sin
-
 /**
  * One word's box on the laid-out text. [leftPx] is at most [rightPx]. [line] is the visual line the word
- * starts on, and it is always below [LyricsLineBands.lineCount].
+ * starts on, and it is always below [LyricsLineBands.lineCount]. [letters] is set only on a word that
+ * earned the [LyricsEmphasis] ripple: the (left, right) pair of each grapheme cluster's slice, in sung
+ * order, so the draw phase can move the letters one at a time.
  */
 data class LyricsWordBox(
     val startMs: Long,
@@ -13,6 +12,7 @@ data class LyricsWordBox(
     val leftPx: Float,
     val rightPx: Float,
     val line: Int,
+    val letters: FloatArray? = null,
 )
 
 /** Vertical bands of the laid-out lines plus the layout width, all in pixels. */
@@ -55,6 +55,15 @@ object LyricsSweepGeometry {
     /** A word earns glow only from [EMPHASIS_MIN_MS]; it reaches its full share [EMPHASIS_RAMP_MS] later. */
     const val EMPHASIS_MIN_MS = 1_000L
     const val EMPHASIS_RAMP_MS = 1_000L
+
+    /** The feathered sweep edge is this share of the active word's width, clamped to the bounds below. */
+    const val SWEEP_FEATHER_FRACTION = 0.2f
+    const val SWEEP_FEATHER_MIN_DP = 4f
+    const val SWEEP_FEATHER_MAX_DP = 28f
+
+    /** The feather width in px for a word [wordWidthPx] wide, clamped to [minPx]..[maxPx]. */
+    fun sweepFeatherPx(wordWidthPx: Float, minPx: Float, maxPx: Float): Float =
+        (wordWidthPx * SWEEP_FEATHER_FRACTION).coerceIn(minPx, maxPx)
 
     /** Share of the active word that is sung, from 0 to 1. Reduced motion jumps between 0 and 1. */
     fun progressAt(
@@ -140,14 +149,4 @@ object LyricsSweepGeometry {
         return (0.5f + 0.5f * ((held - EMPHASIS_MIN_MS).toFloat() / EMPHASIS_RAMP_MS)).coerceAtMost(1f)
     }
 
-    /**
-     * How far a held word has lifted, from 0 to 1. It rises and falls with the word and peaks mid-word, so the lift
-     * is one smooth movement. Words that earn no emphasis do not lift at all.
-     */
-    fun liftShare(box: LyricsWordBox, positionMs: Long): Float {
-        if (positionMs < box.startMs || positionMs >= box.endMs) return 0f
-        val held = (box.endMs - box.startMs).coerceAtLeast(1L)
-        val through = ((positionMs - box.startMs).toFloat() / held).coerceIn(0f, 1f)
-        return emphasisGain(box) * sin(PI.toFloat() * through)
-    }
 }

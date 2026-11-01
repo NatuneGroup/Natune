@@ -1,12 +1,14 @@
 package moe.rukamori.archivetune.ui.component
 
 import android.os.SystemClock
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +38,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -50,6 +53,8 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsCredits
 import moe.rukamori.archivetune.LocalBlurPolicy
 import moe.rukamori.archivetune.utils.isLowEndDevice
 
@@ -105,13 +110,17 @@ internal fun BasicSyncedLyricsList(
     modifier: Modifier = Modifier,
     useBlurEffect: Boolean = false,
     manualScrolling: Boolean = false,
+    /** The document's credits, for the writer footer at the end of the list. */
+    credits: LyricsCredits? = null,
 ) {
     val lines = lyrics.lines
     val starts = remember(lines) { IntArray(lines.size) { lines[it].start } }
     val ends = remember(lines) { IntArray(lines.size) { lines[it].end } }
     val interludes = remember(starts, ends) { enhancedInterludes(starts, ends) }
-    val activeIndex by remember(starts) {
-        derivedStateOf { activeSyncedLineIndex(starts, currentPosition()) }
+    // The lit line opens its activation-lead early; the word sweep still follows the real starts.
+    val activationStarts = remember(starts, ends) { enhancedActivationStarts(starts, ends) }
+    val activeIndex by remember(activationStarts) {
+        derivedStateOf { activeSyncedLineIndex(activationStarts, currentPosition()) }
     }
     // Animations disabled is the one reduced-motion switch: the glide, the depth springs and the scroll animation
     // all turn off together.
@@ -179,7 +188,23 @@ internal fun BasicSyncedLyricsList(
             if (animationsDisabled || firstFocus) {
                 listState.scrollToItem(target)
             } else {
-                listState.animateScrollToItem(target)
+                // A line at hand eases to the anchor on the fixed 350ms scroll; a far one keeps the
+                // distance-covering animation.
+                val top = listState.itemTopOrNull(target)
+                if (top != null) {
+                    val delta = top - listState.layoutInfo.beforeContentPadding
+                    if (delta != 0) {
+                        listState.animateScrollBy(
+                            value = delta.toFloat(),
+                            animationSpec = tween(AUTO_SCROLL_MS, easing = AUTO_SCROLL_EASE),
+                        )
+                        if (listState.itemTopOrNull(target) != listState.layoutInfo.beforeContentPadding) {
+                            listState.scrollToItem(target)
+                        }
+                    }
+                } else {
+                    listState.animateScrollToItem(target)
+                }
             }
         }
     }
@@ -218,6 +243,15 @@ internal fun BasicSyncedLyricsList(
                 showPhonetic = showPhonetic,
                 animationsDisabled = animationsDisabled,
             )
+        }
+        if (credits != null && !credits.isEmpty) {
+            item {
+                EnhancedCreditsFooter(
+                    credits = credits,
+                    textColor = textColor,
+                    style = phoneticTextStyle,
+                )
+            }
         }
     }
 }
@@ -260,6 +294,12 @@ private fun BasicSyncedLyricLine(
         depthSpec,
         label = "enhanced-depth-blur",
     )
+    // The quick pop the sung line takes on activation; reduced motion keeps the line's size.
+    val activePop by animateFloatAsState(
+        targetValue = if (isActive && !animationsDisabled) ACTIVE_POP_SCALE else 1f,
+        animationSpec = if (animationsDisabled) snap() else tween(ACTIVE_POP_MS),
+        label = "enhanced-active-pop",
+    )
     val karaoke = line as? KaraokeLine
     val endAligned = karaoke?.alignment == KaraokeAlignment.End
     val horizontal = if (endAligned) Alignment.End else Alignment.Start
@@ -275,8 +315,8 @@ private fun BasicSyncedLyricLine(
                 // The scale grows from the aligned edge so a start-aligned line does not drift sideways. Scale, fade and
                 // the glide are read in the draw phase, so a frame of them does not recompose the row.
                 .graphicsLayer {
-                    scaleX = depthScale
-                    scaleY = depthScale
+                    scaleX = depthScale * activePop
+                    scaleY = depthScale * activePop
                     alpha = lineAlpha * depthAlpha
                     transformOrigin = TransformOrigin(if (endAligned) 1f else 0f, 0.5f)
                     translationY = settle.offsetPx(settleDelayMs)
@@ -338,6 +378,8 @@ private fun BasicSyncedLyricLine(
                 translation = karaoke?.translation ?: (line as? SyncedLine)?.translation,
                 textColor = textColor,
                 phoneticTextStyle = phoneticTextStyle,
+                isActive = isActive,
+                reduceMotion = animationsDisabled,
             )
         }
     }
@@ -347,5 +389,49 @@ private fun BasicSyncedLyricLine(
 private fun LazyListState.itemTopOrNull(index: Int): Int? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
 
-private const val AUTO_SCROLL_RESUME_MS = 3_000L
+private const val AUTO_SCROLL_RESUME_MS = 4_500L
+private const val AUTO_SCROLL_MS = 350
+private const val ACTIVE_POP_MS = 100
+private const val ACTIVE_POP_SCALE = 1.05f
+
+/** The one animated scroll speed of a line change: a fixed ease-in-out over [AUTO_SCROLL_MS]. */
+private val AUTO_SCROLL_EASE = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 private val LINE_SPACING = 4.dp
+
+/** The mark a machine-made translation carries. */
+private const val AUTO_CREATED_MARK = "✦ "
+
+/**
+ * The credits block at the end of the list: the songwriters the document names, and the badge a
+ * machine-made translation or transliteration earns, both dim and small under the last line.
+ */
+@Composable
+private fun EnhancedCreditsFooter(
+    credits: LyricsCredits,
+    textColor: Color,
+    style: TextStyle,
+) {
+    if (credits.isEmpty) return
+    val autoCreated = credits.translationAutoCreated || credits.transliterationAutoCreated
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (credits.songwriters.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.lyrics_written_by, credits.songwriters.joinToString(", ")),
+                style = style,
+                color = textColor.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (autoCreated) {
+            Text(
+                text = AUTO_CREATED_MARK + stringResource(R.string.lyrics_auto_created),
+                style = style,
+                color = textColor.copy(alpha = 0.5f),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}

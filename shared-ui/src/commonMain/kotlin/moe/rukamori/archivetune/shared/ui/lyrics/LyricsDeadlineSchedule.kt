@@ -56,7 +56,8 @@ internal class LyricsDeadlineSchedule(
                 changes.add(end)
             }
             for (row in rows) {
-                changes.add(row.scanStartMs)
+                // The visual change lands at activation, which the lead-in moves ahead of the timed start.
+                changes.add(row.scanStartMs - row.activationLeadMs)
                 changes.add(row.scanEndMs)
                 for (words in listOfNotNull(row.words, row.backgroundWords)) {
                     for (word in words) {
