@@ -119,7 +119,7 @@ class CollectionOverflowMenusTest {
         var last = emptyList<ContentOccurrence>()
         var kind: UserQueuedKind? = null
         override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) { last = entries }
-        override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind) { last = entries; this.kind = kind }
+        override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind): Int { last = entries; this.kind = kind; return entries.size }
         override suspend fun remove(occurrenceIds: Set<String>) = error("Not called")
         override suspend fun move(occurrenceId: String, beforeOccurrenceId: String?) = error("Not called")
         override suspend fun select(occurrenceId: String, positionMs: Long) = error("Not called")

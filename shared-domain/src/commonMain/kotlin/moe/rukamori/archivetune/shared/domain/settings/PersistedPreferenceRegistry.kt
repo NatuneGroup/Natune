@@ -262,6 +262,8 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         AutoLoadMoreKey,
         AutoDownloadOnLikeKey,
         AutoSkipNextOnErrorKey,
+        PreventDuplicateTracksInQueueKey,
+        QueueLockedKey,
         PauseOnDeviceMuteKey,
         DeviceMutePlaybackRecoveryVolumeKey,
         AutoStartOnBluetoothKey,

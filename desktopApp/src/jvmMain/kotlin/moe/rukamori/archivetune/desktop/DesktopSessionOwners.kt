@@ -77,7 +77,9 @@ import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
 import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.PreventDuplicateTracksInQueueKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
+import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
 import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
@@ -239,6 +241,8 @@ internal suspend fun assembleDesktopSessionOwners(
         keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
         repeatMode = { repeatModeOf(vault.snapshots.value) },
         autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+        preventDuplicateTracksInQueue = { vault.snapshots.value?.get(PreventDuplicateTracksInQueueKey) ?: false },
+        queueLocked = { vault.snapshots.value?.get(QueueLockedKey) ?: false },
         autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
         autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
         hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
