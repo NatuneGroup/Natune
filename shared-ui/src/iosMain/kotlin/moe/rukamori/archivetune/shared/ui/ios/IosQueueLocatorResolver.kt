@@ -12,9 +12,14 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixAppleMusicToken
+import moe.rukamori.archivetune.shared.data.platform.ios.AmazonPoolAccount
+import moe.rukamori.archivetune.shared.data.platform.ios.AppleMusicPoolAccount
+import moe.rukamori.archivetune.shared.data.platform.ios.DeezerPoolAccount
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
+import moe.rukamori.archivetune.shared.data.platform.ios.QobuzPoolAccount
+import moe.rukamori.archivetune.shared.data.platform.ios.TidalPoolAccount
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.provider.AmazonInstanceAccess
 import moe.rukamori.archivetune.shared.data.provider.AppleMusicAccess
@@ -33,13 +38,15 @@ import moe.rukamori.archivetune.shared.data.provider.KtorQobuzRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorQqMusicRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorTidalRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
-import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
+import moe.rukamori.archivetune.shared.data.provider.PoolFailureKind
+import moe.rukamori.archivetune.shared.data.provider.PoolRetryOutcome
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccess
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.YouTubeResolutionPort
+import moe.rukamori.archivetune.shared.data.provider.classifyPoolFailure
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.PlatformSecret
@@ -234,7 +241,66 @@ private class IosTidalSource(
 ) : AudioProviderRepository {
     override val source = AudioSourceType.TIDAL
 
-    private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false)
+    private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false,
+        val stale: String = "")
+
+    /** One pooled-account attempt; also how a re-leased credential is retried after recovery. */
+    private suspend fun pooledAttempt(account: TidalPoolAccount): Attempt? {
+        val feedId = account.id?.takeIf { it > 0L } ?: return null
+        val scope = accounts.admitPoolEntry(
+            ContentProvider.TIDAL, feedId, buildMap {
+                put("token", account.token)
+                account.refreshToken?.let { put("refreshToken", it) }
+                account.countryCode?.let { put("countryCode", it) }
+                put("premium", account.premium.toString())
+            },
+        ) ?: return null
+        return Attempt(
+            KtorTidalRepository(
+                http,
+                TidalAccess(scope = scope, bearer = account.token, credentialScope = CredentialScope.PLAYBACK_POOL, isActive = { pool?.enabled() == true }),
+                countryCode = account.countryCode?.trim()?.takeIf { it.length == 2 } ?: "US",
+            ),
+            poolId = feedId,
+            pooled = true,
+            stale = account.token,
+        )
+    }
+
+    /**
+     * Recovers a pooled TIDAL account that just failed: one re-lease (single-flight per account)
+     * and one retry with the credential the pool now serves; the account is reported dead only
+     * when it still fails for real. Answers the retry's stream, or null.
+     */
+    private suspend fun recoverPooled(
+        attempt: Attempt,
+        kind: PoolFailureKind,
+        request: AudioResolveRequest,
+    ): PreparedAudio? {
+        val owner = pool ?: return null
+        val poolId = attempt.poolId ?: return null
+        return owner.deadReports.recoverAndReport(
+            IosPlaybackPool.TIDAL, poolId, kind,
+            stale = attempt.stale,
+            current = { owner.tidalAccounts().firstOrNull { it.id == poolId }?.token },
+            recover = { owner.refresh(force = true) },
+            retry = {
+                val fresh = owner.tidalAccounts().firstOrNull { it.id == poolId }
+                if (fresh == null) {
+                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } else try {
+                    pooledAttempt(fresh)?.repository?.resolve(request)
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
+                }
+            },
+            report = { type -> owner.report(IosPlaybackPool.TIDAL, poolId, type) },
+        )
+    }
 
     /** The session's one anonymous racing route. It is rebuilt only when its merged list, country or Pool switch changes. */
     private class AnonymousRoute(val instances: List<String>, val country: String, val poolOn: Boolean,
@@ -246,26 +312,7 @@ private class IosTidalSource(
         val snapshot = preferences()
         val country = snapshot?.tidalCountryCode()?.takeIf { it.length == 2 } ?: "US"
         val personal = personalRepository(country)?.let { Attempt(it) }
-        val pooled = pool?.tidalAccounts().orEmpty().mapNotNull { account ->
-            val feedId = account.id?.takeIf { it > 0L } ?: return@mapNotNull null
-            val scope = accounts.admitPoolEntry(
-                ContentProvider.TIDAL, feedId, buildMap {
-                    put("token", account.token)
-                    account.refreshToken?.let { put("refreshToken", it) }
-                    account.countryCode?.let { put("countryCode", it) }
-                    put("premium", account.premium.toString())
-                },
-            ) ?: return@mapNotNull null
-            Attempt(
-                KtorTidalRepository(
-                    http,
-                    TidalAccess(scope = scope, bearer = account.token, credentialScope = CredentialScope.PLAYBACK_POOL, isActive = { pool?.enabled() == true }),
-                    countryCode = account.countryCode?.trim()?.takeIf { it.length == 2 } ?: "US",
-                ),
-                poolId = feedId,
-                pooled = true,
-            )
-        }
+        val pooled = pool?.tidalAccounts().orEmpty().mapNotNull { account -> pooledAttempt(account) }
         val instanceBases = LinkedHashSet<String>().apply {
             addAll(snapshot?.tidalInstanceList().orEmpty())
             addAll(pool?.tidalInstances().orEmpty())
@@ -286,11 +333,11 @@ private class IosTidalSource(
                 throw cancelled
             } catch (auth: TerminalPlaybackAuthentication) {
                 if (!attempt.pooled) throw auth
-                pool?.report(IosPlaybackPool.TIDAL, attempt.poolId, "dead")
+                recoverPooled(attempt, PoolFailureKind.AUTH_REJECTED, request)?.let { return it }
                 pool?.noteFailure(IosPlaybackPool.TIDAL, attempt.poolId)
             } catch (error: Exception) {
                 if (attempt.pooled) {
-                    if ((error as? ProviderHttpFailure)?.status == 401) pool?.report(IosPlaybackPool.TIDAL, attempt.poolId, "dead")
+                    recoverPooled(attempt, classifyPoolFailure(error), request)?.let { return it }
                     pool?.noteFailure(IosPlaybackPool.TIDAL, attempt.poolId)
                 }
                 failure = error
@@ -403,27 +450,66 @@ private class IosDeezerSource(
         return null
     }
 
+    /** One repository per pooled ARL, so its gateway session is reused until the credential changes. */
+    private suspend fun pooledRepository(owner: IosPlaybackPool, account: DeezerPoolAccount): KtorDeezerRepository =
+        pooledRepositories.getOrPut(account.arl) {
+            val feedId = account.id?.takeIf { it > 0L }
+            val scope = feedId?.let {
+                accounts.admitPoolEntry(
+                    ContentProvider.DEEZER, it, buildMap {
+                        put("arl", account.arl)
+                        account.masterSecret?.let { secret -> put("masterSecret", secret) }
+                        put("premium", account.premium.toString())
+                    },
+                )
+            } ?: ANONYMOUS_ACCOUNT_SCOPE
+            KtorDeezerRepository(
+                http,
+                nowMs = ::iosNowMillis,
+                access = DeezerAccess(scope, account.arl, CredentialScope.PLAYBACK_POOL, isActive = { owner.enabled() }),
+            )
+        }
+
+    /**
+     * Recovers a pooled Deezer account that just failed: one re-lease (the pool rotates ARLs
+     * server-side) and one retry with the credential it now serves; the account is reported dead
+     * only when it still fails for real. Answers the retry's stream, or null.
+     */
+    private suspend fun recoverPooled(
+        owner: IosPlaybackPool,
+        account: DeezerPoolAccount,
+        kind: PoolFailureKind,
+        request: AudioResolveRequest,
+    ): PreparedAudio? {
+        val poolId = account.id ?: return null
+        return owner.deadReports.recoverAndReport(
+            IosPlaybackPool.DEEZER, poolId, kind,
+            stale = account.arl,
+            current = { owner.deezerAccounts().firstOrNull { it.id == poolId }?.arl },
+            recover = { owner.refresh(force = true) },
+            retry = {
+                val fresh = owner.deezerAccounts().firstOrNull { it.id == poolId }
+                if (fresh == null) {
+                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } else try {
+                    pooledRepository(owner, fresh).resolve(request)
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
+                }
+            },
+            report = { type -> owner.report(IosPlaybackPool.DEEZER, poolId, type) },
+        )
+    }
+
     private suspend fun resolvePooled(request: AudioResolveRequest): PreparedAudio? {
         val owner = pool ?: return null
         var failure: Exception? = null
         for (account in owner.deezerAccounts()) {
-            val repository = pooledRepositories.getOrPut(account.arl) {
-                val feedId = account.id?.takeIf { it > 0L }
-                val scope = feedId?.let {
-                    accounts.admitPoolEntry(
-                        ContentProvider.DEEZER, it, buildMap {
-                            put("arl", account.arl)
-                            account.masterSecret?.let { secret -> put("masterSecret", secret) }
-                            put("premium", account.premium.toString())
-                        },
-                    )
-                } ?: ANONYMOUS_ACCOUNT_SCOPE
-                KtorDeezerRepository(
-                    http,
-                    nowMs = ::iosNowMillis,
-                    access = DeezerAccess(scope, account.arl, CredentialScope.PLAYBACK_POOL, isActive = { owner.enabled() }),
-                )
-            }
+            val repository = pooledRepository(owner, account)
             try {
                 repository.resolve(request)?.let { resolved ->
                     owner.noteSuccess(IosPlaybackPool.DEEZER, account.id)
@@ -432,9 +518,10 @@ private class IosDeezerSource(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (auth: TerminalPlaybackAuthentication) {
-                owner.report(IosPlaybackPool.DEEZER, account.id, "dead")
+                recoverPooled(owner, account, PoolFailureKind.AUTH_REJECTED, request)?.let { return it }
                 owner.noteFailure(IosPlaybackPool.DEEZER, account.id)
             } catch (error: Exception) {
+                recoverPooled(owner, account, classifyPoolFailure(error), request)?.let { return it }
                 owner.noteFailure(IosPlaybackPool.DEEZER, account.id)
                 failure = error
             }
@@ -457,7 +544,67 @@ private class IosQobuzSource(
 ) : AudioProviderRepository {
     override val source = AudioSourceType.QOBUZ
 
-    private class Attempt(val repository: KtorQobuzRepository, val poolId: Long? = null, val pooled: Boolean = false)
+    private class Attempt(val repository: KtorQobuzRepository, val poolId: Long? = null, val pooled: Boolean = false,
+        val stale: String = "")
+
+    /** One pooled-account attempt; also how a re-leased credential is retried after recovery. */
+    private suspend fun pooledAttempt(account: QobuzPoolAccount): Attempt? {
+        val feedId = account.id?.takeIf { it > 0L } ?: return null
+        val scope = accounts.admitPoolEntry(
+            ContentProvider.QOBUZ, feedId, mapOf(
+                "token" to account.token,
+                "appId" to account.appId,
+                "appSecret" to account.appSecret,
+                "premium" to account.premium.toString(),
+            ),
+        ) ?: return null
+        return Attempt(
+            KtorQobuzRepository(
+                http,
+                nowMs = ::iosNowMillis,
+                access = QobuzAccess(scope, account.appId, account.token, account.appSecret, CredentialScope.PLAYBACK_POOL) { pool?.enabled() == true },
+                digest = IosQobuzRequestDigest(),
+            ),
+            poolId = feedId,
+            pooled = true,
+            stale = account.token,
+        )
+    }
+
+    /**
+     * Recovers a pooled Qobuz account that just failed: one re-lease (the pool can rotate
+     * tokens, appIds and appSecrets server-side) and one retry with the credential it now
+     * serves; the account is reported dead only when it still fails for real.
+     */
+    private suspend fun recoverPooled(
+        attempt: Attempt,
+        kind: PoolFailureKind,
+        request: AudioResolveRequest,
+    ): PreparedAudio? {
+        val owner = pool ?: return null
+        val poolId = attempt.poolId ?: return null
+        return owner.deadReports.recoverAndReport(
+            IosPlaybackPool.QOBUZ, poolId, kind,
+            stale = attempt.stale,
+            current = { owner.qobuzAccounts().firstOrNull { it.id == poolId }?.token },
+            recover = { owner.refresh(force = true) },
+            retry = {
+                val fresh = owner.qobuzAccounts().firstOrNull { it.id == poolId }
+                if (fresh == null) {
+                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } else try {
+                    pooledAttempt(fresh)?.repository?.resolve(request)
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
+                }
+            },
+            report = { type -> owner.report(IosPlaybackPool.QOBUZ, poolId, type) },
+        )
+    }
 
     /**
      * One resolver for the session, so its cooldowns, probe results and discovered instances persist across resolves. The
@@ -488,27 +635,7 @@ private class IosQobuzSource(
                 )
             }
         }
-        val pooled = pool?.qobuzAccounts().orEmpty().mapNotNull { account ->
-            val feedId = account.id?.takeIf { it > 0L } ?: return@mapNotNull null
-            val scope = accounts.admitPoolEntry(
-                ContentProvider.QOBUZ, feedId, mapOf(
-                    "token" to account.token,
-                    "appId" to account.appId,
-                    "appSecret" to account.appSecret,
-                    "premium" to account.premium.toString(),
-                ),
-            ) ?: return@mapNotNull null
-            Attempt(
-                KtorQobuzRepository(
-                    http,
-                    nowMs = ::iosNowMillis,
-                    access = QobuzAccess(scope, account.appId, account.token, account.appSecret, CredentialScope.PLAYBACK_POOL) { pool?.enabled() == true },
-                    digest = IosQobuzRequestDigest(),
-                ),
-                poolId = feedId,
-                pooled = true,
-            )
-        }
+        val pooled = pool?.qobuzAccounts().orEmpty().mapNotNull { account -> pooledAttempt(account) }
         // The user's list is the resolver's manual list. Pool-discovered instances join it inside the resolver while the Pool
         // switch is on, so a removed base never lingers and discovery runs once per cache window, not once per resolve.
         instanceResolver.setInstances(snapshot?.qobuzInstanceList().orEmpty())
@@ -525,11 +652,11 @@ private class IosQobuzSource(
                 throw cancelled
             } catch (auth: TerminalPlaybackAuthentication) {
                 if (!attempt.pooled) throw auth
-                pool?.report(IosPlaybackPool.QOBUZ, attempt.poolId, "dead")
+                recoverPooled(attempt, PoolFailureKind.AUTH_REJECTED, request)?.let { return it }
                 pool?.noteFailure(IosPlaybackPool.QOBUZ, attempt.poolId)
             } catch (error: Exception) {
                 if (attempt.pooled) {
-                    if ((error as? ProviderHttpFailure)?.status == 401) pool?.report(IosPlaybackPool.QOBUZ, attempt.poolId, "dead")
+                    recoverPooled(attempt, classifyPoolFailure(error), request)?.let { return it }
                     pool?.noteFailure(IosPlaybackPool.QOBUZ, attempt.poolId)
                 }
                 failure = error
@@ -600,7 +727,62 @@ private class IosAppleMusicSource(
     private val devToken = IosAppleDevToken(http, preferences)
     private val storefront = IosAppleStorefront(http)
 
-    private class Attempt(val repository: KtorAppleMusicRepository, val poolId: Long? = null, val pooled: Boolean = false)
+    private class Attempt(val repository: KtorAppleMusicRepository, val poolId: Long? = null, val pooled: Boolean = false,
+        val stale: String = "")
+
+    /** One pooled-account attempt; also how a re-leased credential is retried after recovery. */
+    private suspend fun pooledAttempt(dev: String, account: AppleMusicPoolAccount): Attempt? {
+        val feedId = account.id?.takeIf { it > 0L } ?: return null
+        val scope = accounts.admitPoolEntry(
+            ContentProvider.APPLE, feedId, mapOf("token" to account.mediaUserToken, "premium" to account.premium.toString()),
+        ) ?: return null
+        return Attempt(
+            KtorAppleMusicRepository(
+                http,
+                AppleMusicAccess(scope, dev, account.mediaUserToken, storefront.forToken(dev, account.mediaUserToken),
+                    CredentialScope.PLAYBACK_POOL) { pool?.enabled() == true },
+            ),
+            poolId = feedId,
+            pooled = true,
+            stale = account.mediaUserToken,
+        )
+    }
+
+    /**
+     * Recovers a pooled Apple Music account that just failed: one re-lease (the pool can serve a
+     * replacement media-user-token) and one retry with the credential it now serves; the account
+     * is reported dead only when it still fails for real.
+     */
+    private suspend fun recoverPooled(
+        attempt: Attempt,
+        kind: PoolFailureKind,
+        request: AudioResolveRequest,
+    ): PreparedAudio? {
+        val owner = pool ?: return null
+        val poolId = attempt.poolId ?: return null
+        return owner.deadReports.recoverAndReport(
+            IosPlaybackPool.APPLE, poolId, kind,
+            stale = attempt.stale,
+            current = { owner.appleMusicAccounts().firstOrNull { it.id == poolId }?.mediaUserToken },
+            recover = { owner.refresh(force = true) },
+            retry = {
+                val fresh = owner.appleMusicAccounts().firstOrNull { it.id == poolId }
+                val dev = devToken.bearer()
+                if (fresh == null || dev == null) {
+                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } else try {
+                    pooledAttempt(dev, fresh)?.repository?.resolve(request)
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
+                }
+            },
+            report = { type -> owner.report(IosPlaybackPool.APPLE, poolId, type) },
+        )
+    }
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         val dev = devToken.bearer() ?: return null
@@ -621,19 +803,7 @@ private class IosAppleMusicSource(
             }
         }
         for (account in pool?.appleMusicAccounts().orEmpty()) {
-            val feedId = account.id?.takeIf { it > 0L } ?: continue
-            val scope = accounts.admitPoolEntry(
-                ContentProvider.APPLE, feedId, mapOf("token" to account.mediaUserToken, "premium" to account.premium.toString()),
-            ) ?: continue
-            attempts += Attempt(
-                KtorAppleMusicRepository(
-                    http,
-                    AppleMusicAccess(scope, dev, account.mediaUserToken, storefront.forToken(dev, account.mediaUserToken),
-                        CredentialScope.PLAYBACK_POOL) { pool?.enabled() == true },
-                ),
-                poolId = feedId,
-                pooled = true,
-            )
+            pooledAttempt(dev, account)?.let { attempts += it }
         }
         var failure: Exception? = null
         for (attempt in attempts) {
@@ -646,11 +816,11 @@ private class IosAppleMusicSource(
                 throw cancelled
             } catch (auth: TerminalPlaybackAuthentication) {
                 if (!attempt.pooled) throw auth
-                pool?.report(IosPlaybackPool.APPLE, attempt.poolId, "dead")
+                recoverPooled(attempt, PoolFailureKind.AUTH_REJECTED, request)?.let { return it }
                 pool?.noteFailure(IosPlaybackPool.APPLE, attempt.poolId)
             } catch (error: Exception) {
                 if (attempt.pooled) {
-                    if ((error as? ProviderHttpFailure)?.status == 401) pool?.report(IosPlaybackPool.APPLE, attempt.poolId, "dead")
+                    recoverPooled(attempt, classifyPoolFailure(error), request)?.let { return it }
                     pool?.noteFailure(IosPlaybackPool.APPLE, attempt.poolId)
                 }
                 failure = error
@@ -674,7 +844,71 @@ private class IosAmazonSource(
 ) : AudioProviderRepository {
     override val source = AudioSourceType.AMAZON
 
-    private class Attempt(val repository: KtorAmazonRepository, val poolId: Long? = null, val pooled: Boolean = false)
+    private class Attempt(val repository: KtorAmazonRepository, val poolId: Long? = null, val pooled: Boolean = false,
+        val stale: String = "")
+
+    private fun marker(account: AmazonPoolAccount) = listOf(account.bypassToken, account.turnstileJwt).joinToString("|")
+
+    private fun turnstileOrigin(): String = iosAmazonTurnstileOrigin() ?: KtorAmazonAuthorization.TURNSTILE_ORIGIN
+
+    /** One pooled-instance attempt; also how a re-leased credential is retried after recovery. */
+    private suspend fun pooledAttempt(account: AmazonPoolAccount, turnstileOrigin: String): Attempt? {
+        val feedId = account.id?.takeIf { it > 0L } ?: return null
+        val base = account.baseUrl ?: return null
+        val operator = account.bypassToken
+        val poolJwt = account.turnstileJwt.takeIf { (account.turnstileJwtExpiresAtMs ?: Long.MAX_VALUE) > iosNowMillis() }
+        if (operator.isNullOrBlank() && poolJwt.isNullOrBlank()) return null
+        val scope = accounts.admitPoolEntry(
+            ContentProvider.AMAZON, feedId, buildMap {
+                put("baseUrl", base)
+                operator?.let { put("bypassToken", it) }
+                poolJwt?.let { put("turnstileJwt", it) }
+                account.turnstileJwtExpiresAtMs?.let { put("turnstileJwtExpiresAtMs", it.toString()) }
+                put("premium", account.premium.toString())
+            },
+        ) ?: return null
+        return Attempt(
+            KtorAmazonRepository(http, base, AmazonInstanceAccess(scope, operator, poolJwt) { pool?.enabled() == true }, turnstileOrigin = turnstileOrigin),
+            poolId = feedId,
+            pooled = true,
+            stale = marker(account),
+        )
+    }
+
+    /**
+     * Recovers a pooled Amazon entry that just failed: one re-lease (the pool rotates operator
+     * and Turnstile tokens server-side) and one retry with the credentials it now serves; the
+     * entry is reported dead only when it still fails for real.
+     */
+    private suspend fun recoverPooled(
+        attempt: Attempt,
+        kind: PoolFailureKind,
+        request: AudioResolveRequest,
+    ): PreparedAudio? {
+        val owner = pool ?: return null
+        val poolId = attempt.poolId ?: return null
+        return owner.deadReports.recoverAndReport(
+            IosPlaybackPool.AMAZON, poolId, kind,
+            stale = attempt.stale,
+            current = { owner.amazonInstances().firstOrNull { it.id == poolId }?.let { marker(it) } },
+            recover = { owner.refresh(force = true) },
+            retry = {
+                val fresh = owner.amazonInstances().firstOrNull { it.id == poolId }
+                if (fresh == null) {
+                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } else try {
+                    pooledAttempt(fresh, turnstileOrigin())?.repository?.resolve(request)
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
+                }
+            },
+            report = { type -> owner.report(IosPlaybackPool.AMAZON, poolId, type) },
+        )
+    }
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         val snapshot = preferences() ?: return null
@@ -698,25 +932,7 @@ private class IosAmazonSource(
             }
         }
         for (account in pool?.amazonInstances().orEmpty()) {
-            val feedId = account.id?.takeIf { it > 0L } ?: continue
-            val base = account.baseUrl ?: continue
-            val operator = account.bypassToken
-            val poolJwt = account.turnstileJwt.takeIf { (account.turnstileJwtExpiresAtMs ?: Long.MAX_VALUE) > iosNowMillis() }
-            if (operator.isNullOrBlank() && poolJwt.isNullOrBlank()) continue
-            val scope = accounts.admitPoolEntry(
-                ContentProvider.AMAZON, feedId, buildMap {
-                    put("baseUrl", base)
-                    operator?.let { put("bypassToken", it) }
-                    poolJwt?.let { put("turnstileJwt", it) }
-                    account.turnstileJwtExpiresAtMs?.let { put("turnstileJwtExpiresAtMs", it.toString()) }
-                    put("premium", account.premium.toString())
-                },
-            ) ?: continue
-            attempts += Attempt(
-                KtorAmazonRepository(http, base, AmazonInstanceAccess(scope, operator, poolJwt) { pool?.enabled() == true }, turnstileOrigin = turnstileOrigin),
-                poolId = feedId,
-                pooled = true,
-            )
+            pooledAttempt(account, turnstileOrigin)?.let { attempts += it }
         }
         var failure: Exception? = null
         for (attempt in attempts) {
@@ -729,11 +945,11 @@ private class IosAmazonSource(
                 throw cancelled
             } catch (auth: TerminalPlaybackAuthentication) {
                 if (!attempt.pooled) throw auth
-                pool?.report(IosPlaybackPool.AMAZON, attempt.poolId, "dead")
+                recoverPooled(attempt, PoolFailureKind.AUTH_REJECTED, request)?.let { return it }
                 pool?.noteFailure(IosPlaybackPool.AMAZON, attempt.poolId)
             } catch (error: Exception) {
                 if (attempt.pooled) {
-                    if ((error as? ProviderHttpFailure)?.status == 401) pool?.report(IosPlaybackPool.AMAZON, attempt.poolId, "dead")
+                    recoverPooled(attempt, classifyPoolFailure(error), request)?.let { return it }
                     pool?.noteFailure(IosPlaybackPool.AMAZON, attempt.poolId)
                 }
                 failure = error

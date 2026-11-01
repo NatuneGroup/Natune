@@ -140,9 +140,9 @@ object PoolAccountManager {
     var lastFeedError: String? = null
         private set
 
-    /** Report deduplication: "$service:$id:$type" → timestamp. Suppresses duplicate reports within ~10 minutes. */
+    /** Report deduplication: "$service:$id:$type" → timestamp. Suppresses duplicate reports within ~30 minutes. */
     private val reportDedupe = ConcurrentHashMap<String, Long>()
-    private const val REPORT_DEDUPE_WINDOW_MS = 10 * 60 * 1000L
+    private const val REPORT_DEDUPE_WINDOW_MS = 30L * 60 * 1000L
 
     /** A shared Tidal subscriber token contributed to the pool. */
     data class TidalPoolAccount(
@@ -723,7 +723,7 @@ object PoolAccountManager {
         if (id == null || !isPoolEnabled()) return
         val base = poolBaseUrl ?: return
 
-        // Deduplicate reports within ~10 minutes to avoid spamming the server when one dead
+        // Deduplicate reports within ~30 minutes to avoid spamming the server when one dead
         // token is hit by multiple resolvers (e.g., LosslessStreamResolver racing all pool accounts).
         val dedupeKey = "$service:$id:$reportType"
         val now = System.currentTimeMillis()
@@ -733,7 +733,7 @@ object PoolAccountManager {
         }
         reportDedupe[dedupeKey] = now
 
-        // Prune old entries to prevent unbounded map growth (~10min window).
+        // Prune old entries to prevent unbounded map growth (~30min window).
         reportDedupe.entries.removeIf { (_, ts) -> now - ts > REPORT_DEDUPE_WINDOW_MS }
 
         reportScope.launch {

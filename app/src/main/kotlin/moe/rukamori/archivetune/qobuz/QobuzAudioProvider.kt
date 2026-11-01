@@ -863,7 +863,7 @@ object QobuzAudioProvider {
                 .build()
         client.newCall(directRequest(url.toString(), token)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
-                token.poolId?.let { moe.rukamori.archivetune.utils.PoolAccountManager.report("qobuz", "account", it, "dead") }
+                token.poolId?.let { return moe.rukamori.archivetune.utils.PoolAccountRecovery.retryOrReportQobuz(it, token) { fresh -> searchItemsDirect(fresh, searchQuery) } }
             }
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
@@ -885,7 +885,7 @@ object QobuzAudioProvider {
     ): DownloadResult? {
         client.newCall(directDownloadRequest(token, trackId, formatId)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
-                token.poolId?.let { moe.rukamori.archivetune.utils.PoolAccountManager.report("qobuz", "account", it, "dead") }
+                token.poolId?.let { return moe.rukamori.archivetune.utils.PoolAccountRecovery.retryOrReportQobuz(it, token) { fresh -> fetchDownloadDirect(fresh, trackId, formatId) } }
             }
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
