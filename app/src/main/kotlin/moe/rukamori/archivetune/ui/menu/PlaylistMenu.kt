@@ -540,6 +540,7 @@ public fun PlaylistMenu(
     val playNextText = stringResource(R.string.play_next)
     val addToQueueText = stringResource(R.string.add_to_queue)
     val shareText = stringResource(R.string.share)
+    val copyLinkText = stringResource(R.string.copy_link)
     val exportText = stringResource(R.string.export_playlist_csv)
     val exportPlaylist = rememberPlaylistExportAction(playlist.id, coroutineScope, onDismiss)
     val remoteShareLink = dbPlaylist?.playlist?.takeIf { !it.browseId.isNullOrBlank() }?.shareLink
@@ -550,6 +551,7 @@ public fun PlaylistMenu(
             playText,
             shuffleText,
             shareText,
+            copyLinkText,
             exportText,
             exportPlaylist,
             remoteShareLink,
@@ -559,50 +561,28 @@ public fun PlaylistMenu(
             playerConnection,
         ) {
             listOf(
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.play),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                menuGridAction(R.drawable.play, playText) {
+                    onDismiss()
+                    if (songs.isNotEmpty()) {
+                        playerConnection.playQueue(
+                            ListQueue(
+                                title = playlist.playlist.name,
+                                items = songs.map(Song::toMediaItem),
+                            ),
                         )
-                    },
-                    text = playText,
-                    onClick = {
-                        onDismiss()
-                        if (songs.isNotEmpty()) {
-                            playerConnection.playQueue(
-                                ListQueue(
-                                    title = playlist.playlist.name,
-                                    items = songs.map(Song::toMediaItem),
-                                ),
-                            )
-                        }
-                    },
-                ),
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.shuffle),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    }
+                },
+                menuGridAction(R.drawable.shuffle, shuffleText) {
+                    onDismiss()
+                    if (songs.isNotEmpty()) {
+                        playerConnection.playQueue(
+                            ListQueue(
+                                title = playlist.playlist.name,
+                                items = songs.shuffled().map(Song::toMediaItem),
+                            ),
                         )
-                    },
-                    text = shuffleText,
-                    onClick = {
-                        onDismiss()
-                        if (songs.isNotEmpty()) {
-                            playerConnection.playQueue(
-                                ListQueue(
-                                    title = playlist.playlist.name,
-                                    items = songs.shuffled().map(Song::toMediaItem),
-                                ),
-                            )
-                        }
-                    },
-                ),
+                    }
+                },
                 NewAction(
                     icon = {
                         Icon(
@@ -624,7 +604,16 @@ public fun PlaylistMenu(
                         }
                     },
                 ),
-            )
+            ) + if (remoteShareLink != null) {
+                listOf(
+                    copyLinkMenuAction(copyLinkText) {
+                        context.copyLinkToClipboard(remoteShareLink)
+                        onDismiss()
+                    },
+                )
+            } else {
+                emptyList()
+            }
         }
 
     LazyColumn(
@@ -1102,6 +1091,14 @@ public fun PlaylistMenu(
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
+                    HorizontalDivider(
+                        modifier = dividerModifier,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    MenuLinkListItem(R.drawable.link, stringResource(R.string.copy_link)) {
+                        context.copyLinkToClipboard(shareLink)
+                        onDismiss()
+                    }
                 }
             }
         }

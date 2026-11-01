@@ -21,7 +21,7 @@ class PlayerStyleSettingsTest {
     fun sleeveSettings_reachEveryStyleWithAnOrdinaryCover() {
         val shared = setOf("V1", "V2", "V3", "V4", "V6")
         val native = setOf("BITCHORD", "SIMPMUSIC", "SPATIALFLOW", "LOOPER", "FLAMINGO", "APPLE_MUSIC")
-        assertEquals(shared + native + setOf("V8", "V9", "V10"), honoring(PlayerStyleSetting.HIDE_THUMBNAIL))
+        assertEquals(shared + native + setOf("V8", "V9", "V10", "METROLIST_KMP"), honoring(PlayerStyleSetting.HIDE_THUMBNAIL))
         assertEquals(shared + native + setOf("V8", "V9"), honoring(PlayerStyleSetting.CORNER_RADIUS))
     }
 

@@ -36,7 +36,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -46,6 +45,8 @@ import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.lyrics.effectiveLyricsSyncOffsetMs
+import moe.rukamori.archivetune.shared.domain.settings.GlobalLyricsOffsetMsKey
 import moe.rukamori.archivetune.shared.domain.settings.NativeIosInterfaceKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
@@ -78,6 +79,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
+import moe.rukamori.archivetune.shared.ui.player.capabilities
 import moe.rukamori.archivetune.shared.ui.queue.PlaybackQueuePanel
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSettings
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSlots
@@ -95,7 +97,6 @@ import moe.rukamori.archivetune.shared.ui.resources.stats_range_all
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSURL
-import platform.Foundation.NSURLComponents
 import platform.Foundation.NSUUID
 import platform.UIKit.UIApplication
 import platform.UIKit.UIPasteboard
@@ -116,9 +117,15 @@ internal fun iosHostBindings(
     graph: IosSessionGraph,
     recognition: IosRecognitionMount,
 ): ArchiveTuneHostBindings {
-    val controls = IosPlayerControls(graph)
-    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser) { host.viewController }
     val itemMenu = IosItemMenuState()
+    val sleepSheet = IosSleepTimerSheetState()
+    val controls = IosPlayerControls(graph, sleepSheet)
+    // The canvas owner resolves the current occurrence's loop behind the same gates the settings page shows;
+    // its controls report availability so a canvas-capable style knows a loop answered.
+    val canvas = createIosCanvas(graph)
+    val canvasFrames = IosCanvasFrames(graph, canvas, graph.canvasStore)
+    val canvasControls = IosCanvasControls(controls, canvas, graph.scope)
+    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser, host.appleMusicSheet) { host.viewController }
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     // Back requests a page answers itself, such as a chat's back port. The root pops the stack for them, as the gesture does.
@@ -130,12 +137,22 @@ internal fun iosHostBindings(
     val catalogOwners = IosCatalogOwners(graph)
     val playlistCreation = IosPlaylistCreation(graph.scope, graph.libraryContent, openOwnRoute)
     val playlistTags = IosPlaylistTagsState(openOwnRoute)
+    // The playlist overflow menu's host: pins, tags, covers and deletion run against the same owners as the page.
+    val playlistMenus = IosPlaylistMenuHost(graph, itemMenu, playlistTags, openOwnRoute)
     return ArchiveTuneHostBindings(
         queue = graph.queue,
         songMetadata = graph.library.songMetadata,
+        customArtwork = graph.customArtwork,
+        // The multi-playlist add picker reads the one library repository's candidates.
+        playlistPicker = object : moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource {
+            override fun candidates(
+                occurrences: List<ContentOccurrence>,
+            ): Flow<List<moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate>> =
+                graph.library.observePlaylistPicker(occurrences)
+        },
         settings = graph.settings,
         actionScope = graph.scope,
-        // `archivetune://` links the Swift app session hands in merge with the host's own route opens. The system back
+        // Links the Swift app session hands in merge with the host's own route opens. The system back
         // gesture is handled by the shell itself.
         routes = merge(iosLaunchRoutes(host, graph), ownRoutes.receiveAsFlow()),
         backRequests = backChannel.receiveAsFlow(),
@@ -154,11 +171,14 @@ internal fun iosHostBindings(
             }
         },
         overlays = { route ->
-            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute)
+            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, playlistMenus, sleepSheet)
             IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
+            IosSleepTimerOverlay(sleepSheet, graph.sleepTimer)
         },
-        playerSlots = { expanded, active, _ -> iosPlayerSlots(host, graph, expanded, active) },
-        playerControls = controls,
+        playerSlots = { expanded, active, _ ->
+            iosPlayerSlots(host, graph, canvas, canvasFrames, expanded, active)
+        },
+        playerControls = canvasControls,
         // The row menu offers the queue commands this host answers and the custom artwork editor; the rest of the
         // baseline menu needs owners this host does not connect yet.
         more = { occurrence -> itemMenu.open(occurrence) },
@@ -206,7 +226,7 @@ private fun iosGraphPage(
             ArchiveDestination.RECAP -> iosRecapPage(graph, host, menu, route, openRoute)
             ArchiveDestination.LISTEN_TOGETHER -> iosListenTogetherPage(graph, host, back, openRoute)
             ArchiveDestination.LISTEN_TOGETHER_CHAT -> iosCommentTogetherPage(graph, host, back)
-            ArchiveDestination.TELEGRAM_BROWSE -> iosTelegramBrowsePage(graph, host, back)
+            ArchiveDestination.TELEGRAM, ArchiveDestination.TELEGRAM_BROWSE -> iosTelegramBrowsePage(graph, host, back)
             ArchiveDestination.TELEGRAM_BOTS -> iosTelegramBotsPage(graph, host, back, openRoute)
             ArchiveDestination.TELEGRAM_BOT_CHAT -> iosTelegramBotChatPage(graph, host, route.arguments.getValue("botId"))
             ArchiveDestination.UPLOADED_SONGS -> iosUploadsPage(graph.uploads, graph.settings, host)
@@ -216,38 +236,19 @@ private fun iosGraphPage(
     }
 
 /**
- * The `archivetune://` links the host receives, resolved into routes the root may open. A link that names no openable
- * page is reported once and dropped.
- */
-private fun iosLaunchRoutes(host: IosHost, graph: IosSessionGraph): Flow<String> =
-    host.linkRequests.mapNotNull { link ->
-        iosLaunchRoute(link) ?: run {
-            graph.report("link not opened: it names no page that a link may open")
-            null
-        }
-    }
-
-/**
- * The route an `archivetune://open/...` link opens, or null when it opens none. The path and query are passed on as
- * they arrived, and [ArchiveRoutes] decides the destination. A link starts no action: a recognition auto-start
- * request and the sign-in page are refused, so another program cannot open the microphone or start a sign-in.
- */
-internal fun iosLaunchRoute(link: String): String? {
-    val components = NSURLComponents.componentsWithString(link) ?: return null
-    val route = components.path.orEmpty().removePrefix("/") +
-        components.percentEncodedQuery?.let { "?$it" }.orEmpty()
-    val resolved = ArchiveRoutes.resolve(route) ?: return null
-    val opensAction = resolved.destination == ArchiveDestination.LOGIN || resolved.arguments.containsKey("autoStart")
-    return route.takeUnless { opensAction }
-}
-
-/**
  * The player's media slots. Lyrics come from the graph's lyrics owner and render through the shared renderers on the
  * player's own snapshot, so a tap seeks the one player. The Japanese pack romanizes the lines it has loaded: an
  * absent pack or an opted-out preference publishes the off presentation, as before.
  */
 @Composable
-private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Boolean, active: Boolean): PlayerSlots {
+private fun iosPlayerSlots(
+    host: IosHost,
+    graph: IosSessionGraph,
+    canvas: IosCanvasOwner,
+    canvasFrames: IosCanvasFrames,
+    expanded: Boolean,
+    active: Boolean,
+): PlayerSlots {
     val document by graph.lyrics.current.collectAsState()
     val saved by graph.settings.snapshots.collectAsState()
     val preferences = saved ?: PreferenceSnapshot.EMPTY
@@ -278,10 +279,22 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
     }
     val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    // The resolver runs only while a canvas-capable style shows the player surface.
+    LaunchedEffect(canvas, expanded, active, style) {
+        canvas.setVisible(expanded && active && style.capabilities.artworkCanvas)
+    }
     val reducedMotion = rememberIosReduceMotion()
+    // The stored per-song correction plus the global offset feeds every lyrics surface, Compose and native alike.
+    val queueState by graph.queue.state.collectAsState()
+    val currentSongRef = remember(queueState, document?.occurrenceId) {
+        queueState.entries.firstOrNull { it.occurrenceId == document?.occurrenceId }?.item?.ref
+    }
+    val storedSyncOffsetMs by remember(currentSongRef) {
+        currentSongRef?.let(graph.songLyricsOffsets::observeOffset) ?: flowOf(null)
+    }.collectAsState(null)
     val lyricsSettings = preferences.playerLyricsSettings(
         // Both renderers apply the route delay from PlaybackSnapshot through LyricsClock, not a second sync offset.
-        syncOffsetMs = 0L,
+        syncOffsetMs = effectiveLyricsSyncOffsetMs(storedSyncOffsetMs, (preferences[GlobalLyricsOffsetMsKey] ?: 0).toLong()),
         reducedMotion = reducedMotion,
         depthEffects = true,
         backgroundVocals = true,
@@ -297,6 +310,7 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
         fullVisible = expanded && active,
         compactVisible = expanded && active,
         resumed = active,
+        credits = document?.credits,
     )
     // Only the Enhanced look has a native counterpart; the other looks and older systems keep the Compose renderer.
     val registeredNativeLyrics by host.nativeLyricsFactory.collectAsState()
@@ -316,10 +330,14 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
         )
     }
     return PlayerSlots(
-        artwork = { occurrenceId, modifier -> IosQueueArtwork(occurrenceId, graph, modifier) },
-        // No canvas loop source is connected. The artwork slot keeps the cover, as it does for a song without a canvas.
-        canvas = { _, _, _ -> },
-        customBackground = { _, modifier -> IosArtworkPlaceholder(modifier) },
+        artwork = { occurrenceId, modifier ->
+            IosCanvasArtwork(occurrenceId, graph, canvas, expanded && active, modifier)
+        },
+        canvas = { occurrenceId, visible, modifier ->
+            IosCanvasSurface(occurrenceId, graph, canvas, canvasFrames, expanded && active && visible, modifier)
+        },
+        // The picked file loads through the same bounded loader as remote covers; a missing file keeps the placeholder.
+        customBackground = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         lyrics = fullLyrics,
         compactLyrics = lyrics.compact,
         queue = { modifier -> IosQueuePanel(graph, modifier) },

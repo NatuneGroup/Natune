@@ -19,7 +19,6 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -43,14 +42,13 @@ import moe.rukamori.archivetune.constants.TidalSubscriptionStatus
 import moe.rukamori.archivetune.constants.TidalTokenExpiryKey
 import moe.rukamori.archivetune.constants.TidalUserIdKey
 import moe.rukamori.archivetune.tidal.TidalAccountManager
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
-import android.webkit.HttpAuthHandler
-import moe.rukamori.archivetune.utils.AppProxy
 
 const val TIDAL_LOGIN_ROUTE = "settings/tidal/login"
 
@@ -193,23 +191,14 @@ fun TidalLoginScreen(navController: NavController) {
 
     AuthWebViewScreen(
         navController = navController,
+        provider = "tidal",
         title = stringResource(R.string.tidal_login),
         subtitle = stringResource(R.string.auth_webview_tidal_subtitle),
         onRelease = { it.releaseAuthWebView("TidalAuth") },
         factory = { ctx ->
             createAuthWebView(ctx).apply {
                 webViewClient =
-                    object : WebViewClient() {
-                        override fun onReceivedHttpAuthRequest(
-                            view: WebView?,
-                            handler: HttpAuthHandler?,
-                            host: String?,
-                            realm: String?,
-                        ) {
-                            if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-                            super.onReceivedHttpAuthRequest(view, handler, host, realm)
-                        }
-
+                    object : AuthSignInWebViewClient("tidal", setOf("tidal.com")) {
                         override fun onPageStarted(
                             view: WebView,
                             url: String?,

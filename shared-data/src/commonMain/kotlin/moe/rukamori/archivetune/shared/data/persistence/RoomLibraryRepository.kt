@@ -15,6 +15,9 @@ import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.library.PlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.SongSortType
 import moe.rukamori.archivetune.shared.domain.platform.ContentDigest
+import moe.rukamori.archivetune.shared.domain.customartwork.localPlaylistCoverUri
+import moe.rukamori.archivetune.shared.domain.playlist.PLAYLIST_MOSAIC_LIMIT
+import moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate
 import moe.rukamori.archivetune.shared.domain.playlist.PlaylistSongOrder
 import moe.rukamori.archivetune.shared.domain.playlist.StoredPlaylistRow
 import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportLibrary
@@ -52,6 +55,13 @@ class RoomLibraryRepository(
         combine(pages, metadataEdits()) { page, edits -> page.withSongMetadataOverrides(edits) }
     /** Deletes the local playlist [id], its songs list and its tags. An unknown id throws and changes nothing. */
     suspend fun deletePlaylist(id: String) = dao.deletePlaylist(id)
+
+    /**
+     * Removes saved items from the library, the same cascade the Android store performs on a saved song:
+     * the membership row and its like go, while playlist entries, downloads, listens and metadata edits
+     * keep their own tables. An unknown ref throws and changes nothing.
+     */
+    suspend fun removeItems(refs: List<ContentRef>) = dao.removeItems(refs)
     suspend fun createPlaylist(id: String, title: String) {
         require(id.isNotBlank() && title.isNotBlank())
         dao.createPlaylist(PortablePlaylistRow(id, title))
@@ -102,6 +112,7 @@ class RoomLibraryRepository(
                         createdSeq = row.createdSeq ?: 0L,
                         newestAddedSeq = entries.maxOfOrNull { it.addedSeq } ?: 0L,
                         hidden = row.isHidden,
+                        previewItems = entries.take(PLAYLIST_MOSAIC_LIMIT).map { decode(it.json).item },
                     )
                 }
             }) { summaries -> summaries.toList() }
@@ -498,8 +509,48 @@ class RoomLibraryRepository(
             query.parent?.kind?.name.orEmpty(), query.parent?.id.orEmpty()).joinToString("") { "${it.length}:$it" }.encodeToByteArray())
         .take(16)
     private fun decode(raw: String): ContentOccurrence = ContentJson.decode(Json.parseToJsonElement(raw).jsonObject)
+
+    /**
+     * The add-to-playlist picker's candidates: every stored playlist with its sort values and the parts of
+     * [occurrences] it already holds, emitted again when a playlist or its songs change. A candidate's
+     * [PlaylistPickerCandidate.memberOccurrenceIds] are filtered out of the write, so a repeated add of the same
+     * occurrence never reaches the store's refused duplicate identity.
+     */
+    fun observePlaylistPicker(occurrences: List<ContentOccurrence>): Flow<List<PlaylistPickerCandidate>> {
+        val refs = occurrences.mapTo(HashSet()) { it.item.ref }
+        val occurrenceIds = occurrences.mapTo(HashSet()) { it.occurrenceId }
+        return dao.observePlaylists("").flatMapLatest { rows ->
+            if (rows.isEmpty()) {
+                flowOf(emptyList<PlaylistPickerCandidate>())
+            } else {
+                combine(rows.map { row ->
+                    dao.observeEntries(row.id).map { entries ->
+                        val decoded = entries.map { decode(it.json) }
+                        PlaylistPickerCandidate(
+                            item = playlistOccurrence(row).item,
+                            songCount = entries.size,
+                            createdSeq = row.createdSeq ?: 0L,
+                            updatedSeq = entries.maxOfOrNull { it.addedSeq } ?: 0L,
+                            memberRefs = decoded.mapTo(HashSet()) { it.item.ref }.intersect(refs),
+                            memberOccurrenceIds = decoded.mapTo(HashSet()) { it.occurrenceId }.intersect(occurrenceIds),
+                        )
+                    }
+                }) { it.toList() }
+            }
+        }
+    }
+
     private fun playlistOccurrence(row: PortablePlaylistRow): ContentOccurrence =
-        ContentOccurrence("playlist:${row.id}", ContentItem(ContentRef("local", ContentKind.PLAYLIST, row.id), row.title))
+        ContentOccurrence(
+            "playlist:${row.id}",
+            ContentItem(
+                ContentRef("local", ContentKind.PLAYLIST, row.id),
+                row.title,
+                // The pseudo-URL the custom playlist cover is keyed on; the artwork loaders resolve it to the stored
+                // file or show the playlist's mosaic in its place.
+                artworkUri = localPlaylistCoverUri(row.id),
+            ),
+        )
 
     companion object {
         const val SONGS = "library_songs"
@@ -521,4 +572,6 @@ data class LocalPlaylistSummary(
     val createdSeq: Long,
     val newestAddedSeq: Long,
     val hidden: Boolean = false,
+    /** The first rows' items in the stored custom order, feeding the local 2x2 mosaic cover. */
+    val previewItems: List<ContentItem> = emptyList(),
 )

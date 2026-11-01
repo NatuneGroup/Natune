@@ -1,10 +1,15 @@
 package moe.rukamori.archivetune.shared.data.repository
 
 import kotlinx.coroutines.CancellationException
+import kotlin.time.Clock
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureClassifier
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureReason
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRecoveryAction
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRecoveryBudget
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRecoveryPolicy
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playback.playbackCauses
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
@@ -15,9 +20,28 @@ import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.StreamRecoveryTracker
 
-/** Queue-lock confined. A recovered load keeps the same occurrence, user intent and audible position. */
-internal class QueueStreamRecovery(private val player: MusicPlayerController, private val locators: QueueLocatorResolver) {
+/**
+ * Queue-lock confined. A recovered load keeps the same occurrence, user intent and audible position.
+ *
+ * The failure taxonomy and per-song budget decide what a failure is worth spending: engine-side
+ * actions keep the resolved locator, while the resolve-side actions spend one of the budget's
+ * re-resolves through the same source-fallback chain as before — one fresh URL per source first,
+ * then the ordinary next source — so provider order and the audio-authenticity rule (a rejected
+ * attempt never reuses its cached URL) are unchanged.
+ */
+internal class QueueStreamRecovery(
+    private val player: MusicPlayerController,
+    private val locators: QueueLocatorResolver,
+    private val nowMs: () -> Long,
+    /**
+     * The wall clock for locator authorization windows: [PlaybackLocator.expiresAtEpochMs] is an epoch
+     * timestamp, so it can never be measured against [nowMs]'s monotonic ticks.
+     */
+    private val epochNowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+) {
     private val attempts = StreamRecoveryTracker<AudioSourceType>()
+    /** Recovery budget per media id, as the host's per-video budget map; cleared with the load lineage. */
+    private val budgets = HashMap<String, PlaybackRecoveryBudget>()
     private var active: PlaybackRequest? = null
     private var loadedPositionMs = 0L
     private var loadedPlaying = false
@@ -47,7 +71,10 @@ internal class QueueStreamRecovery(private val player: MusicPlayerController, pr
     }
 
     fun loaded(request: PlaybackRequest, positionMs: Long, playing: Boolean, recovering: Boolean = false) {
-        if (!recovering) attempts.clear()
+        if (!recovering) {
+            attempts.clear()
+            budgets.clear()
+        }
         active = request
         loadedPositionMs = positionMs
         loadedPlaying = playing
@@ -56,6 +83,7 @@ internal class QueueStreamRecovery(private val player: MusicPlayerController, pr
     fun unresolved() {
         active = null
         attempts.clear()
+        budgets.clear()
     }
 
     suspend fun recover(failure: PlaybackFailure, occurrence: ContentOccurrence): Load? {
@@ -65,8 +93,9 @@ internal class QueueStreamRecovery(private val player: MusicPlayerController, pr
         val source = current.locator.source?.takeUnless { it == AudioSourceType.YOUTUBE } ?: return null
         if (current.locator is PlaybackLocator.LocalFile || current.locator is PlaybackLocator.TelegramFile) return null
         // Native engines collapse lease read/expiry failures into DECODE_FAILED, not just OPEN_FAILED.
+        // A carried status below 400 was never a rejection, so there is nothing to classify.
         if (failure.reason !in setOf(PlaybackFailureReason.OPEN_FAILED, PlaybackFailureReason.DECODE_FAILED) ||
-            failure.httpStatus?.let { it !in HTTP_REJECTIONS } == true
+            failure.httpStatus?.let { it < 400 } == true
         ) return null
         val snapshot = player.snapshot.value?.takeIf { it.occurrenceId == current.occurrenceId }
         val observed = snapshot?.let { player.positionMs() }?.coerceAtLeast(0L)
@@ -78,14 +107,43 @@ internal class QueueStreamRecovery(private val player: MusicPlayerController, pr
             val latestIntent = player.snapshot.value?.takeIf { it.occurrenceId == current.occurrenceId }?.playWhenReady
             return Load(current.copy(locator = locator), position, latestIntent ?: playing)
         }
+        // The policy classifies the failure and spends one attempt of this song's budget. Thirty seconds
+        // of progress since the last failure refunds the budget, so a song that played on is not retired.
+        val now = nowMs()
+        val mediaId = current.mediaId
+        val budget = (budgets[mediaId] ?: PlaybackRecoveryBudget.starting(now))
+            .forPlaybackFailure(position, now)
+        val decision = PlaybackRecoveryPolicy.decide(PlaybackFailureClassifier.categorize(failure), budget, now)
+        var remaining = decision.budget
+        budgets[mediaId] = remaining
+        when (decision.action) {
+            PlaybackRecoveryAction.NONE -> {
+                budgets.remove(mediaId)
+                return null
+            }
+            // Same-resource actions keep the resolved locator while it can still be opened: a timeout is
+            // retried as-is and a network or renderer rejection is reloaded by the engine, never
+            // re-resolving a cached URL. A lease already out of its authorization window or a consumed
+            // single-use view falls through to re-resolution instead of replaying a refused locator.
+            PlaybackRecoveryAction.RETRY_SAME_URL,
+            PlaybackRecoveryAction.INVALIDATE_NETWORK,
+            PlaybackRecoveryAction.REBUILD_RENDERER -> {
+                if (reusable(current.locator, epochNowMs())) return recovered(current.locator)
+            }
+            else -> Unit
+        }
         return try {
             if (attempts.onFailure(current.occurrenceId, source)) {
+                if (remaining.requestsRemaining <= 0) return null
+                remaining = remaining.consumeRequest()
                 locate(occurrence, QueueSourceRecovery(source, attempts.rejectedSources(current.occurrenceId)))?.let {
                     attempts.resolved(current.occurrenceId)
                     return recovered(it)
                 }
                 attempts.reject(current.occurrenceId, source)
             }
+            if (remaining.requestsRemaining <= 0) return null
+            remaining = remaining.consumeRequest()
             val next = locate(occurrence, QueueSourceRecovery(rejectedSources = attempts.rejectedSources(current.occurrenceId)))
                 ?: return null
             attempts.resolved(current.occurrenceId)
@@ -93,8 +151,19 @@ internal class QueueStreamRecovery(private val player: MusicPlayerController, pr
         } catch (_: TerminalPlaybackAuthentication) {
             // Authentication that requires user action never buys an anonymous or cross-account fallback.
             null
+        } finally {
+            budgets[mediaId] = remaining
         }
     }
+
+    /**
+     * A locator another load may reuse: inside its authorization window (an epoch instant read on the
+     * wall clock, never the monotonic budget clock) and not a single-use prepared view. One
+     * [PlaybackLocator.PreparedPlaintext] handle is one engine load, so any retry of it — even a
+     * same-locator one — resolves a fresh preparation instead of returning the consumed view.
+     */
+    private fun reusable(locator: PlaybackLocator, epochNow: Long): Boolean =
+        locator !is PlaybackLocator.PreparedPlaintext && locator.expiresAtEpochMs?.let { it > epochNow } != false
 
     private suspend fun locate(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator? =
         try {
@@ -112,9 +181,5 @@ internal class QueueStreamRecovery(private val player: MusicPlayerController, pr
     sealed interface Prepared {
         class Ready(val request: PlaybackRequest) : Prepared
         class Unresolved(val failure: PlaybackFailure) : Prepared
-    }
-
-    private companion object {
-        val HTTP_REJECTIONS = setOf(401, 403, 404, 410, 416)
     }
 }

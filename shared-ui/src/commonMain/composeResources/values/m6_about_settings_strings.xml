@@ -15,7 +15,7 @@
     <string name="m6_about_telegram">Telegram</string>
     <string name="m6_about_discord">Discord</string>
     <string name="m6_about_position_lead_dev">Eh?</string>
-    <string name="m6_about_position_vossgraves">merely added tidal and qobuz integration</string>
+    <string name="m6_about_position_vossgraves">Kotlin Multiplatform port | Natune</string>
     <string name="m6_about_position_developers">Developer | Team</string>
     <string name="m6_about_position_yuki">dummy reze | admin</string>
     <string name="m6_about_position_mo_agamy">Base Framework | Metrolist</string>
@@ -26,5 +26,6 @@
     <string name="m6_about_unknown_license">Unknown license</string>
     <string name="m6_about_unknown_error">Unknown error</string>
     <string name="m6_about_host_unavailable">This list is not available in this version of the app.</string>
+    <string name="m6_about_bundled_notices_only">Only licenses for data bundled inside the app are listed; the full dependency catalog is not available on this build.</string>
     <string name="m6_about_badge_debug">Debug</string>
 </resources>

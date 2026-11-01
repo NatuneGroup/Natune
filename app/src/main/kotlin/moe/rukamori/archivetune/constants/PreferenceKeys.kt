@@ -315,11 +315,9 @@ val PaxsenixApiKeyKey = stringPreferencesKey("paxsenixApiKey")
 // endpoint is used. When set, all Paxsenix API requests go to this URL.
 val PaxsenixEndpointKey = stringPreferencesKey("paxsenixEndpoint")
 val EnableUnisonLyricsKey = booleanPreferencesKey("enableUnisonLyrics")
-// The user's self-hosted Lyprio server (Metrolist's lyrics service). Off until the user enables it and enters the
-// server URL and its base64 32-byte signing key; nothing is bundled.
+// The bundled Lyprio lyrics server (the service the Metrolist developers run). On by default, like
+// Metrolist; its endpoint comes only from the build (BuildConfig.LYPRIO_*) and is never a preference.
 val EnableLyprioLyricsKey = booleanPreferencesKey("enableLyprioLyrics")
-val LyprioEndpointKey = stringPreferencesKey("lyprioEndpoint")
-val LyprioSigningKeyKey = stringPreferencesKey("lyprioSigningKey")
 val EnableTidalLyricsKey = booleanPreferencesKey("enableTidalLyrics")
 val EnableDeezerLyricsKey = booleanPreferencesKey("enableDeezerLyrics")
 // When ON, lyrics lookup first queries the four word-sync-capable providers
@@ -904,7 +902,7 @@ val PlaylistSortTypeKey = stringPreferencesKey("playlistSortType")
 val PlaylistSortDescendingKey = booleanPreferencesKey("playlistSortDescending")
 val ArtistSongSortTypeKey = stringPreferencesKey("artistSongSortType")
 val ArtistSongSortDescendingKey = booleanPreferencesKey("artistSongSortDescending")
-
+val PlaylistPickerSortTypeKey = stringPreferencesKey("playlistPickerSortType")
 val SongFilterKey = stringPreferencesKey("songFilter")
 val ArtistFilterKey = stringPreferencesKey("artistFilter")
 val AlbumFilterKey = stringPreferencesKey("albumFilter")
@@ -1331,6 +1329,10 @@ enum class PlayerDesignStyle(
      * peek, which Flamingo does not need because its own queue page replaces the sheet.
      */
     FLAMINGO(nativeBackground = PlayerBackgroundStyle.BLUR),
+
+    // Metrolist's clean column player (MetrolistGroup/Metrolist, GPL-3.0); like LOOPER it
+    // leaves the backdrop to the reader instead of painting one of its own.
+    METROLIST_KMP,
     ;
 
     /** DEFAULT preserves the native recipe; explicit choices never rewrite storage. */
@@ -1385,7 +1387,7 @@ enum class PlayerDesignStyle(
         private val OrdinarySleeveStyles = setOf(BITCHORD, SIMPMUSIC, SPATIALFLOW, LOOPER, FLAMINGO, APPLE_MUSIC)
         private val HorizontalArtworkSkipStyles = setOf(SIMPMUSIC, SPATIALFLOW, LOOPER)
         private val ArtworkCanvasStyles = setOf(APPLE_MUSIC, SPATIALFLOW, LOOPER, FLAMINGO)
-        private val SharedBackgroundHosts = setOf(V1, V2, V3, V4, V6, V10, LOOPER)
+        private val SharedBackgroundHosts = setOf(V1, V2, V3, V4, V6, V10, LOOPER, METROLIST_KMP)
 
         /**
          * What a fresh install opens with. Seven readers — the player, its thumbnail, the queue, the
@@ -1396,13 +1398,6 @@ enum class PlayerDesignStyle(
         val Default = V4
     }
 }
-
-/**
- * Flamingo player settings. Upstream reads both with the same defaults written here — the volume
- * bar on, the backdrop effect off — so a fresh install looks the way the style's reference does.
- */
-val FlamingoShowVolumeBarKey = booleanPreferencesKey("flamingoNowPlayingShowVolumeBar")
-val FlamingoBackgroundEffectKey = booleanPreferencesKey("flamingoNowPlayingBackgroundEffect")
 
 enum class PlayerBackgroundStyle {
     DEFAULT,

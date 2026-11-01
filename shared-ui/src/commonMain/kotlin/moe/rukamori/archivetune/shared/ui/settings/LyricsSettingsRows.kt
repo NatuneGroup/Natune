@@ -16,24 +16,40 @@ fun lyricsSettingsRows(navigate: (String) -> Unit): List<SettingsRow> = listOf(
     SettingsRow.Toggle("lyrics_click", Res.string.m6_lyrics_click, LyricsClickKey, true),
     SettingsRow.Toggle("lyrics_scroll", Res.string.m6_lyrics_scroll, LyricsScrollKey, true),
     SettingsRow.Number("preload_queue_lyrics", Res.string.m6_lyrics_preload, QueueLyricsPreloadCountKey, 3, 0..10),
+    SettingsRow.Number("global_lyrics_offset", Res.string.m6_global_lyrics_offset, GlobalLyricsOffsetMsKey, 0, -2_000..2_000),
 )
 
-/** Word-sync is a preliminary sweep, not an override of the fallback or manual provider controls. */
+/**
+ * Word-sync is a preliminary sweep, not an override of the fallback or manual provider controls.
+ * [lyprioBuiltInServer] is true when the host baked a Lyprio endpoint pair into the build — the only
+ * endpoint the provider can have, since the Metrolist developers run the server and there is no user
+ * setting for it. A build without the pair still lists the provider, toggled off and disabled, so the
+ * row reads unavailable instead of pretending a server can be entered.
+ */
 fun lyricsProviderSettingsRows(
     preferences: PreferenceSnapshot,
     showOrder: () -> Unit,
     showStats: () -> Unit,
     checkEndpoints: () -> Unit,
+    lyprioBuiltInServer: Boolean = false,
 ): List<SettingsRow> = buildList {
     val enabled = true
     add(SettingsRow.Action("lyrics_provider_order", Res.string.m6_provider_order, showOrder, enabled))
     add(SettingsRow.Toggle("prioritize_word_synced_lyrics", Res.string.m6_word_sync, PrioritizeWordSyncedLyricsKey, false,
         description = Res.string.m6_word_sync_fallback))
     LyricsProviderPreference.entries.filter { !it.name.startsWith("PAXSENIX_") }.forEach { provider ->
-        provider.key?.let { add(SettingsRow.Toggle(provider.anchor(), provider.label(), it, provider.defaultEnabled, enabled = enabled)) }
-        if (provider == LyricsProviderPreference.LYPRIO && preferences[EnableLyprioLyricsKey, false]) {
-            add(SettingsRow.Text("lyprio_endpoint", Res.string.m6_lyprio_endpoint, LyprioEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
-            add(SettingsRow.Text("lyprio_signing_key", Res.string.m6_lyprio_signing_key, LyprioSigningKeyKey, masked = true, valid = ::validLyprioSigningKey, enabled = enabled))
+        provider.key?.let { key ->
+            // With no bundled endpoint the toggle stays listed but reports unavailable, like the other
+            // controls that grey out while their backing feature is absent.
+            val lyprioMissing = provider == LyricsProviderPreference.LYPRIO && !lyprioBuiltInServer
+            add(
+                SettingsRow.Toggle(
+                    provider.anchor(), provider.label(), key, provider.defaultEnabled,
+                    description = Res.string.m6_lyprio_not_available.takeIf { lyprioMissing },
+                    enabled = enabled && !lyprioMissing,
+                    read = { snapshot -> !lyprioMissing && snapshot[key, provider.defaultEnabled] },
+                ),
+            )
         }
     }
     add(SettingsRow.Toggle("enable_bini_lyrics", Res.string.m6_bini, EnableBiniLyricsKey, true, enabled = enabled))
@@ -79,14 +95,6 @@ fun romanizationSettingsRows(
 fun validLyricsEndpoint(value: String): Boolean =
     value.isBlank() || (value.startsWith("https://") || value.startsWith("http://")) &&
         value.substringAfter("://").substringBefore('/').isNotBlank() && value.none(Char::isWhitespace)
-
-/** Blank (not configured yet) or base64 of exactly 32 bytes, the key length a Lyprio server signs with. */
-fun validLyprioSigningKey(value: String): Boolean {
-    val trimmed = value.trim()
-    if (trimmed.isEmpty()) return true
-    if (trimmed.length != 44 || !trimmed.endsWith("=") || trimmed.endsWith("==")) return false
-    return trimmed.dropLast(1).all { it.isLetterOrDigit() && it.code < 128 || it == '+' || it == '/' }
-}
 
 internal fun LyricsProviderPreference.label() = when (this) {
     LyricsProviderPreference.LYPRIO -> Res.string.m6_lyprio

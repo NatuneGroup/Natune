@@ -123,6 +123,8 @@ jobs:
       GITHUB_EVENT_NAME: ${{ github.event_name }}
       ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
       ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
+      ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
+      ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
       ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
       ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
       ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
@@ -359,6 +361,8 @@ jobs:
       DISPLAY_VERSION: ${{ inputs.version_name }}
       ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
       ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
+      ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
+      ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
       ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
       ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
       ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
@@ -389,6 +393,16 @@ jobs:
       ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID }}
       ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID }}
       ARCHIVETUNE_SPOTIFY_AUDIO_IV: ${{ secrets.ARCHIVETUNE_SPOTIFY_AUDIO_IV }}
+      # The desktop installers compile only JVM and Kotlin/Native host targets; they never need the
+      # Android SDK. Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
+      # :jiosaavn and :morideobfuscator load no build script and the shared modules skip their Android
+      # targets. Without this, configuring :app lets AGP auto-install the pinned ~1 GB NDK — a slow
+      # dl.google.com transfer whose corrupt downloads have failed the macOS legs, and one the desktop
+      # tasks never use.
+      ANDROID_HOME: ""
+      ANDROID_SDK_ROOT: ""
+      # dl.google.com flakes have terminated configuration downloads on these runners; retry with backoff.
+      GRADLE_OPTS: -Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=60000 -Dorg.gradle.internal.repository.max.retries=5 -Dorg.gradle.internal.repository.initial.backoff=2000
     steps:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
@@ -730,6 +744,8 @@ jobs:
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
       ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
       ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
+      ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
+      ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
       ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
       ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
       ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
@@ -752,6 +768,16 @@ jobs:
       ARCHIVETUNE_POOL_CLIENT_KEY: ${{ secrets.POOL_CLIENT_KEY }}
       ARCHIVETUNE_FEEDBACK_API_URL: ${{ secrets.FEEDBACK_API_URL }}
       ARCHIVETUNE_FEEDBACK_INGEST_KEY: ${{ secrets.FEEDBACK_INGEST_KEY }}
+      # The job builds only the Kotlin/Native iOS framework through xcodebuild; it never needs the
+      # Android SDK. Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
+      # :jiosaavn and :morideobfuscator load no build script and the shared modules skip their Android
+      # targets. Without this, configuring :app lets AGP auto-install the pinned ~1 GB NDK — a slow
+      # dl.google.com transfer whose corrupt downloads have failed this job, and one the iOS tasks
+      # never use.
+      ANDROID_HOME: ""
+      ANDROID_SDK_ROOT: ""
+      # dl.google.com flakes have terminated configuration downloads on this runner; retry with backoff.
+      GRADLE_OPTS: -Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=60000 -Dorg.gradle.internal.repository.max.retries=5 -Dorg.gradle.internal.repository.initial.backoff=2000
     steps:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
@@ -826,8 +852,12 @@ jobs:
           write_setting ARCHIVETUNE_LISTENER_PRESENCE_URL "$ARCHIVETUNE_LISTENER_PRESENCE_URL"
           write_setting ARCHIVETUNE_LASTFM_API_KEY "$ARCHIVETUNE_LASTFM_API_KEY"
           write_setting ARCHIVETUNE_LASTFM_API_SECRET "$ARCHIVETUNE_LASTFM_API_SECRET"
+          write_setting ARCHIVETUNE_LYPRIO_BASE_URL "$ARCHIVETUNE_LYPRIO_BASE_URL"
+          write_setting ARCHIVETUNE_LYPRIO_HMAC_KEY "$ARCHIVETUNE_LYPRIO_HMAC_KEY"
           write_setting ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY "$ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY"
           write_setting ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN "$ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN"
+          write_setting ARCHIVETUNE_POTOKEN_REQUEST_KEY "$ARCHIVETUNE_POTOKEN_REQUEST_KEY"
+          write_setting ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY "$ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY"
 
       - name: Build unsigned device app and create IPA
         shell: bash

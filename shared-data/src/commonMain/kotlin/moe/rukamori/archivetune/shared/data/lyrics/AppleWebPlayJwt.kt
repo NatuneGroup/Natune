@@ -17,7 +17,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  * Expiry is supplied by the caller as epoch seconds, so this stays free of any clock.
  */
 @OptIn(ExperimentalEncodingApi::class)
-internal object AppleWebPlayJwt {
+object AppleWebPlayJwt {
     private const val ISSUER = "AMPWebPlay"
 
     // A candidate has to outlive the request it is for, not merely the clock.

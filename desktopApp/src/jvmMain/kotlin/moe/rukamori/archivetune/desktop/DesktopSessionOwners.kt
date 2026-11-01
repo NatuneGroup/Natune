@@ -21,8 +21,10 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.backup.DesktopBackup
 import moe.rukamori.archivetune.shared.data.playlistimport.PlaylistImportOwner
 import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImportSearch
+import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
 import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
@@ -43,6 +45,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
+import moe.rukamori.archivetune.shared.data.potoken.poTokenSessionId
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.download.DownloadKey
 import moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository
@@ -75,11 +78,19 @@ import moe.rukamori.archivetune.shared.domain.settings.ContentCountryKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentLanguageKey
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
 import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
+import moe.rukamori.archivetune.shared.domain.settings.PlaybackPitchKey
+import moe.rukamori.archivetune.shared.domain.settings.PlaybackSpeedKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.PreventDuplicateTracksInQueueKey
+import moe.rukamori.archivetune.shared.domain.settings.TEMPO_PITCH_VALUE_MAX
+import moe.rukamori.archivetune.shared.domain.settings.TEMPO_PITCH_VALUE_MIN
+import moe.rukamori.archivetune.shared.domain.settings.TempoPitchRememberedKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
+import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
 import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
+import moe.rukamori.archivetune.shared.domain.settings.WebClientPoTokenEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
@@ -140,6 +151,17 @@ internal suspend fun assembleDesktopSessionOwners(
     val playback = DesktopPlaybackPort(accounts = sourceAdmissions, cookies = sourceAdmissions)
     vault.snapshots.value?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.let { playback.setVolume(it.coerceIn(0f, 1f)) }
     val player = MusicPlayerController(playback, scope)
+    // The opt-in "remember speed and pitch" restore: without the flag the port keeps neutral parameters.
+    vault.snapshots.value?.takeIf { it[TempoPitchRememberedKey] == true }?.let { persisted ->
+        persisted[PlaybackSpeedKey]
+            ?.takeIf(Float::isFinite)
+            ?.coerceIn(TEMPO_PITCH_VALUE_MIN, TEMPO_PITCH_VALUE_MAX)
+            ?.let(player::setPlaybackSpeed)
+        persisted[PlaybackPitchKey]
+            ?.takeIf(Float::isFinite)
+            ?.coerceIn(TEMPO_PITCH_VALUE_MIN, TEMPO_PITCH_VALUE_MAX)
+            ?.let(player::setPlaybackPitch)
+    }
     val telegramRoot = directory.resolve(TELEGRAM_DIRECTORY).toFile()
     val telegram = TdlightClientSession(
         credentials = DesktopCredentials.telegramApi,
@@ -184,12 +206,32 @@ internal suspend fun assembleDesktopSessionOwners(
         tidalSessionRefresh = tidalSessionRefresh,
         pool = playbackPool,
     )
+    // One BotGuard owner feeds the primary walk, the InnerTubeX provider and settings generation,
+    // as Android's BotGuardTokenGenerator object feeds every resolver there.
+    val poTokens = DesktopPoTokenOwner(
+        http = http,
+        enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+    )
     val youtubeResolver = DesktopYouTubeResolver(
         http,
         preferences = { vault.snapshots.value },
         search = youtubeTransport,
         signIn = { vault.snapshots.value.youTubeSignIn() },
+        poTokens = poTokens,
     )
+    // The shipped app warms BotGuard once the auth state names a session, so a cold mint never
+    // lands inside a bounded tier; the same warm runs off the graph scope and stays a no-op while
+    // the poToken preference is off or no session id exists yet.
+    scope.launch {
+        val signIn = vault.snapshots.value.youTubeSignIn()
+        val sessionId =
+            poTokenSessionId(
+                signIn?.dataSyncId,
+                signIn?.visitorData,
+                hasLoginContext = signIn != null && !signIn.dataSyncId.isNullOrBlank(),
+            )
+        if (sessionId != null) poTokens.preWarm(sessionId)
+    }
     // One resolver for playback and downloads alike, over the same providers and source chain.
     val audioResolver = OrderedAudioResolver(
         providers = audioSources.providers,
@@ -239,6 +281,8 @@ internal suspend fun assembleDesktopSessionOwners(
         keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
         repeatMode = { repeatModeOf(vault.snapshots.value) },
         autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+        preventDuplicateTracksInQueue = { vault.snapshots.value?.get(PreventDuplicateTracksInQueueKey) ?: false },
+        queueLocked = { vault.snapshots.value?.get(QueueLockedKey) ?: false },
         autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
         autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
         hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
@@ -265,9 +309,16 @@ internal suspend fun assembleDesktopSessionOwners(
             desktopDiagnostic("download reconciliation failed: ${failure.javaClass.simpleName}")
         }
     }
-    val metadata = combine(queue.state, player.snapshot) { state, snapshot ->
-        state.metadataFor(snapshot?.occurrenceId, repeatModeOf(vault.snapshots.value))
+    val metadata = combine(queue.state, player.snapshot, vault.snapshots) { state, snapshot, preferences ->
+        state.metadataFor(snapshot?.occurrenceId, repeatModeOf(preferences))
     }.stateIn(scope, SharingStarted.Eagerly, null)
+    val transport = combine(queue.state, vault.snapshots) { state, preferences ->
+        DesktopTransportState(
+            shuffleEnabled = state.shuffleEnabled,
+            repeat = repeatModeOf(preferences),
+            volume = preferences?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f,
+        )
+    }.stateIn(scope, SharingStarted.Eagerly, DesktopTransportState())
     val listenDriver = ListenHistoryDriver(
         scope = scope,
         player = player,
@@ -302,6 +353,7 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
     )
     // The JVM publishes no network events; a lookup offline simply misses, and a cached answer still shows.
+    // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
     val lyrics = HostLyrics(
         scope = scope,
         http = http,
@@ -310,6 +362,8 @@ internal suspend fun assembleDesktopSessionOwners(
         queue = queue.state,
         networkAvailable = { true },
         report = ::desktopDiagnostic,
+        lyprioBuildBaseUrl = DesktopCredentials.lyprioBaseUrl,
+        lyprioBuildHmacKey = DesktopCredentials.lyprioHmacKey,
     )
     val pack = try {
         jvmJapaneseLanguagePackManager(
@@ -464,6 +518,7 @@ internal suspend fun assembleDesktopSessionOwners(
     val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
     val graph = DesktopSessionGraph(
         youtubeResolver = youtubeResolver,
+        poTokens = poTokens,
         instanceDirectory = directory,
         scope = scope,
         settings = vault,
@@ -478,6 +533,7 @@ internal suspend fun assembleDesktopSessionOwners(
         queue = queue,
         radio = DesktopRadioOwner(owner),
         metadata = metadata,
+        transport = transport,
         textOrder = textOrder,
         libraryContent = libraryContent,
         owner = owner,

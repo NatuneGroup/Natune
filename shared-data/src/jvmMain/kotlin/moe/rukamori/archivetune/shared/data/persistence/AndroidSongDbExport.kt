@@ -19,7 +19,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 
 /**
- * Writes a portable state snapshot as an Android `song.db` at Room schema 38, the reverse of [LegacySongDbImport], so
+ * Writes a portable state snapshot as an Android `song.db` at Room schema 39, the reverse of [LegacySongDbImport], so
  * a desktop library restores in the Android app.
  *
  * The Android library holds YouTube songs, albums and artists only. Items of any other provider, and this host's
@@ -49,6 +49,7 @@ object AndroidSongDbExport {
         val setVideoIds: Int,
         val podcastProgress: Int,
         val songMetadata: Int,
+        val lyricsOffsets: Int,
         val skippedItems: Int,
     )
 
@@ -86,7 +87,7 @@ object AndroidSongDbExport {
             }
         }
 
-    /** The schema-38 DDL, the views and Room's identity row, exported from `app/schemas`. */
+    /** The schema-39 DDL, the views and Room's identity row, exported from `app/schemas`. */
     private fun schemaStatements(): List<String> =
         requireNotNull(AndroidSongDbExport::class.java.getResourceAsStream(SCHEMA_RESOURCE)) { "Android schema missing" }
             .use { it.readBytes().decodeToString() }
@@ -183,6 +184,16 @@ object AndroidSongDbExport {
                     )
                 }
             }
+            if (connection.tableExists("portable_song_lyrics_offset")) {
+                connection.prepare(
+                    "SELECT provider, songId, offsetMs FROM portable_song_lyrics_offset WHERE offsetMs != 0",
+                ).use { statement ->
+                    while (statement.step()) {
+                        if (statement.getText(0) != YOUTUBE) continue
+                        model.lyricsOffsets[statement.getText(1)] = statement.getLong(2)
+                    }
+                }
+            }
             connection.prepare(
                 "SELECT provider, songId, title, artistNamesJson, updatedAtMs FROM portable_song_metadata_override",
             ).use { statement ->
@@ -222,14 +233,16 @@ object AndroidSongDbExport {
         ) { album -> bindAll(album.item.ref.id, album.item.title, album.item.artworkUri, album.item.explicit, now, album.bookmarkedAt) }
         connection.each(
             "INSERT INTO song (id, title, titleOverride, duration, thumbnailUrl, albumId, albumName, explicit, year, date, " +
-                "dateModified, liked, likedDate, totalPlayTime, inLibrary, dateDownload, isMusicVideo, isLocal, blockedAt) " +
-                "VALUES (?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, NULL, ?, 0, NULL)",
+                "dateModified, liked, likedDate, totalPlayTime, inLibrary, dateDownload, isMusicVideo, isLocal, blockedAt, " +
+                "lyricsOffset) " +
+                "VALUES (?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, NULL, ?, 0, NULL, ?)",
             model.songs.values,
         ) { song ->
             val item = song.item
             bindAll(
                 item.ref.id, item.title, (item.durationMs ?: 0L) / 1000L, item.artworkUri, item.albumId, item.album,
                 item.explicit, song.liked, song.likedDate, song.totalPlayTimeMs, song.inLibrary, item.isVideo,
+                model.lyricsOffsets[item.ref.id] ?: 0L,
             )
         }
         connection.each(
@@ -282,6 +295,7 @@ object AndroidSongDbExport {
         ) { row -> bindAll(row.songId, row.title, row.artistNames, row.updatedAtMs) }
         model.written = Written(
             playlistEntries = entries.size, tagAssignments = assignments.size, songMetadata = metadata.size,
+            lyricsOffsets = model.lyricsOffsets.keys.count { it in model.songs },
         )
     }
 
@@ -295,6 +309,12 @@ object AndroidSongDbExport {
     private fun SQLiteConnection.exec(sql: String) {
         prepare(sql).use { it.step() }
     }
+
+    private fun SQLiteConnection.tableExists(name: String): Boolean =
+        prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").use {
+            it.bindText(1, name)
+            it.step()
+        }
 
     private inline fun <T> SQLiteConnection.each(sql: String, rows: Iterable<T>, bind: SQLiteStatement.(T) -> Unit) {
         prepare(sql).use { statement ->
@@ -322,7 +342,7 @@ object AndroidSongDbExport {
     }
 
     private val YOUTUBE = ContentProvider.YOUTUBE.id
-    private const val SCHEMA_RESOURCE = "/android-schema/song-db-38.sql"
+    private const val SCHEMA_RESOURCE = "/android-schema/song-db-39.sql"
 }
 
 /**
@@ -385,7 +405,7 @@ private class ExportedProgress(
 
 private class ExportedMetadata(val songId: String, val title: String?, val artistNames: String?, val updatedAtMs: Long)
 
-private class Written(val playlistEntries: Int, val tagAssignments: Int, val songMetadata: Int)
+private class Written(val playlistEntries: Int, val tagAssignments: Int, val songMetadata: Int, val lyricsOffsets: Int)
 
 /** The Android rows built from the portable snapshot, keyed the way the Android tables key them. */
 private class AndroidLibraryModel(val nowMs: Long) {
@@ -401,6 +421,7 @@ private class AndroidLibraryModel(val nowMs: Long) {
     val setVideoIds = ArrayList<Pair<String, String?>>()
     val progress = ArrayList<ExportedProgress>()
     val metadata = ArrayList<ExportedMetadata>()
+    val lyricsOffsets = HashMap<String, Long>()
     var skippedItems = 0
     var written: Written? = null
 
@@ -445,7 +466,7 @@ private class AndroidLibraryModel(val nowMs: Long) {
             blockedArtists = blockedArtists, playlists = playlists.size, playlistEntries = written.playlistEntries,
             listenEvents = events.size, tags = tags.size, tagAssignments = written.tagAssignments, searches = searches.size,
             setVideoIds = setVideoIds.size, podcastProgress = progress.size, songMetadata = written.songMetadata,
-            skippedItems = skippedItems,
+            lyricsOffsets = written.lyricsOffsets, skippedItems = skippedItems,
         )
     }
 

@@ -18,8 +18,8 @@ import moe.rukamori.archivetune.shared.data.lyrics.KuGouLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LrcLibLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LrcRedLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.MegalobizLyricsProvider
-import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioLyricsProvider
+import moe.rukamori.archivetune.shared.data.lyrics.resolveLyprioEndpoint
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.LyricsRequest
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixAppleMusicLyricsProvider
@@ -31,14 +31,13 @@ import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixYouTubeLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.SimpMusicLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.UnisonLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.YouLyPlusLyricsProvider
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsCredits
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsDetection
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
-import moe.rukamori.archivetune.shared.domain.settings.LyprioEndpointKey
-import moe.rukamori.archivetune.shared.domain.settings.LyprioSigningKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.PaxsenixApiKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.PaxsenixEndpointKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -55,12 +54,19 @@ data class HostLyricsDocument(
     val lines: List<LyricsLine>,
     val loading: Boolean,
     val raw: String = "",
+    /** The document's writer/auto-created credits; null for non-TTML lyrics. */
+    val credits: LyricsCredits? = null,
 )
 
 /**
  * The host lyrics owner: the shared provider runtime over the settings owner, fed by the one queue. It follows the
  * occurrence the player reports, preloads the next ones in play order, and parses the winning document once. The
  * app-only providers (account Apple Music, TIDAL, Deezer, YouTube captions and the like) are Android-only.
+ *
+ * [lyprioBuildBaseUrl]/[lyprioBuildHmacKey] are the host's build-time Lyprio server pair — the only
+ * endpoint the provider can have, since the server is run by the Metrolist developers and is not
+ * user-configurable. When both are present and parse, the bundled endpoint serves the lookup.
+ * The pair never enters preferences, so it stays out of backups and diagnostics.
  */
 class HostLyrics(
     private val scope: CoroutineScope,
@@ -70,13 +76,15 @@ class HostLyrics(
     private val queue: StateFlow<QueueState>,
     private val networkAvailable: () -> Boolean,
     private val report: (String) -> Unit,
+    lyprioBuildBaseUrl: String = "",
+    lyprioBuildHmacKey: String = "",
 ) {
     private val runtime = SettingsLyricsRuntime(
         scope = scope,
         store = settings,
         availableProviderNames = MutableStateFlow(SHARED_PROVIDER_NAMES),
         providerRevision = MutableStateFlow(0L),
-        providerFactory = { preferences -> sharedLyricsProviders(http, preferences) },
+        providerFactory = { preferences -> sharedLyricsProviders(http, preferences, lyprioBuildBaseUrl, lyprioBuildHmacKey) },
         networkAvailable = networkAvailable,
         reportFailure = { name, failure -> report("lyrics provider $name failed: ${failure::class.simpleName}") },
     )
@@ -122,7 +130,8 @@ class HostLyrics(
             report("lyrics lookup failed: ${failure::class.simpleName}")
             "" to emptyList()
         }
-        state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw)
+        val credits = if (LyricsDetection.isTtml(raw)) LyricsParser.parseTtmlCredits(raw) else null
+        state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw, credits = credits)
     }
 
     private fun parse(text: String): List<LyricsLine> =
@@ -153,12 +162,19 @@ fun paxsenixSettingsOf(preferences: PreferenceSnapshot): PaxsenixSettings = Paxs
 )
 
 /**
- * Shared providers in canonical order. Paxsenix uses the user's endpoint and key when they are set. Lyprio exists only
- * once the user has entered a valid server URL and signing key; its toggle is applied by the runtime like the others.
+ * Shared providers in canonical order. Paxsenix uses the user's endpoint and key when they are set. Lyprio
+ * resolves through [resolveLyprioEndpoint] from the host's build-time pair
+ * ([lyprioBuildBaseUrl]/[lyprioBuildHmacKey]) — its only endpoint, like Metrolist; a build without a
+ * valid pair simply has no Lyprio provider. Its toggle is applied by the runtime like the others.
  */
-fun sharedLyricsProviders(http: HttpClient, preferences: PreferenceSnapshot): List<LyricsProvider> {
+fun sharedLyricsProviders(
+    http: HttpClient,
+    preferences: PreferenceSnapshot,
+    lyprioBuildBaseUrl: String = "",
+    lyprioBuildHmacKey: String = "",
+): List<LyricsProvider> {
     val paxsenix = paxsenixSettingsOf(preferences)
-    val lyprio = LyprioEndpoint.parse(preferences[LyprioEndpointKey].orEmpty(), preferences[LyprioSigningKeyKey].orEmpty())
+    val lyprio = resolveLyprioEndpoint(lyprioBuildBaseUrl, lyprioBuildHmacKey)
     return listOfNotNull(
         lyprio?.let { LyprioLyricsProvider(http, it) },
         // Same relative order as the Android baseProviders list; account-bound providers

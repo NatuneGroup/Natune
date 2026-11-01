@@ -20,8 +20,8 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/appearance/interface` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_interface` (or its `scrollTo`) |
 | `settings/appearance/extras` | ✓ | ✓ | ✓ | |
 | `settings/appearance/lyrics_animations` | ✓ | ✓ | ✓ | |
-| `settings/appearance/navigation_bar` | ✓ | — | — | Android-only surface |
-| `settings/appearance/liquid_glass` | ✓ | — | — | Android-only liquid glass tuning; added after the baseline |
+| `settings/appearance/navigation_bar` | ✓ | ✓ | ✓ | shared page hoisted from the iOS rows; the Liquid Glass and frosted rows report why they are disabled on each host |
+| `settings/appearance/liquid_glass` | ✓ | ✓ | ✓ | shared tuning page over the same persisted keys; rows explain the off state (blur off, no refraction renderer, master switch off) |
 | `settings/appearance/aod_customized` | ✓ | — | — | Android-only surface |
 | `settings/appearance/icon` | ✓ | — | — | launcher icon switcher, Android-only |
 | `settings/appearance/palette_picker` | ✓ | — | — | Android-only |
@@ -56,7 +56,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/jiosaavn` | ✓ | ✓ | — | desktop mounts |
 | `settings/qqmusic` | ✓ | ✓ | — | desktop mounts |
 | `settings/spotify_streaming` | ✓ | ✓ | — | desktop mounts |
-| `settings/applemusic` + `/login` | ✓ | page | — | desktop mounts the page, not `/login` |
+| `settings/applemusic` + `/login` | ✓ | ✓ | ✓ | sign-in row opens the web flow on both hosts; iOS harvests the MusicKit pair in a JS-evaluating sheet, desktop reads the media-user-token cookie, then both write the two token keys |
 | `settings/telegram` | ✓ | ✓ | ✓ | iOS: one TDLib session page; the unbound boundary until the session exists |
 | `settings/telegram/login` `/browse` `/bots` `/chat/{id}` | ✓ | login | browse, bots | desktop mounts login only; iOS mounts browse and bots while the session exists, and login and bot chat stay on the boundary |
 | `settings/ai_integration` | ✓ | ✓ | ✓ | real KtorAiTextService; "not configured" without provider |
@@ -65,7 +65,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 | `settings/lastfm/dashboard` | ✓ | ✓ | — | desktop mounts |
 | `settings/misc` (developer) | ✓ | ✓ | ✓ | acoustic/discord-debug/nerd-stats sections unavailable on iOS |
 | `settings/logcat` | ✓ | ✓ | ✓ | DiagnosticLogScreen on all three |
-| `settings/crash_logs` `/{recordId}` | ✓ | — | — | Android-only, added after the baseline: Developer Crash logs list and record detail over the bounded startup record store; not mounted on desktop or iOS |
+| `settings/crash_logs` `/{recordId}` | ✓ | ✓ | ✓ | list and record detail over each host's bounded record store, filled by the host's own crash capture; the detail rides `settings/crash_logs/record?id=` |
 | `settings/update` | ✓ | ✓ | ✓ | desktop mounts; iOS mounts the page with checks reported unavailable |
 | `settings/changelog?channel=` | ✓ | ✓ | — | desktop mounts |
 | `settings/about` | ✓ | ✓ | ✓ | iOS: real GitHub contributors/translations fetch |

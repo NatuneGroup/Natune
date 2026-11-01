@@ -36,6 +36,7 @@ data class AndroidAutoConfiguration(
     val meteredArtwork: Boolean = true,
     val primaryAction: AndroidAutoCustomAction = AndroidAutoCustomAction.LIKE,
     val secondaryAction: AndroidAutoCustomAction = AndroidAutoCustomAction.START_RADIO,
+    val pinnedPlaylistShuffle: Boolean = false,
 )
 
 @Immutable
@@ -49,4 +50,27 @@ data class AndroidAutoSettingsSnapshot(
     val configuration: AndroidAutoConfiguration,
     val connectionStatus: AndroidAutoConnectionStatus,
     val hasLocalAudioPermission: Boolean,
+    val pinnedPlaylists: List<AndroidAutoPinnedPlaylist> = emptyList(),
+)
+
+/**
+ * One row in the driving-playlists picker: a local library playlist or a YouTube (online)
+ * account playlist that can be pinned to the car home screen.
+ */
+@Immutable
+data class AndroidAutoPlaylistOption(
+    val kind: AndroidAutoPinnedPlaylistKind,
+    val id: String,
+    val title: String,
+    val songCount: Int?,
+    val subtitle: String?,
+) {
+    fun asPin(): AndroidAutoPinnedPlaylist = AndroidAutoPinnedPlaylist(kind, id)
+}
+
+@Immutable
+data class AndroidAutoPlaylistPickerState(
+    val options: List<AndroidAutoPlaylistOption> = emptyList(),
+    val loading: Boolean = false,
+    val failed: Boolean = false,
 )

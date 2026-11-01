@@ -12,13 +12,11 @@ import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.net.Uri
 import android.webkit.CookieManager
-import android.webkit.HttpAuthHandler
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.LinearProgressIndicator
@@ -39,9 +37,10 @@ import moe.rukamori.archivetune.auth.YouTubeLoginWebEvents
 import moe.rukamori.archivetune.auth.YouTubeLoginDocumentCallbacks
 import moe.rukamori.archivetune.auth.mergePreferredYouTubeCookies
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
-import moe.rukamori.archivetune.utils.AppProxy
+
 import moe.rukamori.archivetune.viewmodels.LoginError
 import moe.rukamori.archivetune.viewmodels.LoginScreenState
 import moe.rukamori.archivetune.viewmodels.LoginViewModel
@@ -90,6 +89,7 @@ fun LoginScreen(
     key(webRevision) {
         AuthWebViewScreen(
             navController = navController,
+            provider = "youtube",
             title = stringResource(R.string.login),
             subtitle = stringResource(R.string.auth_webview_youtube_subtitle),
             onDismiss = cancel,
@@ -143,7 +143,7 @@ private fun LoginError.messageResource(): Int = when (this) {
 private class YouTubeLoginWebViewClient(
     private val viewModel: LoginViewModel,
     private val viewRevision: Long,
-) : WebViewClient() {
+) : AuthSignInWebViewClient("youtube", setOf("youtube.com", "google.com")) {
     private val returns = YouTubeLoginReturnGuard()
     private var extraction: Runnable? = null
     private var returnLoad: Runnable? = null
@@ -219,6 +219,7 @@ private class YouTubeLoginWebViewClient(
     }
 
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+        super.onReceivedError(view, request, error)
         if (!owns() || !request.isForMainFrame) return
         if (error.errorCode == ERROR_UNSUPPORTED_SCHEME && YouTubeLoginNavigationPolicy.isMusicInstall(request.url.toString()) &&
             request.method == "GET") {
@@ -227,6 +228,7 @@ private class YouTubeLoginWebViewClient(
     }
 
     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
+        super.onReceivedHttpError(view, request, errorResponse)
         if (owns()) YouTubeLoginWebEvents.httpError(request.isForMainFrame, errorResponse.statusCode)?.let { fail(view, it) }
     }
 
@@ -234,11 +236,6 @@ private class YouTubeLoginWebViewClient(
         if (owns()) viewModel.onError(viewRevision, LoginError.RendererLost)
         destroy(view)
         return true
-    }
-
-    override fun onReceivedHttpAuthRequest(view: WebView?, handler: HttpAuthHandler?, host: String?, realm: String?) {
-        if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-        super.onReceivedHttpAuthRequest(view, handler, host, realm)
     }
 
     fun destroy(view: WebView) {

@@ -31,6 +31,8 @@ fun LyricsProviderSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    /** True when the host baked a Lyprio endpoint pair into the build; without one the provider row renders disabled as unavailable. */
+    lyprioBuiltInServer: Boolean = false,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -43,7 +45,7 @@ fun LyricsProviderSettings(
     }
     SettingsPage(
         lyricsProviderSettingsRows(preferences, { dialog = ProviderDialog.ORDER }, { dialog = ProviderDialog.STATS },
-            { dialog = ProviderDialog.ENDPOINTS }),
+            { dialog = ProviderDialog.ENDPOINTS }, lyprioBuiltInServer = lyprioBuiltInServer),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
     )
     if (dialog == ProviderDialog.ORDER) {

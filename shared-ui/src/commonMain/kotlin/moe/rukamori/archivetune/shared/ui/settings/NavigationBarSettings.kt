@@ -1,4 +1,4 @@
-package moe.rukamori.archivetune.shared.ui.ios
+package moe.rukamori.archivetune.shared.ui.settings
 
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.CompactBottomPillsKey
 import moe.rukamori.archivetune.shared.domain.settings.CompactControlsStockColorKey
+import moe.rukamori.archivetune.shared.domain.settings.DisableBlurKey
 import moe.rukamori.archivetune.shared.domain.settings.HideNavigationBarLabelsKey
 import moe.rukamori.archivetune.shared.domain.settings.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.LiquidGlassNavBarEnabledKey
@@ -84,21 +85,27 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_lane_nav_transparency
 import moe.rukamori.archivetune.shared.ui.resources.ios_lane_nav_transparency_desc
 import moe.rukamori.archivetune.shared.ui.resources.ios_lane_nav_width
 import moe.rukamori.archivetune.shared.ui.resources.ios_lane_nav_width_desc
-import moe.rukamori.archivetune.shared.ui.settings.SettingsController
-import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
-import moe.rukamori.archivetune.shared.ui.settings.SettingsRow
-import moe.rukamori.archivetune.shared.ui.settings.SettingsUnit
+import moe.rukamori.archivetune.shared.ui.resources.m6_liquid_glass_blur_overridden
+import moe.rukamori.archivetune.shared.ui.resources.m6_liquid_glass_unsupported
+import androidx.compose.ui.Modifier
+
+const val NavigationBarSettingsRoute = "settings/appearance/navigation_bar"
 
 /**
- * Settings > Appearance > Navigation bar on this host: the same rows and persisted keys as the Android page, so the
- * shell reads every choice with no translation. Sliders keep the Android ranges and defaults; the treatment switches
- * go through [applyNavigationTreatment], so at most one treatment is on.
+ * Settings > Appearance > Navigation bar on every shared host: the same rows and persisted keys as
+ * the Android page, so the shell reads every choice with no translation. Sliders keep the Android
+ * ranges and defaults; the treatment switches go through [applyNavigationTreatment], so at most one
+ * treatment is on. The Liquid Glass row additionally reports why it is greyed out, the way the
+ * Android row does: blur off, no refraction support, or the master switch off.
  */
 @Composable
-internal fun IosNavigationBarSettingsPage(
+fun NavigationBarSettingsPage(
     controller: SettingsController,
+    blurSupported: Boolean,
+    refractionSupported: Boolean,
     onFailure: () -> Unit,
     scrollTo: String?,
+    modifier: Modifier = Modifier,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -112,6 +119,14 @@ internal fun IosNavigationBarSettingsPage(
     val stockColor = preferences[CompactControlsStockColorKey, false]
     val glow = preferences[NavigationBarGlassGlowKey, true]
     val fixedDimensions = liquidNav || style == NavigationBarStyle.SUKISU
+    val blurDisabled = preferences[DisableBlurKey, false] || !blurSupported
+    val liquidRowEnabled = liquidGlassEnabled && refractionSupported && !blurDisabled
+    val liquidDescription = when {
+        blurDisabled -> Res.string.m6_liquid_glass_blur_overridden
+        !refractionSupported -> Res.string.m6_liquid_glass_unsupported
+        !liquidGlassEnabled -> Res.string.ios_lane_nav_liquid_disabled
+        else -> Res.string.ios_lane_nav_liquid_desc
+    }
     val scope = rememberCoroutineScope()
 
     val rows = buildList {
@@ -165,26 +180,32 @@ internal fun IosNavigationBarSettingsPage(
         add(
             SettingsRow.Toggle(
                 "frosted_nav_bar", Res.string.ios_lane_nav_frosted, NavigationBarFrostedBlurKey, false,
-                description = Res.string.ios_lane_nav_frosted_desc,
+                enabled = !blurDisabled,
+                description = if (blurDisabled) {
+                    Res.string.m6_liquid_glass_blur_overridden
+                } else {
+                    Res.string.ios_lane_nav_frosted_desc
+                },
                 write = { applyNavigationTreatment(NavigationBarFrostedBlurKey, it) },
             ),
         )
         add(
             SettingsRow.Toggle(
                 "tint_frosted_nav_bar", Res.string.ios_lane_nav_tint_frosted, NavigationBarTintFrostedBlurKey, false,
-                description = Res.string.ios_lane_nav_tint_frosted_desc,
+                enabled = !blurDisabled,
+                description = if (blurDisabled) {
+                    Res.string.m6_liquid_glass_blur_overridden
+                } else {
+                    Res.string.ios_lane_nav_tint_frosted_desc
+                },
                 write = { applyNavigationTreatment(NavigationBarTintFrostedBlurKey, it) },
             ),
         )
         add(
             SettingsRow.Toggle(
                 "liquid_glass_nav_bar", Res.string.ios_lane_nav_liquid, LiquidGlassNavBarEnabledKey, false,
-                enabled = liquidGlassEnabled,
-                description = if (liquidGlassEnabled) {
-                    Res.string.ios_lane_nav_liquid_desc
-                } else {
-                    Res.string.ios_lane_nav_liquid_disabled
-                },
+                enabled = liquidRowEnabled,
+                description = liquidDescription,
                 write = { applyNavigationTreatment(LiquidGlassNavBarEnabledKey, it) },
             ),
         )
@@ -280,7 +301,7 @@ internal fun IosNavigationBarSettingsPage(
         add(
             SettingsRow.Action(
                 "navigation_bar_reset_dimensions", Res.string.ios_lane_nav_reset_dimensions,
-                enabled = !fixedDimensions && !preferences.iosLaneNavBarAtDefaults(),
+                enabled = !fixedDimensions && !preferences.navBarAtDefaults(),
                 run = {
                     scope.launch {
                         try {
@@ -302,10 +323,10 @@ internal fun IosNavigationBarSettingsPage(
             ),
         )
     }
-    SettingsPage(rows, preferences, controller, scrollTo, onFailure = onFailure)
+    SettingsPage(rows, preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier)
 }
 
-private fun PreferenceSnapshot.iosLaneNavBarAtDefaults(): Boolean =
+private fun PreferenceSnapshot.navBarAtDefaults(): Boolean =
     this[NavigationBarWidthKey, NAVIGATION_BAR_WIDTH_DEFAULT] == NAVIGATION_BAR_WIDTH_DEFAULT &&
         this[NavigationBarHeightKey, NAVIGATION_BAR_HEIGHT_DEFAULT] == NAVIGATION_BAR_HEIGHT_DEFAULT &&
         this[NavigationBarOpacityKey, NAVIGATION_BAR_OPACITY_DEFAULT] == NAVIGATION_BAR_OPACITY_DEFAULT &&

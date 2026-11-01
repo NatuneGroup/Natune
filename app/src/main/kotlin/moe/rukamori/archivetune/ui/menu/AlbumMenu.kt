@@ -94,7 +94,7 @@ import moe.rukamori.archivetune.playback.ExoDownloadService
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.ui.component.AlbumListItem
 import moe.rukamori.archivetune.ui.component.ListDialog
-import moe.rukamori.archivetune.ui.component.ListItem
+import moe.rukamori.archivetune.ui.component.ListItem as MenuListItem
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
@@ -265,7 +265,7 @@ fun AlbumMenu(
             },
         ) {
             item {
-                ListItem(
+                MenuListItem(
                     title = stringResource(R.string.already_in_playlist),
                     thumbnailContent = {
                         Image(
@@ -459,6 +459,23 @@ fun AlbumMenu(
                                                     )
                                                 }
                                             context.startActivity(Intent.createChooser(intent, null))
+                                        },
+                                    ),
+                                )
+                                add(
+                                    NewAction(
+                                        icon = {
+                                            Icon(
+                                                painter = painterResource(R.drawable.link),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(28.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        },
+                                        text = stringResource(R.string.copy_link),
+                                        onClick = {
+                                            onDismiss()
+                                            context.copyLinkToClipboard("https://music.youtube.com/playlist?list=${album.album.playlistId}")
                                         },
                                     ),
                                 )

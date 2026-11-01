@@ -21,6 +21,9 @@ import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import moe.rukamori.archivetune.shared.data.potoken.IosPoTokenSupport
+import moe.rukamori.archivetune.shared.data.potoken.appendPoTokenToStreamUrl
+import moe.rukamori.archivetune.shared.data.potoken.poTokenForWebClient
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
 import moe.rukamori.archivetune.shared.domain.repository.AudioResolveRequest
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
@@ -63,6 +66,7 @@ class IosYouTubeResolver(
     private val transport: IosYouTubeBrowseTransport,
     private val preferences: () -> PreferenceSnapshot?,
     private val personalScope: suspend () -> String?,
+    private val poTokens: IosPoTokenSupport? = null,
 ) : YouTubeResolutionPort {
 
     // A derived client shares the graph's engine and adds what InnerTubeX expects: status exceptions and JSON bodies.
@@ -94,11 +98,19 @@ class IosYouTubeResolver(
         var lastReason: String? = null
         var loginRequired = false
         var botBlocked = false
+        // One BotGuard mint per resolve under the current transport session, as the shipped chain
+        // mints once for its main client; the pair then feeds serviceIntegrityDimensions and pot=.
+        transport.refreshSession(preferences())
+        val minted = poTokens?.mintForPlayback(target.videoId, transport.innerTubeSession.sessionSnapshot())
         for (attempt in qualities) {
             for (streamClient in clientOrder(preferences)) {
                 val response =
                     try {
-                        innerTubePlayer(streamClient, target.videoId)
+                        innerTubePlayer(
+                            streamClient,
+                            target.videoId,
+                            poToken = poTokenForWebClient(streamClient.clientName, minted),
+                        )
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (failure: Exception) {
@@ -116,7 +128,13 @@ class IosYouTubeResolver(
                 val format = pickFormat(response.streamingData?.adaptiveFormats.orEmpty(), attempt) ?: continue
                 lastSuccessful = streamClient
                 return PreparedAudio.Progressive(
-                    format.toDirectStream(streamClient, response, target, accountScope(target))
+                    format.toDirectStream(
+                        streamClient,
+                        response,
+                        target,
+                        accountScope(target),
+                        poTokenForWebClient(streamClient.clientName, minted),
+                    )
                 )
             }
         }
@@ -142,7 +160,14 @@ class IosYouTubeResolver(
         if (VIDEO_ID_REGEX.matches(request.mediaId)) return IosYouTubeTarget(request.mediaId, trusted = true)
         searchedIds[request.mediaId]?.let { return IosYouTubeTarget(it, trusted = false) }
         val query = searchQuery(request)
-        val videoId = runCatching { transport.firstSongVideoId(query) }.getOrNull() ?: return null
+        val videoId =
+            try {
+                transport.firstSongVideoId(query)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            } ?: return null
         rememberSearchedId(request.mediaId, videoId)
         return IosYouTubeTarget(videoId, trusted = false)
     }
@@ -160,8 +185,8 @@ class IosYouTubeResolver(
     }
 
     /** One player request under the session's current sign-in, returning null's opposite only. */
-    private suspend fun innerTubePlayer(client: YouTubeClient, videoId: String): PlayerResponse =
-        innerTube.player(client, videoId).body()
+    private suspend fun innerTubePlayer(client: YouTubeClient, videoId: String, poToken: String?): PlayerResponse =
+        innerTube.player(client, videoId, poToken = poToken).body()
 
     private suspend fun resolveInnerTubeX(target: IosYouTubeTarget): PreparedAudio? {
         prewarmOnce()
@@ -211,6 +236,7 @@ class IosYouTubeResolver(
             configParser = YtConfigParserImpl(client, innerTube, playerConfigStore),
             cipherService = YouTubeCipherService(client, playerConfigStore),
             innerTube = innerTube,
+            tokenProvider = poTokens?.tokenProvider,
         )
     }
 
@@ -353,10 +379,11 @@ private fun PlayerResponse.StreamingData.Format.toDirectStream(
     response: PlayerResponse,
     target: IosYouTubeTarget,
     accountScope: String?,
+    poToken: String?,
 ): DirectStream {
     val fullMime = mimeType
     return DirectStream(
-        uri = url.orEmpty(),
+        uri = appendPoTokenToStreamUrl(url.orEmpty(), poToken),
         mimeType = mimeBase(fullMime),
         codecs = mimeCodecs(fullMime),
         contentLength = contentLength?.takeIf { it > 0L },

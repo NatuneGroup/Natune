@@ -19,32 +19,40 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.awt.Desktop
 import java.net.URI
-import java.net.URLDecoder
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
-import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
+import moe.rukamori.archivetune.shared.domain.lyrics.effectiveLyricsSyncOffsetMs
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.repository.ContentKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.DisableAnimationsKey
+import moe.rukamori.archivetune.shared.domain.settings.GlobalLyricsOffsetMsKey
 import moe.rukamori.archivetune.shared.domain.settings.LyricsModeKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate
+import moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsMode
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceActions
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSyncControls
-import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
-import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
+import moe.rukamori.archivetune.shared.ui.navigation.ExternalLink
+import moe.rukamori.archivetune.shared.ui.navigation.ExternalLinks
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
 import moe.rukamori.archivetune.shared.ui.player.capabilities
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSettings
@@ -67,6 +75,8 @@ internal fun desktopHostBindings(
     recognition: DesktopRecognitionMount,
     feedback: DesktopFeedbackMount,
     quit: () -> Unit,
+    /** The F key's window fullscreen toggle; the root binds it where a window state exists. */
+    toggleFullscreen: () -> Unit = {},
 ): ArchiveTuneHostBindings {
     val dates = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     // One row menu per host: a row's overflow opens it, and the overlay of the page the row is on shows it.
@@ -92,6 +102,12 @@ internal fun desktopHostBindings(
     return ArchiveTuneHostBindings(
         queue = DesktopPodcastQueue(graph.queue, podcasts),
         songMetadata = graph.library.songMetadata,
+        customArtwork = graph.customArtwork,
+        // The multi-playlist add picker reads the one library repository's candidates.
+        playlistPicker = object : PlaylistPickerSource {
+            override fun candidates(occurrences: List<ContentOccurrence>): Flow<List<PlaylistPickerCandidate>> =
+                graph.library.observePlaylistPicker(occurrences)
+        },
         settings = graph.settings,
         actionScope = graph.scope,
         // Deep links from the desktop intake open their page through the root. Back arrives from the window.
@@ -140,6 +156,7 @@ internal fun desktopHostBindings(
         // The desktop root has no screen beneath it, so back at the root has nothing to pop.
         onBackAtRoot = { },
         podcastProgress = graph.podcastProgress.observeAll(),
+        toggleWindowFullscreen = toggleFullscreen,
     )
 }
 
@@ -160,66 +177,67 @@ private val launchLinks: Channel<String> by lazy {
 }
 
 /**
- * The route strings the shared root opens. A link that opens no page is reported as one line and dropped here, so the
- * root never receives an unresolved route or an action link as a route.
+ * The route strings the shared root opens. The shared [ExternalLinks] table classifies each link the way the Android
+ * intent handler does: an invite joins its room and a watch link plays, a page link opens its route, and a link that
+ * opens nothing is reported as one line and dropped here, so the root never receives an unresolved route or an action
+ * link as a route.
  */
 private fun desktopLaunchRoutes(graph: DesktopSessionGraph): Flow<String> =
     launchLinks.receiveAsFlow().mapNotNull { link ->
-        val listenCode = desktopListenTogetherCode(link)
-        if (listenCode != null) {
-            graph.listenTogether.joinFromLink(listenCode)
-            return@mapNotNull null
-        }
-        desktopLaunchRoute(link) ?: run {
-            graph.report("link not opened: it names no page that a link may open")
-            null
+        when (val target = ExternalLinks.classify(link)) {
+            is ExternalLink.ListenTogetherInvite -> {
+                graph.listenTogether.joinFromLink(target.code)
+                null
+            }
+            is ExternalLink.YouTubeWatch -> {
+                desktopPlayWatchLink(graph, target)
+                null
+            }
+            is ExternalLink.Route -> ExternalLinks.openableRoute(target.route) ?: run {
+                graph.report("link not opened: it names no page that a link may open")
+                null
+            }
+            is ExternalLink.Login, null -> run {
+                graph.report("link not opened: it names no page that a link may open")
+                null
+            }
         }
     }
 
 /**
- * The room code an `archivetune://listen` invite carries, or null when the link is not a listen invite. Mirrors the
- * Android handler exactly: `?code=`, then `?room=`, then the second path segment (pathSegments[1] — on the https invite
- * hosts the first segment is "listen"), accepted only when the link names a listen endpoint.
+ * A watch link plays the video it names the way the Android host plays it: the queue becomes the song, identified by
+ * its YouTube video id until the resolver supplies the rest.
  */
-internal fun desktopListenTogetherCode(link: String): String? {
-    val uri = try {
-        URI(link)
-    } catch (_: Exception) {
-        return null
-    }
-    val segments = uri.rawPath.orEmpty().split('/').filter { it.isNotEmpty() }
-    val isListenLink = segments.firstOrNull() == "listen" ||
-        uri.host?.equals("listen", ignoreCase = true) == true ||
-        ListenTogetherServers.isInviteHost(uri.host)
-    if (!isListenLink) return null
-    val query = uri.rawQuery.orEmpty().split('&').filter { it.isNotEmpty() }.mapNotNull {
-        val parts = it.split('=', limit = 2)
+private fun desktopPlayWatchLink(graph: DesktopSessionGraph, target: ExternalLink.YouTubeWatch) {
+    val occurrence = ContentOccurrence(
+        occurrenceId = "link-watch:${target.videoId}",
+        item = ContentItem(ContentRef("youtube", ContentKind.SONG, target.videoId), target.videoId),
+    )
+    graph.scope.launch {
         try {
-            URLDecoder.decode(parts[0], Charsets.UTF_8) to
-                URLDecoder.decode(parts.getOrElse(1) { "" }, Charsets.UTF_8)
-        } catch (_: IllegalArgumentException) {
-            null
+            graph.queue.replace(listOf(occurrence), occurrence.occurrenceId, playWhenReady = true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            graph.report("link not opened: ${failure::class.simpleName}")
         }
-    }.toMap()
-    return (query["code"] ?: query["room"] ?: segments.getOrNull(1))?.takeIf { it.isNotBlank() }
+    }
 }
 
 /**
- * The route an `archivetune://open/...` link opens, or null when it opens none. The path and query are passed on as they
- * arrived, and [ArchiveRoutes] decides the destination. A link starts no action: a recognition auto-start request and the
- * sign-in page are refused, so another program cannot open the microphone or start a sign-in.
+ * The room code an `archivetune://listen` invite carries, or null when the link is not a listen invite — the shared
+ * [ExternalLinks] classifier, which mirrors the Android handler: `?code=`, then `?room=`, then the second path
+ * segment, accepted only when the link names a listen endpoint.
  */
-internal fun desktopLaunchRoute(link: String): String? {
-    val uri = try {
-        URI(link)
-    } catch (_: Exception) {
-        return null
-    }
-    val route = uri.rawPath.orEmpty().removePrefix("/") + uri.rawQuery?.let { "?$it" }.orEmpty()
-    val resolved = ArchiveRoutes.resolve(route) ?: return null
-    val opensAction = resolved.destination == ArchiveDestination.LOGIN || resolved.arguments.containsKey("autoStart")
-    return route.takeUnless { opensAction }
-}
+internal fun desktopListenTogetherCode(link: String): String? =
+    (ExternalLinks.classify(link) as? ExternalLink.ListenTogetherInvite)?.code
+
+/**
+ * The route an `archivetune://open/...` link opens, or null when it opens none. The shared classifier decides, and the
+ * refusal every host keeps stays: a link starts no sign-in and no action.
+ */
+internal fun desktopLaunchRoute(link: String): String? =
+    (ExternalLinks.classify(link) as? ExternalLink.Route)?.route?.let(ExternalLinks::openableRoute)
 
 /**
  * Only web links leave the app. Every other scheme, a missing browser and a failed launch are reported as one line and
@@ -260,6 +278,8 @@ private fun desktopPlayerSlots(
     val preferences = saved ?: PreferenceSnapshot.EMPTY
     val sessionKey = graph.lyricsSurface.sessionKey(document)
     val romanization = graph.lyricsSurface.romanization
+    val storedSyncOffsetMs by remember(current?.item?.ref) { tools.offsets.observe(current?.item?.ref) }
+        .collectAsState(null)
     val actions = remember(graph, occurrenceId, tools, current) {
         LyricsSurfaceActions(
             onSeek = { position ->
@@ -281,7 +301,7 @@ private fun desktopPlayerSlots(
         playback = graph.player.snapshot,
         romanization = romanization,
         settings = preferences.playerLyricsSettings(
-            syncOffsetMs = tools.offsets.value(current?.item?.ref),
+            syncOffsetMs = effectiveLyricsSyncOffsetMs(storedSyncOffsetMs, (preferences[GlobalLyricsOffsetMsKey] ?: 0).toLong()),
             reducedMotion = preferences[DisableAnimationsKey] == true,
             // ENHANCED reads its depth on desktop too; reduced motion leaves every row flat.
             depthEffects = LyricsMode.fromStored(preferences[LyricsModeKey]) == LyricsMode.ENHANCED &&
@@ -289,6 +309,7 @@ private fun desktopPlayerSlots(
         ),
         actions = actions,
         compactStyle = if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
+        credits = if (matching) document?.credits else null,
         fullVisible = expanded && active,
         compactVisible = expanded && active,
         resumed = active,
@@ -301,7 +322,7 @@ private fun desktopPlayerSlots(
             Column(modifier) {
                 val ref = current?.item?.ref
                 LyricsSyncControls(
-                    tools.offsets.value(ref), { delta -> if (ref != null) tools.offsets.adjust(ref, delta) },
+                    storedSyncOffsetMs ?: 0L, { delta -> if (ref != null) tools.offsets.adjust(ref, delta) },
                     { if (ref != null) tools.offsets.reset(ref) }, enabled = matching && ref != null,
                 )
                 Box(Modifier.weight(1f)) { lyrics.full(Modifier.fillMaxSize()) }

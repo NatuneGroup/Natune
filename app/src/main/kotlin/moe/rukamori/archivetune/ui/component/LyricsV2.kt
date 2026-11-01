@@ -140,6 +140,7 @@ import moe.rukamori.archivetune.constants.LyricsV2LrcBounceEnabledKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
+import moe.rukamori.archivetune.lyrics.LyricsDeadlineSchedule
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
@@ -180,6 +181,10 @@ private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
  * short enough not to lag noticeably behind the audio for typical words.
  */
 private const val MIN_SWEEP_MS = 180L
+
+/** The slowest the lyrics clock re-checks its feed while idle, and its cadence while paused. */
+private const val IDLE_POLL_MS = 250L
+private const val PAUSED_POLL_MS = 100L
 
 /**
  * Backward jump in the player's clock that counts as a restart (REPEAT_MODE_ONE
@@ -482,6 +487,9 @@ fun LyricsV2(
         // fill animation lag visibly behind the audio. `withFrameNanos` ties the poll cadence to
         // the actual frame rate so the two stay in lock-step.
         val useFrameClock = !v2AnimationsDisabled && isTtmlFormat
+        // Between word and line boundaries the drawn state is static: while playing, sleep to the
+        // next deadline; while paused or dragging, the coarse poll is enough to catch seeks.
+        val schedule = LyricsDeadlineSchedule.of(entriesWithWords, MIN_SWEEP_MS)
         var seekCheckPositionMs = -1L
         var seekCheckUptimeMs = 0L
         while (isActive) {
@@ -520,10 +528,14 @@ fun LyricsV2(
             currentPositionMs = (playbackPositionMs + leadMs + LYRIC_VISUAL_TUNING_OFFSET_MS).coerceAtLeast(0L)
 
             currentLineIndex = findCurrentLineIndex(entriesWithWords, currentPositionMs, 0L)
-            if (useFrameClock) {
-                withFrameNanos { }
-            } else {
-                delay(pollIntervalMs)
+            when {
+                sliderPos != null -> delay(pollIntervalMs)
+                !player.isPlaying -> delay(PAUSED_POLL_MS)
+                useFrameClock && schedule.isLive(currentPositionMs) -> withFrameNanos { }
+                else -> {
+                    val next = schedule.nextChangeAfter(currentPositionMs)
+                    delay(if (next == null) IDLE_POLL_MS else (next - currentPositionMs).coerceIn(pollIntervalMs, IDLE_POLL_MS))
+                }
             }
         }
     }
@@ -2328,84 +2340,6 @@ private fun InstrumentalBreakRow(
             textColor = textColor,
             inactiveAlpha = inactiveAlpha,
         )
-        }
-    }
-}
-
-@Composable
-private fun InstrumentalBreakItem(
-    durationMs: Long,
-    currentPositionMs: Long,
-    startTimeMs: Long,
-    textColor: Color,
-    inactiveAlpha: Float,
-) {
-    val musicNotePath =
-        remember {
-            androidx.compose.ui.graphics.vector
-                .PathParser()
-                .parsePathString(
-                    "M10 21q-1.65 0-2.825-1.175T6 17t1.175-2.825T10 13q.575 0 1.063.138t.937.412V4" +
-                        "q0-.425.288-.712T13 3h4q.425 0 .713.288T18 4v2q0 .425-.288.713T17 7h-3v10" +
-                        "q0 1.65-1.175 2.825T10 21",
-                ).toPath()
-        }
-
-    val targetFillFraction =
-        when {
-            durationMs <= 0L -> {
-                0f
-            }
-
-            currentPositionMs <= startTimeMs -> {
-                0f
-            }
-
-            currentPositionMs >= startTimeMs + durationMs -> {
-                1f
-            }
-
-            else -> {
-                ((currentPositionMs - startTimeMs).toDouble() / durationMs.toDouble())
-                    .toFloat()
-                    .coerceIn(0f, 1f)
-            }
-        }
-    val fillFraction by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = targetFillFraction,
-        animationSpec =
-            spring(
-                stiffness = Spring.StiffnessHigh,
-                dampingRatio = Spring.DampingRatioNoBouncy,
-            ),
-        label = "instrumentalFill",
-    )
-
-    androidx.compose.foundation.Canvas(modifier = Modifier.size(48.dp)) {
-        val scaleX = size.width / 24f
-        val scaleY = size.height / 24f
-        val pivot = androidx.compose.ui.geometry.Offset.Zero
-
-        withTransform(
-            transformBlock = { scale(scaleX, scaleY, pivot) },
-        ) {
-            drawPath(path = musicNotePath, color = textColor.copy(alpha = inactiveAlpha))
-        }
-
-        if (fillFraction > 0f) {
-            val clipTop = size.height * (1f - fillFraction)
-            clipRect(
-                left = 0f,
-                top = clipTop,
-                right = size.width,
-                bottom = size.height,
-            ) {
-                withTransform(
-                    transformBlock = { scale(scaleX, scaleY, pivot) },
-                ) {
-                    drawPath(path = musicNotePath, color = textColor)
-                }
-            }
         }
     }
 }

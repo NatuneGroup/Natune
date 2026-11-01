@@ -44,15 +44,97 @@ class StartupStateStoreTest {
 
     @Test fun backgroundRestartCannotHideAnUnreviewedStartupFailure() {
         val directory = temporary.newFolder()
-        val failed = StartupAttempt(100L, 10, "failed-build")
+        val failed = StartupAttempt(100L, 10, "N20261101")
         StartupStateStore(directory).begin(failed)
         val restarted = StartupStateStore(directory)
-        val later = StartupAttempt(200L, 11, "current-build")
+        val later = StartupAttempt(200L, 11, "N20261101")
         restarted.begin(later)
         assertEquals(failed, restarted.pendingAttempt())
         assertEquals(failed, restarted.lastAttempt())
         assertFalse(restarted.markHealthy(later))
         assertTrue(restarted.pendingExists())
+    }
+
+    @Test fun aHealthyNewerBuildRetiresAnEarlierBuildsPendingAttempt() {
+        val directory = temporary.newFolder()
+        StartupStateStore(directory).begin(StartupAttempt(100L, 10, "N20261031"))
+        val restarted = StartupStateStore(directory)
+        val current = StartupAttempt(200L, 11, "N20261101")
+        restarted.begin(current)
+        assertTrue(restarted.markHealthy(current))
+        assertFalse(restarted.pendingExists())
+    }
+
+    @Test fun aHealthyLaunchRetiresAnUnreadablePendingMarker() {
+        val directory = temporary.newFolder()
+        File(directory, "startup_pending").writeText("partial")
+        val restarted = StartupStateStore(directory)
+        assertTrue(restarted.markHealthy(StartupAttempt(200L, 11, "N20261101")))
+        assertFalse(restarted.pendingExists())
+    }
+
+    @Test fun aMarkerRoundTripsItsInstallIdentity() {
+        val directory = temporary.newFolder()
+        val attempt = StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 1_000L)
+        StartupStateStore(directory).begin(attempt)
+        assertEquals(attempt, StartupStateStore(directory).pendingAttempt())
+        assertEquals(attempt, StartupStateStore(directory).lastAttempt())
+    }
+
+    @Test fun aLegacyThreeLineMarkerStillParses() {
+        val directory = temporary.newFolder()
+        File(directory, "startup_pending").writeText("100\n10\nN20261031")
+        val attempt = StartupStateStore(directory).pendingAttempt()!!
+        assertEquals(100L, attempt.timestampMs)
+        assertEquals(10, attempt.pid)
+        assertEquals("N20261031", attempt.version)
+        assertEquals(UNKNOWN_VERSION_CODE, attempt.versionCode)
+        assertEquals(0L, attempt.installedSinceMs)
+    }
+
+    @Test fun aHealthyProcessCannotRetireAnotherProcesssMarkerOfTheSameInstall() {
+        val directory = temporary.newFolder()
+        StartupStateStore(directory)
+            .begin(StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 1_000L))
+        val restarted = StartupStateStore(directory)
+        val sameInstall = StartupAttempt(200L, 11, "N20261101", versionCode = 100L, installedSinceMs = 1_000L)
+        assertFalse(restarted.markHealthy(sameInstall))
+        assertTrue(restarted.pendingExists())
+    }
+
+    @Test fun aHealthyProcessCannotRetireAPossiblySameInstallMarker() {
+        // An install stamp only disproves a match when both sides recorded one.
+        val directory = temporary.newFolder()
+        StartupStateStore(directory)
+            .begin(StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 0L))
+        val restarted = StartupStateStore(directory)
+        assertFalse(
+            restarted.markHealthy(
+                StartupAttempt(200L, 11, "N20261101", versionCode = 100L, installedSinceMs = 1_000L),
+            ),
+        )
+        assertTrue(restarted.pendingExists())
+
+        val second = temporary.newFolder()
+        StartupStateStore(second)
+            .begin(StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 1_000L))
+        val unstamped = StartupStateStore(second)
+        assertFalse(
+            unstamped.markHealthy(
+                StartupAttempt(200L, 11, "N20261101", versionCode = 100L, installedSinceMs = 0L),
+            ),
+        )
+        assertTrue(unstamped.pendingExists())
+    }
+
+    @Test fun aHealthyLaunchRetiresAMarkerFromAnotherInstall() {
+        val directory = temporary.newFolder()
+        StartupStateStore(directory)
+            .begin(StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 500L))
+        val restarted = StartupStateStore(directory)
+        val current = StartupAttempt(200L, 11, "N20261101", versionCode = 100L, installedSinceMs = 1_000L)
+        assertTrue(restarted.markHealthy(current))
+        assertFalse(restarted.pendingExists())
     }
 
     @Test fun javaCaptureIsBoundedAndContainsTheTimestampEvenWithALargeMessage() {

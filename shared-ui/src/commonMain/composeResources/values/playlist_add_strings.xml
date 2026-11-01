@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_move_to_top">Move to top</string>
+    <string name="playlist_move_to_bottom">Move to bottom</string>
+    <string name="playlist_already_in">Already in %1$s</string>
+    <string name="playlist_add">Add</string>
+    <string name="playlist_add_retry">Retry</string>
+    <string name="playlist_add_progress">Processed %1$d of %2$d tracks</string>
+    <string name="playlist_add_uncertain">The last request may have succeeded. Check the playlist before retrying.</string>
+    <string name="playlist_add_stopped">%1$d tracks completed or already present; %2$d tracks remain unconfirmed. Completed additions were kept.</string>
+    <string name="playlist_add_failed">Couldn\'t add to %1$s: %2$s</string>
+</resources>

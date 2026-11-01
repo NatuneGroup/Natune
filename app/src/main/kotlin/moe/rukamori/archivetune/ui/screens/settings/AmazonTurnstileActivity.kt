@@ -59,6 +59,7 @@ import moe.rukamori.archivetune.constants.AmazonBypassTokenKey
 import moe.rukamori.archivetune.constants.AmazonInstancesKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtExpiryMsKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtKey
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
@@ -288,6 +289,16 @@ class AmazonTurnstileActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth().weight(1f),
                             factory = { ctx ->
                                 createAuthWebView(ctx).apply {
+                                    // The challenge page is injected over a spoofed origin; without a
+                                    // client nothing logged its main-frame failures at all.
+                                    webViewClient =
+                                        AuthSignInWebViewClient(
+                                            "amazon",
+                                            setOfNotNull(
+                                                "amazon.com",
+                                                android.net.Uri.parse(AmazonAudioProvider.TURNSTILE_ORIGIN).host,
+                                            ),
+                                        )
                                     addJavascriptInterface(
                                         object {
                                             @JavascriptInterface

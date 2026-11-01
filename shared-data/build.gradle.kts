@@ -60,6 +60,8 @@ kotlin {
             implementation("androidx.sqlite:sqlite-bundled:2.6.2")
             // TidalDns ports the original's OkHttp bootstrap-resolver + DoH client verbatim.
             implementation(libs.okhttp)
+            // The desktop BotGuard runtime shares the pinned quickjs-kt artifact iosMain already uses.
+            implementation(libs.quickjs.kt)
         }
         if (hasAndroidSdk) {
             androidMain.dependencies {
@@ -86,8 +88,8 @@ kotlin {
             implementation(libs.ktor.client.darwin)
             implementation("androidx.sqlite:sqlite-bundled:2.6.2")
         }
-        // InnerTubeX (com.github.MetrolistGroup.innertubex v0.11.0, GPL-3.0) is consumed through its
-        // per-target artifacts so the Android-side innertubex v0.9.2 pin keeps its own version.
+        // InnerTubeX (com.github.MetrolistGroup.innertubex v0.11.2, GPL-3.0) is consumed through its
+        // per-target artifacts, on the same release as the Android-side innertubex pin.
         iosArm64Main.dependencies {
             implementation(libs.innertubex.iosarm64)
         }

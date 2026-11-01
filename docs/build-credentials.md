@@ -21,7 +21,8 @@ For each variable, the first non-blank value wins:
 4. Blank (the default). The dependent feature reports "not configured".
 
 Last.fm also reads the legacy names `LASTFM_API_KEY` and `LASTFM_SECRET` when the `ARCHIVETUNE_LASTFM_*`
-name is blank, so existing local setups keep working.
+name is blank, so existing local setups keep working. Lyprio reads `LYPRIO_BASE_URL` and
+`LYPRIO_HMAC_KEY` the same way when the `ARCHIVETUNE_LYPRIO_*` names are blank.
 
 ## Variables
 
@@ -29,12 +30,14 @@ name is blank, so existing local setups keep working.
 | --- | --- | --- |
 | `ARCHIVETUNE_LASTFM_API_KEY` (legacy `LASTFM_API_KEY`) | Last.fm sign-in and the default Last.fm API key for scrobbling. Read by `:app` (`BuildConfig.LASTFM_API_KEY`) and `:lastfm` (`ProviderBuildCredentials`). | Last.fm sign-in reports not configured unless the user has entered their own key in Last.fm settings. Libre.fm and custom endpoints keep their own keys or the compatibility pair. |
 | `ARCHIVETUNE_LASTFM_API_SECRET` (legacy `LASTFM_SECRET`) | Signing secret for the same Last.fm calls. Same consumers as above. | As above. A key without a secret does not count as configured. |
+| `ARCHIVETUNE_LYPRIO_BASE_URL` (legacy `LYPRIO_BASE_URL`) | Built-in Lyprio lyrics server base URL (the service the Metrolist developers run; not user-configurable), for example `https://ly.meowery.eu`. Read by `:app` (`BuildConfig.LYPRIO_BASE_URL`), desktop (`DesktopCredentials.lyprioBaseUrl`) and iOS (`Info.plist` `ArchiveTuneLyprioBaseUrl`). | The Lyprio provider is absent and its settings toggle greys out as unavailable in this build. |
+| `ARCHIVETUNE_LYPRIO_HMAC_KEY` (legacy `LYPRIO_HMAC_KEY`) | Base64 of the 32-byte request-signing key paired with the built-in Lyprio server. Same consumers as the base URL. It is never written to settings, so it stays out of backups and diagnostics, and settings never display it. | As above. Both values must be present for the bundled endpoint to exist. |
 | `ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY` | Cloudflare Turnstile verification for Amazon Music instances (`AmazonAudioProvider`, `AmazonTurnstileActivity`; desktop `DesktopAmazonAuthorize`, which runs the challenge in its native window). | "Authorize with Turnstile" shows "not configured" and loads nothing. Operator bypass tokens keep working. |
 | `ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN` | Origin the Turnstile sitekey is locked to: the `Origin` header of the instance requests and the document the challenge runs on (the Android WebView base URL, the desktop challenge window). Desktop accepts only a plain `https://host[:port]` origin. iOS does not read this value yet and keeps its built-in origin. | Same as the sitekey: the sign-in reports not configured. Android and desktop then send no `Origin` header. |
 | `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID` | YouTube device-code sign-in (`YouTubeOAuthRepository`, `YouTubeOAuthLoginScreen`; desktop `DesktopYouTubeOAuth`). | The sign-in shows "not configured" and sends no request. Stored sessions are not cleared. |
 | `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET` | Client secret for the same flow. | As above. |
-| `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY` | WebClient PO token generation (`PoTokenWebView`) and BotGuard token minting (`BotGuardTokenGenerator`, as its `API_KEY`). The same value feeds both. | No WebClient PO token is minted; the existing client fallbacks continue. |
-| `ARCHIVETUNE_POTOKEN_REQUEST_KEY` | Request key for the same PO token and BotGuard paths. The same value feeds both. | As above. |
+| `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY` | WebClient PO token generation (`PoTokenWebView`) and BotGuard token minting (`BotGuardTokenGenerator`, as its `API_KEY`). The same value feeds both. On desktop the shared BotGuard engine (`DesktopPoTokenOwner`) reads it through `DesktopCredentials`; on iOS the shared engine reads the `ArchiveTunePoTokenGoogleApiKey` Info.plist key. | No WebClient PO token is minted; the existing client fallbacks continue. On desktop and iOS the resolver sends untokened requests and settings generation reports not configured. |
+| `ARCHIVETUNE_POTOKEN_REQUEST_KEY` | Request key for the same PO token and BotGuard paths. The same value feeds both. On desktop it comes through `DesktopCredentials`; on iOS through the `ArchiveTunePoTokenRequestKey` Info.plist key. | As above. |
 | `ARCHIVETUNE_TIDAL_CLIENT_ID` | TIDAL OAuth client for token refresh (`TidalAccountManager`). | Refresh of sessions that use this flow is skipped: no request is sent and the stored session is kept. The PKCE sign-in and the web-player capture remain. |
 | `ARCHIVETUNE_TIDAL_CLIENT_SECRET` | Client secret for the TIDAL OAuth flow. | As above. |
 | `ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID` | TIDAL PKCE sign-in flow (`TidalAccountManager`, `TidalLoginScreen`). | The PKCE flow is skipped and the login screen uses the web-player capture fallback. |
@@ -67,7 +70,8 @@ auth, WebView or Media3 classes are included.
 
 - **`:app`** declares each variable with `buildConfigField` in `app/build.gradle.kts`, so the value is
   available as `BuildConfig.<NAME>`. `BuildConfig.LASTFM_API_KEY` and `BuildConfig.LASTFM_SECRET` keep
-  their historical names.
+  their historical names, and `BuildConfig.LYPRIO_BASE_URL` / `BuildConfig.LYPRIO_HMAC_KEY` carry the
+  built-in Lyprio pair.
 - **`:lastfm`** and **`:canvas`** are plain JVM modules without `BuildConfig`. Each has a
   `generateProviderCredentials` task that writes `moe.rukamori.archivetune.<module>.ProviderBuildCredentials`
   into `build/generated/providerCredentials`, and that source directory is compiled with the module.
@@ -80,11 +84,14 @@ auth, WebView or Media3 classes are included.
   `moe.rukamori.archivetune.desktop.DesktopBuildCredentials` (TIDAL OAuth clients, the JioSaavn key,
   Last.fm, listener presence, the Telegram api_id/api_hash, the Playback Pool feed, the feedback service,
   the Google Drive desktop client, Spotify Echo protocol configuration, the YouTube device-code
-  client pair and the Amazon Turnstile sitekey and origin). `DesktopCredentials` reads each value from an environment variable of the
+  client pair, the Amazon Turnstile sitekey and origin and the built-in Lyprio server pair).
+  `DesktopCredentials` reads each value from an environment variable of the
   same name, then a JVM system property of the same name (`-D<NAME>=<value>`), then the build-time value, so a
   packaged desktop build can be configured at launch without rebuilding.
-- **iOS** maps the Telegram pair, the TIDAL client pairs, `ARCHIVETUNE_LISTENER_PRESENCE_URL` and the Last.fm
-  pair into `Info.plist`. Xcode takes them from the untracked `iosApp/Configuration/Credentials.xcconfig`
+- **iOS** maps the Telegram pair, the TIDAL client pairs, `ARCHIVETUNE_LISTENER_PRESENCE_URL`, the Last.fm
+  pair, the BotGuard PO token pair (`ARCHIVETUNE_POTOKEN_REQUEST_KEY`,
+  `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY`), the TIDAL canvas embed token and the Lyprio pair into
+  `Info.plist`. Xcode takes them from the untracked `iosApp/Configuration/Credentials.xcconfig`
   (included last by `Native.xcconfig`) or from build settings. The release workflow's iOS job writes that file from
   the same secrets before it builds (step `Write iOS provider credentials`). An xcconfig file treats `//` as a
   comment, so a value such as the presence origin is written with `/$()/` in place of `//`. The Turnstile sitekey
@@ -99,6 +106,8 @@ runs Gradle with the app or one of the modules above:
 env:
   ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
   ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
+  ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
+  ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
   ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
   ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
   ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
@@ -127,7 +136,9 @@ The two Telegram variables reuse the existing `TELEGRAM_API_ID` and `TELEGRAM_AP
 The repository owner creates the secrets. A secret that does not exist resolves to an empty string, so the build still
 succeeds and the matching feature reports not configured. `.github/workflows/_release-artifacts.yml` passes these values
 to its Android, desktop and iOS jobs. The pull-request and test workflows read the Last.fm pair under the canonical
-names and fall back to the legacy `LASTFM_*` secrets.
+names and fall back to the legacy `LASTFM_*` secrets. The Lyprio pair comes from the `LYPRIO_BASE_URL` Actions
+variable and the `LYPRIO_HMAC_KEY` secret in every job that receives the Last.fm secrets; fork pull requests get
+neither, so the bundled endpoint simply stays unconfigured there.
 
 ## Local setup
 

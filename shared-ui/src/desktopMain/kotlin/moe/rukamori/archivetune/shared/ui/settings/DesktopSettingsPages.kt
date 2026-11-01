@@ -141,37 +141,4 @@ fun ContentSettings(
     )
 }
 
-@Composable
-fun AppleMusicSettings(
-    controller: SettingsController,
-    onFailure: () -> Unit,
-    scrollTo: String?,
-) = DesktopRowsPage(controller, {
-    buildList {
-        add(
-            SettingsRow.Toggle(
-                "apple_music_experience", Res.string.m6_apple_music_experience, AppleMusicExperienceKey,
-                PreferenceDefaults.appleMusicExperience,
-                read = { it.interfaceStyle() == InterfaceStyle.APPLE_MUSIC },
-                write = { applyInterfaceStyle(if (it) InterfaceStyle.APPLE_MUSIC else InterfaceStyle.MATERIAL_EXPRESSIVE) },
-            ),
-        )
-        add(
-            SettingsRow.Text(
-                "apple_music_dev_token", Res.string.m6_apple_music_dev_token, AppleMusicDevTokenKey,
-                masked = true,
-            ),
-        )
-        add(
-            SettingsRow.Text(
-                "apple_music_user_token", Res.string.m6_apple_music_user_token, AppleMusicMediaUserTokenKey,
-                masked = true,
-            ),
-        )
-        add(
-            SettingsRow.Text(
-                "apple_music_account_name", Res.string.m6_apple_music_account_name, AppleMusicAccountNameKey,
-            ),
-        )
-    }
-}, onFailure, scrollTo)
+

@@ -8,6 +8,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +24,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
+import moe.rukamori.archivetune.shared.domain.library.librarySortState
+import moe.rukamori.archivetune.shared.domain.library.writeTo
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.navigation.*
@@ -58,8 +68,14 @@ class ArchiveTuneHostBindings(
     val onBackAtRoot: () -> Unit,
     val podcastProgress: Flow<List<PodcastProgress>> = flowOf(emptyList()),
     val songMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository? = null,
+    /** The repository-backed add-to-playlist picker; a host without one keeps the single-playlist chooser. */
+    val playlistPicker: moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource? = null,
+    /** The custom cover store; provided as overrides so playlist rows can choose cover or mosaic. */
+    val customArtwork: moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository? = null,
     /** A tab bar and mini player the platform draws above the root, or null where the shell draws its own. */
     val nativeChrome: NativeShellChrome? = null,
+    /** Toggles the platform window's own fullscreen; null where the host window has no fullscreen surface. */
+    val toggleWindowFullscreen: (() -> Unit)? = null,
 )
 
 /** Host lifecycle is an input: losing UI visibility never pauses background audio. */
@@ -70,6 +86,8 @@ fun ArchiveTuneRoot(
     resumed: Boolean,
     opticalCapabilities: OpticalCapabilities,
     television: Boolean = false,
+    /** The OS light/dark answer as the host observes it; the default asks Compose, which may not see OS changes. */
+    systemDark: Boolean = isSystemInDarkTheme(),
 ) {
     key(host) {
         // A null local means this host has no edit store; leave repository-supplied effective rows intact.
@@ -85,11 +103,37 @@ fun ArchiveTuneRoot(
         } else {
             val progress by host.podcastProgress.collectAsState(emptyList())
             val byEpisode = remember(progress) { progress.associateBy { it.episodeId } }
+            // The picker sort is one persisted preference, read and written through the same settings store as the
+            // other library sorts, so a chosen order survives the next picker on every host.
+            val pickerContext = remember(host.playlistPicker, preferences) {
+                host.playlistPicker?.let { source ->
+                    moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerContext(
+                        source = source,
+                        sort = preferences.librarySortState(
+                            PlaylistPickerSortTypeKey,
+                            PlaylistPickerSortDescendingKey,
+                            moe.rukamori.archivetune.shared.domain.library.LibraryDefaults.playlistPickerSort,
+                        ),
+                        onSort = { type, descending ->
+                            host.actionScope.launch {
+                                host.settings.edit {
+                                    moe.rukamori.archivetune.shared.domain.library.LibrarySortState(type, descending)
+                                        .writeTo(this, PlaylistPickerSortTypeKey, PlaylistPickerSortDescendingKey)
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+            LaunchedEffect(host.customArtwork) { host.customArtwork?.ensureLoaded() }
+            val artworkOverrides by (host.customArtwork?.overrides ?: remember { kotlinx.coroutines.flow.MutableStateFlow<moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkOverrides?>(null) }).collectAsState()
             CompositionLocalProvider(
                 moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides provides edits,
                 LocalPodcastProgress provides byEpisode,
+                moe.rukamori.archivetune.shared.ui.menu.LocalPlaylistPickerContext provides pickerContext,
+                moe.rukamori.archivetune.shared.ui.screens.LocalCustomArtworkOverrides provides artworkOverrides,
             ) {
-                ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television)
+                ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television, systemDark)
             }
         }
     }
@@ -103,6 +147,7 @@ private fun ArchiveTuneLoadedRoot(
     resumed: Boolean,
     opticalCapabilities: OpticalCapabilities,
     television: Boolean,
+    systemDark: Boolean,
 ) {
         val navigation = rememberShellNavigation(preferences)
         val interaction = remember { PlayerInteractionState() }
@@ -125,14 +170,15 @@ private fun ArchiveTuneLoadedRoot(
                 expand = { expanded = true },
                 togglePlayback = { playing -> if (playing) host.queue.player.pause() else host.queue.player.play() })
         }
-        LaunchedEffect(host, navigation, interaction) {
-            host.backRequests.collect {
-                when {
-                    expanded && interaction.back() -> Unit
-                    expanded -> expanded = false
-                    !navigation.back() -> host.onBackAtRoot()
-                }
+        val goBack = {
+            when {
+                expanded && interaction.back() -> Unit
+                expanded -> expanded = false
+                !navigation.back() -> host.onBackAtRoot()
             }
+        }
+        LaunchedEffect(host, navigation, interaction) {
+            host.backRequests.collect { goBack() }
         }
         fun load(request: QueueLoadRequest) {
             host.actionScope.launch {
@@ -151,7 +197,7 @@ private fun ArchiveTuneLoadedRoot(
         )
         val policy = opticalPolicy(preferences, opticalCapabilities, resumed, visible,
             playerExpanded = expanded, lyricsExpanded = expanded && interaction.fullscreenLyrics)
-        val darkTheme = isSystemInDarkTheme()
+        val darkTheme = darkThemeFor(preferences[DarkModeKey], systemDark)
         // A palette is rebuilt only when its seed, style or dark flag changes. Without a saved palette the scheme is
         // the default one, so the default look does not change.
         val paletteSeed = preferences.savedPaletteSeed()
@@ -159,10 +205,56 @@ private fun ArchiveTuneLoadedRoot(
         val colorScheme = remember(paletteSeed, paletteStyle, darkTheme) {
             paletteSeed?.let { paletteColorScheme(it, darkTheme, paletteStyle) } ?: archiveTuneDefaultColorScheme(darkTheme)
         }
+        val nativeState by host.playerControls.state.collectAsState()
+        var rememberedMute by remember { mutableStateOf<Float?>(null) }
+        fun handleKeymap(action: KeymapAction): Boolean {
+            val player = host.queue.player
+            val snapshot = player.snapshot.value
+            when (action) {
+                KeymapAction.TogglePlayback -> {
+                    if (snapshot == null) return false
+                    if (snapshot.playWhenReady) player.pause() else player.play()
+                }
+                KeymapAction.SeekBack -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.SEEK_BACKWARD)
+                KeymapAction.SeekForward -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.SEEK_FORWARD)
+                KeymapAction.Next -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.NEXT)
+                KeymapAction.Previous -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.PREVIOUS)
+                KeymapAction.Shuffle -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.SHUFFLE)
+                KeymapAction.Repeat -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.REPEAT)
+                KeymapAction.VolumeUp, KeymapAction.VolumeDown -> {
+                    val level = nativeState.volume ?: return false
+                    val delta = if (action == KeymapAction.VolumeUp) KEYMAP_VOLUME_STEP else -KEYMAP_VOLUME_STEP
+                    host.playerControls.setVolume((level + delta).coerceIn(0f, 1f))
+                }
+                KeymapAction.Mute -> {
+                    val level = nativeState.volume ?: return false
+                    val target = muteVolumeTarget(level, rememberedMute)
+                    rememberedMute = target.remembered
+                    host.playerControls.setVolume(target.volume)
+                }
+                is KeymapAction.SeekFraction -> {
+                    if (snapshot?.isSeekable != true) return false
+                    val target = fractionSeekTargetMs(snapshot.durationMs ?: return false, action.fraction) ?: return false
+                    player.seekTo(target)
+                }
+                KeymapAction.Back -> goBack()
+                KeymapAction.Search -> navigation.select(ShellTab.Search, toRoot = true)
+                KeymapAction.ExpandPlayer -> expanded = !expanded
+                KeymapAction.FullscreenLyrics -> { expanded = true; interaction.fullscreenLyrics = !interaction.fullscreenLyrics }
+                KeymapAction.ToggleFullscreen -> host.toggleWindowFullscreen?.invoke() ?: return false
+            }
+            return true
+        }
         ArchiveTuneTheme(darkTheme = darkTheme, disableAnimations = preferences[DisableAnimationsKey, false],
             colorScheme = colorScheme) {
             ProvideBackdropSources(policy) { pageSource ->
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    val action = keymapActionOf(event.key,
+                        ctrlOrMeta = event.isCtrlPressed || event.isMetaPressed,
+                        alt = event.isAltPressed, shift = event.isShiftPressed) ?: return@onKeyEvent false
+                    handleKeymap(action)
+                }) {
                     ArchiveTuneShell(navigation, preferences,
                         onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
                         television = television, contentModifier = pageSource,
@@ -266,6 +358,16 @@ private class CollapsingPlayerControls(
     override fun onAction(action: PlayerAction, occurrenceId: String?) {
         if (action == PlayerAction.COLLAPSE) collapse() else delegate.onAction(action, occurrenceId)
     }
+}
+
+/**
+ * The stored dark-mode choice resolves over the platform's own light/dark reading; "AUTO" and unknown values
+ * follow it. The settings page writes exactly ON, OFF and AUTO.
+ */
+internal fun darkThemeFor(mode: String?, systemDark: Boolean): Boolean = when (mode) {
+    "ON" -> true
+    "OFF" -> false
+    else -> systemDark
 }
 
 /** Explicit unconfigured boundary retained for hosts whose required owner has not been published. */

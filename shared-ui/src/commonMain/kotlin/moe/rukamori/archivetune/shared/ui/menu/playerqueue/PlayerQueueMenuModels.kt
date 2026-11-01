@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
+import moe.rukamori.archivetune.shared.domain.settings.TempoPitchPreset
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 
 /**
@@ -153,6 +154,7 @@ enum class PlayerQueueMenuIcon {
     EQUALIZER,
     SPEED,
     DISCOVER_TUNE,
+    EDIT,
     REMOVE,
     ADD,
     SKIP_NEXT,
@@ -220,6 +222,10 @@ data class PlayerQueueMenuState(
     val equalizerSupported: Boolean = true,
     /** A host with no download owner hides the download and remove-download rows. */
     val downloadsSupported: Boolean = true,
+    /** Saved named tempo/pitch presets from the host's `tempoPitchPresetsJson` setting, already decoded. */
+    val tempoPitchPresets: List<TempoPitchPreset> = emptyList(),
+    /** True while the host persists the applied speed and pitch so they restore on the next launch. */
+    val tempoPitchRemembered: Boolean = false,
     /** Apple Music keeps the icon grid of actions; MD3 lists the same actions as rows with their icons. */
     val menuStyle: PlayerMenuStyle = PlayerMenuStyle.Default,
 )
@@ -252,6 +258,15 @@ interface PlayerQueueMenuActions : PlayerSleepTimerCommands {
     fun setAodMode()
     /** The menu clamps both values to the baseline's tempo and pitch ranges before calling. */
     fun applyPlaybackParameters(speed: Float, pitch: Float)
+    /** Owner copies [url] with the live playback position appended, as the baseline's timestamped row wrote it. */
+    fun copyLinkAtCurrentPosition(url: String)
+    /** Owner persists [remembered]; while it holds, every applied speed and pitch is stored for the next launch. */
+    fun setTempoPitchRemembered(remembered: Boolean)
+    /** Owner adds the named preset (or replaces the same id); a blank name or out-of-range value is rejected. */
+    fun saveTempoPitchPreset(name: String, speed: Float, pitch: Float)
+    /** Owner renames the preset; a blank name or unknown id is rejected. */
+    fun renameTempoPitchPreset(id: String, name: String)
+    fun deleteTempoPitchPreset(id: String)
     /** Owner renders the in-app equalizer and launches the system panel only when a handler exists. */
     fun openEqualizer()
     /** Owner renders the acoustic graph dialog for the target, as the baseline's AcousticQualityDialog did. */

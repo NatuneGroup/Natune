@@ -163,7 +163,7 @@ class LyricsModeComposeTest {
     }
 
     @Test
-    fun manualScrollHoldsAutoFollowForThreeSecondsThenReturnsToThePlayhead() = runComposeUiTest {
+    fun manualScrollHoldsAutoFollowForFourAndAHalfSecondsThenReturnsToThePlayhead() = runComposeUiTest {
         val playback = MutableStateFlow<PlaybackSnapshot?>(testSnapshot(positionMs = 0, sampleMonotonicNanos = nanos(1)))
         val listState = LazyListState()
         setContent {
@@ -192,21 +192,23 @@ class LyricsModeComposeTest {
         waitForIdle()
         assertFalse(isRowVisible(listState, 45), "auto-follow must hold during the manual-scroll window")
 
-        advanceTo(swipeAt + 3_600)
+        advanceTo(swipeAt + 4_400)
         waitForIdle()
-        advanceTo(swipeAt + 4_600)
+        assertFalse(isRowVisible(listState, 45), "auto-follow must still hold just before the hold expires")
+
+        advanceTo(swipeAt + 5_600)
         waitForIdle()
         assertTrue(isRowVisible(listState, 45), "auto-follow must return to the playhead once the hold expires")
     }
 
     @Test
-    fun v2HoldsAutoFollowForThreeSecondsAfterItsSwipe() = runComposeUiTest {
-        assertSwipeHoldExpires(LyricsMode.V2, holdMs = 3_000L)
+    fun v2HoldsAutoFollowForFourAndAHalfSecondsAfterItsSwipe() = runComposeUiTest {
+        assertSwipeHoldExpires(LyricsMode.V2, holdMs = 4_500L)
     }
 
     @Test
-    fun spotifyHoldsAutoFollowForThreeSecondsAfterItsSwipe() = runComposeUiTest {
-        assertSwipeHoldExpires(LyricsMode.SPOTIFY, holdMs = 3_000L)
+    fun spotifyHoldsAutoFollowForFourAndAHalfSecondsAfterItsSwipe() = runComposeUiTest {
+        assertSwipeHoldExpires(LyricsMode.SPOTIFY, holdMs = 4_500L)
     }
 
     @Test
@@ -328,9 +330,13 @@ class LyricsModeComposeTest {
         val firstLift = mainClock.currentTime
         playback.value = testSnapshot(positionMs = 45_000, sampleMonotonicNanos = nanos(2))
         waitForIdle()
-        advanceClockTo(firstLift + 4_000)
+        advanceClockTo(firstLift + 4_400)
         waitForIdle()
-        assertTrue(isRowVisible(listState, 45), "ENHANCED must resume after its three-second hold")
+        assertFalse(isRowVisible(listState, 45), "ENHANCED must still hold just before its 4.5-second hold expires")
+
+        advanceClockTo(firstLift + 5_600)
+        waitForIdle()
+        assertTrue(isRowVisible(listState, 45), "ENHANCED must resume after its 4.5-second hold")
 
         mode = LyricsMode.SIMPMUSIC
         waitForIdle()

@@ -336,10 +336,11 @@ internal suspend fun requestYouTubePlayer(
     gl: String,
     hl: String,
     signIn: DesktopYouTubeSignIn? = null,
+    poToken: String? = null,
 ): JsonObject {
     // A client without cookie authentication would reject or ignore the cookie, so it is only ever sent as a visitor.
     val session = signIn?.takeIf { client.supportsCookieAuthentication }
-    val body = playerRequestBody(videoId, playlistId, client, signatureTimestamp, visitorData, gl, hl, session)
+    val body = playerRequestBody(videoId, playlistId, client, signatureTimestamp, visitorData, gl, hl, session, poToken)
     val text =
         withTransientRetry {
             val response =
@@ -380,6 +381,7 @@ private fun playerRequestBody(
     gl: String,
     hl: String,
     session: DesktopYouTubeSignIn?,
+    poToken: String?,
 ): JsonObject =
     buildJsonObject {
         put("context", contextJson(client, videoId, visitorData, gl, hl, session))
@@ -387,6 +389,11 @@ private fun playerRequestBody(
         playlistId?.let { put("playlistId", it) }
         put("racyCheckOk", true)
         put("contentCheckOk", true)
+        poToken?.takeIf(String::isNotBlank)?.let { token ->
+            putJsonObject("serviceIntegrityDimensions") {
+                put("poToken", token)
+            }
+        }
         if (client.useSignatureTimestamp) {
             // The timestamp is what lets the player request mint URLs for the current base.js; without
             // it the response is ciphered for a stale script, so an absent value is omitted, not zeroed.

@@ -226,6 +226,8 @@
     <string name="save_canvas_variant_vertical">Vertical</string>
     <string name="save_canvas_variant_unavailable">Unavailable</string>
     <string name="lyrics_not_available">No lyrics for this track</string>
+    <string name="lyrics_written_by">Written by %1$s</string>
+    <string name="lyrics_auto_created">Automatically created</string>
     <string name="save_canvas_saving">Saving canvas…</string>
     <string name="save_canvas_saved">Canvas saved to Movies/ArchiveTune Canvas</string>
     <string name="save_canvas_save_failed">Couldn\'t save canvas: %1$s</string>
@@ -638,14 +640,9 @@
     <string name="enable_betterlyrics_portato">Enable BetterLyrics Portato</string>
     <string name="enable_youlyplus_lyrics">Enable YouLyPlus lyrics</string>
     <string name="enable_unison_lyrics">Enable Unison lyrics</string>
-    <string name="enable_lyprio_lyrics">Enable Lyprio lyrics (self-hosted)</string>
-    <string name="enable_lyprio_lyrics_desc">Ask your own Lyprio server first. Needs its URL and signing key.</string>
-    <string name="lyprio_endpoint">Lyprio server URL</string>
-    <string name="lyprio_endpoint_hint">Server root, e.g. https://lyrics.example.org</string>
-    <string name="lyprio_signing_key">Lyprio signing key</string>
-    <string name="lyprio_signing_key_hint">Base64 of the server\'s 32-byte key</string>
-    <string name="lyprio_signing_key_set">Signing key is set</string>
-    <string name="lyprio_not_configured">Not configured</string>
+    <string name="enable_lyprio_lyrics">Enable Lyprio lyrics</string>
+    <string name="enable_lyprio_lyrics_desc">Query the bundled Lyprio lyrics server.</string>
+    <string name="lyprio_not_available">Not available in this build</string>
     <string name="prioritize_word_synced_lyrics">Prioritize Word Synced Lyrics</string>
     <string name="prioritize_word_synced_lyrics_desc">Only accept word-synced lyrics, from BetterLyrics, YouLyPlus and Unison.</string>
     <string name="enable_simpmusic_lyrics">Enable SimpMusic lyrics</string>
@@ -700,6 +697,8 @@
     <string name="equalizer">Equalizer</string>
     <string name="eq_waiting_for_audio_session">Waiting for audio session</string>
     <string name="eq_open_system_equalizer">Open system equalizer</string>
+    <string name="equalizer_not_found">No system equalizer is available on this device</string>
+    <string name="equalizer_stream_unavailable">The equalizer is unavailable until music is playing</string>
     <string name="eq_screen_subtitle">Shape playback for your ears and equipment</string>
     <string name="eq_sound_shaping_on">Sound shaping is on</string>
     <string name="eq_sound_shaping_off">Sound shaping is off</string>

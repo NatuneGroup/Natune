@@ -38,6 +38,7 @@ import moe.rukamori.archivetune.ai.AiLyricsTranslator
 import moe.rukamori.archivetune.ai.toAiServiceConfig
 import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.LyricsEntity
+import moe.rukamori.archivetune.shared.domain.lyrics.LrcTranslationMerge
 import moe.rukamori.archivetune.lyrics.LyricsHelper
 import moe.rukamori.archivetune.lyrics.LyricsResult
 import moe.rukamori.archivetune.lyrics.LyricsUtils
@@ -273,7 +274,14 @@ class LyricsMenuViewModel
 
                         LyricsEntity.Source.AI_TRANSLATION,
                         LyricsEntity.Source.TRANSLATION,
-                        -> usableTranslatedLyrics(lyrics) ?: return@launch
+                        -> {
+                            val usable = usableTranslatedLyrics(lyrics) ?: return@launch
+                            // A stored line-synced document keeps its source rows: the translation
+                            // lands in a [translatedLyrics] section instead of replacing the doc —
+                            // unless it is already bilingual, in which case it saves verbatim.
+                            val existing = database.withTransaction { getLyricsById(mediaMetadata.id) }?.lyrics
+                            LrcTranslationMerge.saveableTranslation(existing, usable)
+                        }
                     }
                 database.query {
                     replaceLyrics(
@@ -360,7 +368,11 @@ class LyricsMenuViewModel
                             _translationUndo.value = LyricsTranslationUndoSnapshot(
                                 expected.id, expected.lyrics, expected.source, expected.providerName)
                         }
-                        replaceLyrics(mediaMetadata.id, usable, LyricsEntity.Source.AI_TRANSLATION.value,
+                        // The translator's rebuild already interleaves source and translated rows;
+                        // only a plain-text result needs the merge's re-stamped section.
+                        val merged =
+                            LrcTranslationMerge.saveableTranslation(expected?.lyrics ?: lyrics, usable)
+                        replaceLyrics(mediaMetadata.id, merged, LyricsEntity.Source.AI_TRANSLATION.value,
                             expected?.providerName.orEmpty())
                         true
                     }

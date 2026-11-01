@@ -668,6 +668,21 @@ private fun AboutSuccessContent(
                 }
             }
 
+            AboutLabelItem(acknowledgementsTitle)
+
+            preferenceGroup {
+                repeat(model.respecters.size) { index ->
+                    item {
+                        AboutMemberRow(
+                            member = model.respecters[index],
+                            index = index,
+                            count = model.respecters.size,
+                            onOpenUri = onOpenUri,
+                        )
+                    }
+                }
+            }
+
             AboutLabelItem(leadDeveloperTitle)
 
             preferenceGroup {
@@ -692,21 +707,6 @@ private fun AboutSuccessContent(
                             member = model.collaborators[index],
                             index = index,
                             count = model.collaborators.size,
-                            onOpenUri = onOpenUri,
-                        )
-                    }
-                }
-            }
-
-            AboutLabelItem(acknowledgementsTitle)
-
-            preferenceGroup {
-                repeat(model.respecters.size) { index ->
-                    item {
-                        AboutMemberRow(
-                            member = model.respecters[index],
-                            index = index,
-                            count = model.respecters.size,
                             onOpenUri = onOpenUri,
                         )
                     }

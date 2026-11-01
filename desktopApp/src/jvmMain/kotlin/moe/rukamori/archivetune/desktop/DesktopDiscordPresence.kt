@@ -7,7 +7,6 @@ import java.net.http.HttpResponse
 import java.net.http.WebSocket
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
 import java.util.Base64
@@ -23,25 +22,16 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.desktop.integration.DesktopDeepLinks
-import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
 
 /**
  * The desktop Discord owner: PKCE OAuth against discord.com, a minimal-identify Gateway session and
  * playback-driven presence updates, exactly the contract the shared Discord settings pages expect
  * (AGENTS.md: no user token, no confidential client secret, IDENTIFY with intents=0, presence driven
- * by playback only — no background gateway retry loops).
+ * by playback only — no background gateway retry loops). Every wire payload comes from the shared
+ * protocol helpers, so both hosts emit the identical shapes.
  */
 internal class DesktopDiscordPresence(
     private val graph: DesktopSessionGraph,
@@ -49,7 +39,6 @@ internal class DesktopDiscordPresence(
     private val controller: SettingsController,
     private val report: (String) -> Unit,
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
     private val secureRandom = SecureRandom()
     private val scope = graph.scope
@@ -73,18 +62,13 @@ internal class DesktopDiscordPresence(
         registerDiscordScheme()
         val state = randomUrlSafe(24)
         val verifier = randomUrlSafe(64)
-        val challenge = Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.UTF_8)))
+        val challenge = discordPkceChallenge(verifier)
         val callback = CompletableDeferred<String>()
-        val handle = links.expectCallback(REDIRECT_URI, state) { raw -> callback.complete(raw) }
+        val handle = links.expectCallback(DISCORD_REDIRECT_URI, state) { raw -> callback.complete(raw) }
         try {
-            val authorizeUrl = "$AUTHORIZE_ENDPOINT?client_id=$APPLICATION_ID" +
-                "&response_type=code&redirect_uri=${REDIRECT_URI.uriEncode()}" +
-                "&scope=${OAUTH_SCOPES.uriEncode()}&state=$state" +
-                "&code_challenge=$challenge&code_challenge_method=S256"
-            if (!openDesktopUri(authorizeUrl, report)) return@withContext null
+            if (!openDesktopUri(discordAuthorizeUrl(state, challenge), report)) return@withContext null
             val raw = withTimeoutOrNull(OAUTH_TIMEOUT_MS) { callback.await() } ?: return@withContext null
-            val code = queryParam(raw, "code") ?: return@withContext null
+            val code = discordQueryParam(raw, "code") ?: return@withContext null
             exchangeCode(code, verifier)
         } finally {
             handle.close()
@@ -93,38 +77,36 @@ internal class DesktopDiscordPresence(
 
     private suspend fun exchangeCode(code: String, verifier: String): DiscordSessionFacts? =
         withContext(Dispatchers.IO) {
-            val body = "client_id=$APPLICATION_ID&grant_type=authorization_code" +
-                "&code=${code.uriEncode()}&redirect_uri=${REDIRECT_URI.uriEncode()}" +
-                "&code_verifier=${verifier.uriEncode()}"
-            val request = HttpRequest.newBuilder(URI.create(TOKEN_ENDPOINT))
+            val request = HttpRequest.newBuilder(URI.create(DISCORD_TOKEN_ENDPOINT))
                 .timeout(Duration.ofMillis(REQUEST_TIMEOUT_MS))
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(body)).build()
+                .POST(HttpRequest.BodyPublishers.ofString(discordTokenExchangeBody(code, verifier))).build()
             runCatching {
                 val response = http.send(request, HttpResponse.BodyHandlers.ofString())
                 if (response.statusCode() != 200) return@withContext null
-                val root = json.parseToJsonElement(response.body()).jsonObject
-                val access = root["access_token"]?.jsonPrimitive?.content ?: return@withContext null
-                val refresh = root["refresh_token"]?.jsonPrimitive?.content
-                val expiresIn = root["expires_in"]?.jsonPrimitive?.longOrNull ?: 0L
+                val grant = parseDiscordTokenGrant(response.body()) ?: return@withContext null
                 DiscordSessionFacts(
-                    accessToken = access,
-                    refreshToken = refresh,
-                    expiresAtMillis = if (expiresIn > 0) System.currentTimeMillis() + expiresIn * 1000 else 0L,
-                    account = fetchAccountFacts(access),
+                    accessToken = grant.accessToken,
+                    refreshToken = grant.refreshToken,
+                    expiresAtMillis = if (grant.expiresInSeconds > 0) {
+                        System.currentTimeMillis() + grant.expiresInSeconds * 1000
+                    } else {
+                        0L
+                    },
+                    account = fetchAccountFacts(grant.accessToken),
                 )
             }.getOrNull()
         }
 
     suspend fun verifyAccount(accessToken: String): DiscordAccountCheck = withContext(Dispatchers.IO) {
         runCatching {
-            val request = HttpRequest.newBuilder(URI.create(CURRENT_USER_ENDPOINT))
+            val request = HttpRequest.newBuilder(URI.create(DISCORD_CURRENT_USER_ENDPOINT))
                 .timeout(Duration.ofMillis(REQUEST_TIMEOUT_MS))
                 .header("Authorization", "Bearer $accessToken").GET().build()
             val response = http.send(request, HttpResponse.BodyHandlers.ofString())
             when (response.statusCode()) {
                 200 -> {
-                    val facts = parseAccountFacts(response.body())
+                    val facts = parseDiscordAccountFacts(response.body())
                     if (facts != null) DiscordAccountCheck.Verified(facts) else DiscordAccountCheck.Unverified
                 }
                 401, 403 -> DiscordAccountCheck.Rejected
@@ -134,22 +116,12 @@ internal class DesktopDiscordPresence(
     }
 
     private fun fetchAccountFacts(accessToken: String): DiscordAccountFacts? = runCatching {
-        val request = HttpRequest.newBuilder(URI.create(CURRENT_USER_ENDPOINT))
+        val request = HttpRequest.newBuilder(URI.create(DISCORD_CURRENT_USER_ENDPOINT))
             .timeout(Duration.ofMillis(REQUEST_TIMEOUT_MS))
             .header("Authorization", "Bearer $accessToken").GET().build()
         val response = http.send(request, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() != 200) return null
-        parseAccountFacts(response.body())
-    }.getOrNull()
-
-    private fun parseAccountFacts(body: String): DiscordAccountFacts? = runCatching {
-        val root = json.parseToJsonElement(body).jsonObject
-        val username = root["username"]?.jsonPrimitive?.content ?: return null
-        val display = root["global_name"]?.jsonPrimitive?.content ?: username
-        val id = root["id"]?.jsonPrimitive?.content
-        val avatar = root["avatar"]?.jsonPrimitive?.content
-        val avatarUrl = if (id != null && avatar != null) "https://cdn.discordapp.com/avatars/$id/$avatar.png" else null
-        DiscordAccountFacts(username = username, displayName = display, avatarUrl = avatarUrl)
+        parseDiscordAccountFacts(response.body())
     }.getOrNull()
 
     /** A fresh valid access token: refreshes through Discord's grant when expired and a refresh token exists. */
@@ -158,29 +130,29 @@ internal class DesktopDiscordPresence(
         val expiry = preferences.discordTokenExpiresAt()
         if (expiry == 0L || expiry - EXPIRY_SKEW_MS > System.currentTimeMillis()) return@withContext current
         val refresh = preferences[DiscordRefreshTokenKey] ?: return@withContext null
-        val body = "client_id=$APPLICATION_ID&grant_type=refresh_token&refresh_token=${refresh.uriEncode()}"
-        val request = HttpRequest.newBuilder(URI.create(TOKEN_ENDPOINT))
+        val request = HttpRequest.newBuilder(URI.create(DISCORD_TOKEN_ENDPOINT))
             .timeout(Duration.ofMillis(REQUEST_TIMEOUT_MS))
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .POST(HttpRequest.BodyPublishers.ofString(body)).build()
+            .POST(HttpRequest.BodyPublishers.ofString(discordTokenRefreshBody(refresh))).build()
         runCatching {
             val response = http.send(request, HttpResponse.BodyHandlers.ofString())
             if (response.statusCode() != 200) return@withContext null
-            val root = json.parseToJsonElement(response.body()).jsonObject
-            val access = root["access_token"]?.jsonPrimitive?.content ?: return@withContext null
-            val newRefresh = root["refresh_token"]?.jsonPrimitive?.content
-            val expiresIn = root["expires_in"]?.jsonPrimitive?.longOrNull ?: 0L
+            val grant = parseDiscordTokenGrant(response.body()) ?: return@withContext null
             controller.edit {
                 commitDiscordSignIn(
                     DiscordSessionFacts(
-                        accessToken = access,
-                        refreshToken = newRefresh ?: refresh,
-                        expiresAtMillis = if (expiresIn > 0) System.currentTimeMillis() + expiresIn * 1000 else 0L,
+                        accessToken = grant.accessToken,
+                        refreshToken = grant.refreshToken ?: refresh,
+                        expiresAtMillis = if (grant.expiresInSeconds > 0) {
+                            System.currentTimeMillis() + grant.expiresInSeconds * 1000
+                        } else {
+                            0L
+                        },
                         account = null,
                     ),
                 )
             }
-            access
+            grant.accessToken
         }.getOrNull()
     }
 
@@ -238,37 +210,25 @@ internal class DesktopDiscordPresence(
         webSocket?.let { return it }
         val identified = CompletableDeferred<Boolean>()
         val socket = http.newWebSocketBuilder()
-            .buildAsync(URI.create(GATEWAY_URL), object : WebSocket.Listener {
+            .buildAsync(URI.create(DISCORD_GATEWAY_URL), object : WebSocket.Listener {
                 override fun onOpen(ws: WebSocket) {
-                    val identify = buildJsonObject {
-                        put("op", 2)
-                        put("d", buildJsonObject {
-                            put("token", "Bearer $token")
-                            put("intents", 0)
-                            put("properties", buildJsonObject {
-                                put("os", System.getProperty("os.name"))
-                                put("browser", "ArchiveTune")
-                                put("device", "ArchiveTune")
-                            })
-                        })
-                    }
-                    ws.sendText(identify.toString(), true)
+                    ws.sendText(buildDiscordIdentifyJson(token, System.getProperty("os.name")), true)
                     ws.request(1)
                 }
 
                 override fun onText(ws: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*> {
                     ws.request(1)
-                    val event = runCatching { json.parseToJsonElement(data.toString()).jsonObject }.getOrNull()
+                    val event = parseDiscordGatewayEvent(data.toString())
                         ?: return CompletableFuture.completedFuture(null)
-                    when (event["op"]?.jsonPrimitive?.intOrNull) {
+                    when (event.op) {
                         10 -> {
-                            val interval = event["d"]?.jsonObject?.get("heartbeat_interval")?.jsonPrimitive?.longOrNull
+                            val interval = event.heartbeatIntervalMs
                             if (interval != null && interval > 0) startHeartbeat(ws, interval)
                             identified.complete(true)
                         }
-                        1 -> ws.sendText(buildJsonObject { put("op", 1); put("d", lastSequence) }.toString(), true)
+                        1 -> ws.sendText(buildDiscordHeartbeatJson(lastSequence), true)
                         11 -> if (heartbeatSocket === ws) heartbeatAcked = true
-                        0 -> lastSequence = event["s"]?.jsonPrimitive?.intOrNull ?: lastSequence
+                        0 -> lastSequence = event.sequence ?: lastSequence
                     }
                     return CompletableFuture.completedFuture(null)
                 }
@@ -311,7 +271,7 @@ internal class DesktopDiscordPresence(
                     return@launch
                 }
                 heartbeatAcked = false
-                socket.sendText(buildJsonObject { put("op", 1); put("d", lastSequence) }.toString(), true)
+                socket.sendText(buildDiscordHeartbeatJson(lastSequence), true)
                 delay(intervalMs)
             }
         }
@@ -329,75 +289,22 @@ internal class DesktopDiscordPresence(
     private fun sendPresence(socket: WebSocket, preferences: PreferenceSnapshot) {
         val metadata = graph.metadata.value
         val snapshot = graph.player.snapshot.value
-        val paused = snapshot?.playWhenReady == false
-        val status = preferences[DiscordPresenceStatusKey, DiscordSettingsDefaults.PRESENCE_STATUS]
-        val activityType = when (preferences[DiscordActivityTypeKey, DiscordSettingsDefaults.ACTIVITY_TYPE]) {
-            "PLAYING" -> 0
-            "STREAMING" -> 1
-            "LISTENING" -> 2
-            "WATCHING" -> 3
-            "COMPETING" -> 5
-            else -> 2
-        }
-        val name = when (preferences.discordActivitySource(DiscordActivityNameKey, DiscordSettingsDefaults.ACTIVITY_NAME_SOURCE)) {
-            DiscordActivitySource.APP -> "ArchiveTune"
-            else -> metadata?.title ?: "ArchiveTune"
-        }
-        val details = when (preferences.discordActivitySource(DiscordActivityDetailsKey, DiscordSettingsDefaults.ACTIVITY_DETAILS_SOURCE)) {
-            DiscordActivitySource.ARTIST -> metadata?.artists?.joinToString(", ")?.takeIf(String::isNotEmpty)
-            DiscordActivitySource.ALBUM -> metadata?.album
-            DiscordActivitySource.SONG -> metadata?.title
-            DiscordActivitySource.APP -> "ArchiveTune"
-        }
-        val state = when (preferences.discordActivitySource(DiscordActivityStateKey, DiscordSettingsDefaults.ACTIVITY_STATE_SOURCE)) {
-            DiscordActivitySource.ARTIST -> metadata?.artists?.joinToString(", ")?.takeIf(String::isNotEmpty)
-            DiscordActivitySource.ALBUM -> metadata?.album
-            DiscordActivitySource.SONG -> metadata?.title
-            DiscordActivitySource.APP -> "ArchiveTune"
-        }
-        val activity = buildJsonObject {
-            put("name", name)
-            put("type", activityType)
-            details?.let { put("details", it) }
-            state?.let { put("state", it) }
-            if (metadata != null && snapshot != null && !paused &&
-                (snapshot.durationMs ?: 0) > 0 && (snapshot.positionMs ?: -1) >= 0
-            ) {
-                val now = System.currentTimeMillis()
-                put("timestamps", buildJsonObject {
-                    put("start", now - (snapshot.positionMs ?: 0))
-                    put("end", now + ((snapshot.durationMs ?: 0) - (snapshot.positionMs ?: 0)))
-                })
-            }
-            val assets = buildJsonObject {
-                resolveImage(
-                    preferences[DiscordLargeImageTypeKey, DiscordSettingsDefaults.LARGE_IMAGE],
-                    preferences[DiscordLargeImageCustomUrlKey, ""], metadata,
-                )?.let { put("large_image", it) }
-                resolveImage(
-                    preferences[DiscordSmallImageTypeKey, DiscordSettingsDefaults.SMALL_IMAGE],
-                    preferences[DiscordSmallImageCustomUrlKey, ""], metadata,
-                )?.let { put("small_image", it) }
-            }
-            if (assets.isNotEmpty()) put("assets", assets)
-        }
-        val payload = buildJsonObject {
-            put("op", 3)
-            put("d", buildJsonObject {
-                put("status", status)
-                put("afk", false)
-                put("since", JsonNull)
-                put("activities", kotlinx.serialization.json.buildJsonArray { add(activity) })
-            })
-        }
-        runCatching { socket.sendText(payload.toString(), true) }
-    }
-
-    private fun resolveImage(type: String, custom: String, metadata: DesktopMediaMetadata?): String? = when (type) {
-        "custom" -> custom.takeIf { it.isNotBlank() }
-        "thumbnail", "artist" -> metadata?.artworkUri
-        "appicon" -> "archivetune"
-        else -> null
+        val payload = buildDiscordPresenceJson(
+            preferences = preferences,
+            track = metadata?.let {
+                DiscordPresenceTrack(
+                    title = it.title,
+                    artists = it.artists,
+                    album = it.album,
+                    artworkUri = it.artworkUri,
+                )
+            },
+            positionMs = snapshot?.positionMs,
+            durationMs = snapshot?.durationMs,
+            paused = snapshot?.playWhenReady == false,
+            nowMillis = System.currentTimeMillis(),
+        )
+        runCatching { socket.sendText(payload, true) }
     }
 
     // ------------------------------------------------------------------ helpers
@@ -407,17 +314,6 @@ internal class DesktopDiscordPresence(
         secureRandom.nextBytes(buffer)
         return Base64.getUrlEncoder().withoutPadding().encodeToString(buffer)
     }
-
-    private fun String.uriEncode(): String =
-        java.net.URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
-
-    private fun queryParam(uri: String, name: String): String? =
-        URI(uri).rawQuery?.split("&")?.firstNotNullOfOrNull { part ->
-            val pieces = part.split("=", limit = 2)
-            if (pieces.size == 2 && pieces[0] == name) {
-                java.net.URLDecoder.decode(pieces[1], Charsets.UTF_8)
-            } else null
-        }
 
     /**
      * Registers discord-<id> with the OS so callbacks reach the app. Per-user registration only —
@@ -429,7 +325,7 @@ internal class DesktopDiscordPresence(
         when {
             "win" in os -> {
                 val exe = ProcessHandle.current().info().command().orElse(null) ?: return@runCatching
-                val key = "HKCU\\Software\\Classes\\discord-$APPLICATION_ID"
+                val key = "HKCU\\Software\\Classes\\discord-$DISCORD_APPLICATION_ID"
                 listOf(
                     arrayOf("reg", "add", key, "/ve", "/d", "URL:ArchiveTune Discord", "/f"),
                     arrayOf("reg", "add", key, "/v", "URL Protocol", "/d", "", "/f"),
@@ -446,27 +342,17 @@ internal class DesktopDiscordPresence(
                 Files.writeString(
                     desktop,
                     "[Desktop Entry]\nType=Application\nName=ArchiveTune Discord\n" +
-                        "Exec=$exe %u\nMimeType=x-scheme-handler/discord-$APPLICATION_ID;\nNoDisplay=true\n",
+                        "Exec=$exe %u\nMimeType=x-scheme-handler/discord-$DISCORD_APPLICATION_ID;\nNoDisplay=true\n",
                 )
                 ProcessBuilder(
                     "xdg-mime", "default", "archivetune-discord.desktop",
-                    "x-scheme-handler/discord-$APPLICATION_ID",
+                    "x-scheme-handler/discord-$DISCORD_APPLICATION_ID",
                 ).redirectErrorStream(true).start().waitFor()
             }
         }
     }
 
-    companion object {
-        // Public Discord application id for ArchiveTune OAuth (same default as the Android build).
-        private const val APPLICATION_ID = "1165706613961789445"
-        // The redirect the application registers, the same string the Android build sends. It has no host, so the
-        // callback is matched on its path (DesktopDeepLinks, authorityless schemes).
-        private const val REDIRECT_URI = "discord-$APPLICATION_ID:/authorize/callback"
-        private const val OAUTH_SCOPES = "openid identify sdk.social_layer_presence"
-        private const val AUTHORIZE_ENDPOINT = "https://discord.com/oauth2/authorize"
-        private const val TOKEN_ENDPOINT = "https://discord.com/api/oauth2/token"
-        private const val CURRENT_USER_ENDPOINT = "https://discord.com/api/v10/users/@me"
-        private const val GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json"
+    private companion object {
         private const val REQUEST_TIMEOUT_MS = 12_000L
         private const val OAUTH_TIMEOUT_MS = 300_000L
         private const val EXPIRY_SKEW_MS = 60_000L

@@ -13,9 +13,11 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -24,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.localmedia.IosLocalMediaSource
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -31,10 +34,11 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomLocalMediaLibrary
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
+import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
-import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCanvasCacheStore
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCrossfadeHandoff
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherAvatar
@@ -43,9 +47,13 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosMediaImporter
 import moe.rukamori.archivetune.shared.data.platform.ios.IosNetworkOwner
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
+import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTransportAvailability
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
+import moe.rukamori.archivetune.shared.data.potoken.IosPoTokenSupport
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalPkceClient
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeResolver
@@ -76,8 +84,11 @@ import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsDefaults
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.PreventDuplicateTracksInQueueKey
 import moe.rukamori.archivetune.shared.domain.settings.QueueAddAfterManualKey
+import moe.rukamori.archivetune.shared.domain.settings.QueueLockedKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
+import moe.rukamori.archivetune.shared.domain.settings.WebClientPoTokenEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.domain.settings.listenTogetherAvatarIndex
 import moe.rukamori.archivetune.shared.ui.IosHost
@@ -88,6 +99,7 @@ import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
+import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
@@ -114,6 +126,8 @@ internal class IosSessionGraph private constructor(
     val player: MusicPlayerController,
     val queue: TypedDelegatingQueueController,
     val youtubeTransport: IosYouTubeBrowseTransport,
+    /** The one BotGuard poToken owner; the settings page and the YouTube resolver share it. */
+    internal val poTokens: IosPoTokenSupport,
     /** The typed YouTube catalogue over [youtubeTransport] and the account binding: search, albums, playlists, sections. */
     val youtubeContent: YouTubeContentRepository,
     /** The shelf feeds over the same InnerTubeX session: the home feed, charts, explore and new releases. */
@@ -128,6 +142,8 @@ internal class IosSessionGraph private constructor(
     val customArtwork: FileCustomArtworkRepository,
     val playbackPool: IosPlaybackPool,
     val artworkLoader: IosArtworkLoader,
+    /** The on-disk canvas frame store the canvas owner and the canvas cache settings share. */
+    val canvasStore: IosCanvasCacheStore,
     /** The room, chat and settings owner over the one Listen Together engine, started and closed with the graph. */
     val listenTogether: IosListenTogetherOwner,
     /** The YouTube Music uploads owner: picker transfers over its own client, closed with the graph. */
@@ -138,6 +154,8 @@ internal class IosSessionGraph private constructor(
     val localMedia: IosLocalMediaOwner,
     /** The Last.fm, Libre.fm and custom-endpoint scrobbler over the one player and queue, closed with the graph. */
     val lastFm: IosLastFm,
+    /** The Discord owner: PKCE sheet sign-in and playback-driven presence, closed with the graph. */
+    val discord: IosDiscordPresence,
     private val owner: PortableQueueOwner,
     private val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
@@ -147,10 +165,27 @@ internal class IosSessionGraph private constructor(
     private val reportLine: (String) -> Unit,
 ) {
     val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
+
+    /** The persisted per-song lyrics offsets this host applies on every lyrics surface. */
+    val songLyricsOffsets = RoomSongLyricsOffsetRepository(database.songLyricsOffsets())
     /** The playlist tag catalog and assignments, in the same portable file as the playlists; the tag manager is not mounted on iOS. */
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
     /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
+
+    /** The one sleep timer of this process. It only pauses [player], so every surface shares it. */
+    val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause, ::iosNowMillis)
+
+    /**
+     * Next/previous enablement for the system transport: the same successors the on-screen controls compute, so the
+     * lock screen offers a skip exactly when the queue reports one.
+     */
+    val transportAvailability: Flow<IosTransportAvailability> = combine(
+        queue.state, player.snapshot, settings.snapshots,
+    ) { queueState, playback, preferences ->
+        val native = iosNativeState(queueState, playback, preferences)
+        IosTransportAvailability(canPrevious = native.canPrevious, canNext = native.canNext)
+    }.distinctUntilChanged()
 
     /**
      * Sets the app-level output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player
@@ -172,6 +207,13 @@ internal class IosSessionGraph private constructor(
     }
 
     fun report(message: String) = reportLine(message)
+
+    /**
+     * Hands the host's admitted Telegram session to the artwork path so a `tgart:` cover downloads its thumbnail
+     * through it. The playback port's own attach stays the host's call; this only lets the loader reach the same
+     * client, and an unadmitted or closed session answers nothing.
+     */
+    fun attachTelegram(session: IosTelegramClient) = artworkLoader.attachTelegram(session)
 
     /**
      * The playback error dialog's Retry: loads the failed occurrence again at the position the player kept for it. An
@@ -229,6 +271,7 @@ internal class IosSessionGraph private constructor(
      */
     suspend fun close() = withContext(NonCancellable) {
         playbackPort.cancelNext()
+        discord.close()
         lastFm.close()
         listenTogether.close()
         uploads.close()
@@ -241,6 +284,7 @@ internal class IosSessionGraph private constructor(
         localMedia.close()
         checkpointNow(queue, reportLine)
         owner.close()
+        poTokens.close()
         http.close()
         database.close()
         scope.cancel()
@@ -335,6 +379,18 @@ internal class IosSessionGraph private constructor(
             // player clients first and keeps InnerTubeX as the bounded extractor tier, like the desktop host.
             val youtubeTransport = IosYouTubeBrowseTransport(http)
             youtubeTransport.refreshSession(vault.snapshots.value)
+            // One BotGuard owner feeds the resolver's minting and the settings generation, like the
+            // shared BotGuardTokenGenerator object on Android.
+            val poTokens = IosPoTokenSupport(
+                http = http,
+                transport = youtubeTransport,
+                enabled = { vault.snapshots.value?.get(WebClientPoTokenEnabledKey) ?: false },
+                report = report,
+            )
+            // The shipped app warms BotGuard once the auth state names a session, so a cold mint
+            // never lands inside a resolve; the owner derives the session id from the transport
+            // itself and stays a no-op while the poToken preference is off.
+            scope.launch { poTokens.preWarm() }
             // The shelf feeds read the same session, so a signed-in home feed and the account listings agree.
             val youtubeCatalogue = youtubeTransport.catalogueTransport()
             val youtubeAccount = YouTubeAccountBinding(
@@ -352,6 +408,7 @@ internal class IosSessionGraph private constructor(
                     personalScope = {
                         providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
                     },
+                    poTokens = poTokens,
                 ),
             )
             // Both media owners write into the app container, which the host creates once here.
@@ -395,6 +452,8 @@ internal class IosSessionGraph private constructor(
                 keepManualQueueInOrder = vault.snapshot()[QueueAddAfterManualKey] ?: true,
                 repeatMode = { iosRepeatMode(vault.snapshots.value) },
                 autoSkipNextOnError = { vault.snapshots.value?.get(AutoSkipNextOnErrorKey) ?: false },
+                preventDuplicateTracksInQueue = { vault.snapshots.value?.get(PreventDuplicateTracksInQueueKey) ?: false },
+                queueLocked = { vault.snapshots.value?.get(QueueLockedKey) ?: false },
                 songMetadata = songMetadata,
                 autoLoadMoreEnabled = { vault.snapshots.value?.get(AutoLoadMoreKey) ?: true },
                 autoLoadMoreChanges = vault.snapshots.map { it?.get(AutoLoadMoreKey) ?: true },
@@ -411,6 +470,17 @@ internal class IosSessionGraph private constructor(
             } catch (failure: Exception) {
                 report("saved queue was not restored: ${failure::class.simpleName}")
             }
+            // The Discord owner borrows the host's ephemeral OAuth sheet and the shared websocket wrapper; it only
+            // acts on playback and settings reads, so it costs nothing until the settings page starts its driver.
+            val discord = IosDiscordPresence(
+                scope = scope,
+                http = http,
+                settings = vault,
+                browser = host.browser,
+                player = player,
+                queue = queue.state,
+                report = report,
+            )
             // The scrobbler sits on the one player and queue, so a like written below is mirrored to Last.fm by the
             // same owner that queues the scrobbles.
             val lastFm = IosLastFm(
@@ -447,6 +517,7 @@ internal class IosSessionGraph private constructor(
                 preferences = vault.snapshots,
                 repository = KtorSponsorBlockRepository(http),
             )
+            // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
             val lyrics = HostLyrics(
                 scope = scope,
                 http = http,
@@ -455,6 +526,8 @@ internal class IosSessionGraph private constructor(
                 queue = queue.state,
                 networkAvailable = { iosNetworkAvailable() },
                 report = report,
+                lyprioBuildBaseUrl = IosProviderCredentials.lyprioBaseUrl,
+                lyprioBuildHmacKey = IosProviderCredentials.lyprioHmacKey,
             )
             val libraryContent = LibraryContentOwner(
                 settings = vault,
@@ -537,6 +610,10 @@ internal class IosSessionGraph private constructor(
                 ),
             )
             val uploads = IosYouTubeUploads(scope, vault, queue, report) { network.configure(this) }
+            // The custom cover store and its folder are shared with the artwork loader, which resolves a stored
+            // cover to its file URI and reads it locally.
+            val customArtworkFiles = IosCustomArtworkFiles()
+            val customArtwork = FileCustomArtworkRepository(customArtworkFiles, nowMillis = ::iosNowMillis)
             val handoffHold = scope.launch {
                 listenTogether.client.roomState.map { it != null }.distinctUntilChanged().collect { handoff.hold(it) }
             }
@@ -553,20 +630,23 @@ internal class IosSessionGraph private constructor(
                 library = library,
                 artistBlocks = artistBlocks,
                 youtubeTransport = youtubeTransport,
+                poTokens = poTokens,
                 youtubeContent = youtubeContent,
                 youtubeCatalogue = youtubeCatalogue,
                 libraryContent = libraryContent,
                 pageOwners = pageOwners,
                 history = history,
                 lyrics = lyrics,
-                customArtwork = FileCustomArtworkRepository(IosCustomArtworkFiles(), nowMillis = ::iosNowMillis),
+                customArtwork = customArtwork,
                 playbackPool = playbackPool,
-                artworkLoader = IosArtworkLoader(http),
+                artworkLoader = IosArtworkLoader(http, customArtwork, customArtworkFiles),
+                canvasStore = IosCanvasCacheStore().also { it.ensure() },
                 listenTogether = listenTogether,
                 uploads = uploads,
                 downloads = downloads,
                 localMedia = localMedia,
                 lastFm = lastFm,
+                discord = discord,
                 owner = owner,
                 playbackPort = host.playbackPort,
                 database = database,
@@ -575,6 +655,7 @@ internal class IosSessionGraph private constructor(
                 drivers = drivers + handoffHold,
                 reportLine = report,
             )
+            host.telegram.value?.let { graph.attachTelegram(it) }
             lyrics.start()
             playbackPool.start()
             lastFm.start()

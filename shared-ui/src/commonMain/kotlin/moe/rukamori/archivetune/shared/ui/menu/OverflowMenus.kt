@@ -102,6 +102,12 @@ fun songOverflowActions(
     OverflowAction("share", Res.string.m6_share) {
         check(sharing.song(selected.item.ref.id, isLocal, mimeType)) { "Share target unavailable" }
     },
+    // Local files have no shareable link; a Telegram song resolves its message link like share does.
+    if (!isLocal || selected.item.ref.id.startsWith("telegram://")) {
+        OverflowAction("copy_link", Res.string.m5pq_copy_link) {
+            check(sharing.copySongLink(selected.item.ref.id, isLocal)) { "Link unavailable" }
+        }
+    } else null,
     // Save canvas is the baseline SongMenu row; the host mounts CanvasSourcePicker beside the menu.
     canvasSave?.saveCanvasOverflowAction(),
 )
@@ -152,9 +158,14 @@ fun playlistOverflowActions(
     browseId: String?, shareLink: String?, sharing: MenuShareHandler, exportLocal: suspend () -> Unit,
 ): List<OverflowAction> =
     if (browseId.isNullOrBlank() && shareLink.isNullOrBlank()) listOf(OverflowAction("export", Res.string.m6_export, run = exportLocal))
-    else listOf(OverflowAction("share", Res.string.m6_share) {
-        check(sharing.playlist(browseId, shareLink)) { "Share target unavailable" }
-    })
+    else listOf(
+        OverflowAction("share", Res.string.m6_share) {
+            check(sharing.playlist(browseId, shareLink)) { "Share target unavailable" }
+        },
+        OverflowAction("copy_link", Res.string.m5pq_copy_link) {
+            check(sharing.copyPlaylistLink(browseId, shareLink)) { "Link unavailable" }
+        },
+    )
 
 /** The single M7 repository owns remote-before-local commit and duplicate occurrence mapping. */
 fun playlistOccurrenceRemoval(

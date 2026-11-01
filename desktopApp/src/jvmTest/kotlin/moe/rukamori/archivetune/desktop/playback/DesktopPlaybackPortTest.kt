@@ -215,6 +215,28 @@ class DesktopPlaybackPortTest {
     }
 
     @Test
+    fun mutedOutputKeepsRenderingAndAdvancing() {
+        val port = DesktopPlaybackPort(backend = EngineBackend.NULL)
+        try {
+            port.submit(PlaybackCommand.Load(localRequest("occ-mute", "ramp-48k.wav"), 0L, playWhenReady = true))
+            port.awaitSnapshot("playback past 200 ms") { it.positionMs >= 200L }
+
+            port.setAudioOutputEnabled(false)
+            awaitValue("the muted flag") { port.audioOutputEnabled.value.takeIf { !it } }
+            val muted = port.awaitSnapshot("position advancing while muted") { it.positionMs >= 500L }
+            assertTrue(muted.playWhenReady)
+            assertTrue(muted.isAudioAdvancing)
+
+            port.setAudioOutputEnabled(true)
+            awaitValue("the unmuted flag") { port.audioOutputEnabled.value.takeIf { it } }
+            val unmuted = port.awaitSnapshot("position past the mute") { it.positionMs >= muted.positionMs + 200L }
+            assertTrue(unmuted.isAudioAdvancing)
+        } finally {
+            port.close()
+        }
+    }
+
+    @Test
     fun closeStopsPublishingAndIgnoresLaterCommands() {
         val port = newPort()
         port.submit(PlaybackCommand.Load(localRequest("occ-closed", "ramp-48k.wav"), 0L, playWhenReady = true))

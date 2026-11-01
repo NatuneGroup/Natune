@@ -161,4 +161,62 @@ class LyricsParseTtmlTest {
     fun displayTextOfTtmlIsOneRowPerParagraph() {
         assertEquals("Hello world\nHi", LyricsDetection.displayText(duet))
     }
+
+    private val credited =
+        """
+        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" xml:lang="en">
+          <head>
+            <metadata>
+              <iTunesMetadata>
+                <songwriters>
+                  <songwriter>Ada Writer</songwriter>
+                  <songwriter>Sam Tune</songwriter>
+                </songwriters>
+                <translations>
+                  <translation xml:lang="es" itunes:automaticallyCreated="true">
+                    <text for="L1">Hola mundo</text>
+                  </translation>
+                </translations>
+                <transliterations>
+                  <transliteration xml:lang="es-Latn">
+                    <text for="L1" itunes:automaticallyCreated="1">hola mundo</text>
+                  </transliteration>
+                </transliterations>
+              </iTunesMetadata>
+            </metadata>
+          </head>
+          <body>
+            <div>
+              <p begin="1.000" end="3.000" itunes:key="L1">Hello world</p>
+            </div>
+          </body>
+        </tt>
+        """.trimIndent()
+
+    @Test
+    fun songwritersAndAutoCreatedFlagsComeFromTheDocument() {
+        val credits = LyricsParser.parseTtmlCredits(credited)
+
+        assertEquals(listOf("Ada Writer", "Sam Tune"), credits.songwriters)
+        assertTrue(credits.translationAutoCreated)
+        assertTrue(credits.transliterationAutoCreated)
+        assertFalse(credits.isEmpty)
+    }
+
+    @Test
+    fun aDocumentWithoutCreditsParsesEmpty() {
+        val credits = LyricsParser.parseTtmlCredits(duet)
+
+        assertEquals(emptyList(), credits.songwriters)
+        assertFalse(credits.translationAutoCreated)
+        assertFalse(credits.transliterationAutoCreated)
+        assertTrue(credits.isEmpty)
+    }
+
+    @Test
+    fun nonTtmlAndMalformedInputParseEmpty() {
+        assertTrue(LyricsParser.parseTtmlCredits("[00:01.00] hello").isEmpty)
+        assertTrue(LyricsParser.parseTtmlCredits("").isEmpty)
+        assertTrue(LyricsParser.parseTtmlCredits("<tt><unclosed").isEmpty)
+    }
 }

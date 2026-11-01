@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.EnableBetterLyricsKey
@@ -60,8 +61,6 @@ import moe.rukamori.archivetune.constants.EnableBetterLyricsPortatoKey
 import moe.rukamori.archivetune.constants.EnableKugouKey
 import moe.rukamori.archivetune.constants.EnableLrcLibKey
 import moe.rukamori.archivetune.constants.EnableLyprioLyricsKey
-import moe.rukamori.archivetune.constants.LyprioEndpointKey
-import moe.rukamori.archivetune.constants.LyprioSigningKeyKey
 import moe.rukamori.archivetune.constants.EnableMegalobizLyricsKey
 import moe.rukamori.archivetune.constants.EnableMusixmatchExperimentalKey
 import moe.rukamori.archivetune.constants.EnablePaxsenixAppleMusicLyricsKey
@@ -81,7 +80,7 @@ import moe.rukamori.archivetune.constants.LyricsProviderOrderKey
 import moe.rukamori.archivetune.constants.PrioritizeWordSyncedLyricsKey
 import moe.rukamori.archivetune.constants.deserializeLyricsProviderOrder
 import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
-import moe.rukamori.archivetune.shared.ui.settings.validLyprioSigningKey
+import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
@@ -140,11 +139,12 @@ fun LyricsProvidersSettings(
     val (enableUnisonLyrics, onEnableUnisonLyricsChange) =
         prefs.state(key = EnableUnisonLyricsKey, defaultValue = true)
     val (enableLyprioLyrics, onEnableLyprioLyricsChange) =
-        prefs.state(key = EnableLyprioLyricsKey, defaultValue = false)
-    val (lyprioEndpoint, onLyprioEndpointChange) =
-        prefs.state(key = LyprioEndpointKey, defaultValue = "")
-    val (lyprioSigningKey, onLyprioSigningKeyChange) =
-        prefs.state(key = LyprioSigningKeyKey, defaultValue = "")
+        prefs.state(key = EnableLyprioLyricsKey, defaultValue = true)
+    // A build-time Lyprio pair (BuildConfig.LYPRIO_BASE_URL / LYPRIO_HMAC_KEY) is the only endpoint the
+    // provider can have: the Metrolist developers run the server, so there is no URL or key to enter and
+    // the build key is never written to preferences or displayed. Without a pair the toggle greys out.
+    val lyprioBuiltIn =
+        remember { LyprioEndpoint.parse(BuildConfig.LYPRIO_BASE_URL, BuildConfig.LYPRIO_HMAC_KEY) != null }
     val (enableTidalLyrics, onEnableTidalLyricsChange) =
         prefs.state(key = EnableTidalLyricsKey, defaultValue = true)
     val (enableDeezerLyrics, onEnableDeezerLyricsChange) =
@@ -254,70 +254,20 @@ fun LyricsProvidersSettings(
 
                 val providerTogglesEnabled = true
 
+                // The bundled server is the only endpoint Lyprio can have; a build without the
+                // pair keeps the row listed but greyed out, like the other unavailable controls.
                 item {
                     SwitchPreference(
                         modifier = positions.modifierFor("enable_lyprio_lyrics", "lyprio_lyrics"),
                         title = { Text(stringResource(R.string.enable_lyprio_lyrics)) },
-                        description = stringResource(R.string.enable_lyprio_lyrics_desc),
+                        description = stringResource(
+                            if (lyprioBuiltIn) R.string.enable_lyprio_lyrics_desc else R.string.lyprio_not_available,
+                        ),
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                        checked = enableLyprioLyrics,
+                        checked = enableLyprioLyrics && lyprioBuiltIn,
                         onCheckedChange = onEnableLyprioLyricsChange,
-                        isEnabled = providerTogglesEnabled,
+                        isEnabled = providerTogglesEnabled && lyprioBuiltIn,
                     )
-                }
-
-                item(visible = enableLyprioLyrics) {
-                    var showEndpointDialog by remember { mutableStateOf(false) }
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("lyprio_endpoint"),
-                        title = { Text(stringResource(R.string.lyprio_endpoint)) },
-                        description = lyprioEndpoint.ifBlank { stringResource(R.string.lyprio_not_configured) },
-                        icon = { Icon(painterResource(R.drawable.solar_server_linear), null) },
-                        onClick = { showEndpointDialog = true },
-                        isEnabled = providerTogglesEnabled,
-                    )
-                    if (showEndpointDialog) {
-                        TextFieldDialog(
-                            onDismiss = { showEndpointDialog = false },
-                            title = { Text(stringResource(R.string.lyprio_endpoint)) },
-                            placeholder = { Text(stringResource(R.string.lyprio_endpoint_hint)) },
-                            textFieldValue = lyprioEndpoint,
-                            onTextFieldValueChange = onLyprioEndpointChange,
-                            singleLine = true,
-                            isInputValid = {
-                                it.isBlank() ||
-                                    (it.startsWith("http://") || it.startsWith("https://")) && it.none(Char::isWhitespace)
-                            },
-                        )
-                    }
-                }
-
-                item(visible = enableLyprioLyrics) {
-                    var showKeyDialog by remember { mutableStateOf(false) }
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("lyprio_signing_key"),
-                        title = { Text(stringResource(R.string.lyprio_signing_key)) },
-                        description = if (lyprioSigningKey.isNotBlank()) {
-                            stringResource(R.string.lyprio_signing_key_set)
-                        } else {
-                            stringResource(R.string.lyprio_not_configured)
-                        },
-                        icon = { Icon(painterResource(R.drawable.token), null) },
-                        onClick = { showKeyDialog = true },
-                        isEnabled = providerTogglesEnabled,
-                    )
-                    if (showKeyDialog) {
-                        TextFieldDialog(
-                            onDismiss = { showKeyDialog = false },
-                            title = { Text(stringResource(R.string.lyprio_signing_key)) },
-                            placeholder = { Text(stringResource(R.string.lyprio_signing_key_hint)) },
-                            textFieldValue = lyprioSigningKey,
-                            onTextFieldValueChange = onLyprioSigningKeyChange,
-                            singleLine = true,
-                            masked = true,
-                            isInputValid = ::validLyprioSigningKey,
-                        )
-                    }
                 }
 
                 item {

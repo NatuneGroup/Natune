@@ -48,6 +48,8 @@ fun DetailScreen(
     contentPadding: PaddingValues = LocalShellContentPadding.current,
     /** The retained sort, order or period control of a playlist page. Other kinds ignore it and keep their layout. */
     control: PlaylistDetailControl? = null,
+    /** A local playlist header's first rows' items, drawn as its 2x2 mosaic cover when it has no custom cover. */
+    headerMosaicItems: List<ContentItem> = emptyList(),
 ) {
     // Glass is only recorded for the playlist header, so the other kinds never record the list into a backdrop nothing samples.
     val glass = rememberGlassScreenHeader()
@@ -81,8 +83,9 @@ fun DetailScreen(
                 ) {
                     if (!glassHeader) TextButton(onClick = actions.back) { Text(stringResource(Res.string.m4_back)) }
                     header?.let {
-                        artwork(it, Modifier.size(if (kind == DetailKind.Artist) 180.dp else 224.dp)
-                            .clip(if (kind == DetailKind.Artist) CircleShape else RoundedCornerShape(16.dp)))
+                        PlaylistArtwork(it, headerMosaicItems, artwork,
+                            Modifier.size(if (kind == DetailKind.Artist) 180.dp else 224.dp)
+                                .clip(if (kind == DetailKind.Artist) CircleShape else RoundedCornerShape(16.dp)))
                         Text(it.title, style = MaterialTheme.typography.headlineLarge)
                         Text(it.subtitle, style = MaterialTheme.typography.bodyLarge)
                     }

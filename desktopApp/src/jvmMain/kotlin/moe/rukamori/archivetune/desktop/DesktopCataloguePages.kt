@@ -12,18 +12,21 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeMoodGenre
 import moe.rukamori.archivetune.shared.data.provider.YouTubeRelease
 import moe.rukamori.archivetune.shared.data.provider.YouTubeReleaseType
 import moe.rukamori.archivetune.shared.data.provider.YouTubeShelf
+import moe.rukamori.archivetune.shared.data.provider.stableKey
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.settings.ActiveHomeSourcesKey
 import moe.rukamori.archivetune.shared.domain.settings.HomeSourceKey
 import moe.rukamori.archivetune.shared.domain.settings.HideAiMixKey
+import moe.rukamori.archivetune.shared.domain.settings.ShowHomeCategoryChipsKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
 import moe.rukamori.archivetune.shared.ui.home.resolvedHomeSource
 import moe.rukamori.archivetune.shared.ui.home.resolvedHomeSources
+import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantNowPlaying
 import moe.rukamori.archivetune.shared.ui.home.variants.SpotifyHomeActions
 import moe.rukamori.archivetune.shared.ui.navigation.HomeSourceBinding
@@ -48,6 +51,9 @@ import moe.rukamori.archivetune.shared.ui.screens.rememberPagedContent
 /** The feed's collection request: one key per page, so its shelves never share rows with another feed. */
 private val HOME_REQUEST = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.HOME)
 private val DISCOVERY_REQUEST = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.DISCOVERY)
+/** The suggestion feed's own collection, so its shelf rows never share keys with the explore page's release shelf. */
+private val DISCOVERY_SUGGESTIONS_REQUEST =
+    ContentRequest(ContentProvider.YOUTUBE, ContentSurface.DISCOVERY, text = "suggestions")
 private val CHARTS_REQUEST = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.EXPLORE, text = "charts")
 
 @Composable
@@ -89,8 +95,13 @@ internal fun desktopHomePage(
         )
     }
     val feed = graph.catalogueOwners.home
+    val showChips = preferences?.get(ShowHomeCategoryChipsKey) ?: true
     androidx.compose.runtime.LaunchedEffect(topMixes) { topMixes.ensureLoaded() }
     androidx.compose.runtime.LaunchedEffect(feed) { feed.reload() }
+    // Hiding the row while a chip filters the feed clears it, as the Android home does.
+    androidx.compose.runtime.LaunchedEffect(showChips) {
+        if (!showChips && feed.selectedChip != null) feed.selectChip(null)
+    }
     val snapshot by graph.queue.player.snapshot.collectAsState()
     val mixShelves = if (preferences?.get(HideAiMixKey) == true) emptyList() else topMixes.homeShelves()
     val shelves = mixShelves + feed.shelves.map { shelf -> shelf.toHomeShelf(graph, HOME_REQUEST, openRoute) }
@@ -117,6 +128,10 @@ internal fun desktopHomePage(
         playing = snapshot?.playWhenReady == true,
         refreshing = feed.refreshing,
         refresh = feed::refresh,
+        chips = feed.chips.map { HomeVariantChip(it.stableKey, it.title) },
+        selectedChipKey = feed.selectedChip?.stableKey,
+        selectChip = { tapped -> feed.chips.firstOrNull { it.stableKey == tapped.key }?.let(feed::selectChip) },
+        showChips = showChips,
     )
 }
 
@@ -156,8 +171,13 @@ private fun YouTubeMoodGenre.toUi(surface: ContentSurface): MoodGenreUi =
 @Composable
 internal fun desktopDiscoveryPage(graph: DesktopSessionGraph, openRoute: (String) -> Unit): ArchiveGraphPage {
     val feed = graph.catalogueOwners.explore
+    val suggest = graph.catalogueOwners.suggestions
     androidx.compose.runtime.LaunchedEffect(feed) { feed.reload() }
     var tab by remember { mutableStateOf(DiscoveryTab.EXPLORE) }
+    // The suggestion feed reads on first tab entry, not on page mount, so the tab costs nothing while it is unseen.
+    androidx.compose.runtime.LaunchedEffect(tab) {
+        if (tab == DiscoveryTab.SUGGESTIONS && !suggest.initialized) suggest.reload()
+    }
     val releaseRows = feed.releases.mapIndexed { index, release -> catalogueOccurrence(DISCOVERY_REQUEST, release.entry, index) }
     SideEffect { graph.catalogueOwners.recordShelf(DISCOVERY_REQUEST, "new_releases", releaseRows) }
     val releaseShelf = BrowseShelfUi(
@@ -167,14 +187,29 @@ internal fun desktopDiscoveryPage(graph: DesktopSessionGraph, openRoute: (String
         rows = releaseRows,
         more = null,
     )
+    val suggestionShelves =
+        suggest.shelves.map { it.toBrowseShelfUi(graph, DISCOVERY_SUGGESTIONS_REQUEST, openRoute) }
+    SideEffect {
+        suggestionShelves.forEach { graph.catalogueOwners.recordShelf(DISCOVERY_SUGGESTIONS_REQUEST, it.key, it.rows) }
+    }
+    val suggestionsActive = tab == DiscoveryTab.SUGGESTIONS
     val state = DiscoveryUi(
         shelves = if (releaseRows.isEmpty()) emptyList() else listOf(releaseShelf),
         moods = feed.moods.map { it.toUi(ContentSurface.EXPLORE) },
         tab = tab,
-        loading = feed.loading,
-        failed = feed.failed,
+        loading = if (suggestionsActive) suggest.loading else feed.loading,
+        failed = if (suggestionsActive) suggest.failed else feed.failed,
+        suggestions = suggestionShelves,
     )
-    return ArchiveGraphPage.Discovery(state, { tab = it }, feed::reload, feed::reload)
+    return ArchiveGraphPage.Discovery(
+        state,
+        { tab = it },
+        refresh = {
+            feed.reload()
+            if (suggest.initialized) suggest.reload()
+        },
+        retry = { if (suggestionsActive) suggest.reload() else feed.reload() },
+    )
 }
 
 @Composable
@@ -183,7 +218,8 @@ internal fun desktopChartsPage(graph: DesktopSessionGraph): ArchiveGraphPage {
     androidx.compose.runtime.LaunchedEffect(feed) { feed.reload() }
     val shelves = feed.shelves.map { it.toBrowseShelfUi(graph, CHARTS_REQUEST) {} }
     SideEffect { shelves.forEach { graph.catalogueOwners.recordShelf(CHARTS_REQUEST, it.key, it.rows) } }
-    return ArchiveGraphPage.Charts(shelves, feed.loading, feed.failed, feed::reload)
+    return ArchiveGraphPage.Charts(shelves, feed.loading, feed.failed, feed::reload,
+        continuation = feed.continuation, loadMore = feed::loadMore)
 }
 
 @Composable

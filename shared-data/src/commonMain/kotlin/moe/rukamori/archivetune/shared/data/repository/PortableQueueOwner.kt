@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.repository
 
 import kotlin.random.Random
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -24,6 +25,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.persistence.AlbumCompletionIndex
 import moe.rukamori.archivetune.shared.data.repository.QueueStreamRecovery.Prepared
+import moe.rukamori.archivetune.shared.domain.persistence.PositionRestorePolicy
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
@@ -33,6 +35,7 @@ import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistPhase
 import moe.rukamori.archivetune.shared.domain.queue.IncompleteFinitePlaylistException
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
+import moe.rukamori.archivetune.shared.domain.queue.QueueDedupePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueEditPolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.queue.ShuffleOrder
@@ -83,6 +86,10 @@ class PortableQueueOwner(
     private val repeatMode: () -> QueueRepeatMode = { QueueRepeatMode.OFF },
     /** Mirrors the Android `AutoSkipNextOnErrorKey` setting. Off stops the queue at a failure, as before. */
     private val autoSkipNextOnError: () -> Boolean = { false },
+    /** The `preventDuplicateTracksInQueue` setting; the insert path applies [QueueDedupePolicy]. */
+    private val preventDuplicateTracksInQueue: () -> Boolean = { false },
+    /** The queueLocked setting: user removes, moves and clears are refused; adds and programmatic edits are not. */
+    private val queueLocked: () -> Boolean = { false },
     /**
      * Mirrors the Android `AutoLoadMoreKey` setting. On, an exhausted finite queue seeds a watch-next tail
      * from the current song (`onInfiniteQueueEnabled`); off, its last song ends the queue.
@@ -102,6 +109,10 @@ class PortableQueueOwner(
     /** Durable host preference changes also cancel an in-flight append when the queue UI is closed. */
     autoLoadMoreChanges: Flow<Boolean> = emptyFlow(),
     monotonicTimeMs: () -> Long = queueMonotonicClock(),
+    /** Wall clock for checkpoint stamps; the monotonic clock above must not measure wall-time ages. */
+    private val wallTimeMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    /** The wall clock for locator expiresAtEpochMs: an epoch instant, never the monotonic clock's ticks. */
+    epochNowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : TypedQueueOwnerPort, QueueEditingCommands {
     private val lock = Mutex()
     private val finitePlaylists = FinitePlaylistLoader(content, albumCompletion)
@@ -123,7 +134,7 @@ class PortableQueueOwner(
 
     private val resolutionFailureFlow = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 8)
     private val finalFailureFlow = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = 8)
-    private val streamRecovery = QueueStreamRecovery(player, locators)
+    private val streamRecovery = QueueStreamRecovery(player, locators, monotonicTimeMs, epochNowMs)
 
     /**
      * The failures the error dialog and skip-on-error act on: the engine's, and those of songs no source resolved. An
@@ -253,7 +264,7 @@ class PortableQueueOwner(
         // The hidden-content rules of `Queue.Status.filterPlaybackContent` apply to every queue load.
         loaded = loaded.filterPlaybackContent()
         if (loaded.isEmpty()) throw IncompleteFinitePlaylistException("Collection returned no songs")
-        requireUnique(loaded)
+        QueueEditPolicy.requireUnique(loaded)
 
         val startIndex = startIndexOf(loaded, request.start)
         val order: List<Int> = if (request.shuffle) {
@@ -290,7 +301,7 @@ class PortableQueueOwner(
 
     override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) {
         requireInside()
-        requireUnique(entries)
+        QueueEditPolicy.requireUnique(entries)
         val start = entries.firstOrNull { it.occurrenceId == startOccurrenceId }
             ?: throw IllegalArgumentException("Start occurrence is not in the replacement queue")
         val playRequest = requestFor(start)
@@ -317,26 +328,42 @@ class PortableQueueOwner(
      * songs, Add to queue behind every hand-queued song, both ahead of radio and tail songs. With keep-in-order
      * off, Play next goes straight after the current song and Add to queue to the end.
      */
-    override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind) {
+    override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind): Int {
         requireInside()
-        if (entries.isEmpty()) return
-        val queue = currentState
-        requireNewOccurrences(queue.entries, entries)
+        if (entries.isEmpty()) return 0
+        var queue = currentState
+        var batch = entries
+        if (preventDuplicateTracksInQueue()) {
+            // An emptied queue takes the same rules: the batch dedupes itself and the copy that
+            // survives becomes current. A copy of the song playing is dropped and an earlier
+            // occurrence of an incoming media reference is evicted, so it never appears twice.
+            val evicted = QueueDedupePolicy.evictable(queue, batch)
+            if (evicted.isNotEmpty()) queue = QueueDedupePolicy.evict(queue, evicted)
+            batch = QueueDedupePolicy.incoming(queue, batch)
+            if (batch.isEmpty()) {
+                if (evicted.isNotEmpty()) {
+                    currentState = queue.copy(revision = queue.revision + 1)
+                    revalidateHandoff()
+                }
+                return 0
+            }
+        }
+        QueueEditPolicy.requireNewOccurrences(queue.entries, batch)
         val currentIndex = queue.currentOccurrenceId?.let { id ->
             queue.entries.indexOfFirst { it.occurrenceId == id }.takeIf { it >= 0 }
         }
         val placement = UserQueuePolicy.placement(
             kind = kind,
-            count = entries.size,
+            count = batch.size,
             keepInOrder = keepManualQueueInOrder,
             itemCount = queue.entries.size,
             currentIndex = currentIndex,
             shuffleEnabled = queue.shuffleEnabled,
-            upcoming = { upcomingKinds(queue) },
-        ) ?: return
+            upcoming = { UserQueuePolicy.upcomingKinds(queue) },
+        ) ?: return 0
 
-        val newIds = entries.map { it.occurrenceId }
-        val timeline = queue.entries.toMutableList().apply { addAll(placement.timelineIndex, entries) }
+        val newIds = batch.map { it.occurrenceId }
+        val timeline = queue.entries.toMutableList().apply { addAll(placement.timelineIndex, batch) }
         val order = queue.playOrder.toMutableList()
         when (val play = placement.playOrder) {
             // Shuffle is off here, so the play order is simply the new timeline; it is rebuilt below.
@@ -373,10 +400,12 @@ class PortableQueueOwner(
             manualKinds = manualKinds,
         )
         if (playRequest != null) startPrepared(playRequest, 0L, playWhenReady = false) else revalidateHandoff()
+        return batch.size
     }
 
     override suspend fun remove(occurrenceIds: Set<String>) {
         requireInside()
+        if (queueLocked()) return
         val queue = currentState
         if (queue.entries.none { it.occurrenceId in occurrenceIds }) return
         val entries = queue.entries.filterNot { it.occurrenceId in occurrenceIds }
@@ -417,6 +446,7 @@ class PortableQueueOwner(
 
     override suspend fun removeUndoable(occurrenceIds: Set<String>): Long? {
         requireInside()
+        if (queueLocked()) return null
         val ticket = removals.remember(currentState, occurrenceIds) ?: return null
         remove(occurrenceIds)
         return ticket
@@ -437,6 +467,7 @@ class PortableQueueOwner(
 
     override suspend fun clearUpcoming(): Long? {
         requireInside()
+        if (queueLocked()) return null
         check(!autoLoadMoreEnabled()) { "Disable infinite queue before clearing it" }
         infinite.reset(staticQueue = true)
         val ticket = removeUndoable(currentState.entries
@@ -454,12 +485,14 @@ class PortableQueueOwner(
 
     override suspend fun moveNext(occurrenceId: String) {
         requireInside()
+        if (queueLocked()) return
         currentState = QueueEditPolicy.moveNext(currentState, occurrenceId)
         revalidateHandoff()
     }
 
     override suspend fun moveInPlayOrder(occurrenceId: String, beforeOccurrenceId: String?) {
         requireInside()
+        if (queueLocked()) return
         currentState = QueueEditPolicy.moveInPlayOrder(currentState, occurrenceId, beforeOccurrenceId)
         revalidateHandoff()
     }
@@ -470,6 +503,7 @@ class PortableQueueOwner(
      */
     override suspend fun move(occurrenceId: String, beforeOccurrenceId: String?) {
         requireInside()
+        if (queueLocked()) return
         currentState = QueueEditPolicy.moveInTimeline(currentState, occurrenceId, beforeOccurrenceId)
         revalidateHandoff()
     }
@@ -574,7 +608,7 @@ class PortableQueueOwner(
         } else {
             0L
         }
-        return QueueCheckpoint(queue, position)
+        return QueueCheckpoint(queue, position, savedAtEpochMs = wallTimeMs())
     }
 
     /** Publishes the saved queue with its saved revision, then loads its current song paused at the saved position. */
@@ -593,7 +627,18 @@ class PortableQueueOwner(
             forgetHandoff()
             player.stop()
         } else {
-            startPrepared(playRequest, checkpoint.positionMs, playWhenReady = false)
+            // The position belongs to the restored current item; a stamp older than the resume
+            // window (or an unstamped legacy checkpoint) restarts it from zero.
+            val currentItemId = queue.entries.firstOrNull { it.occurrenceId == current }?.item?.ref?.id
+            val positionMs =
+                PositionRestorePolicy.positionMs(
+                    savedItemId = currentItemId,
+                    restoredItemId = currentItemId,
+                    savedAtEpochMs = checkpoint.savedAtEpochMs,
+                    positionMs = checkpoint.positionMs,
+                    nowEpochMs = wallTimeMs(),
+                )
+            startPrepared(playRequest, positionMs, playWhenReady = false)
         }
     }
 
@@ -839,6 +884,7 @@ class PortableQueueOwner(
     }
 
     private suspend fun onFailure(failure: PlaybackFailure) {
+        var reported = false
         try {
             withQueueAccess {
                 if (failure.occurrenceId != currentState.currentOccurrenceId || !streamRecovery.accepts(failure)) {
@@ -854,13 +900,14 @@ class PortableQueueOwner(
                     startPrepared(Prepared.Ready(recovered.request), recovered.positionMs, recovered.playWhenReady, recovering = true)
                     return@withQueueAccess
                 }
-                finalFailureFlow.tryEmit(failure)
+                reported = finalFailureFlow.tryEmit(failure) || reported
                 if (autoSkipNextOnError()) skipAfterFailure(failure.occurrenceId)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            finalFailureFlow.tryEmit(failure)
+            // A skip that throws must not report the same terminal failure a second time.
+            if (!reported) finalFailureFlow.tryEmit(failure)
             advanceFailureFlow.tryEmit(error)
         }
     }
@@ -912,34 +959,6 @@ class PortableQueueOwner(
         }
     }
 
-    private data class ArmedHandoff(
-        val request: PlaybackRequest,
-        val state: QueueHandoffState,
-        val playbackGeneration: Long,
-        val discontinuityGeneration: Long,
-    )
-
-    /** The parts of a snapshot that start a new playback stretch. Position alone never does. */
-    private data class HandoffKey(
-        val occurrenceId: String,
-        val playbackGeneration: Long,
-        val discontinuityGeneration: Long,
-        val playWhenReady: Boolean,
-        val ended: Boolean,
-        val durationMs: Long?,
-        val speed: Float,
-    )
-
-    private fun PlaybackSnapshot.handoffKey() = HandoffKey(
-        occurrenceId = occurrenceId,
-        playbackGeneration = playbackGeneration,
-        discontinuityGeneration = discontinuityGeneration,
-        playWhenReady = playWhenReady,
-        ended = isEnded,
-        durationMs = durationMs,
-        speed = playbackSpeed,
-    )
-
     /** The hidden-content rules of `Queue.Status.filterPlaybackContent`: explicit, video and blocked artists. */
     private fun List<ContentOccurrence>.filterPlaybackContent(): List<ContentOccurrence> {
         val explicit = hideExplicit()
@@ -971,24 +990,4 @@ class PortableQueueOwner(
 
     private fun requireInside() = check(inside) { "Queue changes must run inside withQueueAccess" }
 
-    private fun upcomingKinds(queue: QueueState): List<UserQueuedKind> {
-        val current = queue.currentOccurrenceId ?: return emptyList()
-        val position = queue.playOrder.indexOf(current)
-        if (position < 0) return emptyList()
-        return queue.playOrder.drop(position + 1)
-            .takeWhile { queue.manualKinds.containsKey(it) }
-            .map { queue.manualKinds.getValue(it) }
-    }
-
-    private fun requireUnique(entries: List<ContentOccurrence>) {
-        require(entries.mapTo(HashSet()) { it.occurrenceId }.size == entries.size) {
-            "Queue occurrence ids must be unique"
-        }
-    }
-
-    private fun requireNewOccurrences(existing: List<ContentOccurrence>, incoming: List<ContentOccurrence>) {
-        requireUnique(incoming)
-        val known = existing.mapTo(HashSet()) { it.occurrenceId }
-        require(incoming.none { it.occurrenceId in known }) { "Occurrence is already queued" }
-    }
 }

@@ -15,7 +15,7 @@ class LyricsProviderOrderTest {
         // Android LyricsHelper.baseProviders, restricted to the providers ported here:
         // BetterLyrics, BetterLyrics Portato, YouLyPlus, LrcLib, Kugou, SimpMusic, Unison,
         // Paxsenix Apple Music, Paxsenix NetEase, Paxsenix Spotify, Paxsenix Musixmatch, Paxsenix YouTube.
-        // The self-hosted Lyprio server leads, as in Metrolist's default order.
+        // The bundled Lyprio server leads, as in Metrolist's default order.
         assertEquals(
             listOf(
                 "Lyprio",
@@ -39,10 +39,10 @@ class LyricsProviderOrderTest {
     @Test
     fun theShippedProviderClassesCarryTheCanonicalNames() {
         val client = client()
-        val selfHosted = checkNotNull(LyprioEndpoint.parse("https://lyrics.example.invalid", "A".repeat(43) + "="))
+        val lyprio = checkNotNull(LyprioEndpoint.parse("https://lyrics.example.invalid", "A".repeat(43) + "="))
         val providers =
             listOf(
-                LyprioLyricsProvider(client, selfHosted),
+                LyprioLyricsProvider(client, lyprio),
                 BetterLyricsProvider(client),
                 BetterLyricsProvider.portato(client),
                 YouLyPlusLyricsProvider(client),

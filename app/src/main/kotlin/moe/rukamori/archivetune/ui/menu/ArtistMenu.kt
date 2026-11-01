@@ -206,6 +206,23 @@ fun ArtistMenu(
                                         },
                                     ),
                                 )
+                                add(
+                                    NewAction(
+                                        icon = {
+                                            Icon(
+                                                painter = painterResource(R.drawable.link),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(28.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        },
+                                        text = stringResource(R.string.copy_link),
+                                        onClick = {
+                                            onDismiss()
+                                            context.copyLinkToClipboard("https://music.youtube.com/channel/${artist.id}")
+                                        },
+                                    ),
+                                )
                             }
                         },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),

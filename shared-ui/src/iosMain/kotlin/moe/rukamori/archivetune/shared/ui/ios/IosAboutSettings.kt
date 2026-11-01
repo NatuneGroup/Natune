@@ -31,6 +31,7 @@ import moe.rukamori.archivetune.shared.ui.settings.AboutContributor
 import moe.rukamori.archivetune.shared.ui.settings.AboutContributorsState
 import moe.rukamori.archivetune.shared.ui.settings.AboutDialog
 import moe.rukamori.archivetune.shared.ui.settings.AboutFailureMessages
+import moe.rukamori.archivetune.shared.ui.settings.AboutBundledNotices
 import moe.rukamori.archivetune.shared.ui.settings.AboutLicensesState
 import moe.rukamori.archivetune.shared.ui.settings.AboutSettings
 import moe.rukamori.archivetune.shared.ui.settings.AboutTranslationEntry
@@ -45,7 +46,8 @@ import platform.UIKit.UIDevice
 /**
  * The baseline About lists on iOS: GitHub contributors and the Weblate translators per `values-*` folder, read from
  * the same repository endpoints as Android. Results stay in memory for the session; Android's DataStore cache has no
- * iOS counterpart. The dependency license list comes from a generated Android library catalog, so it is unavailable.
+ * iOS counterpart. The generated Android dependency catalog is unavailable here, so the licenses dialog lists
+ * the bundled data notices instead.
  */
 internal class IosAboutRepository(private val http: HttpClient) {
     private val lock = Mutex()
@@ -219,7 +221,7 @@ internal fun IosAboutPage(
         memberAvatar = { url, _, modifier -> IosRemoteArtwork(url, graph.artworkLoader, modifier) },
         contributorsState = contributorsState,
         translationsState = translationsState,
-        licensesState = AboutLicensesState.Failed(AboutFailureMessages.unavailableOnHost),
+        licensesState = AboutLicensesState.Loaded(AboutBundledNotices.entries, bundledOnly = true),
         activeDialog = dialog,
         navigate = { navigation.open(it) },
         onOpenUri = { openIosUri(it, graph::report) },

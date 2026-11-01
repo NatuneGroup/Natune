@@ -21,8 +21,10 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.backup.DesktopBackup
 import moe.rukamori.archivetune.desktop.backup.DesktopPendingRestore
 import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
+import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
 import moe.rukamori.archivetune.desktop.telegram.TdlightClientSession
@@ -32,6 +34,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
+import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepository
 import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.openNow
@@ -53,6 +56,7 @@ import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.ui.host.CatalogPageOwners
+import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
@@ -102,12 +106,16 @@ class DesktopSessionGraph internal constructor(
     internal val radio: DesktopRadioOwner,
     /** Lifetime-bound projection of the queue and the player for the OS media controls. Never a second queue. */
     val metadata: StateFlow<DesktopMediaMetadata?>,
+    /** Shuffle, repeat and output volume for the OS media controls; unlike [metadata] it is not track-scoped. */
+    val transport: StateFlow<DesktopTransportState>,
     /** The one device collator every sorted list of this host uses, so one artist never splits into two groups. */
     val textOrder: Comparator<String>,
     /** The one owner of the Library sections and playlist orders, read through [settings] and [library]. */
     internal val libraryContent: LibraryContentOwner,
     /** The YouTube resolve owner; the source chooser's refresh drops its searched-id cache entry. */
     internal val youtubeResolver: DesktopYouTubeResolver,
+    /** The one BotGuard poToken owner; settings generation and the resolver tiers share it. */
+    internal val poTokens: DesktopPoTokenOwner,
     private val owner: PortableQueueOwner,
     /** The engine behind [player], reached directly only for the output volume, which is not a queue command. */
     private val playback: DesktopPlaybackPort,
@@ -171,6 +179,9 @@ class DesktopSessionGraph internal constructor(
     private val drivers: List<Job>,
 ) {
     internal val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
+
+    /** The persisted per-song lyrics offsets, keyed by the playing item's content ref. */
+    internal val songLyricsOffsets = RoomSongLyricsOffsetRepository(database.songLyricsOffsets())
     /** The playlist tag catalog and assignments, in the same portable file as the playlists. */
     internal val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
 
@@ -222,13 +233,25 @@ class DesktopSessionGraph internal constructor(
     }.getOrNull()
 
     /** The one sleep timer of this process. It only pauses [player], so every window shares it. */
-    internal val sleepTimer = DesktopSleepTimer(this)
+    internal val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause) { System.currentTimeMillis() }
 
     /**
      * The one equalizer of this process. Its bands reach the engine through [playback], and its levels are saved in
      * [settings].
      */
     internal val equalizer = DesktopEqualizer(scope = scope, settings = settings, playback = playback)
+
+    /**
+     * The one pause-on-device-mute driver of this process: the stored option over the observed output
+     * level, pausing and resuming [player] and restoring the app volume as Android restores its stream.
+     */
+    internal val outputMutePolicy = DesktopOutputMutePolicy(
+        scope = scope,
+        settings = settings,
+        player = player,
+        playback = playback,
+        restoreVolume = { level -> setVolume(level) },
+    )
 
     /** The crossfade or automix blend armed into the next song, which the player artwork follows. */
     internal val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
@@ -249,6 +272,16 @@ class DesktopSessionGraph internal constructor(
                 desktopDiagnostic("volume was not saved: ${failure.javaClass.simpleName}")
             }
         }
+    }
+
+    /**
+     * Mutes or unmutes the output as gain on every live deck, including a transition's preloaded one,
+     * without closing the device or touching the stored volume: a muted occurrence keeps rendering and
+     * keeps its position, as a system-level mute behaves. A mute-transition policy may also observe it
+     * through the port's published flag.
+     */
+    fun setAudioOutputEnabled(enabled: Boolean) {
+        playback.setAudioOutputEnabled(enabled)
     }
 
     /** Writes one sanitized diagnostic line to the local log. Host diagnostics are not telemetry. */
@@ -320,6 +353,7 @@ class DesktopSessionGraph internal constructor(
         telegram.close()
         uploads.close()
         audioSources.close()
+        poTokens.close()
         http.close()
         player.close()
         network.close()

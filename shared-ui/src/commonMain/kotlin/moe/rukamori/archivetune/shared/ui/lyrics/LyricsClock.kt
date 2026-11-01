@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.delay
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.playback.SystemMonotonicClock
 import kotlin.math.roundToLong
@@ -31,6 +32,12 @@ internal class LyricsClock {
     /** Counts discontinuity resets. A change tells the scroll owner to jump rather than animate. */
     val discontinuities: MutableIntState = mutableIntStateOf(0)
 
+    /**
+     * Counts same-timeline feed jumps past the seek bound. A change snaps the scroll to the new line rather
+     * than animating the distance, but it is not a seek: it never resumes following on its own.
+     */
+    val reanchors: MutableIntState = mutableIntStateOf(0)
+
     fun accept(snapshot: PlaybackSnapshot, nowNanos: Long): LyricsAnchorChange {
         val change = smooth.accept(snapshot, nowNanos)
         if (change != LyricsAnchorChange.STALE) {
@@ -39,30 +46,43 @@ internal class LyricsClock {
         if (change == LyricsAnchorChange.RESET) {
             discontinuities.intValue += 1
         }
-        publish(smooth.advance(nowNanos))
+        publish(smooth.advance(nowNanos), reanchorOnJump = change != LyricsAnchorChange.RESET)
         return change
     }
 
     fun advance(nowNanos: Long) {
-        publish(smooth.advance(nowNanos))
+        publish(smooth.advance(nowNanos), reanchorOnJump = true)
     }
 
     fun retime(syncOffsetMs: Long, leadMs: Long) {
         this.syncOffsetMs = syncOffsetMs
         this.leadMs = leadMs
-        publish(smooth.positionMs)
+        publish(smooth.positionMs, reanchorOnJump = true)
     }
 
-    private fun publish(positionMs: Long) {
+    private fun publish(positionMs: Long, reanchorOnJump: Boolean) {
         // Output delay is wall time; convert it at the media rate without changing row timestamps or tap-to-seek.
         val feed = LyricsFeedTiming.feedMs(positionMs, syncOffsetMs, leadMs)
-        feedMs.longValue = if (feed < Long.MIN_VALUE + outputDelayMs) Long.MIN_VALUE else feed - outputDelayMs
+        val next = if (feed < Long.MIN_VALUE + outputDelayMs) Long.MIN_VALUE else feed - outputDelayMs
+        val previous = feedMs.longValue
+        feedMs.longValue = next
+        // A feed jump past the seek bound is a re-anchor: the scroll owner snaps to the new line
+        // instead of animating the distance, even when no formal discontinuity arrived.
+        if (reanchorOnJump && previous != Long.MIN_VALUE && next != Long.MIN_VALUE &&
+            kotlin.math.abs(next - previous) > FEED_JUMP_DISCONTINUITY_MS
+        ) {
+            reanchors.intValue += 1
+        }
     }
 }
 
 /**
  * Keeps [LyricsClock] current for one surface. A new snapshot is accepted once. The frame loop runs only when
  * [frameLoop] is true, which [LyricsFrameGate] decides from visibility, resume, motion and play state.
+ *
+ * With a [deadlines] schedule the loop requests a frame only while a span animates continuously;
+ * between events it sleeps until the next boundary (bounded by [IDLE_POLL_MS] so a seek or a stale
+ * anchor still lands within a quarter second) instead of drawing an unchanged frame every vsync.
  */
 @Composable
 internal fun rememberLyricsClock(
@@ -70,6 +90,7 @@ internal fun rememberLyricsClock(
     syncOffsetMs: Long,
     leadMs: Long,
     frameLoop: Boolean,
+    deadlines: LyricsDeadlineSchedule? = null,
 ): LyricsClock {
     val clock = remember { LyricsClock() }
     LaunchedEffect(snapshot) {
@@ -78,12 +99,22 @@ internal fun rememberLyricsClock(
     LaunchedEffect(syncOffsetMs, leadMs) {
         clock.retime(syncOffsetMs, leadMs)
     }
-    LaunchedEffect(frameLoop) {
-        if (frameLoop) {
-            while (true) {
+    LaunchedEffect(frameLoop, deadlines) {
+        if (!frameLoop) return@LaunchedEffect
+        while (true) {
+            clock.advance(SystemMonotonicClock.nowNanos())
+            if (deadlines != null && !deadlines.isLive(clock.feedMs.longValue)) {
+                val next = deadlines.nextChangeAfter(clock.feedMs.longValue)
+                delay(if (next == null) IDLE_POLL_MS else (next - clock.feedMs.longValue).coerceIn(1L, IDLE_POLL_MS))
+            } else {
                 withFrameNanos { clock.advance(SystemMonotonicClock.nowNanos()) }
             }
         }
     }
     return clock
 }
+
+/** The slowest the clock re-checks its feed while idle; matches the native surface's held-position poll. */
+private const val IDLE_POLL_MS = 250L
+/** A feed jump beyond this is treated as a seek and re-anchors the list at once. */
+private const val FEED_JUMP_DISCONTINUITY_MS = 1_000L

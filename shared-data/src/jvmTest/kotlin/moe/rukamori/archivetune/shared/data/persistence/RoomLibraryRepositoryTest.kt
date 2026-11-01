@@ -71,4 +71,71 @@ class RoomLibraryRepositoryTest {
             assertEquals("same", repo.page(ContentQuery(RoomLibraryRepository.SONGS, text = "Provider artist")).items.single().item.ref.id)
         } finally { db.close() }
     }
+
+    @Test fun playlistPickerReportsMembershipMosaicAndCoverIdentity() = runTest {
+        val db = openPortableStateDatabase(":memory:")
+        try {
+            val repo = RoomLibraryRepository(db.library())
+            val songA = ContentItem(ContentRef("youtube", ContentKind.SONG, "a"), "A", artworkUri = "https://i/a.jpg")
+            val songB = ContentItem(ContentRef("youtube", ContentKind.SONG, "b"), "B", artworkUri = "https://i/b.jpg")
+            val songC = ContentItem(ContentRef("youtube", ContentKind.SONG, "c"), "C")
+            repo.saveItems(listOf(songA, songB, songC))
+            repo.createPlaylist("p1", "One")
+            repo.createPlaylist("p2", "Two")
+            val batch = listOf(ContentOccurrence("batch-a", songA), ContentOccurrence("batch-c", songC))
+            repo.mutate(LibraryMutation.AddToPlaylist("p1", listOf(ContentOccurrence("stored-a", songA), ContentOccurrence("stored-b", songB))))
+
+            val candidates = repo.observePlaylistPicker(batch).first().associateBy { it.item.ref.id }
+
+            // p1 holds song A by ref but stores it under a different occurrence id, so the write filters nothing and
+            // the membership hint still fires. The playlist item carries its cover pseudo-URL.
+            val one = candidates.getValue("p1")
+            assertEquals(setOf(songA.ref), one.memberRefs)
+            assertEquals(emptySet(), one.memberOccurrenceIds)
+            assertEquals("local-playlist-cover://p1", one.item.artworkUri)
+            val two = candidates.getValue("p2")
+            assertEquals(emptySet(), two.memberRefs)
+            assertEquals(emptySet(), two.memberOccurrenceIds)
+
+            // The summary feeds the row mosaic with the first stored items and the same cover identity.
+            val summary = repo.observeLocalPlaylists().first().single { it.occurrence.item.ref.id == "p1" }
+            assertEquals(listOf(songA.ref, songB.ref), summary.previewItems.map { it.ref })
+            assertEquals("local-playlist-cover://p1", summary.occurrence.item.artworkUri)
+        } finally { db.close() }
+    }
+
+    @Test fun removingALibraryItemKeepsItsPlaylistEntryDownloadAndEdits() = runTest {
+        val db = openPortableStateDatabase(":memory:")
+        try {
+            val metadata = RoomSongMetadataRepository(db.songMetadataOverrides())
+            val repo = RoomLibraryRepository(db.library(), songMetadata = metadata)
+            val song = ContentItem(ContentRef("youtube", ContentKind.SONG, "gone"), "Gone")
+            repo.saveItems(listOf(song))
+            repo.mutate(LibraryMutation.Like(song.ref, true))
+            repo.createPlaylist("p", "Mix")
+            repo.mutate(LibraryMutation.AddToPlaylist("p", listOf(ContentOccurrence("occ-1", song))))
+            metadata.setOverride(song.ref, SongMetadataOverride("Edited", listOf("Edited artist"), 3L))
+
+            repo.removeItems(listOf(song.ref))
+
+            // Membership and the like the row carried are gone, the Android cascade's effect.
+            assertTrue(repo.page(ContentQuery(RoomLibraryRepository.SONGS)).items.isEmpty())
+            assertTrue(repo.page(ContentQuery(RoomLibraryRepository.LIKED)).items.isEmpty())
+            assertNull(repo.findSong("gone", "youtube"))
+            // Playlists and metadata edits are their own tables, so both keep the song, as Android's
+            // inLibrary=null keeps them. A later re-add meets them again.
+            val playlist = ContentQuery(RoomLibraryRepository.PLAYLIST_ITEMS, parent = ContentRef("local", ContentKind.PLAYLIST, "p"))
+            assertEquals(listOf("occ-1"), repo.page(playlist).items.map { it.occurrenceId })
+            repo.saveItems(listOf(song))
+            assertEquals("Edited", repo.page(ContentQuery(RoomLibraryRepository.SONGS)).items.single().item.title)
+
+            // An unknown ref refuses the whole batch and changes nothing, as deletePlaylist does.
+            val kept = ContentItem(ContentRef("youtube", ContentKind.SONG, "kept"), "Kept")
+            repo.saveItems(listOf(kept))
+            assertFailsWith<IllegalArgumentException> {
+                repo.removeItems(listOf(kept.ref, ContentRef("youtube", ContentKind.SONG, "missing")))
+            }
+            assertNotNull(repo.findSong("kept", "youtube"))
+        } finally { db.close() }
+    }
 }

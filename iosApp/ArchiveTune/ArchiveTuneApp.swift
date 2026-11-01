@@ -20,7 +20,9 @@ struct ArchiveTuneApp: App {
         WindowGroup {
             AppRoot()
                 .onOpenURL { url in
-                    // Custom scheme and invite links; the host classifies, routes and reports what it cannot open.
+                    // Custom-scheme and share links; the Kotlin host classifies, routes and reports what it cannot
+                    // open. Universal links would arrive here too, but they need an associated-domains entitlement
+                    // for domains the project does not own, so https intake stays scheme-only for now.
                     ArchiveTuneSession.shared.accept(url)
                 }
         }
@@ -91,7 +93,8 @@ final class ArchiveTuneSession {
     /// The system glass tab bar and mini player bridge. The Kotlin root stays the owner of tabs and playback.
     var nativeChrome: IosNativeChrome { host.nativeChrome }
 
-    /// The onOpenURL entry: a deep link is handed to the host, which queues it for the session graph to resolve.
+    /// The onOpenURL entry: a deep link is handed to the host, which queues it for the session graph to resolve
+    /// through the shared link classifier (page routes, Listen Together invites, watch links).
     func accept(_ url: URL) {
         host.openLink(link: url.absoluteString)
     }

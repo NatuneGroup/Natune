@@ -17,6 +17,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
+import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChipRow
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.*
@@ -101,6 +103,15 @@ fun HomeScreen(
     thumbnailAspectRatio: (ContentItem) -> Float = { HomeSquareCardRatio },
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
+    /**
+     * The feed's category chips and the selected key, bound like the variant pages' chip row. [selectChip] asks the
+     * owner to re-read the feed under the tapped chip (and to clear a re-tap); [showChips] hides the whole row, which
+     * the owner's chips preference controls.
+     */
+    chips: List<HomeVariantChip> = emptyList(),
+    selectedChipKey: String? = null,
+    selectChip: (HomeVariantChip) -> Unit = {},
+    showChips: Boolean = true,
 ) {
     val pullState = rememberPullToRefreshState()
     // Before the first shelves arrive the skeleton stands in for them, and the status line would only repeat its loading.
@@ -123,6 +134,11 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(if (design == HomeFeedDesign.BitChord) 26.dp else 18.dp)) {
                 item(key = "m4-home-header") { HomePageHeader(source, availableSources, onSource, headerActions) }
                 item(key = "m4-home-greeting") { HomeWelcomeHeader(accountName) }
+                if (showChips && chips.isNotEmpty()) {
+                    item(key = "m4-home-chips") {
+                        HomeVariantChipRow(chips = chips, selectedKey = selectedChipKey, onSelect = selectChip)
+                    }
+                }
                 items(shelves, key = { "m4-home-shelf-${it.key}" }) { shelf ->
                     Column {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {

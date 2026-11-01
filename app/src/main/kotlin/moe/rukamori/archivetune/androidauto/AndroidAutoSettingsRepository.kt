@@ -9,6 +9,7 @@ package moe.rukamori.archivetune.androidauto
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -30,8 +31,11 @@ import moe.rukamori.archivetune.constants.AndroidAutoMeteredArtworkKey
 import moe.rukamori.archivetune.constants.AndroidAutoMeteredPlaybackKey
 import moe.rukamori.archivetune.constants.AndroidAutoOnlineRecommendationsKey
 import moe.rukamori.archivetune.constants.AndroidAutoOnlineVoiceSearchKey
+import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistShuffleKey
+import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistsJsonKey
 import moe.rukamori.archivetune.constants.AndroidAutoPrimaryActionKey
 import moe.rukamori.archivetune.constants.AndroidAutoSecondaryActionKey
+import moe.rukamori.archivetune.playback.MusicService
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import javax.inject.Inject
@@ -58,8 +62,14 @@ class AndroidAutoSettingsRepository @Inject constructor(
                 preferences[AndroidAutoSecondaryActionKey],
                 AndroidAutoCustomAction.START_RADIO,
             ),
+            pinnedPlaylistShuffle = preferences[AndroidAutoPinnedPlaylistShuffleKey] ?: false,
         )
     }.distinctUntilChanged()
+
+    val pinnedPlaylists: Flow<List<AndroidAutoPinnedPlaylist>> =
+        context.dataStore.data.map { preferences ->
+            AndroidAutoPinnedPlaylists.decode(preferences[AndroidAutoPinnedPlaylistsJsonKey])
+        }.distinctUntilChanged()
 
     val connectionStatus: Flow<AndroidAutoConnectionStatus> = callbackFlow {
         if (context.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)) {
@@ -112,7 +122,41 @@ class AndroidAutoSettingsRepository @Inject constructor(
             context.dataStore[AndroidAutoSecondaryActionKey],
             AndroidAutoCustomAction.START_RADIO,
         ),
+        pinnedPlaylistShuffle = context.dataStore.get(AndroidAutoPinnedPlaylistShuffleKey, false),
     )
+
+    fun currentPinnedPlaylists(): List<AndroidAutoPinnedPlaylist> =
+        AndroidAutoPinnedPlaylists.decode(context.dataStore[AndroidAutoPinnedPlaylistsJsonKey])
+
+    suspend fun togglePinnedPlaylist(entry: AndroidAutoPinnedPlaylist): List<AndroidAutoPinnedPlaylist> {
+        var updated: List<AndroidAutoPinnedPlaylist> = emptyList()
+        context.dataStore.edit { preferences ->
+            val current = AndroidAutoPinnedPlaylists.decode(preferences[AndroidAutoPinnedPlaylistsJsonKey])
+            updated = AndroidAutoPinnedPlaylists.toggle(current, entry)
+            preferences[AndroidAutoPinnedPlaylistsJsonKey] = AndroidAutoPinnedPlaylists.encode(updated)
+        }
+        requestAutomotiveLibraryRefresh()
+        return updated
+    }
+
+    suspend fun setPinnedPlaylistShuffle(enabled: Boolean) =
+        edit(AndroidAutoPinnedPlaylistShuffleKey, enabled).also {
+            requestAutomotiveLibraryRefresh()
+        }
+
+    /**
+     * A pin or playback-mode change must reach a head unit that already attached its browse
+     * session, so the service re-publishes the affected tree nodes. Harmless when playback is
+     * not running: starting the service only re-advertises an empty tree.
+     */
+    private fun requestAutomotiveLibraryRefresh() {
+        runCatching {
+            context.startService(
+                Intent(context, MusicService::class.java)
+                    .setAction(MusicService.ACTION_REFRESH_AUTOMOTIVE_LIBRARY),
+            )
+        }
+    }
 
     fun currentNetworkState(): AndroidAutoNetworkState {
         val manager = connectivityManager ?: return AndroidAutoNetworkState()

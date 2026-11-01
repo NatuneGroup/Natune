@@ -66,4 +66,8 @@ object LyricsParser {
             }.sortedBy { it.time }
             .map { it.toLine() }
     }
+
+    /** The document-level credits of a TTML document, or an empty value for non-TTML and malformed input. */
+    fun parseTtmlCredits(lyrics: String): LyricsCredits =
+        TtmlParser.parseCredits(LyricsNormalizer.normalize(lyrics))
 }

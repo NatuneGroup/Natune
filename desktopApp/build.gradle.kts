@@ -33,6 +33,8 @@ kotlin {
             implementation(libs.innertubex.desktop)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.json)
+            // The Hyprland visibility watcher parses the compositor's IPC replies with it.
+            implementation(libs.kotlinx.serialization.json)
             implementation(project(":core"))
             implementation(libs.metrolist.extractor)
             implementation(compose.desktop.currentOs)
@@ -90,6 +92,9 @@ val desktopCredentialNames = listOf(
     "ARCHIVETUNE_JIOSAAVN_DES_KEY",
     "ARCHIVETUNE_LASTFM_API_KEY",
     "ARCHIVETUNE_LASTFM_API_SECRET",
+    // The built-in Lyprio lyrics server pair; both values must be present for the host to offer it.
+    "ARCHIVETUNE_LYPRIO_BASE_URL",
+    "ARCHIVETUNE_LYPRIO_HMAC_KEY",
     "ARCHIVETUNE_LISTENER_PRESENCE_URL",
     "ARCHIVETUNE_TELEGRAM_API_ID",
     "ARCHIVETUNE_TELEGRAM_API_HASH",
@@ -111,10 +116,16 @@ val desktopCredentialNames = listOf(
     // both, sign-in is not configured.
     "ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY",
     "ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN",
+    // The BotGuard attestation pair, under the names Android's BuildConfig reads; without both, web-client
+    // PO token generation and resolver minting report not configured and send untokened requests.
+    "ARCHIVETUNE_POTOKEN_REQUEST_KEY",
+    "ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY",
 )
 val desktopLegacyCredentialNames = mapOf(
     "ARCHIVETUNE_LASTFM_API_KEY" to arrayOf("LASTFM_API_KEY"),
     "ARCHIVETUNE_LASTFM_API_SECRET" to arrayOf("LASTFM_SECRET"),
+    "ARCHIVETUNE_LYPRIO_BASE_URL" to arrayOf("LYPRIO_BASE_URL"),
+    "ARCHIVETUNE_LYPRIO_HMAC_KEY" to arrayOf("LYPRIO_HMAC_KEY"),
     "ARCHIVETUNE_TELEGRAM_API_ID" to arrayOf("TELEGRAM_API_ID"),
     "ARCHIVETUNE_TELEGRAM_API_HASH" to arrayOf("TELEGRAM_API_HASH"),
     "ARCHIVETUNE_SOURCE_PROVIDER_URL" to arrayOf("SOURCE_PROVIDER_URL"),

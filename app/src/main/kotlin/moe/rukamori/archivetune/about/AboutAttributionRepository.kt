@@ -12,7 +12,7 @@ import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.datastore.preferences.core.edit
 import com.mikepenz.aboutlibraries.Libs
-import com.mikepenz.aboutlibraries.util.withContext
+import com.mikepenz.aboutlibraries.util.withContext as libsWithContext
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.GitHubTranslationContributorsJsonKey
+import moe.rukamori.archivetune.shared.ui.settings.AboutBundledNotices
 import moe.rukamori.archivetune.constants.GitHubTranslationContributorsLastCheckedAtKey
 import moe.rukamori.archivetune.utils.dataStore
 import org.json.JSONArray
@@ -176,7 +177,7 @@ class AboutAttributionRepository
                     val libs =
                         Libs
                             .Builder()
-                            .withContext(context)
+                            .libsWithContext(context)
                             .build()
                     val licenses =
                         libs.libraries
@@ -193,7 +194,13 @@ class AboutAttributionRepository
                                             .takeIf(String::isNotBlank),
                                 )
                             }.filter { library -> library.name.isNotBlank() }
-                    val collection = AboutDependencyLicenseCollection.from(licenses)
+                    // Data bundled inside the binary never reaches the generated catalog, so its
+                    // notices are appended from the shared list rather than through Libs.
+                    val bundled =
+                        AboutBundledNotices.entries.map { entry ->
+                            AboutDependencyLicense(name = entry.name, version = entry.version, licenses = entry.license)
+                        }
+                    val collection = AboutDependencyLicenseCollection.from(licenses + bundled)
                     if (collection.isEmpty) {
                         Result.failure(IllegalStateException("No dependency licenses found"))
                     } else {

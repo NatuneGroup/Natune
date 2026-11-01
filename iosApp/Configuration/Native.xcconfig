@@ -55,4 +55,12 @@ ARCHIVETUNE_LASTFM_API_SECRET =
 // Info.plist forwards them to IosProviderCredentials for the authorization sheet.
 ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY =
 ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN =
+// The TIDAL canvas embed token reaches the app through Info.plist the same way. A blank value leaves the TIDAL
+// canvas provider not configured; the better-lyrics resolver still answers canvas requests without it.
+ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN =
+// The built-in Lyprio lyrics server pair reaches the app through Info.plist the same way; both must be set for the
+// bundled endpoint to exist, and a user's own server entry always wins. xcconfig treats // as a comment, so write
+// the scheme as https:/$()/host when setting it in an xcconfig file.
+ARCHIVETUNE_LYPRIO_BASE_URL =
+ARCHIVETUNE_LYPRIO_HMAC_KEY =
 #include? "Credentials.xcconfig"

@@ -18,7 +18,10 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertEqual(["audio"], info["UIBackgroundModes"])
         self.assertTrue(info["LSSupportsOpeningDocumentsInPlace"])
         self.assertNotIn("NSAppTransportSecurity", info)
-        self.assertEqual(["archivetune"], info["CFBundleURLTypes"][0]["CFBundleURLSchemes"])
+        self.assertEqual(
+            ["archivetune", "discord-1165706613961789445"],
+            info["CFBundleURLTypes"][0]["CFBundleURLSchemes"],
+        )
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
         scheme = ET.parse(IOS / "ArchiveTune.xcodeproj/xcshareddata/xcschemes/ArchiveTune.xcscheme")
         for target in scheme.findall(".//BuildableReference"):
