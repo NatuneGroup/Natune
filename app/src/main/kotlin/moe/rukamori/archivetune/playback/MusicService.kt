@@ -139,6 +139,8 @@ import moe.rukamori.archivetune.cast.CastMediaItemResolver
 import moe.rukamori.archivetune.cast.CastPlaybackRepository
 import moe.rukamori.archivetune.cast.CastPlaybackRepositoryLocator
 import moe.rukamori.archivetune.cast.CastScreenState
+import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylists
+import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistsJsonKey
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
 import moe.rukamori.archivetune.constants.DefaultMetadataSourceKey
 import moe.rukamori.archivetune.constants.MetadataSource
@@ -1491,6 +1493,9 @@ class MusicService :
             toggleLike = ::toggleLike
             toggleStartRadio = ::toggleStartRadio
             toggleLibrary = ::toggleLibrary
+            isListenTogetherGuestActive = {
+                listenTogetherManager.isInRoom && !listenTogetherManager.isHost
+            }
         }
         mediaSession =
             MediaLibrarySession
@@ -5506,6 +5511,28 @@ class MusicService :
         onUpdateNotification(mediaSession, hasResumablePlaybackNotification())
     }
 
+    /**
+     * Re-publishes the automotive browse tree so a head unit that already attached sees current
+     * queue, pinned driving playlists and library content. Triggered by
+     * [ACTION_REFRESH_AUTOMOTIVE_LIBRARY].
+     */
+    private fun refreshAutomotiveLibrary() {
+        if (!::mediaSession.isInitialized) return
+        val pinnedCount =
+            runCatching {
+                AndroidAutoPinnedPlaylists
+                    .decode(dataStore.get(AndroidAutoPinnedPlaylistsJsonKey, "[]"))
+                    .size
+            }.getOrDefault(0)
+        runCatching {
+            mediaSession.notifyChildrenChanged(ROOT, AUTOMOTIVE_ROOT_ITEM_COUNT, null)
+            mediaSession.notifyChildrenChanged(QUEUE, player.mediaItemCount, null)
+            mediaSession.notifyChildrenChanged(PINNED_PLAYLISTS, pinnedCount, null)
+        }.onFailure { error ->
+            Timber.tag(TAG).w(error, "Failed to refresh automotive library")
+        }
+    }
+
     private suspend fun enrichFromAppleMusic(metadata: MediaMetadata): MediaMetadata {
         val artistName = metadata.artists.firstOrNull()?.name
         val query = listOfNotNull(metadata.title, artistName).joinToString(" ")
@@ -6807,6 +6834,9 @@ class MusicService :
 
     private fun openAudioEffectSession() {
         if (isAudioEffectSessionOpened) return
+        // The OPEN broadcast invites external equalizer apps to attach to the audio session;
+        // suppressing it keeps the bit-perfect stream free of any control-session effects.
+        if (bitPerfectOutputActive && BitPerfectUsbOutput.enabled) return
         val sessionId = localPlayer.audioSessionId
         if (sessionId <= 0) return
         isAudioEffectSessionOpened = true
@@ -6827,6 +6857,7 @@ class MusicService :
 
     private fun rebindAudioEffectSession(newSessionId: Int) {
         if (newSessionId <= 0 || !shouldKeepAudioEffectSessionOpen()) return
+        if (bitPerfectOutputActive && BitPerfectUsbOutput.enabled) return
         val oldSessionId = openedAudioSessionId
         if (!isAudioEffectSessionOpened) {
             openAudioEffectSession()
@@ -6846,22 +6877,32 @@ class MusicService :
     }
 
     private fun sendOpenAudioEffectSessionBroadcast(sessionId: Int) {
-        sendBroadcast(
-            Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
-                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
-                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
-                putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-            },
-        )
+        try {
+            sendBroadcast(
+                Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
+                    putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
+                    putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                    putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
+                },
+            )
+        } catch (e: SecurityException) {
+            // Some OEM builds restrict the audio-effect control-session broadcasts.
+            Timber.tag(TAG).w(e, "OPEN_AUDIO_EFFECT_CONTROL_SESSION broadcast denied")
+        }
     }
 
     private fun sendCloseAudioEffectSessionBroadcast(sessionId: Int) {
-        sendBroadcast(
-            Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
-                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
-                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
-            },
-        )
+        try {
+            sendBroadcast(
+                Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
+                    putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
+                    putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                    putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
+                },
+            )
+        } catch (e: SecurityException) {
+            Timber.tag(TAG).w(e, "CLOSE_AUDIO_EFFECT_CONTROL_SESSION broadcast denied")
+        }
     }
 
     private fun historyThresholdMs(): Long =
@@ -12995,6 +13036,10 @@ class MusicService :
                     player.skipKeepingPlayState { seekToPrevious() }
                 }
             }
+
+            ACTION_REFRESH_AUTOMOTIVE_LIBRARY -> {
+                refreshAutomotiveLibrary()
+            }
         }
         super.onStartCommand(intent, flags, startId)
         return START_NOT_STICKY
@@ -13075,6 +13120,8 @@ class MusicService :
         const val SPOTIFY_PLAYLIST = "spotify_playlist"
         const val SPOTIFY_LIKED = "spotify_liked"
         const val ONLINE_PLAYLIST = "online_playlist"
+        const val QUEUE = "queue"
+        const val PINNED_PLAYLISTS = "pinned_playlists"
 
         private const val TAG = "MusicService"
         private const val SessionActivityAlbumLinkRequestCode = 889
@@ -13085,6 +13132,9 @@ class MusicService :
         const val CHANNEL_ID = "music_channel_01"
         const val ACTION_MEDIA_NOTIFICATION_DISMISSED =
             "moe.rukamori.archivetune.action.MEDIA_NOTIFICATION_DISMISSED"
+        const val ACTION_REFRESH_AUTOMOTIVE_LIBRARY =
+            "moe.rukamori.archivetune.action.REFRESH_AUTOMOTIVE_LIBRARY"
+        private const val AUTOMOTIVE_ROOT_ITEM_COUNT = 11
         const val EXTRA_MEDIA_NOTIFICATION_DELETE_INTENT =
             "moe.rukamori.archivetune.extra.MEDIA_NOTIFICATION_DELETE_INTENT"
         const val NOTIFICATION_ID = 888

@@ -17,6 +17,7 @@ import androidx.annotation.StringRes
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -44,6 +45,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylist
+import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylistKind
+import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylists
+import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistShuffleKey
+import moe.rukamori.archivetune.constants.AndroidAutoPinnedPlaylistsJsonKey
 import moe.rukamori.archivetune.constants.HideExplicitKey
 import moe.rukamori.archivetune.constants.HideVideoKey
 import moe.rukamori.archivetune.constants.MediaSessionConstants
@@ -95,6 +101,8 @@ class MediaLibrarySessionCallback
         var toggleLike: () -> Unit = {}
         var toggleStartRadio: () -> Unit = {}
         var toggleLibrary: () -> Unit = {}
+        var isListenTogetherGuestActive: () -> Boolean = { false }
+        private val controllerClassifier = MediaSessionControllerClassifier(context)
 
         private data class AutoPlaylistSortOption(
             val sortType: PlaylistSongSortType,
@@ -133,17 +141,31 @@ class MediaLibrarySessionCallback
             controller: MediaSession.ControllerInfo,
         ): MediaSession.ConnectionResult {
             val connectionResult = super.onConnect(session, controller)
-            return MediaSession.ConnectionResult.accept(
+            val tier = controllerClassifier.tierOf(controller)
+            val sessionCommands =
                 connectionResult.availableSessionCommands
                     .buildUpon()
-                    .add(MediaSessionConstants.CommandToggleLike)
-                    .add(MediaSessionConstants.CommandToggleStartRadio)
-                    .add(MediaSessionConstants.CommandToggleLibrary)
-                    .add(MediaSessionConstants.CommandToggleShuffle)
-                    .add(MediaSessionConstants.CommandToggleRepeatMode)
-                    .build(),
-                connectionResult.availablePlayerCommands,
-            )
+                    .apply {
+                        val allowed = MediaSessionAuthorization.allowedCustomActions(tier)
+                        MediaSessionConstants.AllCustomCommands
+                            .filter { it.customAction in allowed }
+                            .forEach(::add)
+                    }.build()
+            val playerCommands =
+                when (MediaSessionAuthorization.playerCommandAccess(tier)) {
+                    PlayerCommandAccess.FULL -> connectionResult.availablePlayerCommands
+
+                    PlayerCommandAccess.TRANSPORT ->
+                        Player.Commands
+                            .EMPTY
+                            .buildUpon()
+                            .apply {
+                                MediaSessionAuthorization.MINIMAL_PLAYER_COMMANDS
+                                    .filter(connectionResult.availablePlayerCommands::contains)
+                                    .forEach(::add)
+                            }.build()
+                }
+            return MediaSession.ConnectionResult.accept(sessionCommands, playerCommands)
         }
 
         override fun onPlaybackResumption(
@@ -204,6 +226,16 @@ class MediaLibrarySessionCallback
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
+            if (
+                MediaSessionAuthorization.isCustomCommandBlocked(
+                    customCommand.customAction,
+                    isListenTogetherGuestActive(),
+                )
+            ) {
+                return Futures.immediateFuture(
+                    SessionResult(SessionError.ERROR_PERMISSION_DENIED),
+                )
+            }
             when (customCommand.customAction) {
                 MediaSessionConstants.ACTION_TOGGLE_LIKE -> {
                     toggleLike()
@@ -390,6 +422,8 @@ class MediaLibrarySessionCallback
                                 staticFolderItem(MusicService.ARTIST),
                                 staticFolderItem(MusicService.ALBUM),
                                 staticFolderItem(MusicService.PLAYLIST),
+                                staticFolderItem(MusicService.QUEUE),
+                                staticFolderItem(MusicService.PINNED_PLAYLISTS),
                             )
                         }
 
@@ -547,6 +581,14 @@ class MediaLibrarySessionCallback
                                 }
                         }
 
+                        MusicService.QUEUE -> {
+                            currentQueueChildren(session)
+                        }
+
+                        MusicService.PINNED_PLAYLISTS -> {
+                            pinnedPlaylistItems()
+                        }
+
                         MusicService.SPOTIFY_LIKED -> {
                             spotifyLikedMediaItems().map { mediaItem ->
                                 mediaItem
@@ -602,6 +644,10 @@ class MediaLibrarySessionCallback
 
                                 parentId.startsWith("${MusicService.PLAYLIST}/") -> {
                                     playlistChildren(parentId)
+                                }
+
+                                parentId.startsWith("${MusicService.PINNED_PLAYLISTS}/") -> {
+                                    pinnedPlaylistChildren(parentId)
                                 }
 
                                 parentId.startsWith("${MusicService.ONLINE_PLAYLIST}/") -> {
@@ -672,6 +718,18 @@ class MediaLibrarySessionCallback
 
                     mediaId.startsWith("${MusicService.ONLINE_PLAYLIST}/") -> {
                         onlinePlaylistItem(mediaId)?.let {
+                            LibraryResult.ofItem(it, null)
+                        } ?: LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
+                    }
+
+                    mediaId.startsWith("${MusicService.QUEUE}/") -> {
+                        queueEntryItem(session, mediaId)?.let {
+                            LibraryResult.ofItem(it, null)
+                        } ?: LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
+                    }
+
+                    mediaId.startsWith("${MusicService.PINNED_PLAYLISTS}/") -> {
+                        pinnedMediaItem(mediaId)?.let {
                             LibraryResult.ofItem(it, null)
                         } ?: LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                     }
@@ -954,6 +1012,29 @@ class MediaLibrarySessionCallback
                         )
                     }
 
+                    MusicService.QUEUE -> {
+                        // A car queue tap replays the tapped entry inside the existing queue
+                        // instead of rebuilding a queue around it.
+                        val entry = AutoQueueMediaIds.parse(firstItem.mediaId) ?: return@future defaultResult
+                        withContext(Dispatchers.Main) {
+                            val player = mediaSession.player
+                            val queueMediaIds =
+                                List(player.mediaItemCount) { index -> player.getMediaItemAt(index).mediaId }
+                            AutoQueueMediaIds.resolvePosition(entry, queueMediaIds)?.let { position ->
+                                MediaSession.MediaItemsWithStartPosition(
+                                    List(player.mediaItemCount) { index -> player.getMediaItemAt(index) },
+                                    position,
+                                    startPositionMs,
+                                )
+                            }
+                        } ?: return@future defaultResult
+                    }
+
+                    MusicService.PINNED_PLAYLISTS -> {
+                        pinnedPlaylistPlayback(firstItem.mediaId, startPositionMs)
+                            ?: return@future defaultResult
+                    }
+
                     else -> {
                         val directMediaId = firstItem.mediaId.trim()
                         if (directMediaId.isNotBlank() && !directMediaId.contains("/")) {
@@ -1003,6 +1084,128 @@ class MediaLibrarySessionCallback
                         }
                     }.toMutableList()
             }
+
+        private suspend fun currentQueueChildren(session: MediaLibrarySession): List<MediaItem> =
+            withContext(Dispatchers.Main) {
+                val player = session.player
+                (0 until player.mediaItemCount).map { index ->
+                    val item = player.getMediaItemAt(index)
+                    item
+                        .buildUpon()
+                        .setMediaId(AutoQueueMediaIds.mediaIdFor(index, item.mediaId))
+                        .setMediaMetadata(
+                            item.mediaMetadata
+                                .buildUpon()
+                                .setIsPlayable(true)
+                                .setIsBrowsable(false)
+                                .setExtras(playableExtras())
+                                .build(),
+                        ).build()
+                }
+            }
+
+        private suspend fun queueEntryItem(
+            session: MediaLibrarySession,
+            mediaId: String,
+        ): MediaItem? {
+            val entry = AutoQueueMediaIds.parse(mediaId) ?: return null
+            return withContext(Dispatchers.Main) {
+                val player = session.player
+                val queueMediaIds =
+                    List(player.mediaItemCount) { index -> player.getMediaItemAt(index).mediaId }
+                AutoQueueMediaIds.resolvePosition(entry, queueMediaIds)?.let { position ->
+                    player
+                        .getMediaItemAt(position)
+                        .buildUpon()
+                        .setMediaId(mediaId)
+                        .build()
+                }
+            }
+        }
+
+        private suspend fun pinnedPlaylistEntries(): List<AndroidAutoPinnedPlaylist> =
+            AndroidAutoPinnedPlaylists.decode(
+                context.dataStore.get(AndroidAutoPinnedPlaylistsJsonKey, "[]"),
+            )
+
+        private suspend fun pinnedPlaylistItems(): List<MediaItem> =
+            pinnedPlaylistEntries().mapNotNull(::pinnedPlaylistItem)
+
+        private suspend fun pinnedPlaylistItem(entry: AndroidAutoPinnedPlaylist): MediaItem? {
+            val source =
+                when (entry.kind) {
+                    AndroidAutoPinnedPlaylistKind.LOCAL ->
+                        playlistItem("${MusicService.PLAYLIST}/${entry.id}")
+
+                    AndroidAutoPinnedPlaylistKind.ONLINE ->
+                        onlinePlaylistItem("${MusicService.ONLINE_PLAYLIST}/${entry.id}")
+                } ?: return null
+            return source
+                .buildUpon()
+                .setMediaId(AndroidAutoPinnedPlaylists.mediaIdFor(entry))
+                .build()
+        }
+
+        private suspend fun pinnedMediaItem(mediaId: String): MediaItem? {
+            val ref = AndroidAutoPinnedPlaylists.parseMediaId(mediaId) ?: return null
+            val songMediaId =
+                ref.songMediaId
+                    ?: return pinnedPlaylistItem(AndroidAutoPinnedPlaylist(ref.kind, ref.playlistId))
+            val parentId = mediaId.substringBeforeLast('/')
+            return when (ref.kind) {
+                AndroidAutoPinnedPlaylistKind.LOCAL ->
+                    database.song(songMediaId).first()?.toMediaItem(parentId)
+
+                AndroidAutoPinnedPlaylistKind.ONLINE ->
+                    onlinePlaylistSongItem(
+                        playlistId = ref.playlistId,
+                        songId = songMediaId,
+                        parentId = parentId,
+                    )
+            }
+        }
+
+        private suspend fun pinnedPlaylistChildren(parentId: String): List<MediaItem> {
+            // Song-level ids are leaves: browsing below them yields nothing.
+            val ref = AndroidAutoPinnedPlaylists.parseMediaId(parentId) ?: return emptyList()
+            if (ref.songMediaId != null) return emptyList()
+            return when (ref.kind) {
+                AndroidAutoPinnedPlaylistKind.LOCAL ->
+                    playlistSongs(ref.playlistId).map { it.toMediaItem(parentId) }
+
+                AndroidAutoPinnedPlaylistKind.ONLINE ->
+                    onlinePlaylistSongs(ref.playlistId).map { it.toMediaItem(parentId) }
+            }
+        }
+
+        private suspend fun pinnedPlaylistPlayback(
+            mediaId: String,
+            startPositionMs: Long,
+        ): MediaSession.MediaItemsWithStartPosition? {
+            val ref = AndroidAutoPinnedPlaylists.parseMediaId(mediaId) ?: return null
+            val shufflePinned = context.dataStore.get(AndroidAutoPinnedPlaylistShuffleKey, false)
+            val songs =
+                when (ref.kind) {
+                    AndroidAutoPinnedPlaylistKind.LOCAL ->
+                        playlistSongs(ref.playlistId).map { it.toMediaItem() }
+
+                    AndroidAutoPinnedPlaylistKind.ONLINE ->
+                        onlinePlaylistSongs(ref.playlistId).map { it.toMediaItem() }
+                }
+            if (songs.isEmpty()) return null
+            // Pinned playlist taps honour the driving-playlist playback mode: shuffle starts a
+            // shuffled list from the top while play-in-order keeps the playlist's order. A tap on
+            // a specific song always starts at that song.
+            val startIndex =
+                ref.songMediaId?.let { songId ->
+                    songs.indexOfFirst { it.mediaId == songId }.takeIf { it != -1 }
+                } ?: 0
+            return if (ref.songMediaId == null && shufflePinned) {
+                MediaSession.MediaItemsWithStartPosition(songs.shuffled(), 0, startPositionMs)
+            } else {
+                MediaSession.MediaItemsWithStartPosition(songs, startIndex, startPositionMs)
+            }
+        }
 
         private suspend fun autoQueueSongPathItem(mediaId: String): MediaItem? {
             val path = mediaId.pathSegments()
@@ -1947,6 +2150,24 @@ class MediaLibrarySessionCallback
                         context.getString(R.string.playlists),
                         null,
                         drawableUri(R.drawable.queue_music),
+                        MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS,
+                    )
+
+                MusicService.QUEUE ->
+                    browsableMediaItem(
+                        MusicService.QUEUE,
+                        context.getString(R.string.queue),
+                        null,
+                        drawableUri(R.drawable.queue_music),
+                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
+                    )
+
+                MusicService.PINNED_PLAYLISTS ->
+                    browsableMediaItem(
+                        MusicService.PINNED_PLAYLISTS,
+                        context.getString(R.string.android_auto_driving_playlists),
+                        null,
+                        drawableUri(R.drawable.push_pin),
                         MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS,
                     )
 

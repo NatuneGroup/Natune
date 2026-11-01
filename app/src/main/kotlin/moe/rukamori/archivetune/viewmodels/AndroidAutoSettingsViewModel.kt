@@ -13,21 +13,31 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.androidauto.AndroidAutoActionSlot
 import moe.rukamori.archivetune.androidauto.AndroidAutoCustomAction
+import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylistKind
+import moe.rukamori.archivetune.androidauto.AndroidAutoPlaylistOption
+import moe.rukamori.archivetune.androidauto.AndroidAutoPlaylistPickerState
 import moe.rukamori.archivetune.androidauto.AndroidAutoSettingsSnapshot
 import moe.rukamori.archivetune.androidauto.AndroidAutoSettingsUseCases
+import moe.rukamori.archivetune.constants.PlaylistSortType
+import moe.rukamori.archivetune.db.MusicDatabase
+import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.innertube.models.PlaylistItem
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -43,6 +53,7 @@ sealed interface AndroidAutoSettingsState {
 data class AndroidAutoSettingsUiModel(
     val snapshot: AndroidAutoSettingsSnapshot,
     val busy: Boolean,
+    val picker: AndroidAutoPlaylistPickerState,
 )
 
 sealed interface AndroidAutoSettingsAction {
@@ -60,6 +71,9 @@ sealed interface AndroidAutoSettingsAction {
     data object ExternalActionFailed : AndroidAutoSettingsAction
     data object PermissionResult : AndroidAutoSettingsAction
     data object Retry : AndroidAutoSettingsAction
+    data object LoadPlaylistCandidates : AndroidAutoSettingsAction
+    data class TogglePinnedPlaylist(val option: AndroidAutoPlaylistOption) : AndroidAutoSettingsAction
+    data class SetPinnedPlayInOrder(val playInOrder: Boolean) : AndroidAutoSettingsAction
 }
 
 sealed interface AndroidAutoSettingsEvent {
@@ -70,6 +84,7 @@ sealed interface AndroidAutoSettingsEvent {
 @HiltViewModel
 class AndroidAutoSettingsViewModel @Inject constructor(
     private val useCases: AndroidAutoSettingsUseCases,
+    private val database: MusicDatabase,
 ) : ViewModel() {
     private data class Controls(
         val busy: Boolean = false,
@@ -78,8 +93,10 @@ class AndroidAutoSettingsViewModel @Inject constructor(
 
     private val controls = MutableStateFlow(Controls())
     private val permissionVersion = MutableStateFlow(0L)
+    private val pickerState = MutableStateFlow(AndroidAutoPlaylistPickerState())
     private val eventChannel = Channel<AndroidAutoSettingsEvent>(Channel.BUFFERED)
     private var updateJob: Job? = null
+    private var candidatesJob: Job? = null
 
     val events = eventChannel.receiveAsFlow()
 
@@ -87,12 +104,14 @@ class AndroidAutoSettingsViewModel @Inject constructor(
         useCases.observeSettings(),
         controls,
         permissionVersion,
-    ) { snapshot, controls, _ ->
+        pickerState,
+    ) { snapshot, controls, _, picker ->
         controls.error?.let(AndroidAutoSettingsState::Error)
             ?: AndroidAutoSettingsState.Success(
                 AndroidAutoSettingsUiModel(
                     snapshot = snapshot.copy(hasLocalAudioPermission = useCases.hasLocalAudioPermission()),
                     busy = controls.busy,
+                    picker = picker,
                 ),
             )
     }.catch { error ->
@@ -112,7 +131,72 @@ class AndroidAutoSettingsViewModel @Inject constructor(
             }
             AndroidAutoSettingsAction.PermissionResult -> permissionVersion.update { it + 1 }
             AndroidAutoSettingsAction.Retry -> controls.update { it.copy(error = null) }
+            AndroidAutoSettingsAction.LoadPlaylistCandidates -> loadPlaylistCandidates()
             else -> update(action)
+        }
+    }
+
+    /**
+     * Fills the driving-playlist picker once per open: local library playlists first, then the
+     * signed-in account's YouTube playlists. An offline or signed-out YouTube fetch only drops
+     * the online section — it is not an error for the picker itself.
+     */
+    private fun loadPlaylistCandidates() {
+        if (candidatesJob?.isActive == true) return
+        candidatesJob = viewModelScope.launch {
+            pickerState.update { it.copy(loading = true, failed = false) }
+            try {
+                val local =
+                    withContext(Dispatchers.IO) {
+                        database.playlists(PlaylistSortType.NAME, descending = false).first()
+                    }.map { playlist ->
+                        AndroidAutoPlaylistOption(
+                            kind = AndroidAutoPinnedPlaylistKind.LOCAL,
+                            id = playlist.id,
+                            title = playlist.playlist.name,
+                            songCount = playlist.songCount,
+                            subtitle = null,
+                        )
+                    }
+                var onlineFailed = false
+                val online =
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            YouTube
+                                .library("FEmusic_liked_playlists")
+                                .completed()
+                                .getOrThrow()
+                                .items
+                                .filterIsInstance<PlaylistItem>()
+                                .filterNot { it.id == "SE" }
+                        }
+                    }.onFailure { error ->
+                        if (error is CancellationException) throw error
+                        Timber.w(error, "Failed to load YouTube playlists for driving playlists picker")
+                        onlineFailed = true
+                    }.getOrDefault(emptyList())
+                        .map { playlist ->
+                            AndroidAutoPlaylistOption(
+                                kind = AndroidAutoPinnedPlaylistKind.ONLINE,
+                                id = playlist.id,
+                                title = playlist.title,
+                                songCount = null,
+                                subtitle = playlist.songCountText ?: playlist.author?.name,
+                            )
+                        }
+                pickerState.update {
+                    it.copy(
+                        options = local + online,
+                        loading = false,
+                        failed = onlineFailed && local.isEmpty(),
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.e(error, "Failed to load driving playlist candidates")
+                pickerState.update { it.copy(loading = false, failed = true) }
+            }
         }
     }
 
@@ -131,6 +215,10 @@ class AndroidAutoSettingsViewModel @Inject constructor(
                     is AndroidAutoSettingsAction.SetMeteredArtwork -> useCases.setMeteredArtwork(action.enabled)
                     is AndroidAutoSettingsAction.SetAction ->
                         useCases.setAction(action.slot, action.action, model.snapshot.configuration)
+                    is AndroidAutoSettingsAction.TogglePinnedPlaylist ->
+                        useCases.togglePinnedPlaylist(action.option.asPin())
+                    is AndroidAutoSettingsAction.SetPinnedPlayInOrder ->
+                        useCases.setPinnedPlaylistShuffle(!action.playInOrder)
                     else -> Unit
                 }
             } catch (error: CancellationException) {
