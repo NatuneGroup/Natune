@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.repository
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.datetime.Clock
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureClassifier
@@ -32,6 +33,11 @@ internal class QueueStreamRecovery(
     private val player: MusicPlayerController,
     private val locators: QueueLocatorResolver,
     private val nowMs: () -> Long,
+    /**
+     * The wall clock for locator authorization windows: [PlaybackLocator.expiresAtEpochMs] is an epoch
+     * timestamp, so it can never be measured against [nowMs]'s monotonic ticks.
+     */
+    private val epochNowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val attempts = StreamRecoveryTracker<AudioSourceType>()
     /** Recovery budget per media id, as the host's per-video budget map; cleared with the load lineage. */
@@ -122,7 +128,7 @@ internal class QueueStreamRecovery(
             PlaybackRecoveryAction.RETRY_SAME_URL,
             PlaybackRecoveryAction.INVALIDATE_NETWORK,
             PlaybackRecoveryAction.REBUILD_RENDERER -> {
-                if (reusable(current.locator, now)) return recovered(current.locator)
+                if (reusable(current.locator, epochNowMs())) return recovered(current.locator)
             }
             else -> Unit
         }
@@ -151,12 +157,13 @@ internal class QueueStreamRecovery(
     }
 
     /**
-     * A locator another load may reuse: inside its authorization window and not a single-use prepared
-     * view. One [PlaybackLocator.PreparedPlaintext] handle is one engine load, so any retry of it —
-     * even a same-locator one — resolves a fresh preparation instead of returning the consumed view.
+     * A locator another load may reuse: inside its authorization window (an epoch instant read on the
+     * wall clock, never the monotonic budget clock) and not a single-use prepared view. One
+     * [PlaybackLocator.PreparedPlaintext] handle is one engine load, so any retry of it — even a
+     * same-locator one — resolves a fresh preparation instead of returning the consumed view.
      */
-    private fun reusable(locator: PlaybackLocator, now: Long): Boolean =
-        locator !is PlaybackLocator.PreparedPlaintext && locator.expiresAtEpochMs?.let { it > now } != false
+    private fun reusable(locator: PlaybackLocator, epochNow: Long): Boolean =
+        locator !is PlaybackLocator.PreparedPlaintext && locator.expiresAtEpochMs?.let { it > epochNow } != false
 
     private suspend fun locate(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator? =
         try {
