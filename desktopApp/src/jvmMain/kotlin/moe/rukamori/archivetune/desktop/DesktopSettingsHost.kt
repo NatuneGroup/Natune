@@ -86,7 +86,6 @@ import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
-import androidx.compose.runtime.mutableStateOf
 import moe.rukamori.archivetune.shared.domain.settings.CanvasConnectivity
 import moe.rukamori.archivetune.shared.domain.settings.EnableTranslatorKey
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackState

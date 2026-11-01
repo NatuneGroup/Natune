@@ -39,7 +39,6 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCanvasCacheStore
-import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCrossfadeHandoff
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherAvatar

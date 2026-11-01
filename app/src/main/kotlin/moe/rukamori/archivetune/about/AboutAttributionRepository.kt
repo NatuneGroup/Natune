@@ -12,7 +12,7 @@ import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.datastore.preferences.core.edit
 import com.mikepenz.aboutlibraries.Libs
-import com.mikepenz.aboutlibraries.util.withContext
+import com.mikepenz.aboutlibraries.util.withContext as libsWithContext
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -177,7 +177,7 @@ class AboutAttributionRepository
                     val libs =
                         Libs
                             .Builder()
-                            .withContext(context)
+                            .libsWithContext(context)
                             .build()
                     val licenses =
                         libs.libraries
