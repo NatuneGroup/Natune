@@ -148,6 +148,9 @@ internal class IosSettingsOwners(
     )
     val accounts = graph.accountLifecycle
 
+    /** The graph's Discord owner: the settings page starts its presence driver and drives its OAuth sheet. */
+    val discord: IosDiscordPresence get() = graph.discord
+
     /** The YouTube sign-in sheet and account owner; the Settings > Account page and the login page both use it. */
     val youTube = IosYouTubeAccountOwner(graph, controller, browser)
 
