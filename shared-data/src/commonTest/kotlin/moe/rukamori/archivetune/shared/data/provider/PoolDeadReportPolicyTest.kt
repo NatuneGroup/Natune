@@ -291,8 +291,9 @@ class PoolDeadReportPolicyTest {
         ) { }
         // Account B must join A's in-flight refresh and re-read its own credential afterwards —
         // an account-keyed flight let B skip recovery while its token was still stale.
+        // awaitAll answers in launch order, so both retries land in the order they were raced.
         val results = awaitAll(async { fail(5L) }, async { fail(6L) })
-        assertEquals(listOf("s:5:fresh-a", "s:6:fresh-b"), results.sorted())
+        assertEquals(listOf("s:5:fresh-a", "s:6:fresh-b"), results)
         assertEquals(1, recoveries)
         assertEquals(setOf(5L to "fresh-a", 6L to "fresh-b"), retries.toSet())
     }
