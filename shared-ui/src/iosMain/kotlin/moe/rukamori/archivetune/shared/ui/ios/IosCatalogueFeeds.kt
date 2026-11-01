@@ -15,11 +15,14 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.provider.YouTubeCatalogueTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeEntry
 import moe.rukamori.archivetune.shared.data.provider.YouTubeExplore
+import moe.rukamori.archivetune.shared.data.provider.YouTubeFeedChip
 import moe.rukamori.archivetune.shared.data.provider.YouTubeMoodGenre
 import moe.rukamori.archivetune.shared.data.provider.YouTubeRelease
 import moe.rukamori.archivetune.shared.data.provider.YouTubeReleaseType
 import moe.rukamori.archivetune.shared.data.provider.YouTubeShelf
 import moe.rukamori.archivetune.shared.data.provider.YouTubeShelfPage
+import moe.rukamori.archivetune.shared.data.provider.selectYouTubeFeedChip
+import moe.rukamori.archivetune.shared.data.provider.stableKey
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -27,9 +30,11 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSection
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.settings.ShowHomeCategoryChipsKey
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
+import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.resources.Res
@@ -67,6 +72,10 @@ private val IOS_DISCOVERY_REQUEST = ContentRequest(ContentProvider.YOUTUBE, Cont
 /** Charts' collection, kept apart from the home feed and from generic browse pages. */
 private val IOS_CHARTS_REQUEST = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.EXPLORE, text = "charts")
 
+/** Discovery's suggestion feed collection, so its shelf rows never share keys with the release shelf. */
+private val IOS_DISCOVERY_SUGGESTIONS_REQUEST =
+    ContentRequest(ContentProvider.YOUTUBE, ContentSurface.DISCOVERY, text = "suggestions")
+
 /** New releases' collection: its rows are albums, so a tap opens the album page rather than a queue. */
 private val IOS_RELEASES_REQUEST = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.EXPLORE, text = "new_releases")
 
@@ -80,7 +89,7 @@ private const val NEW_RELEASES_SHELF_KEY = "new_releases"
 internal class IosShelfFeed(
     private val scope: CoroutineScope,
     private val report: (String) -> Unit,
-    private val read: suspend (continuation: String?) -> YouTubeShelfPage,
+    private val read: suspend (continuation: String?, params: String?) -> YouTubeShelfPage,
 ) {
     var shelves by mutableStateOf<List<YouTubeShelf>>(emptyList())
         private set
@@ -97,6 +106,15 @@ internal class IosShelfFeed(
     var refreshing by mutableStateOf(false)
         private set
 
+    /** The feed chips the last first-page read returned; a feed that carries none leaves this empty. */
+    var chips by mutableStateOf<List<YouTubeFeedChip>>(emptyList())
+        private set
+
+    /** The chip currently filtering the feed, as the Android home tracks it; null keeps the un-filtered feed. */
+    var selectedChip by mutableStateOf<YouTubeFeedChip?>(null)
+        private set
+
+    private var chipParams: String? = null
     private var generation = 0
 
     fun reload() {
@@ -110,15 +128,28 @@ internal class IosShelfFeed(
         load(token)
     }
 
+    /**
+     * A chip tap re-reads the first page under it, and a re-tap of the selected chip clears it through the shared
+     * toggle — the same select/deselect semantics the Android home applies.
+     */
+    fun selectChip(chip: YouTubeFeedChip?) {
+        val selection = selectYouTubeFeedChip(selectedChip, chip)
+        selectedChip = selection.selected
+        chipParams = selection.params
+        load(continuation = null)
+    }
+
     private fun load(continuation: String?) {
         val current = ++generation
         loading = true
         failed = false
         scope.launch {
             try {
-                val page = read(continuation)
+                // Continuation reads carry the token alone; the transport drops params on continuation anyway.
+                val page = read(continuation, chipParams)
                 if (current != generation) return@launch
                 shelves = if (continuation == null) page.shelves else shelves + page.shelves
+                if (continuation == null) chips = page.chips
                 this@IosShelfFeed.continuation = page.continuation
                 initialized = true
             } catch (cancelled: CancellationException) {
@@ -228,12 +259,17 @@ internal fun iosHomePage(
     val catalogue = graph.youtubeCatalogue
     val feed =
         remember(graph, scope, catalogue) {
-            IosShelfFeed(scope, graph::report) { token ->
+            IosShelfFeed(scope, graph::report) { token, params ->
                 graph.youtubeTransport.refreshSession(graph.settings.snapshots.value)
-                catalogue.home(token, null)
+                catalogue.home(token, params)
             }
         }
     LaunchedEffect(feed) { feed.reload() }
+    val showChips = graph.settings.snapshots.value?.get(ShowHomeCategoryChipsKey) ?: true
+    // Hiding the row while a chip filters the feed clears it, as the Android home does.
+    LaunchedEffect(showChips) {
+        if (!showChips && feed.selectedChip != null) feed.selectChip(null)
+    }
     val shelves = feed.shelves.map { shelf -> shelf.toHomeShelf(openRoute) }
     SideEffect { shelves.forEach { lists.recordShelf(IOS_HOME_REQUEST, it.key, it.items) } }
     val snapshot by graph.player.snapshot.collectAsState()
@@ -258,6 +294,10 @@ internal fun iosHomePage(
         playing = snapshot?.playWhenReady == true,
         refreshing = feed.refreshing,
         refresh = feed::reload,
+        chips = feed.chips.map { HomeVariantChip(it.stableKey, it.title) },
+        selectedChipKey = feed.selectedChip?.stableKey,
+        selectChip = { tapped -> feed.chips.firstOrNull { it.stableKey == tapped.key }?.let(feed::selectChip) },
+        showChips = showChips,
     )
 }
 
@@ -267,8 +307,20 @@ internal fun iosDiscoveryPage(graph: IosSessionGraph, lists: IosCatalogueOwners)
     val scope = rememberCoroutineScope()
     val catalogue = graph.youtubeCatalogue
     val feed = remember(graph, scope, catalogue) { IosExploreFeed(scope, graph::report) { catalogue.explore() } }
+    // The suggestion feed is the provider's own suggestion surface — the un-filtered home feed — read on first tab
+    // entry rather than on page mount, so the tab costs nothing while it is unseen.
+    val suggest =
+        remember(graph, scope, catalogue) {
+            IosShelfFeed(scope, graph::report) { token, _ ->
+                graph.youtubeTransport.refreshSession(graph.settings.snapshots.value)
+                catalogue.home(token, null)
+            }
+        }
     LaunchedEffect(feed) { feed.reload() }
     var tab by remember { mutableStateOf(DiscoveryTab.EXPLORE) }
+    LaunchedEffect(tab) {
+        if (tab == DiscoveryTab.SUGGESTIONS && !suggest.initialized) suggest.reload()
+    }
     val releaseRows = feed.releases.mapIndexed { index, release -> catalogueOccurrence(IOS_DISCOVERY_REQUEST, release.entry, index) }
     SideEffect { lists.recordShelf(IOS_DISCOVERY_REQUEST, NEW_RELEASES_SHELF_KEY, releaseRows) }
     val releaseShelf =
@@ -279,15 +331,29 @@ internal fun iosDiscoveryPage(graph: IosSessionGraph, lists: IosCatalogueOwners)
             rows = releaseRows,
             more = null,
         )
+    val suggestionShelves = suggest.shelves.map { it.toBrowseShelf(IOS_DISCOVERY_SUGGESTIONS_REQUEST) }
+    SideEffect {
+        suggestionShelves.forEach { lists.recordShelf(IOS_DISCOVERY_SUGGESTIONS_REQUEST, it.key, it.rows) }
+    }
+    val suggestionsActive = tab == DiscoveryTab.SUGGESTIONS
     val state =
         DiscoveryUi(
             shelves = if (releaseRows.isEmpty()) emptyList() else listOf(releaseShelf),
             moods = feed.moods.map { it.toUi() },
             tab = tab,
-            loading = feed.loading,
-            failed = feed.failed,
+            loading = if (suggestionsActive) suggest.loading else feed.loading,
+            failed = if (suggestionsActive) suggest.failed else feed.failed,
+            suggestions = suggestionShelves,
         )
-    return ArchiveGraphPage.Discovery(state, { tab = it }, feed::reload, feed::reload)
+    return ArchiveGraphPage.Discovery(
+        state,
+        { tab = it },
+        refresh = {
+            feed.reload()
+            if (suggest.initialized) suggest.reload()
+        },
+        retry = { if (suggestionsActive) suggest.reload() else feed.reload() },
+    )
 }
 
 /** Charts: the ranked top songs and the genre/new-release shelves the charts sheet returns. */
@@ -295,11 +361,15 @@ internal fun iosDiscoveryPage(graph: IosSessionGraph, lists: IosCatalogueOwners)
 internal fun iosChartsPage(graph: IosSessionGraph, lists: IosCatalogueOwners): ArchiveGraphPage {
     val scope = rememberCoroutineScope()
     val catalogue = graph.youtubeCatalogue
-    val feed = remember(graph, scope, catalogue) { IosShelfFeed(scope, graph::report) { token -> catalogue.charts(token) } }
+    val feed =
+        remember(graph, scope, catalogue) {
+            IosShelfFeed(scope, graph::report) { token, _ -> catalogue.charts(token) }
+        }
     LaunchedEffect(feed) { feed.reload() }
-    val shelves = feed.shelves.map { it.toBrowseShelf() }
+    val shelves = feed.shelves.map { it.toBrowseShelf(IOS_CHARTS_REQUEST) }
     SideEffect { shelves.forEach { lists.recordShelf(IOS_CHARTS_REQUEST, it.key, it.rows) } }
-    return ArchiveGraphPage.Charts(shelves, feed.loading, feed.failed, feed::reload)
+    return ArchiveGraphPage.Charts(shelves, feed.loading, feed.failed, feed::reload,
+        continuation = feed.continuation, loadMore = feed::loadMore)
 }
 
 /** Moods and genres: the explore page's tile list, each tile browsing the provider's own section. */
@@ -341,13 +411,13 @@ private fun YouTubeShelf.toHomeShelf(openRoute: (String) -> Unit): HomeShelf =
         more = more?.let { section -> { openRoute(ArchiveRoutes.browse(browseRequest(ContentSurface.EXPLORE, section))) } },
     )
 
-/** One shelf as a Discovery or charts shelf: its rows queue under the page's collection, "more" browses on. */
-private fun YouTubeShelf.toBrowseShelf(): BrowseShelfUi =
+/** One shelf as a Discovery or charts shelf: its rows queue under [collection], "more" browses on. */
+private fun YouTubeShelf.toBrowseShelf(collection: ContentRequest): BrowseShelfUi =
     BrowseShelfUi(
         key = key,
         title = title,
-        collection = IOS_CHARTS_REQUEST,
-        rows = entries.mapIndexed { index, entry -> catalogueOccurrence(IOS_CHARTS_REQUEST, entry, index) },
+        collection = collection,
+        rows = entries.mapIndexed { index, entry -> catalogueOccurrence(collection, entry, index) },
         more = more?.let { browseRequest(ContentSurface.EXPLORE, it) },
         ranked = numbered,
     )

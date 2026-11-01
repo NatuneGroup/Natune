@@ -11,6 +11,7 @@ import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeCatalogueTranspor
 import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.provider.YouTubeEntry
 import moe.rukamori.archivetune.shared.data.provider.YouTubeShelfPage
+import moe.rukamori.archivetune.shared.data.provider.selectYouTubeFeedChip
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -175,6 +176,8 @@ internal class DesktopCatalogueOwners(
 
     val home = DesktopHomeFeed(this)
     val charts = DesktopShelfFeed(this) { catalogue.charts(it) }
+    /** Discovery's SUGGESTIONS tab: the provider's suggestion feed, which is the un-filtered home feed read. */
+    val suggestions = DesktopShelfFeed(this) { catalogue.home(it, null) }
     val explore = DesktopExploreFeed(this)
     val releases = DesktopReleasesFeed(this)
 
@@ -236,6 +239,9 @@ internal class DesktopHomeFeed(private val owners: DesktopCatalogueOwners) {
         private set
     var refreshing by mutableStateOf(false)
         private set
+    /** The chip currently filtering the feed, as the Android home tracks it; null keeps the un-filtered feed. */
+    var selectedChip by mutableStateOf<moe.rukamori.archivetune.shared.data.provider.YouTubeFeedChip?>(null)
+        private set
 
     private var generation = 0
 
@@ -253,12 +259,9 @@ internal class DesktopHomeFeed(private val owners: DesktopCatalogueOwners) {
     }
 
     fun selectChip(chip: moe.rukamori.archivetune.shared.data.provider.YouTubeFeedChip?) {
-        chipParams =
-            when {
-                chip == null -> null
-                chipParams == chip.params -> chip.deselectParams
-                else -> chip.params
-            }
+        val selection = selectYouTubeFeedChip(selectedChip, chip)
+        selectedChip = selection.selected
+        chipParams = selection.params
         reload()
     }
 
@@ -267,7 +270,9 @@ internal class DesktopHomeFeed(private val owners: DesktopCatalogueOwners) {
         loading = true
         failed = false
         owners.launch {
-            val page = owners.catalogue.home(if (first) null else continuation, params)
+            // Continuation reads send the token alone, as the Android feed does; the chip's params belong to
+            // first-page re-reads only.
+            val page = owners.catalogue.home(if (first) null else continuation, if (first) params else null)
             if (gen != generation) return@launch
             if (first) {
                 shelves = page.shelves

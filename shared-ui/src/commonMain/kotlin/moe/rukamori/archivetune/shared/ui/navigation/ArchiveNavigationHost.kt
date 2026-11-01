@@ -74,7 +74,9 @@ fun ArchiveNavigationHost(
                     headerActions = { ArchiveEntryLinks(navigation) }, accountName = binding.accountName,
                     blurEffects = binding.blurEffects, activeIds = binding.activeIds, playing = binding.playing,
                     thumbnailAspectRatio = binding.thumbnailAspectRatio,
-                    refreshing = binding.refreshing, onRefresh = binding.refresh)
+                    refreshing = binding.refreshing, onRefresh = binding.refresh,
+                    chips = binding.chips, selectedChipKey = binding.selectedChipKey,
+                    selectChip = binding.selectChip, showChips = binding.showChips)
             }
             is ArchiveGraphPage.HomeRukamori -> {
                 require(route.destination == ArchiveDestination.HOME)
@@ -126,9 +128,9 @@ fun ArchiveNavigationHost(
             }
             is ArchiveGraphPage.Charts -> {
                 require(route.destination == ArchiveDestination.CHARTS)
-                ChartsScreen(binding.sections, binding.loading, binding.failed,
+                ChartsScreen(binding.sections, binding.loading, binding.failed, binding.continuation,
                     ChartsActions(back, { navigation.open(ArchiveRoutes.browse(it)) }, { row, request -> open(row, request) },
-                        actions.more, binding.retry), artwork)
+                        actions.more, binding.retry, binding.loadMore), artwork)
             }
             is ArchiveGraphPage.Moods -> {
                 require(route.destination == ArchiveDestination.MOODS)
