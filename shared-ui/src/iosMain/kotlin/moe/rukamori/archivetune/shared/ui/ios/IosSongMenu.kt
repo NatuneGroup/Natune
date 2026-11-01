@@ -61,6 +61,7 @@ private class IosSongMenuHost(
     private val state: IosItemMenuState,
     private val graph: IosSessionGraph,
     private val openRoute: (String) -> Unit,
+    private val sleepSheet: IosSleepTimerSheetState,
 ) : SongMenuHost {
     /**
      * The song loads alone and the watch-next tail is appended behind it, the pair of calls `PlayerConnection.startRadio`
@@ -115,7 +116,10 @@ private class IosSongMenuHost(
         openRoute(ArchiveRoutes.content(ContentRef(item.ref.provider, ContentKind.ALBUM, albumId)))
     }
 
-    override fun openSleepTimer() = state.unavailable()
+    /** The shared sheet of the one session timer opens over the root; the menu itself already dismissed on success. */
+    override fun openSleepTimer() {
+        sleepSheet.open = true
+    }
     override suspend fun setRecommendationBlocked(song: ContentRef, blocked: Boolean) = state.unavailable()
     override suspend fun saveCoverArtwork(song: ContentRef, artworkUrl: String): Boolean = false
     override suspend fun refetchSong(song: ContentRef) = state.unavailable()
@@ -129,7 +133,7 @@ private class IosSongMenuHost(
 /**
  * The shared song menu over the owners this host connects: queue, like and add-to-playlist, the system share sheet,
  * library add, downloads, history and playlist-row removal, album and artist pages, YouTube radio, track and media
- * info and the custom artwork editor. Rows whose owner is not connected here (cache, speed dial, sleep timer,
+ * info and the custom artwork editor. Rows whose owner is not connected here (cache, speed dial,
  * refetch, recommendation blocks, cover save, exporting a download to another app) are filtered off rather than
  * appearing as dead items.
  */
@@ -140,9 +144,10 @@ internal fun IosSongMenu(
     host: IosHost,
     occurrence: ContentOccurrence,
     openRoute: (String) -> Unit,
+    sleepSheet: IosSleepTimerSheetState,
 ) {
     val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host)) }
-    val songHost = remember { IosSongMenuHost(menu, graph, openRoute) }
+    val songHost = remember { IosSongMenuHost(menu, graph, openRoute, sleepSheet) }
     val editablePlaylists by remember {
         graph.libraryContent.playlistRows().map { rows -> rows.filter { it.editable }.map { it.item } }
     }.collectAsState(emptyList())
@@ -273,6 +278,8 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, inLibrary: 
         if (!inLibrary && !facts.isLocal) add("library")
         if (facts.fromHistory) add("remove_history")
         if (facts.albumId != null) add("view_album")
+        // The shared sleep timer sheet is owned by the session graph, so the row is always connected.
+        add("sleep_timer")
         if (hasArtist) add("view_artist")
         // A provider that can only stream encrypted audio has no stored file here, so it offers no download row.
         if (iosDownloadRefusal(ref) == null) {

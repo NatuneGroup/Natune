@@ -116,9 +116,10 @@ internal fun iosHostBindings(
     graph: IosSessionGraph,
     recognition: IosRecognitionMount,
 ): ArchiveTuneHostBindings {
-    val controls = IosPlayerControls(graph)
-    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser) { host.viewController }
     val itemMenu = IosItemMenuState()
+    val sleepSheet = IosSleepTimerSheetState()
+    val controls = IosPlayerControls(graph, sleepSheet)
+    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser) { host.viewController }
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     // Back requests a page answers itself, such as a chat's back port. The root pops the stack for them, as the gesture does.
@@ -154,8 +155,9 @@ internal fun iosHostBindings(
             }
         },
         overlays = { route ->
-            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute)
+            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, sleepSheet)
             IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
+            IosSleepTimerOverlay(sleepSheet, graph.sleepTimer)
         },
         playerSlots = { expanded, active, _ -> iosPlayerSlots(host, graph, expanded, active) },
         playerControls = controls,
@@ -206,7 +208,7 @@ private fun iosGraphPage(
             ArchiveDestination.RECAP -> iosRecapPage(graph, host, menu, route, openRoute)
             ArchiveDestination.LISTEN_TOGETHER -> iosListenTogetherPage(graph, host, back, openRoute)
             ArchiveDestination.LISTEN_TOGETHER_CHAT -> iosCommentTogetherPage(graph, host, back)
-            ArchiveDestination.TELEGRAM_BROWSE -> iosTelegramBrowsePage(graph, host, back)
+            ArchiveDestination.TELEGRAM, ArchiveDestination.TELEGRAM_BROWSE -> iosTelegramBrowsePage(graph, host, back)
             ArchiveDestination.TELEGRAM_BOTS -> iosTelegramBotsPage(graph, host, back, openRoute)
             ArchiveDestination.TELEGRAM_BOT_CHAT -> iosTelegramBotChatPage(graph, host, route.arguments.getValue("botId"))
             ArchiveDestination.UPLOADED_SONGS -> iosUploadsPage(graph.uploads, graph.settings, host)
@@ -319,7 +321,8 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
         artwork = { occurrenceId, modifier -> IosQueueArtwork(occurrenceId, graph, modifier) },
         // No canvas loop source is connected. The artwork slot keeps the cover, as it does for a song without a canvas.
         canvas = { _, _, _ -> },
-        customBackground = { _, modifier -> IosArtworkPlaceholder(modifier) },
+        // The picked file loads through the same bounded loader as remote covers; a missing file keeps the placeholder.
+        customBackground = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         lyrics = fullLyrics,
         compactLyrics = lyrics.compact,
         queue = { modifier -> IosQueuePanel(graph, modifier) },

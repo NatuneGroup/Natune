@@ -63,6 +63,7 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.coroutines.test)
         }
         getByName("desktopTest").dependencies {
             implementation(libs.coroutines.test)

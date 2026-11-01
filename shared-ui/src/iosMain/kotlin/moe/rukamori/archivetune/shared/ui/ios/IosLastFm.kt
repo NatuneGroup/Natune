@@ -21,6 +21,8 @@ import moe.rukamori.archivetune.shared.data.platform.ios.iosBuildSetting
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmApiConfig
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmAppCredentials
+import moe.rukamori.archivetune.shared.domain.lastfm.LastFmDashboardReader
+import moe.rukamori.archivetune.shared.domain.lastfm.LastFmDashboardService
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmLoveMirror
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmLoveOutcome
 import moe.rukamori.archivetune.shared.domain.lastfm.LastFmPlay
@@ -106,6 +108,10 @@ internal class IosLastFm(
             settings.edit { if (this[LastFMSessionKey] == sessionKeyUsed) clearLastFmSession() }
         }
     }
+
+    /** The dashboard reads through the same signed service and stored session as scrobbling. */
+    val dashboardService: LastFmDashboardService get() = service
+    val dashboardReader = LastFmDashboardReader(service, sessions) { apiConfig(serviceConfig()) }
 
     private val queueOwner = LastFmScrobbleOwner(
         scope = scope,
