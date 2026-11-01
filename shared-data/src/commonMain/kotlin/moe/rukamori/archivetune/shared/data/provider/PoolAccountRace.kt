@@ -30,10 +30,13 @@ private class PoolRaceResult<R>(val resolved: R?, val error: Exception?, val can
  * actually ran reports to the pool exactly the way the sequential walk reports today — the winner
  * calls [noteSuccess] once; a failure [PoolDeadReportPolicy.reportTypeFor] maps to a report type
  * calls [report] with that type and then [noteFailure]; any other exception calls [noteFailure]
- * alone. An attempt cancelled because another attempt won reports nothing, and an attempt still
- * queued when the race settles reports nothing either, so no account is counted twice or blamed for
- * work it never did. A [CancellationException] out of an attempt aborts the whole race and
- * propagates, as the sequential walk does. Each account is tried once — no retries inside the race.
+ * alone. A lane that already ran its recover-and-report pass throws [PoolRecoverySettledException]
+ * instead: the pass owns the account's verdict — posted or deliberately withheld — so the race
+ * records the wrapped failure without reporting again. An attempt cancelled because another
+ * attempt won reports nothing, and an attempt still queued when the race settles reports nothing
+ * either, so no account is counted twice or blamed for work it never did. A
+ * [CancellationException] out of an attempt aborts the whole race and propagates, as the
+ * sequential walk does. Each account is tried once — no retries inside the race.
  */
 suspend fun <A, R : Any> racePoolAttempts(
     attempts: List<A>,
@@ -82,9 +85,17 @@ suspend fun <A, R : Any> racePoolAttempts(
                         break
                     }
                     result.error != null -> {
-                        val error = result.error
-                        PoolDeadReportPolicy.reportTypeFor(classifyPoolFailure(error))
-                            ?.let { type -> report(attempt, type) }
+                        var error = result.error
+                        if (error is PoolRecoverySettledException) {
+                            // The lane's recover-and-report pass already settled the pool verdict
+                            // — posted or deliberately withheld — so the race must not classify
+                            // the failure into a report of its own. The wrapped error still counts
+                            // for note-failure and last-failure bookkeeping.
+                            error = (error.cause as? Exception) ?: error
+                        } else {
+                            PoolDeadReportPolicy.reportTypeFor(classifyPoolFailure(error))
+                                ?.let { type -> report(attempt, type) }
+                        }
                         noteFailure(attempt)
                         if (error !is TerminalPlaybackAuthentication) failure = error
                     }

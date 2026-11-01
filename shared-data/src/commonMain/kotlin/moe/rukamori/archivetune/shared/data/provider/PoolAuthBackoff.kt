@@ -30,8 +30,13 @@ class PoolAuthBackoff {
     /** Whether another fetch inside the quiet period would just re-hear the same refusal. */
     fun blocked(nowMs: Long): Boolean = failedAtMs > 0L && nowMs - failedAtMs < windowMs
 
-    /** True when [keyHash] is not the refused key, so the stored backoff does not apply to it. */
-    fun clearsFor(keyHash: Int): Boolean = failedKeyHash != 0 && failedKeyHash != keyHash
+    /**
+     * True when a backoff is active and [keyHash] is not the refused key, so the stored backoff
+     * does not apply to it. The refused key hashes to 0 when it is empty, so "a previous refusal
+     * exists" is read off [windowMs] — never off a non-zero hash, which would let a different key
+     * inherit the empty key's backoff.
+     */
+    fun clearsFor(keyHash: Int): Boolean = windowMs > 0L && failedKeyHash != keyHash
 
     /** Records one key refusal: the quiet period doubles inside [MIN_WINDOW_MS]..[MAX_WINDOW_MS]. */
     fun onAuthRejected(nowMs: Long, keyHash: Int) {

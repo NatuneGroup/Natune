@@ -27,6 +27,7 @@ import moe.rukamori.archivetune.canvas.AppleMusicProvider
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.shared.data.provider.PoolAuthBackoff
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
+import moe.rukamori.archivetune.shared.data.provider.PoolReportGate
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -145,7 +146,9 @@ object PoolAccountManager {
     /** Report deduplication: "$service:$id:$type" → timestamp. Suppresses duplicate reports within ~30 minutes. */
     private val reportDedupe = ConcurrentHashMap<String, Long>()
 
-    private val expiredReLeaseAtMs = ConcurrentHashMap<String, Long>()
+    /** Atomic expired-lease admission; a merge-then-compare map let same-ms callers both in. */
+    private val expiredReLeaseGate =
+        PoolReportGate(nowMs = { System.currentTimeMillis() }, windowMs = PoolDeadReportPolicy.RECOVERY_DEDUPE_MS)
 
     /** The persisted backoff a refused read key earns, shared across every refresh caller. */
     private val authBackoff = PoolAuthBackoff()
@@ -542,13 +545,8 @@ object PoolAccountManager {
         }
 
     /** One forced re-lease per service inside [PoolDeadReportPolicy.RECOVERY_DEDUPE_MS]. Answers [hasAccounts]. */
-    suspend fun reLeaseExpired(context: Context, service: String): Boolean {
-        val now = System.currentTimeMillis()
-        val admitted = expiredReLeaseAtMs.merge(service, now) { last, fresh ->
-            if (now - last < PoolDeadReportPolicy.RECOVERY_DEDUPE_MS) last else fresh
-        } == now
-        return if (admitted) refresh(context, force = true) else hasAccounts()
-    }
+    suspend fun reLeaseExpired(context: Context, service: String): Boolean =
+        if (expiredReLeaseGate.allowService(service, "expired")) refresh(context, force = true) else hasAccounts()
 
     /** Outcome of one feed fetch: the parsed JSON on success, plus the HTTP code (0 = network error). */
     private class FeedFetch(

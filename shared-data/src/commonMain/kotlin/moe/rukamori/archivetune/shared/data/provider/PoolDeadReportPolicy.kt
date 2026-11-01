@@ -137,6 +137,15 @@ sealed interface PoolRecovery<out C> {
 }
 
 /**
+ * The settled-verdict marker a pooled-account lane throws when its [PoolDeadReporter]
+ * recover-and-report pass already decided the account's report — posted, or deliberately
+ * withheld because the lease never moved. A racing helper treats it as reporting-owned: it must
+ * not classify the failure and post the account a second time, while the wrapped [cause] still
+ * counts as the attempt's failure for note-failure and last-failure bookkeeping.
+ */
+class PoolRecoverySettledException(cause: Exception) : Exception(cause)
+
+/**
  * The dead-report decision for one pooled account, shared by every host (and reusable by pooled
  * race helpers such as racePoolAttempts): a credential refusal first earns one recovery — the
  * caller's [recover] refreshes the token or re-leases the pool so the current server credential is
@@ -148,9 +157,9 @@ sealed interface PoolRecovery<out C> {
  *
  * [stale] and the value [current] re-reads are opaque credential markers (usually the token
  * string); a recovery "moved" the lease only when the marker changed. Recovery is single-flight
- * per account and throttled to one round-trip per service per [recoveryWindowMs], and reports
- * dedupe to one per account and type per [reportWindowMs] — concurrent failures cause one refresh
- * and at most one report.
+ * per service — one feed fetch refreshes every account the service lends — and throttled to one
+ * round-trip per service per [recoveryWindowMs], and reports dedupe to one per account and type
+ * per [reportWindowMs] — concurrent failures cause one refresh and at most one report.
  */
 class PoolDeadReporter(
     private val nowMs: () -> Long,
@@ -167,14 +176,19 @@ class PoolDeadReporter(
     }
 
     /**
-     * Runs [recover] at most once at a time per account and at most once per recovery window per
-     * service — one feed fetch refreshes every account a provider serves, so a second account's
-     * failure reuses the same round-trip. Callers that queued behind an in-flight recovery re-check
-     * [current] inside the flight and reuse the winner's result instead of recovering again — the
-     * tidalapi compare-inside-lock pattern. The answer is explicit: [PoolRecovery.Recovered] when the lease moved,
+     * Runs [recover] at most once at a time and at most once per recovery window per service —
+     * one feed fetch refreshes every account a provider serves, so the flight is keyed by service
+     * and a caller whose own account failed joins an in-flight recovery instead of reading its
+     * still-stale credential while another account's refresh is underway. Every caller re-checks
+     * its own [current] marker inside the gate — the tidalapi compare-inside-lock pattern — so a
+     * queued waiter reuses the winner's round-trip and retries with the fresh credential it reads
+     * back. The answer is explicit: [PoolRecovery.Recovered] when the lease moved,
      * [PoolRecovery.Unchanged] when it did not, [PoolRecovery.Unavailable] when no round-trip
      * could run. A leader cancelled inside [recover] gives its admission back so a queued waiter
      * can take over immediately instead of waiting out the window.
+     *
+     * [id] names the account [stale] and [current] describe; the flight deliberately does not key
+     * on it, because keying per account let a second account skip a refresh already in progress.
      */
     suspend fun <C : Any> reLease(
         service: String,
@@ -183,7 +197,7 @@ class PoolDeadReporter(
         current: suspend () -> C?,
         recover: suspend () -> Unit,
     ): PoolRecovery<C> = flights.run(
-        key = "$service:${id ?: 0L}",
+        key = service,
         satisfied = { current()?.takeIf { it != stale }?.let { PoolRecovery.Recovered(it) } },
         block = {
             // Only the first caller inside the window pays for the round-trip; a caller that

@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
 import moe.rukamori.archivetune.shared.data.provider.PoolAuthBackoff
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReporter
+import moe.rukamori.archivetune.shared.data.provider.PoolReportGate
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.SecureCredentialStore
@@ -102,7 +103,7 @@ internal class DesktopPlaybackPool(
     /** "service:id" to the time the account is worth trying first again. */
     private val cooldownUntil = ConcurrentHashMap<String, Long>()
     private val reportedAt = ConcurrentHashMap<String, Long>()
-    private val expiredReLeaseAt = ConcurrentHashMap<String, Long>()
+    private val expiredReLeaseGate = PoolReportGate(nowMs, PoolDeadReportPolicy.RECOVERY_DEDUPE_MS)
     private val authBackoff = PoolAuthBackoff()
 
     /** The Playback Pool switch, on by default as on Android, and only while a deployment is configured. */
@@ -141,14 +142,11 @@ internal class DesktopPlaybackPool(
     /**
      * One forced re-lease per service inside [PoolDeadReportPolicy.RECOVERY_DEDUPE_MS]. A token
      * already known expired still earns a feed fetch, but a feed that keeps serving expiring
-     * leases can no longer turn every resolve into a request.
+     * leases can no longer turn every resolve into a request. The gate admits atomically — a
+     * merge-then-compare map let two callers in the same millisecond both pay the round-trip.
      */
     private suspend fun reLeaseExpired(service: String) {
-        val now = nowMs()
-        val admitted = expiredReLeaseAt.merge(service, now) { last, fresh ->
-            if (now - last < PoolDeadReportPolicy.RECOVERY_DEDUPE_MS) last else fresh
-        } == now
-        if (admitted) refresh(force = true)
+        if (expiredReLeaseGate.allowService(service, "expired")) refresh(force = true)
     }
 
     /** The credential the feed last served, with no load or refresh — the marker a recovery compares. */
