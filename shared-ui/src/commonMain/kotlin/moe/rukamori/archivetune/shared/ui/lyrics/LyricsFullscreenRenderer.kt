@@ -72,6 +72,12 @@ internal fun lyricsVerticalInset(viewportHeight: Dp, anchorFraction: Float): Dp 
 class LyricsSurfaceActions(
     val onSeek: (positionMs: Long) -> Unit,
     val onShareCard: (ImageBitmap) -> Unit,
+    /**
+     * Playback resumes after a lyric-line seek that landed while paused: the tapped line is itself
+     * a play control, so a seek must not leave the song paused at the new position. The renderer
+     * calls this only when its snapshot says playback was not requested.
+     */
+    val onResume: () -> Unit = {},
 )
 
 /**
@@ -215,6 +221,9 @@ fun LyricsFullscreenRenderer(
                         row = row,
                         alignment = alignment,
                         active = row.index in activeRows,
+                        // A timed row behind the playhead keeps the faded active colour; unsynced
+                        // rows are static and never count as passed.
+                        passed = isPassedLyricRow(row, activeRows, primary),
                         selected = row.index in selection.indices,
                         mainStyle = styles.main(alignment),
                         phoneticStyle = styles.phonetic(alignment),
@@ -240,6 +249,8 @@ fun LyricsFullscreenRenderer(
                                     // A tapped line returns to the playhead, so following resumes with the seek.
                                     scrollOwner.resume()
                                     actions.onSeek(row.timeMs)
+                                    // The line is a play control: a seek landed while paused resumes playback.
+                                    if (snapshot?.playWhenReady == false) actions.onResume()
                                 }
                                 LyricsTapAction.ToggleSelection -> selection = selection.toggled(row.index)
                                 LyricsTapAction.None -> Unit

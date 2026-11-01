@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
+import androidx.compose.ui.graphics.Color
 import moe.rukamori.archivetune.shared.domain.lyrics.KaraokeLine
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsWord
@@ -311,6 +312,33 @@ class LyricsModeTest {
         assertTrue(leftEdge(LyricsLineAlignment.START) < 1f)
         assertTrue(leftEdge(LyricsLineAlignment.CENTER) in 100f..300f)
         assertTrue(leftEdge(LyricsLineAlignment.END) > 300f)
+    }
+
+    @Test
+    fun aPassedLineReadsAsTheActiveColourAtSeventyPercent() {
+        val palette = LyricsPalette(dim = Color.Black, bright = Color.White, glow = Color.Red)
+
+        assertEquals(LyricsPalette.PASSED_ALPHA, palette.passed.alpha, 0.0001f)
+        assertEquals(palette.bright.copy(alpha = LyricsPalette.PASSED_ALPHA), palette.passed)
+        assertEquals(LyricsPalette.PASSED_ALPHA, 0.7f, 0.0001f)
+    }
+
+    @Test
+    fun onlySyncedRowsBehindThePlayheadCountAsPassed() {
+        val rows = LyricsRenderRows.build(
+            listOf(
+                SyncedLine(time = 1_000, text = "one"),
+                SyncedLine(time = 2_000, text = "two"),
+                SyncedLine(time = 3_000, text = "three"),
+            ),
+        )
+        val active = listOf(rows[1].index)
+
+        assertTrue(isPassedLyricRow(rows[0], active, primaryIndex = rows[1].index))
+        assertFalse(isPassedLyricRow(rows[1], active, primaryIndex = rows[1].index))
+        assertFalse(isPassedLyricRow(rows[2], active, primaryIndex = rows[1].index))
+        assertFalse(isPassedLyricRow(rows[0], active, primaryIndex = -1))
+        assertFalse(isPassedLyricRow(rows[0].copy(isSynced = false), active, primaryIndex = rows[1].index))
     }
 
     private fun row(line: LyricsLine): LyricsRenderRow = LyricsRenderRows.build(listOf(line)).single()

@@ -289,6 +289,9 @@ private fun desktopPlayerSlots(
             onShareCard = { card ->
                 if (graph.player.snapshot.value?.occurrenceId == occurrenceId && current != null) tools.share(card, current.item.title)
             },
+            onResume = {
+                if (graph.player.snapshot.value?.occurrenceId == occurrenceId) graph.player.play()
+            },
         )
     }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)

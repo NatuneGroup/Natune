@@ -75,6 +75,9 @@ fun playerLyricsSlotFactory(
                 onShareCard = { card ->
                     if (playback.value?.occurrenceId == occurrenceId) currentActions.onShareCard(card)
                 },
+                onResume = {
+                    if (playback.value?.occurrenceId == occurrenceId) currentActions.onResume()
+                },
             )
         }
         val lyrics = playerLyricsSlots(
