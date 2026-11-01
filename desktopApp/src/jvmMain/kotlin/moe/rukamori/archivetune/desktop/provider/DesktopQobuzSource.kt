@@ -9,7 +9,9 @@ import moe.rukamori.archivetune.shared.data.provider.KtorQobuzAccountIdentity
 import moe.rukamori.archivetune.shared.data.provider.KtorQobuzRepository
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccess
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceResolver
-import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
+import moe.rukamori.archivetune.shared.data.provider.PoolFailureKind
+import moe.rukamori.archivetune.shared.data.provider.PoolRetryOutcome
+import moe.rukamori.archivetune.shared.data.provider.classifyPoolFailure
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.ProviderIdentity
 import moe.rukamori.archivetune.shared.domain.repository.AudioProviderRepository
@@ -84,6 +86,44 @@ internal class DesktopQobuzSource(
         repository
     }
 
+    /**
+     * Recovers a pooled Qobuz account that just failed: one re-lease (the pool can rotate
+     * tokens, appIds and appSecrets server-side) and one retry with the credential it now
+     * serves; the account is reported dead only when it still fails for real.
+     */
+    private suspend fun recoverPooled(
+        credential: Credential,
+        kind: PoolFailureKind,
+        request: AudioResolveRequest,
+    ): PreparedAudio? {
+        val owner = pool ?: return null
+        val poolId = credential.poolId ?: return null
+        return owner.deadReports.recoverAndReport(
+            DesktopPlaybackPool.QOBUZ, poolId, kind,
+            stale = credential.key.entry.token,
+            current = { owner.qobuzAccounts().firstOrNull { it.id == poolId }?.token },
+            recover = { owner.refresh(force = true) },
+            retry = {
+                val account = owner.qobuzAccounts().firstOrNull { it.id == poolId }
+                    ?: return@recoverAndReport PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                val entry = QobuzTokenEntry(account.token, appId = account.appId,
+                    appSecret = account.appSecret, poolId = account.id)
+                try {
+                    repository(Credential(CacheKey(entry, true), CredentialScope.PLAYBACK_POOL,
+                        { owner.admitsQobuz(account) }, account.id))
+                        ?.resolve(request)
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
+                }
+            },
+            report = { type -> owner.report(DesktopPlaybackPool.QOBUZ, poolId, type) },
+        )
+    }
+
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         var failure: Exception? = null
         val saved = entries()
@@ -97,10 +137,8 @@ internal class DesktopQobuzSource(
                 throw cancelled
             } catch (error: Exception) {
                 if (credential.key.pooled) {
+                    recoverPooled(credential, classifyPoolFailure(error), request)?.let { return it }
                     pool?.noteFailure(DesktopPlaybackPool.QOBUZ, credential.poolId)
-                    if ((error as? ProviderHttpFailure)?.status == 401) {
-                        pool?.report(DesktopPlaybackPool.QOBUZ, credential.poolId, "dead")
-                    }
                 }
                 failure = error
             }

@@ -32,6 +32,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.desktop.DesktopCredentials
+import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
+import moe.rukamori.archivetune.shared.data.provider.PoolDeadReporter
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.SecureCredentialStore
@@ -91,6 +93,9 @@ internal class DesktopPlaybackPool(
     @Volatile private var lastAttemptAtMs = 0L
     @Volatile private var discovered: List<String> = emptyList()
     @Volatile private var discoveredAtMs = 0L
+
+    /** The shared dead-report policy: recover-then-retry once, dedupe per account per window. */
+    internal val deadReports = PoolDeadReporter(nowMs)
 
     /** "service:id" to the time the account is worth trying first again. */
     private val cooldownUntil = ConcurrentHashMap<String, Long>()
@@ -430,7 +435,7 @@ internal class DesktopPlaybackPool(
         private const val PARTIAL_INTERVAL_MS = 5L * 60L * 60L * 1000L
         private const val DISCOVERY_INTERVAL_MS = 30L * 60L * 1000L
         private const val ACCOUNT_COOLDOWN_MS = 10L * 60L * 1000L
-        private const val REPORT_DEDUPE_MS = 10L * 60L * 1000L
+        private const val REPORT_DEDUPE_MS = PoolDeadReportPolicy.REPORT_DEDUPE_MS
         private const val REQUEST_TIMEOUT_MS = 10_000L
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

@@ -30,6 +30,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
+import moe.rukamori.archivetune.shared.data.provider.PoolDeadReporter
 import moe.rukamori.archivetune.shared.data.stream.aes.AesGcm
 import moe.rukamori.archivetune.shared.domain.platform.ContentDigest
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
@@ -123,6 +125,9 @@ class IosPlaybackPool(
     private val discovered = HashMap<String, Pair<List<String>, Long>>()
     private val cooldownUntil = HashMap<String, Long>()
     private val reportedAt = HashMap<String, Long>()
+
+    /** The shared dead-report policy: recover-then-retry once, dedupe per account per window. */
+    val deadReports = PoolDeadReporter(nowMs)
 
     /** The Playback Pool switch, on by default as on Android, and only while a deployment is configured. */
     fun enabled(): Boolean = configured && (preferences()?.get(UsePoolAccountsKey) ?: true)
@@ -550,7 +555,7 @@ class IosPlaybackPool(
         private const val PARTIAL_INTERVAL_MS = 5L * 60L * 60L * 1000L
         private const val DISCOVERY_INTERVAL_MS = 30L * 60L * 1000L
         private const val ACCOUNT_COOLDOWN_MS = 10L * 60L * 1000L
-        private const val REPORT_DEDUPE_MS = 10L * 60L * 1000L
+        private const val REPORT_DEDUPE_MS = PoolDeadReportPolicy.REPORT_DEDUPE_MS
         private const val REQUEST_TIMEOUT_MS = 10_000L
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
