@@ -34,17 +34,29 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.useContents
+import kotlin.math.max
+import kotlin.math.min
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkDirectory
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkKeys
+import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkLimits
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkOverrides
 import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
 import moe.rukamori.archivetune.shared.ui.player.rememberCoverImage
-import platform.Foundation.NSData
-import platform.Foundation.NSURL
 import org.jetbrains.skia.Image as SkiaImage
+import platform.CoreGraphics.CGRectMake
+import platform.CoreGraphics.CGSizeMake
+import platform.Foundation.NSData
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileSize
+import platform.Foundation.NSNumber
+import platform.Foundation.NSURL
+import platform.UIKit.UIGraphicsImageRenderer
+import platform.UIKit.UIGraphicsImageRendererFormat
+import platform.UIKit.UIImage
+import platform.UIKit.UIImagePNGRepresentation
 
 /**
  * Fetches and decodes the artwork the iOS app shows: a public http or https image, requested with no cookie and no
@@ -93,7 +105,7 @@ internal class IosArtworkLoader(
         lock.withLock { cache[target]?.let { held -> cache.remove(target); cache[target] = held; return held } }
         val bitmap = try {
             withTimeout(FETCH_TIMEOUT_MS) {
-                permits.withPermit { if (file) readFileAndDecode(target) else fetchAndDecode(target) }
+                permits.withPermit { if (file) readLocalImage(target) else fetchAndDecode(target) }
             }
         } catch (_: TimeoutCancellationException) {
             null
@@ -109,24 +121,40 @@ internal class IosArtworkLoader(
         return bitmap
     }
 
-    /** Reads a custom cover from its override file and decodes it within the same bounds a remote image keeps. */
-    private suspend fun readFileAndDecode(fileUri: String): ImageBitmap? = withContext(Dispatchers.Default) {
-        val path = NSURL.URLWithString(fileUri)?.path ?: return@withContext null
-        val data = NSData.dataWithContentsOfFile(path) ?: return@withContext null
-        if (data.length.toLong() > MAX_IMAGE_BYTES) return@withContext null
-        val size = data.length.toInt()
-        if (size == 0) return@withContext null
-        val bytes = ByteArray(size)
-        bytes.usePinned { pinned -> platform.posix.memcpy(pinned.addressOf(0), data.bytes, data.length) }
-        decode(bytes)
-    }
-
     private suspend fun fetchAndDecode(uri: String): ImageBitmap? {
+        if (uri.startsWith("file:")) return readLocalImage(uri)
         val bytes = http.prepareGet(uri).execute { response ->
             if (!response.status.isSuccess()) return@execute null
             response.readBoundedBytes(MAX_IMAGE_BYTES)
         } ?: return null
         return withContext(Dispatchers.Default) { decode(bytes) }
+    }
+
+    /**
+     * A file the app stored itself, such as the picked player background. A picked photo is often larger than a
+     * thumbnail and can be HEIC, so UIKit decodes and downsamples it to the cache's edge bound before Skia keeps the
+     * bounded copy, the way the desktop loader subsamples a picked cover instead of refusing it.
+     */
+    private suspend fun readLocalImage(uri: String): ImageBitmap? = withContext(Dispatchers.Default) {
+        val url = NSURL.URLWithString(uri)?.takeIf { it.scheme == "file" } ?: return@withContext null
+        val path = url.path ?: return@withContext null
+        val attributes = NSFileManager.defaultManager.attributesOfItemAtPath(path, null) ?: return@withContext null
+        val fileBytes = (attributes[NSFileSize] as? NSNumber)?.longLongValue ?: return@withContext null
+        if (fileBytes <= 0L || fileBytes > CustomArtworkLimits.MAX_COVER_BYTES) return@withContext null
+        val data = NSData.dataWithContentsOfFile(path) ?: return@withContext null
+        val image = UIImage(data = data) ?: return@withContext null
+        val (width, height) = image.size.useContents { width to height }
+        if (width <= 0.0 || height <= 0.0) return@withContext null
+        val scale = min(1.0, MAX_IMAGE_EDGE.toDouble() / max(width, height))
+        val targetWidth = max(1.0, width * scale)
+        val targetHeight = max(1.0, height * scale)
+        // The renderer draws at the screen's scale by default, which would triple the kept pixels.
+        val format = UIGraphicsImageRendererFormat.defaultFormat().apply { this.scale = 1.0 }
+        val scaled = UIGraphicsImageRenderer(size = CGSizeMake(targetWidth, targetHeight), format = format)
+            .imageWithActions { _ -> image.drawInRect(CGRectMake(0.0, 0.0, targetWidth, targetHeight)) }
+        val png = UIImagePNGRepresentation(scaled) ?: return@withContext null
+        val bytes = png.bytes?.readBytes(png.length.toInt()) ?: return@withContext null
+        decode(bytes)
     }
 
     /** Refuses an image whose edge is out of bounds before its pixels are kept, so one image cannot dominate memory. */

@@ -13,9 +13,11 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -45,6 +47,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosMediaImporter
 import moe.rukamori.archivetune.shared.data.platform.ios.IosNetworkOwner
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTransportAvailability
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
@@ -94,6 +97,7 @@ import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
+import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
@@ -162,6 +166,20 @@ internal class IosSessionGraph private constructor(
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
     /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
+
+    /** The one sleep timer of this process. It only pauses [player], so every surface shares it. */
+    val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause, ::iosNowMillis)
+
+    /**
+     * Next/previous enablement for the system transport: the same successors the on-screen controls compute, so the
+     * lock screen offers a skip exactly when the queue reports one.
+     */
+    val transportAvailability: Flow<IosTransportAvailability> = combine(
+        queue.state, player.snapshot, settings.snapshots,
+    ) { queueState, playback, preferences ->
+        val native = iosNativeState(queueState, playback, preferences)
+        IosTransportAvailability(canPrevious = native.canPrevious, canNext = native.canNext)
+    }.distinctUntilChanged()
 
     /**
      * Sets the app-level output volume, 0 to 1, on the engine and keeps it in [PlayerVolumeKey] as the Android player

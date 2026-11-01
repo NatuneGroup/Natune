@@ -43,7 +43,10 @@ private const val STATE_STOP_TIMEOUT_MS = 5_000L
  * without an owner on this host are reported and never shown as done.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-internal class IosPlayerControls(private val graph: IosSessionGraph) : PlayerNativeControls {
+internal class IosPlayerControls(
+    private val graph: IosSessionGraph,
+    private val sleepSheet: IosSleepTimerSheetState,
+) : PlayerNativeControls {
     private val clock = TimeSource.Monotonic
     private var lastSeekAt: TimeSource.Monotonic.ValueTimeMark? = null
     private var seekMultiplier = 1
@@ -121,6 +124,7 @@ internal class IosPlayerControls(private val graph: IosSessionGraph) : PlayerNat
             // The root closes the sheet for COLLAPSE before an action reaches the host.
             PlayerAction.COLLAPSE -> Unit
             PlayerAction.LIKE -> toggleLike(occurrenceId)
+            PlayerAction.SLEEP -> sleepSheet.open = true
             else -> graph.report("player action ${action.name} is not connected on the iOS host")
         }
     }
@@ -144,7 +148,7 @@ internal class IosPlayerControls(private val graph: IosSessionGraph) : PlayerNat
  * The observed native state for [playback]. Previous and next follow the queue owner's own rules: the same successor
  * for the repeat mode in settings, and the same restart threshold as the graph's previous skip.
  */
-private fun iosNativeState(
+internal fun iosNativeState(
     queue: QueueState,
     playback: PlaybackSnapshot?,
     preferences: PreferenceSnapshot?,
