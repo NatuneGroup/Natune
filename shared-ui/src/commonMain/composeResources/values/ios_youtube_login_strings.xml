@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ios_youtube_login_window_hint">Sign in with your Google account in the sign-in sheet. YouTube Music opens when sign-in finishes.</string>
+    <string name="ios_youtube_login_browser_unavailable">The sign-in sheet could not open on this device. Try again.</string>
+</resources>
