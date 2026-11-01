@@ -379,36 +379,14 @@ fun YouTubeSongMenu(
                         playerConnection.playQueue(YouTubeQueue.radio(song.toMediaMetadata()))
                     },
                 ),
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.playlist_play),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    text = playNextText,
-                    onClick = {
-                        onDismiss()
-                        playerConnection.playNext(song.toMediaItem())
-                    },
-                ),
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.queue_music),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    text = addToQueueText,
-                    onClick = {
-                        onDismiss()
-                        playerConnection.addToQueue(song.toMediaItem())
-                    },
-                ),
+                menuGridAction(R.drawable.playlist_play, playNextText) {
+                    onDismiss()
+                    playerConnection.playNext(song.toMediaItem())
+                },
+                menuGridAction(R.drawable.queue_music, addToQueueText) {
+                    onDismiss()
+                    playerConnection.addToQueue(song.toMediaItem())
+                },
                 NewAction(
                     icon = {
                         Icon(
@@ -430,21 +408,10 @@ fun YouTubeSongMenu(
                         onDismiss()
                     },
                 ),
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.link),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    text = copyLinkText,
-                    onClick = {
-                        context.copyLinkToClipboard(song.shareLink)
-                        onDismiss()
-                    },
-                ),
+                copyLinkMenuAction(copyLinkText) {
+                    context.copyLinkToClipboard(song.shareLink)
+                    onDismiss()
+                },
             )
         }
 

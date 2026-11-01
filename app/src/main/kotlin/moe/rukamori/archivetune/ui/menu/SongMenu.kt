@@ -625,36 +625,10 @@ fun SongMenu(
                         },
                     ),
                 )
-                add(
-                    NewAction(
-                        icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.share),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        text = shareText,
-                        onClick = shareSong,
-                    ),
-                )
+                add(menuGridAction(R.drawable.share, shareText, shareSong))
                 // Local files have no link to copy; a Telegram song resolves its real message link.
                 if (!isLocalSong || isTelegramSong) {
-                    add(
-                        NewAction(
-                            icon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.link),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(28.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            text = copyLinkText,
-                            onClick = copySongLink,
-                        ),
-                    )
+                    add(copyLinkMenuAction(copyLinkText, copySongLink))
                 }
                 add(
                     NewAction(
