@@ -8,6 +8,8 @@
     <string name="app_name">Natune</string>
     <string name="foundation_status">Kotlin Multiplatform foundation</string>
     <string name="lyrics_selected_count">%1$d selected</string>
+    <string name="lyrics_written_by">Written by %1$s</string>
+    <string name="lyrics_auto_created">Automatically created</string>
     <string name="lyrics_share">Share</string>
     <string name="lyrics_clear_selection">Clear</string>
 </resources>

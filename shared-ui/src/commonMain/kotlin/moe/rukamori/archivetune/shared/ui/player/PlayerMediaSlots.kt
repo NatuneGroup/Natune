@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.ui.player
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.flow.StateFlow
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsCredits
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.*
@@ -52,6 +53,8 @@ fun playerLyricsSlotFactory(
     romanization: LyricsRomanizationState,
     actions: LyricsSurfaceActions,
     syncOffsetMs: Long,
+    /** The document's credits, for the writer footer and the machine-made badges. */
+    credits: LyricsCredits? = null,
     compactStyle: (PlayerDesignStyle) -> LyricsCompactStyle,
     resumed: Boolean,
     reducedMotion: Boolean,
@@ -85,6 +88,7 @@ fun playerLyricsSlotFactory(
             fullVisible = matching && surfaces.fullLyrics,
             compactVisible = matching && surfaces.compactLyrics,
             resumed = resumed,
+            credits = credits,
         )
         PlayerSlots(
             artwork = media.artwork,

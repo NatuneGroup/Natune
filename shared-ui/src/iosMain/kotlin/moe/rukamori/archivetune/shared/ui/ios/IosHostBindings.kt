@@ -307,6 +307,7 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
         fullVisible = expanded && active,
         compactVisible = expanded && active,
         resumed = active,
+        credits = document?.credits,
     )
     // Only the Enhanced look has a native counterpart; the other looks and older systems keep the Compose renderer.
     val registeredNativeLyrics by host.nativeLyricsFactory.collectAsState()

@@ -32,13 +32,20 @@ internal data class LyricsDepth(
         fun staggerMs(distance: Int?): Long =
             if (distance == null || distance <= 0) 0L else STAGGER_STEP_MS * distance.coerceAtMost(MAX_STEPS)
 
+        /**
+         * Every inactive row gets the same softening while the list follows the playhead, like the
+         * Enhanced look does: distance still drives scale and alpha, but the blur is one uniform veil
+         * rather than a per-step ramp. Pass 0 to keep the per-step blur.
+         */
+        const val UNIFORM_BLUR_DP = 2f
+
         /** Reduced motion keeps every row at full size, so a line change never animates a scale. */
-        fun of(distance: Int?, reduceMotion: Boolean): LyricsDepth {
+        fun of(distance: Int?, reduceMotion: Boolean, uniformBlurDp: Float = 0f): LyricsDepth {
             if (distance == null || distance <= 0) return Flat
             val steps = distance.coerceAtMost(MAX_STEPS)
             return LyricsDepth(
                 scale = if (reduceMotion) 1f else 1f - SCALE_STEP * steps,
-                blurDp = BLUR_STEP_DP * steps,
+                blurDp = if (uniformBlurDp > 0f) uniformBlurDp else BLUR_STEP_DP * steps,
                 alpha = 1f - ALPHA_STEP * steps,
             )
         }

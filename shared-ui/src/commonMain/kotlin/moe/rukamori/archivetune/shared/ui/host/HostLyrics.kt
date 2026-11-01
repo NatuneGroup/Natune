@@ -31,6 +31,7 @@ import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixYouTubeLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.SimpMusicLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.UnisonLyricsProvider
 import moe.rukamori.archivetune.shared.data.lyrics.YouLyPlusLyricsProvider
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsCredits
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsDetection
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
@@ -55,6 +56,8 @@ data class HostLyricsDocument(
     val lines: List<LyricsLine>,
     val loading: Boolean,
     val raw: String = "",
+    /** The document's writer/auto-created credits; null for non-TTML lyrics. */
+    val credits: LyricsCredits? = null,
 )
 
 /**
@@ -122,7 +125,8 @@ class HostLyrics(
             report("lyrics lookup failed: ${failure::class.simpleName}")
             "" to emptyList()
         }
-        state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw)
+        val credits = if (LyricsDetection.isTtml(raw)) LyricsParser.parseTtmlCredits(raw) else null
+        state.value = HostLyricsDocument(occurrenceId, lines, loading = false, raw = raw, credits = credits)
     }
 
     private fun parse(text: String): List<LyricsLine> =

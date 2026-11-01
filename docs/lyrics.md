@@ -135,21 +135,44 @@ the word being sung, not a blurred copy of the text.
 ENHANCED (the `refinedMotion` flag on `LyricsModeProfile`, in `shared-ui`) adds these, all of
 them skipped under reduced motion:
 
-- The sung edge is feathered over 6 dp with a `DstIn` mask on a layer limited to the line's band.
-- The glow is scaled by how long the word is held. Words under 1 s get none, and the share rises
-  to full at 2 s (`LyricsSweepGeometry.emphasisGain`).
-- A word held for at least 1 s lifts up to 2.5 dp while it is sung. It is cut out of the line
-  and drawn again higher inside its own box (`LyricsSweepGeometry.liftShare`).
-- An instrumental break of 4 s or more shows three dots above the next line (`LyricsInterludes`,
-  `LyricsInterludeDots`). They light in turn over the break and breathe.
-- Depth (scale, fade and blur by distance from the sung line) waits `LyricsDepth.staggerMs` per
-  step, so a line change ripples outward. Rows stay sharp until the listener's hold ends or a
-  line is tapped, not only while the finger is down. The desktop host turns depth on for ENHANCED
-  unless reduced motion is on.
+- Each line lights an activation-lead before its sung start (`LyricsActivation`): 250 ms by
+  default, growing toward 750 ms when the silence before it is a tight 200–750 ms hand-off. The
+  word sweep still follows the real word times; only the lit line, the deadline edges and the
+  scroll target move early. Overlapping duet rows measure the silence against the furthest
+  earlier end, so they light together.
+- The sung edge is feathered across a fifth of the active word's width, clamped to 4–28 dp, with
+  a `DstIn` mask on a layer limited to the line's band (`LyricsSweepGeometry.sweepFeatherPx`).
+- A word earns emphasis only when it is held at least 1 s, is at most 7 grapheme clusters and is
+  written in an unjoined safe script (`LyricsEmphasis`). Its letters ripple a couple of dp and a
+  few percent of scale one at a time as the sweep crosses them, and its glow — scaled by how long
+  it is held (`LyricsSweepGeometry.emphasisGain`) — rises and falls. Every other word keeps the
+  plain feathered sweep, no lift, no glow.
+- The sung line pops to 1.05× over 100 ms when it activates (`LyricsModeProfile.activeScale`),
+  scaling from its aligned edge.
+- An instrumental break of 9 s or more shows three dots above the next line (`LyricsInterludes`,
+  `LyricsInterludeDots`). They light in turn over the break and breathe, and over the last 1.5 s
+  they swell toward the arriving line.
+- Depth (scale, fade and a uniform 2 dp blur) applies to every non-sung row while the list
+  follows (`LyricsDepth.UNIFORM_BLUR_DP`), and waits `LyricsDepth.staggerMs` per step, so a line
+  change ripples outward. Rows stay sharp until the listener's hold ends or a line is tapped,
+  not only while the finger is down. The desktop host turns depth on for ENHANCED unless reduced
+  motion is on.
 - The list moves to a new line at once, and each row starts where it was and eases into place
   after the same stagger (`LyricsLineSettle`). The glide lasts at most 1 s, is off under reduced
-  motion, and ends at once on a drag, a seek or a hidden surface. The line settles at 35% of the
-  box, about a third from the top. Every other look keeps the single animated scroll.
+  motion, and ends at once on a drag, a seek or a hidden surface. Without a glide, a line at hand
+  eases to the anchor on a fixed 350 ms ease-in-out scroll; a far one keeps the distance-covering
+  animation. The line settles at 35% of the box, about a third from the top, and the manual-scroll
+  hold is 4.5 s. A feed jump past 1 s is treated as a seek and re-anchors at once.
+- The reading and translation slide in under the line over about 0.6 s when the line activates,
+  and stay once revealed.
+- A TTML document's songwriters and its machine-made translation/transliteration flags
+  (`LyricsParser.parseTtmlCredits`) close the list as a dim credits footer; a provider-supplied
+  reading is never badged.
+
+The same changes mirror in the Android Enhanced path (`EnhancedSweptLine`, `BasicSyncedLyricsList`,
+`EnhancedInterludeDots`): activation leads, the per-letter ripple, the width-share feather, the
+uniform blur, the 15% anchor, the 4.5 s hold, the 350 ms scroll, the active-line pop, the dots and
+the credits footer.
 
 The iOS 26 native Enhanced view (`iosApp/ArchiveTune/SystemLyrics.swift`) draws its own sweep. It
 takes the idle alpha and the depth values from the shared profile, but not the feather, lift,
