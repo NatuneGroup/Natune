@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -46,6 +48,17 @@ private const val PHONETIC_SIZE_RATIO = 0.55f
 private const val SELECTED_ROW_ALPHA = 0.16f
 private const val BACKGROUND_SIZE_RATIO = 0.7f
 private const val BACKGROUND_ACTIVE_ALPHA = 0.72f
+
+/**
+ * The soft dark lift under every sung glyph. Artwork behind the rows can be bright or busy, so a
+ * short-radius shadow keeps the edges reading on any palette without a visible outline.
+ */
+private val LYRICS_TEXT_SHADOW =
+    Shadow(
+        color = Color.Black.copy(alpha = 0.45f),
+        offset = Offset(0f, 1.5f),
+        blurRadius = 6f,
+    )
 
 /** One lyric row: the swept line with its reading and translation beneath. Tap and long press are host-decided. */
 @Composable
@@ -236,11 +249,12 @@ internal fun lyricsMainStyle(profile: LyricsModeProfile, alignment: LyricsLineAl
         lineHeight = (profile.mainSizeSp * profile.lineSpacingFactor * LINE_HEIGHT_FACTOR).sp,
         fontWeight = FontWeight.Bold,
         textAlign = alignment.textAlign(),
+        shadow = LYRICS_TEXT_SHADOW,
     )
 
 /** The reading and translation rows sit at 0.55 of the main size, as the Android renderers set them. */
 internal fun lyricsPhoneticStyle(profile: LyricsModeProfile, alignment: LyricsLineAlignment): TextStyle =
-    TextStyle(fontSize = (profile.mainSizeSp * PHONETIC_SIZE_RATIO).sp, textAlign = alignment.textAlign())
+    TextStyle(fontSize = (profile.mainSizeSp * PHONETIC_SIZE_RATIO).sp, textAlign = alignment.textAlign(), shadow = LYRICS_TEXT_SHADOW)
 
 /**
  * The text styles of one look, one pair per alignment. A row is shaped in the style it is drawn with, so the shape

@@ -5,7 +5,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
@@ -14,23 +15,30 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.domain.lyrics.MAX_LYRICS_SYNC_OFFSET_MS
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.ui.menu.songExportFileName
 
-/** Android's per-song session adjustment, not a new global persisted preference. */
-internal class DesktopLyricsOffsets {
-    private val offsets = mutableStateMapOf<ContentRef, Long>()
-    fun value(ref: ContentRef?): Long = offsets[ref] ?: 0L
+/**
+ * The per-song lyrics offset, persisted through the portable store instead of the session map it replaces,
+ * so a correction survives restarts and is shared with every other surface that reads the same store.
+ */
+internal class DesktopLyricsOffsets(private val graph: DesktopSessionGraph) {
+    fun observe(ref: ContentRef?): Flow<Long?> = ref?.let(graph.songLyricsOffsets::observeOffset) ?: flowOf(null)
     fun adjust(ref: ContentRef, deltaMs: Long) {
-        if (ref !in offsets && offsets.size >= 128) offsets.remove(offsets.keys.first())
-        offsets[ref] = (value(ref) + deltaMs.coerceIn(-MAX_OFFSET_MS, MAX_OFFSET_MS)).coerceIn(-MAX_OFFSET_MS, MAX_OFFSET_MS)
+        graph.scope.launch {
+            val next = ((graph.songLyricsOffsets.offset(ref) ?: 0L) + deltaMs)
+                .coerceIn(-MAX_LYRICS_SYNC_OFFSET_MS, MAX_LYRICS_SYNC_OFFSET_MS)
+            graph.songLyricsOffsets.setOffset(ref, next)
+        }
     }
-    fun reset(ref: ContentRef) { offsets.remove(ref) }
-    private companion object { const val MAX_OFFSET_MS = 30_000L }
+    fun reset(ref: ContentRef) {
+        graph.scope.launch { graph.songLyricsOffsets.setOffset(ref, null) }
+    }
 }
 
 internal class DesktopLyricsTools(private val graph: DesktopSessionGraph) {
-    val offsets = DesktopLyricsOffsets()
+    val offsets = DesktopLyricsOffsets(graph)
     private var shareJob: Job? = null
     var notice: String? by mutableStateOf(null)
         private set

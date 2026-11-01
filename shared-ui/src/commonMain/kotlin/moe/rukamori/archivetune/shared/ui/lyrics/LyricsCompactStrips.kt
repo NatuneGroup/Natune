@@ -52,7 +52,10 @@ fun LyricsCompactStrip(
 ) {
     val snapshot by playback.collectAsState()
     val frameLoop = LyricsFrameGate.runsFrameLoop(visible, resumed, reduceMotion, snapshot)
-    val clock = rememberLyricsClock(snapshot, syncOffsetMs, LyricsFeedTiming.leadMsFor(rows), frameLoop)
+    val deadlines = remember(rows) {
+        LyricsDeadlineSchedule.of(rows, LyricsSweepGeometry.MIN_SWEEP_MS, includeInterludes = false)
+    }
+    val clock = rememberLyricsClock(snapshot, syncOffsetMs, LyricsFeedTiming.leadMsFor(rows), frameLoop, deadlines)
     val scanner = remember(rows) { LyricsRenderRows.scanner(rows) }
     val activeRows by remember(scanner) { derivedStateOf { scanner.activeAt(clock.feedMs.longValue) } }
     val primary = activeRows.lastOrNull() ?: -1

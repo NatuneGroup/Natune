@@ -165,6 +165,7 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
+import moe.rukamori.archivetune.constants.GlobalLyricsOffsetMsKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
@@ -565,9 +566,21 @@ fun BitChordPlayerContent(
     // Sync offset for the lyrics, held per track exactly as the standalone lyrics
     // screen holds it (Player.kt). The lyrics options bottom sheet (LyricsMenu)
     // edits it, and the panel + the current-lyric strip both read it so a nudge
-    // moves the highlight the way it does everywhere else in the app.
-    var lyricsSyncOffset by rememberSaveable(mediaMetadata.id) {
-        mutableIntStateOf(0)
+    // moves the highlight the way it does everywhere else in the app. The correction
+    // is persisted on the song row; the renderer-facing value adds the global offset.
+    val storedLyricsSyncOffset by remember(mediaMetadata.id) {
+        database.lyricsOffset(mediaMetadata.id)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val (globalLyricsOffsetMs) = rememberPreference(GlobalLyricsOffsetMsKey, 0)
+    val lyricsSyncOffset = (storedLyricsSyncOffset ?: 0) + globalLyricsOffsetMs
+    val onLyricsSyncOffsetChange = remember(mediaMetadata.id, globalLyricsOffsetMs, mediaMetadata) {
+        { newOffset: Int ->
+            database.query {
+                dao.insert(mediaMetadata.toSongEntity())
+                dao.setLyricsOffset(mediaMetadata.id, newOffset - globalLyricsOffsetMs)
+            }
+            Unit
+        }
     }
 
     // Not [isPlaying]: that one is true through a buffer and through a suppressed
@@ -1445,7 +1458,7 @@ fun BitChordPlayerContent(
                                         lyricsProvider = { lyricsEntity },
                                         mediaMetadataProvider = { mediaMetadata },
                                         lyricsSyncOffset = lyricsSyncOffset,
-                                        onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                                        onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                                         onDismiss = menuState::dismiss,
                                     )
                                 }

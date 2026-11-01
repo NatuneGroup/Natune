@@ -158,6 +158,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalAnimationsDisabled
@@ -178,7 +179,9 @@ import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.BlurRadiusKey
 import moe.rukamori.archivetune.constants.DarkModeKey
+import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.constants.EnableVideoPlaybackKey
+import moe.rukamori.archivetune.constants.GlobalLyricsOffsetMsKey
 import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
@@ -511,8 +514,26 @@ fun BottomSheetPlayer(
     var duration by rememberSaveable(mediaMetadata?.id) {
         mutableLongStateOf(playerConnection.player.duration)
     }
-    var lyricsSyncOffset by rememberSaveable(mediaMetadata?.id) {
-        mutableIntStateOf(0)
+    // The offset a surface applies is the song's persisted correction plus the global preference.
+    // The menu commits the effective shift back minus the global share, so a global offset is
+    // never double-counted into the per-song row.
+    val lyricsOffsetSongId = mediaMetadata?.id
+    val database = LocalDatabase.current
+    val storedLyricsSyncOffset by remember(lyricsOffsetSongId) {
+        lyricsOffsetSongId?.let(database::lyricsOffset) ?: flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val (globalLyricsOffsetMs) = rememberPreference(GlobalLyricsOffsetMsKey, 0)
+    val lyricsSyncOffset = (storedLyricsSyncOffset ?: 0) + globalLyricsOffsetMs
+    val onLyricsSyncOffsetChange = remember(lyricsOffsetSongId, globalLyricsOffsetMs, mediaMetadata) {
+        { newOffset: Int ->
+            lyricsOffsetSongId?.let { songId ->
+                database.query {
+                    mediaMetadata?.let { dao.insert(it.toSongEntity()) }
+                    dao.setLyricsOffset(songId, newOffset - globalLyricsOffsetMs)
+                }
+            }
+            Unit
+        }
     }
     var sliderPosition by remember(mediaMetadata?.id) {
         mutableStateOf<Long?>(null)
@@ -1991,7 +2012,7 @@ fun BottomSheetPlayer(
                             bottomSheetPageState = bottomSheetPageState,
                             lyricsVisible = isLyricsScreenVisible,
                             lyricsSyncOffset = lyricsSyncOffset,
-                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                             onSeek = onSliderValueChange,
                             onSeekFinished = onSliderValueChangeFinished,
                             modifier =
@@ -2100,7 +2121,7 @@ fun BottomSheetPlayer(
                             onSliderValueChange = onSliderValueChange,
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             lyricsSyncOffset = lyricsSyncOffset,
-                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                             onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             landscape = true,
                             modifier =
@@ -2166,7 +2187,7 @@ fun BottomSheetPlayer(
                             onSliderValueChange = onSliderValueChange,
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             lyricsSyncOffset = lyricsSyncOffset,
-                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                             onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             landscape = true,
                             modifier =
@@ -2605,7 +2626,7 @@ fun BottomSheetPlayer(
                             bottomSheetPageState = bottomSheetPageState,
                             lyricsVisible = isLyricsScreenVisible,
                             lyricsSyncOffset = lyricsSyncOffset,
-                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                             onSeek = onSliderValueChange,
                             onSeekFinished = onSliderValueChangeFinished,
                             modifier =
@@ -2711,7 +2732,7 @@ fun BottomSheetPlayer(
                             onSliderValueChange = onSliderValueChange,
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             lyricsSyncOffset = lyricsSyncOffset,
-                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                             onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             modifier =
                                 Modifier
@@ -2776,7 +2797,7 @@ fun BottomSheetPlayer(
                             onSliderValueChange = onSliderValueChange,
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             lyricsSyncOffset = lyricsSyncOffset,
-                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                             onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             // Full-bleed: the artwork runs under the status bar by design, so no
                             // top inset here (mirrors the reference layout).
@@ -2903,7 +2924,7 @@ fun BottomSheetPlayer(
                 mediaMetadata = metadata,
                 navController = navController,
                 lyricsSyncOffset = lyricsSyncOffset,
-                onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = { isLyricsScreenVisible = false },
                 onQueueClick = openQueue,
             )
