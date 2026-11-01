@@ -21,12 +21,13 @@ import androidx.compose.ui.unit.dp
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsCredits
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsViewportFade
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 
 /**
  * The synced Enhanced lyrics list inside a box whose top and bottom edges fade, wherever the list is scrolled. The
- * active line sits 8% of the box height below the top. The in-house [BasicSyncedLyricsList] draws the lines on every
+ * active line sits 15% of the box height below the top. The in-house [BasicSyncedLyricsList] draws the lines on every
  * API level, so the feathered sweep, the line-change glide, the distance depth and the interlude dots all run.
  */
 @Composable
@@ -46,11 +47,13 @@ internal fun EnhancedKaraokePane(
     maxContentWidth: Dp,
     modifier: Modifier = Modifier,
     manualScrolling: Boolean = false,
+    /** The document's credits, for the writer footer at the end of the list. */
+    credits: LyricsCredits? = null,
 ) {
     BoxWithConstraints(modifier = modifier) {
         // The inner Box's layout scope shadows this one, so the height is read here and handed down.
         val viewportHeight = maxHeight
-        val anchorOffset = remember(maxHeight) { maxHeight * 0.08f }
+        val anchorOffset = remember(maxHeight) { maxHeight * 0.15f }
         Box(
             modifier =
                 Modifier
@@ -105,6 +108,7 @@ internal fun EnhancedKaraokePane(
                     modifier = Modifier.fillMaxSize(),
                     useBlurEffect = useBlurEffect,
                     manualScrolling = manualScrolling,
+                    credits = credits,
                 )
             }
         }

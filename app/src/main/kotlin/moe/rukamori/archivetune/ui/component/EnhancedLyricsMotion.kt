@@ -34,7 +34,9 @@ internal object EnhancedLyricsMotion {
     const val BLUR_VISIBLE_DP = 0.05f
 
     private const val SCALE_STEP = 0.025f
-    private const val BLUR_STEP_DP = 0.75f
+
+    /** Every non-sung row gets the same soft veil while the list follows the playhead, not a per-step ramp. */
+    private const val AUTO_BLUR_DP = 2f
     private const val ALPHA_STEP = 0.12f
 
     /** Rows from the sung line, or null for the sung row itself and while no line is sung yet. */
@@ -51,7 +53,7 @@ internal object EnhancedLyricsMotion {
         val steps = distance.coerceAtMost(MAX_STEPS)
         return EnhancedDepth(
             scale = if (reduceMotion) 1f else 1f - SCALE_STEP * steps,
-            blurDp = BLUR_STEP_DP * steps,
+            blurDp = AUTO_BLUR_DP,
             alpha = 1f - ALPHA_STEP * steps,
         )
     }

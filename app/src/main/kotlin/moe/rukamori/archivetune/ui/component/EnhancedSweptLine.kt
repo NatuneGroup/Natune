@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.shared.domain.lyrics.unicode.GraphemeClusterSegmenter
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsEmphasis
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsClipRect
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsLineBands
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
@@ -113,8 +115,9 @@ private fun DrawScope.drawEnhancedSweep(
 }
 
 /**
- * The sung line of an active row. The dim line draws first. A word held for at least a second lifts while it is sung: it is
- * cut out of the line and drawn again higher, so the lift moves that word alone.
+ * The sung line of an active row. The dim line draws first. An emphasized word — one that passed
+ * [LyricsEmphasis] — is cut out of the line and drawn again letter by letter, so its letters ripple
+ * while the sweep crosses them. Every other word stays in the plain feathered sweep.
  */
 private fun DrawScope.drawRefinedSweep(
     shaped: EnhancedShapedLine,
@@ -124,8 +127,7 @@ private fun DrawScope.drawRefinedSweep(
     val layout = shaped.layout
     val boxes = shaped.boxes
     val box = boxes.getOrNull(LyricsSweepGeometry.activeIndex(boxes, positionMs))
-    val lift = if (box == null) 0f else LIFT_MAX_DP.dp.toPx() * LyricsSweepGeometry.liftShare(box, positionMs)
-    val hole = if (box != null && lift > 0f) {
+    val hole = if (box != null && box.letters != null) {
         Rect(box.leftPx, shaped.bands.tops[box.line], box.rightPx, shaped.bands.bottoms[box.line])
     } else {
         null
@@ -135,9 +137,9 @@ private fun DrawScope.drawRefinedSweep(
     } else {
         clipPath(outsideOf(hole)) { drawText(layout, color = palette.dim) }
     }
-    drawFeatheredSweep(shaped, positionMs, palette, hole)
+    drawFeatheredSweep(shaped, positionMs, palette, hole, box)
     if (box != null && hole != null) {
-        drawLiftedWord(shaped, hole, lift, sweepEdge(box, positionMs, shaped.rtl), palette)
+        drawEmphasizedWord(shaped, box, hole, sweepEdge(box, positionMs, shaped.rtl), positionMs, palette)
     }
 }
 
@@ -150,7 +152,8 @@ private fun sweepEdge(box: LyricsWordBox, positionMs: Long, rtl: Boolean): Float
 
 /**
  * The sung part of the line. Lines above the sung one are fully bright. The sung line is bright up to the sweep edge and
- * fades to dim across [WIPE_FEATHER_DP] either side of it, so the fill has a soft leading edge. The fade is a mask on a layer
+ * fades to dim across a share of the active word's width on either side of it, so the fill has a soft
+ * leading edge sized to the word it crosses. The fade is a mask on a layer
  * limited to the sung line's band, so the lines above and below are left alone. A [hole] is left out, because that word is
  * drawn lifted instead.
  */
@@ -159,6 +162,7 @@ private fun DrawScope.drawFeatheredSweep(
     positionMs: Long,
     palette: EnhancedLyricPalette,
     hole: Rect?,
+    box: LyricsWordBox?,
 ) {
     val rects = LyricsSweepGeometry.clipRects(shaped.boxes, shaped.bands, positionMs, shaped.rtl, reduceMotion = false)
     if (rects.isEmpty()) return
@@ -172,7 +176,7 @@ private fun DrawScope.drawFeatheredSweep(
     val height = sung.bottom - sung.top
     val width = shaped.bands.widthPx
     val edge = if (shaped.rtl) sung.left else sung.right
-    val feather = WIPE_FEATHER_DP.dp.toPx()
+    val feather = sweepFeather(box)
     val mask = Brush.horizontalGradient(fadeColors(shaped.rtl), startX = edge - feather, endX = edge + feather)
     drawIntoCanvas { canvas ->
         canvas.saveLayer(Rect(0f, top, width, top + height), Paint())
@@ -187,34 +191,70 @@ private fun DrawScope.drawFeatheredSweep(
 }
 
 /**
- * The lifted word: its dim fill, then its sung fill with the same feathered edge, drawn [LIFT_MAX_DP] scaled by the lift
- * higher, inside its own box. The clip is the shifted box, so only that word's band shows, and the text of the lines above
- * and below cannot show through.
+ * The emphasized word, one grapheme slice at a time. Each letter rides the [LyricsEmphasis.rippleAt]
+ * wave — a small rise and swell that travels through the word — while the sweep's feathered edge fills
+ * it. The letters that are not bumping yet still draw inside their own clip, so the word sits where the
+ * plain text left it.
  */
-private fun DrawScope.drawLiftedWord(
+private fun DrawScope.drawEmphasizedWord(
     shaped: EnhancedShapedLine,
+    box: LyricsWordBox,
     hole: Rect,
-    lift: Float,
     edge: Float,
+    positionMs: Long,
     palette: EnhancedLyricPalette,
 ) {
     val layout = shaped.layout
-    val window = Rect(hole.left, hole.top - lift, hole.right, hole.bottom - lift)
-    val offset = Offset(0f, -lift)
-    val feather = WIPE_FEATHER_DP.dp.toPx()
-    val mask = Brush.horizontalGradient(fadeColors(shaped.rtl), startX = edge - feather, endX = edge + feather)
-    clipPath(Path().apply { addRect(window) }) {
-        drawText(layout, color = palette.dim, topLeft = offset)
-        drawIntoCanvas { canvas ->
-            canvas.saveLayer(window, Paint())
-            drawText(layout, color = palette.bright, topLeft = offset)
-            drawRect(
-                brush = mask,
-                topLeft = Offset(window.left, window.top),
-                size = Size(window.width, window.height),
-                blendMode = BlendMode.DstIn,
+    val letters = box.letters ?: return
+    val count = letters.size / 2
+    val duration = (box.endMs - box.startMs).coerceAtLeast(1L)
+    val liftMax = LyricsEmphasis.LIFT_DP.dp.toPx()
+    val feather = sweepFeather(box)
+    for (index in 0 until count) {
+        val left = letters[index * 2]
+        val right = letters[index * 2 + 1]
+        if (right - left < 0.01f) continue
+        val bump = LyricsEmphasis.rippleAt(box.startMs, duration, count, index, positionMs)
+        val lift = liftMax * bump
+        val scale = 1f + LyricsEmphasis.SCALE_BOOST * bump
+        val centreX = (left + right) / 2f
+        val centreY = (hole.top + hole.bottom) / 2f
+        val pad = (right - left) * 0.5f + liftMax + 4f
+        if (bump > 0f) {
+            drawRoundRect(
+                color = palette.glow.copy(alpha = palette.glow.alpha * GLOW_ALPHA * bump),
+                topLeft = Offset(left - pad * 0.3f, hole.top - lift - 2f),
+                size = Size(right - left + pad * 0.6f, hole.height + 4f),
+                cornerRadius = CornerRadius(GLOW_CORNER_DP.dp.toPx()),
             )
-            canvas.restore()
+        }
+        val window = Rect(left - pad, hole.top - lift - pad, right + pad, hole.bottom + pad)
+        clipPath(Path().apply { addRect(window) }) {
+            withTransform({
+                translate(top = -lift)
+                scale(scale, scale, Offset(centreX, centreY))
+            }) {
+                drawText(layout, color = palette.dim)
+                // The line's feathered edge mapped into the letter's scaled frame: a canvas x lands
+                // at centreX + (x - centreX) / scale, so the mask tracks the same edge.
+                val edgeLocal = centreX + (edge - centreX) / scale
+                val mask = Brush.horizontalGradient(
+                    fadeColors(shaped.rtl),
+                    startX = edgeLocal - feather / scale,
+                    endX = edgeLocal + feather / scale,
+                )
+                drawIntoCanvas { canvas ->
+                    canvas.saveLayer(window, Paint())
+                    drawText(layout, color = palette.bright)
+                    drawRect(
+                        brush = mask,
+                        topLeft = Offset(window.left, window.top),
+                        size = Size(window.width, window.height),
+                        blendMode = BlendMode.DstIn,
+                    )
+                    canvas.restore()
+                }
+            }
         }
     }
 }
@@ -240,7 +280,9 @@ private fun DrawScope.drawGlow(shaped: EnhancedShapedLine, positionMs: Long, pal
     val index = LyricsSweepGeometry.activeIndex(boxes, positionMs)
     if (index < 0) return
     val box = boxes[index]
-    val glow = LyricsSweepGeometry.glowIntensity(box, positionMs) * LyricsSweepGeometry.emphasisGain(box)
+    // The glow belongs to emphasis: a word that earns no ripple stays plain all the way.
+    val gain = if (box.letters != null) LyricsSweepGeometry.emphasisGain(box) else 0f
+    val glow = LyricsSweepGeometry.glowIntensity(box, positionMs) * gain
     val width = box.rightPx - box.leftPx
     if (glow <= 0f || width <= 0f) return
     val top = shaped.bands.tops[box.line]
@@ -354,10 +396,66 @@ private fun enhancedWordBox(
     val last = layout.getBoundingBox(end - 1)
     val left = minOf(first.left, last.left)
     val right = if (lastLine == line) maxOf(first.right, last.right) else layout.getLineRight(line)
-    return LyricsWordBox(startMs, endMs, left, right, line)
+    return LyricsWordBox(
+        startMs = startMs,
+        endMs = endMs,
+        leftPx = left,
+        rightPx = right,
+        line = line,
+        letters =
+            emphasisLetters(
+                text, clusters, start, end, line, lastLine, left, right, endMs - startMs, layout,
+            ),
+    )
 }
+
+/**
+ * The (left, right) slice of each grapheme cluster in a word that earned the [LyricsEmphasis] ripple,
+ * in sung order, or null when the word keeps the plain sweep. A word that wraps to a second visual
+ * line keeps the plain sweep, because its slices could not stay on one band.
+ */
+private fun emphasisLetters(
+    text: String,
+    clusterStarts: IntArray,
+    start: Int,
+    end: Int,
+    line: Int,
+    lastLine: Int,
+    boxLeft: Float,
+    boxRight: Float,
+    durationMs: Long,
+    layout: TextLayoutResult,
+): FloatArray? {
+    if (line != lastLine) return null
+    // Edge clusters that only carry whitespace leave no letter to move.
+    var first = start
+    var last = end
+    while (first < last && text[first].isWhitespace()) first++
+    while (last > first && text[last - 1].isWhitespace()) last--
+    if (first >= last) return null
+    val count = clusterStarts.count { it in first until last }
+    if (!LyricsEmphasis.isEmphasized(text.substring(first, last), count, durationMs)) return null
+    val slices = FloatArray(count * 2)
+    var index = 0
+    for (clusterStart in clusterStarts) {
+        if (clusterStart < first || clusterStart >= last) continue
+        val clusterEnd = clusterStarts.firstOrNull { it > clusterStart }?.let { minOf(it, last) } ?: last
+        val head = layout.getBoundingBox(clusterStart)
+        val tail = layout.getBoundingBox(clusterEnd - 1)
+        slices[index * 2] = minOf(head.left, tail.left).coerceIn(boxLeft, boxRight)
+        slices[index * 2 + 1] = maxOf(head.right, tail.right).coerceIn(boxLeft, boxRight)
+        index++
+    }
+    return slices
+}
+
+/** The feathered edge width for [box], a share of its own width clamped to the sweep bounds. */
+private fun DrawScope.sweepFeather(box: LyricsWordBox?): Float =
+    LyricsSweepGeometry.sweepFeatherPx(
+        wordWidthPx = box?.let { it.rightPx - it.leftPx } ?: 0f,
+        minPx = LyricsSweepGeometry.SWEEP_FEATHER_MIN_DP.dp.toPx(),
+        maxPx = LyricsSweepGeometry.SWEEP_FEATHER_MAX_DP.dp.toPx(),
+    )
 
 private const val GLOW_ALPHA = 0.35f
 private const val GLOW_CORNER_DP = 8
-private const val WIPE_FEATHER_DP = 6
-private const val LIFT_MAX_DP = 2.5f
