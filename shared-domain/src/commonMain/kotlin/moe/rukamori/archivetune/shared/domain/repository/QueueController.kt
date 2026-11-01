@@ -39,7 +39,9 @@ interface QueueController {
     val player: MusicPlayerController
     val state: StateFlow<QueueState>
     suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean)
-    suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind)
+
+    /** The occurrences actually queued; duplicate prevention can refuse some or all of the batch. */
+    suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind): Int
     suspend fun remove(occurrenceIds: Set<String>)
     suspend fun move(occurrenceId: String, beforeOccurrenceId: String?)
     suspend fun select(occurrenceId: String, positionMs: Long = 0L)
