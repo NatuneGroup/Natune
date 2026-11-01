@@ -51,7 +51,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -60,6 +59,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
@@ -130,26 +130,31 @@ fun SpotifyStreamingSettings(
     // alive; the pending grant itself lives in the account object, so a rotated screen still completes
     // the flow. A redirect whose state is not the pending one is ignored, not completed.
     LaunchedEffect(Unit) {
-        SpotifyLibrespotAuthCoordinator.redirects.collectLatest { redirect ->
+        // Sequential collect, not collectLatest: a second redirect must wait for the in-flight
+        // completion rather than cancelling it halfway through its datastore commit.
+        SpotifyLibrespotAuthCoordinator.redirects.collect { redirect ->
             if (redirect.getQueryParameter("state") != SpotifyLibrespotAccount.pendingAuthorizationState) {
-                return@collectLatest
+                return@collect
             }
             librespotVerifying = true
-            val result = SpotifyLibrespotAccount.completeAuthorization(context, redirect)
-            librespotVerifying = false
-            result.exceptionOrNull()?.let { error ->
-                signInError =
-                    when (error) {
-                        is SpotifyLibrespotAccount.SignInError.NotPremium ->
-                            context.getString(R.string.spotify_stream_error_not_premium)
-                        is SpotifyLibrespotAccount.SignInError.DifferentFromCatalog ->
-                            context.getString(R.string.spotify_stream_error_different_account)
-                        is SpotifyLibrespotAccount.SignInError.CatalogUnverifiable ->
-                            context.getString(R.string.spotify_stream_librespot_needs_catalog)
-                        is SpotifyLibrespotAccount.SignInError.NotConfigured ->
-                            context.getString(R.string.spotify_stream_error_not_configured)
-                        else -> context.getString(R.string.spotify_stream_error_oauth)
-                    }
+            try {
+                val result = SpotifyLibrespotAccount.completeAuthorization(context, redirect)
+                result.exceptionOrNull()?.let { error ->
+                    signInError =
+                        when (error) {
+                            is SpotifyLibrespotAccount.SignInError.NotPremium ->
+                                context.getString(R.string.spotify_stream_error_not_premium)
+                            is SpotifyLibrespotAccount.SignInError.DifferentFromCatalog ->
+                                context.getString(R.string.spotify_stream_error_different_account)
+                            is SpotifyLibrespotAccount.SignInError.CatalogUnverifiable ->
+                                context.getString(R.string.spotify_stream_librespot_needs_catalog)
+                            is SpotifyLibrespotAccount.SignInError.NotConfigured ->
+                                context.getString(R.string.spotify_stream_error_not_configured)
+                            else -> context.getString(R.string.spotify_stream_error_oauth)
+                        }
+                }
+            } finally {
+                librespotVerifying = false
             }
         }
     }
@@ -316,10 +321,12 @@ fun SpotifyStreamingSettings(
                                     SpotifyLibrespotAccount.isConfigured && catalogSignedIn &&
                                         !librespotVerifying,
                                 onClick = {
-                                    SpotifyLibrespotAccount.beginAuthorization()?.let { session ->
-                                        context.startActivity(
-                                            Intent(Intent.ACTION_VIEW, session.authorizationUri),
-                                        )
+                                    scope.launch {
+                                        SpotifyLibrespotAccount.beginAuthorization()?.let { session ->
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, session.authorizationUri),
+                                            )
+                                        }
                                     }
                                 },
                             )

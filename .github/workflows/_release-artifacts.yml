@@ -147,6 +147,8 @@ jobs:
       FEEDBACK_API_URL: ${{ secrets.FEEDBACK_API_URL }}
       FEEDBACK_INGEST_KEY: ${{ secrets.FEEDBACK_INGEST_KEY }}
       START_IO_APP_ID: ${{ secrets.START_IO_APP_ID }}
+      # Registered public PKCE client id for the Librespot OAuth flow (repository variable, not a secret).
+      ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
     steps:
       - name: Check out release source and submodules
         uses: actions/checkout@v7
@@ -393,6 +395,8 @@ jobs:
       ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID }}
       ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID }}
       ARCHIVETUNE_SPOTIFY_AUDIO_IV: ${{ secrets.ARCHIVETUNE_SPOTIFY_AUDIO_IV }}
+      # Registered public PKCE client id for the Librespot OAuth flow (repository variable, not a secret).
+      ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
       # The desktop installers compile only JVM and Kotlin/Native host targets; they never need the
       # Android SDK. Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
       # :jiosaavn and :morideobfuscator load no build script and the shared modules skip their Android
