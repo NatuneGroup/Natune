@@ -1,7 +1,7 @@
 package moe.rukamori.archivetune.shared.data.repository
 
 import kotlinx.coroutines.CancellationException
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureClassifier
