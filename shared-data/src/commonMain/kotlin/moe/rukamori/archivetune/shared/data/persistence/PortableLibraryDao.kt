@@ -99,6 +99,10 @@ abstract class PortableLibraryDao {
     @Query("DELETE FROM library_item WHERE provider = :provider AND kind = :kind AND mediaId = :id")
     abstract suspend fun deleteBookmark(provider: String, kind: String, id: String): Int
 
+    /** Removes one saved row. Only the row of that provider, kind and id goes, and nothing else is touched. */
+    @Query("DELETE FROM library_item WHERE provider = :provider AND kind = :kind AND mediaId = :id")
+    abstract suspend fun deleteItem(provider: String, kind: String, id: String): Int
+
     /** The next add sequence. It is read inside the write's transaction, so each new song takes a higher one. */
     @Query("SELECT COALESCE(MAX(addedSeq), 0) + 1 FROM library_item")
     abstract suspend fun nextAddedSeq(): Long
@@ -188,6 +192,22 @@ abstract class PortableLibraryDao {
     @Transaction
     open suspend fun setSongSort(playlistId: String, type: String, descending: Boolean) {
         require(updateSongSort(playlistId, type, descending) == 1) { "Unknown local playlist" }
+    }
+
+    /**
+     * Removes saved items from the library, the same cascade the Android database performs for a saved
+     * song leaving the library: the row that carries membership and the like goes, while playlists,
+     * downloads, listens and metadata edits keep their own tables, so a re-added item meets them again.
+     * Every ref is checked first, so a missing item refuses the whole batch and changes nothing.
+     */
+    @Transaction
+    open suspend fun removeItems(refs: List<ContentRef>) {
+        for (ref in refs) {
+            requireNotNull(item(ref.provider, ref.kind.name, ref.id)) { "Item is not in the library" }
+        }
+        for (ref in refs) {
+            require(deleteItem(ref.provider, ref.kind.name, ref.id) == 1) { "Item is not in the library" }
+        }
     }
 
     @Transaction

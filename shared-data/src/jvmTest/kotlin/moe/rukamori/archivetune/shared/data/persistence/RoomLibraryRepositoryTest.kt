@@ -103,4 +103,39 @@ class RoomLibraryRepositoryTest {
             assertEquals("local-playlist-cover://p1", summary.occurrence.item.artworkUri)
         } finally { db.close() }
     }
+
+    @Test fun removingALibraryItemKeepsItsPlaylistEntryDownloadAndEdits() = runTest {
+        val db = openPortableStateDatabase(":memory:")
+        try {
+            val metadata = RoomSongMetadataRepository(db.songMetadataOverrides())
+            val repo = RoomLibraryRepository(db.library(), songMetadata = metadata)
+            val song = ContentItem(ContentRef("youtube", ContentKind.SONG, "gone"), "Gone")
+            repo.saveItems(listOf(song))
+            repo.mutate(LibraryMutation.Like(song.ref, true))
+            repo.createPlaylist("p", "Mix")
+            repo.mutate(LibraryMutation.AddToPlaylist("p", listOf(ContentOccurrence("occ-1", song))))
+            metadata.setOverride(song.ref, SongMetadataOverride("Edited", listOf("Edited artist"), 3L))
+
+            repo.removeItems(listOf(song.ref))
+
+            // Membership and the like the row carried are gone, the Android cascade's effect.
+            assertTrue(repo.page(ContentQuery(RoomLibraryRepository.SONGS)).items.isEmpty())
+            assertTrue(repo.page(ContentQuery(RoomLibraryRepository.LIKED)).items.isEmpty())
+            assertNull(repo.findSong("gone", "youtube"))
+            // Playlists and metadata edits are their own tables, so both keep the song, as Android's
+            // inLibrary=null keeps them. A later re-add meets them again.
+            val playlist = ContentQuery(RoomLibraryRepository.PLAYLIST_ITEMS, parent = ContentRef("local", ContentKind.PLAYLIST, "p"))
+            assertEquals(listOf("occ-1"), repo.page(playlist).items.map { it.occurrenceId })
+            repo.saveItems(listOf(song))
+            assertEquals("Edited", repo.page(ContentQuery(RoomLibraryRepository.SONGS)).items.single().item.title)
+
+            // An unknown ref refuses the whole batch and changes nothing, as deletePlaylist does.
+            val kept = ContentItem(ContentRef("youtube", ContentKind.SONG, "kept"), "Kept")
+            repo.saveItems(listOf(kept))
+            assertFailsWith<IllegalArgumentException> {
+                repo.removeItems(listOf(kept.ref, ContentRef("youtube", ContentKind.SONG, "missing")))
+            }
+            assertNotNull(repo.findSong("kept", "youtube"))
+        } finally { db.close() }
+    }
 }

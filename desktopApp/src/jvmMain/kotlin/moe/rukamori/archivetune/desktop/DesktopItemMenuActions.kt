@@ -31,10 +31,12 @@ internal class DesktopSongMenuHost(
     }
 
     override suspend fun setInLibrary(song: ContentRef, inLibrary: Boolean) {
-        // Saving metadata and liking are not the missing remove-membership mutation.
-        if (!inLibrary) state.unavailable("content_menu_library_remove_unsupported")
         require(song == selected.item.ref)
-        graph.library.saveItems(listOf(selected.item))
+        if (inLibrary) {
+            graph.library.saveItems(listOf(selected.item))
+        } else {
+            graph.library.removeItems(listOf(song))
+        }
     }
 
     override suspend fun setSpeedDialPinned(song: ContentRef, pinned: Boolean) {
