@@ -72,7 +72,7 @@ Finite browse queues preserve occurrences and paging; unknown legacy recovery is
 Strict complete-list actions/sync and client shuffle do not claim exact server shuffle.
 Login-only recovery addresses an embedded `net::ERR_UNKNOWN_URL_SCHEME` Music store intent
 with one same-WebView return, private verified candidates and YouTube-scoped logout.
-The anonymous MetrolistGroup InnerTubeX `v0.9.2` pin is separate from those app fixes.
+The anonymous MetrolistGroup InnerTubeX `v0.11.2` pin is separate from those app fixes.
 At the 2026-10-15 review-fix integration checkpoint, 134 focused test methods are
 authored and integrated (original 121 plus 13 regressions), locally unexecuted.
 The five confirmed source-review corrections await targeted recheck and exact-head

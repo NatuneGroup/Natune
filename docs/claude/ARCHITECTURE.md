@@ -76,7 +76,7 @@ attempt/base revision before committing identity/context. App collectors reconci
 latest persistence; delayed refresh/repair/logout/switch writers share ownership.
 See [source logins](../source-logins.md) for navigation/security boundaries.
 
-Existing anonymous MetrolistGroup InnerTubeX `v0.9.2` is separate maintenance, not
+Existing anonymous MetrolistGroup InnerTubeX `v0.11.2` is separate maintenance, not
 the login or pager implementation. Primary/manual client, terminal auth errors,
 YTPlayerUtils → InnerTubeX → NewPipe → Echo and direct-audio guards remain intact.
 Focused tests, independent review and remote compilation/execution remain pending.
