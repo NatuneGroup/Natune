@@ -36,7 +36,8 @@ import moe.rukamori.archivetune.shared.domain.settings.JioSaavnEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SaavnAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
-import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamingSignedIn
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamEngineEffective
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamSessionPresent
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.ui.IosHost
@@ -325,7 +326,8 @@ private fun IosLaneSourceSettingsPage(
     }
     SourceSettings(
         controller = owners.controller,
-        spotifyStreamingReady = preferences.spotifyStreamingSignedIn(),
+        spotifyStreamingReady =
+            preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective()),
         // This host has no Spotify streaming transport, so the row reads as not available here.
         spotifyStreamingPlatformSupported = false,
         poolConfigured = owners.poolConfigured,

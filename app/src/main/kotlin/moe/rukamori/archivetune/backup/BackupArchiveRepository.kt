@@ -290,6 +290,24 @@ class BackupArchiveRepository
                     "spotify_access_token_expires_at",
                     "spotify_account_name",
                     "spotify_account_avatar_url",
+                    "spotify_product",
+                    "spotify_product_checked_at",
+                    // The Librespot grant is an OAuth credential bound to the catalog account.
+                    "spotify_librespot_refresh_token",
+                    "spotify_librespot_access_token",
+                    "spotify_librespot_access_token_expires_at",
+                    "spotify_librespot_user_id",
+                    "spotify_librespot_account_name",
+                    "spotify_librespot_catalog_sp_dc",
+                    // The dedicated streaming session was missing here; same sensitivity class.
+                    "spotifyStreamSpDc",
+                    "spotifyStreamSpKey",
+                    "spotifyStreamAccessToken",
+                    "spotifyStreamAccessTokenExpiresAt",
+                    "spotifyStreamUserId",
+                    "spotifyStreamAccountName",
+                    "spotifyStreamProduct",
+                    "spotifyStreamProductCheckedAt",
                     // Tidal login/session (sensitive) — travels with an Account backup, not a
                     // Settings-only one. Instance URL lists (tidalInstances) stay under Settings.
                     "tidalAccessToken",

@@ -395,6 +395,7 @@ internal fun DesktopSettingsScreen(
                     signInInProgress = signingIn,
                     signInRefusal = refusal,
                     onSignIn = { owners.spotify.signInStreaming(::show) },
+                    librespotSignInAvailable = owners.spotify.librespotConfigured,
                     onDismissSignInRefusal = owners.spotify::dismissStreamingRefusal,
                     onSignOut = owners.spotify::signOutStreaming,
                     onFailure = onFailure,

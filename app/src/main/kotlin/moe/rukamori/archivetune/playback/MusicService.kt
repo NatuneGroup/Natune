@@ -236,7 +236,6 @@ import moe.rukamori.archivetune.constants.AmazonTurnstileJwtKey
 import moe.rukamori.archivetune.constants.QqMusicEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethod
-import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.QqAudioQuality
 import moe.rukamori.archivetune.constants.QqMusicAudioQualityKey
 import moe.rukamori.archivetune.constants.YouTubeSourceEnabledKey
@@ -8648,7 +8647,7 @@ class MusicService :
                             AudioSourceType.YOUTUBE to
                                 dataStore.get(YouTubeSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE)),
                         ),
-                    spotifySignedIn = dataStore.get(SpotifyStreamSpDcKey, "").isNotBlank(),
+                    spotifySignedIn = SpotifyStreamingAccount.streamingSessionPresent(dataStore),
                 ),
         )
 
@@ -9962,7 +9961,7 @@ class MusicService :
 
     /** True when the experimental Spotify streaming source is switched on and has an account. */
     private fun isSpotifyStreamingConfigured(): Boolean =
-        dataStore.get(SpotifyStreamEnabledKey, false) && dataStore.get(SpotifyStreamSpDcKey, "").isNotBlank()
+        dataStore.get(SpotifyStreamEnabledKey, false) && SpotifyStreamingAccount.streamingSessionPresent(dataStore)
 
     /** Which Spotify track a media id resolved to, and through which method, for play reporting. */
     private class SpotifyStreamTrack(

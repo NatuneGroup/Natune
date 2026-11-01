@@ -59,7 +59,7 @@ fun iosListenerPresenceDirectory(): String {
 }
 
 /** Bytes from the system's secure generator, so the identifier is never drawn from a predictable source. */
-internal fun iosSecureRandomBytes(count: Int): ByteArray {
+fun iosSecureRandomBytes(count: Int): ByteArray {
     val bytes = ByteArray(count)
     if (count == 0) return bytes
     val status = bytes.usePinned { SecRandomCopyBytes(kSecRandomDefault, count.toULong(), it.addressOf(0)) }

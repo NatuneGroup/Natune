@@ -13,6 +13,12 @@ enum class SpotifySignInRefusal {
 
     /** The catalog is signed in but its account could not be read, so the two cannot be compared. */
     CATALOG_UNVERIFIABLE,
+
+    /** The Librespot sign-in authorized an account that is not the catalog account. */
+    DIFFERENT_FROM_CATALOG,
+
+    /** The Librespot sign-in authorized a non-Premium account; the engine only runs on Premium. */
+    NOT_PREMIUM,
 }
 
 sealed interface SpotifySignInDecision {
@@ -74,6 +80,30 @@ object SpotifyStreamingPolicy {
         if (catalogSpDc.isNotBlank()) {
             val catalog = catalogUserId() ?: return SpotifySignInDecision.Refuse(SpotifySignInRefusal.CATALOG_UNVERIFIABLE)
             if (catalog == streaming) return SpotifySignInDecision.Refuse(SpotifySignInRefusal.SAME_AS_CATALOG)
+        }
+        return SpotifySignInDecision.Accept
+    }
+
+    /**
+     * Decides whether a completed Librespot OAuth grant may be stored. The Librespot session must be
+     * the same account the catalog uses — that is the whole point of mode B — and Premium, since the
+     * engine can only open a session for a Premium account. [catalogUserId] runs only when the catalog
+     * is signed in; an unreadable catalog account refuses instead of silently binding an unknown pair.
+     * A signed-out catalog skips the comparison: the Librespot grant then defines the library account.
+     */
+    fun decideLibrespotSignIn(
+        catalogSignedIn: Boolean,
+        librespotUserId: String?,
+        product: String?,
+        catalogUserId: () -> String?,
+    ): SpotifySignInDecision {
+        val librespot = librespotUserId ?: return SpotifySignInDecision.Refuse(SpotifySignInRefusal.PROFILE_UNAVAILABLE)
+        if (catalogSignedIn) {
+            val catalog = catalogUserId() ?: return SpotifySignInDecision.Refuse(SpotifySignInRefusal.CATALOG_UNVERIFIABLE)
+            if (catalog != librespot) return SpotifySignInDecision.Refuse(SpotifySignInRefusal.DIFFERENT_FROM_CATALOG)
+        }
+        if (!SpotifyPremiumPolicy.librespotAllowed(SpotifyProduct.of(product))) {
+            return SpotifySignInDecision.Refuse(SpotifySignInRefusal.NOT_PREMIUM)
         }
         return SpotifySignInDecision.Accept
     }

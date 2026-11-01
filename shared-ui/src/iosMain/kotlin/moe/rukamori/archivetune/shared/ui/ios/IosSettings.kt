@@ -47,6 +47,7 @@ import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
 import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceState
+import moe.rukamori.archivetune.shared.domain.platform.BrowserAuthPort
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
 import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
@@ -133,13 +134,14 @@ import platform.UIKit.UIViewController
 internal class IosSettingsOwners(
     internal val graph: IosSessionGraph,
     browser: IosCookieOnlyBrowserAuth,
+    browserAuth: BrowserAuthPort,
     appleMusicSheet: IosAppleMusicLoginSheet,
     presenter: () -> UIViewController,
 ) {
     val deezerWeb = IosDeezerWebSignIn(graph, browser)
     val appleMusicWeb = IosAppleMusicWebSignIn(graph, appleMusicSheet)
     val spotifyCatalog = IosSpotifyCatalogAccount(graph, browser)
-    val spotifyStreaming = IosSpotifyStreamingAccount(graph, browser)
+    val spotifyStreaming = IosSpotifyStreamingAccount(graph, browser, browserAuth)
     val amazonAuthorize = IosAmazonAuthorize(graph, presenter)
     val controller = SettingsController(
         graph.settings,
