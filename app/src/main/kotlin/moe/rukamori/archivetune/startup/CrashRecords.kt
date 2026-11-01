@@ -51,12 +51,16 @@ internal data class CrashBuild(
 }
 
 /**
- * A record from before the installed build is still listed, labelled as an earlier version. The install
- * time is compared, not a stored flag, so the label stays right after a later update.
+ * A record from before the installed build is still listed, labelled as an earlier version. The
+ * stamped version code decides when it exists: a record of this build can never predate it, whatever
+ * the wall clock does. Only records without one fall back to comparing the install time.
  */
 internal fun CrashRecord.isFromEarlierVersion(install: InstallWindow): Boolean =
-    timestampMs < install.installedSinceMs ||
-        (versionCode != UNKNOWN_VERSION_CODE && versionCode < install.versionCode)
+    if (versionCode != UNKNOWN_VERSION_CODE) {
+        versionCode < install.versionCode
+    } else {
+        timestampMs < install.installedSinceMs
+    }
 
 /** Only failures of the installed build interrupt startup. Memory-pressure kills are listed for diagnosis. */
 internal fun CrashRecord.interruptsStartup(install: InstallWindow): Boolean =

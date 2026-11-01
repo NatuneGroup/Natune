@@ -49,7 +49,14 @@ object StartupRecovery {
 
     internal fun beginStartup(context: Context) {
         if (isRecoveryProcess(context)) return
-        val current = StartupAttempt(System.currentTimeMillis(), Process.myPid(), BuildConfig.VERSION_NAME)
+        val install = currentInstall(context)
+        val current = StartupAttempt(
+            timestampMs = System.currentTimeMillis(),
+            pid = Process.myPid(),
+            version = BuildConfig.VERSION_NAME,
+            versionCode = install.versionCode,
+            installedSinceMs = install.installedSinceMs,
+        )
         attempt = current
         runCatching { store(context).begin(current) }
     }

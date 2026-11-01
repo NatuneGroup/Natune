@@ -87,12 +87,19 @@ internal fun previousStartupIncomplete(pendingExists: Boolean, pendingPid: Int?,
     pendingExists && (livePid == null || pendingPid != livePid)
 
 /**
- * An attempt recorded before the installed build, or stamped by a different version, survived an app
- * update. It stays in the report for diagnosis but can never put the current build into safe mode.
+ * An attempt recorded by a different build or install survived an app update. It stays in the
+ * report for diagnosis but can never put the current build into safe mode. New markers carry the
+ * install identity captured at write time, so a backward clock correction cannot mislabel a marker
+ * of this build; legacy markers without it still fall back to wall-clock and version inference.
  */
-internal fun isStaleAttempt(attempt: StartupAttempt, install: InstallWindow, currentVersion: String): Boolean =
-    attempt.timestampMs < install.installedSinceMs ||
+internal fun isStaleAttempt(attempt: StartupAttempt, install: InstallWindow, currentVersion: String): Boolean {
+    if (attempt.versionCode != UNKNOWN_VERSION_CODE) {
+        return attempt.versionCode != install.versionCode ||
+            (attempt.installedSinceMs != 0L && attempt.installedSinceMs != install.installedSinceMs)
+    }
+    return attempt.timestampMs < install.installedSinceMs ||
         (attempt.version.isNotEmpty() && attempt.version != currentVersion)
+}
 
 /** Only a pending attempt of the installed build counts as an unfinished startup. */
 internal fun previousStartupIncomplete(
