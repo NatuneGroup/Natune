@@ -108,19 +108,24 @@ def main():
     lines.append("")
     lines.append("/**")
     lines.append(f" * {len(chars)} covered BMP codepoints and {len(kept)} polyphonic phrase overrides,")
-    lines.append(" * bundled as packed constants so the runtime table builds with no I/O.")
+    lines.append(" * bundled as packed strings so the runtime table builds with no I/O. The chunks stay")
+    lines.append(" * non-const on purpose: a `const` concatenation folds into one literal at compile time,")
+    lines.append(" * and the merged cells/phrases strings exceed the 64 KiB modified-UTF-8 limit a class")
+    lines.append(" * file constant can hold, so they assemble lazily at first use instead.")
     lines.append(" * Cells are a 16-bit syllable index per codepoint in [BASE_CODEPOINT, BASE_CODEPOINT +")
     lines.append(" * CELLS length); 0xFFFF marks an uncovered slot. Phrases are `key<TAB>reading\\n` rows.")
     lines.append(" */")
     lines.append("internal object MandarinPinyinData {")
     lines.append(f"    const val BASE_CODEPOINT = 0x{base:04X}")
     lines.append(f"    const val MAX_PHRASE_LENGTH = {max_len}")
-    lines.append(f'    private const val SYLLABLES = "{kt_escape(" ".join(syllables))}"')
+    # Keep the chunk vals non-const: `const` folds the lazy concatenation into a single
+    # literal, and the merged strings exceed the 64 KiB class-file string limit.
+    lines.append(f'    private val SYLLABLES = "{kt_escape(" ".join(syllables))}"')
     for i, chunk in enumerate(cell_chunks):
         esc = "".join(f"\\u{ord(c):04X}" for c in chunk)
-        lines.append(f'    private const val CELLS_{i} = "{esc}"')
+        lines.append(f'    private val CELLS_{i} = "{esc}"')
     for i, chunk in enumerate(phrase_chunks):
-        lines.append(f'    private const val PHRASES_{i} = "{kt_escape(chunk)}"')
+        lines.append(f'    private val PHRASES_{i} = "{kt_escape(chunk)}"')
     lines.append("")
     lines.append("    internal val syllables: List<String> by lazy { SYLLABLES.split(' ') }")
     lines.append(

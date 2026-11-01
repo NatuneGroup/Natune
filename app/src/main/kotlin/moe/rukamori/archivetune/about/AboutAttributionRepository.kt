@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.GitHubTranslationContributorsJsonKey
+import moe.rukamori.archivetune.shared.ui.settings.AboutBundledNotices
 import moe.rukamori.archivetune.constants.GitHubTranslationContributorsLastCheckedAtKey
 import moe.rukamori.archivetune.utils.dataStore
 import org.json.JSONArray
@@ -193,7 +194,13 @@ class AboutAttributionRepository
                                             .takeIf(String::isNotBlank),
                                 )
                             }.filter { library -> library.name.isNotBlank() }
-                    val collection = AboutDependencyLicenseCollection.from(licenses)
+                    // Data bundled inside the binary never reaches the generated catalog, so its
+                    // notices are appended from the shared list rather than through Libs.
+                    val bundled =
+                        AboutBundledNotices.entries.map { entry ->
+                            AboutDependencyLicense(name = entry.name, version = entry.version, licenses = entry.license)
+                        }
+                    val collection = AboutDependencyLicenseCollection.from(licenses + bundled)
                     if (collection.isEmpty) {
                         Result.failure(IllegalStateException("No dependency licenses found"))
                     } else {
