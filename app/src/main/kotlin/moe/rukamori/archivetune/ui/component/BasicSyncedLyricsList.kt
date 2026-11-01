@@ -1,10 +1,14 @@
 package moe.rukamori.archivetune.ui.component
 
 import android.os.SystemClock
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,24 +22,36 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.LocalBlurPolicy
+import moe.rukamori.archivetune.utils.isLowEndDevice
 
 /**
  * Index of the last line whose start time has been reached, or -1 before the first line.
@@ -64,9 +80,12 @@ internal fun syncedLyricsAutoScrollDelayMs(nowMs: Long, lastUserDragMs: Long, re
 }
 
 /**
- * The synced-lyrics list used where lyrics-ui's KaraokeLyricsView cannot run (it needs API 29).
- * It owns its auto-scroll the way the library does, so callers that wait for the active line to be
- * visible behave the same on both paths. List indices match [SyncedLyrics.lines] one to one.
+ * The synced Enhanced lyrics list. It owns its auto-scroll and draws every row itself, because the library's
+ * KaraokeLyricsView cannot draw the feathered sweep, the line-change glide, the distance depth or the interlude dots.
+ * List indices match [SyncedLyrics.lines] one to one.
+ *
+ * [useBlurEffect] is the user's line-blur choice. The distance blur also needs the platform render effect, and it is
+ * lifted while [manualScrolling] is true, so the lines being read stay sharp.
  */
 @Composable
 internal fun BasicSyncedLyricsList(
@@ -84,14 +103,35 @@ internal fun BasicSyncedLyricsList(
     anchorOffset: Dp,
     viewportHeight: Dp,
     modifier: Modifier = Modifier,
+    useBlurEffect: Boolean = false,
+    manualScrolling: Boolean = false,
 ) {
     val lines = lyrics.lines
     val starts = remember(lines) { IntArray(lines.size) { lines[it].start } }
+    val ends = remember(lines) { IntArray(lines.size) { lines[it].end } }
+    val interludes = remember(starts, ends) { enhancedInterludes(starts, ends) }
     val activeIndex by remember(starts) {
         derivedStateOf { activeSyncedLineIndex(starts, currentPosition()) }
     }
+    // Animations disabled is the one reduced-motion switch: the glide, the depth springs and the scroll animation
+    // all turn off together.
     val animationsDisabled = LocalAnimationsDisabled.current
+    val context = LocalContext.current
+    val lowEnd = remember(context) { context.isLowEndDevice() }
+    val blurAllowed =
+        EnhancedLyricsMotion.blurAllowed(
+            blurPreference = useBlurEffect,
+            blurRenderAllowed = LocalBlurPolicy.current.renderEffect,
+            animationsDisabled = animationsDisabled,
+            lowEnd = lowEnd,
+            manualScrolling = manualScrolling,
+        )
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val settle = remember(listState) { EnhancedLineSettle(listState) }
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
     var lastUserDragMs by remember(listState) { mutableLongStateOf(0L) }
+    // The line the list last followed. Only a single step forward from it is a line change; a seek or a tap is not.
+    var followedLine by remember(listState) { mutableIntStateOf(-1) }
 
     LaunchedEffect(listState) {
         listState.interactionSource.interactions.collect { interaction ->
@@ -99,19 +139,48 @@ internal fun BasicSyncedLyricsList(
         }
     }
 
+    // The glide's frame loop runs only while the screen is resumed, so a backgrounded lyrics screen draws no frames.
+    LaunchedEffect(settle, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { settle.runEachSettle() }
+    }
+    // A hand on the list ends a glide at once, so nothing moves under a finger.
+    LaunchedEffect(dragged) {
+        if (dragged) settle.clear()
+    }
+
     LaunchedEffect(listState, activeIndex, lastUserDragMs) {
         val target = activeIndex
         if (target !in lines.indices) return@LaunchedEffect
-        val wait = syncedLyricsAutoScrollDelayMs(SystemClock.uptimeMillis(), lastUserDragMs, AUTO_SCROLL_RESUME_MS)
-        if (wait > 0L) delay(wait)
+        val stepped = followedLine >= 0 && target == followedLine + 1
+        followedLine = target
+        // The hold runs from the last touch. A finger or a fling still moving the list keeps follow waiting, so the list
+        // is pulled back only once it has been idle for the whole hold.
+        var wait = syncedLyricsAutoScrollDelayMs(SystemClock.uptimeMillis(), lastUserDragMs, AUTO_SCROLL_RESUME_MS)
+        while (wait > 0L || dragged || listState.isScrollInProgress) {
+            if (wait > 0L) {
+                delay(wait)
+            } else {
+                snapshotFlow { dragged || listState.isScrollInProgress }.first { !it }
+            }
+            wait = syncedLyricsAutoScrollDelayMs(SystemClock.uptimeMillis(), lastUserDragMs, AUTO_SCROLL_RESUME_MS)
+        }
         if (listState.isScrollInProgress) return@LaunchedEffect
         val alreadyAnchored = listState.firstVisibleItemIndex == target && listState.firstVisibleItemScrollOffset == 0
         if (alreadyAnchored) return@LaunchedEffect
         val firstFocus = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
-        if (animationsDisabled || firstFocus) {
+        // A line change moves the list at once and lets the rows glide from where they were, so the change ripples
+        // outward from the sung line. Every other move keeps the single animated scroll, and a seek never ripples.
+        val glideFrom = if (stepped && !animationsDisabled && !dragged) listState.itemTopOrNull(target) else null
+        if (glideFrom != null) {
+            settle.start(target, glideFrom)
             listState.scrollToItem(target)
         } else {
-            listState.animateScrollToItem(target)
+            settle.clear()
+            if (animationsDisabled || firstFocus) {
+                listState.scrollToItem(target)
+            } else {
+                listState.animateScrollToItem(target)
+            }
         }
     }
 
@@ -123,11 +192,23 @@ internal fun BasicSyncedLyricsList(
         modifier = modifier,
     ) {
         itemsIndexed(lines) { index, line ->
+            val distance = EnhancedLyricsMotion.distance(index, activeIndex)
             BasicSyncedLyricLine(
                 line = line,
                 isActive = index == activeIndex,
+                depth = EnhancedLyricsMotion.depthOf(distance, reduceMotion = animationsDisabled),
+                settle = settle,
+                settleDelayMs = EnhancedLyricsMotion.staggerDelayMs(distance),
+                interlude = interludes[index],
                 currentPosition = currentPosition,
-                onClick = { onLineClicked(line) },
+                blurAllowed = blurAllowed,
+                onClick = {
+                    // A tap is a seek, and it also resumes following at once, even inside the drag hold. Forgetting the
+                    // followed line makes the next follow start fresh, so the jump does not glide.
+                    followedLine = -1
+                    lastUserDragMs = 0L
+                    onLineClicked(line)
+                },
                 onLongClick = { onLinePressed(line) },
                 textColor = textColor,
                 normalLineTextStyle = normalLineTextStyle,
@@ -145,7 +226,12 @@ internal fun BasicSyncedLyricsList(
 private fun BasicSyncedLyricLine(
     line: ISyncedLine,
     isActive: Boolean,
+    depth: EnhancedDepth,
+    settle: EnhancedLineSettle,
+    settleDelayMs: Long,
+    interlude: EnhancedInterlude?,
     currentPosition: () -> Int,
+    blurAllowed: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     textColor: Color,
@@ -156,11 +242,23 @@ private fun BasicSyncedLyricLine(
     showPhonetic: Boolean,
     animationsDisabled: Boolean,
 ) {
-    val targetAlpha = if (isActive) 1f else INACTIVE_ALPHA
-    val alpha by animateFloatAsState(
-        targetValue = targetAlpha,
+    val depthSpec =
+        if (animationsDisabled) {
+            snap<Float>()
+        } else {
+            spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
+        }
+    val lineAlpha by animateFloatAsState(
+        targetValue = if (isActive) 1f else EnhancedLyricsMotion.INACTIVE_ALPHA,
         animationSpec = tween(durationMillis = if (animationsDisabled) 0 else 240),
-        label = "basic-synced-line-alpha",
+        label = "enhanced-line-alpha",
+    )
+    val depthAlpha by animateFloatAsState(depth.alpha, depthSpec, label = "enhanced-depth-alpha")
+    val depthScale by animateFloatAsState(depth.scale, depthSpec, label = "enhanced-depth-scale")
+    val depthBlur by animateFloatAsState(
+        if (blurAllowed) depth.blurDp else 0f,
+        depthSpec,
+        label = "enhanced-depth-blur",
     )
     val karaoke = line as? KaraokeLine
     val endAligned = karaoke?.alignment == KaraokeAlignment.End
@@ -174,8 +272,31 @@ private fun BasicSyncedLyricLine(
                 .fillMaxWidth()
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(horizontal = 24.dp, vertical = 6.dp)
-                .graphicsLayer { this.alpha = alpha },
+                // The scale grows from the aligned edge so a start-aligned line does not drift sideways. Scale, fade and
+                // the glide are read in the draw phase, so a frame of them does not recompose the row.
+                .graphicsLayer {
+                    scaleX = depthScale
+                    scaleY = depthScale
+                    alpha = lineAlpha * depthAlpha
+                    transformOrigin = TransformOrigin(if (endAligned) 1f else 0f, 0.5f)
+                    translationY = settle.offsetPx(settleDelayMs)
+                }
+                .then(
+                    if (depthBlur > EnhancedLyricsMotion.BLUR_VISIBLE_DP) {
+                        Modifier.blur(depthBlur.dp, BlurredEdgeTreatment.Unbounded)
+                    } else {
+                        Modifier
+                    },
+                ),
     ) {
+        interlude?.let {
+            EnhancedInterludeDots(
+                interlude = it,
+                currentPosition = currentPosition,
+                color = textColor,
+                reduceMotion = animationsDisabled,
+            )
+        }
         if (showPhonetic && karaoke != null) {
             val phonetic =
                 (karaoke as? KaraokeLine.MainKaraokeLine)?.phonetic?.takeIf { it.isNotBlank() }
@@ -189,11 +310,12 @@ private fun BasicSyncedLyricLine(
         }
         when {
             karaoke != null && isActive ->
-                KaraokeSweepText(
+                EnhancedSweptLine(
                     syllables = karaoke.syllables,
-                    currentPosition = currentPosition,
+                    style = normalLineTextStyle.copy(textAlign = textAlign),
                     textColor = textColor,
-                    textStyle = normalLineTextStyle,
+                    reduceMotion = animationsDisabled,
+                    currentPosition = currentPosition,
                 )
             karaoke != null ->
                 Text(text = karaoke.syllables.joinSyllableContents(), style = normalLineTextStyle, color = textColor, textAlign = textAlign)
@@ -221,6 +343,9 @@ private fun BasicSyncedLyricLine(
     }
 }
 
-private const val INACTIVE_ALPHA = 0.45f
+/** Where the row starts in the viewport now, or null while it is not laid out. */
+private fun LazyListState.itemTopOrNull(index: Int): Int? =
+    layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
+
 private const val AUTO_SCROLL_RESUME_MS = 3_000L
 private val LINE_SPACING = 4.dp
