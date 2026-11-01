@@ -7,21 +7,24 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import timber.log.Timber
+import moe.rukamori.archivetune.logcat.DiagnosticRedaction
 import moe.rukamori.archivetune.utils.AppProxy
 
 /** "Diagnostics" in the tag routes the line through the redacting diagnostic facility, not only logcat. */
 internal const val SIGN_IN_DIAGNOSTIC_TAG = "SignInDiagnostics"
 
 internal fun signInDiagnostic(provider: String, message: String) {
-    Timber.tag(SIGN_IN_DIAGNOSTIC_TAG).w("%s sign-in %s", provider, message)
+    // The DebugTree half of Timber writes raw text to logcat, so the line must be redacted here,
+    // not only inside the diagnostic facility. Builders keep it to bounded fields already.
+    Timber.tag(SIGN_IN_DIAGNOSTIC_TAG).w("%s sign-in %s", provider, DiagnosticRedaction.redact(message))
 }
 
 /**
  * The shared WebViewClient for every provider sign-in: proxy authentication plus bounded, redacted
  * navigation-failure diagnostics. Main-frame failures always log; subresource failures log only for
  * the flow's own hosts ([extraLoggedHosts]) so a tracker's broken beacon does not drown the real
- * error. [authLogUrl] keeps scheme, host and path — never a query, cookie or form field — and every
- * line additionally passes the shared redaction before it can reach a report.
+ * error. Lines carry the error code or HTTP status and the failing scheme/host/path — never a
+ * description, console text, query, cookie or form field.
  */
 internal open class AuthSignInWebViewClient(
     private val provider: String,
@@ -38,8 +41,7 @@ internal open class AuthSignInWebViewClient(
         if (logsRequest(request)) {
             signInDiagnostic(
                 provider,
-                "error code=${error.errorCode} frame=${if (request.isForMainFrame) "main" else "sub"} " +
-                    "url=${authLogUrl(request.url?.toString())} desc=${error.description}",
+                authNavErrorLine(error.errorCode, request.isForMainFrame, request.url?.toString()),
             )
         }
         super.onReceivedError(view, request, error)
@@ -53,7 +55,7 @@ internal open class AuthSignInWebViewClient(
         failingUrl: String?,
     ) {
         // API < M only delivers this overload, and only for the main frame.
-        signInDiagnostic(provider, "error code=$errorCode frame=main url=${authLogUrl(failingUrl)} desc=$description")
+        signInDiagnostic(provider, authNavErrorLine(errorCode, isMainFrame = true, url = failingUrl))
         super.onReceivedError(view, errorCode, description, failingUrl)
     }
 
@@ -65,8 +67,7 @@ internal open class AuthSignInWebViewClient(
         if (logsRequest(request)) {
             signInDiagnostic(
                 provider,
-                "http=${errorResponse.statusCode} frame=${if (request.isForMainFrame) "main" else "sub"} " +
-                    "url=${authLogUrl(request.url?.toString())}",
+                authHttpErrorLine(errorResponse.statusCode, request.isForMainFrame, request.url?.toString()),
             )
         }
         super.onReceivedHttpError(view, request, errorResponse)

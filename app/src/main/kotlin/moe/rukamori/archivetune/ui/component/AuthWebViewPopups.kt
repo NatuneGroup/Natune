@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.ui.component
 
 import android.os.Message
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -8,17 +9,19 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 
 private const val BLANK_POPUP_TIMEOUT_MS = 5_000L
+private const val POPUP_REVEAL_INTERVAL_MS = 250L
 private const val MAX_LOGGED_BLOCKED_POPUPS = 3
-private const val CONSOLE_MESSAGE_LIMIT = 200
 
 /**
- * The popup slot every sign-in WebView shares. A page that opened windows on its own used to get a
- * full-size opaque WebView stacked over the sign-in form — an invisible overlay that swallowed the
- * taps meant for the email field. Popups are now gated on a real user gesture, so script-driven
- * window.open calls die here, and a gesture popup runs in the same container where [moveToParent]
- * can hand same-flow navigations back to the parent and dead about:blank windows are closed instead
- * of lingering. The popup shares its parent's WebView profile and cookie jar; it is never a second
- * account and never a second session.
+ * The popup slot used by sign-ins that genuinely need gesture popups (Spotify's social buttons).
+ * A page that opened windows on its own used to get a full-size opaque WebView stacked over the
+ * sign-in form — an invisible overlay that swallowed every tap. Popups are now gated on a real
+ * user gesture, so script-driven window.open calls die here; a gesture popup starts INVISIBLE —
+ * invisible views take no input and draw nothing, so even a dead about:blank window cannot cover
+ * the form — and only appears once it commits a real navigation. [moveToParent] hands verified
+ * main-frame GET navigations back to the parent; everything else stays and is captured in place.
+ * The popup shares its parent's WebView profile and cookie jar; it is never a second account and
+ * never a second session.
  */
 internal class AuthPopupWebChromeClient(
     private val container: FrameLayout,
@@ -51,6 +54,9 @@ internal class AuthPopupWebChromeClient(
         closePopups()
         val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
         val popup = createPopup(this, view)
+        // Invisible until it proves it is a page: an invisible window cannot cover the form or
+        // take its taps while it sits on about:blank.
+        popup.visibility = View.INVISIBLE
         container.addView(
             popup,
             FrameLayout.LayoutParams(
@@ -60,11 +66,10 @@ internal class AuthPopupWebChromeClient(
         )
         popup.webChromeClient = this
         popup.bringToFront()
-        popup.requestFocus()
         onActiveWebViewChanged(popup)
         transport.webView = popup
         resultMsg.sendToTarget()
-        popup.postDelayed({ destroyIfStillBlank(popup) }, blankPopupTimeoutMs)
+        popup.postDelayed(PopupReveal(popup), POPUP_REVEAL_INTERVAL_MS)
         return true
     }
 
@@ -79,8 +84,11 @@ internal class AuthPopupWebChromeClient(
         ) {
             signInDiagnostic(
                 provider,
-                "console.error $host:${consoleMessage.lineNumber()} " +
-                    consoleMessage.message()?.take(CONSOLE_MESSAGE_LIMIT).orEmpty(),
+                authConsoleLine(
+                    consoleMessage.messageLevel().name.lowercase(),
+                    consoleMessage.sourceId(),
+                    consoleMessage.lineNumber(),
+                ),
             )
         }
         return false
@@ -88,8 +96,9 @@ internal class AuthPopupWebChromeClient(
 
     /**
      * A gesture popup that lands back on the sign-in flow's own hosts continues in the parent:
-     * the popup closes, focus returns to the form and the user keeps a single window. Used by
-     * providers whose OAuth substitutes return onto their own pages.
+     * the popup closes, focus returns to the form and the user keeps a single window. Callers must
+     * have already verified this is a main-frame GET — see [authPopupHandoffAllowed]; replaying a
+     * POST as loadUrl would silently drop the OAuth body.
      */
     fun moveToParent(
         view: WebView,
@@ -122,9 +131,26 @@ internal class AuthPopupWebChromeClient(
         onActiveWebViewChanged(parentWebView)
     }
 
-    private fun destroyIfStillBlank(popup: WebView) {
-        if (popup.parent !== container || !isBlankPopupUrl(popup.url)) return
-        signInDiagnostic(provider, "closing popup that stayed about:blank")
-        destroyPopup(popup)
+    /** Reveals the popup on its first real navigation, or tears it down once it is proven dead. */
+    private inner class PopupReveal(
+        private val popup: WebView,
+    ) : Runnable {
+        private var waited = 0L
+
+        override fun run() {
+            if (popup.parent !== container) return
+            if (!isBlankPopupUrl(popup.url)) {
+                popup.visibility = View.VISIBLE
+                popup.requestFocus()
+                return
+            }
+            waited += POPUP_REVEAL_INTERVAL_MS
+            if (waited >= blankPopupTimeoutMs) {
+                signInDiagnostic(provider, "closing popup that stayed about:blank")
+                destroyPopup(popup)
+                return
+            }
+            popup.postDelayed(this, POPUP_REVEAL_INTERVAL_MS)
+        }
     }
 }

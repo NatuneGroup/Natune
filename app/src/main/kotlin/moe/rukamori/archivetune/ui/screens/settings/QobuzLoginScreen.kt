@@ -202,6 +202,7 @@ fun QobuzLoginScreen(navController: NavController) {
 
     AuthWebViewScreen(
         navController = navController,
+        provider = "qobuz",
         title = stringResource(R.string.qobuz_login),
         subtitle = stringResource(R.string.auth_webview_qobuz_subtitle),
         // A leaked WebView keeps its in-flight bundle re-fetches alive for the rest of the process,

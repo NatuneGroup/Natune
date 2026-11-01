@@ -53,7 +53,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.ProfileStore
-import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import coil3.compose.AsyncImage
@@ -64,7 +63,8 @@ import moe.rukamori.archivetune.spotify.SpotifyAuth
 import moe.rukamori.archivetune.ui.component.AuthPopupWebChromeClient
 import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewSheet
-import moe.rukamori.archivetune.ui.component.authLogHost
+import moe.rukamori.archivetune.ui.component.authPopupHandoffAllowed
+import moe.rukamori.archivetune.ui.component.authPopupsEnabled
 import moe.rukamori.archivetune.ui.component.hostInLoginFlow
 import moe.rukamori.archivetune.ui.component.sanitizeAuthWebViewUserAgent
 import moe.rukamori.archivetune.ui.component.DefaultDialog
@@ -429,17 +429,12 @@ private fun WebView.destroySpotifyLoginWebView() {
 @SuppressLint("SetJavaScriptEnabled")
 private fun WebView.configureSpotifyLoginWebView() {
     settings.apply {
-        setSupportMultipleWindows(true)
+        setSupportMultipleWindows(authPopupsEnabled("spotify"))
         mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         // The engine's own UA minus the WebView-only tokens — the frozen Chrome/131 string this
         // replaced contradicted the runtime Sec-CH-UA hints, which is exactly the kind of
         // automation tell Spotify's bot check answers with "Something went wrong".
         userAgentString = sanitizeAuthWebViewUserAgent(WebSettings.getDefaultUserAgent(context))
-        // WebView appends X-Requested-With: <package> to every request; the embedded-client marker
-        // is another tell the browser login does not send.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
-            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(this, emptySet())
-        }
     }
 }
 
@@ -467,16 +462,21 @@ private fun AuthPopupWebChromeClient.createSpotifyLoginPopup(
         configureSpotifyLoginWebView()
         webViewClient =
             object : AuthSignInWebViewClient("spotify", SPOTIFY_FLOW_HOSTS) {
+                // Only a main-frame GET whose method is on the request may be replayed into the
+                // parent: a form_post OAuth return reissued as loadUrl would drop code/state.
                 private fun movesToParent(
                     view: WebView,
-                    url: String?,
-                ): Boolean = hostInLoginFlow(authLogHost(url), SPOTIFY_FLOW_HOSTS) && moveToParent(view, url)
+                    request: WebResourceRequest,
+                ): Boolean =
+                    authPopupHandoffAllowed(request.isForMainFrame, request.method) &&
+                        hostInLoginFlow(request.url?.host, SPOTIFY_FLOW_HOSTS) &&
+                        moveToParent(view, request.url?.toString())
 
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
                     request: WebResourceRequest,
                 ): Boolean =
-                    movesToParent(view, request.url?.toString()) ||
+                    movesToParent(view, request) ||
                         shouldOverrideSpotifyLoginUrl(
                             view = view,
                             url = request.url?.toString(),
@@ -488,19 +488,19 @@ private fun AuthPopupWebChromeClient.createSpotifyLoginPopup(
                     view: WebView,
                     url: String?,
                 ): Boolean =
-                    movesToParent(view, url) ||
-                        shouldOverrideSpotifyLoginUrl(
-                            view = view,
-                            url = url,
-                            captureCookies = captureCookies,
-                        )
+                    shouldOverrideSpotifyLoginUrl(
+                        view = view,
+                        url = url,
+                        captureCookies = captureCookies,
+                    )
 
                 override fun onPageStarted(
                     view: WebView,
                     url: String?,
                     favicon: android.graphics.Bitmap?,
                 ) {
-                    if (movesToParent(view, url)) return
+                    // No method info here, so no handoff: the popup shares the session jar and the
+                    // capture, so a Spotify-hosted load completes in place either way.
                     captureCookies(url)
                 }
 

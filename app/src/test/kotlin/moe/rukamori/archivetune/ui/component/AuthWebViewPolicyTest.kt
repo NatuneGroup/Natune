@@ -91,24 +91,24 @@ class AuthWebViewPolicyTest {
     }
 
     @Test
-    fun loggedUrlsKeepOnlySchemeHostAndPath() {
+    fun loggedTargetsKeepOnlySchemeHostAndPath() {
         assertEquals(
-            "https://accounts.spotify.com/en/login",
-            authLogUrl("https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com#frag"),
+            "scheme=https host=accounts.spotify.com path=/en/login",
+            authLogTarget("https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com#frag"),
         )
-        assertEquals("https://open.spotify.com/", authLogUrl("https://user:pw@open.spotify.com/"))
-        assertEquals("http://deezer.com/login", authLogUrl("HTTP://deezer.com/login"))
+        assertEquals("scheme=https host=open.spotify.com path=/", authLogTarget("https://user:pw@open.spotify.com/"))
+        assertEquals("scheme=http host=deezer.com path=/login", authLogTarget("HTTP://deezer.com/login"))
     }
 
     @Test
-    fun loggedUrlsNeverLeakCredentials() {
+    fun loggedTargetsNeverLeakCredentials() {
         val sensitive = "https://accounts.spotify.com/callback?code=SECRET&state=S"
-        assertFalse(authLogUrl(sensitive).contains("SECRET"))
-        assertEquals("(none)", authLogUrl(null))
-        assertEquals("(none)", authLogUrl(""))
+        assertFalse(authLogTarget(sensitive).contains("SECRET"))
+        assertEquals("url=(none)", authLogTarget(null))
+        assertEquals("url=(none)", authLogTarget(""))
         assertEquals(
-            "archivetune://oauth/callback",
-            authLogUrl("archivetune://oauth/callback?token=SECRET"),
+            "scheme=archivetune host=oauth path=/callback",
+            authLogTarget("archivetune://oauth/callback?token=SECRET"),
         )
     }
 
@@ -119,5 +119,46 @@ class AuthWebViewPolicyTest {
         assertEquals(null, authLogHost(""))
         assertEquals(null, authLogHost("mailto:test@example.com"))
         assertEquals("oauth", authLogHost("archivetune://oauth"))
+    }
+
+    @Test
+    fun handoffNeedsAVerifiedMainFrameGet() {
+        assertTrue(authPopupHandoffAllowed(isMainFrame = true, method = "GET"))
+        assertFalse(authPopupHandoffAllowed(isMainFrame = true, method = "POST"))
+        assertFalse(authPopupHandoffAllowed(isMainFrame = true, method = "PUT"))
+        assertFalse(authPopupHandoffAllowed(isMainFrame = true, method = null))
+        assertFalse(authPopupHandoffAllowed(isMainFrame = false, method = "GET"))
+    }
+
+    @Test
+    fun onlyProvidersWhoseSignInNeedsPopupsGetThem() {
+        // Spotify's social-login buttons window.open; every other routed flow signs in inside the
+        // one window so its provider client keeps seeing every navigation.
+        assertTrue(authPopupsEnabled("spotify"))
+        for (provider in listOf("youtube", "tidal", "qobuz", "deezer", "lastfm", "librefm", "applemusic", "amazon", "potoken")) {
+            assertFalse(provider, authPopupsEnabled(provider))
+        }
+    }
+
+    @Test
+    fun diagnosticLinesCarryOnlyBoundedFields() {
+        val failing = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com&token=SECRET"
+        val nav = authNavErrorLine(-7, isMainFrame = true, url = failing)
+        val http = authHttpErrorLine(403, isMainFrame = false, url = failing)
+        for (line in listOf(nav, http)) {
+            assertTrue(line, line.contains("host=accounts.spotify.com"))
+            assertFalse(line, line.contains("SECRET"))
+            assertFalse(line, line.contains("continue="))
+        }
+        assertEquals("error code=-7 frame=main", nav.substringBefore(" scheme="))
+        assertEquals("http=403 frame=sub", http.substringBefore(" scheme="))
+    }
+
+    @Test
+    fun consoleLineNeverCarriesMessageText() {
+        // The builder takes no message parameter: page text cannot reach the log by construction.
+        val line = authConsoleLine("error", "https://open.spotify.com/x.js?t=1", 42)
+        assertEquals("console.error scheme=https host=open.spotify.com path=/x.js line=42", line)
+        assertFalse(line.contains("t=1"))
     }
 }
