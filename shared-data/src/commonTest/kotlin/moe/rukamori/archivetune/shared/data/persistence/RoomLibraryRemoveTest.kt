@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.persistence
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
@@ -88,11 +89,11 @@ class RoomLibraryRemoveTest {
         private var likedSeq = 0L
         private var playlistSeq = 0L
 
-        override suspend fun items(text: String, likedOnly: Boolean, limit: Int, offset: Int) = unused()
+        override suspend fun items(text: String, likedOnly: Boolean, limit: Int, offset: Int) = unused<List<LibraryItemRow>>()
         override fun observeItems(text: String, likedOnly: Boolean) = unused<Flow<List<LibraryItemRow>>>()
 
         override fun observeSongRows(likedOnly: Boolean): Flow<List<LibraryItemRow>> =
-            flowOf(songRows(likedOnly))
+            flow { emit(songRows(likedOnly)) }
 
         override suspend fun songRows(likedOnly: Boolean): List<LibraryItemRow> =
             items.values
@@ -127,7 +128,7 @@ class RoomLibraryRemoveTest {
 
         override suspend fun nextPlaylistSequence() = ++playlistSeq
         override suspend fun playlist(id: String) = playlists[id]
-        override suspend fun playlists(text: String, limit: Int, offset: Int) = unused()
+        override suspend fun playlists(text: String, limit: Int, offset: Int) = unused<List<PortablePlaylistRow>>()
         override fun observePlaylists(text: String) = unused<Flow<List<PortablePlaylistRow>>>()
         override suspend fun rename(id: String, title: String) = unused<Int>()
         override fun observeHiddenPlaylists() = unused<Flow<List<PortablePlaylistRow>>>()
@@ -139,13 +140,13 @@ class RoomLibraryRemoveTest {
         override suspend fun playlistTagNames(playlistId: String) = unused<List<String>>()
         override suspend fun tag(id: String) = unused<PortableTagRow?>()
         override suspend fun tagNamed(name: String) = unused<PortableTagRow?>()
-        override suspend fun insertTag(row: PortableTagRow) = unused()
+        override suspend fun insertTag(row: PortableTagRow) = unused<Unit>()
         override suspend fun renameTag(id: String, name: String, color: String) = unused<Int>()
         override suspend fun recolorTag(id: String, color: String) = unused<Int>()
-        override suspend fun removeTagAssignments(tagId: String) = unused()
+        override suspend fun removeTagAssignments(tagId: String) = unused<Unit>()
         override suspend fun deleteTagRow(tagId: String) = unused<Int>()
-        override suspend fun clearPlaylistTags(playlistId: String) = unused()
-        override suspend fun putTagAssignments(rows: List<PortablePlaylistTagRow>) = unused()
+        override suspend fun clearPlaylistTags(playlistId: String) = unused<Unit>()
+        override suspend fun putTagAssignments(rows: List<PortablePlaylistTagRow>) = unused<Unit>()
 
         override suspend fun entries(id: String, limit: Int, offset: Int) =
             entriesByPlaylist[id].orEmpty().drop(offset).take(limit)

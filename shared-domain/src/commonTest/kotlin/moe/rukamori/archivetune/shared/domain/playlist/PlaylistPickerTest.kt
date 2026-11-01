@@ -71,10 +71,12 @@ class PlaylistPickerTest {
     fun holdsAllRequiresEveryBatchRef() {
         val songA = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, "A")
         val songB = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, "B")
+        val songC = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.SONG, "C")
         val candidate = playlist("p", "P").copy(memberRefs = setOf(songA, songB))
 
         assertTrue(candidate.holdsAll(listOf(songA, songB)))
-        assertFalse(candidate.holdsAll(listOf(songA)))
+        assertTrue(candidate.holdsAll(listOf(songA)))
+        assertFalse(candidate.holdsAll(listOf(songA, songC)))
         assertFalse(candidate.holdsAll(emptyList()))
     }
 
