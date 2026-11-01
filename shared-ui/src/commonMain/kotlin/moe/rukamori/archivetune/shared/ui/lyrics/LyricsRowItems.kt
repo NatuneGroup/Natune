@@ -149,7 +149,6 @@ internal fun LyricsRowItem(
         row.phonetic?.let {
             RevealedSubline(
                 text = it,
-                active = active,
                 style = phoneticStyle,
                 color = palette.dim,
                 reduceMotion = reduceMotion,
@@ -160,7 +159,6 @@ internal fun LyricsRowItem(
         row.translation?.let {
             RevealedSubline(
                 text = it,
-                active = active,
                 style = phoneticStyle,
                 color = palette.dim,
                 reduceMotion = reduceMotion,
@@ -178,22 +176,22 @@ private const val REVEAL_MS = 600
 private const val AUTO_CREATED_MARK = "✦ "
 
 /**
- * One revealed line: it slides in when its row activates — or when its text publishes after the row —
- * and it stays once revealed. Reduced motion shows it without the slide.
+ * One revealed line: it slides in when its text publishes to its row — the row may not be the sung one,
+ * as a listener reading ahead still sees every reading — and it stays while the row stays composed.
+ * Reduced motion shows it without the slide.
  */
 @Composable
 private fun RevealedSubline(
     text: String,
-    active: Boolean,
     style: TextStyle,
     color: Color,
     reduceMotion: Boolean,
     autoCreated: Boolean,
     autoCreatedLabel: String,
 ) {
-    val reveal = remember(text) { MutableTransitionState(active) }
-    LaunchedEffect(active, text) {
-        if (active) reveal.targetState = true
+    val reveal = remember(text) { MutableTransitionState(false) }
+    LaunchedEffect(text) {
+        reveal.targetState = true
     }
     AnimatedVisibility(
         visibleState = reveal,
