@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.playback.PodcastProgress
+import moe.rukamori.archivetune.shared.domain.library.librarySortState
+import moe.rukamori.archivetune.shared.domain.library.writeTo
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.navigation.*
@@ -58,6 +60,10 @@ class ArchiveTuneHostBindings(
     val onBackAtRoot: () -> Unit,
     val podcastProgress: Flow<List<PodcastProgress>> = flowOf(emptyList()),
     val songMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository? = null,
+    /** The repository-backed add-to-playlist picker; a host without one keeps the single-playlist chooser. */
+    val playlistPicker: moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource? = null,
+    /** The custom cover store; provided as overrides so playlist rows can choose cover or mosaic. */
+    val customArtwork: moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository? = null,
     /** A tab bar and mini player the platform draws above the root, or null where the shell draws its own. */
     val nativeChrome: NativeShellChrome? = null,
 )
@@ -85,9 +91,35 @@ fun ArchiveTuneRoot(
         } else {
             val progress by host.podcastProgress.collectAsState(emptyList())
             val byEpisode = remember(progress) { progress.associateBy { it.episodeId } }
+            // The picker sort is one persisted preference, read and written through the same settings store as the
+            // other library sorts, so a chosen order survives the next picker on every host.
+            val pickerContext = remember(host.playlistPicker, preferences) {
+                host.playlistPicker?.let { source ->
+                    moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerContext(
+                        source = source,
+                        sort = preferences.librarySortState(
+                            PlaylistPickerSortTypeKey,
+                            PlaylistPickerSortDescendingKey,
+                            moe.rukamori.archivetune.shared.domain.library.LibraryDefaults.playlistPickerSort,
+                        ),
+                        onSort = { type, descending ->
+                            host.actionScope.launch {
+                                host.settings.edit {
+                                    moe.rukamori.archivetune.shared.domain.library.LibrarySortState(type, descending)
+                                        .writeTo(this, PlaylistPickerSortTypeKey, PlaylistPickerSortDescendingKey)
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+            LaunchedEffect(host.customArtwork) { host.customArtwork?.ensureLoaded() }
+            val artworkOverrides by (host.customArtwork?.overrides ?: remember { kotlinx.coroutines.flow.MutableStateFlow<moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkOverrides?>(null) }).collectAsState()
             CompositionLocalProvider(
                 moe.rukamori.archivetune.shared.ui.songmetadata.LocalSongMetadataOverrides provides edits,
                 LocalPodcastProgress provides byEpisode,
+                moe.rukamori.archivetune.shared.ui.menu.LocalPlaylistPickerContext provides pickerContext,
+                moe.rukamori.archivetune.shared.ui.screens.LocalCustomArtworkOverrides provides artworkOverrides,
             ) {
                 ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television)
             }

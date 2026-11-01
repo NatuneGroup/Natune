@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.shared.domain.platform.FileHandle
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.screens.customartwork.BoundCustomArtworkEditDialog
 import moe.rukamori.archivetune.shared.ui.screens.customartwork.CustomArtworkKind
@@ -60,9 +61,14 @@ internal class IosItemMenuState {
 
     fun openCustomArtwork() {
         val occurrence = target ?: return
+        openCustomArtwork(occurrence.item)
+    }
+
+    /** Opens the artwork editor on [item] — a song's artwork URL or a playlist's cover pseudo-URL. */
+    fun openCustomArtwork(item: ContentItem) {
         target = null
         playlistId = null
-        artworkTarget = occurrence.item
+        artworkTarget = item
     }
 
     fun closeCustomArtwork() {
@@ -124,6 +130,7 @@ internal fun IosItemMenuDialog(
     host: IosHost,
     routeKey: String,
     openRoute: (String) -> Unit,
+    playlistMenus: IosPlaylistMenuHost,
 ) {
     DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
     menu.artworkTarget?.let { item ->
@@ -143,6 +150,11 @@ internal fun IosItemMenuDialog(
             Box {
                 if (occurrence.item.ref.kind == ContentKind.SONG || occurrence.item.ref.kind == ContentKind.EPISODE) {
                     IosSongMenu(menu, graph, host, occurrence, openRoute)
+                } else if (
+                    occurrence.item.ref.kind == ContentKind.PLAYLIST &&
+                    occurrence.item.ref.provider == ContentProvider.LOCAL.id
+                ) {
+                    IosPlaylistRowMenu(menu, graph, host, occurrence, playlistMenus)
                 } else {
                     IosCollectionRowMenu(menu, host, occurrence)
                 }

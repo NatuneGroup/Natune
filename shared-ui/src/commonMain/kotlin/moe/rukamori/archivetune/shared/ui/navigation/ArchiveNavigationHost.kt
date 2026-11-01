@@ -242,7 +242,8 @@ fun ArchiveNavigationHost(
                 require(route.destination in setOf(ArchiveDestination.ALBUM, ArchiveDestination.ARTIST, ArchiveDestination.PLAYLIST))
                 val a = binding.actions
                 DetailScreen(binding.kind, binding.header, binding.page, DetailActions(a.content, back,
-                    a.playAll, a.shuffle, a.toggleLibrary, a.more), artwork, control = binding.control)
+                    a.playAll, a.shuffle, a.toggleLibrary, a.more), artwork, control = binding.control,
+                    headerMosaicItems = binding.headerMosaicItems)
             }
             is ArchiveGraphPage.Account -> {
                 require(route.destination == ArchiveDestination.ACCOUNT)
