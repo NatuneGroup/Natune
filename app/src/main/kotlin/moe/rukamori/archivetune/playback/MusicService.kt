@@ -777,6 +777,7 @@ class MusicService :
     private var codecRecoveryMediaId: String? = null
     @Volatile
     private var codecRecoveryAttemptCount: Int = 0
+    private var codecRecoveryReadyAtMs: Long = Long.MIN_VALUE
     private val codecRecoveryMaxAttempts = 4
     private var nextHistorySessionToken = 0L
     private var currentHistorySessionToken = 0L
@@ -5249,7 +5250,7 @@ class MusicService :
                     if (externalStreamRecoveryEpoch != recoveryEpoch || player !== recoveryPlayer ||
                         player.currentMediaItemIndex != mediaItemIndex || player.currentMediaItem?.mediaId != mediaId
                     ) return@withContext
-                    recoveryRetry.prepare(mediaId, resumePlaying = false, seekIndex = mediaItemIndex, seekPositionMs = positionMs)
+                    if (recoveryRetry.allow(mediaId)) recoveryRetry.prepare(mediaId, resumePlaying = false, seekIndex = mediaItemIndex, seekPositionMs = positionMs)
                 }
             }
             return true
@@ -7242,7 +7243,8 @@ class MusicService :
         initialBufferRecoveryJob = null
         initialBufferRecoveryAttemptedMediaId = null
         updateInitialBufferRecovery(player.playbackState)
-        recoveryRetry.onMediaItemTransition(mediaItem?.mediaId)
+        recoveryRetry.onMediaItemTransition(
+            mediaItem?.mediaId, player.playbackState == Player.STATE_READY, player.playbackState == Player.STATE_BUFFERING)
 
         // Catch-all for user-initiated skips that bypass PlayerConnection (notification, lock
         // screen, Bluetooth, Android Auto): a SEEK transition while a crossfade fade loop is still
@@ -7565,7 +7567,7 @@ class MusicService :
         rebufferMonitor.onPlaybackStateChanged(
             player.currentMediaItem?.mediaId, playbackState == Player.STATE_BUFFERING, playbackState == Player.STATE_READY, player.playWhenReady)
         if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
-            enqueueCurrentHistorySessionForFinalization()
+            enqueueCurrentHistorySessionForFinalization(); if (playbackState == Player.STATE_IDLE && player.playerError == null) recoveryRetry.cancelPending() // user stop() reaches IDLE cleanly; an error-IDLE keeps its pending retry
             // IDLE also follows a playback error that the source chain retries in place; resetting
             // there would restart the listen count and could scrobble the same play twice.
             if (playbackState == Player.STATE_ENDED || player.currentMediaItem == null) {
@@ -7802,6 +7804,7 @@ class MusicService :
             if (currentMediaId != codecRecoveryMediaId) {
                 codecRecoveryMediaId = currentMediaId
                 codecRecoveryAttemptCount = 0
+                codecRecoveryReadyAtMs = Long.MIN_VALUE
             }
         }
         if (
@@ -7810,17 +7813,10 @@ class MusicService :
         ) {
             playbackStreamRecoveryTracker.onPlaybackRecovered(currentMediaId)
             playbackErrorRecovery.onPlaybackRecovered()
-            // Codec successfully reached READY / isPlaying after a recovery re-prepare —
-            // the current codec instance is healthy, so reset the per-media counter so the
-            // NEXT background+pause cycle gets a fresh budget.
-            if (codecRecoveryAttemptCount > 0) {
-                Timber.tag("MusicService").i(
-                    "Codec recovery succeeded for %s after %d attempt(s); resetting codec-recovery budget",
-                    currentMediaId,
-                    codecRecoveryAttemptCount,
-                )
-                codecRecoveryAttemptCount = 0
-            }
+            // READY alone does not prove the codec healthy — only sustained READY does. Stamp the
+            // (re-)entry; the attempt counter refills at the next codec error only when the player
+            // held READY for a stable window, so a READY blip between decoder deaths cannot refill it.
+            codecRecoveryReadyAtMs = android.os.SystemClock.elapsedRealtime()
             currentMediaId
                 ?.let(playbackUrlCache::get)
                 ?.url
@@ -8347,11 +8343,14 @@ class MusicService :
             val resumePosition = player.currentPosition.coerceAtLeast(0L)
             val mediaItemIndex = player.currentMediaItemIndex
 
-            // Reset budget if we've moved to a different media item since the last attempt.
-            if (currentMediaId != codecRecoveryMediaId) {
+            // A different media item resets the budget; so does READY held for 10 s — a brief
+            // READY between decoder failures must not refill it.
+            val stableReadyMs = if (codecRecoveryReadyAtMs == Long.MIN_VALUE) 0L else android.os.SystemClock.elapsedRealtime() - codecRecoveryReadyAtMs
+            if (currentMediaId != codecRecoveryMediaId || stableReadyMs >= 10_000L) {
                 codecRecoveryMediaId = currentMediaId
                 codecRecoveryAttemptCount = 0
             }
+            codecRecoveryReadyAtMs = Long.MIN_VALUE
             val attemptNumber = codecRecoveryAttemptCount + 1
             val withinBudget = attemptNumber <= codecRecoveryMaxAttempts
 
