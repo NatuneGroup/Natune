@@ -123,12 +123,12 @@ class JvmBackupArchiveCodec {
                     require(statement.step()) { "Android library has no schema version" }
                     statement.getLong(0)
                 }
-                // Public Room identities from the retained Android schema exports, not credentials. The newest
-                // retained schema has no hand-invented identity, so its exact shape is checked below instead.
+                // Public Room identities from the retained Android schema exports, not credentials. The additive
+                // migrations (38 and newer) have no hand-invented identity, so their exact shape is checked below.
                 val expectedIdentity = when (version) {
                     36L -> "7f6fc454b3f0d77468bc4ae9d5a71c3f"
                     37L -> "ea9228eb769d7cdde2b6a9a6a4532182"
-                    LegacySongDbImport.ANDROID_SCHEMA_VERSION.toLong() -> null
+                    in 38L..LegacySongDbImport.ANDROID_SCHEMA_VERSION.toLong() -> null
                     else -> throw IllegalArgumentException("Unsupported Android library schema")
                 }
                 connection.prepare("PRAGMA integrity_check").use { statement ->
@@ -159,6 +159,26 @@ class JvmBackupArchiveCodec {
                         listOf("artistNames", "TEXT", "0", "0"),
                         listOf("updatedAt", "INTEGER", "1", "0"),
                     )) { "Unexpected song metadata override schema" }
+                    if (version >= 39L) {
+                        // Schema 39 adds `song.lyricsOffset`; its exact column shape is checked the same
+                        // way rather than trusting an identity hash a Room build never generated here.
+                        val lyricsOffset = connection.prepare("PRAGMA table_info(`song`)").use { statement ->
+                            var column: List<String>? = null
+                            while (statement.step()) {
+                                if (statement.getText(1) == "lyricsOffset") {
+                                    column = listOf(
+                                        statement.getText(2),
+                                        statement.getLong(3).toString(),
+                                        if (statement.isNull(4)) "" else statement.getText(4),
+                                    )
+                                }
+                            }
+                            column
+                        }
+                        require(lyricsOffset == listOf("INTEGER", "1", "0")) {
+                            "Unexpected song lyrics offset schema"
+                        }
+                    }
                 }
             } finally { connection.close() }
         } catch (failure: Exception) {
