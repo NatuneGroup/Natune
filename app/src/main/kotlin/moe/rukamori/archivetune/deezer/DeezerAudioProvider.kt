@@ -688,29 +688,6 @@ object DeezerAudioProvider {
     // Stream URL
     // ---------------------------------------------------------------------------------------------
 
-    private class Media(
-        val url: String,
-        val flac: Boolean,
-        /** The tier the gateway served, which may be lower than the one requested. */
-        val format: String,
-        val contentLength: Long?,
-    )
-
-    /** A string field's text, or null when it is absent, JSON null or blank. */
-    private fun JSONObject.textOrNull(key: String): String? =
-        optString(key, "").takeIf { it.isNotBlank() && it != "null" }
-
-    /**
-     * The same preview test the shared Deezer provider applies: a sample/preview flag, a preview type or a
-     * preview presentation marks a 30-second clip rather than the full track.
-     */
-    private fun JSONObject.isPreviewMedia(): Boolean =
-        optBoolean("sample", false) || optBoolean("preview", false) ||
-            textOrNull("type")?.lowercase()?.let { it in setOf("preview", "sample") } == true ||
-            textOrNull("assetPresentation").equals("PREVIEW", ignoreCase = true) ||
-            textOrNull("trackPresentation").equals("PREVIEW", ignoreCase = true) ||
-            optJSONObject("data")?.isPreviewMedia() == true
-
     /**
      * Exchanges a track id for a CDN URL via the media endpoint.
      *
@@ -769,37 +746,7 @@ object DeezerAudioProvider {
                 JSONObject(response.body?.string().orEmpty())
             }
 
-        val first = json.optJSONArray("data")?.optJSONObject(0) ?: return null
-        val mediaEntries = first.optJSONArray("media") ?: return null
-        // The first entry that is a usable full stream wins, not simply the first one returned. Previews, other
-        // types, an unexpected cipher, a tier that was not requested and entries without a URL are skipped. When
-        // none qualifies there is no match, so the caller moves on to the next account or source.
-        for (index in 0 until mediaEntries.length()) {
-            val media = mediaEntries.optJSONObject(index) ?: continue
-            if (media.isPreviewMedia()) continue
-            val type = media.textOrNull("type")
-            if (type != null && type != "FULL") continue
-            val cipher = media.textOrNull("cipher")
-            if (cipher != null && cipher != "BF_CBC_STRIPE") continue
-            // The tier the gateway actually served, which may be lower than the one requested.
-            val servedFormat = media.textOrNull("format")?.uppercase() ?: continue
-            if (servedFormat !in formats) continue
-            val url = media.optJSONArray("sources")?.optJSONObject(0)?.textOrNull("url") ?: continue
-            val flac = servedFormat == FORMAT_FLAC
-
-            // song.getData carries a per-format size (FILESIZE_FLAC, FILESIZE_MP3_320, ...). The encrypted
-            // stream is byte-for-byte the same length as the decrypted one because BF_CBC_STRIPE adds no
-            // padding, so this size is valid for the decrypted output and saves a HEAD probe. Null is fine:
-            // DirectStream treats an unknown length as "ask the CDN".
-            val sizeField = "FILESIZE_$servedFormat"
-            val results = trackJson.optJSONObject("results")
-            val contentLength =
-                results?.optString(sizeField)?.toLongOrNull()?.takeIf { it > 0L }
-                    ?: results?.optString("FILESIZE")?.toLongOrNull()?.takeIf { it > 0L }
-
-            return Media(url = url, flac = flac, format = servedFormat, contentLength = contentLength)
-        }
-        return null
+        return selectStreamMedia(json, trackJson, formats)
     }
 
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaTypeOrNull()

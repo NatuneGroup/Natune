@@ -1,9 +1,10 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 
 package moe.rukamori.archivetune.shared.ui.ios
 
 import kotlin.coroutines.resume
 import kotlin.time.Clock
+import kotlinx.cinterop.ObjCAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -243,6 +244,13 @@ private object IosAmazonChallenge {
 }
 
 /**
+ * The build's Turnstile sign-in origin, validated to a plain https origin the sitekey can be locked to,
+ * or null when the build names none. Shared with the playback resolver so the exchange and the stream
+ * requests send the same Origin.
+ */
+internal fun iosAmazonTurnstileOrigin(): String? = IosAmazonChallenge.validatedOrigin()
+
+/**
  * The iOS Amazon authorization: the sheet runs the Turnstile challenge on the sign-in origin, the token is exchanged
  * against the configured primary instance through the shared [KtorAmazonAuthorization], and the returned JWT plus its
  * expiry are committed together through the one settings owner — the same keys, the same expiry margin and the same
@@ -384,8 +392,9 @@ internal class IosAmazonAuthorize(
         }
     }
 
-    /** The bar-button target. Methods of a named NSObject subclass are ObjC-visible under their Kotlin names. */
+    /** The bar-button target. @ObjCAction is what exports a Kotlin method to Objective-C dispatch under its own name. */
     private class ChallengeSheetActions(val onCancel: () -> Unit) : NSObject() {
+        @ObjCAction
         fun cancelTapped() = onCancel()
     }
 }
