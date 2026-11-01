@@ -44,15 +44,33 @@ class StartupStateStoreTest {
 
     @Test fun backgroundRestartCannotHideAnUnreviewedStartupFailure() {
         val directory = temporary.newFolder()
-        val failed = StartupAttempt(100L, 10, "failed-build")
+        val failed = StartupAttempt(100L, 10, "N20261101")
         StartupStateStore(directory).begin(failed)
         val restarted = StartupStateStore(directory)
-        val later = StartupAttempt(200L, 11, "current-build")
+        val later = StartupAttempt(200L, 11, "N20261101")
         restarted.begin(later)
         assertEquals(failed, restarted.pendingAttempt())
         assertEquals(failed, restarted.lastAttempt())
         assertFalse(restarted.markHealthy(later))
         assertTrue(restarted.pendingExists())
+    }
+
+    @Test fun aHealthyNewerBuildRetiresAnEarlierBuildsPendingAttempt() {
+        val directory = temporary.newFolder()
+        StartupStateStore(directory).begin(StartupAttempt(100L, 10, "N20261031"))
+        val restarted = StartupStateStore(directory)
+        val current = StartupAttempt(200L, 11, "N20261101")
+        restarted.begin(current)
+        assertTrue(restarted.markHealthy(current))
+        assertFalse(restarted.pendingExists())
+    }
+
+    @Test fun aHealthyLaunchRetiresAnUnreadablePendingMarker() {
+        val directory = temporary.newFolder()
+        File(directory, "startup_pending").writeText("partial")
+        val restarted = StartupStateStore(directory)
+        assertTrue(restarted.markHealthy(StartupAttempt(200L, 11, "N20261101")))
+        assertFalse(restarted.pendingExists())
     }
 
     @Test fun javaCaptureIsBoundedAndContainsTheTimestampEvenWithALargeMessage() {

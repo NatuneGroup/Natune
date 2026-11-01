@@ -48,11 +48,14 @@ If the previous startup never stayed resumed for five seconds, this activity
 shows Safe mode rather than automatically retrying Hilt, Room, preferences,
 playback or native initialization. An interrupted startup is not proof of a
 crash: force-stop, reboot, background-only starts and memory pressure can also
-leave the marker. **Continue normally** clears only recovery state and explicitly
-retries. The recovery screen never resets settings, accounts or the library;
-normal startup's existing database repair/reset policy is unchanged.
+leave the marker. **Continue normally** clears recovery state and explicitly
+retries; **Close** dismisses after clearing and acknowledging too, so the report
+cannot reappear every launch. The recovery screen never resets settings, accounts
+or the library; normal startup's existing database repair/reset policy is unchanged.
 An unreviewed incomplete attempt survives main-process service/provider restarts;
-only its own healthy callback or the explicit recovery action clears it.
+only its own healthy callback or the explicit recovery action clears it. An attempt
+marker left by a replaced build never enters safe mode: it is reported once for
+diagnosis, and the new build's first healthy launch retires it.
 
 Java exceptions are synchronously saved under `noBackupFilesDir/startup_recovery`
 (16,000 characters, timestamp and thread included), starting before providers in

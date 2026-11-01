@@ -81,7 +81,7 @@ class StartupRecoveryActivity : ComponentActivity() {
                         report = current.report,
                         onShare = ::shareReport,
                         onContinue = ::continueNormally,
-                        onClose = ::finishAndRemoveTask,
+                        onClose = ::closeReport,
                         onActionFailed = ::showActionFailure,
                     )
                 }
@@ -136,6 +136,16 @@ class StartupRecoveryActivity : ComponentActivity() {
             if (!store.clearPending()) throw IOException("Startup marker could not be cleared")
             runCatching { store.acknowledgeThrough(report.reviewedThroughMs) }
             openMain(restart = report.safeMode)
+        }.onFailure { showActionFailure() }
+    }
+
+    // Dismissing also retires the attempt and acknowledges the report, or it would reappear next launch.
+    private fun closeReport(report: StartupReport) {
+        runCatching {
+            val store = StartupRecovery.store(this)
+            if (!store.clearPending()) throw IOException("Startup marker could not be cleared")
+            runCatching { store.acknowledgeThrough(report.reviewedThroughMs) }
+            finishAndRemoveTask()
         }.onFailure { showActionFailure() }
     }
 
@@ -197,7 +207,7 @@ private fun RecoveryReportScreen(
     report: StartupReport,
     onShare: (StartupReport) -> Unit,
     onContinue: (StartupReport) -> Unit,
-    onClose: () -> Unit,
+    onClose: (StartupReport) -> Unit,
     onActionFailed: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -270,7 +280,7 @@ private fun RecoveryReportScreen(
                         Text(stringResource(R.string.share))
                     }
                     TextButton(
-                        onClick = onClose,
+                        onClick = { onClose(report) },
                         modifier = Modifier.weight(1f),
                         shapes = ButtonDefaults.shapes(),
                     ) {

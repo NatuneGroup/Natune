@@ -29,7 +29,10 @@ internal class StartupStateStore(private val directory: File) {
     }
 
     fun markHealthy(attempt: StartupAttempt): Boolean {
-        if (pendingAttempt() != attempt) return false
+        val stored = pendingAttempt()
+        // Only a same-build attempt owned by another (dead) process is protected until the launcher
+        // reads it. A healthy launch retires a leftover from another build or an unreadable marker.
+        if (stored != attempt && stored?.version == attempt.version) return false
         return clearPending()
     }
 
