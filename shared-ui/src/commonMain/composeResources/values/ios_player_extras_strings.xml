@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ios_player_background_title">Custom background</string>
+    <string name="ios_player_background_none">No custom background is set; the player uses the current track's artwork colours.</string>
+    <string name="ios_player_background_missing">The stored image can no longer be read; choose a new one.</string>
+    <string name="ios_player_background_choose">Choose image</string>
+    <string name="ios_player_background_remove">Remove</string>
+    <string name="ios_player_background_blur">Blur</string>
+    <string name="ios_player_background_contrast">Contrast</string>
+    <string name="ios_player_background_brightness">Brightness</string>
+    <string name="ios_player_background_reset">Reset adjustments</string>
+</resources>

@@ -124,6 +124,7 @@ internal fun IosItemMenuDialog(
     host: IosHost,
     routeKey: String,
     openRoute: (String) -> Unit,
+    sleepSheet: IosSleepTimerSheetState,
 ) {
     DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
     menu.artworkTarget?.let { item ->
@@ -142,7 +143,7 @@ internal fun IosItemMenuDialog(
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box {
                 if (occurrence.item.ref.kind == ContentKind.SONG || occurrence.item.ref.kind == ContentKind.EPISODE) {
-                    IosSongMenu(menu, graph, host, occurrence, openRoute)
+                    IosSongMenu(menu, graph, host, occurrence, openRoute, sleepSheet)
                 } else {
                     IosCollectionRowMenu(menu, host, occurrence)
                 }

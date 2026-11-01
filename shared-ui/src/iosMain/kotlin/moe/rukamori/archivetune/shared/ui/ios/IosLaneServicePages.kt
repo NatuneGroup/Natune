@@ -248,6 +248,7 @@ internal fun IosLaneServiceSettingsPage(
             onFailure = onFailure,
             scrollTo = scrollTo,
             report = host::report,
+            openDashboard = { navigate(IosLastFmDashboardRoute) },
         )
         "settings/po_token" -> PoTokenSettings(
             controller = owners.controller,

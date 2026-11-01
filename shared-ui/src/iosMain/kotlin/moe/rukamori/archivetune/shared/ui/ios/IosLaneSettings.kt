@@ -94,7 +94,7 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/android_auto", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
-    TelegramLoginRoute,
+    TelegramLoginRoute, IosLastFmDashboardRoute, "customize_background", "settings/customize_background",
 )
 
 /** Routes that mount the unavailable page: their owners do not exist on this host. */
@@ -169,6 +169,9 @@ internal fun IosLaneSettingsPage(
             if (telegram == null) IosUnboundSurface(Modifier.fillMaxSize())
             else IosTelegramLoginPage(telegram, navigation)
         }
+        "customize_background", "settings/customize_background" ->
+            IosCustomBackgroundPage(host, owners.graph, owners.controller, onFailure)
+        IosLastFmDashboardRoute -> IosLastFmDashboardPage(owners.graph, navigation, unavailable)
         else -> IosLaneServiceSettingsPage(path, host, owners, channel, navigate, onNotice, onFailure, unavailable, scrollTo)
     }
 }
