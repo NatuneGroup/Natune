@@ -52,6 +52,7 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.m5pqDetailsRes
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_tempo_and_pitch
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -185,9 +186,9 @@ private class IosSongMenuHost(
 /**
  * The shared song menu over the owners this host connects: queue, like and add-to-playlist, the system share sheet,
  * library add and remove, speed-dial pins, downloads and their export, cover save, the watch-next metadata refetch,
- * history and playlist-row removal, album and artist pages, YouTube radio, track and media info, the sleep timer and
- * the custom artwork editor. Rows whose owner is not connected here (cache, external downloader, recommendation
- * blocks) are filtered off rather than appearing as dead items.
+ * history and playlist-row removal, album and artist pages, YouTube radio, track and media info, the sleep timer,
+ * tempo and pitch, and the custom artwork editor. Rows whose owner is not connected here (cache, external downloader,
+ * recommendation blocks) are filtered off rather than appearing as dead items.
  */
 @Composable
 internal fun IosSongMenu(
@@ -197,6 +198,7 @@ internal fun IosSongMenu(
     occurrence: ContentOccurrence,
     openRoute: (String) -> Unit,
     sleepSheet: IosSleepTimerSheetState,
+    tempoSheet: IosTempoPitchSheetState,
 ) {
     val sharing = remember { MenuShareHandler(iosMenuSharing(menu, host)) }
     val songHost = remember { IosSongMenuHost(menu, graph, host, openRoute, sleepSheet) }
@@ -293,6 +295,8 @@ internal fun IosSongMenu(
         addAll(songLibraryAndDownloadActions(facts, songHost))
         // The shared menu has no media-info row, so this host adds the Details row that opens the mounted route.
         add(OverflowAction("media_info", m5pqDetailsRes) { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(ref.id)) })
+        // The shared tempo/pitch dialog is owned by the session graph, so the row opens it like the timer row.
+        add(OverflowAction("tempo_pitch", Res.string.m5pq_tempo_and_pitch) { menu.dismiss(); tempoSheet.open = true })
         menu.playlistId?.let { playlistId -> add(playlistOccurrenceRemoval(playlistId, occurrence, graph.library)) }
         add(customArtworkEntryAction { menu.openCustomArtwork() })
     }.filter { it.id in iosBoundSongRows(ref, facts, artistRef != null) }
@@ -353,6 +357,8 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         if (facts.albumId != null) add("view_album")
         // The shared sleep timer sheet is owned by the session graph, so the row is always connected.
         add("sleep_timer")
+        // The shared tempo/pitch dialog is owned by the session graph too, so the row is always connected.
+        add("tempo_pitch")
         if (hasArtist) add("view_artist")
         // A provider that can only stream encrypted audio has no stored file here, so it offers no download row.
         if (iosDownloadRefusal(ref) == null) {

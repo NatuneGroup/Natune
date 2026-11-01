@@ -17,6 +17,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackClock
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.playback.SystemMonotonicClock
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import platform.Foundation.NSNumber
 import platform.MediaPlayer.*
 
 /** Next/previous enablement for the system transport, from the queue successors the on-screen controls compute. */
@@ -72,7 +73,18 @@ class IosNowPlaying(
             }) { event ->
                 player.seekTo(((event as MPChangePlaybackPositionCommandEvent).positionTime * 1_000).toLong())
             }
+            // The system surfaces the same step the on-screen seek buttons use; no stored interval preference exists.
+            bind(remote.skipForwardCommand, accepts = ::skippableIntervalEvent) { event ->
+                skipBy((event as MPSkipIntervalCommandEvent).interval)
+            }
+            bind(remote.skipBackwardCommand, accepts = ::skippableIntervalEvent) { event ->
+                skipBy(-(event as MPSkipIntervalCommandEvent).interval)
+            }
+            remote.skipForwardCommand.preferredIntervals = listOf(NSNumber.numberWithDouble(SKIP_INTERVAL_SECONDS))
+            remote.skipBackwardCommand.preferredIntervals = listOf(NSNumber.numberWithDouble(SKIP_INTERVAL_SECONDS))
             remote.changePlaybackPositionCommand.enabled = false
+            remote.skipForwardCommand.enabled = false
+            remote.skipBackwardCommand.enabled = false
             center.nowPlayingInfo = null
             combine(
                 player.snapshot,
@@ -98,13 +110,19 @@ class IosNowPlaying(
             projection = null
             info.clear()
             remote.changePlaybackPositionCommand.enabled = false
+            remote.skipForwardCommand.enabled = false
+            remote.skipBackwardCommand.enabled = false
             return
         }
         val next = nowPlayingProjection(snapshot, metadata(snapshot.occurrenceId))
         val changes = next.changesFrom(projection)
         selectArtwork(next.metadata.artworkKey)
         projection = next
-        if (changes.seekability) remote.changePlaybackPositionCommand.enabled = next.seekable
+        if (changes.seekability) {
+            remote.changePlaybackPositionCommand.enabled = next.seekable
+            remote.skipForwardCommand.enabled = next.seekable
+            remote.skipBackwardCommand.enabled = next.seekable
+        }
         if (changes.metadata) updateMetadata(next.metadata)
         if (changes.metadata || artworkChanged) setInfo(MPMediaItemPropertyArtwork, artwork)
         if (!changes.publishInfo && !artworkChanged) return
@@ -114,6 +132,19 @@ class IosNowPlaying(
         info[MPNowPlayingInfoPropertyPlaybackRate] = next.transport.rate
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = next.transport.defaultRate
         center.nowPlayingInfo = info.toMap()
+    }
+
+    /** Interval commands carry a user-chosen step; a non-finite or non-positive one is refused like a bad seek. */
+    private fun skippableIntervalEvent(event: MPRemoteCommandEvent): Boolean =
+        (event as? MPSkipIntervalCommandEvent)?.interval?.let { it.isFinite() && it > 0.0 } == true &&
+            player.snapshot.value?.isSeekable == true
+
+    private fun skipBy(seconds: Double) {
+        val snapshot = player.snapshot.value ?: return
+        val position = PlaybackClock.positionMs(snapshot, SystemMonotonicClock.nowNanos()).coerceAtLeast(0L)
+        val duration = snapshot.durationMs?.coerceAtLeast(0L) ?: Long.MAX_VALUE
+        val target = (position + (seconds * 1_000).toLong()).coerceIn(0L, duration)
+        player.seekTo(target)
     }
 
     private fun updateMetadata(value: NowPlayingMetadata) {
@@ -198,5 +229,8 @@ class IosNowPlaying(
 
     private companion object {
         const val ARTWORK_CACHE_ENTRIES = 4
+
+        /** The interval the skip commands advertise, matching the on-screen seek step. */
+        const val SKIP_INTERVAL_SECONDS = 5.0
     }
 }

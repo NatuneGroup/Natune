@@ -19,6 +19,8 @@ internal class IosBlendSource(
     val request: PlaybackRequest,
     val generation: Long,
     val transport: IosCiphertextOpener?,
+    /** Whether [request] can be re-issued through the port's load path on a stall: false once an admitted lease fed it. */
+    val repreparable: Boolean,
 ) {
     fun release() {
         at_audio_stop(output)
@@ -84,7 +86,11 @@ internal class IosBlendSource(
                 }
                 if (generation == 0uL) return null
                 accepted = true
-                return IosBlendSource(native, request, generation.toLong(), transport)
+                // Only a locator that went straight to the engine can be re-prepared: an admitted outcome's
+                // lease was consumed by this open, and its locator alone skips the account admission. A
+                // Telegram source stays repreparable — a stall recovery re-runs the whole resolver path.
+                val repreparable = outcome == null
+                return IosBlendSource(native, request, generation.toLong(), transport, repreparable)
             } finally {
                 if (!accepted) {
                     at_audio_destroy(native)
