@@ -80,8 +80,8 @@ class IosNowPlaying(
             bind(remote.skipBackwardCommand, accepts = ::skippableIntervalEvent) { event ->
                 skipBy(-(event as MPSkipIntervalCommandEvent).interval)
             }
-            remote.skipForwardCommand.preferredIntervals = listOf(NSNumber.numberWithDouble(SKIP_INTERVAL_SECONDS))
-            remote.skipBackwardCommand.preferredIntervals = listOf(NSNumber.numberWithDouble(SKIP_INTERVAL_SECONDS))
+            remote.skipForwardCommand.preferredIntervals = listOf(NSNumber(SKIP_INTERVAL_SECONDS))
+            remote.skipBackwardCommand.preferredIntervals = listOf(NSNumber(SKIP_INTERVAL_SECONDS))
             remote.changePlaybackPositionCommand.enabled = false
             remote.skipForwardCommand.enabled = false
             remote.skipBackwardCommand.enabled = false
