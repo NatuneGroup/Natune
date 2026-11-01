@@ -59,6 +59,16 @@ class TwoDeckTransitionScheduler(initialDeck: TransitionDeck = TransitionDeck.FI
         armed = null
     }
 
+    /**
+     * Makes [deck] the active one without a transition, for a host that rebuilt its output and had to
+     * reload the playing source on whichever deck the new engine reported. Any armed handoff is
+     * dropped, because the output timeline it was scheduled on is gone with the old engine.
+     */
+    fun adoptActive(deck: TransitionDeck) {
+        armed = null
+        activeDeck = deck
+    }
+
     private fun commit(transition: ArmedTransition) {
         activeDeck = transition.incoming
         armed = null

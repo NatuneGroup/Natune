@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
+import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
+import moe.rukamori.archivetune.shared.data.playback.PlaybackProgressWatchdog
 import moe.rukamori.archivetune.shared.data.stream.NativeRouteOutcome
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.BitPerfectGate
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.BitPerfectRouteFacts
@@ -114,6 +116,28 @@ class DesktopPlaybackPort(
     /** Confined to [executor]. The listener's output volume, applied on top of each deck's normalization gain. */
     private var outputVolume = 1f
 
+    /** Confined to [executor]. The host output mute: silence applied as gain zero on every live deck. */
+    private var outputEnabled = true
+
+    /** The published [outputEnabled], so a mute-transition policy outside the executor can follow it. */
+    private val outputEnabledFlow = MutableStateFlow(true)
+
+    /**
+     * Confined to [executor]. One watchdog per deck: a deck that expects progress but renders none is
+     * a stall, and a preloaded deck is timed on its own reads once its handoff start frame arrives.
+     */
+    private val stallWatchdogs = Array(DECK_COUNT) { PlaybackProgressWatchdog() }
+
+    /** Confined to [executor]. The last device-consumed frame count and when it last moved. */
+    private var lastTimelineFrames = NO_TIMELINE
+    private var timelineProgressedAtNanos = 0L
+
+    /**
+     * Confined to [executor]. The load generation the output was rebuilt for: a stall under a rebuilt
+     * load goes to the failure path instead of rebuilding again.
+     */
+    private var rebuiltForLoadGeneration = NO_LOAD
+
     /*
      * The spectral check owns its own IO and default dispatchers and never waits on [executor], so it is driven
      * from the caller's coroutine. Only conclusive results are cached, and only under the source they measured.
@@ -130,6 +154,12 @@ class DesktopPlaybackPort(
 
     override val snapshots: StateFlow<PlaybackSnapshot?> = publishedSnapshot.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = publishedFailures.asSharedFlow()
+
+    /**
+     * Whether host output is enabled: false mutes every live deck as gain zero. Mirrored off the
+     * executor for the session's mute-transition policy, which reads it next to the stored volume.
+     */
+    val audioOutputEnabled: StateFlow<Boolean> = outputEnabledFlow.asStateFlow()
 
     private val activePollIntervalMs = pollIntervalMs
     private val idlePollIntervalMs = maxOf(pollIntervalMs, IDLE_POLL_INTERVAL_MS)
@@ -158,6 +188,21 @@ class DesktopPlaybackPort(
         require(volume.isFinite() && volume in 0f..1f) { "volume must be between 0 and 1, was $volume" }
         submitTask {
             outputVolume = volume
+            applyStages()
+        }
+    }
+
+    /**
+     * Mutes or unmutes the output as gain on every live deck, including the preloaded deck of an
+     * armed transition, without closing the device: a muted occurrence keeps rendering and its
+     * position keeps advancing, so an unmute lands mid-track exactly where the mute left it, as a
+     * system-level mute behaves. The stored volume is untouched. While the bit-perfect route
+     * bypasses the mixer the flag does not alter samples, as with [setVolume].
+     */
+    fun setAudioOutputEnabled(enabled: Boolean) {
+        submitTask {
+            outputEnabled = enabled
+            outputEnabledFlow.value = enabled
             applyStages()
         }
     }
@@ -393,6 +438,7 @@ class DesktopPlaybackPort(
         sessions[index] = DeckSession(request, generation)
         failureMappers[index].beginRequest(request, generation)
         mapper.beginRequest(request, generation)
+        stallWatchdogs[index].reset()
         applyStages()
     }
 
@@ -449,6 +495,7 @@ class DesktopPlaybackPort(
         }
         sessions[incomingIndex] = DeckSession(next, generation, trackGainDb, trackPeak)
         failureMappers[incomingIndex].beginRequest(next, generation)
+        stallWatchdogs[incomingIndex].reset()
         applySession(mix, incomingIndex, plan)
 
         if (!mix.arm(incomingIndex, transition.startFrame, transition.overlapFrames)) {
@@ -530,6 +577,7 @@ class DesktopPlaybackPort(
         deck.stop()
         failureMappers[index].stopped(clock.nowNanos())
         sessions[index] = null
+        stallWatchdogs[index].reset()
     }
 
     private fun openMixer(request: PlaybackRequest): NativeTwoDeckMixer? =
@@ -583,7 +631,8 @@ class DesktopPlaybackPort(
         if (plan.tempoPitch) stages.request.speed.toFloat() else 1f
 
     private fun gainFor(plan: SoftwareStagePlan, trackGainDb: Double?, trackPeak: Double?): Float =
-        outputVolume * if (plan.normalization) NormalizationGain.linearGain(trackGainDb, trackPeak) else 1f
+        outputVolume * (if (outputEnabled) 1f else 0f) *
+            if (plan.normalization) NormalizationGain.linearGain(trackGainDb, trackPeak) else 1f
 
     private fun activeIndex(): Int = scheduler.activeDeck.ordinal
 
@@ -645,6 +694,8 @@ class DesktopPlaybackPort(
         return try {
             syncHandoff()
             val now = clock.nowNanos()
+            val timing = mix.snapshot()
+            trackTimeline(timing.timelineFrames, now)
             mapper.observe(mix.deck(activeIndex()).snapshot(), now)?.let { publishedSnapshot.value = it }
             var busy = false
             for (index in 0 until DECK_COUNT) {
@@ -652,6 +703,7 @@ class DesktopPlaybackPort(
                 val state = engine.snapshot()
                 failureMappers[index].failure(state) { engine.lastError() }
                     ?.let { publishedFailures.tryEmit(it) }
+                watchStall(mix, index, timing, state, now)
                 if (state.hasSource && (state.isBuffering || (state.playWhenReady && !state.isEnded))) busy = true
             }
             busy
@@ -659,6 +711,145 @@ class DesktopPlaybackPort(
             System.err.println("playback poll skipped: ${error.message}")
             true
         }
+    }
+
+    /** The device-consumed frame count is the output's liveness; remember when it last moved. */
+    private fun trackTimeline(frames: Long, nowNanos: Long) {
+        if (frames != lastTimelineFrames) {
+            lastTimelineFrames = frames
+            timelineProgressedAtNanos = nowNanos
+        }
+    }
+
+    /**
+     * Feeds one deck read to its stall watchdog. The active deck is expected to make progress
+     * whenever it has a source and play was requested; a preloaded deck only once the schedule
+     * says its handoff has started, since the mixer never pulls it before then.
+     *
+     * A stalled incoming deck is dropped with its handoff: the outgoing song keeps the output and
+     * the queue treats the blend as never armed. A stalled active deck goes to [onActiveStall].
+     */
+    private fun watchStall(
+        mix: NativeTwoDeckMixer,
+        index: Int,
+        timing: TwoDeckMixerState,
+        state: EnginePlaybackState,
+        nowNanos: Long,
+    ) {
+        if (sessions[index] == null) return
+        val active = index == activeIndex()
+        val expectProgress = state.hasSource && state.playWhenReady && !state.isEnded &&
+            state.errorCode == EnginePlaybackState.ERROR_NONE &&
+            (active || run {
+                val plan = scheduler.armedPlan ?: return@run false
+                scheduler.armedIncomingDeck?.ordinal == index && timing.timelineFrames >= plan.startFrame
+            })
+        if (!stallWatchdogs[index].observe(state, expectProgress, nowNanos)) return
+        if (active) {
+            onActiveStall(mix, index, state, nowNanos)
+        } else {
+            System.err.println("armed handoff dropped: the incoming deck made no progress")
+            cancelArmed(mix)
+        }
+    }
+
+    /**
+     * The audible deck rendered nothing for the whole stall window. When the device timeline also
+     * stopped, the output itself is dead and the mixer is rebuilt once under this load; a frozen
+     * position under a running timeline is a decode or source stall, which the queue recovery path
+     * handles from the same failure it handles a failed read with.
+     */
+    private fun onActiveStall(
+        mix: NativeTwoDeckMixer,
+        index: Int,
+        state: EnginePlaybackState,
+        nowNanos: Long,
+    ) {
+        val session = sessions[index] ?: return
+        val timelineStalled =
+            nowNanos - timelineProgressedAtNanos >= PlaybackProgressWatchdog.DEFAULT_TIMEOUT_MS * NANOS_PER_MILLI
+        if (!timelineStalled) {
+            fail(
+                session.request,
+                PlaybackFailureReason.DECODE_FAILED,
+                "the deck made no audible progress within the stall window",
+            )
+            return
+        }
+        recoverOutput(mix, index, session, state, nowNanos)
+    }
+
+    /**
+     * Reopens the output device and resumes the stalled occurrence where it froze. The device is
+     * the only thing rebuilt: the scheduler, the session bookkeeping and the occurrence all stay,
+     * so a dead or replaced output device is recovered rather than "playing" into silence forever,
+     * and an output that cannot open again is reported rather than silently abandoned.
+     *
+     * Only the active deck is restored: an armed incoming deck is dropped by [cancelArmed], and the
+     * queue arms a fresh one. One rebuild per load generation; a second stall under a rebuilt load
+     * goes to the failure path, which skips or stops with a visible error.
+     */
+    private fun recoverOutput(
+        mix: NativeTwoDeckMixer,
+        index: Int,
+        session: DeckSession,
+        state: EnginePlaybackState,
+        nowNanos: Long,
+    ) {
+        if (rebuiltForLoadGeneration == session.generation) {
+            fail(
+                session.request,
+                PlaybackFailureReason.OUTPUT_FAILED,
+                "the audio output still does not progress after it was reopened",
+            )
+            return
+        }
+        val positionUs = state.positionUs.coerceAtLeast(0L)
+        val playWhenReady = state.playWhenReady
+        cancelArmed(mix)
+        mix.close()
+        mixer = null
+        lastTimelineFrames = NO_TIMELINE
+        // The decks died with their mixer; only the bookkeeping remains, so no deck is stopped here.
+        sessions[index] = null
+        failureMappers[index].stopped(nowNanos)
+        stallWatchdogs[index].reset()
+        val fresh = try {
+            NativeTwoDeckMixer.create(backend)
+        } catch (error: IllegalStateException) {
+            mapper.stopped(nowNanos)?.let { publishedSnapshot.value = it }
+            fail(
+                session.request,
+                PlaybackFailureReason.OUTPUT_FAILED,
+                error.message ?: "the audio output did not start",
+            )
+            return
+        }
+        mixer = fresh
+        val timing = fresh.snapshot()
+        committedSequence = timing.commitSequence
+        scheduler.adoptActive(TransitionDeck.entries.getOrElse(timing.activeDeck) { TransitionDeck.FIRST })
+        val deckIndex = activeIndex()
+        val source = engineSourceOpen(session.request.locator, telegramFiles)
+        if (source == null) {
+            stopSession()
+            val (reason, message) = refusalOf(session.request.locator)
+            fail(session.request, reason, message)
+            return
+        }
+        val generation = fresh.deck(deckIndex).load(source, positionUs, playWhenReady)
+        if (generation == REJECTED_LOAD) {
+            stopSession()
+            fail(session.request, PlaybackFailureReason.OPEN_FAILED, "the engine rejected the source")
+            return
+        }
+        sessions[deckIndex] = session.copy(generation = generation)
+        failureMappers[deckIndex].beginRequest(session.request, generation)
+        mapper.beginRequest(session.request, generation)
+        rebuiltForLoadGeneration = generation
+        stallWatchdogs[deckIndex].reset()
+        applyStages()
+        System.err.println("audio output reopened after it stalled; playback resumed")
     }
 
     private fun fail(request: PlaybackRequest, reason: PlaybackFailureReason, message: String) {
@@ -685,6 +876,9 @@ class DesktopPlaybackPort(
         const val FAILURE_BUFFER = 16
         const val DECK_COUNT = 2
         const val MICROS_PER_MILLI = 1_000L
+        const val NANOS_PER_MILLI = 1_000_000L
+        const val NO_LOAD = -1L
+        const val NO_TIMELINE = -1L
         const val MILLIS_PER_SECOND = 1_000.0
         const val MICROS_PER_SECOND = 1_000_000.0
         const val REJECTED_LOAD = 0L
