@@ -367,19 +367,26 @@ internal class IosSessionGraph private constructor(
                                 // Room releases the files before the rollback replaces them, and the abort
                                 // decision is durable first: a kill re-enters the joint undo next start.
                                 runCatching { database.close() }
-                                runCatching {
+                                val abortPersisted = runCatching {
                                     ops.writeAtomically(
                                         IosRestoreRecovery.abortMarkerPath(pending.directory),
                                         byteArrayOf(1),
                                     )
+                                }.isSuccess
+                                if (abortPersisted) {
+                                    if (pending.hasSettingsBefore) {
+                                        vaultOk = runCatching {
+                                            IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
+                                        }.isSuccess
+                                        if (!vaultOk) report("restored settings rollback failed")
+                                    }
+                                    runCatching { restoreStart.transaction.rollbackCommitted() }
+                                } else {
+                                    // No durable abort decision: a kill now would re-read a half-undone set
+                                    // as a fresh restore, so block and hold the set for recovery mode.
+                                    report("restore abort marker not written")
+                                    vaultOk = false
                                 }
-                                if (pending.hasSettingsBefore) {
-                                    vaultOk = runCatching {
-                                        IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
-                                    }.isSuccess
-                                    if (!vaultOk) report("restored settings rollback failed")
-                                }
-                                runCatching { restoreStart.transaction.rollbackCommitted() }
                                 if (vaultOk) {
                                     runCatching { pending.markFailed() }
                                 } else {
@@ -477,20 +484,27 @@ internal class IosSessionGraph private constructor(
                     runCatching { database.close() }
                     start.pending?.let { pending ->
                         if (start.transaction != null) {
-                            runCatching {
+                            val abortPersisted = runCatching {
                                 ops.writeAtomically(
                                     IosRestoreRecovery.abortMarkerPath(pending.directory),
                                     byteArrayOf(1),
                                 )
+                            }.isSuccess
+                            if (abortPersisted) {
+                                // A vault merge that already landed goes back with the files it belongs to.
+                                if (pending.hasSettingsBefore) {
+                                    vaultOk = runCatching {
+                                        IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
+                                    }.isSuccess
+                                    if (!vaultOk) report("restored settings rollback failed")
+                                }
+                                runCatching { start.transaction.rollbackCommitted() }
+                            } else {
+                                // No durable abort decision: a kill now would re-read a half-undone set
+                                // as a fresh restore, so block and hold for recovery mode.
+                                report("restore abort marker not written")
+                                vaultOk = false
                             }
-                            // A vault merge that already landed goes back with the files it belongs to.
-                            if (pending.hasSettingsBefore) {
-                                vaultOk = runCatching {
-                                    IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
-                                }.isSuccess
-                                if (!vaultOk) report("restored settings rollback failed")
-                            }
-                            runCatching { start.transaction.rollbackCommitted() }
                         } else {
                             pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
                         }

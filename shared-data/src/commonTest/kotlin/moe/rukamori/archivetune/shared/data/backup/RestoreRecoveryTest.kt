@@ -413,7 +413,7 @@ class RestoreRecoveryTest {
         // Requiring sidecar presence to match the journal would read this as CORRUPT; it is a finished commit.
         val ops = appliedOps(newWal = false)
         val journal = RestorePhaseJournal.decode(ops.files.getValue(JOURNAL).decodeToString())
-        ops.files[JOURNAL] = RestorePhaseJournal(RestorePhase.COMMITTED, journal.targets).encode()
+        ops.files[JOURNAL] = RestorePhaseJournal(RestorePhase.COMMITTED, journal.targets).encode().encodeToByteArray()
         ops.files.remove("$BACKUP_DB-wal")
         ops.files["$LIVE_DB-wal"] = RUNTIME_WAL
         assertEquals(RecoveryOutcome.COMMITTED, RestoreTransaction.recover(ops, JOURNAL))
