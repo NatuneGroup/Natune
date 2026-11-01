@@ -271,4 +271,45 @@ class PoolDeadReportPolicyTest {
         )
         assertEquals(listOf("not_premium"), reports)
     }
+
+    @Test fun recoveryFlightIsServiceWideAndEachCallerReReadsItsCredential() = runTest {
+        val clock = TestClock()
+        val reporter = reporter(clock)
+        val credentials = mutableMapOf(5L to "stale-a", 6L to "stale-b")
+        var recoveries = 0
+        val retries = mutableListOf<Pair<Long, String>>()
+        suspend fun fail(id: Long) = reporter.recoverAndReport<String, String>(
+            "tidal", id, PoolFailureKind.AUTH_REJECTED, credentials.getValue(id),
+            current = { credentials[id] },
+            recover = {
+                recoveries++
+                delay(10)   // hold the round-trip so the second account arrives mid-flight
+                credentials[5L] = "fresh-a"
+                credentials[6L] = "fresh-b"
+            },
+            retry = { fresh -> retries += id to fresh; PoolRetryOutcome.Success("s:$id:$fresh") },
+        ) { }
+        // Account B must join A's in-flight refresh and re-read its own credential afterwards —
+        // an account-keyed flight let B skip recovery while its token was still stale.
+        val results = awaitAll(async { fail(5L) }, async { fail(6L) })
+        assertEquals(listOf("s:5:fresh-a", "s:6:fresh-b"), results.sorted())
+        assertEquals(1, recoveries)
+        assertEquals(setOf(5L to "fresh-a", 6L to "fresh-b"), retries.toSet())
+    }
+
+    @Test fun serviceGateAdmitsOneCallerPerWindowAtomically() = runTest {
+        val clock = TestClock()
+        val gate = PoolReportGate(clock::nowMs, PoolDeadReportPolicy.RECOVERY_DEDUPE_MS)
+        // The expired-lease re-lease on every host goes through this admission; same-ms callers
+        // must split one round-trip, not each pay for it the way a merge-then-compare map allowed.
+        val admitted = awaitAll(
+            async { gate.allowService("tidal", "expired") },
+            async { gate.allowService("tidal", "expired") },
+            async { gate.allowService("tidal", "expired") },
+        )
+        assertEquals(1, admitted.count { it })
+        assertFalse(gate.allowService("tidal", "expired"))
+        clock.now += PoolDeadReportPolicy.RECOVERY_DEDUPE_MS + 1
+        assertTrue(gate.allowService("tidal", "expired"))
+    }
 }

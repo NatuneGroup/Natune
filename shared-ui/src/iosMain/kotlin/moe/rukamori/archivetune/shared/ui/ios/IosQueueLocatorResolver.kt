@@ -39,6 +39,7 @@ import moe.rukamori.archivetune.shared.data.provider.KtorQqMusicRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorTidalRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.PoolFailureKind
+import moe.rukamori.archivetune.shared.data.provider.PoolRecoverySettledException
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccess
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
@@ -331,9 +332,11 @@ private class IosTidalSource(
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (auth: TerminalPlaybackAuthentication) {
-                        recoverPooled(attempt, PoolFailureKind.AUTH_REJECTED, request) ?: throw auth
+                        recoverPooled(attempt, PoolFailureKind.AUTH_REJECTED, request)
+                            ?: throw PoolRecoverySettledException(auth)
                     } catch (error: Exception) {
-                        recoverPooled(attempt, classifyPoolFailure(error), request) ?: throw error
+                        recoverPooled(attempt, classifyPoolFailure(error), request)
+                            ?: throw PoolRecoverySettledException(error)
                     }
                 },
                 report = { attempt, type ->

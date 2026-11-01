@@ -129,4 +129,31 @@ class PoolAccountRaceTest {
         assertTrue(reports.failures.isEmpty(), "the lane cancelled by the winner reports nothing")
         assertTrue(reports.dead.isEmpty())
     }
+
+    @Test fun settledRecoveryFailureIsNotReportedAgain() = runTest {
+        val reports = Reports()
+        val unauthorized = ProviderHttpFailure(401)
+        val outcome = race(listOf(1, 2), reports, maxConcurrent = 2) { id ->
+            if (id == 1) throw PoolRecoverySettledException(unauthorized) else null
+        }
+        assertNull(outcome.winner)
+        assertEquals(listOf(1), reports.failures)
+        assertTrue(
+            reports.dead.isEmpty(),
+            "the recovery pass owns the verdict; the race must not report dead a second time",
+        )
+        // The wrapped refusal still surfaces as the attempt's failure for the resolve walk.
+        assertTrue(outcome.failure === unauthorized)
+    }
+
+    @Test fun settledTerminalRefusalStaysOutOfTheThrownFailure() = runTest {
+        val reports = Reports()
+        val outcome = race(listOf(1), reports) {
+            throw PoolRecoverySettledException(TerminalPlaybackAuthentication())
+        }
+        assertNull(outcome.winner)
+        assertNull(outcome.failure, "a terminal auth refusal never becomes the rethrown failure")
+        assertEquals(listOf(1), reports.failures)
+        assertTrue(reports.dead.isEmpty())
+    }
 }
