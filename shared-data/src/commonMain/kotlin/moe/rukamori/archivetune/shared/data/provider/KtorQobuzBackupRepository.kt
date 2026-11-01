@@ -21,7 +21,7 @@ class KtorQobuzBackupRepository(client: HttpClient, base: String = "https://mls.
         val query = requireNotNull(request.text).also { require(it.isNotBlank()) }
         val tracks = search(query)
         return ContentPage(tracks.mapIndexed { index, track ->
-            ContentOccurrence("qobuz_backup:$index:${track.item.ref.id}", track.item)
+            ContentOccurrence("qobuz_backup:$index:${track.item.ref.id}", track.queueItem())
         })
     }
     private suspend fun search(query: String, limit: Int = 8): List<ProviderTrack> {

@@ -35,33 +35,12 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
             require(request.purpose == AudioPurpose.PLAYBACK) { "Native routes require the host download preparer" }
             return AudioResolution.NativeRoute(nativeUri)
         }
-        val attempts = mutableListOf<AudioAttempt>()
-        for (source in PlaybackSourceChain.configuredChain(settings, pinned, rejected).distinct()) {
-            if (source in rejected || source !in settings.enabled ||
-                request.purpose == AudioPurpose.DOWNLOAD && source == AudioSourceType.SPOTIFY) continue
-            val provider = providers[source]
-            if (provider == null) { attempts += AudioAttempt(source, AudioAttemptResult.UNAVAILABLE); continue }
-            val audio = try {
-                withTimeoutOrNull(30_000) { provider.resolve(request) }
-            } catch (auth: TerminalPlaybackAuthentication) { throw auth }
-            catch (cancel: CancellationException) { throw cancel }
-            catch (failure: AudioProviderUnavailable) {
-                attempts += AudioAttempt(source, AudioAttemptResult.UNAVAILABLE, failure.reason); continue
-            }
-            catch (failure: ProviderRequestTimeout) {
-                attempts += AudioAttempt(source, AudioAttemptResult.TIMEOUT); continue
-            }
-            catch (failure: Exception) {
-                attempts += AudioAttempt(source, AudioAttemptResult.FAILED); continue
-            }
-            if (audio == null) { attempts += AudioAttempt(source, AudioAttemptResult.NO_MATCH); continue }
-            require(audio.source == source) { "Provider returned another source" }
-            if (!audio.matchesRequest(request)) {
-                attempts += AudioAttempt(source, AudioAttemptResult.REJECTED_METADATA); continue
-            }
-            attempts += AudioAttempt(source, AudioAttemptResult.RESOLVED)
-            return AudioResolution.Resolved(audio, attempts.toList())
-        }
+        val chain = ExternalChain()
+        // The external sources share one whole-chain budget; YouTube below keeps its own per-tier deadlines.
+        withTimeoutOrNull(FALLBACK_CHAIN_MS) { resolveExternal(request, settings, pinned, rejected, chain) }?.let { return it }
+        // The chain deadline can cut an attempt in flight. That source timed out; it did not find no match.
+        chain.inFlight?.let { chain.attempts += AudioAttempt(it, AudioAttemptResult.TIMEOUT) }
+        val attempts = chain.attempts
         if (PlaybackSourceChain.youTubeTerminalAllowed(settings, rejected)) {
             var failure = false
             val primary = try { withTimeoutOrNull(30_000) { youtube.primary(request) } }
@@ -85,6 +64,69 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
             attempts += AudioAttempt(AudioSourceType.YOUTUBE, if (failure) AudioAttemptResult.FAILED else AudioAttemptResult.NO_MATCH)
         }
         return AudioResolution.Unavailable(attempts.toList())
+    }
+
+    /** Attempts recorded so far; [inFlight] names the source whose attempt has not finished. */
+    private class ExternalChain {
+        val attempts = mutableListOf<AudioAttempt>()
+        var inFlight: AudioSourceType? = null
+    }
+
+    /** Wraps a provider answer so its own budget expiring (null) stays distinct from a provider's no-match (audio null). */
+    private class ProviderOutcome(val audio: PreparedAudio?)
+
+    private suspend fun resolveExternal(request: AudioResolveRequest, settings: PlaybackSourceSnapshot,
+        pinned: AudioSourceType?, rejected: Set<AudioSourceType>, chain: ExternalChain): AudioResolution.Resolved? {
+        for (source in PlaybackSourceChain.configuredChain(settings, pinned, rejected).distinct()) {
+            if (source in rejected || source !in settings.enabled ||
+                request.purpose == AudioPurpose.DOWNLOAD && source == AudioSourceType.SPOTIFY) continue
+            val provider = providers[source]
+            if (provider == null) { chain.attempts += AudioAttempt(source, AudioAttemptResult.UNAVAILABLE); continue }
+            chain.inFlight = source
+            val outcome = try {
+                withTimeoutOrNull(sourceBudgetMs(source)) { ProviderOutcome(provider.resolve(request)) }
+            } catch (auth: TerminalPlaybackAuthentication) { throw auth }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (failure: AudioProviderUnavailable) {
+                chain.inFlight = null
+                chain.attempts += AudioAttempt(source, AudioAttemptResult.UNAVAILABLE, failure.reason); continue
+            }
+            catch (failure: ProviderRequestTimeout) {
+                chain.inFlight = null
+                chain.attempts += AudioAttempt(source, AudioAttemptResult.TIMEOUT); continue
+            }
+            catch (failure: Exception) {
+                chain.inFlight = null
+                chain.attempts += AudioAttempt(source, AudioAttemptResult.FAILED); continue
+            }
+            chain.inFlight = null
+            if (outcome == null) { chain.attempts += AudioAttempt(source, AudioAttemptResult.TIMEOUT); continue }
+            val audio = outcome.audio
+            if (audio == null) { chain.attempts += AudioAttempt(source, AudioAttemptResult.NO_MATCH); continue }
+            require(audio.source == source) { "Provider returned another source" }
+            if (!audio.matchesRequest(request)) {
+                chain.attempts += AudioAttempt(source, AudioAttemptResult.REJECTED_METADATA); continue
+            }
+            chain.attempts += AudioAttempt(source, AudioAttemptResult.RESOLVED)
+            return AudioResolution.Resolved(audio, chain.attempts.toList())
+        }
+        return null
+    }
+
+    /**
+     * Per-source budgets carry the values of the Android `resolveAudioSourceAttemptTimeoutMs`: Spotify, Amazon and QQ
+     * get 20 s, everything else 8 s. A slow source must not spend the whole chain budget, or the sources after it
+     * would never be tried.
+     */
+    private fun sourceBudgetMs(source: AudioSourceType): Long = when (source) {
+        AudioSourceType.SPOTIFY, AudioSourceType.AMAZON, AudioSourceType.QQ -> SLOW_SOURCE_ATTEMPT_MS
+        else -> PROVIDER_ATTEMPT_MS
+    }
+
+    private companion object {
+        const val PROVIDER_ATTEMPT_MS = 8_000L
+        const val SLOW_SOURCE_ATTEMPT_MS = 20_000L
+        const val FALLBACK_CHAIN_MS = 30_000L
     }
 }
 

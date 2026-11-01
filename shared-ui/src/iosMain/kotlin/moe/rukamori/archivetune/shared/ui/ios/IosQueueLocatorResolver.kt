@@ -5,6 +5,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -18,6 +20,7 @@ import moe.rukamori.archivetune.shared.data.provider.AmazonInstanceAccess
 import moe.rukamori.archivetune.shared.data.provider.AppleMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.AudioResolution
 import moe.rukamori.archivetune.shared.data.provider.DeezerAccess
+import moe.rukamori.archivetune.shared.data.provider.DeezerInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.IosJioSaavnUrlDecoder
 import moe.rukamori.archivetune.shared.data.provider.IosQobuzRequestDigest
 import moe.rukamori.archivetune.shared.data.provider.KtorAmazonRepository
@@ -31,8 +34,10 @@ import moe.rukamori.archivetune.shared.data.provider.KtorTidalRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccess
+import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalAccess
+import moe.rukamori.archivetune.shared.data.provider.TidalInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.YouTubeResolutionPort
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
@@ -54,14 +59,17 @@ import moe.rukamori.archivetune.shared.domain.settings.AmazonTurnstileJwtKey
 import moe.rukamori.archivetune.shared.domain.settings.AppleMusicDevTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.AppleMusicMediaUserTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
 import moe.rukamori.archivetune.shared.domain.settings.TidalAccountFirstKey
 import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
+import moe.rukamori.archivetune.shared.domain.settings.deezerInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.qobuzInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.qobuzTokens
 import moe.rukamori.archivetune.shared.domain.settings.tidalCountryCode
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
+import moe.rukamori.archivetune.shared.domain.source.SongSourceOverride
 import moe.rukamori.archivetune.shared.domain.source.YouTubeFallbackTier
 import moe.rukamori.archivetune.shared.domain.source.toPlaybackLocator
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
@@ -69,6 +77,7 @@ import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.host.hostSourceSnapshot
 import moe.rukamori.archivetune.shared.ui.host.toAudioResolveRequest
 import moe.rukamori.archivetune.shared.ui.host.unresolvedSourceReason
+import moe.rukamori.archivetune.shared.ui.host.withSourcePins
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.ui.settings.playbackPoolPending
 import moe.rukamori.archivetune.shared.ui.settings.poolScopeForFeedId
@@ -108,10 +117,13 @@ internal class IosQueueLocatorResolver(
                 ?: throw IllegalStateException("invalid Telegram media id: ${occurrence.item.ref.id}")
             return PlaybackLocator.TelegramFile(track)
         }
-        val request = occurrence.toAudioResolveRequest(preferences())
+        // The per-source ids the source chooser stored join the request. A "play from" pin forces the chain for this one
+        // song, as the Android service and the desktop host do; a refused pinned source falls through to the ordinary chain.
+        val request = occurrence.toAudioResolveRequest(preferences()).withSourcePins(preferences(), occurrence.item.ref.id)
+        val pinned = SongSourceOverride.get(preferences()?.get(SongSourceOverrideKey), occurrence.item.ref.id)
         var refused = emptySet<AudioSourceType>()
         while (true) {
-            val prepared = when (val resolution = audio.resolve(request, hostSourceSnapshot(preferences()), rejected = refused)) {
+            val prepared = when (val resolution = audio.resolve(request, hostSourceSnapshot(preferences()), pinned = pinned, rejected = refused)) {
                 is AudioResolution.Resolved -> resolution.audio
                 is AudioResolution.Unavailable ->
                     throw IllegalStateException(unresolvedSourceReason(occurrence, resolution.attempts, host = "iOS"))
@@ -160,7 +172,7 @@ internal fun iosAudioProviders(
 ): List<AudioProviderRepository> = listOfNotNull(
     IosTidalSource(http, accounts, preferences, tidalSessionRefresh, pool),
     KtorQobuzBackupRepository(http),
-    IosDeezerSource(http, accounts, pool),
+    IosDeezerSource(http, accounts, pool, preferences),
     IosQobuzSource(http, accounts, preferences, pool),
     IosAppleMusicSource(http, accounts, preferences, pool),
     IosAmazonSource(http, preferences, accounts, pool),
@@ -199,10 +211,10 @@ private suspend fun VaultProviderAccountStore.admitPoolEntry(
 /**
  * TIDAL over the personal account lease, the Playback Pool accounts and the HiFi instances (the user's own, then the
  * pool's discovered ones), in the shipped order: the accounts first while "account first" is on (the default),
- * otherwise the instances first. Attempts run in that order; the Android resolver races its attempts and this host
- * does not yet, which the binding table in ios-status.md names. A failed attempt moves to the next one. A terminal
- * authentication failure of the personal account stops the source; a pooled account that fails authentication or
- * answers HTTP 401 is reported dead to the pool and the next one is tried.
+ * otherwise the instances first. The instances form one racing route for the session, so their health and cooldowns
+ * persist across resolves, as the desktop host's do. A failed attempt moves to the next one. A terminal authentication
+ * failure of the personal account stops the source; a pooled account that fails authentication or answers HTTP 401 is
+ * reported dead to the pool and the next one is tried.
  */
 private class IosTidalSource(
     private val http: HttpClient,
@@ -214,6 +226,12 @@ private class IosTidalSource(
     override val source = AudioSourceType.TIDAL
 
     private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false)
+
+    /** The session's one anonymous racing route. It is rebuilt only when its merged list, country or Pool switch changes. */
+    private class AnonymousRoute(val instances: List<String>, val country: String, val poolOn: Boolean,
+        val repository: KtorTidalRepository)
+    private val routeLock = Mutex()
+    private var anonymous: AnonymousRoute? = null
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         val snapshot = preferences()
@@ -242,10 +260,9 @@ private class IosTidalSource(
         val instanceBases = LinkedHashSet<String>().apply {
             addAll(snapshot?.tidalInstanceList().orEmpty())
             addAll(pool?.tidalInstances().orEmpty())
-        }
-        val instances = instanceBases.map { base ->
-            Attempt(KtorTidalRepository(http, TidalAccess(scope = ANONYMOUS_ACCOUNT_SCOPE), instanceBase = base, countryCode = country))
-        }
+        }.toList()
+        // One attempt covers the whole list: the racing resolver keeps its health and cooldowns across it.
+        val instances = if (instanceBases.isEmpty()) emptyList() else listOf(Attempt(anonymousRepository(instanceBases, country)))
         val accountFirst = snapshot?.get(TidalAccountFirstKey) ?: true
         val accountAttempts = listOfNotNull(personal) + pooled
         val attempts = if (accountFirst) accountAttempts + instances else instances + accountAttempts
@@ -274,6 +291,23 @@ private class IosTidalSource(
         return null
     }
 
+    /**
+     * The anonymous repository for this list. Its racing resolver is created once and reused, so a resolve that follows
+     * another still knows which instances failed, which are cooling down and which answered 429. A changed list, country
+     * or Pool switch replaces it. It carries no account, so no personal or pooled state reaches it.
+     */
+    private suspend fun anonymousRepository(instances: List<String>, country: String): KtorTidalRepository = routeLock.withLock {
+        val poolOn = pool?.enabled() == true
+        anonymous?.takeIf { it.instances == instances && it.country == country && it.poolOn == poolOn }?.repository
+            ?: KtorTidalRepository(
+                http,
+                TidalAccess(scope = ANONYMOUS_ACCOUNT_SCOPE),
+                countryCode = country,
+                resolver = TidalInstanceResolver(http, nowMs = ::iosNowMillis),
+                instances = { instances },
+            ).also { anonymous = AnonymousRoute(instances, country, poolOn, it) }
+    }
+
     private suspend fun personalRepository(country: String): KtorTidalRepository? {
         val scope = providerAccountScope(ContentProvider.TIDAL.id, CredentialScope.PERSONAL) ?: return null
         var lease = accounts.personalTidalLease(scope) ?: return null
@@ -292,27 +326,72 @@ private class IosTidalSource(
 }
 
 /**
- * Deezer over the personal ARL lease. Deezer media needs a signed-in session, so without one the source answers no
- * match. One repository is kept per lease generation, so its gateway session is reused until the account changes.
+ * Deezer over the personal ARL lease, then the Playback Pool ARLs, then the user's own instances and the pool's discovered
+ * ones. Each stage that answers no match or fails for a transient reason hands over to the next; a terminal
+ * authentication failure of the personal account still stops the source. One repository is kept per lease generation,
+ * so its gateway session is reused until the account changes. The instance stage keeps one resolver for the session and
+ * reads the current instance list and Pool switch on every resolve.
  */
 private class IosDeezerSource(
     private val http: HttpClient,
     private val accounts: VaultProviderAccountStore,
     private val pool: IosPlaybackPool?,
+    private val preferences: () -> PreferenceSnapshot?,
 ) : AudioProviderRepository {
     override val source = AudioSourceType.DEEZER
     private var cached: Pair<Long, KtorDeezerRepository>? = null
     private val pooledRepositories = HashMap<String, KtorDeezerRepository>()
+    private val instanceResolver = DeezerInstanceResolver(
+        http,
+        ::iosNowMillis,
+        poolEnabled = { pool?.enabled() == true },
+        sourceProviderUrl = { pool?.discoveryBaseUrl().orEmpty() },
+        sourceProviderKey = { pool?.discoveryReadKey().orEmpty() },
+    )
+    private val instanceRepository = KtorDeezerRepository(
+        http,
+        nowMs = ::iosNowMillis,
+        resolver = instanceResolver,
+        instances = { preferences()?.deezerInstanceList().orEmpty() },
+    )
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
+        var failure: Exception? = null
         val scope = providerAccountScope(ContentProvider.DEEZER.id, CredentialScope.PERSONAL)
-        val lease = scope?.let { accounts.personalDeezerLease(it) } ?: return resolvePooled(request)
-        val repository = cached?.takeIf { it.first == lease.generation }?.second ?: KtorDeezerRepository(
-            http,
-            nowMs = ::iosNowMillis,
-            access = DeezerAccess(lease.accountScope, lease.arl.reveal(), CredentialScope.PERSONAL, lease::isStillAdmitted),
-        ).also { cached = lease.generation to it }
-        return repository.resolve(request)
+        val lease = scope?.let { accounts.personalDeezerLease(it) }
+        if (lease != null) {
+            try {
+                val repository = cached?.takeIf { it.first == lease.generation }?.second ?: KtorDeezerRepository(
+                    http,
+                    nowMs = ::iosNowMillis,
+                    access = DeezerAccess(lease.accountScope, lease.arl.reveal(), CredentialScope.PERSONAL, lease::isStillAdmitted),
+                ).also { cached = lease.generation to it }
+                repository.resolve(request)?.let { return it }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (auth: TerminalPlaybackAuthentication) {
+                throw auth
+            } catch (error: Exception) {
+                // A transient personal failure must not end Deezer while the pool and the instances can still answer.
+                failure = error
+            }
+        }
+        try {
+            resolvePooled(request)?.let { return it }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            failure = error
+        }
+        try {
+            instanceRepository.resolve(request)?.let { return it }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            failure = error
+        }
+        failure?.let { throw it }
+        return null
     }
 
     private suspend fun resolvePooled(request: AudioResolveRequest): PreparedAudio? {
@@ -371,6 +450,18 @@ private class IosQobuzSource(
 
     private class Attempt(val repository: KtorQobuzRepository, val poolId: Long? = null, val pooled: Boolean = false)
 
+    /**
+     * One resolver for the session, so its cooldowns, probe results and discovered instances persist across resolves. The
+     * Pool switch gates its discovery, as the desktop host's does.
+     */
+    private val instanceResolver = QobuzInstanceResolver(
+        http,
+        ::iosNowMillis,
+        poolEnabled = { pool?.enabled() == true },
+        sourceProviderUrl = { pool?.discoveryBaseUrl().orEmpty() },
+        sourceProviderKey = { pool?.discoveryReadKey().orEmpty() },
+    )
+
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         val snapshot = preferences()
         val personalScope = providerAccountScope(ContentProvider.QOBUZ.id, CredentialScope.PERSONAL)
@@ -409,13 +500,11 @@ private class IosQobuzSource(
                 pooled = true,
             )
         }
-        val instanceBases = LinkedHashSet<String>().apply {
-            addAll(snapshot?.qobuzInstanceList().orEmpty())
-            addAll(pool?.qobuzInstances().orEmpty())
-        }
-        val instances = instanceBases.map { base ->
-            Attempt(KtorQobuzRepository(http, nowMs = ::iosNowMillis, access = null, digest = null, instanceBase = base))
-        }
+        // The user's list is the resolver's manual list. Pool-discovered instances join it inside the resolver while the Pool
+        // switch is on, so a removed base never lingers and discovery runs once per cache window, not once per resolve.
+        instanceResolver.setInstances(snapshot?.qobuzInstanceList().orEmpty())
+        val instances = if (instanceResolver.hasInstances()) listOf(Attempt(KtorQobuzRepository(http, nowMs = ::iosNowMillis,
+            resolver = instanceResolver, instances = { preferences()?.qobuzInstanceList().orEmpty() }))) else emptyList()
         var failure: Exception? = null
         for (attempt in personal + pooled + instances) {
             try {

@@ -13,11 +13,19 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QobuzAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.QqMusicAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.SaavnAudioQualityKey
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceAmazonPickKey
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzBackupVideoIdKey
+import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzTrackIdKey
 import moe.rukamori.archivetune.shared.domain.settings.TidalAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.audioSourceEnabled
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceConfig
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
+import moe.rukamori.archivetune.shared.domain.source.SongSourceAmazonPick
+import moe.rukamori.archivetune.shared.domain.source.SongSourceOverride
+import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzBackupVideoId
+import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzTrackId
 import moe.rukamori.archivetune.shared.domain.source.TrackMatching
 
 /**
@@ -65,7 +73,10 @@ fun hostSourceQualities(preferences: PreferenceSnapshot?): Map<AudioSourceType, 
         ?.let { put(AudioSourceType.AMAZON, it) }
 }
 
-/** The resolve request of one queue occurrence: its match target, its authoritative catalog id and the stored qualities. */
+/**
+ * The resolve request of one queue occurrence: its match target, its authoritative catalog id, the recording's ISRC when
+ * the provider gave one, and the stored qualities.
+ */
 fun ContentOccurrence.toAudioResolveRequest(preferences: PreferenceSnapshot?): AudioResolveRequest {
     val canonical = item.canonicalSong()
     return AudioResolveRequest(
@@ -77,8 +88,26 @@ fun ContentOccurrence.toAudioResolveRequest(preferences: PreferenceSnapshot?): A
         durationMs = canonical.durationMs,
     ),
     directIds = item.ref.directSourceId()?.let { mapOf(it) }.orEmpty(),
+    isrc = item.isrc?.takeIf { it.isNotBlank() },
     qualities = hostSourceQualities(preferences),
 )
+}
+
+/**
+ * The per-source catalogue ids the source chooser stored for one song, added to the request's authoritative ids. A
+ * "play from" pin is not an id: it is applied to the chain by the caller through [SongSourceOverride].
+ */
+fun AudioResolveRequest.withSourcePins(preferences: PreferenceSnapshot?, songId: String): AudioResolveRequest {
+    val qobuzTrack = preferences?.get(SongSourceQobuzTrackIdKey)?.let { SongSourceQobuzTrackId.get(it, songId) }
+    val backupVideo = preferences?.get(SongSourceQobuzBackupVideoIdKey)?.let { SongSourceQobuzBackupVideoId.get(it, songId) }
+    val extras = listOfNotNull(
+        qobuzTrack?.let { AudioSourceType.QOBUZ to it },
+        backupVideo?.let { AudioSourceType.QOBUZ_BACKUP to it },
+    )
+    val amazon = if (SongSourceOverride.get(preferences?.get(SongSourceOverrideKey), songId) == AudioSourceType.AMAZON) {
+        SongSourceAmazonPick.get(preferences?.get(SongSourceAmazonPickKey), songId)
+    } else null
+    return if (extras.isEmpty() && amazon == null) this else copy(directIds = directIds + extras.toMap(), amazonPick = amazon)
 }
 
 /** A catalog id is authoritative only for the source that issued it. */
