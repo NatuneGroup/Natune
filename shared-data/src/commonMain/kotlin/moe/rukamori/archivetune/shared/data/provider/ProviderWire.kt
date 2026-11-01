@@ -167,6 +167,7 @@ abstract class PagedAudioProvider(private val cursorScope: String) : TypedConten
         accountScope: String? = null): DirectStream =
         DirectStream(streamUrl(uri), mime, codecs, length, source.name, source,
             track.item.title, track.artists.joinToString(", "), track.album, track.item.durationMs,
-            request.directIds[source] == track.item.ref.id, sampleRate, bitDepth, accountScope = accountScope)
+            request.directIds[source] == track.item.ref.id, sampleRate, bitDepth, accountScope = accountScope,
+            expiresAtEpochMs = StreamUrlExpiry.fromUrl(uri))
     private companion object { const val PAGE_SIZE = 50 }
 }

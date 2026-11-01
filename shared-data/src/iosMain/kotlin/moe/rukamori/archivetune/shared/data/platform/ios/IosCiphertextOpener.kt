@@ -12,6 +12,7 @@ import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.stream.NativeCiphertextOpener
 import moe.rukamori.archivetune.shared.data.stream.NativePlaintext
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 import platform.Foundation.NSLock
 
 /** The engine's unknown length. A view that states no length is read to its end without the engine assuming one. */
@@ -61,7 +62,7 @@ internal class IosCiphertextOpener(
                 permittedOrigins = setOf(origin),
                 // The query string carries a per-request signature, so it never becomes part of the cache key.
                 cacheKey = url.substringBefore('?'),
-                expiresAtEpochMs = null,
+                expiresAtEpochMs = StreamUrlExpiry.fromUrl(url),
                 lengthBytes = null,
             )
         // No cookie is read here. The recheck reads the admitted account before the probe and before every later request,

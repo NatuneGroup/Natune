@@ -93,7 +93,8 @@ class IosPlaybackPort : PlaybackPort {
 
     override fun submit(command: PlaybackCommand) {
         val occurrence = (command as? PlaybackCommand.Load)?.request?.occurrenceId ?: state.value?.occurrenceId
-        enqueue(Inbound.Command(command), occurrence)
+        val attempt = if (command is PlaybackCommand.Load) command.request.attemptId else request?.attemptId
+        enqueue(Inbound.Command(command), occurrence, attempt)
     }
 
     /**
@@ -238,7 +239,7 @@ class IosPlaybackPort : PlaybackPort {
             ?: return QueuedPreparation.Refused(ACCOUNTS_NOT_ATTACHED)
         val outcome = access.prepare(prepared)
         val locator = when (outcome) {
-            is IosNativeAudioRoute.Outcome.Ready -> PlaybackLocator.PreparedPlaintext(outcome.handle)
+            is IosNativeAudioRoute.Outcome.Ready -> PlaybackLocator.PreparedPlaintext(outcome.handle, prepared.source)
             is IosNativeAudioRoute.Outcome.Streamed -> outcome.remote.locator
             is IosNativeAudioRoute.Outcome.Refused -> return QueuedPreparation.Refused(outcome.reason)
             is IosNativeAudioRoute.Outcome.Failed -> return QueuedPreparation.Refused(outcome.reason)
@@ -304,11 +305,11 @@ class IosPlaybackPort : PlaybackPort {
     }
 
     /** Queues [item]. A full queue reports the occurrence it could not take, and an unknown occurrence is dropped silently. */
-    private fun enqueue(item: Inbound, occurrenceId: String?) {
+    private fun enqueue(item: Inbound, occurrenceId: String?, attemptId: Long? = null) {
         val result = inbox.trySend(item)
         if (result.isFailure && !result.isClosed && occurrenceId != null) {
             errors.tryEmit(PlaybackFailure(occurrenceId, PlaybackFailureReason.OUTPUT_FAILED,
-                "iOS playback command queue is full"))
+                "iOS playback command queue is full", attemptId = attemptId))
         }
     }
 
@@ -394,18 +395,21 @@ class IosPlaybackPort : PlaybackPort {
         if (plaintext == null) {
             transport.close()
             errors.tryEmit(PlaybackFailure(source.occurrenceId, PlaybackFailureReason.OPEN_FAILED,
-                "the prepared audio is not a native plaintext view"))
+                "the prepared audio is not a native plaintext view", attemptId = source.attemptId))
             return
         }
         val expiresAt = handle.expiresAtEpochMs
         if (expiresAt != null && expiresAt <= nowEpochMs()) {
             transport.close()
             errors.tryEmit(PlaybackFailure(source.occurrenceId, PlaybackFailureReason.OPEN_FAILED,
-                "the prepared audio authorization expired; prepare it again"))
+                "the prepared audio authorization expired; prepare it again", attemptId = source.attemptId))
             return
         }
         stop()
-        val playable = PlaybackRequest(source.occurrenceId, source.mediaId, PlaybackLocator.PreparedPlaintext(handle))
+        val playable = PlaybackRequest(
+            source.occurrenceId, source.mediaId, PlaybackLocator.PreparedPlaintext(handle, source.prepared.source),
+            attemptId = source.attemptId,
+        )
         request = playable
         val native = outputForLoad()
         if (native == null) {
@@ -438,7 +442,7 @@ class IosPlaybackPort : PlaybackPort {
     private fun loadStreamed(source: Inbound.Prepare, streamed: IosNativeAudioRoute.Outcome.Streamed) {
         val remote = streamed.remote
         stop()
-        val playable = PlaybackRequest(source.occurrenceId, source.mediaId, remote.locator)
+        val playable = PlaybackRequest(source.occurrenceId, source.mediaId, remote.locator, source.attemptId)
         request = playable
         val native = outputForLoad()
         if (native == null) {
@@ -496,11 +500,11 @@ class IosPlaybackPort : PlaybackPort {
         }
         val startUs = micros(command.startPositionMs)
         val play = if (command.playWhenReady) 1 else 0
-        // Deezer ciphertext and header-bearing remotes are read through the host lease, which decrypts them or carries
-        // their headers under the lease policy. A header-free remote keeps the engine's own opener.
+        // Known expiry needs the lease even without headers; the engine's own opener cannot enforce that window.
+        // Deezer ciphertext and header-bearing remotes also stay under the lease policy.
         val generation = when {
             locator is PlaybackLocator.DeezerEncrypted -> IosStreamLease.loadDeezer(native, locator, startUs, play)
-            locator is PlaybackLocator.Remote && !locator.headers.isEmpty() ->
+            locator is PlaybackLocator.Remote && (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null) ->
                 IosStreamLease.loadRemote(native, locator, startUs, play)
             else -> at_audio_load(native, source, startUs, play)
         }
@@ -515,13 +519,17 @@ class IosPlaybackPort : PlaybackPort {
     private fun loadQueued(command: PlaybackCommand.Load, view: QueuedView) {
         val request = command.request
         stop()
-        val source = Inbound.Prepare(request.occurrenceId, request.mediaId, view.prepared, command.startPositionMs, command.playWhenReady)
+        val source = Inbound.Prepare(
+            request.occurrenceId, request.mediaId, view.prepared, command.startPositionMs, command.playWhenReady,
+            request.attemptId,
+        )
         when (val outcome = view.outcome) {
             is IosNativeAudioRoute.Outcome.Ready -> loadPrepared(source, outcome)
             is IosNativeAudioRoute.Outcome.Streamed -> loadStreamed(source, outcome)
             // Only Ready and Streamed outcomes are kept, so these cannot arrive here.
             is IosNativeAudioRoute.Outcome.Refused, is IosNativeAudioRoute.Outcome.Failed ->
-                errors.tryEmit(PlaybackFailure(request.occurrenceId, PlaybackFailureReason.OPEN_FAILED, "the prepared audio is unavailable"))
+                errors.tryEmit(PlaybackFailure(request.occurrenceId, PlaybackFailureReason.OPEN_FAILED,
+                    "the prepared audio is unavailable", attemptId = request.attemptId))
         }
     }
 
@@ -562,7 +570,8 @@ class IosPlaybackPort : PlaybackPort {
         val occurrenceId = item.command.request.occurrenceId
         when (outcome) {
             is IosTelegramTrackOutcome.Refused ->
-                errors.tryEmit(PlaybackFailure(occurrenceId, PlaybackFailureReason.OPEN_FAILED, outcome.reason))
+                errors.tryEmit(PlaybackFailure(occurrenceId, PlaybackFailureReason.OPEN_FAILED, outcome.reason,
+                    attemptId = item.command.request.attemptId))
             is IosTelegramTrackOutcome.Ready -> {
                 request = item.command.request
                 val native = outputForLoad()
@@ -671,7 +680,7 @@ class IosPlaybackPort : PlaybackPort {
     }
 
     private fun fail(reason: PlaybackFailureReason) {
-        request?.let { errors.tryEmit(PlaybackFailure(it.occurrenceId, reason, "iOS playback rejected")) }
+        request?.let { errors.tryEmit(PlaybackFailure(it.occurrenceId, reason, "iOS playback rejected", attemptId = it.attemptId)) }
     }
 
     private fun micros(ms: Long): ULong = ms.coerceAtMost(Long.MAX_VALUE / 1_000).toULong() * 1_000uL
@@ -704,6 +713,7 @@ class IosPlaybackPort : PlaybackPort {
             val prepared: PreparedAudio,
             val startPositionMs: Long,
             val playWhenReady: Boolean,
+            val attemptId: Long? = null,
         ) : Inbound
 
         class Prepared(

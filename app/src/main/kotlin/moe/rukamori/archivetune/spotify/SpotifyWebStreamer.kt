@@ -36,6 +36,7 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import moe.rukamori.archivetune.utils.withAppProxy
 
 object SpotifyWebStreamer {
@@ -90,6 +91,14 @@ object SpotifyWebStreamer {
 
     private val audioFileMap = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val pendingTrackResolutions = java.util.concurrent.ConcurrentHashMap<String, CompletableDeferred<String>>()
+    private val streamGeneration = AtomicLong()
+
+    /** CDN URLs are always fetched anew; also retire the old manifest and an in-flight storage resolve. */
+    fun invalidateTrack(trackUri: String) {
+        streamGeneration.incrementAndGet()
+        audioFileMap.remove(trackUri)
+        pendingTrackResolutions.remove(trackUri)?.cancel()
+    }
 
     @Volatile
     private var cachedClientToken: String? = null
@@ -101,6 +110,7 @@ object SpotifyWebStreamer {
     var accessTokenProvider: (suspend () -> String?)? = null
 
     fun resetSession() {
+        streamGeneration.incrementAndGet()
         activeWebSocket?.close(1000, "session reset")
         activeWebSocket = null
         dealerConnectionId = null
@@ -176,6 +186,7 @@ object SpotifyWebStreamer {
                         webSocket: WebSocket,
                         text: String,
                     ) {
+                        if (connectionIdDeferred !== deferred) return
                         val json = runCatching { JSONObject(text) }.getOrNull() ?: return
                         val connId = json.optJSONObject("headers")?.optString("Spotify-Connection-Id")
                         if (!connId.isNullOrEmpty() && dealerConnectionId == null) {
@@ -209,6 +220,7 @@ object SpotifyWebStreamer {
                         t: Throwable,
                         response: Response?,
                     ) {
+                        if (connectionIdDeferred !== deferred) return
                         Timber.tag(TAG).w(t, "Dealer websocket failed")
                         activeWebSocket = null
                         dealerConnectionId = null
@@ -221,6 +233,7 @@ object SpotifyWebStreamer {
                         code: Int,
                         reason: String,
                     ) {
+                        if (connectionIdDeferred !== deferred) return
                         activeWebSocket = null
                         dealerConnectionId = null
                         connectionIdDeferred = null
@@ -399,6 +412,7 @@ object SpotifyWebStreamer {
         trackUri: String,
         deviceId: String,
     ): String? {
+        val generation = streamGeneration.get()
         val token = token() ?: run {
             Timber.tag(TAG).d("No Spotify access token; direct streaming unavailable")
             return null
@@ -436,14 +450,14 @@ object SpotifyWebStreamer {
                     withTimeoutOrNull(MANIFEST_TIMEOUT_MS) { deferred.await() }
                         ?: audioFileMap[trackUri]
             } finally {
-                pendingTrackResolutions.remove(trackUri)
+                pendingTrackResolutions.remove(trackUri, deferred)
             }
         }
         if (fileId == null) {
             Timber.tag(TAG).w("No manifest file id arrived for %s", trackUri)
             return null
         }
-        return resolveAudioCdn(fileId, token, clientToken)
+        return resolveAudioCdn(fileId, token, clientToken)?.takeIf { generation == streamGeneration.get() }
     }
 
     private suspend fun resolveAudioCdn(
