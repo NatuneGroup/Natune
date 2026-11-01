@@ -119,8 +119,9 @@ enum class RecoveryOutcome {
  *
  * Any failure before that last journal write runs [rollback]: every backup returns to its live path, staged
  * leftovers and live files at targets that had no original are removed, the journal is marked `ROLLED_BACK` and
- * deleted, then the original failure is rethrown. A process killed mid-commit leaves the journal behind for
- * [recover].
+ * deleted, then the original failure is rethrown. A rollback step that itself fails leaves the journal at
+ * `ORIGINALS_MOVED` so [recover] retries instead of startup opening a half-restored set. A process killed
+ * mid-commit leaves the journal behind for [recover] either way.
  *
  * Two-phase commit: [commit]`(retainBackups = true)` leaves the journal at `APPLYING` with the new files live and
  * every backup intact. That is how the database and the settings vault move together: the caller applies the
@@ -142,7 +143,8 @@ class RestoreTransaction(
     /**
      * Runs the staged swap to [RestorePhase.COMMITTED] and removes the backups and journal — or, with
      * [retainBackups], stops at [RestorePhase.APPLYING] and keeps both until [finalize] or [rollbackCommitted]
-     * is called. Throws the first failure after rolling the live files back to their pre-commit contents.
+     * is called. Throws the first failure after rolling the live files back to their pre-commit contents — or,
+     * when a rollback step fails too, after journaling the remaining rollback for [recover] to retry.
      */
     fun commit(retainBackups: Boolean = false) {
         check(!ops.exists(journalPath)) { "Unrecovered restore journal at $journalPath; run recover() first" }
@@ -205,15 +207,16 @@ class RestoreTransaction(
      * Puts every retained backup back over the staged installs — the rollback a failed non-file apply owes the
      * user — then deletes staged leftovers and the journal. Idempotent and kill-safe: it re-journals
      * `ORIGINALS_MOVED` before touching a file, so a kill mid-rollback leaves a journal [recover] completes the
-     * same rollback from. Throws before moving anything when a needed backup is already gone.
+     * same rollback from, and a target already restored — live present, backup gone — counts as done rather
+     * than missing. Throws before moving anything only when an original is gone from both places.
      */
     fun rollbackCommitted() {
         val journal = readJournal() ?: return
         when (journal.phase) {
             RestorePhase.APPLYING, RestorePhase.COMMITTED -> {
                 journal.targets.forEach { entry ->
-                    check(!entry.hadLive || ops.exists(entry.backupPath)) {
-                        "Cannot roll back a committed restore; backup is gone: ${entry.backupPath}"
+                    check(!entry.hadLive || ops.exists(entry.livePath) || ops.exists(entry.backupPath)) {
+                        "Cannot roll back a committed restore; original is lost: ${entry.livePath}"
                     }
                 }
                 writeJournal(ops, journalPath, RestorePhase.ORIGINALS_MOVED, journal.targets)
@@ -234,11 +237,18 @@ class RestoreTransaction(
         ops.readBytes(journalPath)?.decodeToString()?.let(RestorePhaseJournal::decode)
 
     /**
-     * Undoes the swap [commit] began after [cause] stopped it: originals return, installs at targets that had no
-     * original are removed, and staged leftovers are deleted. Best effort per file so one failing path cannot
-     * strand the rest; the original failure always propagates.
+     * Undoes the swap [commit] began after [cause] stopped it: the journal is first advanced to ORIGINALS_MOVED
+     * so a kill mid-rollback re-enters a phase that tolerates already-restored files, then every original is put
+     * back and installs at targets that had none are removed. A failing step is collected, not swallowed: the
+     * journal is left at ORIGINALS_MOVED so the next [recover] retries the same work instead of a startup
+     * opening a half-restored database. The commit's own failure always propagates.
      */
     private fun rollback(entries: List<RestorePlanEntry>, cause: Exception): Nothing {
+        try {
+            writeJournal(ops, journalPath, RestorePhase.ORIGINALS_MOVED, entries)
+        } catch (_: Exception) {
+        }
+        var rollbackFailure: Exception? = null
         entries.forEach { entry ->
             try {
                 if (ops.exists(entry.backupPath)) {
@@ -246,22 +256,26 @@ class RestoreTransaction(
                 } else if (!entry.hadLive && ops.exists(entry.livePath)) {
                     ops.delete(entry.livePath)
                 }
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                if (rollbackFailure == null) rollbackFailure = failure
             }
         }
         entries.forEach { entry ->
             try {
                 if (ops.exists(entry.stagedPath)) ops.delete(entry.stagedPath)
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                if (rollbackFailure == null) rollbackFailure = failure
             }
         }
-        try {
-            writeJournal(ops, journalPath, RestorePhase.ROLLED_BACK, entries)
-        } catch (_: Exception) {
-        }
-        try {
-            if (ops.exists(journalPath)) ops.delete(journalPath)
-        } catch (_: Exception) {
+        if (rollbackFailure == null) {
+            try {
+                writeJournal(ops, journalPath, RestorePhase.ROLLED_BACK, entries)
+            } catch (_: Exception) {
+            }
+            try {
+                if (ops.exists(journalPath)) ops.delete(journalPath)
+            } catch (_: Exception) {
+            }
         }
         throw cause
     }
@@ -324,6 +338,9 @@ class RestoreTransaction(
             journalPath: String,
             entries: List<RestorePlanEntry>,
         ): RecoveryOutcome {
+            // The rollback phase is journaled BEFORE a file moves: a kill mid-rollback lands back here, where a
+            // target whose original is already restored (live present, backup gone) is done, never lost.
+            writeJournal(ops, journalPath, RestorePhase.ORIGINALS_MOVED, entries)
             restoreOriginals(ops, entries)
             val lostOriginal = entries.any { entry -> entry.hadLive && !ops.exists(entry.livePath) }
             if (lostOriginal) return RecoveryOutcome.CORRUPT
@@ -334,27 +351,33 @@ class RestoreTransaction(
         }
 
         /**
-         * A retained commit left at `APPLYING`: the new files are all live and untouched, so the caller is
-         * handed [RecoveryOutcome.PENDING_APPLY] to finish the non-file apply. An `APPLYING` journal beside an
-         * inconsistent live set can only come from outside the swap, so it gets the same rollback-or-corrupt
-         * treatment as a broken `COMMITTED`.
+         * A retained commit left at `APPLYING`: every staged file is live, so the caller is handed
+         * [RecoveryOutcome.PENDING_APPLY] to finish the non-file apply. Consistency only checks that staged
+         * files landed — a sidecar Room created at runtime is not part of the swap and never by itself means
+         * rollback. A staged file that went missing gets the same rollback as a broken COMMITTED.
          */
         private fun applyingRecovery(
             ops: RestoreFileOps,
             journalPath: String,
             entries: List<RestorePlanEntry>,
         ): RecoveryOutcome {
-            val consistent = entries.all { entry -> ops.exists(entry.livePath) == entry.hasStaged }
+            entries.forEach { entry ->
+                if (entry.hasStaged && !ops.exists(entry.livePath) && ops.exists(entry.stagedPath)) {
+                    ops.atomicRename(entry.stagedPath, entry.livePath)
+                }
+            }
+            val consistent = entries.all { entry -> !entry.hasStaged || ops.exists(entry.livePath) }
             if (consistent) return RecoveryOutcome.PENDING_APPLY
-            return rollbackOrCorrupt(ops, journalPath, entries)
+            return rollbackRecovery(ops, journalPath, entries)
         }
 
         /**
          * Finishes a swap whose staged installs all committed: any live file still missing takes its staged copy,
-         * then backups, staged leftovers and the journal are deleted. A live file missing with no staged copy to
-         * promote, or a live file the new state says should be absent, means the swap no longer matches its
-         * journal; the only consistent end states are a full rollback to the originals (possible only while every
-         * original backup still exists) or CORRUPT.
+         * then backups, staged leftovers and the journal are deleted. Consistency only checks that staged files
+         * landed — a sidecar Room created at runtime, or any other file a target never staged, is ignored here
+         * and left alone rather than forcing a rollback or CORRUPT over legitimate runtime files. A staged file
+         * missing with nothing to promote means the swap no longer matches its journal and gets the rollback
+         * path — which journals ORIGINALS_MOVED before moving so a mid-rollback kill is retried, not re-judged.
          */
         private fun committedRecovery(
             ops: RestoreFileOps,
@@ -366,36 +389,12 @@ class RestoreTransaction(
                     ops.atomicRename(entry.stagedPath, entry.livePath)
                 }
             }
-            val consistent = entries.all { entry -> ops.exists(entry.livePath) == entry.hasStaged }
-            if (!consistent) return rollbackOrCorrupt(ops, journalPath, entries)
+            val consistent = entries.all { entry -> !entry.hasStaged || ops.exists(entry.livePath) }
+            if (!consistent) return rollbackRecovery(ops, journalPath, entries)
             entries.forEach { entry -> if (ops.exists(entry.backupPath)) ops.delete(entry.backupPath) }
             entries.forEach { entry -> if (ops.exists(entry.stagedPath)) ops.delete(entry.stagedPath) }
             if (ops.exists(journalPath)) ops.delete(journalPath)
             return RecoveryOutcome.COMMITTED
-        }
-
-        /**
-         * The only consistent end states for a journal that disagrees with its live set: every original restored
-         * (possible only while all of them still exist as backups) or CORRUPT.
-         */
-        private fun rollbackOrCorrupt(
-            ops: RestoreFileOps,
-            journalPath: String,
-            entries: List<RestorePlanEntry>,
-        ): RecoveryOutcome {
-            val canRestore = entries.all { entry -> !entry.hadLive || ops.exists(entry.backupPath) }
-            if (!canRestore) return RecoveryOutcome.CORRUPT
-            entries.forEach { entry ->
-                if (entry.hadLive) {
-                    ops.atomicRename(entry.backupPath, entry.livePath)
-                } else if (ops.exists(entry.livePath)) {
-                    ops.delete(entry.livePath)
-                }
-            }
-            entries.forEach { entry -> if (ops.exists(entry.stagedPath)) ops.delete(entry.stagedPath) }
-            writeJournal(ops, journalPath, RestorePhase.ROLLED_BACK, entries)
-            if (ops.exists(journalPath)) ops.delete(journalPath)
-            return RecoveryOutcome.ROLLED_BACK
         }
     }
 }
