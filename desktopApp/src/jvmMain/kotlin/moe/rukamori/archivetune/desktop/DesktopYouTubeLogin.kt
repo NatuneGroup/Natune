@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import io.ktor.client.request.forms.submitForm
 import io.ktor.http.parameters
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,9 +25,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopCookieOnlyBrowserAuth
-import moe.rukamori.archivetune.desktop.provider.fetchYouTubeAccountSession
-import moe.rukamori.archivetune.desktop.provider.fetchYouTubeVisitorData
-import moe.rukamori.archivetune.desktop.provider.verifyYouTubeAccountMenu
+import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountLocale
+import moe.rukamori.archivetune.shared.data.provider.fetchYouTubeAccountSession
+import moe.rukamori.archivetune.shared.data.provider.fetchYouTubeVisitorData
+import moe.rukamori.archivetune.shared.data.provider.verifyYouTubeAccountMenu
 import moe.rukamori.archivetune.shared.domain.platform.AuthorizedHttpsOrigin
 import moe.rukamori.archivetune.shared.domain.platform.CookieOnlyLoginFailure
 import moe.rukamori.archivetune.shared.domain.platform.CookieOnlyLoginOutcome
@@ -87,7 +89,7 @@ internal class DesktopYouTubeAccountOwner(
     val channels: StateFlow<List<YouTubeAccountChannel>> = channelState.asStateFlow()
 
     suspend fun verify(candidate: YouTubeSessionCandidate): YouTubeAccountIdentity? =
-        verifyYouTubeAccountMenu(graph.http, candidate)
+        verifyYouTubeAccountMenu(graph.http, candidate, desktopYouTubeAccountLocale())
 
     /** Reads the channel list of the stored session. A failure keeps the last list rather than showing none. */
     suspend fun refreshChannels() {
@@ -101,6 +103,7 @@ internal class DesktopYouTubeAccountOwner(
             fetchYouTubeAccountSession(
                 graph.http, cookie, snapshot[VisitorDataKey]?.takeIf { it.isNotBlank() },
                 snapshot[DataSyncIdKey, ""].takeIf { it.isNotBlank() },
+                desktopYouTubeAccountLocale(),
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -169,12 +172,14 @@ internal class DesktopYouTubeAccountOwner(
     /** Verifies the cookie privately and commits it with its identity in one edit. Returns the failure, or null. */
     private suspend fun commitVerified(cookie: String, generation: Long): YouTubeLoginError? {
         if (!hasYouTubeSignInCookie(cookie)) return YouTubeLoginError.LoginFailed
-        val session = fetchYouTubeAccountSession(graph.http, cookie, visitorData = null, dataSyncId = null)
-            ?: return YouTubeLoginError.Http
+        val session = fetchYouTubeAccountSession(
+            graph.http, cookie, visitorData = null, dataSyncId = null, locale = desktopYouTubeAccountLocale(),
+        ) ?: return YouTubeLoginError.Http
         val dataSyncId = session.dataSyncId ?: return YouTubeLoginError.MissingDataSyncId
         val visitorData = session.visitorData ?: fetchYouTubeVisitorData(graph.http)
-        val identity = verifyYouTubeAccountMenu(graph.http, YouTubeSessionCandidate(cookie, visitorData, dataSyncId))
-            ?: return YouTubeLoginError.LoginFailed
+        val identity = verifyYouTubeAccountMenu(
+            graph.http, YouTubeSessionCandidate(cookie, visitorData, dataSyncId), desktopYouTubeAccountLocale(),
+        ) ?: return YouTubeLoginError.LoginFailed
         // A newer attempt owns the session now; this one must not overwrite it.
         if (generation != generations.get()) return null
         controller.edit { commitYouTubeManualImport(YouTubeManualAuth(cookie, visitorData, dataSyncId, null), identity) }
@@ -191,6 +196,15 @@ private fun cookieHeader(cookies: List<PrivateCookie>): String =
     cookies.groupBy { it.name }
         .map { (_, sameName) -> sameName.maxBy { it.domain.removePrefix(".").length } }
         .joinToString("; ") { "${it.name}=${it.value.reveal()}" }
+
+/** The account calls send the desktop's default region and language, as the requests always have. */
+private fun desktopYouTubeAccountLocale(): YouTubeAccountLocale {
+    val locale = Locale.getDefault()
+    return YouTubeAccountLocale(
+        region = locale.country.takeIf { it.length == 2 }?.uppercase(Locale.US) ?: "US",
+        language = locale.toLanguageTag().ifBlank { "en" },
+    )
+}
 
 private fun CookieOnlyLoginFailure.toLoginError(): YouTubeLoginError = when (this) {
     CookieOnlyLoginFailure.BROWSER_UNAVAILABLE -> YouTubeLoginError.RendererLost

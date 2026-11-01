@@ -46,6 +46,8 @@ import moe.rukamori.archivetune.shared.data.lyrics.PaxsenixDiagnostics
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceState
 import moe.rukamori.archivetune.shared.domain.presence.ListenerPresenceStore
+import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
+import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.QobuzTokenEntry
 import moe.rukamori.archivetune.shared.domain.settings.SourceHealth
@@ -60,6 +62,7 @@ import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceHealth
 import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
+import moe.rukamori.archivetune.shared.domain.settings.youTubeLoginBlock
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
@@ -73,6 +76,7 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_settings_change_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
+import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
 import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings
 import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
@@ -104,6 +108,8 @@ import moe.rukamori.archivetune.shared.ui.settings.TidalSettings
 import moe.rukamori.archivetune.shared.ui.settings.UpdateCommit
 import moe.rukamori.archivetune.shared.ui.settings.UpdateFeedResult
 import moe.rukamori.archivetune.shared.ui.settings.UpdateSettings
+import moe.rukamori.archivetune.shared.ui.settings.YouTubeAccountRoute
+import moe.rukamori.archivetune.shared.ui.settings.YouTubeLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.privacyInlineSettingsRows
 import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import org.jetbrains.compose.resources.stringResource
@@ -125,6 +131,9 @@ internal class IosSettingsOwners(internal val graph: IosSessionGraph, browser: I
         bitPerfectSupported = false,
     )
     val accounts = graph.accountLifecycle
+
+    /** The YouTube sign-in sheet and account owner; the Settings > Account page and the login page both use it. */
+    val youTube = IosYouTubeAccountOwner(graph, controller, browser)
 
     /** Lazy so the AI service is built only when its page opens; it shares the graph's HTTP engine and scope. */
     val aiActions by lazy { AiSettingsActions(graph.scope, controller, KtorAiTextService(graph.http)) }
@@ -365,6 +374,7 @@ internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.subst
 private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
+    "settings/account", YouTubeAccountRoute, YouTubeLoginRoute,
     "settings/integration", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
     "settings/lyrics/romanisation", "settings/ai_integration", "settings/about", IosListenTogetherSettingsRoute,
 ) + IOS_GENERAL_SETTINGS_ROUTES + IOS_LANE_SETTINGS_ROUTES
@@ -434,6 +444,30 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                     onDone = { navigation.back() },
                 )
             }
+            "settings/account", YouTubeAccountRoute -> {
+                val snapshot by owners.graph.settings.snapshots.collectAsState()
+                val channels by owners.youTube.channels.collectAsState()
+                val sessionKey = snapshot?.let { "${it[InnerTubeCookieKey, ""].hashCode()}|${it[DataSyncIdKey, ""]}" }
+                LaunchedEffect(sessionKey) { owners.youTube.refreshChannels() }
+                AccountSettings(
+                    controller = owners.controller,
+                    channels = channels,
+                    verifyAccount = owners.youTube::verify,
+                    logOut = owners.youTube::logOut,
+                    revokeCodeSession = owners.youTube::revokeCodeSession,
+                    onAuthCommitted = { scope.launch { owners.youTube.sessionChanged() } },
+                    // iOS has no YouTube library sync, so a switch reports that instead of silently doing nothing.
+                    onForceSyncAfterSwitch = { show(featureUnavailable) },
+                    navigate = navigate,
+                    onNotice = onNotice,
+                    onFailure = onFailure,
+                    scrollTo = scrollTo,
+                    avatar = { url, _, modifier -> IosRemoteArtwork(url, owners.graph.artworkLoader, modifier) },
+                    revealCredentialBlock = { owners.graph.settings.snapshots.value?.youTubeLoginBlock() },
+                    copyToClipboard = ::copyToIosClipboard,
+                )
+            }
+            YouTubeLoginRoute -> IosYouTubeLoginPage(owners.youTube, navigation)
             "settings/deezer" -> DeezerSettings(
                 controller = owners.controller,
                 accounts = owners.accounts,
