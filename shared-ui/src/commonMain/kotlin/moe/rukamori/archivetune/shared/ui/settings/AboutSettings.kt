@@ -53,7 +53,8 @@ sealed interface AboutLicensesState {
     data object Loading : AboutLicensesState
     data object Empty : AboutLicensesState
     data class Failed(val message: StringResource) : AboutLicensesState
-    data class Loaded(val entries: List<AboutLicenseEntry>) : AboutLicensesState
+    /** [bundledOnly] marks a list of only bundled-data notices, flagged so the dialog explains the catalog is absent. */
+    data class Loaded(val entries: List<AboutLicenseEntry>, val bundledOnly: Boolean = false) : AboutLicensesState
 }
 
 /**
@@ -561,6 +562,16 @@ private fun LicensesDialogContent(
                     ) {
                         Text(entry.name, style = MaterialTheme.typography.bodyLarge)
                         Text(details, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                if (state.bundledOnly) {
+                    item(key = "licenses_bundled_note") {
+                        Text(
+                            stringResource(Res.string.m6_about_bundled_notices_only),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
                     }
                 }
             }

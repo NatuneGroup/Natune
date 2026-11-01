@@ -218,7 +218,7 @@ internal fun DesktopAboutPage(
         memberAvatar = { url, _, modifier -> DesktopRemoteArtwork(url, graph.artworkLoader, modifier) },
         contributorsState = contributorsState,
         translationsState = translationsState,
-        licensesState = AboutLicensesState.Loaded(AboutBundledNotices.entries),
+        licensesState = AboutLicensesState.Loaded(AboutBundledNotices.entries, bundledOnly = true),
         activeDialog = dialog,
         navigate = { navigation.open(it) },
         onOpenUri = { openDesktopUri(it, graph::report) },
