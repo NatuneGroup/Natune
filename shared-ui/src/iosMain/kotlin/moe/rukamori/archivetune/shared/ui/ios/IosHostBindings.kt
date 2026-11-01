@@ -46,6 +46,8 @@ import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.lyrics.effectiveLyricsSyncOffsetMs
+import moe.rukamori.archivetune.shared.domain.settings.GlobalLyricsOffsetMsKey
 import moe.rukamori.archivetune.shared.domain.settings.NativeIosInterfaceKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
@@ -289,9 +291,17 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
     val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
     val reducedMotion = rememberIosReduceMotion()
+    // The stored per-song correction plus the global offset feeds every lyrics surface, Compose and native alike.
+    val queueState by graph.queue.state.collectAsState()
+    val currentSongRef = remember(queueState, document?.occurrenceId) {
+        queueState.entries.firstOrNull { it.occurrenceId == document?.occurrenceId }?.item?.ref
+    }
+    val storedSyncOffsetMs by remember(currentSongRef) {
+        currentSongRef?.let(graph.songLyricsOffsets::observeOffset) ?: flowOf(null)
+    }.collectAsState(null)
     val lyricsSettings = preferences.playerLyricsSettings(
         // Both renderers apply the route delay from PlaybackSnapshot through LyricsClock, not a second sync offset.
-        syncOffsetMs = 0L,
+        syncOffsetMs = effectiveLyricsSyncOffsetMs(storedSyncOffsetMs, (preferences[GlobalLyricsOffsetMsKey] ?: 0).toLong()),
         reducedMotion = reducedMotion,
         depthEffects = true,
         backgroundVocals = true,

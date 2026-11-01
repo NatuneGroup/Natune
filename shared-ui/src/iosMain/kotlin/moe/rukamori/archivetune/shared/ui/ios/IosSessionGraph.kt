@@ -32,6 +32,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomLocalMediaLibrary
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
+import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
@@ -150,6 +151,9 @@ internal class IosSessionGraph private constructor(
     private val reportLine: (String) -> Unit,
 ) {
     val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
+
+    /** The persisted per-song lyrics offsets this host applies on every lyrics surface. */
+    val songLyricsOffsets = RoomSongLyricsOffsetRepository(database.songLyricsOffsets())
     /** The playlist tag catalog and assignments, in the same portable file as the playlists; the tag manager is not mounted on iOS. */
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
     /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */

@@ -31,7 +31,9 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import moe.rukamori.archivetune.desktop.integration.DesktopLaunchIntake
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.data.listentogether.ListenTogetherServers
+import moe.rukamori.archivetune.shared.domain.lyrics.effectiveLyricsSyncOffsetMs
 import moe.rukamori.archivetune.shared.domain.settings.DisableAnimationsKey
+import moe.rukamori.archivetune.shared.domain.settings.GlobalLyricsOffsetMsKey
 import moe.rukamori.archivetune.shared.domain.settings.LyricsModeKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
@@ -272,6 +274,8 @@ private fun desktopPlayerSlots(
     val preferences = saved ?: PreferenceSnapshot.EMPTY
     val sessionKey = graph.lyricsSurface.sessionKey(document)
     val romanization = graph.lyricsSurface.romanization
+    val storedSyncOffsetMs by remember(current?.item?.ref) { tools.offsets.observe(current?.item?.ref) }
+        .collectAsState(null)
     val actions = remember(graph, occurrenceId, tools, current) {
         LyricsSurfaceActions(
             onSeek = { position ->
@@ -293,7 +297,7 @@ private fun desktopPlayerSlots(
         playback = graph.player.snapshot,
         romanization = romanization,
         settings = preferences.playerLyricsSettings(
-            syncOffsetMs = tools.offsets.value(current?.item?.ref),
+            syncOffsetMs = effectiveLyricsSyncOffsetMs(storedSyncOffsetMs, (preferences[GlobalLyricsOffsetMsKey] ?: 0).toLong()),
             reducedMotion = preferences[DisableAnimationsKey] == true,
             // ENHANCED reads its depth on desktop too; reduced motion leaves every row flat.
             depthEffects = LyricsMode.fromStored(preferences[LyricsModeKey]) == LyricsMode.ENHANCED &&
@@ -313,7 +317,7 @@ private fun desktopPlayerSlots(
             Column(modifier) {
                 val ref = current?.item?.ref
                 LyricsSyncControls(
-                    tools.offsets.value(ref), { delta -> if (ref != null) tools.offsets.adjust(ref, delta) },
+                    storedSyncOffsetMs ?: 0L, { delta -> if (ref != null) tools.offsets.adjust(ref, delta) },
                     { if (ref != null) tools.offsets.reset(ref) }, enabled = matching && ref != null,
                 )
                 Box(Modifier.weight(1f)) { lyrics.full(Modifier.fillMaxSize()) }

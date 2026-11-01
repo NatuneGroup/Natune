@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The fixed shift applied to every lyric clock before a song's own stored correction. -->
+    <string name="m6_global_lyrics_offset">Global lyrics offset (ms)</string>
+</resources>

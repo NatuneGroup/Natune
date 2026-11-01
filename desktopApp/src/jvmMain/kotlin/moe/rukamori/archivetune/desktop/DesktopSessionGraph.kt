@@ -33,6 +33,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
+import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepository
 import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.openNow
@@ -174,6 +175,9 @@ class DesktopSessionGraph internal constructor(
     private val drivers: List<Job>,
 ) {
     internal val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
+
+    /** The persisted per-song lyrics offsets, keyed by the playing item's content ref. */
+    internal val songLyricsOffsets = RoomSongLyricsOffsetRepository(database.songLyricsOffsets())
     /** The playlist tag catalog and assignments, in the same portable file as the playlists. */
     internal val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
 

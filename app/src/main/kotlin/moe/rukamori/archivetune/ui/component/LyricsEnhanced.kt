@@ -146,6 +146,7 @@ import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FO
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsPhonetics
+import moe.rukamori.archivetune.lyrics.LyricsDeadlineSchedule
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.lyrics.LyricsUtils
@@ -170,6 +171,10 @@ import kotlin.math.roundToLong
 private const val LRC_LEAD_MS = 300L
 private const val TTML_LEAD_MS = 0L
 private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
+
+/** The shortest span the karaoke sweep animates for; the slowest idle re-poll below it. */
+private const val ENHANCED_SWEEP_MIN_MS = 150L
+private const val IDLE_POLL_MS = 250L
 private const val MANUAL_SCROLL_TIMEOUT_MS = 3000L
 private const val MANUAL_SCROLL_DEBOUNCE_MS = 50L
 private const val LYRIC_FIRST_FOCUS_SETTLE_FRAMES = 42
@@ -189,7 +194,6 @@ private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 900L
 // A line-synced "syllable" is only a peg to hang a romanisation on, so it gets the shortest window
 // the library will accept rather than a share of the line's duration — see
 // buildWrappingKaraokeSyllables.
-private const val MIN_KARAOKE_SYLLABLE_DURATION_MS = 1
 
 // How long a line-synced line may keep focus after its own timestamp before it hands over to the
 // interlude dots. A shorter gap to the next line simply holds the line until that line starts.
@@ -602,7 +606,9 @@ fun LyricsEnhanced(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(player, lyricsSessionKey, animationsDisabled, playbackParameters.speed) {
+    // The word/line boundaries below which the position loop sleeps instead of frame-stepping.
+    val deadlineSchedule = remember(lyricsEntries) { LyricsDeadlineSchedule.of(lyricsEntries, ENHANCED_SWEEP_MIN_MS) }
+    LaunchedEffect(player, lyricsSessionKey, animationsDisabled, playbackParameters.speed, deadlineSchedule) {
         var wasSliderActive = false
         var anchorPlayerPositionMs = player.currentPosition.coerceAtLeast(0L)
         var anchorFrameNanos = 0L
@@ -645,7 +651,28 @@ fun LyricsEnhanced(
                 // playbackPositionMs.longValue (we already have the value in
                 // `rawPosition` / `nextPosition`).
                 val effectivePositionMs: Long
-                if (sliderPosition != null || !player.isPlaying || animationsDisabled) {
+                // Between word and line boundaries the drawn state is static: sleep to the next
+                // deadline and re-read the feed, rather than frame-stepping an unmoving sweep.
+                val idleFeedEstimateMs =
+                    (rawPosition + latestLyricsSyncOffset.value.toLong() +
+                        latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
+                        .coerceIn(0L, Int.MAX_VALUE.toLong())
+                if (sliderPosition == null && player.isPlaying && !animationsDisabled &&
+                    !deadlineSchedule.isLive(idleFeedEstimateMs)
+                ) {
+                    val next = deadlineSchedule.nextChangeAfter(idleFeedEstimateMs)
+                    delay(if (next == null) IDLE_POLL_MS else (next - idleFeedEstimateMs).coerceIn(16L, IDLE_POLL_MS))
+                    val restedPosition = player.currentPosition.coerceAtLeast(0L)
+                    anchorPlayerPositionMs = restedPosition
+                    anchorFrameNanos = 0L
+                    if (playbackPositionMs.longValue != restedPosition) {
+                        playbackPositionMs.longValue = restedPosition
+                    }
+                    effectivePositionMs =
+                        (restedPosition + latestLyricsSyncOffset.value.toLong() +
+                            latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
+                            .coerceIn(0L, Int.MAX_VALUE.toLong())
+                } else if (sliderPosition != null || !player.isPlaying || animationsDisabled) {
                     anchorPlayerPositionMs = rawPosition
                     anchorFrameNanos = 0L
                     if (playbackPositionMs.longValue != rawPosition) {
@@ -1707,43 +1734,6 @@ private fun buildSyncedLyrics(
     return SyncedLyrics(lines = lines)
 }
 
-private fun buildLineSyncedLrcLine(
-    entry: LyricsEntry,
-    romanizedText: String?,
-    start: Int,
-    end: Int,
-): ISyncedLine {
-    val translation = providedTranslationTextForEntry(entry)
-    val normalizedRomanizedText = romanizedText?.trim()?.takeIf { it.isNotEmpty() }
-
-    if (normalizedRomanizedText == null) {
-        return SyncedLine(
-            content = entry.text,
-            translation = translation,
-            start = start,
-            end = end,
-        )
-    }
-
-    // Keep the existing wrapping units, but never manufacture timed phonetic alignment.
-    val syllables = entry.text.toLyricsWrappingUnits().ifEmpty { listOf(entry.text) }.map { unit ->
-        KaraokeSyllable(
-            content = unit,
-            start = start,
-            end = start + MIN_KARAOKE_SYLLABLE_DURATION_MS,
-            phonetic = null,
-        )
-    }
-
-    return KaraokeLine.MainKaraokeLine(
-        syllables = syllables,
-        translation = translation,
-        alignment = KaraokeAlignment.Start,
-        start = start,
-        end = end,
-        phonetic = normalizedRomanizedText,
-    )
-}
 
 /**
  * Renders exactly one karaoke line cluster — the joined phonetic (romanisation) row above, the

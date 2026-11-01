@@ -1925,7 +1925,7 @@ object LyricsUtils {
                 preferences.romanizeJapanese && looksJapanese(text, sourceLanguage, contextText) -> romanizeJapanese(text)
                 preferences.romanizeKorean && isKorean(text) -> romanizeKorean(text)
                 preferences.romanizeHindi && isHindi(text) -> romanizeHindi(text)
-                preferences.romanizeChinese && !looksJapanese(text, sourceLanguage, contextText) && isChinese(text) -> romanizeWithIcu(text)
+                preferences.romanizeChinese && !looksJapanese(text, sourceLanguage, contextText) && isChinese(text) -> romanizeChinese(text)
                 preferences.romanizeOther && hasOtherRomanizableScript(text) -> romanizeWithIcu(text)
                 else -> null
             }
@@ -1946,7 +1946,7 @@ object LyricsUtils {
                 preferences.romanizeJapanese && looksJapanese(lineText, sourceLanguage, contextText) -> romanizeJapanese(word)
                 preferences.romanizeKorean && isKorean(lineText) -> romanizeKorean(word)
                 preferences.romanizeHindi && isHindi(lineText) -> romanizeHindi(word)
-                preferences.romanizeChinese && !looksJapanese(lineText, sourceLanguage, contextText) && isChinese(lineText) -> romanizeWithIcu(word)
+                preferences.romanizeChinese && !looksJapanese(lineText, sourceLanguage, contextText) && isChinese(lineText) -> romanizeChinese(word)
                 preferences.romanizeOther && hasOtherRomanizableScript(lineText) -> romanizeWithIcu(word)
                 else -> null
             }

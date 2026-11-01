@@ -71,6 +71,39 @@ and the tap policy match the Compose renderer. Both use `LyricsClock`, which sub
 snapshot's output-latency estimate once at the playback speed, separately from the user offset;
 the iOS host does not add a second route-latency offset.
 
+## Sync offsets, romanization and frame scheduling
+
+The lyrics offset is two parts that add: a **global** preference (`GlobalLyricsOffsetMsKey`,
+editable on the Lyrics settings page) and a **per-song** correction the lyrics-menu dialog edits.
+The per-song part is persisted, not session state: Android stores it as `SongEntity.lyricsOffset`
+(InternalDatabase v39) and desktop/iOS store it as `portable_song_lyrics_offset` rows
+(PortableStateDatabase v11), keyed by provider + media id rather than queue occurrence. Every
+lyrics surface — full screen, compact strip, the SimpMusic sheet, the iOS native view — applies
+`stored + global` through the same `syncOffsetMs` plumbing. When a song row does not exist yet,
+committing the dialog inserts it first so the offset is never silently dropped.
+
+Mandarin romanization is **offline**: `MandarinPinyinData` bundles ~26.8k kMandarin readings and
+~8.8k polyphonic phrase overrides generated from the MIT-licensed `pinyin-data` and
+`phrase-pinyin-data` sets (see `docs/CREDITS.md`, `scripts/generate_mandarin_pinyin.py`).
+`MandarinRomanization` longest-matches phrases then falls back per character, and ICU stays the
+fallback for characters the table does not cover. The same table serves the shared `LyricsRomanizer`
+(desktop/iOS) and the Android `LyricsUtils` path, so no host needs a bundled `mandarin.bin` or a
+language pack download for pinyin.
+
+Translations of line-synced documents are stored **merged**, never as an overwrite. A saved
+translation re-stamps its lines with the source rows' own timestamps and lands in a trailing
+`[translatedLyrics]` section (`LrcTranslationMerge`), which the repeated-timestamp fold already
+parses back into `providerTranslationText`; re-translating strips the old section first. The same
+shape arrives from providers carrying `[translated_lyrics]`.
+
+Frame requests are **deadline-gated**, not per-vsync. `LyricsDeadlineSchedule` (shared-ui, plus the
+`LyricsEntry` copy in `app/lyrics`) lists the live spans where motion is continuous — a word sweep
+in flight (at least `minSweepMs`), a breathing interlude — and the discrete edges where the drawn
+state changes. The clock loop requests a frame inside a live span, sleeps to the next boundary
+otherwise, and re-checks at most every 250 ms so a seek still lands promptly; paused surfaces poll
+at 100 ms. The SwiftUI view already pauses its `TimelineView` when hidden and polls a held
+position at 250 ms, matching the same budget.
+
 `LyricsMode` (settings) picks between these. Do not delete `SimpMusicLyrics`
 thinking it is player-style chrome — it is a lyrics style a user can select.
 
