@@ -64,8 +64,10 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamUserIdKey
 import moe.rukamori.archivetune.shared.domain.settings.clearSpotifyLibrespotSession
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInDecision
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamAccountBinding
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
+import moe.rukamori.archivetune.shared.domain.source.streamAccountBinding
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
 import moe.rukamori.archivetune.spotify.SPOTIFY_HISTORY_ARCHIVE_LIMIT
@@ -164,6 +166,8 @@ internal class DesktopSpotifyAccounts(
             graph = graph,
             controller = controller,
             catalogUserId = { prefs ->
+                // Only the account id is compared; a catalog profile read that drops the product
+                // field can never refuse a sign-in here.
                 catalogTokenForComparison(prefs)?.let { fetchSpotifyProfile(graph.http, it) }?.userId
             },
         )
@@ -559,11 +563,14 @@ internal class DesktopSpotifyAccounts(
         refusalState.value = null
     }
 
-    /** The page commits the stored streaming session away after this; only an open window is left to close. */
+    /** The page commits the stored streaming session away after this; host cleanup matches the binding it signed out. */
     suspend fun signOutStreaming() {
         streamingAttempt?.cancel()
-        librespot.signOut()
-        browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_STREAMING)
+        when (snapshot().spotifyStreamEngine().streamAccountBinding()) {
+            SpotifyStreamAccountBinding.LIBRARY -> librespot.signOut()
+            SpotifyStreamAccountBinding.DEDICATED ->
+                browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_STREAMING)
+        }
     }
 
     private suspend fun captureCookies(scope: CredentialScope): SpotifyCookieResult {

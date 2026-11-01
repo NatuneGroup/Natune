@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.desktop
 
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -8,6 +9,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import java.awt.Desktop
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.BindException
 import java.net.InetSocketAddress
@@ -38,13 +40,16 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.clearSpotifyLibrespotSession
 import moe.rukamori.archivetune.shared.domain.settings.recordSpotifyLibraryProduct
 import moe.rukamori.archivetune.shared.domain.settings.setSpotifyLibrespotSession
+import moe.rukamori.archivetune.shared.domain.source.SPOTIFY_OAUTH_ME_ENDPOINT
 import moe.rukamori.archivetune.shared.domain.source.SPOTIFY_OAUTH_TOKEN_ENDPOINT
+import moe.rukamori.archivetune.shared.domain.source.SpotifyOAuthAccountFacts
 import moe.rukamori.archivetune.shared.domain.source.SpotifyOAuthTokenGrant
 import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
 import moe.rukamori.archivetune.shared.domain.source.SpotifyProduct
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInDecision
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
+import moe.rukamori.archivetune.shared.domain.source.parseSpotifyOAuthMe
 import moe.rukamori.archivetune.shared.domain.source.parseSpotifyOAuthTokenGrant
 import moe.rukamori.archivetune.shared.domain.source.spotifyOAuthAuthorizeUrl
 import moe.rukamori.archivetune.shared.domain.source.spotifyPkceChallenge
@@ -133,8 +138,10 @@ internal class DesktopSpotifyLibrespot(
                         val refreshToken =
                             grant.refreshToken?.takeIf { it.isNotBlank() }
                                 ?: return@withLock LibrespotSignInOutcome.Refused(SpotifySignInRefusal.INVALID_SESSION)
+                        // The OAuth bearer reads the public profile directly — it is not a
+                        // web-player token, so the GraphQL profile path cannot answer it.
                         val me =
-                            fetchSpotifyProfile(graph.http, grant.accessToken)
+                            fetchMe(grant.accessToken)
                                 ?: return@withLock LibrespotSignInOutcome.Refused(SpotifySignInRefusal.PROFILE_UNAVAILABLE)
                         val prefs = snapshot()
                         val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
@@ -292,7 +299,7 @@ internal class DesktopSpotifyLibrespot(
         ) {
             return
         }
-        val product = fetchSpotifyProfile(graph.http, accessToken)?.product ?: return
+        val product = fetchMe(accessToken)?.product ?: return
         controller.edit {
             if (this[SpotifySpDcKey].orEmpty() != catalogSpDc) {
                 clearSpotifyLibrespotSession()
@@ -315,9 +322,11 @@ internal class DesktopSpotifyLibrespot(
     }
 
     /**
-     * Waits for Spotify's redirect with the matching [state] on the loopback listener. Requests for
-     * other paths (a browser's favicon) are answered and ignored; the loop gives up after the
-     * deadline and cancellation interrupts it between accepts.
+     * Waits for Spotify's redirect with the matching [state] on the loopback listener. Each request
+     * gets a bounded, cancellable read — total head bytes and the request's own wall-clock deadline
+     * are both capped, the client socket dies with a cancelled attempt — and requests for other
+     * paths or a malformed query are answered and ignored. The loop gives up after the deadline and
+     * cancellation interrupts it between accepts.
      */
     private suspend fun awaitCallback(
         server: ServerSocket,
@@ -334,6 +343,7 @@ internal class DesktopSpotifyLibrespot(
                     } catch (_: SocketTimeoutException) {
                         continue
                     }
+                // use() closes the client socket on every exit, including a cancelled read.
                 val outcome = socket.use { answer(it, state) }
                 if (outcome != null) return@withContext outcome
             }
@@ -341,27 +351,30 @@ internal class DesktopSpotifyLibrespot(
         }
 
     /** Null when this request was not the callback; otherwise the code, a refusal, or a declined sign-in. */
-    private fun answer(
+    private suspend fun answer(
         socket: Socket,
         state: String,
     ): Callback? {
-        socket.soTimeout = READ_TIMEOUT_MS
-        val line =
+        val head =
             try {
-                readRequestLine(socket)
+                readRequestHead(socket)
             } catch (_: IOException) {
                 return null
             } ?: return null
-        val target = line.split(' ').getOrNull(1) ?: return null
+        val target = head.substringBefore('\n').trimEnd('\r').split(' ').getOrNull(1) ?: return null
         val path = target.substringBefore('?')
         if (path != CALLBACK_PATH) {
             respond(socket, 404, null)
             return null
         }
+        // A malformed escape is that request's failure, not the attempt's: answer it and keep
+        // waiting for the real callback.
         val fields =
-            target.substringAfter('?', "").split('&').filter { it.isNotEmpty() }.associate { part ->
-                URLDecoder.decode(part.substringBefore('='), Charsets.UTF_8) to
-                    URLDecoder.decode(part.substringAfter('=', ""), Charsets.UTF_8)
+            try {
+                queryFields(target.substringAfter('?', ""))
+            } catch (_: IllegalArgumentException) {
+                respond(socket, 400, null)
+                return null
             }
         if (fields["state"] != state) {
             respond(socket, 404, null)
@@ -376,17 +389,41 @@ internal class DesktopSpotifyLibrespot(
         return if (code != null) Callback.Code(code) else Callback.Refused
     }
 
-    private fun readRequestLine(socket: Socket): String? {
+    /**
+     * Reads one request head — request line plus headers — capped at [MAX_REQUEST_BYTES] total and
+     * [REQUEST_DEADLINE_MS] wall time, checking cancellation between reads. Null on an over-limit,
+     * stalled or headless connection; the caller's socket close cleans it up.
+     */
+    private suspend fun readRequestHead(socket: Socket): String? {
         val input = socket.getInputStream()
-        val bytes = java.io.ByteArrayOutputStream()
-        while (bytes.size() < MAX_REQUEST_LINE) {
-            val next = input.read()
+        val bytes = ByteArrayOutputStream()
+        val deadline = nowMs() + REQUEST_DEADLINE_MS
+        var last4 = 0
+        while (bytes.size() < MAX_REQUEST_BYTES) {
+            currentCoroutineContext().ensureActive()
+            val remaining = (deadline - nowMs()).coerceAtMost(READ_TIMEOUT_MS)
+            if (remaining <= 0) return null
+            socket.soTimeout = remaining.coerceAtLeast(1L).toInt()
+            val next =
+                try {
+                    input.read()
+                } catch (_: SocketTimeoutException) {
+                    return null
+                }
             if (next < 0) return null
-            if (next == '\n'.code) return bytes.toString(Charsets.US_ASCII).trimEnd('\r')
             bytes.write(next)
+            last4 = (last4 shl 8) or next
+            if (last4 == HEAD_END) return bytes.toString(Charsets.US_ASCII)
         }
         return null
     }
+
+    /** Percent-decodes a=b&c=d pairs; a malformed escape throws IllegalArgumentException. */
+    private fun queryFields(query: String): Map<String, String> =
+        query.split('&').filter { it.isNotEmpty() }.associate { part ->
+            URLDecoder.decode(part.substringBefore('='), Charsets.UTF_8) to
+                URLDecoder.decode(part.substringAfter('=', ""), Charsets.UTF_8)
+        }
 
     private fun respond(
         socket: Socket,
@@ -402,7 +439,11 @@ internal class DesktopSpotifyLibrespot(
                     "</title></head><body style=\"font-family:sans-serif;margin:3em\"><p>$escaped</p></body></html>"
             }
         val payload = body.toByteArray(Charsets.UTF_8)
-        val reason = if (status == 200) "OK" else "Not Found"
+        val reason = when (status) {
+            200 -> "OK"
+            400 -> "Bad Request"
+            else -> "Not Found"
+        }
         val head =
             "HTTP/1.1 $status $reason\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${payload.size}\r\n" +
                 "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
@@ -438,6 +479,22 @@ internal class DesktopSpotifyLibrespot(
                 refreshToken = refreshToken,
             ),
         )?.let(::parseSpotifyOAuthTokenGrant)
+
+    /** The OAuth token's own profile read: /v1/me under the user-read-private scope it carries. */
+    private suspend fun fetchMe(accessToken: String): SpotifyOAuthAccountFacts? =
+        try {
+            graph.http
+                .get(SPOTIFY_OAUTH_ME_ENDPOINT) {
+                    header("Authorization", "Bearer $accessToken")
+                    header("Accept", "application/json")
+                }.takeIf { it.status.isSuccess() }
+                ?.bodyAsText()
+                ?.let(::parseSpotifyOAuthMe)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
 
     private suspend fun postForm(body: String): String? =
         try {
@@ -475,8 +532,10 @@ internal class DesktopSpotifyLibrespot(
         const val REDIRECT_URI = "http://$LOOPBACK_HOST:$CALLBACK_PORT$CALLBACK_PATH"
         const val TOKEN_EXPIRY_MARGIN_MS = 60_000L
         const val ACCEPT_POLL_MS = 500
-        const val READ_TIMEOUT_MS = 5_000
+        const val READ_TIMEOUT_MS = 5_000L
+        const val REQUEST_DEADLINE_MS = 10_000L
         const val CALLBACK_TIMEOUT_MS = 5 * 60_000L
-        const val MAX_REQUEST_LINE = 8 * 1024
+        const val MAX_REQUEST_BYTES = 8 * 1024
+        const val HEAD_END = 0x0D0A0D0A
     }
 }

@@ -42,8 +42,10 @@ import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamProduct
 import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInDecision
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamAccountBinding
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
+import moe.rukamori.archivetune.shared.domain.source.streamAccountBinding
 import moe.rukamori.archivetune.shared.ui.settings.preferredCookieValue
 
 private const val SPOTIFY_PROVIDER = "spotify"
@@ -196,12 +198,15 @@ internal class IosSpotifyStreamingAccount(
         busyFlow.value = false
     }
 
-    /** The page commits the stored streaming session away after this; only an open sheet is left to close. */
+    /** The page commits the stored streaming session away after this; host cleanup matches the binding it signed out. */
     suspend fun signOut() {
         generation += 1
         attempt?.cancel()
-        librespot.signOut()
-        browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_STREAMING)
+        when (snapshot().spotifyStreamEngine().streamAccountBinding()) {
+            SpotifyStreamAccountBinding.LIBRARY -> librespot.signOut()
+            SpotifyStreamAccountBinding.DEDICATED ->
+                browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_STREAMING)
+        }
     }
 
     /**
