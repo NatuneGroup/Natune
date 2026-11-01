@@ -5,6 +5,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -103,7 +104,8 @@ class RestoreRecoveryTest {
     ) {
         when (outcome) {
             RecoveryOutcome.NOTHING, RecoveryOutcome.ROLLED_BACK -> assertLiveEquals(ops, Side.OLD, oldWal, newWal)
-            RecoveryOutcome.COMMITTED -> assertLiveEquals(ops, Side.NEW, oldWal, newWal)
+            RecoveryOutcome.COMMITTED, RecoveryOutcome.PENDING_APPLY ->
+                assertLiveEquals(ops, Side.NEW, oldWal, newWal)
             RecoveryOutcome.CORRUPT -> error("recovery reported CORRUPT with every file recoverable")
         }
     }
@@ -159,6 +161,7 @@ class RestoreRecoveryTest {
             val crashed = seeded()
             crashed.failAt = 8
             assertFailsWith<KilledException> { RestoreTransaction(crashed, JOURNAL, targets()).commit() }
+            crashed.mutatingOps = 0
             crashed.failAt = kill
             assertFailsWith<KilledException> { RestoreTransaction.recover(crashed, JOURNAL) }
             crashed.failAt = -1
@@ -240,6 +243,126 @@ class RestoreRecoveryTest {
         val decoded = RestorePhaseJournal.decode(RestorePhaseJournal(RestorePhase.ORIGINALS_MOVED, entries).encode())
         assertEquals(RestorePhase.ORIGINALS_MOVED, decoded.phase)
         assertEquals(entries, decoded.targets)
+    }
+
+    /** A fully retained commit: new files live, old files under the backup paths, `APPLYING` journal. */
+    private fun appliedOps(oldWal: Boolean = true, newWal: Boolean = true): FakeFileOps {
+        val ops = seeded(oldWal, newWal)
+        RestoreTransaction(ops, JOURNAL, targets()).commit(retainBackups = true)
+        return ops
+    }
+
+    private fun assertBackupsAreOld(ops: FakeFileOps, oldWal: Boolean = true) {
+        assertContentEquals(OLD_DB, ops.files[BACKUP_DB], "backup db was not the original")
+        if (oldWal) {
+            assertContentEquals(OLD_WAL, ops.files["$BACKUP_DB-wal"], "backup wal was not the original")
+        } else {
+            assertNull(ops.files["$BACKUP_DB-wal"], "backup wal should not exist")
+        }
+        assertContentEquals(OLD_SHM, ops.files["$BACKUP_DB-shm"], "backup shm was not the original")
+        assertContentEquals(OLD_SETTINGS, ops.files[BACKUP_SETTINGS], "backup settings were not the original")
+    }
+
+    /** The mutating ops [run] performs on a freshly retained commit, isolated from the commit's own op count. */
+    private fun mutatingOpCountOf(run: (FakeFileOps) -> Unit): Int {
+        val ops = appliedOps()
+        ops.mutatingOps = 0
+        run(ops)
+        return ops.mutatingOps
+    }
+
+    @Test
+    fun retainedCommitReportsPendingApplyAndKeepsBackups() {
+        val ops = appliedOps()
+        assertLiveEquals(ops, Side.NEW)
+        assertBackupsAreOld(ops)
+        assertTrue(ops.exists(JOURNAL), "retained commit must keep the journal")
+        assertEquals(RecoveryOutcome.PENDING_APPLY, RestoreTransaction.recover(ops, JOURNAL))
+        assertNotNull(RestoreTransaction.resume(ops, JOURNAL))
+    }
+
+    @Test
+    fun finalizeKillPointsStillEndFullyNew() {
+        val total = mutatingOpCountOf { RestoreTransaction.resume(it, JOURNAL)!!.finalize() }
+        for (kill in 1..total) {
+            val ops = appliedOps()
+            ops.mutatingOps = 0
+            ops.failAt = kill
+            assertFailsWith<KilledException> { RestoreTransaction.resume(ops, JOURNAL)!!.finalize() }
+            when (RestoreTransaction.recover(ops, JOURNAL)) {
+                RecoveryOutcome.PENDING_APPLY -> RestoreTransaction.resume(ops, JOURNAL)!!.finalize()
+                RecoveryOutcome.COMMITTED -> Unit
+                else -> error("unexpected recovery outcome at kill #$kill")
+            }
+            assertLiveEquals(ops, Side.NEW)
+            assertFalse(ops.exists(JOURNAL), "kill #$kill")
+        }
+    }
+
+    @Test
+    fun rollbackCommittedKillPointsStillEndFullyOld() {
+        val total = mutatingOpCountOf { RestoreTransaction.resume(it, JOURNAL)!!.rollbackCommitted() }
+        for (kill in 1..total) {
+            val ops = appliedOps()
+            ops.mutatingOps = 0
+            ops.failAt = kill
+            assertFailsWith<KilledException> { RestoreTransaction.resume(ops, JOURNAL)!!.rollbackCommitted() }
+            when (RestoreTransaction.recover(ops, JOURNAL)) {
+                RecoveryOutcome.PENDING_APPLY -> RestoreTransaction.resume(ops, JOURNAL)!!.rollbackCommitted()
+                RecoveryOutcome.ROLLED_BACK -> Unit
+                else -> error("unexpected recovery outcome at kill #$kill")
+            }
+            assertLiveEquals(ops, Side.OLD)
+            assertFalse(ops.exists(JOURNAL), "kill #$kill")
+        }
+    }
+
+    @Test
+    fun pendingApplyRoundTrip() {
+        // The non-file apply succeeded: finalize keeps the new files and drops the backups and journal.
+        val committed = appliedOps(oldWal = false, newWal = true)
+        assertEquals(RecoveryOutcome.PENDING_APPLY, RestoreTransaction.recover(committed, JOURNAL))
+        RestoreTransaction.resume(committed, JOURNAL)!!.finalize()
+        assertLiveEquals(committed, Side.NEW, oldWal = false, newWal = true)
+        assertFalse(committed.exists(JOURNAL))
+        assertFalse(committed.exists(BACKUP_DB))
+
+        // The non-file apply failed: rollbackCommitted puts the old files back everywhere, wal included.
+        val rolled = appliedOps(oldWal = true, newWal = false)
+        assertEquals(RecoveryOutcome.PENDING_APPLY, RestoreTransaction.recover(rolled, JOURNAL))
+        RestoreTransaction.resume(rolled, JOURNAL)!!.rollbackCommitted()
+        assertLiveEquals(rolled, Side.OLD, oldWal = true, newWal = false)
+        assertFalse(rolled.exists(JOURNAL))
+        assertFalse(rolled.exists(BACKUP_DB))
+    }
+
+    @Test
+    fun resumeReturnsNullWithoutAJournal() {
+        assertNull(RestoreTransaction.resume(FakeFileOps(), JOURNAL))
+        val malformed = FakeFileOps()
+        malformed.files[JOURNAL] = byteArrayOf(0x7f)
+        assertNull(RestoreTransaction.resume(malformed, JOURNAL))
+    }
+
+    @Test
+    fun finalizeAndRollbackCommittedWithoutJournalAreNoops() {
+        val ops = seeded()
+        val transaction = RestoreTransaction(ops, JOURNAL, targets())
+        transaction.finalize()
+        transaction.rollbackCommitted()
+        assertLiveEquals(ops, Side.OLD)
+    }
+
+    @Test
+    fun rollbackCommittedRejectsAnUncommittedJournal() {
+        val ops = seeded()
+        ops.failAt = 2 // killed while moving originals: journal stays STAGED
+        assertFailsWith<KilledException> { RestoreTransaction(ops, JOURNAL, targets()).commit() }
+        assertFailsWith<IllegalStateException> {
+            RestoreTransaction.resume(ops, JOURNAL)!!.rollbackCommitted()
+        }
+        assertEquals(RecoveryOutcome.ROLLED_BACK, RestoreTransaction.recover(ops, JOURNAL))
+        assertLiveEquals(ops, Side.OLD)
     }
 
     private companion object {
