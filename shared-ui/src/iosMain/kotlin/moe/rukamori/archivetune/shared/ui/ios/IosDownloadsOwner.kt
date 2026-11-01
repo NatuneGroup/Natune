@@ -19,6 +19,7 @@ import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskDao
 import moe.rukamori.archivetune.shared.data.download.RoomDownloadTaskStore
 import moe.rukamori.archivetune.shared.data.download.downloadTaskId
 import moe.rukamori.archivetune.shared.data.persistence.PortableStoredSongDao
+import moe.rukamori.archivetune.shared.data.persistence.PortableStoredSongRow
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomStoredSongIndex
 import moe.rukamori.archivetune.shared.data.persistence.storedOccurrence
@@ -162,6 +163,37 @@ internal class IosDownloadsOwner(
         if (ref.kind != ContentKind.SONG) return null
         val task = listedTask(ref) ?: return null
         return locator.fileOf(task)
+    }
+
+    /** The stored download rows the export page lists, in the index order the library reads. */
+    fun storedRows(): Flow<List<PortableStoredSongRow>> = storedSongs.observe(DOWNLOAD_ORIGIN)
+
+    /**
+     * The committed file a stored row names, while it holds the bytes the row committed; the export page copies it
+     * under a readable name. A row whose committed count is unknown answers while the file exists.
+     */
+    suspend fun fileOf(provider: String, mediaId: String, source: AudioSourceType, quality: String): String? {
+        val path = files.destinationPath(provider, mediaId, source, quality)
+        if (!files.exists(path)) return null
+        val committed = storedSongs.find(DOWNLOAD_ORIGIN, provider, mediaId)?.bytes?.takeIf { it > 0L }
+        return if (committed == null || files.sizeOf(path) == committed) path else null
+    }
+
+    /**
+     * The storage page's Clear downloads: every queued, running and completed task loses its staged and committed
+     * bytes through the queue's own removal, then any orphan row and the staging tree itself.
+     */
+    suspend fun clearAll() {
+        queue.observe().first().forEach { task -> queue.remove(task.id) }
+        storedSongs.rows(DOWNLOAD_ORIGIN).forEach { row ->
+            val source = AudioSourceType.entries.firstOrNull { it.name == row.source }
+            val quality = row.quality?.takeIf { it.isNotBlank() }
+            if (source != null && quality != null) {
+                files.removeCommitted(files.destinationPath(row.provider, row.mediaId, source, quality))
+            }
+            storedSongs.delete(DOWNLOAD_ORIGIN, row.provider, row.mediaId)
+        }
+        files.removeStagingRoot()
     }
 
     /** The download row of [ref] as a completed task, or null when the index lists no usable download of it. */
