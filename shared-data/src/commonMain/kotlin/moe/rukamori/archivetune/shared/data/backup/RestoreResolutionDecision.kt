@@ -23,47 +23,83 @@ enum class RestoreResolutionStage(val journalName: String) {
     /** The quarantine pass finished; originals are moving back over the live slots. */
     RESTORING("restoring"),
 
+    /** The originals are live; the resolved pending set is moving into quarantine before markers drop. */
+    RETIRING("retiring"),
+
     /** Every move landed; only the markers are left to clear. */
     CLEANUP("cleanup");
 }
 
-/** One resolution-journal record: the choice and the furthest pass it reached. */
+/**
+ * One resolution-journal record: the choice, the furthest pass it reached, the block it belongs to — stored as
+ * the blocked marker's content, so a journal can never resolve a different block — and for "restore previous"
+ * the originals directory and the file names expected live before cleanup is durable.
+ */
 data class RestoreResolutionEntry(
     val resolution: RestoreResolution,
     val stage: RestoreResolutionStage,
+    val blockToken: String? = null,
+    val source: String? = null,
+    val files: List<String> = emptyList(),
 )
 
 private const val RESOLUTION_ACTION_PREFIX = "action: "
 private const val RESOLUTION_STEP_PREFIX = "step: "
+private const val RESOLUTION_BLOCK_PREFIX = "block: "
+private const val RESOLUTION_SOURCE_PREFIX = "source: "
+private const val RESOLUTION_FILES_PREFIX = "files: "
 
-/** Two `key: value` lines, written atomically; a missing `step:` line is the first pass. */
-fun encodeRestoreResolution(entry: RestoreResolutionEntry): String =
-    "$RESOLUTION_ACTION_PREFIX${entry.resolution.journalName}\n" +
-        "$RESOLUTION_STEP_PREFIX${entry.stage.journalName}\n"
+/** `key: value` lines, written atomically; a missing `step:` line is the first pass. */
+fun encodeRestoreResolution(entry: RestoreResolutionEntry): String = buildString {
+    append(RESOLUTION_ACTION_PREFIX).append(entry.resolution.journalName).append('\n')
+    append(RESOLUTION_STEP_PREFIX).append(entry.stage.journalName).append('\n')
+    entry.blockToken?.let { append(RESOLUTION_BLOCK_PREFIX).append(it).append('\n') }
+    entry.source?.let { append(RESOLUTION_SOURCE_PREFIX).append(it).append('\n') }
+    entry.files.forEach { append(RESOLUTION_FILES_PREFIX).append(it).append('\n') }
+}
 
 /** Strict like the transaction journal: anything unreadable is no record at all. */
 fun decodeRestoreResolution(text: String): RestoreResolutionEntry? {
-    val lines = text.lines().filter { it.isNotEmpty() }
-    if (lines.isEmpty() || lines.size > 2) return null
-    val resolution = lines.firstOrNull { it.startsWith(RESOLUTION_ACTION_PREFIX) }
-        ?.removePrefix(RESOLUTION_ACTION_PREFIX)
-        ?.let { name -> RestoreResolution.entries.firstOrNull { it.journalName == name } }
-        ?: return null
-    val stage = lines.firstOrNull { it.startsWith(RESOLUTION_STEP_PREFIX) }
-        ?.removePrefix(RESOLUTION_STEP_PREFIX)
-        ?.let { name -> RestoreResolutionStage.entries.firstOrNull { it.journalName == name } ?: return null }
-        ?: RestoreResolutionStage.QUARANTINING
-    return RestoreResolutionEntry(resolution, stage)
+    var resolution: RestoreResolution? = null
+    var stage = RestoreResolutionStage.QUARANTINING
+    var blockToken: String? = null
+    var source: String? = null
+    val files = mutableListOf<String>()
+    text.lines().filter { it.isNotEmpty() }.forEach { line ->
+        when {
+            line.startsWith(RESOLUTION_ACTION_PREFIX) -> {
+                resolution = RestoreResolution.entries.firstOrNull {
+                    it.journalName == line.removePrefix(RESOLUTION_ACTION_PREFIX)
+                }
+                if (resolution == null) return null
+            }
+            line.startsWith(RESOLUTION_STEP_PREFIX) -> {
+                stage = RestoreResolutionStage.entries.firstOrNull {
+                    it.journalName == line.removePrefix(RESOLUTION_STEP_PREFIX)
+                } ?: return null
+            }
+            line.startsWith(RESOLUTION_BLOCK_PREFIX) ->
+                blockToken = line.removePrefix(RESOLUTION_BLOCK_PREFIX)
+            line.startsWith(RESOLUTION_SOURCE_PREFIX) ->
+                source = line.removePrefix(RESOLUTION_SOURCE_PREFIX)
+            line.startsWith(RESOLUTION_FILES_PREFIX) ->
+                files += line.removePrefix(RESOLUTION_FILES_PREFIX)
+            else -> return null
+        }
+    }
+    return resolution?.let { RestoreResolutionEntry(it, stage, blockToken, source, files) }
 }
 
 /**
- * What the host gathers before touching a file: the journaled choice (if one survived a kill), the user's
- * fresh pick when there is none, and where original files still sit — the failed set's `previous/` or the
- * still-pending set's — so "restore previous" is only promised when they exist.
+ * What the host gathers before touching a file: the journaled choice (if one survived a kill), whether that
+ * journal still belongs to the block on disk, the user's fresh pick when there is none, and where original
+ * files still sit — the failed set's `previous/` or the still-pending set's — so "restore previous" is only
+ * promised when they exist.
  */
 data class RestoreResolutionFacts(
     val recorded: RestoreResolutionEntry?,
     val chosen: RestoreResolution,
+    val journalBound: Boolean,
     val originalsInPending: Boolean,
     val originalsInFailed: Boolean,
 ) {
@@ -84,14 +120,29 @@ enum class RestoreResolutionStep {
 }
 
 /**
- * The journaled choice always wins and always resumes — its moves are idempotent, so even a half-restored set
- * converges on the same end. Only a brand-new "restore previous" must prove originals exist somewhere first.
+ * The journaled choice always wins and always resumes — but only while it still belongs to the block on disk:
+ * a stale journal is ignored, never allowed to resolve a different block. The one exception is a recorded
+ * restore-previous that can never finish (no originals left) losing to a fresh "start empty" pick. A
+ * brand-new "restore previous" must prove originals exist somewhere first.
  */
 fun decideRestoreResolution(facts: RestoreResolutionFacts): RestoreResolutionStep {
-    val action = facts.recorded?.resolution ?: facts.chosen
-    return when (action) {
+    val recorded = facts.recorded?.takeIf { facts.journalBound }
+    if (recorded != null) {
+        if (recorded.resolution == RestoreResolution.RESTORE_PREVIOUS &&
+            facts.chosen == RestoreResolution.START_EMPTY &&
+            !facts.originalsAvailable
+        ) {
+            // The recorded restore has nothing left to put back; the user's empty start takes over.
+            return RestoreResolutionStep.RESOLVE_EMPTY
+        }
+        return when (recorded.resolution) {
+            RestoreResolution.RESTORE_PREVIOUS -> RestoreResolutionStep.RESOLVE_PREVIOUS
+            RestoreResolution.START_EMPTY -> RestoreResolutionStep.RESOLVE_EMPTY
+        }
+    }
+    return when (facts.chosen) {
         RestoreResolution.RESTORE_PREVIOUS ->
-            if (facts.recorded != null || facts.originalsAvailable) {
+            if (facts.originalsAvailable) {
                 RestoreResolutionStep.RESOLVE_PREVIOUS
             } else {
                 RestoreResolutionStep.UNRESOLVABLE

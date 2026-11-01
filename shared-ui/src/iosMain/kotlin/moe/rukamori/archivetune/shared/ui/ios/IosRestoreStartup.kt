@@ -76,14 +76,15 @@ internal object IosRestoreStartup {
      * until the user resolves it.
      */
     fun begin(instanceDirectory: String, databaseFile: String, report: (String) -> Unit): IosRestoreStart {
-        if (IosRestoreRecovery.isBlocked(instanceDirectory)) {
-            // A journaled resolution resumes its own choice rather than re-prompting; anything else stays
-            // blocked so recovery mode can ask — or retry — next start.
-            if (!IosRestoreRecovery.resumeResolution(IosRestoreFileOps(), instanceDirectory, databaseFile, iosNowMillis())) {
-                report("restore blocked; recovery mode until the user resolves it")
-                return IosRestoreStart(blocked = true)
-            }
+        // A journaled resolution is settled before anything else reads state: one still bound to a live block
+        // resumes its own choice rather than re-prompting, one whose block is already gone owes only its own
+        // delete, and a stale journal is ignored so it can never resolve a different block.
+        if (IosRestoreRecovery.resumeResolution(IosRestoreFileOps(), instanceDirectory, databaseFile, iosNowMillis())) {
             report("recorded restore resolution finished")
+        }
+        if (IosRestoreRecovery.isBlocked(instanceDirectory)) {
+            report("restore blocked; recovery mode until the user resolves it")
+            return IosRestoreStart(blocked = true)
         }
         val pending = try {
             IosPendingRestore.read(instanceDirectory)
