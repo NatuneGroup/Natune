@@ -100,11 +100,11 @@ internal class DesktopQobuzSource(
         val poolId = credential.poolId ?: return null
         return owner.deadReports.recoverAndReport(
             DesktopPlaybackPool.QOBUZ, poolId, kind,
-            stale = credential.key.entry.token,
-            current = { owner.qobuzAccounts().firstOrNull { it.id == poolId }?.token },
+            stale = credential.key.entry.let { Triple(it.token, it.appId, it.appSecret) },
+            current = { owner.qobuzSnapshot().firstOrNull { it.id == poolId }?.let { Triple(it.token, it.appId, it.appSecret) } },
             recover = { owner.refresh(force = true) },
             retry = {
-                val account = owner.qobuzAccounts().firstOrNull { it.id == poolId }
+                val account = owner.qobuzSnapshot().firstOrNull { it.id == poolId }
                     ?: return@recoverAndReport PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
                 val entry = QobuzTokenEntry(account.token, appId = account.appId,
                     appSecret = account.appSecret, poolId = account.id)

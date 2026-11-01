@@ -282,10 +282,10 @@ private class IosTidalSource(
         return owner.deadReports.recoverAndReport(
             IosPlaybackPool.TIDAL, poolId, kind,
             stale = attempt.stale,
-            current = { owner.tidalAccounts().firstOrNull { it.id == poolId }?.token },
+            current = { owner.tidalSnapshot().firstOrNull { it.id == poolId }?.token },
             recover = { owner.refresh(force = true) },
             retry = {
-                val fresh = owner.tidalAccounts().firstOrNull { it.id == poolId }
+                val fresh = owner.tidalSnapshot().firstOrNull { it.id == poolId }
                 if (fresh == null) {
                     PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
                 } else try {
@@ -485,10 +485,10 @@ private class IosDeezerSource(
         return owner.deadReports.recoverAndReport(
             IosPlaybackPool.DEEZER, poolId, kind,
             stale = account.arl,
-            current = { owner.deezerAccounts().firstOrNull { it.id == poolId }?.arl },
+            current = { owner.deezerSnapshot().firstOrNull { it.id == poolId }?.arl },
             recover = { owner.refresh(force = true) },
             retry = {
-                val fresh = owner.deezerAccounts().firstOrNull { it.id == poolId }
+                val fresh = owner.deezerSnapshot().firstOrNull { it.id == poolId }
                 if (fresh == null) {
                     PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
                 } else try {
@@ -545,7 +545,7 @@ private class IosQobuzSource(
     override val source = AudioSourceType.QOBUZ
 
     private class Attempt(val repository: KtorQobuzRepository, val poolId: Long? = null, val pooled: Boolean = false,
-        val stale: String = "")
+        val stale: Triple<String, String, String> = Triple("", "", ""))
 
     /** One pooled-account attempt; also how a re-leased credential is retried after recovery. */
     private suspend fun pooledAttempt(account: QobuzPoolAccount): Attempt? {
@@ -567,7 +567,7 @@ private class IosQobuzSource(
             ),
             poolId = feedId,
             pooled = true,
-            stale = account.token,
+            stale = Triple(account.token, account.appId, account.appSecret),
         )
     }
 
@@ -586,10 +586,10 @@ private class IosQobuzSource(
         return owner.deadReports.recoverAndReport(
             IosPlaybackPool.QOBUZ, poolId, kind,
             stale = attempt.stale,
-            current = { owner.qobuzAccounts().firstOrNull { it.id == poolId }?.token },
+            current = { owner.qobuzSnapshot().firstOrNull { it.id == poolId }?.let { Triple(it.token, it.appId, it.appSecret) } },
             recover = { owner.refresh(force = true) },
             retry = {
-                val fresh = owner.qobuzAccounts().firstOrNull { it.id == poolId }
+                val fresh = owner.qobuzSnapshot().firstOrNull { it.id == poolId }
                 if (fresh == null) {
                     PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
                 } else try {
@@ -741,6 +741,7 @@ private class IosAppleMusicSource(
                 http,
                 AppleMusicAccess(scope, dev, account.mediaUserToken, storefront.forToken(dev, account.mediaUserToken),
                     CredentialScope.PLAYBACK_POOL) { pool?.enabled() == true },
+                propagateAuthErrors = true,
             ),
             poolId = feedId,
             pooled = true,
@@ -763,10 +764,10 @@ private class IosAppleMusicSource(
         return owner.deadReports.recoverAndReport(
             IosPlaybackPool.APPLE, poolId, kind,
             stale = attempt.stale,
-            current = { owner.appleMusicAccounts().firstOrNull { it.id == poolId }?.mediaUserToken },
+            current = { owner.appleMusicSnapshot().firstOrNull { it.id == poolId }?.mediaUserToken },
             recover = { owner.refresh(force = true) },
             retry = {
-                val fresh = owner.appleMusicAccounts().firstOrNull { it.id == poolId }
+                val fresh = owner.appleMusicSnapshot().firstOrNull { it.id == poolId }
                 val dev = devToken.bearer()
                 if (fresh == null || dev == null) {
                     PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
@@ -890,10 +891,10 @@ private class IosAmazonSource(
         return owner.deadReports.recoverAndReport(
             IosPlaybackPool.AMAZON, poolId, kind,
             stale = attempt.stale,
-            current = { owner.amazonInstances().firstOrNull { it.id == poolId }?.let { marker(it) } },
+            current = { owner.amazonSnapshot().firstOrNull { it.id == poolId }?.let { marker(it) } },
             recover = { owner.refresh(force = true) },
             retry = {
-                val fresh = owner.amazonInstances().firstOrNull { it.id == poolId }
+                val fresh = owner.amazonSnapshot().firstOrNull { it.id == poolId }
                 if (fresh == null) {
                     PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
                 } else try {

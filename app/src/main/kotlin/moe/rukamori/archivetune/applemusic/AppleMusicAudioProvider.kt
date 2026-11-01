@@ -29,6 +29,7 @@ import moe.rukamori.archivetune.canvas.AppleMusicProvider
 import moe.rukamori.archivetune.canvas.AppleWebPlayToken
 import moe.rukamori.archivetune.constants.AppleMusicQuality
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.shared.data.provider.PoolRecovery
 import moe.rukamori.archivetune.utils.PoolAccountRecovery
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -259,17 +260,20 @@ object AppleMusicAudioProvider {
                         if (entry.poolId != null) {
                             // The pool may already serve a replacement media-user-token, so
                             // re-lease once and retry it before believing the account is dead.
-                            val fresh =
+                            val recovery =
                                 PoolAccountRecovery.reLeaseBlocking(null, "apple-music", entry.poolId, entry.token) {
                                     PoolAccountManager.appleMusicAccounts().firstOrNull { it.id == entry.poolId }?.mediaUserToken
                                 }
-                            if (fresh != null) {
-                                val retried = runCatching { resolveWithToken(fresh, devToken, title, artists, quality) }
+                            if (recovery is PoolRecovery.Recovered) {
+                                val retried = runCatching { resolveWithToken(recovery.credential, devToken, title, artists, quality) }
                                 retried.exceptionOrNull()?.rethrowIfAudioSourceCancelled()
                                 retried.getOrNull()?.let { ringIndex = index; return@withContext it }
-                                if (retried.exceptionOrNull() !is AuthException) return@getOrElse null
+                                // Only the recovered credential being refused again earns a dead
+                                // verdict; a transient retry failure or an unmoved lease is none.
+                                if (retried.exceptionOrNull() is AuthException) {
+                                    PoolAccountRecovery.reportDead("apple-music", entry.poolId)
+                                }
                             }
-                            PoolAccountRecovery.reportDead("apple-music", entry.poolId)
                         }
                         null
                     }

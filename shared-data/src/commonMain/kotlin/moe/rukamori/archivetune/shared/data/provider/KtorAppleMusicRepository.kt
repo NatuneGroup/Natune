@@ -28,7 +28,8 @@ class KtorAppleMusicRepository(client: HttpClient, private val access: AppleMusi
     private val ring: () -> List<AppleMusicAccess> = { emptyList() },
     private val nowMs: () -> Long = { 0L },
     apiBase: String = "https://amp-api.music.apple.com",
-    playbackUrl: String = "https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/webPlayback") :
+    playbackUrl: String = "https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/webPlayback",
+    private val propagateAuthErrors: Boolean = false) :
     PagedAudioProvider("apple:${access.scope}:$apiBase") {
     override val provider = ContentProvider.APPLE
     override val source = AudioSourceType.APPLE
@@ -96,12 +97,17 @@ class KtorAppleMusicRepository(client: HttpClient, private val access: AppleMusi
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         // Retained ring order: personal first, then pool entries; rotate past each auth rejection.
+        var authRejection: AppleAuthException? = null
         for (account in ringAccounts()) {
             try {
                 return resolveViaAccount(request, account) ?: continue
             } catch (e: AppleAuthException) {
+                authRejection = e
             }
         }
+        // The ring refused every credential: with [propagateAuthErrors] a pooled host reads the
+        // typed verdict and recovers the account instead of treating it as a plain no-match.
+        if (propagateAuthErrors) authRejection?.let { throw it }
         return null
     }
 
@@ -142,8 +148,6 @@ class KtorAppleMusicRepository(client: HttpClient, private val access: AppleMusi
             requireNotNull(asset.text("flavor")), account.scope))
     }
 
-    /** Thrown by storefront/catalog/webPlayback on 401/403 — the media-user-token is dead. */
-    private class AppleAuthException : Exception("apple media-user-token rejected (401/403)")
     private companion object { const val STOREFRONT_CACHE_MS = 24L * 60L * 60L * 1000L }
     private fun bitrate(asset: JsonObject) = asset.text("flavor")?.takeLastWhile { it.isDigit() }?.toIntOrNull() ?: 0
     private fun parse(row: JsonObject): ProviderTrack {
@@ -157,3 +161,6 @@ class KtorAppleMusicRepository(client: HttpClient, private val access: AppleMusi
             listOfNotNull(artist), a.text("albumName"), a.text("isrc"), row.toString())
     }
 }
+
+/** Thrown by storefront/catalog/webPlayback on 401/403 — the media-user-token is dead; pooled hosts classify it as a real-dead signal. */
+class AppleAuthException : IllegalStateException("apple media-user-token rejected (401/403)")

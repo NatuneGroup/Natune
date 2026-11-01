@@ -87,10 +87,10 @@ internal class DesktopTidalSource(
         return owner.deadReports.recoverAndReport(
             DesktopPlaybackPool.TIDAL, poolId, kind,
             stale = attempt.credential,
-            current = { owner.tidalAccounts().firstOrNull { it.id == poolId }?.token },
+            current = { owner.tidalSnapshot().firstOrNull { it.id == poolId }?.token },
             recover = { owner.refresh(force = true) },
             retry = {
-                val account = owner.tidalAccounts().firstOrNull { it.id == poolId }
+                val account = owner.tidalSnapshot().firstOrNull { it.id == poolId }
                     ?: return@recoverAndReport PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
                 try {
                     tidalRepository(account).resolve(request)
@@ -321,7 +321,7 @@ internal class DesktopDeezerSource(
             current = { owner.deezerAccounts().firstOrNull { it.id == poolId }?.arl },
             recover = { owner.refresh(force = true) },
             retry = {
-                val fresh = owner.deezerAccounts().firstOrNull { it.id == poolId }
+                val fresh = owner.deezerSnapshot().firstOrNull { it.id == poolId }
                     ?: return@recoverAndReport PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
                 try {
                     pooledRepository(owner, fresh).resolve(request)

@@ -21,6 +21,7 @@ class PoolDeadReportPolicyTest {
         assertEquals(PoolFailureKind.AUTH_REJECTED, classifyPoolFailure(ProviderHttpFailure(401)))
         assertEquals(PoolFailureKind.AUTH_REJECTED, classifyPoolFailure(ProviderHttpFailure(403)))
         assertEquals(PoolFailureKind.AUTH_REJECTED, classifyPoolFailure(TerminalPlaybackAuthentication()))
+        assertEquals(PoolFailureKind.AUTH_REJECTED, classifyPoolFailure(AppleAuthException()))
         assertEquals(PoolFailureKind.ENTITLEMENT_LOST, classifyPoolFailure(ProviderHttpFailure(402)))
         assertEquals(PoolFailureKind.CONTENT_UNAVAILABLE, classifyPoolFailure(ProviderHttpFailure(404)))
         assertEquals(PoolFailureKind.RATE_LIMITED, classifyPoolFailure(ProviderHttpFailure(429)))
@@ -227,5 +228,47 @@ class PoolDeadReportPolicyTest {
         // queued behind its leader and ran last.
         assertEquals(listOf("two", "one", "waiter"), order)
         assertEquals(0, flights.trackedKeyCount())
+    }
+
+    @Test fun reLeaseAnswersTheExplicitRecoveryOutcome() = runTest {
+        val clock = TestClock()
+        val reporter = reporter(clock)
+        var tuple = Triple("tok", "app", "secret1")
+        // The pool can rotate the secret without touching the user token; the tuple marker must
+        // still count that lease as moved so the caller retries the credential it now serves.
+        val moved = reporter.reLease(
+            "qobuz", 3L, Triple("tok", "app", "secret1"),
+            current = { tuple },
+            recover = { tuple = Triple("tok", "app", "secret2") },
+        )
+        assertEquals(PoolRecovery.Recovered(Triple("tok", "app", "secret2")), moved)
+        // The same credential still served means the refusal was the stale lease, not the account.
+        assertEquals(
+            PoolRecovery.Unchanged,
+            reporter.reLease("qobuz", 4L, "tok", current = { "tok" }, recover = { }),
+        )
+        // No cached credential readable means no verdict is possible.
+        assertEquals(
+            PoolRecovery.Unavailable,
+            reporter.reLease<String>("qobuz", 5L, "tok", current = { null }, recover = { }),
+        )
+    }
+
+    @Test fun retryEntitlementLossReportsNotPremium() = runTest {
+        val clock = TestClock()
+        val reporter = reporter(clock)
+        var credential = "stale"
+        val reports = mutableListOf<String>()
+        // The re-lease moved and the retried credential came back refused for entitlement (a 402):
+        // that is the real-dead verdict the server needs, reported under its own type.
+        assertNull(
+            reporter.recoverAndReport<String, String>(
+                "tidal", 13L, PoolFailureKind.AUTH_REJECTED, "stale",
+                current = { credential },
+                recover = { credential = "fresh" },
+                retry = { PoolRetryOutcome.Failure(PoolFailureKind.ENTITLEMENT_LOST) },
+            ) { type -> reports += type },
+        )
+        assertEquals(listOf("not_premium"), reports)
     }
 }

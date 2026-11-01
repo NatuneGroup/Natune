@@ -27,6 +27,7 @@ import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -449,8 +450,9 @@ object TidalAccountManager {
         return runCatching {
             resolveClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (response.code == 401) throw TidalUnauthorizedException()
+                if (!response.isSuccessful) throw ProviderHttpFailure(response.code)
                 val payload = response.body?.string().orEmpty()
-                if (!response.isSuccessful || payload.isBlank()) return@use null
+                if (payload.isBlank()) return@use null
                 val items = JSONObject(payload).optJSONArray("items") ?: return@use null
 
                 var bestMatch: SearchMatch? = null
@@ -499,6 +501,7 @@ object TidalAccountManager {
             }
         }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
             if (it is TidalUnauthorizedException) throw it
+            if (it is ProviderHttpFailure) throw it
             Timber.tag("TidalAccount").w(it, "account track search error")
             null
         }
@@ -531,11 +534,12 @@ object TidalAccountManager {
         return runCatching {
             resolveClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (response.code == 401) throw TidalUnauthorizedException()
-                val payload = response.body?.string().orEmpty()
-                if (!response.isSuccessful || payload.isBlank()) {
+                if (!response.isSuccessful) {
                     Timber.tag("TidalAccount").w("playbackinfo failed: %d", response.code)
-                    return@use null
+                    throw ProviderHttpFailure(response.code)
                 }
+                val payload = response.body?.string().orEmpty()
+                if (payload.isBlank()) return@use null
                 val json = JSONObject(payload)
                 // Never serve a preview clip from the account path (we requested FULL, but be safe).
                 if (json.optString("assetPresentation").equals("PREVIEW", ignoreCase = true)) {
@@ -556,6 +560,7 @@ object TidalAccountManager {
             }
         }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
             if (it is TidalUnauthorizedException) throw it
+            if (it is ProviderHttpFailure) throw it
             Timber.tag("TidalAccount").w(it, "playbackinfo error")
             null
         }

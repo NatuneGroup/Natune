@@ -19,6 +19,7 @@ import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.audiosource.TrackMatching
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.shared.data.provider.PoolRecovery
 import moe.rukamori.archivetune.utils.PoolAccountRecovery
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -513,26 +514,28 @@ object DeezerAudioProvider {
         var results = json.optJSONObject("results")
         var user = requireNotNull(results?.optJSONObject("USER")) { "no USER in session payload" }
         // An invalid or expired ARL still returns HTTP 200 with USER_ID 0, so this is the real check.
+        var recovered = false
         if (user.optLong("USER_ID", 0L) == 0L) {
             // The pool rotates ARLs server-side, so the feed may already serve a live replacement:
             // re-lease once and retry the same check before believing the account is dead.
-            val freshArl =
+            val recovery =
                 PoolAccountRecovery.reLeaseBlocking(null, "deezer", account.id, arl) {
                     PoolAccountManager.deezerAccounts().firstOrNull { it.id == account.id }?.arl
                 }
-            if (freshArl != null && freshArl != arl) {
-                val fresh = PoolAccountManager.deezerAccounts().firstOrNull { it.id == account.id && it.arl == freshArl }
-                arl = freshArl
+            if (recovery is PoolRecovery.Recovered) {
+                val fresh = PoolAccountManager.deezerAccounts().firstOrNull { it.id == account.id && it.arl == recovery.credential }
+                arl = recovery.credential
                 masterSecret = fresh?.masterSecret ?: masterSecret
                 json = gateway(arl, apiToken = "", method = "deezer.getUserData", payload = null)
                 results = json.optJSONObject("results")
                 user = requireNotNull(results?.optJSONObject("USER")) { "no USER in session payload" }
+                recovered = true
             }
         }
         if (user.optLong("USER_ID", 0L) == 0L) {
-            // Playback just learned the pooled credential is dead; tell the pool so it stops being
-            // leased to other users before the next server-side sweep. Fire-and-forget.
-            PoolAccountRecovery.reportDead("deezer", account.id)
+            // A dead report requires the recovered credential to fail again for real: an unmoved
+            // or unavailable lease proves nothing, and only it would be a false report.
+            if (recovered) PoolAccountRecovery.reportDead("deezer", account.id)
             throw IllegalStateException("ARL rejected by gateway")
         }
 
