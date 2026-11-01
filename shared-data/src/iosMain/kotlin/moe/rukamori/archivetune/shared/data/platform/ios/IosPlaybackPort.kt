@@ -56,6 +56,10 @@ class IosPlaybackPort : PlaybackPort {
     // Main-queue only. The app-level output level applied to every output, including one recreated after a fault.
     private var volume = 1f
 
+    // Main-queue only. The tempo every output loads with: a SetSpeed that finds no live output is held
+    // here instead of being dropped, and outputForLoad applies it to whatever it creates or recreates.
+    private var desiredSpeed = 1f
+
     // Main-queue state for host-prepared audio. Every Load, Stop and preparation advances [ticket]. A preparation whose
     // ticket no longer matches when it returns is discarded with its transport, so a superseded occurrence never plays.
     private var ticket = 0L
@@ -337,6 +341,7 @@ class IosPlaybackPort : PlaybackPort {
             }
             is PlaybackCommand.SetSpeed -> {
                 handoffEpoch++
+                desiredSpeed = command.speed
                 blend?.setSpeed(command.speed) ?: output?.let { at_audio_speed(it, command.speed) }
             }
             // ae_engine only exposes an atempo stage (tempo without pitch shift), so a pitch
@@ -621,6 +626,7 @@ class IosPlaybackPort : PlaybackPort {
         }?.also {
             output = it
             at_audio_volume(it, volume)
+            at_audio_speed(it, desiredSpeed)
         }
     }
 
@@ -640,7 +646,11 @@ class IosPlaybackPort : PlaybackPort {
                 request = incoming.request
                 liveTransport = incoming.transport
                 requestRepreparable = incoming.repreparable
+                // A promoted occurrence is a new load session: its own recovery budget and baseline.
+                stallRecoveryUsed = false
+                stallWatchdog.reset()
                 at_audio_volume(incoming.output, volume)
+                at_audio_speed(incoming.output, desiredSpeed)
                 mapper.beginRequest(incoming.request, incoming.generation)
             }
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
