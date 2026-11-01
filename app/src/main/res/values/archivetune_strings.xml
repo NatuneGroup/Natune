@@ -493,6 +493,11 @@
     <string name="player_design_spatialflow">SpatialFlow</string>
     <string name="player_design_looper">Looper</string>
     <string name="player_design_flamingo">Flamingo</string>
+    <string name="player_design_metrolist_kmp">Metrolist KMP</string>
+    <string name="metrolist_presentation">Metrolist presentation</string>
+    <string name="metrolist_presentation_desc">Pick between the clean modern look and the framed vintage sleeve.</string>
+    <string name="metrolist_presentation_modern">Modern</string>
+    <string name="metrolist_presentation_vintage">Vintage</string>
     <string name="flamingo_settings_background_effect">Moving blur</string>
     <string name="flamingo_settings_background_effect_desc">Let the blurred artwork drift behind the player.</string>
     <string name="rich_synced">Rich Synced</string>
