@@ -65,6 +65,7 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsRow
 import moe.rukamori.archivetune.shared.ui.settings.SourcePoolRefreshOutcome
 import moe.rukamori.archivetune.shared.ui.settings.SourceSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.YouTubeHiddenPlaylistsRoute
 import moe.rukamori.archivetune.shared.ui.settings.aodSettingsRows
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.ISOCountryCodes
@@ -76,8 +77,8 @@ import platform.Foundation.localizedStringForLanguageCode
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on
- * this host (backup, hidden playlists, song export, the palette picker and the icon picker,
- * Android Auto) mount an honest unavailable page instead of the unbound boundary.
+ * this host (backup, song export, the palette picker and the icon picker, Android Auto) mount an
+ * honest unavailable page instead of the unbound boundary.
  */
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
@@ -92,7 +93,7 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
 
 /** Routes that mount the unavailable page: their owners do not exist on this host. */
 private val IOS_LANE_UNAVAILABLE_ROUTES = setOf(
-    "settings/hidden_playlists", "settings/backup_restore",
+    "settings/backup_restore",
     "settings/storage/export_songs", "settings/appearance/palette_picker", "settings/appearance/icon",
     "settings/android_auto",
 )
@@ -151,6 +152,7 @@ internal fun IosLaneSettingsPage(
         "customize_background", "settings/customize_background" ->
             IosCustomBackgroundPage(host, owners.graph, owners.controller, onFailure)
         IosLastFmDashboardRoute -> IosLastFmDashboardPage(owners.graph, navigation, unavailable)
+        YouTubeHiddenPlaylistsRoute -> IosHiddenPlaylistsPage(owners.graph, onNotice, onFailure)
         else -> IosLaneServiceSettingsPage(path, host, owners, channel, navigate, onNotice, onFailure, unavailable, scrollTo)
     }
 }

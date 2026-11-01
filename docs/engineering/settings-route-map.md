@@ -13,7 +13,7 @@ Legend: **A** = Android (`app/` NavigationBuilder + settings screens),
 |---|:-:|:-:|:-:|---|
 | `settings` (home) | ✓ | ✓ | ✓ | |
 | `settings/account` | ✓ | ✓ | — | no YouTube account owner on iOS |
-| `settings/hidden_playlists` | ✓ | ✓ | — | desktop: lists hidden local playlists with Unhide; the desktop Library always leaves them out, and the Playlists page leaves them out until its Show hidden toggle is on, as Android does |
+| `settings/hidden_playlists` | ✓ | ✓ | ✓ | D/iOS: lists hidden local playlists with Unhide over the shared library; the desktop Library always leaves them out, and the Playlists page leaves them out until its Show hidden toggle is on, as Android does |
 | `settings/appearance` | ✓ | ✓ | ✓ | one page: Theme, Player and Interface sections (anchors `appearance_theme`, `appearance_player`, `appearance_interface`); D/iOS: no wallpaper colors/dynamic, no font picker on iOS; desktop opens the home-screen, library-chip, playlist-tag and artwork-provider editors, iOS opens its own dialogs for the same four preferences |
 | `settings/appearance/theme` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_theme` (or its `scrollTo`) |
 | `settings/appearance/player` | ✓ | ✓ | ✓ | redirect: the Appearance page scrolled to `appearance_player` (or its `scrollTo`) |
