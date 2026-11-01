@@ -37,6 +37,17 @@ class OrderedAudioResolverTest {
             settings(AudioSourceType.TIDAL, AudioSourceType.QOBUZ), rejected = setOf(AudioSourceType.TIDAL))
         assertEquals(listOf(AudioSourceType.QOBUZ), seen)
     }
+    @Test fun rejectedExternalPinFallsThroughTheSamePermittedOrder() = runTest {
+        val seen = mutableListOf<AudioSourceType>()
+        val sources = listOf(AudioSourceType.TIDAL, AudioSourceType.QOBUZ).map { type ->
+            provider(type) { seen += type; audio(type) }
+        }
+        val result = OrderedAudioResolver(sources, youtube()).resolve(request,
+            settings(AudioSourceType.TIDAL, AudioSourceType.QOBUZ),
+            pinned = AudioSourceType.TIDAL, rejected = setOf(AudioSourceType.TIDAL))
+        assertEquals(listOf(AudioSourceType.QOBUZ), seen)
+        assertEquals(AudioSourceType.QOBUZ, assertIs<AudioResolution.Resolved>(result).audio.source)
+    }
     @Test fun youtubeTiersStayInM1OrderAndEchoRemainsLast() = runTest {
         val seen = mutableListOf<String>()
         val resolver = OrderedAudioResolver(emptyList(), youtube(

@@ -175,7 +175,7 @@ internal class NativeStreamLease private constructor(
                 permittedOrigins = setOf(origin),
                 // The query string often carries a signed token, so it never becomes part of the cache key.
                 cacheKey = locator.url.substringBefore('?'),
-                expiresAtEpochMs = null,
+                expiresAtEpochMs = locator.expiresAtEpochMs,
                 lengthBytes = null,
             )
             val http = HttpRangeSource(lease, locator.url, locator.headers, cookies = emptyList())
@@ -201,7 +201,7 @@ internal class NativeStreamLease private constructor(
                 primaryOrigin = origin,
                 permittedOrigins = setOf(origin),
                 cacheKey = locator.url.substringBefore('?'),
-                expiresAtEpochMs = null,
+                expiresAtEpochMs = locator.expiresAtEpochMs,
                 lengthBytes = null,
             )
             val http = HttpRangeSource(lease, locator.url, locator.headers, cookies = emptyList())

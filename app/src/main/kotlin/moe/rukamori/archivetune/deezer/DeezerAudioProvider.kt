@@ -10,6 +10,9 @@
 
 package moe.rukamori.archivetune.deezer
 
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
+
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
@@ -245,6 +248,7 @@ object DeezerAudioProvider {
         val matchedDurationMs: Long?,
         val sampleRate: Int?,
         val bitDepth: Int?,
+        val expiresAtEpochMs: Long? = null,
     )
 
     private class CachedStream(
@@ -254,8 +258,8 @@ object DeezerAudioProvider {
 
     private val sessions = ConcurrentHashMap<String, Session>()
     private val searchCache = ConcurrentHashMap<String, Pair<TrackMatching.Candidate?, Long>>()
-    private val streamCache = ConcurrentHashMap<String, CachedStream>()
-    private val failureCache = ConcurrentHashMap<String, Long>()
+    private val streamCache = StreamUrlCache<String, CachedStream>()
+    private val failureCache = StreamUrlCache<String, Long>()
 
     /** Track id of the most recent successful resolve, used by settings screens as a health probe. */
     @Volatile
@@ -299,6 +303,12 @@ object DeezerAudioProvider {
         failureCache.remove(key)
     }
 
+    /** Playback only has the queue id; retire all quality variants and any in-flight URL for that song. */
+    fun invalidate(mediaId: String) {
+        streamCache.invalidateWhere { it.startsWith("$mediaId|") }
+        failureCache.invalidateWhere { it.startsWith("$mediaId|") }
+    }
+
     /**
      * Resolves a playable stream for [query] at [format] (`FLAC`, `MP3_320` or `MP3_128` — see
      * `DeezerAudioQuality.toFormatName()`), degrading to the next tier down when the account's plan
@@ -326,12 +336,14 @@ object DeezerAudioProvider {
         val cacheKey = query.cacheKey() + ":" + format
         streamCache[cacheKey]?.let { cached ->
             if (cached.expiresAt > now) return cached.stream
-            streamCache.remove(cacheKey)
+            streamCache.discard(cacheKey, cached)
         }
         failureCache[cacheKey]?.let { failedUntil ->
             if (failedUntil > now) return null
-            failureCache.remove(cacheKey)
+            failureCache.discard(cacheKey, failedUntil)
         }
+        val streamGeneration = streamCache.generation
+        val failureGeneration = failureCache.generation
 
         // Accounts with a paid plan come first so a FLAC request has the best chance of being served
         // at full quality. An account whose plan cannot cover the requested tier is NOT skipped: it
@@ -404,8 +416,14 @@ object DeezerAudioProvider {
                     // assumed to be CD quality.
                     sampleRate = null,
                     bitDepth = null,
+                    expiresAtEpochMs = StreamUrlExpiry.fromUrl(media.url),
                 )
-            streamCache[cacheKey] = CachedStream(stream, System.currentTimeMillis() + STREAM_CACHE_MS)
+            if (!streamCache.putIfCurrent(
+                    cacheKey,
+                    CachedStream(stream, StreamUrlExpiry.cacheDeadline(System.currentTimeMillis(), STREAM_CACHE_MS, stream.expiresAtEpochMs)),
+                    streamGeneration,
+                )
+            ) return null
             return stream
         }
 
@@ -413,12 +431,17 @@ object DeezerAudioProvider {
         // already-decrypted audio from the instance's own accounts.
         if (AudioSourceAttemptScope.current()?.isExpired() == true) return null
         resolveViaInstance(query)?.let { stream ->
-            streamCache[cacheKey] = CachedStream(stream, System.currentTimeMillis() + STREAM_CACHE_MS)
+            if (!streamCache.putIfCurrent(
+                    cacheKey,
+                    CachedStream(stream, StreamUrlExpiry.cacheDeadline(System.currentTimeMillis(), STREAM_CACHE_MS, stream.expiresAtEpochMs)),
+                    streamGeneration,
+                )
+            ) return null
             return stream
         }
 
         if (AudioSourceAttemptScope.current()?.isExpired() != true) {
-            failureCache[cacheKey] = System.currentTimeMillis() + FAILURE_CACHE_MS
+            failureCache.putIfCurrent(cacheKey, System.currentTimeMillis() + FAILURE_CACHE_MS, failureGeneration)
         }
         return null
     }
@@ -473,6 +496,7 @@ object DeezerAudioProvider {
             matchedDurationMs = match.durationMs,
             sampleRate = if (stream.flac) 44_100 else null,
             bitDepth = if (stream.flac) 16 else null,
+            expiresAtEpochMs = StreamUrlExpiry.fromUrl(stream.url),
         )
     }
 

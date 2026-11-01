@@ -5,6 +5,9 @@
 
 package moe.rukamori.archivetune.tidal
 
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
+
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
@@ -35,9 +38,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
 import java.text.Normalizer
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import java.io.File
 import java.io.OutputStream
 import java.util.Locale
@@ -81,7 +81,6 @@ object TidalAudioProvider {
     private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L // unreachable host / DNS failure
     private const val STRONG_MATCH_SCORE = 150
     private const val REJECT_SCORE = -1_000_000
-    private val AMAZON_DATE = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'", Locale.US)
 
     // Hoisted so title/artist normalization (run per candidate track during matching) does not
     // recompile the same patterns on every call.
@@ -540,6 +539,8 @@ object TidalAudioProvider {
         val matchedArtist: String? = null,
         val matchedAlbum: String? = null,
         val matchedDurationMs: Long? = null,
+        val bitDepth: Int? = null,
+        val expiresAtEpochMs: Long? = null,
     )
 
     data class CandidateMetadata(
@@ -699,8 +700,8 @@ object TidalAudioProvider {
 
     private val trackCache = ConcurrentHashMap<String, CachedTrack>()
     private val searchCache = ConcurrentHashMap<String, CachedSearch>()
-    private val streamCache = ConcurrentHashMap<String, Resolved>()
-    private val streamFailureCache = ConcurrentHashMap<String, CachedFailure>()
+    private val streamCache = StreamUrlCache<String, Resolved>()
+    private val streamFailureCache = StreamUrlCache<String, CachedFailure>()
 
     @Volatile
     private var resolverRateLimitedUntilMs = 0L
@@ -766,6 +767,8 @@ object TidalAudioProvider {
             throw TidalRateLimitedException(cooldownRemainingMs)
         }
         cacheDir?.let(::cleanupTempFiles)
+        val streamGeneration = streamCache.generation
+        val failureGeneration = streamFailureCache.generation
         val directTrackId = query.mediaId.toTidalTrackIdOrNull()
         val trackCacheKey = query.trackCacheKey()
         val tracks = if (directTrackId != null) {
@@ -837,7 +840,7 @@ object TidalAudioProvider {
                     Timber.tag("TidalAudio").w(error, "TIDAL $quality stream failed for ${track.trackId}")
                     errors += "${track.trackId}/$quality: ${error.message ?: error.javaClass.simpleName}"
                     if (AudioSourceAttemptScope.current()?.isExpired() != true) {
-                        cacheStreamFailure(now, error, streamCacheKey, trackFailureCacheKey)
+                        cacheStreamFailure(now, error, failureGeneration, streamCacheKey, trackFailureCacheKey)
                     }
                 }
 
@@ -850,7 +853,9 @@ object TidalAudioProvider {
                             matchedAlbum = track.album,
                             matchedDurationMs = track.durationMs,
                         )
-                    streamCache[streamCacheKey] = resolved
+                    if (!streamCache.putIfCurrent(streamCacheKey, resolved, streamGeneration)) {
+                        throw TidalAudioResolutionException("TIDAL stream resolution was invalidated")
+                    }
                     if (directTrackId == null) {
                         trackCache[trackCacheKey] = CachedTrack(track, now + TRACK_CACHE_MS)
                     }
@@ -872,15 +877,12 @@ object TidalAudioProvider {
 
     fun invalidate(mediaId: String) {
         val prefix = "$mediaId::"
-        for (key in streamCache.keys) {
-            if (key.startsWith(prefix)) {
-                streamCache.remove(key)?.mediaUri?.deleteIfLocalFileUri()
-            }
-        }
-        for (key in streamFailureCache.keys) {
-            if (key.startsWith(prefix)) {
-                streamFailureCache.remove(key)
-            }
+        val trackIds = (streamCache.keys.filter { it.startsWith(prefix) }.mapNotNull { streamCache[it]?.trackId } +
+            streamFailureCache.keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix).substringBefore("::") }).toSet()
+        // Do not delete a local materialization that an active player/download may still own.
+        streamCache.invalidateWhere { it.startsWith(prefix) }
+        streamFailureCache.invalidateWhere { key ->
+            key.startsWith(prefix) || trackIds.any { key.startsWith("track:$it::") }
         }
         trackCache.remove(mediaId.trackCacheKeyFallback())
     }
@@ -892,7 +894,7 @@ object TidalAudioProvider {
         for (key in keys.distinct()) {
             val failure = streamFailureCache[key] ?: continue
             if (failure.expiresAtMs > now) return failure
-            streamFailureCache.remove(key)
+            streamFailureCache.discard(key, failure)
         }
         return null
     }
@@ -900,6 +902,7 @@ object TidalAudioProvider {
     private fun cacheStreamFailure(
         now: Long,
         error: Throwable,
+        generation: StreamUrlCache.Generation,
         vararg keys: String,
     ) {
         val message = error.message ?: error.javaClass.simpleName
@@ -907,9 +910,10 @@ object TidalAudioProvider {
         keys
             .distinct()
             .forEach { key ->
-                streamFailureCache[key] = CachedFailure(
-                    message = message,
-                    expiresAtMs = expiresAtMs,
+                streamFailureCache.putIfCurrent(
+                    key,
+                    CachedFailure(message = message, expiresAtMs = expiresAtMs),
+                    generation,
                 )
             }
     }
@@ -1660,7 +1664,7 @@ object TidalAudioProvider {
                 val manifestText = fetchText(manifestUrl)
                 manifest = parseManifestText(manifestText, "audio/mp4")
                 resolvedQuality = returnedFormats.toResolvedTidalQuality(quality)
-                dataSampleRate = manifest.sampleRate ?: 48_000
+                dataSampleRate = manifest.sampleRate
                 dataBitDepth = null
             } else {
                 if (data.optString("assetPresentation").equals("PREVIEW", ignoreCase = true)) {
@@ -1776,6 +1780,7 @@ object TidalAudioProvider {
             }
             val losslessDowngradedBitrateKbps =
                 if (isLosslessDowngrade) ((bitrate ?: 320_000) / 1000).coerceAtLeast(1) else null
+            val authorizationExpiry = if (localFile == null) manifest.authorizationExpiry() else null
             Timber.tag("TidalAudio").i(
                 "Resolved TIDAL ${resolvedQuality.ifBlank { quality }} stream for ${track.trackId}: label=$resolvedLabel, local=${localFile != null}, progressive=${progressiveDashFile != null}, dash=${manifest.isDash}, bitrate=$bitrate, sampleRate=$sampleRate",
             )
@@ -1789,10 +1794,11 @@ object TidalAudioProvider {
                 bitrate = bitrate ?: if (isLosslessDowngrade) 320_000 else 0,
                 sampleRate = sampleRate,
                 contentLength = streamMetadata.contentLength,
-                expiresAtMs = (progressiveDashFile ?: localFile ?: liveManifestFile)?.let { now + STREAM_CACHE_MS }
-                    ?: extractExpiryMs(manifest.expiryUrl ?: manifest.url, now),
+                expiresAtMs = StreamUrlExpiry.cacheDeadline(now, STREAM_CACHE_MS, authorizationExpiry),
                 losslessDowngradedBitrateKbps = losslessDowngradedBitrateKbps,
                 isLiveManifest = progressiveDashFile != null || liveManifestFile != null,
+                bitDepth = dataBitDepth?.takeIf { it > 0 },
+                expiresAtEpochMs = authorizationExpiry,
             )
         }
     }
@@ -1876,6 +1882,8 @@ object TidalAudioProvider {
                     contentLength = null,
                     label = "account $quality",
                     source = AudioSourceType.TIDAL,
+                    sampleRate = manifest.sampleRate,
+                    expiresAtEpochMs = manifest.authorizationExpiry(),
                 )
             }
             // Segmented DASH (typical for lossless/HiRes): stitch to a local temp file so ExoPlayer
@@ -1895,6 +1903,8 @@ object TidalAudioProvider {
                     contentLength = null,
                     label = "account $quality",
                     source = AudioSourceType.TIDAL,
+                    sampleRate = manifest.sampleRate,
+                    expiresAtEpochMs = manifest.authorizationExpiry(),
                 )
             }
             val localFile =
@@ -2637,21 +2647,8 @@ object TidalAudioProvider {
         }.takeIf { it > 0 }
     }
 
-    private fun extractExpiryMs(
-        url: String,
-        now: Long,
-    ): Long {
-        val httpUrl = url.toHttpUrlOrNull() ?: return now + STREAM_CACHE_MS
-        val expiresSeconds = httpUrl.queryParameterIgnoreCase("X-Amz-Expires")?.toLongOrNull()
-        val date = httpUrl.queryParameterIgnoreCase("X-Amz-Date")
-        if (expiresSeconds != null && date != null) {
-            runCatching {
-                val issuedAt = LocalDateTime.parse(date, AMAZON_DATE).toInstant(ZoneOffset.UTC).toEpochMilli()
-                return (issuedAt + expiresSeconds * 1000L - 30_000L).coerceAtLeast(now + 60_000L)
-            }
-        }
-        return now + STREAM_CACHE_MS
-    }
+    private fun ParsedManifest.authorizationExpiry(): Long? =
+        (segmentUrls + listOf(expiryUrl ?: url)).mapNotNull(StreamUrlExpiry::fromUrl).minOrNull()
 
     private fun JSONObject.toMatchedTrack(): MatchedTrack? {
         val trackId = stringOrNull("id") ?: return null

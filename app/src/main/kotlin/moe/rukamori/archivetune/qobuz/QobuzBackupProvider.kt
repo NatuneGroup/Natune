@@ -10,6 +10,9 @@
 
 package moe.rukamori.archivetune.qobuz
 
+import java.util.concurrent.atomic.AtomicLong
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
+
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.FlacStreamInfo
@@ -30,6 +33,12 @@ import moe.rukamori.archivetune.utils.withAppProxy
  * mirror, which serves a FLAC per YouTube video id).
  */
 object QobuzBackupProvider {
+    private val streamGeneration = AtomicLong()
+
+    /** No URL is retained here, but an envelope/probe already in flight must not win after rejection. */
+    fun invalidate() {
+        streamGeneration.incrementAndGet()
+    }
     /**
      * Live community mirror. The retired `mlc-ytify.kouzu.in` host stopped resolving
      * (DNS removed) and both upstreams still carry it in places, so the value is funnelled
@@ -266,6 +275,7 @@ object QobuzBackupProvider {
         val sampleRate: Int? = null,
         val bitDepth: Int? = null,
         val durationMs: Long? = null,
+        val expiresAtEpochMs: Long? = null,
     ) {
         /** Label for logs and the media-info card. */
         val label: String
@@ -291,6 +301,7 @@ object QobuzBackupProvider {
             return null
         }
 
+        val generation = streamGeneration.get()
         val candidates = fetchMirrorCandidates(id, client)
         if (candidates.isEmpty()) return null
 
@@ -310,7 +321,8 @@ object QobuzBackupProvider {
             resolved.contentType,
             if (resolved.isLossless) ", lossless" else "",
         )
-        return resolved
+        if (generation != streamGeneration.get()) return null
+        return resolved.copy(expiresAtEpochMs = StreamUrlExpiry.fromUrl(resolved.uri))
     }
 
     /** Reads the resolver envelope and returns its mirror URLs, best first. */

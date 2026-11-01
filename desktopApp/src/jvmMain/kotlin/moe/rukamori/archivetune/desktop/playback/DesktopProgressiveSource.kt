@@ -86,7 +86,7 @@ internal suspend fun prepareAdmittedProgressive(
             permittedOrigins = setOf(origin),
             // The query string often carries a signed token, so it never becomes part of the cache key.
             cacheKey = stream.uri.substringBefore('?'),
-            expiresAtEpochMs = null,
+            expiresAtEpochMs = stream.expiresAtEpochMs,
             lengthBytes = null,
         )
     val liveCookies = LiveCookies()
@@ -110,9 +110,9 @@ internal suspend fun prepareAdmittedProgressive(
                 mimeType = stream.mimeType,
                 codec = stream.codecs,
                 length = length,
-                expiresAtEpochMs = null,
+                expiresAtEpochMs = stream.expiresAtEpochMs,
             )
-        val handle = ProgressivePlaintextHandle(stream.mimeType, stream.codecs, length)
+        val handle = ProgressivePlaintextHandle(stream.mimeType, stream.codecs, length, stream.expiresAtEpochMs)
         NativeRouteOutcome.Ready(HostPreparedPlaintext(handle, plaintext, opener))
     } catch (refused: ByteSourceException) {
         opener.close()
@@ -211,12 +211,11 @@ private class AdmittedProgressiveSource(
 
 /**
  * The format facts of one admitted progressive view. The bytes stay behind the view, so the handle names no transport.
- * An admitted view has no expiry of its own, because each of its reads is gated against the live account instead.
+ * Account admission and the URL authorization window are independent gates on every read.
  */
 private class ProgressivePlaintextHandle(
     override val mimeType: String,
     override val codec: String,
     override val lengthBytes: Long?,
-) : PreparedPlaintextHandle {
-    override val expiresAtEpochMs: Long? = null
-}
+    override val expiresAtEpochMs: Long?,
+) : PreparedPlaintextHandle

@@ -44,8 +44,8 @@ internal fun engineSourceOf(locator: PlaybackLocator): String? = when (locator) 
 
 /**
  * What the engine opens for [locator], or null when it cannot open it. Every deck that opens a source goes through
- * here, so the same locator always names the same source. A header-free source keeps the engine's own reader. A
- * header-bearing HTTP(S) resource is read through a host lease, so its headers reach only its own origin.
+ * here, so the same locator always names the same source. Only header-free sources with no known expiry keep the
+ * engine's own reader. The host lease otherwise enforces the authorization window and origin-bound headers.
  */
 internal fun engineSourceOpen(
     locator: PlaybackLocator,
@@ -53,7 +53,7 @@ internal fun engineSourceOpen(
 ): EngineSource? = when (locator) {
     is PlaybackLocator.LocalFile -> engineSourceOf(locator)?.let { EngineSource.Direct(it) }
     is PlaybackLocator.Remote ->
-        if (locator.headers.isEmpty()) {
+        if (locator.headers.isEmpty() && locator.expiresAtEpochMs == null) {
             engineSourceOf(locator)?.let { EngineSource.Direct(it) }
         } else {
             NativeStreamLease.forRemote(locator)?.let { EngineSource.Leased(it) }
@@ -99,10 +99,10 @@ internal fun engineSourceForPreparedPlaintext(locator: PlaybackLocator.PreparedP
 
 /** What one deck loads: a source the engine reads itself, or a host lease the engine reads through callbacks. */
 internal sealed interface EngineSource {
-    /** A local file or a header-free HTTP(S) URL, which the engine opens with its own reader. */
+    /** A local file or a header-free URL with no reported expiry, which the engine opens with its own reader. */
     class Direct(val source: String) : EngineSource
 
-    /** A header-bearing HTTP(S) resource. Every request is made through [lease], which the engine then owns. */
+    /** A host-leased resource. Every request is made through [lease], which the engine then owns. */
     class Leased(val lease: NativeStreamLease) : EngineSource
 }
 
