@@ -1019,6 +1019,27 @@ fun YouTubePlaylistMenu(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
 
+                    HorizontalDivider(
+                        modifier = dividerModifier,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+
+                    ListItem(
+                        headlineContent = { Text(text = stringResource(R.string.copy_link)) },
+                        leadingContent = {
+                            Icon(
+                                painter = painterResource(R.drawable.link),
+                                contentDescription = null,
+                            )
+                        },
+                        modifier =
+                            Modifier.clickable {
+                                context.copyLinkToClipboard(playlist.shareLink)
+                                onDismiss()
+                            },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+
                     if (canSelect) {
                         HorizontalDivider(
                             modifier = dividerModifier,

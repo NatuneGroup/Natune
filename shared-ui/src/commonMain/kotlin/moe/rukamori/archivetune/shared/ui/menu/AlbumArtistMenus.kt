@@ -88,6 +88,9 @@ fun albumOverflowActions(
         add(OverflowAction("share", Res.string.m6_share, !facts.shareId.isNullOrBlank()) {
             check(sharing.playlist(facts.shareId, null)) { "Share target unavailable" }
         })
+        add(OverflowAction("copy_link", Res.string.m5pq_copy_link, !facts.shareId.isNullOrBlank()) {
+            check(sharing.copyPlaylistLink(facts.shareId, null)) { "Link unavailable" }
+        })
         add(OverflowAction("play_next", Res.string.m6_play_next, ready) { queue.insert(selected(), UserQueuedKind.PLAY_NEXT) })
         add(OverflowAction("add_queue", Res.string.m6_add_queue, ready) { queue.insert(selected(), UserQueuedKind.ADD_TO_QUEUE) })
         add(OverflowAction("like", if (facts.liked) Res.string.m6_unlike else Res.string.m6_like, dismissOnSuccess = false) {

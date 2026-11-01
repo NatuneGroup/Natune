@@ -540,6 +540,7 @@ public fun PlaylistMenu(
     val playNextText = stringResource(R.string.play_next)
     val addToQueueText = stringResource(R.string.add_to_queue)
     val shareText = stringResource(R.string.share)
+    val copyLinkText = stringResource(R.string.copy_link)
     val exportText = stringResource(R.string.export_playlist_csv)
     val exportPlaylist = rememberPlaylistExportAction(playlist.id, coroutineScope, onDismiss)
     val remoteShareLink = dbPlaylist?.playlist?.takeIf { !it.browseId.isNullOrBlank() }?.shareLink
@@ -550,6 +551,7 @@ public fun PlaylistMenu(
             playText,
             shuffleText,
             shareText,
+            copyLinkText,
             exportText,
             exportPlaylist,
             remoteShareLink,
@@ -624,7 +626,27 @@ public fun PlaylistMenu(
                         }
                     },
                 ),
-            )
+            ) + if (remoteShareLink != null) {
+                listOf(
+                    NewAction(
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.link),
+                                contentDescription = null,
+                                modifier = Modifier.size(28.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        text = copyLinkText,
+                        onClick = {
+                            context.copyLinkToClipboard(remoteShareLink)
+                            onDismiss()
+                        },
+                    ),
+                )
+            } else {
+                emptyList()
+            }
         }
 
     LazyColumn(
@@ -1098,6 +1120,25 @@ public fun PlaylistMenu(
                                         putExtra(Intent.EXTRA_TEXT, shareLink)
                                     }
                                 context.startActivity(Intent.createChooser(intent, null))
+                                onDismiss()
+                            },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    HorizontalDivider(
+                        modifier = dividerModifier,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    ListItem(
+                        headlineContent = { Text(text = stringResource(R.string.copy_link)) },
+                        leadingContent = {
+                            Icon(
+                                painter = painterResource(R.drawable.link),
+                                contentDescription = null,
+                            )
+                        },
+                        modifier =
+                            Modifier.clickable {
+                                context.copyLinkToClipboard(shareLink)
                                 onDismiss()
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),

@@ -39,6 +39,9 @@ fun libraryAlbumActions(
             add(OverflowAction("share", Res.string.m6_share, !shareId.isNullOrBlank()) {
                 check(sharing.playlist(shareId, null)) { "Share target unavailable" }
             })
+            add(OverflowAction("copy_link", Res.string.m5pq_copy_link, !shareId.isNullOrBlank()) {
+                check(sharing.copyPlaylistLink(shareId, null)) { "Link unavailable" }
+            })
         }
         add(OverflowAction("play_next", Res.string.m6_play_next, ready) { queue.insert(songs, UserQueuedKind.PLAY_NEXT) })
         add(OverflowAction("add_queue", Res.string.m6_add_queue, ready) { queue.insert(songs, UserQueuedKind.ADD_TO_QUEUE) })
@@ -96,6 +99,9 @@ fun youTubeArtistActions(
         add(OverflowAction("share", Res.string.m6_share, channel != null) {
             check(sharing.artist(channel)) { "Share target unavailable" }
         })
+        add(OverflowAction("copy_link", Res.string.m5pq_copy_link, channel != null) {
+            check(sharing.copyArtistLink(channel)) { "Link unavailable" }
+        })
         add(subscribeRow(ref, menu.subscribed, host))
         add(speedDialRow(ref, menu.speedDialPinned, host))
     }
@@ -121,6 +127,9 @@ fun libraryArtistActions(
         if (facts.isYouTubeArtist) {
             add(OverflowAction("share", Res.string.m6_share, channel != null) {
                 check(sharing.artist(channel)) { "Share target unavailable" }
+            })
+            add(OverflowAction("copy_link", Res.string.m5pq_copy_link, channel != null) {
+                check(sharing.copyArtistLink(channel)) { "Link unavailable" }
             })
         }
         add(subscribeRow(ref, menu.subscribed, host))

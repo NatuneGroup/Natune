@@ -348,6 +348,7 @@ fun YouTubeSongMenu(
     val addToQueueText = stringResource(R.string.add_to_queue)
     val addToPlaylistText = stringResource(R.string.add_to_playlist)
     val shareText = stringResource(R.string.share)
+    val copyLinkText = stringResource(R.string.copy_link)
 
     val primaryActions =
         remember(
@@ -357,6 +358,7 @@ fun YouTubeSongMenu(
             addToQueueText,
             addToPlaylistText,
             shareText,
+            copyLinkText,
             onDismiss,
             playerConnection,
             navController,
@@ -425,6 +427,21 @@ fun YouTubeSongMenu(
                                 putExtra(Intent.EXTRA_TEXT, song.shareLink)
                             }
                         context.startActivity(Intent.createChooser(intent, null))
+                        onDismiss()
+                    },
+                ),
+                NewAction(
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.link),
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    text = copyLinkText,
+                    onClick = {
+                        context.copyLinkToClipboard(song.shareLink)
                         onDismiss()
                     },
                 ),
