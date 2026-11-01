@@ -94,7 +94,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import dagger.hilt.android.AndroidEntryPoint
@@ -185,10 +184,6 @@ import moe.rukamori.archivetune.constants.LastFMUseNowPlaying
 import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
 import moe.rukamori.archivetune.constants.ListenBrainzTokenKey
 import moe.rukamori.archivetune.constants.MaxSongCacheSizeKey
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleLike
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleRepeatMode
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleShuffle
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleStartRadio
 import moe.rukamori.archivetune.constants.PauseListenHistoryKey
 import moe.rukamori.archivetune.constants.SyncPlaybackToYouTubeHistoryKey
 import moe.rukamori.archivetune.constants.PauseOnDeviceMuteKey
@@ -324,7 +319,6 @@ import moe.rukamori.archivetune.extensions.SilentHandler
 import moe.rukamori.archivetune.extensions.collect
 import moe.rukamori.archivetune.extensions.collectLatest
 import moe.rukamori.archivetune.extensions.currentMetadata
-import moe.rukamori.archivetune.extensions.directorySizeBytes
 import moe.rukamori.archivetune.extensions.findNextMediaItemById
 import moe.rukamori.archivetune.extensions.getQueueWindows
 import moe.rukamori.archivetune.extensions.mediaItems
@@ -408,8 +402,6 @@ import moe.rukamori.archivetune.playback.preload.NextTrackPrefetchPolicy
 import moe.rukamori.archivetune.playback.stream.codecsFromMimeType
 import moe.rukamori.archivetune.shared.domain.persistence.PositionRestorePolicy
 import moe.rukamori.archivetune.scrobbling.LastFmServiceConfig
-import moe.rukamori.archivetune.storage.StorageFolderKind
-import moe.rukamori.archivetune.storage.StorageLocationRepository
 import moe.rukamori.archivetune.ui.screens.settings.DiscordPresenceManager
 import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.ui.screens.settings.ListenBrainzManager
@@ -528,6 +520,7 @@ class MusicService :
     private var autoStartOnBluetoothEnabled = false
     private var bluetoothReceiverRegistered = false
     private var wakeLock: PowerManager.WakeLock? = null
+    private var lowLatencyWifiLock: LowLatencyWifiLock? = null
     private var wakelockEnabled = false
     private var audioDeviceCallbackRegistered = false
     private var audioRouteRecoveryJob: Job? = null
@@ -1246,13 +1239,9 @@ class MusicService :
         idleStopJob = null
     }
 
-    private fun hasResumablePlaybackNotification(): Boolean {
-        val state = player.playbackState
-        return player.mediaItemCount > 0 &&
-            player.currentMediaItem != null &&
-            state != Player.STATE_IDLE &&
-            state != Player.STATE_ENDED
-    }
+    // Duration and seekability resolve after the first notification layout, so the long-content
+    // seek pair is re-set only when one of those inputs flips.
+    private val notificationLayoutGate = NotificationCustomLayoutGate()
 
     // Route string of the last session-activity PendingIntent ("album/<id>" or null), so the
     // PendingIntent is only rebuilt when the target actually changes.
@@ -1300,7 +1289,7 @@ class MusicService :
 
     private fun scheduleStopIfIdle() {
         if (hasBoundClients) return
-        if (hasResumablePlaybackNotification()) {
+        if (hasResumablePlaybackNotification(player)) {
             cancelIdleStop()
             promoteToStartedService()
             ensureStartedAsForeground()
@@ -1330,7 +1319,7 @@ class MusicService :
             scope.launch {
                 delay(delayMs)
                 if (hasBoundClients) return@launch
-                if (hasResumablePlaybackNotification()) return@launch
+                if (hasResumablePlaybackNotification(player)) return@launch
                 stopForegroundAndSelf()
             }
     }
@@ -1497,6 +1486,7 @@ class MusicService :
             (getSystemService(Context.POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ArchiveTune:Playback")
                 .also { it.setReferenceCounted(false) }
+        lowLatencyWifiLock = LowLatencyWifiLock(this)
         setupAudioFocusRequest()
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, android.os.Handler(mainLooper))
         audioDeviceCallbackRegistered = true
@@ -1881,7 +1871,7 @@ class MusicService :
                 val bytesPerMb = 1024L * 1024L
                 val safeSizeMb = maxSongCacheSizeMb.toLong().coerceAtMost(Long.MAX_VALUE / bytesPerMb)
                 val limitBytes = safeSizeMb * bytesPerMb
-                trimPlayerCacheToBytes(limitBytes)
+                trimPlayerCacheToBytes(this@MusicService, playerCache, limitBytes)
             }
 
         dataStore.data
@@ -5342,58 +5332,15 @@ class MusicService :
 
     private fun updateNotification() {
         try {
-            val customLayout =
-                listOf(
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(
-                                if (currentSong.value?.song?.liked == true) {
-                                    R.string.action_remove_like
-                                } else {
-                                    R.string.action_like
-                                },
-                            ),
-                        ).setIconResId(if (currentSong.value?.song?.liked == true) R.drawable.favorite else R.drawable.favorite_border)
-                        .setSessionCommand(CommandToggleLike)
-                        .setEnabled(currentSong.value != null)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(
-                                when (player.repeatMode) {
-                                    REPEAT_MODE_OFF -> R.string.repeat_mode_off
-                                    REPEAT_MODE_ONE -> R.string.repeat_mode_one
-                                    REPEAT_MODE_ALL -> R.string.repeat_mode_all
-                                    else -> R.string.repeat_mode_off
-                                },
-                            ),
-                        ).setIconResId(
-                            when (player.repeatMode) {
-                                REPEAT_MODE_OFF -> R.drawable.repeat
-                                REPEAT_MODE_ONE -> R.drawable.repeat_one_on
-                                REPEAT_MODE_ALL -> R.drawable.repeat_on
-                                else -> R.drawable.repeat
-                            },
-                        ).setSessionCommand(CommandToggleRepeatMode)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(if (player.shuffleModeEnabled) R.string.action_shuffle_off else R.string.action_shuffle_on),
-                        ).setIconResId(if (player.shuffleModeEnabled) R.drawable.shuffle_on else R.drawable.shuffle)
-                        .setSessionCommand(CommandToggleShuffle)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(getString(R.string.start_radio))
-                        .setIconResId(R.drawable.radio)
-                        .setSessionCommand(CommandToggleStartRadio)
-                        .setEnabled(currentSong.value != null)
-                        .build(),
-                )
-            mediaSession.setCustomLayout(customLayout)
+            mediaSession.setCustomLayout(
+                buildNotificationCustomLayout(
+                    context = this,
+                    player = player,
+                    liked = currentSong.value?.song?.liked == true,
+                    hasSong = currentSong.value != null,
+                ),
+            )
+            notificationLayoutGate.markBuilt(player)
         } catch (e: Exception) {
             reportException(e)
         }
@@ -5401,7 +5348,7 @@ class MusicService :
 
     fun refreshPlaybackNotification() {
         updateNotification()
-        onUpdateNotification(mediaSession, hasResumablePlaybackNotification())
+        onUpdateNotification(mediaSession, hasResumablePlaybackNotification(player))
     }
 
     private suspend fun enrichFromAppleMusic(metadata: MediaMetadata): MediaMetadata {
@@ -7871,7 +7818,7 @@ class MusicService :
                 ensureAudioFocusForActivePlayback()
             }
             updateWakeLock()
-            if (hasResumablePlaybackNotification()) {
+            if (hasResumablePlaybackNotification(player)) {
                 cancelIdleStop()
                 promoteToStartedService()
                 ensureStartedAsForeground()
@@ -7936,6 +7883,7 @@ class MusicService :
         if (events.contains(EVENT_TIMELINE_CHANGED) && !isCrossfading) {
             scheduleCrossfade()
         }
+        notificationLayoutGate.onEvents(player, events) { updateNotification() }
 
         // Also handle immediate update for play state and media item transition events explicitly
         if (events.containsAny(
@@ -8464,44 +8412,6 @@ class MusicService :
 
     private fun isMediaCodecStateError(error: PlaybackException): Boolean =
         isRecoverableMediaCodecStateError(error)
-
-    private suspend fun trimPlayerCacheToBytes(limitBytes: Long) {
-        if (limitBytes <= 0L) return
-
-        withContext(Dispatchers.IO) {
-            val cacheDir = StorageLocationRepository.cacheDirectory(this@MusicService, StorageFolderKind.SONG_CACHE)
-            val currentSpace = runCatching { playerCache.cacheSpace }.getOrNull() ?: 0L
-            var totalBytes = if (currentSpace > 0L) currentSpace else cacheDir.directorySizeBytes()
-            if (totalBytes <= limitBytes) return@withContext
-
-            data class Candidate(
-                val key: String,
-                val lastTouchTimestamp: Long,
-                val sizeBytes: Long,
-            )
-
-            val candidates =
-                runCatching {
-                    playerCache.keys
-                        .mapNotNull { key ->
-                            runCatching {
-                                val spans = playerCache.getCachedSpans(key)
-                                if (spans.isEmpty()) return@runCatching null
-                                val oldestTouch = spans.minOf { it.lastTouchTimestamp }
-                                val sizeBytes = spans.sumOf { it.length }
-                                Candidate(key = key, lastTouchTimestamp = oldestTouch, sizeBytes = sizeBytes)
-                            }.getOrNull()
-                        }.sortedBy { it.lastTouchTimestamp }
-                }.getOrNull().orEmpty()
-
-            for (candidate in candidates) {
-                if (totalBytes <= limitBytes) break
-                val removedSize = candidate.sizeBytes.coerceAtLeast(0L)
-                runCatching { playerCache.removeResource(candidate.key) }
-                totalBytes -= removedSize
-            }
-        }
-    }
 
     private fun createPlayerCacheDataSourceFactory(cacheWriteEnabled: Boolean): CacheDataSource.Factory =
         CacheDataSource
@@ -11704,8 +11614,10 @@ class MusicService :
     }
 
     private fun updateWakeLock() {
-        val wl = wakeLock ?: return
         val shouldHold = wakelockEnabled && player.isPlaying
+        // The streaming radio companion follows the same hold: low-latency while audio plays.
+        if (shouldHold) lowLatencyWifiLock?.acquire() else lowLatencyWifiLock?.release()
+        val wl = wakeLock ?: return
         if (shouldHold && !wl.isHeld) {
             Timber.tag("PlaybackDiagnostics").d(
                 "Playback wake lock acquired state=%d playWhenReady=%s isPlaying=%s focusHeld=%s gain=%.3f",
@@ -12765,6 +12677,7 @@ class MusicService :
         }
         try {
             if (wakeLock?.isHeld == true) wakeLock?.release()
+            lowLatencyWifiLock?.release()
         } catch (_: Exception) {
         }
         try {
@@ -12922,7 +12835,7 @@ class MusicService :
         val shouldShowNotification =
             shouldShowPlaybackNotification(
                 startInForegroundRequired = startInForegroundRequired,
-                hasResumablePlayback = hasResumablePlaybackNotification(),
+                hasResumablePlayback = hasResumablePlaybackNotification(player),
             )
         if (!shouldShowNotification) return
 
