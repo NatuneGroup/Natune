@@ -24,16 +24,19 @@ internal fun liveMainProcessId(context: Context): Int? = runCatching {
  */
 internal fun previousLaunchReport(context: Context): StartupReport? {
     val store = StartupRecovery.store(context)
+    val install = currentInstall(context)
     val pending = store.pendingAttempt()
     val last = store.lastAttempt()
     val reviewed = store.acknowledgedThrough()
-    val incomplete = previousStartupIncomplete(store.pendingExists(), pending?.pid, liveMainProcessId(context))
+    val incomplete = previousStartupIncomplete(
+        store.pendingExists(), pending, liveMainProcessId(context), install, BuildConfig.VERSION_NAME,
+    )
     val historyUnavailable = importCrashRecords(context, store)
-    val install = currentInstall(context)
     val since = reportSince(last?.timestampMs, reviewed)
     val listed = store.listRecords().filter { it.timestampMs > since }
     val interrupting = listed.filter { it.interruptsStartup(install) }
-    if (!incomplete && interrupting.isEmpty()) return null
+    val stalePending = staleAttemptUnacknowledged(pending, install, BuildConfig.VERSION_NAME, reviewed)
+    if (!incomplete && !stalePending && interrupting.isEmpty()) return null
 
     val safeMode = incomplete || interrupting.any { it.kind == ProcessExitKind.INITIALIZATION_FAILURE }
     val text = buildString {
@@ -46,7 +49,15 @@ internal fun previousLaunchReport(context: Context): StartupReport? {
                 formatCrashTime(context, it.timestampMs), it.pid.toString()))
         }
         appendLine()
-        appendLine(context.getString(if (incomplete) R.string.startup_incomplete_explanation else R.string.startup_previous_exit_explanation))
+        appendLine(
+            context.getString(
+                when {
+                    incomplete -> R.string.startup_incomplete_explanation
+                    stalePending -> R.string.startup_outdated_attempt_explanation
+                    else -> R.string.startup_previous_exit_explanation
+                },
+            ),
+        )
         if (listed.none { it.captured }) appendLine(context.getString(R.string.startup_report_no_java))
         for (record in listed) {
             appendLine()
@@ -74,6 +85,35 @@ internal fun previousLaunchReport(context: Context): StartupReport? {
 
 internal fun previousStartupIncomplete(pendingExists: Boolean, pendingPid: Int?, livePid: Int?): Boolean =
     pendingExists && (livePid == null || pendingPid != livePid)
+
+/**
+ * An attempt recorded before the installed build, or stamped by a different version, survived an app
+ * update. It stays in the report for diagnosis but can never put the current build into safe mode.
+ */
+internal fun isStaleAttempt(attempt: StartupAttempt, install: InstallWindow, currentVersion: String): Boolean =
+    attempt.timestampMs < install.installedSinceMs ||
+        (attempt.version.isNotEmpty() && attempt.version != currentVersion)
+
+/** Only a pending attempt of the installed build counts as an unfinished startup. */
+internal fun previousStartupIncomplete(
+    pendingExists: Boolean,
+    pending: StartupAttempt?,
+    livePid: Int?,
+    install: InstallWindow,
+    currentVersion: String,
+): Boolean =
+    (pending == null || !isStaleAttempt(pending, install, currentVersion)) &&
+        previousStartupIncomplete(pendingExists, pending?.pid, livePid)
+
+/** A stale attempt surfaces once, until the report that covers its timestamp is acknowledged. */
+internal fun staleAttemptUnacknowledged(
+    pending: StartupAttempt?,
+    install: InstallWindow,
+    currentVersion: String,
+    acknowledgedThroughMs: Long,
+): Boolean =
+    pending != null && pending.timestampMs > acknowledgedThroughMs &&
+        isStaleAttempt(pending, install, currentVersion)
 
 internal fun reportSince(lastStartMs: Long?, reviewedThroughMs: Long): Long =
     maxOf(reviewedThroughMs, (lastStartMs ?: 1L) - 1L)
