@@ -29,10 +29,11 @@
     <key>ArchiveTuneTidalCanvasEmbedToken</key><string>$(ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN)</string>
     <key>ArchiveTuneLyprioBaseUrl</key><string>$(ARCHIVETUNE_LYPRIO_BASE_URL)</string>
     <key>ArchiveTuneLyprioHmacKey</key><string>$(ARCHIVETUNE_LYPRIO_HMAC_KEY)</string>
+    <key>ArchiveTuneSpotifyOauthClientId</key><string>$(ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>
-        <key>CFBundleURLSchemes</key><array><string>archivetune</string><string>discord-1165706613961789445</string></array>
+        <key>CFBundleURLSchemes</key><array><string>archivetune</string><string>discord-1165706613961789445</string><string>natune</string></array>
     </dict></array>
     <key>LSRequiresIPhoneOS</key><true/>
     <key>CADisableMinimumFrameDurationOnPhone</key><true/>

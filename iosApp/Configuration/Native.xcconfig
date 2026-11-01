@@ -63,4 +63,7 @@ ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN =
 // the scheme as https:/$()/host when setting it in an xcconfig file.
 ARCHIVETUNE_LYPRIO_BASE_URL =
 ARCHIVETUNE_LYPRIO_HMAC_KEY =
+// The registered public OAuth client id of the Librespot Spotify streaming sign-in reaches the app through
+// Info.plist the same way. It is a PKCE public client, never a secret; a blank value keeps that sign-in unavailable.
+ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID =
 #include? "Credentials.xcconfig"
