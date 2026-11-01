@@ -10,8 +10,6 @@
 
 package moe.rukamori.archivetune.ui.menu
 
-import android.content.Intent
-import android.media.audiofx.AudioEffect
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -539,47 +537,10 @@ fun PlayerMenu(
         EqualizerDialog(
             onDismiss = { showEqualizerDialog = false },
             openSystemEqualizer = {
-                // No live audio session means the panel would open against a dead
-                // stream; no activity means no equalizer is installed on the device.
-                // Both need user-visible feedback, not a silent no-op.
-                val audioSessionId = playerConnection.localPlayer.audioSessionId
-                if (audioSessionId <= 0) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.equalizer_stream_unavailable),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                } else {
-                    val intent =
-                        Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
-                            putExtra(AudioEffect.EXTRA_AUDIO_SESSION, audioSessionId)
-                            putExtra(AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
-                            putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                        }
-                    if (intent.resolveActivity(context.packageManager) == null) {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.equalizer_not_found),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    } else {
-                        try {
-                            activityResultLauncher.launch(intent)
-                        } catch (e: android.content.ActivityNotFoundException) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.equalizer_not_found),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        } catch (e: SecurityException) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.equalizer_not_found),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    }
-                }
+                context.launchSystemEqualizerPanel(
+                    audioSessionId = playerConnection.localPlayer.audioSessionId,
+                    launch = { intent -> activityResultLauncher.launch(intent) },
+                )
             },
         )
     }

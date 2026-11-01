@@ -138,13 +138,6 @@ val AndroidAutoMeteredArtworkKey = booleanPreferencesKey("androidAutoMeteredArtw
 val AndroidAutoPrimaryActionKey = stringPreferencesKey("androidAutoPrimaryAction")
 val AndroidAutoSecondaryActionKey = stringPreferencesKey("androidAutoSecondaryAction")
 
-/**
- * Android Auto driving playlists: up to [moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylists.MAX_PINNED_PLAYLISTS]
- * pinned playlists shown first on the car browse screen, pinned order preserved.
- */
-val AndroidAutoPinnedPlaylistsJsonKey = stringPreferencesKey("androidAutoPinnedPlaylistsJson")
-val AndroidAutoPinnedPlaylistShuffleKey = booleanPreferencesKey("androidAutoPinnedPlaylistShuffle")
-
 val ThumbnailCornerRadiusKey = floatPreferencesKey("thumbnailCornerRadius")
 val CropThumbnailToSquareKey = booleanPreferencesKey("cropThumbnailToSquare")
 
