@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.spotify
 
 import android.content.Context
 import android.net.Uri
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import java.security.SecureRandom
 import java.util.Base64
@@ -89,14 +90,24 @@ object SpotifyLibrespotAccount {
     private val secureRandom = SecureRandom()
 
     // Account mutations share the same commit-boundary lock the dedicated streaming account uses.
+    // The pending OAuth session lives under it too, so begin/cancel/complete cannot interleave.
     private val tokenMutex = StreamingAccountMutationLock()
 
     /** The in-flight authorization; only the newest one is valid, and completing consumes it. */
+    @Volatile
     private var pendingSession: SpotifyLibrespotAuthorizationSession? = null
 
     /** The pending flow's CSRF state, so a redirect collector can tell the real callback from a stale one. */
     val pendingAuthorizationState: String?
         get() = pendingSession?.state
+
+    // The catalog sp_dc whose account the grant was last verified against, and the verdict — checked
+    // once per catalog session, the same cadence as the dedicated account's collision check.
+    @Volatile
+    private var comparedCatalogSpDc: String? = null
+
+    @Volatile
+    private var catalogMatchesLibrespot = false
 
     sealed class SignInError : Exception() {
         class NotConfigured : SignInError()
@@ -123,26 +134,27 @@ object SpotifyLibrespotAccount {
         get() = BuildConfig.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID.isNotBlank()
 
     /** Starts an authorization-code PKCE flow. The URI is for the system browser, never a WebView. */
-    fun beginAuthorization(): SpotifyLibrespotAuthorizationSession? {
-        if (!isConfigured) return null
-        val state = randomUrlSafeString(32)
-        val verifier = randomUrlSafeString(64)
-        val challenge = spotifyPkceChallenge(verifier)
-        val uri =
-            Uri.parse(
-                spotifyOAuthAuthorizeUrl(
-                    clientId = BuildConfig.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID,
-                    redirectUri = REDIRECT_URI,
-                    state = state,
-                    challenge = challenge,
-                ),
-            )
-        return SpotifyLibrespotAuthorizationSession(state, verifier, uri).also { pendingSession = it }
-    }
+    suspend fun beginAuthorization(): SpotifyLibrespotAuthorizationSession? =
+        tokenMutex.withLock {
+            if (!isConfigured) return@withLock null
+            val state = randomUrlSafeString(32)
+            val verifier = randomUrlSafeString(64)
+            val challenge = spotifyPkceChallenge(verifier)
+            val uri =
+                Uri.parse(
+                    spotifyOAuthAuthorizeUrl(
+                        clientId = BuildConfig.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID,
+                        redirectUri = REDIRECT_URI,
+                        state = state,
+                        challenge = challenge,
+                    ),
+                )
+            SpotifyLibrespotAuthorizationSession(state, verifier, uri).also { pendingSession = it }
+        }
 
     /** Drops an in-progress authorization; a redirect that lands later belongs to a cancelled attempt. */
-    fun cancelAuthorization() {
-        pendingSession = null
+    suspend fun cancelAuthorization() {
+        tokenMutex.withLock { pendingSession = null }
     }
 
     /**
@@ -182,6 +194,7 @@ object SpotifyLibrespotAccount {
 
                     val prefs = context.dataStore.data.first()
                     val catalogSignedIn = !prefs[SpotifySpDcKey].isNullOrBlank()
+                    val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
                     val catalogUserId =
                         if (catalogSignedIn) {
                             SpotifyStreamingAccount.catalogToken(context)
@@ -203,6 +216,12 @@ object SpotifyLibrespotAccount {
 
                     val now = System.currentTimeMillis()
                     context.dataStore.edit {
+                        // The catalog session the decision compared against must not have been
+                        // replaced in the meantime; if it was, abort the whole edit so nothing
+                        // half-stores a grant bound to a vanished account.
+                        if (it[SpotifySpDcKey].orEmpty() != catalogSpDc) {
+                            throw SignInError.CatalogUnverifiable()
+                        }
                         it[SpotifyLibrespotRefreshTokenKey] = refreshToken
                         it[SpotifyLibrespotAccessTokenKey] = grant.accessToken
                         it[SpotifyLibrespotAccessTokenExpiresAtKey] =
@@ -242,6 +261,28 @@ object SpotifyLibrespotAccount {
                 val refresh = prefs[SpotifyLibrespotRefreshTokenKey].orEmpty()
                 if (refresh.isBlank()) return@withLock null
 
+                // The catalog account can have been replaced after the grant was stored, and the
+                // grant only streams while it is still the catalog's own account. A proven
+                // mismatch clears it; a catalog identity that cannot be read denies the token for
+                // now without destroying the grant.
+                val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
+                val librespotUserId = prefs[SpotifyLibrespotUserIdKey].orEmpty()
+                if (catalogSpDc.isNotBlank() && librespotUserId.isNotBlank()) {
+                    if (comparedCatalogSpDc != catalogSpDc) {
+                        val catalogUserId =
+                            SpotifyStreamingAccount.catalogToken(context)
+                                ?.let(SpotifyStreamingAccount::fetchProfile)
+                                ?.userId
+                        if (catalogUserId == null) return@withLock null
+                        catalogMatchesLibrespot = catalogUserId == librespotUserId
+                        comparedCatalogSpDc = catalogSpDc
+                    }
+                    if (!catalogMatchesLibrespot) {
+                        context.dataStore.edit { it.clearLibrespotSession() }
+                        return@withLock null
+                    }
+                }
+
                 val grant = refreshAccessToken(refresh) ?: return@withLock null
                 val now = System.currentTimeMillis()
                 context.dataStore.edit {
@@ -259,17 +300,21 @@ object SpotifyLibrespotAccount {
 
     /** Drops the stored grant; streaming turns off when the stored engine is the one losing its session. */
     suspend fun signOut(context: Context): Unit = tokenMutex.withLock {
-        context.dataStore.edit {
-            it.remove(SpotifyLibrespotRefreshTokenKey)
-            it.remove(SpotifyLibrespotAccessTokenKey)
-            it.remove(SpotifyLibrespotAccessTokenExpiresAtKey)
-            it.remove(SpotifyLibrespotUserIdKey)
-            it.remove(SpotifyLibrespotAccountNameKey)
-            if (SpotifyStreamEngine.fromPreference(it[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT) {
-                it[SpotifyStreamEnabledKey] = false
-            }
-        }
+        comparedCatalogSpDc = null
+        catalogMatchesLibrespot = false
+        context.dataStore.edit { it.clearLibrespotSession() }
         Unit
+    }
+
+    private fun MutablePreferences.clearLibrespotSession() {
+        remove(SpotifyLibrespotRefreshTokenKey)
+        remove(SpotifyLibrespotAccessTokenKey)
+        remove(SpotifyLibrespotAccessTokenExpiresAtKey)
+        remove(SpotifyLibrespotUserIdKey)
+        remove(SpotifyLibrespotAccountNameKey)
+        if (SpotifyStreamEngine.fromPreference(this[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT) {
+            this[SpotifyStreamEnabledKey] = false
+        }
     }
 
     /**
@@ -308,7 +353,7 @@ object SpotifyLibrespotAccount {
                 code = code,
                 verifier = codeVerifier,
             ),
-        )?.let(parseSpotifyOAuthTokenGrant::invoke)
+        )?.let(::parseSpotifyOAuthTokenGrant)
 
     private fun refreshAccessToken(refreshToken: String) =
         postForm(
@@ -316,7 +361,7 @@ object SpotifyLibrespotAccount {
                 clientId = BuildConfig.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID,
                 refreshToken = refreshToken,
             ),
-        )?.let(parseSpotifyOAuthTokenGrant::invoke)
+        )?.let(::parseSpotifyOAuthTokenGrant)
 
     private fun postForm(body: String): String? =
         runCatching {

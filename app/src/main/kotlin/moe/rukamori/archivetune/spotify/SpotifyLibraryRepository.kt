@@ -250,6 +250,7 @@ class SpotifyLibraryRepository
                     Spotify.accessToken = null
                     clearCatalogCaches()
                     clearRecentlyPlayed()
+                    SpotifyLibrespotAccount.signOut(context)
                 }
                 _playlists.value = null
                 _errorMessage.value = null
@@ -283,7 +284,6 @@ class SpotifyLibraryRepository
                 clearRecentlyPlayed()
                 runCatching { clearWebAuthSession(context) }
                     .onFailure(::reportException)
-                // The Librespot grant is this account's streaming session: it leaves with it.
                 SpotifyLibrespotAccount.signOut(context)
             }
         }

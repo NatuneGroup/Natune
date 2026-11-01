@@ -200,6 +200,7 @@ internal class IosSpotifyCatalogAccount(
                 if (changed) {
                     this[SpotifyAccessTokenKey] = null
                     this[SpotifyAccessTokenExpiresAtKey] = null
+                    clearSpotifyLibrespotSession()
                     clearCatalogSnapshots()
                 }
             }
