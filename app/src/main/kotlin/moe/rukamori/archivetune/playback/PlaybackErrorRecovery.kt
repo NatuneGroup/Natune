@@ -17,8 +17,9 @@ import moe.rukamori.archivetune.shared.domain.playback.playbackCauses
  * resolve request earns an auto-advance past the dead item instead of stalling on it. The budget's
  * [PlaybackRecoveryBudget.REQUESTS] cap means at most two consecutive item failures buy an advance
  * inside one [PlaybackRecoveryBudget.WINDOW_MS] stretch — the same "cap 2" the study prescribes —
- * before the queue parks on the next failure. Progress of thirty seconds since the last failure
- * refunds the budget, so a queue that moved on is not retired.
+ * before the queue parks on the next failure. The stretch never refunds itself: progress of thirty
+ * seconds since the last failure, playback recovering, or an explicit reset is what refunds it, so
+ * a queue that moved on is not retired while a dead-item chain stays parked.
  *
  * Main-thread only, like the listener callbacks that drive it.
  */
@@ -47,9 +48,12 @@ internal class PlaybackErrorRecovery(
         val now = nowMs()
         val stretch = (budget ?: PlaybackRecoveryBudget.starting(now)).forPlaybackFailure(positionMs, now)
         val decision = PlaybackRecoveryPolicy.decide(PlaybackFailureClassifier.categorize(failure), stretch, now)
-        var remaining = decision.budget
+        val remaining = decision.budget
         if (decision.action == PlaybackRecoveryAction.NONE) {
-            budget = null
+            // The spent budget stays: an exhausted stretch parks every following failure on the
+            // fallback, and only playback recovering, thirty seconds of item progress refunding
+            // the stretch inside forPlaybackFailure, or an explicit reset buys another advance.
+            budget = remaining
             return false
         }
         if (remaining.requestsRemaining <= 0) {

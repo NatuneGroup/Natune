@@ -249,9 +249,9 @@ internal fun SimpMusicQueueSheet(
             index = index,
             canMoveUp = index > 0,
             canMoveDown = index < entries.size - 1,
-            onMoveUp = { playerConnection.player.moveMediaItem(index, index - 1) },
-            onMoveDown = { playerConnection.player.moveMediaItem(index, index + 1) },
-            onRemove = { playerConnection.player.removeMediaItem(index) },
+            onMoveUp = { playerConnection.moveQueueItem(index, index - 1) },
+            onMoveDown = { playerConnection.moveQueueItem(index, index + 1) },
+            onRemove = { playerConnection.removeQueueItemAt(index) },
             onDismiss = { menuIndex = null },
         )
     }

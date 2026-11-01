@@ -81,7 +81,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
-import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalPlayerConnection
@@ -123,7 +122,6 @@ fun AppleMusicQueueSheet(
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
 
-    val localPlayer = playerConnection.localPlayer
 
     var locked by rememberPreference(QueueEditLockKey, defaultValue = true)
     var infiniteQueueEnabled by rememberPreference(AutoLoadMoreKey, defaultValue = true)
@@ -257,17 +255,14 @@ fun AppleMusicQueueSheet(
                 if (sourceIndex != destinationIndex) {
                     justCommittedDragUid = completedDrag.draggedItemUid
                     if (!shuffleModeEnabled) {
-                        playerConnection.player.moveMediaItem(sourceIndex, destinationIndex)
+                        playerConnection.moveQueueItem(sourceIndex, destinationIndex)
                     } else {
-                        localPlayer.setShuffleOrder(
-                            DefaultShuffleOrder(
-                                queueWindows
-                                    .map { it.firstPeriodIndex }
-                                    .toMutableList()
-                                    .move(sourceIndex, destinationIndex)
-                                    .toIntArray(),
-                                System.currentTimeMillis(),
-                            ),
+                        playerConnection.reorderShuffledQueue(
+                            queueWindows
+                                .map { it.firstPeriodIndex }
+                                .toMutableList()
+                                .move(sourceIndex, destinationIndex)
+                                .toIntArray(),
                         )
                     }
                     return@LaunchedEffect
@@ -457,7 +452,7 @@ fun AppleMusicQueueSheet(
                             (dv == SwipeToDismissBoxValue.StartToEnd || dv == SwipeToDismissBoxValue.EndToStart)
                         ) {
                             processedDismiss = true
-                            playerConnection.player.removeMediaItem(window.firstPeriodIndex)
+                            playerConnection.removeQueueItemAt(window.firstPeriodIndex)
                         }
                         if (dv == SwipeToDismissBoxValue.Settled) {
                             processedDismiss = false

@@ -168,7 +168,6 @@ import androidx.media3.common.Player.REPEAT_MODE_ALL
 import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.REPEAT_MODE_ONE
 import androidx.media3.common.Timeline
-import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.db.entities.ArtistEntity
@@ -2766,7 +2765,6 @@ private fun FlamingoPlayingList(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val localPlayer = playerConnection.localPlayer
     val density = LocalDensity.current
     val queueListState = rememberLazyListState(initialFirstVisibleItemIndex = (currentWindowIndex + 1).coerceAtLeast(0))
 
@@ -3050,17 +3048,14 @@ private fun FlamingoPlayingList(
                         if (sourceIndex != destinationIndex) {
                             justCommittedDragUid = completedDrag.draggedItemUid
                             if (!shuffleModeEnabled) {
-                                playerConnection.player.moveMediaItem(sourceIndex, destinationIndex)
+                                playerConnection.moveQueueItem(sourceIndex, destinationIndex)
                             } else {
-                                localPlayer.setShuffleOrder(
-                                    DefaultShuffleOrder(
-                                        queueWindows
-                                            .map { it.firstPeriodIndex }
-                                            .toMutableList()
-                                            .move(sourceIndex, destinationIndex)
-                                            .toIntArray(),
-                                        System.currentTimeMillis(),
-                                    ),
+                                playerConnection.reorderShuffledQueue(
+                                    queueWindows
+                                        .map { it.firstPeriodIndex }
+                                        .toMutableList()
+                                        .move(sourceIndex, destinationIndex)
+                                        .toIntArray(),
                                 )
                             }
                             return@LaunchedEffect
@@ -3195,7 +3190,7 @@ private fun FlamingoPlayingList(
                                     val absIndex =
                                         queueWindows.indexOfFirst { it.uid == window.uid }
                                     if (absIndex > 0) {
-                                        playerConnection.player.moveMediaItem(
+                                        playerConnection.moveQueueItem(
                                             absIndex,
                                             currentWindowIndex + 1,
                                         )
@@ -3208,7 +3203,7 @@ private fun FlamingoPlayingList(
                                     val absIndex =
                                         queueWindows.indexOfFirst { it.uid == window.uid }
                                     if (absIndex != -1) {
-                                        playerConnection.player.removeMediaItem(absIndex)
+                                        playerConnection.removeQueueItemAt(absIndex)
                                         true
                                     } else {
                                         false

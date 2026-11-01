@@ -12,7 +12,7 @@ class QueueDedupeTest {
             QueueDedupe.incoming(currentMediaId = null, mediaIds = listOf("a", "b", "a", "c", "b")),
         )
         assertEquals(
-            emptyList<String>(),
+            listOf("a"),
             QueueDedupe.incoming(currentMediaId = null, mediaIds = listOf("a", "a", "a")),
         )
     }
@@ -41,9 +41,9 @@ class QueueDedupeTest {
             setOf(0, 2, 4),
             QueueDedupe.evictableIndices(queue, currentIndex = 1, incomingMediaIds = setOf("a")),
         )
-        // The same song as the current item: every other copy may go, never index 1.
+        // Every queued copy of an incoming id goes — including "c" at index 3 — never index 1.
         assertEquals(
-            setOf(0, 2, 4),
+            setOf(0, 2, 3, 4),
             QueueDedupe.evictableIndices(queue, currentIndex = 1, incomingMediaIds = setOf("a", "c")),
         )
         assertEquals(
@@ -54,6 +54,24 @@ class QueueDedupeTest {
         assertEquals(
             setOf(0, 2, 4),
             QueueDedupe.evictableIndices(queue, currentIndex = -1, incomingMediaIds = setOf("a")),
+        )
+    }
+
+    @Test
+    fun theInsertAdapterDeduplicatesTheBatchItself() {
+        // The service filters the incoming items by the kept ids and then dedupes them: an
+        // [a, a] insert lands exactly once, and the kept set alone would pass both copies.
+        val kept = QueueDedupe.incoming(currentMediaId = null, mediaIds = listOf("a", "a", "b")).toSet()
+        assertEquals(
+            listOf("a", "b"),
+            QueueDedupe.survivingItems(listOf("a", "a", "b"), kept) { it },
+        )
+        // A copy of the song now playing does not come back through the filter either.
+        val keptWithoutCurrent =
+            QueueDedupe.incoming(currentMediaId = "a", mediaIds = listOf("a", "a", "b")).toSet()
+        assertEquals(
+            listOf("b"),
+            QueueDedupe.survivingItems(listOf("a", "a", "b"), keptWithoutCurrent) { it },
         )
     }
 

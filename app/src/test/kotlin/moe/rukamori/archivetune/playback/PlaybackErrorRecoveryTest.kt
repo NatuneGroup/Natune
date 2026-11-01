@@ -35,8 +35,8 @@ class PlaybackErrorRecoveryTest {
         assertFalse(
             recovery.shouldAdvancePast(failure(reason = PlaybackFailureReason.SOURCE_UNAVAILABLE), positionMs = 0L),
         )
-        // A terminal answer ends the stretch, so a following failure starts a fresh budget —
-        // each new item's failure gets its own honest shot at an advance.
+        // A terminal answer does not poison the stretch: the rate-limited failure spent an
+        // attempt but no request, so a following recoverable failure still funds an advance.
         assertTrue(recovery.shouldAdvancePast(failure(httpStatus = 403), positionMs = 0L))
     }
 
@@ -46,10 +46,13 @@ class PlaybackErrorRecoveryTest {
         val recovery = PlaybackErrorRecovery { now }
         assertTrue(recovery.shouldAdvancePast(failure(httpStatus = 403), positionMs = 0L))
         assertTrue(recovery.shouldAdvancePast(failure(httpStatus = 403), positionMs = 0L))
-        // PlaybackRecoveryBudget.REQUESTS spent: the third failure falls back to stop-or-skip.
+        // PlaybackRecoveryBudget.REQUESTS spent: the third failure falls back to stop-or-skip,
+        // and the stretch stays parked — it never refunds itself on the next failure.
         assertEquals(2, PlaybackRecoveryBudget.REQUESTS)
         assertFalse(recovery.shouldAdvancePast(failure(httpStatus = 403), positionMs = 0L))
-        // The stretch is over: another failure starts a fresh budget.
+        assertFalse(recovery.shouldAdvancePast(failure(httpStatus = 403), positionMs = 0L))
+        // An explicit reset (recovery, queue teardown) is what buys another advance.
+        recovery.reset()
         assertTrue(recovery.shouldAdvancePast(failure(httpStatus = 403), positionMs = 0L))
     }
 

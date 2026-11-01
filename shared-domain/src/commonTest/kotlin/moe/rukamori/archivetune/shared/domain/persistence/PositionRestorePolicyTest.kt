@@ -74,6 +74,32 @@ class PositionRestorePolicyTest {
     }
 
     @Test
+    fun bothRestoreStagesReadTheSameQueueStamp() {
+        // The queue restore and the player-state restore are one decision: both read the queue
+        // file's stamp, so a queue written before the stamp existed gives its position back to
+        // neither stage — the state file's own (newer) write time cannot revive it.
+        assertEquals(
+            0L,
+            PositionRestorePolicy.positionMs("song", "song", savedAtEpochMs = null, positionMs = 90_000L, nowEpochMs = now),
+        )
+        assertEquals(
+            0L,
+            PositionRestorePolicy.positionMs("song", "song", savedAtEpochMs = null, positionMs = 45_000L, nowEpochMs = now),
+        )
+        // With a fresh stamp the queue position applies, and the state position still requires
+        // the item it was saved under.
+        val stamped = now - 1_000L
+        assertEquals(
+            90_000L,
+            PositionRestorePolicy.positionMs("song", "song", stamped, 90_000L, now),
+        )
+        assertEquals(
+            0L,
+            PositionRestorePolicy.positionMs("song", "next-song", stamped, 45_000L, now),
+        )
+    }
+
+    @Test
     fun clockSkewBehindTheStampDropsThePosition() {
         // A stamp in the future reads as tampered time, not freshness.
         assertEquals(

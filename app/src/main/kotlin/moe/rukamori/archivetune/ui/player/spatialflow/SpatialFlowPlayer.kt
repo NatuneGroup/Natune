@@ -116,7 +116,6 @@ import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
 import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
-import androidx.media3.exoplayer.source.ShuffleOrder
 import coil3.compose.AsyncImage
 import kotlin.math.roundToInt
 import moe.rukamori.archivetune.LocalDownloadUtil
@@ -1072,17 +1071,14 @@ fun SpatialFlowPlayerContent(
                 onReorderQueue = { from, to ->
                     if (from == to) return@SlidingQueueDrawer
                     if (!playerConnection.player.shuffleModeEnabled) {
-                        playerConnection.player.moveMediaItem(from, to)
+                        playerConnection.moveQueueItem(from, to)
                     } else {
-                        playerConnection.localPlayer.setShuffleOrder(
-                            ShuffleOrder.DefaultShuffleOrder(
-                                queueWindows
-                                    .map { it.firstPeriodIndex }
-                                    .toMutableList()
-                                    .move(from, to)
-                                    .toIntArray(),
-                                System.currentTimeMillis(),
-                            ),
+                        playerConnection.reorderShuffledQueue(
+                            queueWindows
+                                .map { it.firstPeriodIndex }
+                                .toMutableList()
+                                .move(from, to)
+                                .toIntArray(),
                         )
                     }
                 },
