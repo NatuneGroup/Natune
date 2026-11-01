@@ -361,6 +361,8 @@ class IosHost {
             }
             playbackPort.attachTelegram(session)
             telegramSession.value = session
+            // The graph may not exist yet; the assemble step re-hands the session it finds here.
+            graph?.attachTelegram(session)
         }
     }
 

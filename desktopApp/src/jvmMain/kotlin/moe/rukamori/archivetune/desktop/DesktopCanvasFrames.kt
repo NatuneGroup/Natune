@@ -45,6 +45,7 @@ import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.playback.NativeVideoArtwork
 import moe.rukamori.archivetune.desktop.playback.VideoArtworkState
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackClock
+import moe.rukamori.archivetune.shared.domain.settings.canvasLoopPositionMs
 import moe.rukamori.archivetune.shared.domain.playback.SystemMonotonicClock
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeControls
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeState
@@ -149,12 +150,8 @@ internal class DesktopCanvasFrames(private val graph: DesktopSessionGraph, priva
 }
 
 /** A real audio position modulo a real container duration; no advancing stand-in playback clock. */
-internal fun desktopCanvasPosition(audioMs: Long, anchorMs: Long, durationMs: Long?): Long {
-    val elapsed = audioMs.coerceAtLeast(0) - anchorMs.coerceAtLeast(0)
-    if (durationMs == null || durationMs <= 0L) return elapsed.coerceAtLeast(0L)
-    val remainder = elapsed % durationMs
-    return if (remainder < 0L) remainder + durationMs else remainder
-}
+internal fun desktopCanvasPosition(audioMs: Long, anchorMs: Long, durationMs: Long?): Long =
+    canvasLoopPositionMs(audioMs, anchorMs, durationMs)
 
 @Composable
 internal fun DesktopCanvasSurface(

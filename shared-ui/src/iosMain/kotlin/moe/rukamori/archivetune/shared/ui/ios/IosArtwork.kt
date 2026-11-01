@@ -21,6 +21,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.Url
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readAvailable
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -38,6 +39,7 @@ import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.useContents
 import kotlin.math.max
 import kotlin.math.min
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkDirectory
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkKeys
@@ -71,6 +73,19 @@ internal class IosArtworkLoader(
     private val lock = Mutex()
     private val cache = LinkedHashMap<String, ImageBitmap>()
     private val permits = Semaphore(MAX_CONCURRENT_FETCHES)
+    private val telegramArtwork = IosTelegramArtwork(http)
+
+    /** The Telegram session the `tgart:` chain downloads through; null until the host hands its session in. */
+    @Volatile private var telegram: IosTelegramClient? = null
+
+    /**
+     * Hands the admitted Telegram session to the artwork path, the same hand the desktop loader's `telegramFile`
+     * accessor gets. A session is only ever attached when the host attaches it, so a logged-out client is never
+     * asked for a file.
+     */
+    fun attachTelegram(session: IosTelegramClient) {
+        telegram = session
+    }
 
     /** The stored custom covers, so a slot recomposes when one is set or removed. Null when the host has none. */
     val overrides: StateFlow<CustomArtworkOverrides>? get() = customArtwork?.overrides
@@ -100,12 +115,23 @@ internal class IosArtworkLoader(
     /** Loads [uri] once, within the time, size and concurrency bounds. Null means no image can be shown. */
     suspend fun load(uri: String?): ImageBitmap? {
         val target = displayUri(uri) ?: return null
-        val file = target.startsWith("file:")
-        if (!file && !isPublicWebImage(target)) return null
+        val kind = when {
+            target.startsWith("tgart:") -> ArtworkKind.TELEGRAM
+            target.startsWith("file:") -> ArtworkKind.LOCAL_FILE
+            isPublicWebImage(target) -> ArtworkKind.REMOTE
+            else -> return null
+        }
         lock.withLock { cache[target]?.let { held -> cache.remove(target); cache[target] = held; return held } }
         val bitmap = try {
             withTimeout(FETCH_TIMEOUT_MS) {
-                permits.withPermit { if (file) readLocalImage(target) else fetchAndDecode(target) }
+                permits.withPermit {
+                    when (kind) {
+                        ArtworkKind.REMOTE -> fetchAndDecode(target)
+                        ArtworkKind.LOCAL_FILE -> readLocalImage(target)
+                        ArtworkKind.TELEGRAM -> telegramArtwork.fetchBytes(target, telegram)
+                            ?.let { bytes -> withContext(Dispatchers.Default) { decode(bytes) } }
+                    }
+                }
             }
         } catch (_: TimeoutCancellationException) {
             null
@@ -177,7 +203,12 @@ internal class IosArtworkLoader(
         const val FETCH_TIMEOUT_MS = 15_000L
         const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
         const val MAX_IMAGE_EDGE = 1024
+
+        /** A local artwork file may be a full-size cover, so it keeps the same bound the desktop file branch uses. */
+        const val MAX_COVER_FILE_BYTES = 20L * 1024L * 1024L
     }
+
+    private enum class ArtworkKind { REMOTE, LOCAL_FILE, TELEGRAM }
 }
 
 /** Only public http and https locations are requested. A location with user information or without a host is refused. */

@@ -38,6 +38,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepo
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCanvasCacheStore
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCrossfadeHandoff
 import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogether
@@ -47,6 +48,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosMediaImporter
 import moe.rukamori.archivetune.shared.data.platform.ios.IosNetworkOwner
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTransportAvailability
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
@@ -203,6 +205,13 @@ internal class IosSessionGraph private constructor(
     }
 
     fun report(message: String) = reportLine(message)
+
+    /**
+     * Hands the host's admitted Telegram session to the artwork path so a `tgart:` cover downloads its thumbnail
+     * through it. The playback port's own attach stays the host's call; this only lets the loader reach the same
+     * client, and an unadmitted or closed session answers nothing.
+     */
+    fun attachTelegram(session: IosTelegramClient) = artworkLoader.attachTelegram(session)
 
     /**
      * The playback error dialog's Retry: loads the failed occurrence again at the position the player kept for it. An
@@ -621,6 +630,7 @@ internal class IosSessionGraph private constructor(
                 customArtwork = customArtwork,
                 playbackPool = playbackPool,
                 artworkLoader = IosArtworkLoader(http, customArtwork, customArtworkFiles),
+                canvasStore = IosCanvasCacheStore().also { it.ensure() },
                 listenTogether = listenTogether,
                 uploads = uploads,
                 downloads = downloads,
@@ -635,6 +645,7 @@ internal class IosSessionGraph private constructor(
                 drivers = drivers + handoffHold,
                 reportLine = report,
             )
+            host.telegram.value?.let { graph.attachTelegram(it) }
             lyrics.start()
             playbackPool.start()
             lastFm.start()
