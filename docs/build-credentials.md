@@ -33,8 +33,8 @@ name is blank, so existing local setups keep working.
 | `ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN` | Origin the Turnstile sitekey is locked to: the `Origin` header of the instance requests and the document the challenge runs on (the Android WebView base URL, the desktop challenge window). Desktop accepts only a plain `https://host[:port]` origin. iOS does not read this value yet and keeps its built-in origin. | Same as the sitekey: the sign-in reports not configured. Android and desktop then send no `Origin` header. |
 | `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID` | YouTube device-code sign-in (`YouTubeOAuthRepository`, `YouTubeOAuthLoginScreen`; desktop `DesktopYouTubeOAuth`). | The sign-in shows "not configured" and sends no request. Stored sessions are not cleared. |
 | `ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET` | Client secret for the same flow. | As above. |
-| `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY` | WebClient PO token generation (`PoTokenWebView`) and BotGuard token minting (`BotGuardTokenGenerator`, as its `API_KEY`). The same value feeds both. | No WebClient PO token is minted; the existing client fallbacks continue. |
-| `ARCHIVETUNE_POTOKEN_REQUEST_KEY` | Request key for the same PO token and BotGuard paths. The same value feeds both. | As above. |
+| `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY` | WebClient PO token generation (`PoTokenWebView`) and BotGuard token minting (`BotGuardTokenGenerator`, as its `API_KEY`). The same value feeds both. On desktop the shared BotGuard engine (`DesktopPoTokenOwner`) reads it through `DesktopCredentials`; on iOS the shared engine reads the `ArchiveTunePoTokenGoogleApiKey` Info.plist key. | No WebClient PO token is minted; the existing client fallbacks continue. On desktop and iOS the resolver sends untokened requests and settings generation reports not configured. |
+| `ARCHIVETUNE_POTOKEN_REQUEST_KEY` | Request key for the same PO token and BotGuard paths. The same value feeds both. On desktop it comes through `DesktopCredentials`; on iOS through the `ArchiveTunePoTokenRequestKey` Info.plist key. | As above. |
 | `ARCHIVETUNE_TIDAL_CLIENT_ID` | TIDAL OAuth client for token refresh (`TidalAccountManager`). | Refresh of sessions that use this flow is skipped: no request is sent and the stored session is kept. The PKCE sign-in and the web-player capture remain. |
 | `ARCHIVETUNE_TIDAL_CLIENT_SECRET` | Client secret for the TIDAL OAuth flow. | As above. |
 | `ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID` | TIDAL PKCE sign-in flow (`TidalAccountManager`, `TidalLoginScreen`). | The PKCE flow is skipped and the login screen uses the web-player capture fallback. |
@@ -83,8 +83,10 @@ auth, WebView or Media3 classes are included.
   client pair and the Amazon Turnstile sitekey and origin). `DesktopCredentials` reads each value from an environment variable of the
   same name, then a JVM system property of the same name (`-D<NAME>=<value>`), then the build-time value, so a
   packaged desktop build can be configured at launch without rebuilding.
-- **iOS** maps the Telegram pair, the TIDAL client pairs, `ARCHIVETUNE_LISTENER_PRESENCE_URL` and the Last.fm
-  pair into `Info.plist`. Xcode takes them from the untracked `iosApp/Configuration/Credentials.xcconfig`
+- **iOS** maps the Telegram pair, the TIDAL client pairs, `ARCHIVETUNE_LISTENER_PRESENCE_URL`, the Last.fm
+  pair and the BotGuard PO token pair (`ARCHIVETUNE_POTOKEN_REQUEST_KEY`,
+  `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY`) into `Info.plist`. Xcode takes them from the untracked
+  `iosApp/Configuration/Credentials.xcconfig`
   (included last by `Native.xcconfig`) or from build settings. The release workflow's iOS job writes that file from
   the same secrets before it builds (step `Write iOS provider credentials`). An xcconfig file treats `//` as a
   comment, so a value such as the presence origin is written with `/$()/` in place of `//`. The Turnstile sitekey
