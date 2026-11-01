@@ -324,7 +324,6 @@ import moe.rukamori.archivetune.extensions.SilentHandler
 import moe.rukamori.archivetune.extensions.collect
 import moe.rukamori.archivetune.extensions.collectLatest
 import moe.rukamori.archivetune.extensions.currentMetadata
-import moe.rukamori.archivetune.extensions.directorySizeBytes
 import moe.rukamori.archivetune.extensions.findNextMediaItemById
 import moe.rukamori.archivetune.extensions.getQueueWindows
 import moe.rukamori.archivetune.extensions.mediaItems
@@ -408,8 +407,6 @@ import moe.rukamori.archivetune.playback.preload.NextTrackPrefetchPolicy
 import moe.rukamori.archivetune.playback.stream.codecsFromMimeType
 import moe.rukamori.archivetune.shared.domain.persistence.PositionRestorePolicy
 import moe.rukamori.archivetune.scrobbling.LastFmServiceConfig
-import moe.rukamori.archivetune.storage.StorageFolderKind
-import moe.rukamori.archivetune.storage.StorageLocationRepository
 import moe.rukamori.archivetune.ui.screens.settings.DiscordPresenceManager
 import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.ui.screens.settings.ListenBrainzManager
@@ -1883,7 +1880,7 @@ class MusicService :
                 val bytesPerMb = 1024L * 1024L
                 val safeSizeMb = maxSongCacheSizeMb.toLong().coerceAtMost(Long.MAX_VALUE / bytesPerMb)
                 val limitBytes = safeSizeMb * bytesPerMb
-                trimPlayerCacheToBytes(limitBytes)
+                trimPlayerCacheToBytes(this@MusicService, playerCache, limitBytes)
             }
 
         dataStore.data
@@ -8466,44 +8463,6 @@ class MusicService :
 
     private fun isMediaCodecStateError(error: PlaybackException): Boolean =
         isRecoverableMediaCodecStateError(error)
-
-    private suspend fun trimPlayerCacheToBytes(limitBytes: Long) {
-        if (limitBytes <= 0L) return
-
-        withContext(Dispatchers.IO) {
-            val cacheDir = StorageLocationRepository.cacheDirectory(this@MusicService, StorageFolderKind.SONG_CACHE)
-            val currentSpace = runCatching { playerCache.cacheSpace }.getOrNull() ?: 0L
-            var totalBytes = if (currentSpace > 0L) currentSpace else cacheDir.directorySizeBytes()
-            if (totalBytes <= limitBytes) return@withContext
-
-            data class Candidate(
-                val key: String,
-                val lastTouchTimestamp: Long,
-                val sizeBytes: Long,
-            )
-
-            val candidates =
-                runCatching {
-                    playerCache.keys
-                        .mapNotNull { key ->
-                            runCatching {
-                                val spans = playerCache.getCachedSpans(key)
-                                if (spans.isEmpty()) return@runCatching null
-                                val oldestTouch = spans.minOf { it.lastTouchTimestamp }
-                                val sizeBytes = spans.sumOf { it.length }
-                                Candidate(key = key, lastTouchTimestamp = oldestTouch, sizeBytes = sizeBytes)
-                            }.getOrNull()
-                        }.sortedBy { it.lastTouchTimestamp }
-                }.getOrNull().orEmpty()
-
-            for (candidate in candidates) {
-                if (totalBytes <= limitBytes) break
-                val removedSize = candidate.sizeBytes.coerceAtLeast(0L)
-                runCatching { playerCache.removeResource(candidate.key) }
-                totalBytes -= removedSize
-            }
-        }
-    }
 
     private fun createPlayerCacheDataSourceFactory(cacheWriteEnabled: Boolean): CacheDataSource.Factory =
         CacheDataSource
