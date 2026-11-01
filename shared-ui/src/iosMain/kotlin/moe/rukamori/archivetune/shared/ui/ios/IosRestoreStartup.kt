@@ -15,6 +15,7 @@ import moe.rukamori.archivetune.shared.data.backup.decideRestoreStart
 import moe.rukamori.archivetune.shared.data.backup.mergedRestoredSettings
 import moe.rukamori.archivetune.shared.data.backup.readPortableFileBytes
 import moe.rukamori.archivetune.shared.data.persistence.BackupCategory
+import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 import platform.Foundation.NSFileManager
@@ -76,8 +77,13 @@ internal object IosRestoreStartup {
      */
     fun begin(instanceDirectory: String, databaseFile: String, report: (String) -> Unit): IosRestoreStart {
         if (IosRestoreRecovery.isBlocked(instanceDirectory)) {
-            report("restore blocked; recovery mode until the user resolves it")
-            return IosRestoreStart(blocked = true)
+            // A journaled resolution resumes its own choice rather than re-prompting; anything else stays
+            // blocked so recovery mode can ask — or retry — next start.
+            if (!IosRestoreRecovery.resumeResolution(IosRestoreFileOps(), instanceDirectory, databaseFile, iosNowMillis())) {
+                report("restore blocked; recovery mode until the user resolves it")
+                return IosRestoreStart(blocked = true)
+            }
+            report("recorded restore resolution finished")
         }
         val pending = try {
             IosPendingRestore.read(instanceDirectory)

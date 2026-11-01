@@ -9,9 +9,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.shared.data.backup.IosRestoreFileOps
 import moe.rukamori.archivetune.shared.data.backup.PortableBackupArchive
 import moe.rukamori.archivetune.shared.data.backup.PortableBackupFormat
 import moe.rukamori.archivetune.shared.data.backup.RestoreJournal
+import moe.rukamori.archivetune.shared.data.backup.RestoreResolution
 import moe.rukamori.archivetune.shared.data.backup.RestoreTransaction
 import moe.rukamori.archivetune.shared.data.backup.mergedRestoredSettings
 import moe.rukamori.archivetune.shared.data.backup.readPortableFileBytes
@@ -420,16 +422,14 @@ internal class IosBackupOwner(
     suspend fun resolveRestoreRecovery(restorePrevious: Boolean): Boolean {
         val resolved = withContext(Dispatchers.Default) {
             runCatching {
-                if (restorePrevious) {
-                    IosRestoreRecovery.restorePreviousLibrary(
-                        instanceDirectory, PortableBackupFormat.DATABASE, nowMillis(),
-                    )
-                } else {
-                    IosRestoreRecovery.startEmptyLibrary(
-                        instanceDirectory, PortableBackupFormat.DATABASE, nowMillis(),
-                    )
-                }
-            }.isSuccess
+                IosRestoreRecovery.resolveRestore(
+                    IosRestoreFileOps(),
+                    instanceDirectory,
+                    PortableBackupFormat.DATABASE,
+                    if (restorePrevious) RestoreResolution.RESTORE_PREVIOUS else RestoreResolution.START_EMPTY,
+                    nowMillis(),
+                )
+            }.getOrDefault(false)
         }
         if (resolved) restarting.value = true
         return resolved
