@@ -80,7 +80,7 @@ internal class DesktopCanvasOwner(
         }
     }
     private val endpoints: suspend () -> List<String> = {
-        parseDesktopCanvasEndpoints(graph.settings.snapshots.value?.get(CanvasResolverEndpointsKey))
+        parseCanvasResolverEndpoints(graph.settings.snapshots.value?.get(CanvasResolverEndpointsKey))
     }
 
     init {
@@ -160,10 +160,10 @@ internal class DesktopCanvasOwner(
     }
 
     internal fun remoteAllowed(source: CanvasSource): Boolean {
-        val provider = CanvasHealthProvider.entries.firstOrNull { it.name == source.name } ?: return false
+        val provider = canvasHealthProviderOf(source.name) ?: return false
         val preferences = graph.settings.snapshots.value ?: return false
         // JVM routes do not measure Wi-Fi or metering. Unknown stays conservative instead of claiming unmetered Wi-Fi.
-        return preferences.canvasPlaybackAllowed(provider, CanvasConnectivity(network.online.value, wifi = false, metered = true))
+        return preferences.canvasRemoteAllowed(provider, CanvasConnectivity(network.online.value, wifi = false, metered = true))
     }
 
     fun setVisible(showing: Boolean) { visible.value = showing }
@@ -193,10 +193,7 @@ internal class DesktopCanvasOwner(
 
 internal fun createDesktopCanvas(graph: DesktopSessionGraph, accounts: DesktopSpotifyAccounts) = DesktopCanvasOwner(graph, accounts)
 
-private fun canvasPreferences(preferences: PreferenceSnapshot?): List<Any?> = preferences?.let {
-    listOf(it[ArchiveTuneCanvasKey], it[SpotifyCanvasKey], it[CanvasSourceKey], it[CanvasWifiOnlyKey], it.lowDataMode(),
-        it[DisableAnimationsKey], it[CanvasResolverEndpointsKey], it[SpotifySpDcKey])
-}.orEmpty()
+private fun canvasPreferences(preferences: PreferenceSnapshot?): List<Any?> = canvasPreferenceProbe(preferences)
 
 /** Only a repository-owned, size-bounded file is ever handed to the native file protocol. */
 internal fun validatedDesktopCanvasFile(instance: Path, uri: String): Path {
@@ -207,15 +204,6 @@ internal fun validatedDesktopCanvasFile(instance: Path, uri: String): Path {
     return path
 }
 
-internal fun desktopCanvasHttpsUrl(value: String): Boolean = try {
-    val uri = URI(value)
-    uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null
-} catch (_: Exception) { false }
+internal fun desktopCanvasHttpsUrl(value: String): Boolean = canvasLoopUrlAllowed(value)
 
-internal fun parseDesktopCanvasEndpoints(raw: String?): List<String> = raw.orEmpty().split('\n', ',')
-    .map { it.trim().trimEnd('/') }.filter { value ->
-        try {
-            val uri = URI(value)
-            uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() && uri.rawUserInfo == null
-        } catch (_: Exception) { false }
-    }.distinct().take(8)
+internal fun parseDesktopCanvasEndpoints(raw: String?): List<String> = parseCanvasResolverEndpoints(raw)

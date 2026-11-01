@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="content_canvas_network_unknown">Remote Canvas is paused: this host cannot verify Wi-Fi or metering. Local canvases still work; remote lookups require Wi-Fi-only and Low data mode to be off.</string>
+    <string name="content_canvas_not_found">No Canvas was returned for this song by the selected providers.</string>
+    <string name="content_canvas_failed">Canvas could not be displayed. The cover is shown instead.</string>
+</resources>

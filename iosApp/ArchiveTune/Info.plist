@@ -26,6 +26,7 @@
     <key>ArchiveTuneAmazonTurnstileOrigin</key><string>$(ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN)</string>
     <key>ArchiveTunePoTokenRequestKey</key><string>$(ARCHIVETUNE_POTOKEN_REQUEST_KEY)</string>
     <key>ArchiveTunePoTokenGoogleApiKey</key><string>$(ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY)</string>
+    <key>ArchiveTuneTidalCanvasEmbedToken</key><string>$(ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>

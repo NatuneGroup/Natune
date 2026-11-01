@@ -67,7 +67,8 @@ data class TdJsonAudioTrack(
             ref = ContentRef(TelegramTrackRef.SCHEME, ContentKind.SONG, mediaId),
             title = displayTitle,
             subtitle = artistName,
-            artworkUri = artworkUri,
+            // A tgart URI lets each host's loader try the catalogue cover before the Telegram thumbnail file.
+            artworkUri = artworkUri ?: telegramArtworkUri(thumbnailFileId, displayTitle, artist),
             durationMs = durationSeconds.takeIf { it > 0 }?.let { it * 1000L },
             album = album?.takeIf(String::isNotBlank),
             artists = listOf(ContentCredit(artistName)),
