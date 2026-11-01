@@ -59,7 +59,10 @@ current one never enters safe mode: it is reported once for diagnosis, and the n
 build's first healthy launch retires it. Identity is checked from fields stamped
 at marker write time, not the wall clock, so a backward clock correction cannot
 hide a current-build failure; markers written before identity was recorded still
-fall back to comparing the install time and version label.
+fall back to comparing the install time and version label. An install stamp only
+counts when both sides recorded one, so a failed read cannot orphan a marker.
+Crash records keep the same stamp: an equal version code still counts as an
+earlier build when the name or a proven install stamp differs.
 
 Java exceptions are synchronously saved under `noBackupFilesDir/startup_recovery`
 (16,000 characters, timestamp and thread included), starting before providers in

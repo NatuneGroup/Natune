@@ -31,19 +31,21 @@ internal data class CrashRecord(
     val truncated: Boolean,
     val versionName: String,
     val versionCode: Long,
+    val installedSinceMs: Long = 0L,
 ) {
     val id: String get() = "$timestampMs-$pid-${kind.name.lowercase().replace('_', '-')}"
 }
 
 /** The installed build and the time Android installed it. Nothing is persisted for this; it is read at each use. */
-internal data class InstallWindow(val installedSinceMs: Long, val versionCode: Long)
+internal data class InstallWindow(val installedSinceMs: Long, val versionCode: Long, val versionName: String)
 
-/** Version and process identity captured at the moment of a crash; empty when the caller cannot know it. */
+/** Version, install and process identity captured at the moment of a crash; empty when the caller cannot know it. */
 internal data class CrashBuild(
     val versionName: String,
     val versionCode: Long,
     val process: String,
     val pid: Int,
+    val installedSinceMs: Long = 0L,
 ) {
     companion object {
         val UNKNOWN = CrashBuild(versionName = "", versionCode = UNKNOWN_VERSION_CODE, process = "", pid = 0)
@@ -51,16 +53,18 @@ internal data class CrashBuild(
 }
 
 /**
- * A record from before the installed build is still listed, labelled as an earlier version. The
- * stamped version code decides when it exists: a record of this build can never predate it, whatever
- * the wall clock does. Only records without one fall back to comparing the install time.
+ * A record from before the installed build is still listed, labelled as an earlier version. Records
+ * stamped with a version code are judged on the full build/install identity, never the wall clock:
+ * an equal code still counts as earlier when the version name differs or both install stamps are
+ * known and differ. Only records without a code fall back to comparing the install time.
  */
-internal fun CrashRecord.isFromEarlierVersion(install: InstallWindow): Boolean =
-    if (versionCode != UNKNOWN_VERSION_CODE) {
-        versionCode < install.versionCode
-    } else {
-        timestampMs < install.installedSinceMs
-    }
+internal fun CrashRecord.isFromEarlierVersion(install: InstallWindow): Boolean {
+    if (versionCode == UNKNOWN_VERSION_CODE) return timestampMs < install.installedSinceMs
+    if (versionCode != install.versionCode) return versionCode < install.versionCode
+    if (versionName.isNotEmpty() && versionName != install.versionName) return true
+    return installedSinceMs != 0L && install.installedSinceMs != 0L &&
+        installedSinceMs != install.installedSinceMs
+}
 
 /** Only failures of the installed build interrupt startup. Memory-pressure kills are listed for diagnosis. */
 internal fun CrashRecord.interruptsStartup(install: InstallWindow): Boolean =
@@ -84,6 +88,7 @@ internal fun encodeCrashRecord(record: CrashRecord): String {
         "thread=${singleLine(record.thread, 128)}",
         "versionName=${singleLine(record.versionName, 128)}",
         "versionCode=${record.versionCode}",
+        "installedSinceMs=${record.installedSinceMs}",
         "truncated=${record.truncated || record.body.length > MAX_RECORD_CHARS}",
     )
     return header.joinToString("\n") + BODY_SEPARATOR + record.body.take(MAX_RECORD_CHARS)
@@ -113,6 +118,7 @@ internal fun decodeCrashRecord(text: String): CrashRecord? {
         truncated = fields["truncated"] == "true",
         versionName = fields["versionName"].orEmpty(),
         versionCode = fields["versionCode"]?.toLongOrNull() ?: UNKNOWN_VERSION_CODE,
+        installedSinceMs = fields["installedSinceMs"]?.toLongOrNull() ?: 0L,
     )
 }
 

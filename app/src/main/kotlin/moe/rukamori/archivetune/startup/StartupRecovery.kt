@@ -27,6 +27,7 @@ object StartupRecovery {
                         versionCode = BuildConfig.VERSION_CODE.toLong(),
                         process = processName(context).orEmpty(),
                         pid = Process.myPid(),
+                        installedSinceMs = currentInstall(context).installedSinceMs,
                     )
                     store(context).captureJava(System.currentTimeMillis(), thread.name, error, build)
                 }
