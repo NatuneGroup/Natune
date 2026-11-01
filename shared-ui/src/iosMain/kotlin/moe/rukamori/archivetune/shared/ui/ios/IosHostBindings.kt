@@ -327,6 +327,7 @@ private fun iosPlayerSlots(
             onSeek = actions.onSeek,
             visible = expanded && active,
             modifier = modifier,
+            credits = document?.credits,
         )
     }
     return PlayerSlots(

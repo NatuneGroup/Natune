@@ -67,9 +67,13 @@ In the shared modules `LyricsFullscreenRenderer` draws every look. On iOS 26 and
 the "Native iOS interface" setting on, the Enhanced look is drawn by the SwiftUI view in
 `iosApp/ArchiveTune/SystemLyrics.swift` instead. It reads the same render rows and the same
 lyric clock through `NativeLyricsDocument` and `NativeLyricsTimeline`, so seeking, sync offset
-and the tap policy match the Compose renderer. Both use `LyricsClock`, which subtracts the
-snapshot's output-latency estimate once at the playback speed, separately from the user offset;
-the iOS host does not add a second route-latency offset.
+and the tap policy match the Compose renderer. The document carries the Enhanced refinements the
+same way: emphasis letters for held words, the interlude break each row owns, the saved text size,
+the active-line pop, the uniform blur veil with its stagger, duet end-alignment by
+`LyricsAlignmentPolicy`, and the credits footer with the machine-made badges. What stays
+Compose-only there is the line-change settle glide and selection/share-card UI. Both use
+`LyricsClock`, which subtracts the snapshot's output-latency estimate once at the playback speed,
+separately from the user offset; the iOS host does not add a second route-latency offset.
 
 ## Sync offsets, romanization and frame scheduling
 
