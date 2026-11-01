@@ -120,6 +120,11 @@ class NativeLyricsFrame internal constructor(
     val primaryLine: Int,
     /** Changes on every seek, repeat or new session, so the view jumps rather than scrolls. */
     val discontinuity: Int,
+    /**
+     * Changes when the feed jumps on the same timeline, so the view snaps rather than animates the
+     * distance. Unlike [discontinuity] it never ends a listener's scroll hold.
+     */
+    val reanchor: Int,
     /** False while paused, buffering or routed remotely: the position holds and the view may stop its frame loop. */
     val advancing: Boolean,
     private val active: List<Int>,
@@ -175,6 +180,7 @@ class NativeLyricsTimeline(private val clock: MonotonicClock = SystemMonotonicCl
             positionMs = feed,
             primaryLine = active.lastOrNull() ?: -1,
             discontinuity = lyricsClock.discontinuities.intValue,
+            reanchor = lyricsClock.reanchors.intValue,
             advancing = anchor?.let(PlaybackClock::isInterpolating) == true,
             active = active,
         )
