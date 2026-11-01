@@ -997,48 +997,26 @@ fun YouTubePlaylistMenu(
         item {
             MenuSurfaceSection(modifier = Modifier.padding(vertical = 6.dp)) {
                 Column {
-                    ListItem(
-                        headlineContent = { Text(text = shareText) },
-                        leadingContent = {
-                            Icon(
-                                painter = painterResource(R.drawable.share),
-                                contentDescription = null,
-                            )
-                        },
-                        modifier =
-                            Modifier.clickable {
-                                val intent =
-                                    Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, playlist.shareLink)
-                                    }
-                                context.startActivity(Intent.createChooser(intent, null))
-                                onDismiss()
-                            },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
+                    MenuLinkListItem(R.drawable.share, shareText) {
+                        val intent =
+                            Intent().apply {
+                                action = Intent.ACTION_SEND
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, playlist.shareLink)
+                            }
+                        context.startActivity(Intent.createChooser(intent, null))
+                        onDismiss()
+                    }
 
                     HorizontalDivider(
                         modifier = dividerModifier,
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
 
-                    ListItem(
-                        headlineContent = { Text(text = stringResource(R.string.copy_link)) },
-                        leadingContent = {
-                            Icon(
-                                painter = painterResource(R.drawable.link),
-                                contentDescription = null,
-                            )
-                        },
-                        modifier =
-                            Modifier.clickable {
-                                context.copyLinkToClipboard(playlist.shareLink)
-                                onDismiss()
-                            },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
+                    MenuLinkListItem(R.drawable.link, stringResource(R.string.copy_link)) {
+                        context.copyLinkToClipboard(playlist.shareLink)
+                        onDismiss()
+                    }
 
                     if (canSelect) {
                         HorizontalDivider(
@@ -1046,21 +1024,10 @@ fun YouTubePlaylistMenu(
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
 
-                        ListItem(
-                            headlineContent = { Text(text = selectText) },
-                            leadingContent = {
-                                Icon(
-                                    painter = painterResource(R.drawable.select_all),
-                                    contentDescription = null,
-                                )
-                            },
-                            modifier =
-                                Modifier.clickable {
-                                    onDismiss()
-                                    selectAction()
-                                },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        )
+                        MenuLinkListItem(R.drawable.select_all, selectText) {
+                            onDismiss()
+                            selectAction()
+                        }
                     }
                 }
             }

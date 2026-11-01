@@ -44,7 +44,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -103,12 +102,8 @@ import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.ArtistSeparatorsKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderEnabledKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderPackageKey
-import moe.rukamori.archivetune.constants.PlaybackPitchKey
-import moe.rukamori.archivetune.constants.PlaybackSpeedKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
-import moe.rukamori.archivetune.constants.TempoPitchPresetsJsonKey
-import moe.rukamori.archivetune.constants.TempoPitchRememberedKey
 import moe.rukamori.archivetune.constants.SpeedDialSongIdsKey
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.models.toMediaMetadata
@@ -124,14 +119,6 @@ import moe.rukamori.archivetune.jiosaavn.SaavnService
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.qobuz.QobuzBackupProvider
-import moe.rukamori.archivetune.shared.domain.settings.TempoPitchPreset
-import moe.rukamori.archivetune.shared.domain.settings.encodeTempoPitchPresets
-import moe.rukamori.archivetune.shared.domain.settings.newTempoPitchPresetId
-import moe.rukamori.archivetune.shared.domain.settings.parseTempoPitchPresets
-import moe.rukamori.archivetune.shared.domain.settings.removeTempoPitchPreset
-import moe.rukamori.archivetune.shared.domain.settings.renameTempoPitchPreset
-import moe.rukamori.archivetune.shared.domain.settings.upsertTempoPitchPreset
-import moe.rukamori.archivetune.shared.ui.menu.shareLinkAtPosition
 import moe.rukamori.archivetune.ui.component.MenuHeaderCard
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.ChipsRow
@@ -157,8 +144,6 @@ import moe.rukamori.archivetune.applemusic.AppleMusicSearchItem
 import moe.rukamori.archivetune.constants.SongSourceOverrideKey
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
-import moe.rukamori.archivetune.utils.PreferenceStore
-import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.serializeSpeedDialPins
 import moe.rukamori.archivetune.utils.toggleSpeedDialPin
@@ -766,58 +751,23 @@ fun PlayerMenu(
                             // MenuSurfaceSection below, not chips in this grid.
                             add(
                                 if (isLocalMedia || mediaMetadata.id.startsWith("telegram://")) {
-                                    NewAction(
-                                        icon = {
-                                            Icon(
-                                                painter = painterResource(R.drawable.share),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        },
-                                        text = stringResource(R.string.share),
-                                        onClick = shareSelectedSong,
-                                    )
+                                    menuGridAction(R.drawable.share, stringResource(R.string.share), shareSelectedSong)
                                 } else {
-                                    NewAction(
-                                        icon = {
-                                            Icon(
-                                                painter = painterResource(R.drawable.link),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        },
-                                        text = stringResource(R.string.copy_link),
-                                        onClick = {
-                                            context.copyLinkToClipboard("https://music.youtube.com/watch?v=${mediaMetadata.id}")
-                                            onDismiss()
-                                        },
-                                    )
+                                    copyLinkMenuAction(stringResource(R.string.copy_link)) {
+                                        context.copyLinkToClipboard("https://music.youtube.com/watch?v=${mediaMetadata.id}")
+                                        onDismiss()
+                                    }
                                 },
                             )
                             // Only the playing YouTube track can carry a live position, as the baseline gate did.
                             if (!isLocalMedia && isQueueTrigger != true && !mediaMetadata.id.startsWith("telegram://")) {
                                 add(
-                                    NewAction(
-                                        icon = {
-                                            Icon(
-                                                painter = painterResource(R.drawable.link),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        },
+                                    copyLinkAtCurrentTimeAction(
                                         text = stringResource(R.string.copy_link_at_current_time),
-                                        onClick = {
-                                            context.copyLinkToClipboard(
-                                                shareLinkAtPosition(
-                                                    "https://music.youtube.com/watch?v=${mediaMetadata.id}",
-                                                    playerConnection.player.currentPosition,
-                                                ),
-                                            )
-                                            onDismiss()
-                                        },
+                                        context = context,
+                                        url = "https://music.youtube.com/watch?v=${mediaMetadata.id}",
+                                        positionMs = { playerConnection.player.currentPosition },
+                                        onDismiss = onDismiss,
                                     ),
                                 )
                             }
@@ -1382,10 +1332,6 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
     }
 
     val context = LocalContext.current
-    var tempoPitchRemembered by rememberPreference(TempoPitchRememberedKey, false)
-    var tempoPitchPresetsJson by rememberPreference(TempoPitchPresetsJsonKey, "[]")
-    val tempoPitchPresets = remember(tempoPitchPresetsJson) { parseTempoPitchPresets(tempoPitchPresetsJson) }
-    var presetNameEdit by remember { mutableStateOf<TempoPitchPresetNameEdit?>(null) }
 
     val applyPlaybackParameters: (Float, Float) -> Unit = { speed, pitchMultiplier ->
         playerConnection.player.playbackParameters =
@@ -1394,12 +1340,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
                 pitchMultiplier.coerceIn(PitchMin, PitchMax),
             )
         // Opt-in restore: while "remember" holds, every applied pair is stored for the next launch.
-        if (tempoPitchRemembered) {
-            PreferenceStore.launchEdit(context.dataStore) {
-                this[PlaybackSpeedKey] = speed.coerceIn(TempoMin, TempoMax)
-                this[PlaybackPitchKey] = pitchMultiplier.coerceIn(PitchMin, PitchMax)
-            }
-        }
+        persistRememberedTempoPitch(context, speed, pitchMultiplier)
     }
 
     AlertDialog(
@@ -1697,164 +1638,14 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
                     }
                 }
 
-                HorizontalDivider()
-
-                // Opt-in persistence: while the flag holds, every applied pair is stored for the next launch.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { tempoPitchRemembered = !tempoPitchRemembered },
-                ) {
-                    Checkbox(
-                        checked = tempoPitchRemembered,
-                        onCheckedChange = { tempoPitchRemembered = it },
-                    )
-                    Text(
-                        text = stringResource(R.string.remember_speed_and_pitch),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
-
-                Text(
-                    text = stringResource(R.string.tempo_pitch_presets),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-
-                tempoPitchPresets.forEach { preset ->
-                    // A tap applies speed then pitch through the same clamped path the sliders use.
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    tempo = preset.speed.coerceIn(TempoMin, TempoMax)
-                                    pitch = preset.pitch.coerceIn(PitchMin, PitchMax)
-                                    applyPlaybackParameters(tempo, pitch)
-                                },
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = preset.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text =
-                                    stringResource(
-                                        R.string.tempo_pitch_preset_values,
-                                        formatMultiplier(preset.speed),
-                                        formatMultiplier(preset.pitch),
-                                    ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        IconButton(onClick = { presetNameEdit = TempoPitchPresetNameEdit.Rename(preset) }) {
-                            Icon(
-                                painter = painterResource(R.drawable.edit),
-                                contentDescription = null,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                tempoPitchPresetsJson =
-                                    encodeTempoPitchPresets(removeTempoPitchPreset(tempoPitchPresets, preset.id))
-                            },
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.delete),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                    }
-                }
-
-                TextButton(
-                    onClick = { presetNameEdit = TempoPitchPresetNameEdit.New },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.save_current_as_preset))
+                TempoPitchPresetsSection(tempo, pitch) { speed, pitchMultiplier ->
+                    tempo = speed
+                    pitch = pitchMultiplier
+                    applyPlaybackParameters(tempo, pitch)
                 }
             }
         },
     )
-
-    presetNameEdit?.let { edit ->
-        var name by remember(edit) {
-            mutableStateOf((edit as? TempoPitchPresetNameEdit.Rename)?.preset?.name.orEmpty())
-        }
-        AlertDialog(
-            onDismissRequest = { presetNameEdit = null },
-            title = {
-                Text(
-                    stringResource(
-                        when (edit) {
-                            is TempoPitchPresetNameEdit.Rename -> R.string.rename_preset
-                            TempoPitchPresetNameEdit.New -> R.string.new_preset
-                        },
-                    ),
-                )
-            },
-            text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.preset_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = name.isNotBlank(),
-                    onClick = {
-                        when (edit) {
-                            is TempoPitchPresetNameEdit.Rename ->
-                                tempoPitchPresetsJson =
-                                    encodeTempoPitchPresets(renameTempoPitchPreset(tempoPitchPresets, edit.preset.id, name))
-
-                            TempoPitchPresetNameEdit.New ->
-                                tempoPitchPresetsJson =
-                                    encodeTempoPitchPresets(
-                                        upsertTempoPitchPreset(
-                                            tempoPitchPresets,
-                                            TempoPitchPreset(
-                                                id = newTempoPitchPresetId(),
-                                                name = name.trim(),
-                                                speed = tempo.coerceIn(TempoMin, TempoMax),
-                                                pitch = pitch.coerceIn(PitchMin, PitchMax),
-                                            ),
-                                        ),
-                                    )
-                        }
-                        presetNameEdit = null
-                    },
-                ) {
-                    Text(stringResource(R.string.save))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { presetNameEdit = null }) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            },
-        )
-    }
-}
-
-/** Which name entry the preset dialog is editing: a new preset, or the rename of an existing one. */
-private sealed interface TempoPitchPresetNameEdit {
-    data object New : TempoPitchPresetNameEdit
-
-    data class Rename(val preset: TempoPitchPreset) : TempoPitchPresetNameEdit
 }
 
 private fun AudioSourceType.sourceLabelRes(): Int =

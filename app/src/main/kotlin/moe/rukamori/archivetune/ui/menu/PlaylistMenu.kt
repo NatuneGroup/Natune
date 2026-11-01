@@ -561,50 +561,28 @@ public fun PlaylistMenu(
             playerConnection,
         ) {
             listOf(
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.play),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                menuGridAction(R.drawable.play, playText) {
+                    onDismiss()
+                    if (songs.isNotEmpty()) {
+                        playerConnection.playQueue(
+                            ListQueue(
+                                title = playlist.playlist.name,
+                                items = songs.map(Song::toMediaItem),
+                            ),
                         )
-                    },
-                    text = playText,
-                    onClick = {
-                        onDismiss()
-                        if (songs.isNotEmpty()) {
-                            playerConnection.playQueue(
-                                ListQueue(
-                                    title = playlist.playlist.name,
-                                    items = songs.map(Song::toMediaItem),
-                                ),
-                            )
-                        }
-                    },
-                ),
-                NewAction(
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.shuffle),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    }
+                },
+                menuGridAction(R.drawable.shuffle, shuffleText) {
+                    onDismiss()
+                    if (songs.isNotEmpty()) {
+                        playerConnection.playQueue(
+                            ListQueue(
+                                title = playlist.playlist.name,
+                                items = songs.shuffled().map(Song::toMediaItem),
+                            ),
                         )
-                    },
-                    text = shuffleText,
-                    onClick = {
-                        onDismiss()
-                        if (songs.isNotEmpty()) {
-                            playerConnection.playQueue(
-                                ListQueue(
-                                    title = playlist.playlist.name,
-                                    items = songs.shuffled().map(Song::toMediaItem),
-                                ),
-                            )
-                        }
-                    },
-                ),
+                    }
+                },
                 NewAction(
                     icon = {
                         Icon(
@@ -628,21 +606,10 @@ public fun PlaylistMenu(
                 ),
             ) + if (remoteShareLink != null) {
                 listOf(
-                    NewAction(
-                        icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.link),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        text = copyLinkText,
-                        onClick = {
-                            context.copyLinkToClipboard(remoteShareLink)
-                            onDismiss()
-                        },
-                    ),
+                    copyLinkMenuAction(copyLinkText) {
+                        context.copyLinkToClipboard(remoteShareLink)
+                        onDismiss()
+                    },
                 )
             } else {
                 emptyList()
@@ -1128,21 +1095,10 @@ public fun PlaylistMenu(
                         modifier = dividerModifier,
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
-                    ListItem(
-                        headlineContent = { Text(text = stringResource(R.string.copy_link)) },
-                        leadingContent = {
-                            Icon(
-                                painter = painterResource(R.drawable.link),
-                                contentDescription = null,
-                            )
-                        },
-                        modifier =
-                            Modifier.clickable {
-                                context.copyLinkToClipboard(shareLink)
-                                onDismiss()
-                            },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
+                    MenuLinkListItem(R.drawable.link, stringResource(R.string.copy_link)) {
+                        context.copyLinkToClipboard(shareLink)
+                        onDismiss()
+                    }
                 }
             }
         }
