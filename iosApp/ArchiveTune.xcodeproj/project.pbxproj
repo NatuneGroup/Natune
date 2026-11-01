@@ -12,6 +12,7 @@
         A00000000000000000000006 = {isa = PBXBuildFile; fileRef = A0000000000000000000001C; };
         A00000000000000000000007 = {isa = PBXBuildFile; fileRef = A0000000000000000000001D; };
         A00000000000000000000008 = {isa = PBXBuildFile; fileRef = A0000000000000000000001E; };
+        A00000000000000000000009 = {isa = PBXBuildFile; fileRef = A0000000000000000000001F; };
         A00000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveTune/ArchiveTuneApp.swift; sourceTree = "<group>"; };
         A00000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Native/ATNativeAudio.mm; sourceTree = "<group>"; };
         A00000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = ArchiveTune/Info.plist; sourceTree = "<group>"; };
@@ -26,12 +27,13 @@
         A0000000000000000000001C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveTune/NativeChrome.swift; sourceTree = "<group>"; };
         A0000000000000000000001D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveTune/SystemLyrics.swift; sourceTree = "<group>"; };
         A0000000000000000000001E = {isa = PBXFileReference; lastKnownFileType = text; path = ArchiveTune/Notices/QuickJS-NOTICES.txt; sourceTree = "<group>"; };
-        A00000000000000000000020 = {isa = PBXGroup; children = (A00000000000000000000011, A0000000000000000000001C, A0000000000000000000001D, A00000000000000000000012, A00000000000000000000018, A00000000000000000000019, A0000000000000000000001A, A00000000000000000000013, A00000000000000000000014, A0000000000000000000001B, A00000000000000000000015, A0000000000000000000001E, A00000000000000000000021); sourceTree = "<group>"; };
+        A0000000000000000000001F = {isa = PBXFileReference; lastKnownFileType = text; path = ArchiveTune/Notices/Apache-2.0.txt; sourceTree = "<group>"; };
+        A00000000000000000000020 = {isa = PBXGroup; children = (A00000000000000000000011, A0000000000000000000001C, A0000000000000000000001D, A00000000000000000000012, A00000000000000000000018, A00000000000000000000019, A0000000000000000000001A, A00000000000000000000013, A00000000000000000000014, A0000000000000000000001B, A00000000000000000000015, A0000000000000000000001E, A0000000000000000000001F, A00000000000000000000021); sourceTree = "<group>"; };
         A00000000000000000000021 = {isa = PBXGroup; children = (A00000000000000000000017); name = Products; sourceTree = "<group>"; };
         A00000000000000000000030 = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000051; buildPhases = (A00000000000000000000034, A00000000000000000000031, A00000000000000000000032, A00000000000000000000033); buildRules = (); dependencies = (); name = ArchiveTune; productName = ArchiveTune; productReference = A00000000000000000000017; productType = "com.apple.product-type.application"; };
         A00000000000000000000031 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000006, A00000000000000000000007, A00000000000000000000002, A00000000000000000000004); runOnlyForDeploymentPostprocessing = 0; };
         A00000000000000000000032 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-        A00000000000000000000033 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000003, A00000000000000000000005, A00000000000000000000008); runOnlyForDeploymentPostprocessing = 0; };
+        A00000000000000000000033 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000003, A00000000000000000000005, A00000000000000000000008, A00000000000000000000009); runOnlyForDeploymentPostprocessing = 0; };
         A00000000000000000000034 = {
             isa = PBXShellScriptBuildPhase;
             alwaysOutOfDate = 1;
