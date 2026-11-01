@@ -39,6 +39,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopHostServices
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.settings.BooleanPreferenceKey
+import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneRoot
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 
@@ -145,10 +146,34 @@ internal fun DesktopMountedRoot(window: Window, graph: DesktopSessionGraph, clos
             window = window,
             controller = graph.player,
             metadata = graph.metadata,
+            transport = graph.transport,
             scope = graph.scope,
             dispatchToOwner = { action -> EventQueue.invokeLater { action() } },
             next = { graph.scope.launch { graph.skipNext() } },
             previous = { graph.scope.launch { graph.skipPrevious() } },
+            setShuffle = { enabled ->
+                graph.scope.launch {
+                    try {
+                        if (!graph.queue.setShuffle(enabled)) graph.report("shuffle was not applied: a radio queue keeps server order")
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        graph.report("shuffle was not applied: ${failure.javaClass.simpleName}")
+                    }
+                }
+            },
+            setRepeat = { repeat ->
+                graph.scope.launch {
+                    try {
+                        graph.settings.edit { set(RepeatModeKey, repeat.storedValue) }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        graph.report("repeat was not saved: ${failure.javaClass.simpleName}")
+                    }
+                }
+            },
+            setVolume = { volume -> graph.setVolume(volume) },
             openUri = { uri -> openDesktopUri(uri, graph::report) },
             quit = quit,
             reportUnavailable = graph::report,
