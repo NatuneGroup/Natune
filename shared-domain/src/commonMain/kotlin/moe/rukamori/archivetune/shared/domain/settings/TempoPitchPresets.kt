@@ -89,22 +89,17 @@ fun encodeTempoPitchPresets(presets: List<TempoPitchPreset>): String =
         }
     }.toString()
 
-/**
- * Replaces the same id in place or appends a new one; an invalid preset changes nothing. A save that only
- * renames is not an upsert — renames go through [renameTempoPitchPreset] — and a new entry reusing a stored
- * name is refused, since rows are presented by name.
- */
+/** Replaces the same id in place or appends a new one; an invalid preset changes nothing. */
 fun upsertTempoPitchPreset(
     presets: List<TempoPitchPreset>,
     preset: TempoPitchPreset,
 ): List<TempoPitchPreset> {
     if (!preset.isValid) return presets
-    val stored = presets.firstOrNull { it.id == preset.id }
-    if (stored != null) {
-        if (stored.speed == preset.speed && stored.pitch == preset.pitch) return presets
-        return presets.map { if (it.id == preset.id) preset else it }
+    return if (presets.any { it.id == preset.id }) {
+        presets.map { if (it.id == preset.id) preset else it }
+    } else {
+        presets + preset
     }
-    return if (presets.any { it.name == preset.name }) presets else presets + preset
 }
 
 /** Renames a preset in place; a blank name or unknown id changes nothing. */
