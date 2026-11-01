@@ -18,7 +18,6 @@ import moe.rukamori.archivetune.shared.domain.playback.OutputMuteEvent
 import moe.rukamori.archivetune.shared.domain.playback.OutputMuteReconcile
 import moe.rukamori.archivetune.shared.domain.playback.OutputMuteState
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
-import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommandOrigin
 import moe.rukamori.archivetune.shared.domain.playback.outputMuteCommandUse
 import moe.rukamori.archivetune.shared.domain.playback.outputMuteReconcile
 import moe.rukamori.archivetune.shared.domain.playback.reduceOutputMute
@@ -60,7 +59,7 @@ private sealed interface OutputMuteSignal {
  * state itself is terminal and no signal can produce a command.
  */
 internal class IosOutputMutePolicy(
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     settings: VaultSettingsStore,
     private val port: IosPlaybackPort,
     player: MusicPlayerController,
@@ -104,10 +103,10 @@ internal class IosOutputMutePolicy(
             when (action) {
                 OutputMuteAction.NONE -> Unit
                 OutputMuteAction.PAUSE -> {
-                    port.submit(PlaybackCommand.Pause, PlaybackCommandOrigin.POLICY)
+                    port.submitPolicy(PlaybackCommand.Pause, port.userIntentGeneration)
                     report("playback paused: the output is muted")
                 }
-                OutputMuteAction.RESUME -> port.submit(PlaybackCommand.Play, PlaybackCommandOrigin.POLICY)
+                OutputMuteAction.RESUME -> port.submitPolicy(PlaybackCommand.Play, port.userIntentGeneration)
                 OutputMuteAction.RESTORE_VOLUME -> try {
                     restoreVolume(recoveryVolume)
                 } catch (cancelled: CancellationException) {

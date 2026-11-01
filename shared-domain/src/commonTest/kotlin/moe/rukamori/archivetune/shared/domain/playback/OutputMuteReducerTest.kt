@@ -8,6 +8,8 @@ class OutputMuteReducerTest {
     private val playing = OutputMuteState(pending = false, polling = true)
     private val mutePaused = OutputMuteState(pending = true, polling = true)
 
+    private fun loadRequest() = PlaybackRequest("occ-1", "media-1", PlaybackLocator.LocalFile("/queue/a.flac"))
+
     @Test
     fun playMuteUnmuteRoundTrip() {
         val (started, startAction) = reduceOutputMute(idle, OutputMuteEvent.ManualPlay(freshMuted = false, volumeRestoreAvailable = false))
@@ -99,6 +101,38 @@ class OutputMuteReducerTest {
         assertEquals(OutputMuteState(pending = false, polling = true), clear)
         assertEquals(OutputMuteAction.NONE, clearAction)
         assertEquals(OutputMuteCommandUse.RESOLVE_PLAY, outputMuteCommandUse(PlaybackCommand.Play, PlaybackCommandOrigin.USER))
+    }
+
+    @Test
+    fun userLoadWithPlayResolvesLikeAPlayRequest() {
+        // A normal queue load is how playback actually starts: the watch begins polling with it.
+        assertEquals(
+            OutputMuteCommandUse.RESOLVE_PLAY,
+            outputMuteCommandUse(PlaybackCommand.Load(loadRequest(), 0L, playWhenReady = true), PlaybackCommandOrigin.USER),
+        )
+        // A load that stays paused releases the wait the same as a manual pause.
+        assertEquals(
+            OutputMuteCommandUse.MANUAL_PAUSE,
+            outputMuteCommandUse(PlaybackCommand.Load(loadRequest(), 0L, playWhenReady = false), PlaybackCommandOrigin.USER),
+        )
+        // A policy-side load is never the listener's intent.
+        assertEquals(
+            OutputMuteCommandUse.IGNORED,
+            outputMuteCommandUse(PlaybackCommand.Load(loadRequest(), 0L, playWhenReady = true), PlaybackCommandOrigin.POLICY),
+        )
+    }
+
+    @Test
+    fun stalePolicyCommandDropsAfterUserPause() {
+        // The policy reduced a RESUME while the intent count stood at zero, then a USER Pause was
+        // queued ahead of the POLICY Play it submitted: the loop's count has moved, so the Play
+        // drops instead of applying over the listener's pause.
+        var userIntentGeneration = 0L
+        val observedByPolicy = userIntentGeneration
+        userIntentGeneration++
+        assertEquals(true, outputMuteIntentIsStale(observedByPolicy, userIntentGeneration))
+        // A POLICY command tagged at the current generation still applies.
+        assertEquals(false, outputMuteIntentIsStale(userIntentGeneration, userIntentGeneration))
     }
 
     @Test

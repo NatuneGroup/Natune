@@ -101,15 +101,27 @@ enum class OutputMuteCommandUse {
  * Classifies a [PlaybackCommandEvent] for the mute watch. Only USER commands carry listener intent —
  * the policy's own pause and play arrive with origin POLICY and are IGNORED, so no bookkeeping has
  * to tell an echo apart from a command. A USER Play maps to [RESOLVE_PLAY] instead of an event
- * because its mute decision needs a volume read taken live on the host's queue.
+ * because its mute decision needs a volume read taken live on the host's queue, and a track Load
+ * that wants playback resolves the same way — the common queue load is how playback actually
+ * starts, so the watch begins with it. A Load that stays paused releases the wait like a pause.
  */
 fun outputMuteCommandUse(command: PlaybackCommand, origin: PlaybackCommandOrigin): OutputMuteCommandUse = when {
     origin != PlaybackCommandOrigin.USER -> OutputMuteCommandUse.IGNORED
     command == PlaybackCommand.Pause -> OutputMuteCommandUse.MANUAL_PAUSE
     command == PlaybackCommand.Stop -> OutputMuteCommandUse.MANUAL_STOP
     command == PlaybackCommand.Play -> OutputMuteCommandUse.RESOLVE_PLAY
+    command is PlaybackCommand.Load && command.playWhenReady -> OutputMuteCommandUse.RESOLVE_PLAY
+    command is PlaybackCommand.Load -> OutputMuteCommandUse.MANUAL_PAUSE
     else -> OutputMuteCommandUse.IGNORED
 }
+
+/**
+ * Whether a policy-tagged submit went stale before it reached the command loop: the listener's
+ * Pause, Stop, Play or Load moved the intent generation past the count the policy reduced against.
+ * The port checks this in the same loop that dispatches, so the answer is atomic with the command.
+ */
+fun outputMuteIntentIsStale(observedIntentGeneration: Long, currentIntentGeneration: Long): Boolean =
+    observedIntentGeneration != currentIntentGeneration
 
 /** What an option change does to the watch, given the session's playing bit. */
 enum class OutputMuteReconcile {
