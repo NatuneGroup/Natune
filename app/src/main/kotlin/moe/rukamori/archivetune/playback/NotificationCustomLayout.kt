@@ -104,3 +104,58 @@ internal fun buildNotificationCustomLayout(
                 .build(),
         )
 }
+
+/** True while a resumable playback notification should exist: an item is loaded and not idle or ended. */
+internal fun hasResumablePlaybackNotification(player: Player): Boolean {
+    val state = player.playbackState
+    return player.mediaItemCount > 0 &&
+        player.currentMediaItem != null &&
+        state != Player.STATE_IDLE &&
+        state != Player.STATE_ENDED
+}
+
+/**
+ * Dedupes rebuilds of the notification's custom row. [buildNotificationCustomLayout] first runs while the
+ * item still prepares, when duration is [C.TIME_UNSET] and seekability may still report false, so the
+ * long-content seek pair can be missing — or linger on the next short item — until the signature below flips.
+ * The service feeds its player listener through [onEvents]; a rebuild runs only when a relevant event changes
+ * the signature [markBuilt] last recorded.
+ */
+@UnstableApi
+internal class NotificationCustomLayoutGate {
+    private var signature = SIGNATURE_UNBUILT
+
+    /** Records what the just-built row shows, so later events only re-set on a real change. */
+    fun markBuilt(player: Player) {
+        signature = signatureOf(player)
+    }
+
+    /** Rebuilds through [rebuild] when a duration/seekability event flips the recorded signature. */
+    fun onEvents(player: Player, events: Player.Events, rebuild: () -> Unit) {
+        if (
+            !events.containsAny(
+                Player.EVENT_TIMELINE_CHANGED,
+                Player.EVENT_PLAYBACK_STATE_CHANGED,
+                Player.EVENT_AVAILABLE_COMMANDS_CHANGED,
+            )
+        ) {
+            return
+        }
+        val next = signatureOf(player)
+        if (signature == SIGNATURE_UNBUILT) {
+            signature = next
+            return
+        }
+        if (next == signature) return
+        signature = next
+        rebuild()
+    }
+
+    private fun signatureOf(player: Player): Int =
+        (if (player.duration != C.TIME_UNSET && player.duration > LONG_CONTENT_NOTIFICATION_MS) 1 else 0) or
+            (if (player.isCurrentMediaItemSeekable) 2 else 0)
+
+    private companion object {
+        const val SIGNATURE_UNBUILT = -1
+    }
+}
