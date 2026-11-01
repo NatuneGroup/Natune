@@ -528,6 +528,7 @@ class MusicService :
     private var autoStartOnBluetoothEnabled = false
     private var bluetoothReceiverRegistered = false
     private var wakeLock: PowerManager.WakeLock? = null
+    private var lowLatencyWifiLock: LowLatencyWifiLock? = null
     private var wakelockEnabled = false
     private var audioDeviceCallbackRegistered = false
     private var audioRouteRecoveryJob: Job? = null
@@ -1497,6 +1498,7 @@ class MusicService :
             (getSystemService(Context.POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ArchiveTune:Playback")
                 .also { it.setReferenceCounted(false) }
+        lowLatencyWifiLock = LowLatencyWifiLock(this)
         setupAudioFocusRequest()
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, android.os.Handler(mainLooper))
         audioDeviceCallbackRegistered = true
@@ -11704,8 +11706,10 @@ class MusicService :
     }
 
     private fun updateWakeLock() {
-        val wl = wakeLock ?: return
         val shouldHold = wakelockEnabled && player.isPlaying
+        // The streaming radio companion follows the same hold: low-latency while audio plays.
+        if (shouldHold) lowLatencyWifiLock?.acquire() else lowLatencyWifiLock?.release()
+        val wl = wakeLock ?: return
         if (shouldHold && !wl.isHeld) {
             Timber.tag("PlaybackDiagnostics").d(
                 "Playback wake lock acquired state=%d playWhenReady=%s isPlaying=%s focusHeld=%s gain=%.3f",
@@ -12765,6 +12769,7 @@ class MusicService :
         }
         try {
             if (wakeLock?.isHeld == true) wakeLock?.release()
+            lowLatencyWifiLock?.release()
         } catch (_: Exception) {
         }
         try {
