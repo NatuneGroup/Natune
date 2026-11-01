@@ -92,8 +92,6 @@ import moe.rukamori.archivetune.shared.ui.resources.content_canvas_not_found
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.skia.Image as SkiaImage
 import platform.AVFoundation.AVAssetImageGenerator
-import platform.AVFoundation.AVAssetTrack
-import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.AVURLAsset
 import platform.CoreGraphics.CGImageRelease
 import platform.CoreMedia.CMTime
@@ -374,9 +372,13 @@ internal class IosCanvasFrames(
         try {
             val path = canvasLocalPath(target.uri) ?: error("canvas loop has no local file")
             val asset = AVURLAsset.URLAssetWithURL(NSURL.fileURLWithPath(path), null)
-            if (asset.tracks.none { (it as? AVAssetTrack)?.mediaType == AVMediaTypeVideo }) error("canvas loop has no video track")
             val generator = AVAssetImageGenerator(asset = asset)
             generator.appliesPreferredTrackTransform = true
+            // The K/N AVFoundation binding hides the synchronous track list, so a video-less asset is refused
+            // by its own decoder instead: a whole-timeline probe only yields a frame when there is video.
+            generator.requestedTimeToleranceBefore = asset.duration
+            generator.requestedTimeToleranceAfter = asset.duration
+            feed.frame.value = iosCanvasFrameAt(generator, 0L) ?: error("canvas loop has no video track")
             generator.requestedTimeToleranceBefore = CMTimeMake(0, 1)
             generator.requestedTimeToleranceAfter = CMTimeMake(0, 1)
             val durationMs = CMTimeGetSeconds(asset.duration)
