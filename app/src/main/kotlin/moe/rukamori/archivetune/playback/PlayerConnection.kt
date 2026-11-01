@@ -436,6 +436,18 @@ class PlayerConnection(
         service.moveQueueItemToNext(mediaItemIndex)
     }
 
+    fun removeQueueItemAt(mediaItemIndex: Int) {
+        service.removeQueueItemAt(mediaItemIndex)
+    }
+
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        service.moveQueueItem(fromIndex, toIndex)
+    }
+
+    fun reorderShuffledQueue(firstPeriodIndices: IntArray) {
+        service.reorderShuffledQueue(firstPeriodIndices)
+    }
+
     fun addToQueue(item: MediaItem) = addToQueue(listOf(item))
 
     fun addToQueue(items: List<MediaItem>) {

@@ -29,4 +29,15 @@ internal object QueueDedupe {
             index.takeIf { index != currentIndex && id in incoming }
         }
     }
+
+    /**
+     * The surviving incoming items in first-occurrence order: only items whose id [keptIds]
+     * admitted, and only one item per id. [keptIds] is a set, so membership alone cannot drop the
+     * second copy of an id — the distinctBy is what actually deduplicates the insert.
+     */
+    fun <T> survivingItems(
+        items: List<T>,
+        keptIds: Set<String>,
+        mediaId: (T) -> String,
+    ): List<T> = items.filter { mediaId(it) in keptIds }.distinctBy(mediaId)
 }

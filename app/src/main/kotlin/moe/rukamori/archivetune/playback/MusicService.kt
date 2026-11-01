@@ -329,7 +329,6 @@ import moe.rukamori.archivetune.extensions.getQueueWindows
 import moe.rukamori.archivetune.extensions.mediaItems
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.withEffectiveSongMetadata
-import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.extensions.toEnum
 import moe.rukamori.archivetune.extensions.toContinuationQueue
 import moe.rukamori.archivetune.extensions.toMediaItem
@@ -2688,14 +2687,15 @@ class MusicService :
                             player.currentMediaItemIndex.coerceIn(0, player.mediaItemCount - 1)
                         }
                     }
-                // Same rule as the queue file's own position: inside the twelve-hour window and
-                // only onto the item the state was saved under (its index keys the queue file's
-                // items — the pair is written from one snapshot).
+                // Same rule as the queue file's own position — and the same stamp: the
+                // state file's position is only trusted while the queue it keys into carries a
+                // fresh stamp of its own, so a legacy queue cannot be revived by the state file's
+                // newer write time. The item check still uses the queue file's items.
                 val restoredPositionMs =
                     PositionRestorePolicy.positionMs(
                         savedItemId = persistedQueue?.items?.getOrNull(playerState.currentMediaItemIndex)?.id,
                         restoredItemId = runCatching { player.getMediaItemAt(index).mediaId }.getOrNull(),
-                        savedAtEpochMs = playerState.timestamp,
+                        savedAtEpochMs = persistedQueue?.savedAtEpochMs,
                         positionMs = playerState.currentPosition.coerceAtLeast(0L),
                         nowEpochMs = System.currentTimeMillis(),
                     )
@@ -6284,46 +6284,8 @@ class MusicService :
             .evictableIndices(queueIds, player.currentMediaItemIndex, keptIds)
             .sortedDescending()
             .forEach(player::removeMediaItem)
-        return items.filter { it.mediaId in keptIds }
-    }
-
-    fun moveQueueItemToNext(mediaItemIndex: Int) {
-        if (dataStore.get(QueueLockedKey, false)) return
-        val currentIndex = player.currentMediaItemIndex
-        if (
-            player.mediaItemCount < 2 ||
-            currentIndex == C.INDEX_UNSET ||
-            mediaItemIndex !in 0 until player.mediaItemCount ||
-            mediaItemIndex == currentIndex
-        ) {
-            return
-        }
-
-        if (player.shuffleModeEnabled) {
-            val shuffledIndices = player.getQueueWindows().map { it.firstPeriodIndex }.toMutableList()
-            val sourcePosition = shuffledIndices.indexOf(mediaItemIndex)
-            val currentPosition = shuffledIndices.indexOf(currentIndex)
-            if (sourcePosition == -1 || currentPosition == -1) return
-
-            val destinationPosition = (currentPosition + if (sourcePosition < currentPosition) 0 else 1)
-                .coerceAtMost(shuffledIndices.lastIndex)
-            if (sourcePosition == destinationPosition) return
-
-            shuffledIndices.move(sourcePosition, destinationPosition)
-            localPlayer.setShuffleOrder(
-                DefaultShuffleOrder(
-                    shuffledIndices.toIntArray(),
-                    System.currentTimeMillis(),
-                ),
-            )
-            return
-        }
-
-        val destinationIndex = (currentIndex + if (mediaItemIndex < currentIndex) 0 else 1)
-            .coerceAtMost(player.mediaItemCount - 1)
-        if (mediaItemIndex != destinationIndex) {
-            player.moveMediaItem(mediaItemIndex, destinationIndex)
-        }
+        // keptIds is a set: an [a, a] batch would otherwise pass membership twice.
+        return QueueDedupe.survivingItems(items, keptIds) { it.mediaId }
     }
 
     fun playFromVoiceSearch(query: String) {

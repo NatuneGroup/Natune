@@ -85,7 +85,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Timeline
-import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -803,17 +802,14 @@ fun Queue(
                     sourceIndex != destinationIndex
                 ) {
                     if (!playerConnection.player.shuffleModeEnabled) {
-                        playerConnection.player.moveMediaItem(sourceIndex, destinationIndex)
+                        playerConnection.moveQueueItem(sourceIndex, destinationIndex)
                     } else {
-                        playerConnection.localPlayer.setShuffleOrder(
-                            DefaultShuffleOrder(
-                                queueWindows
-                                    .map { it.firstPeriodIndex }
-                                    .toMutableList()
-                                    .move(sourceIndex, destinationIndex)
-                                    .toIntArray(),
-                                System.currentTimeMillis(),
-                            ),
+                        playerConnection.reorderShuffledQueue(
+                            queueWindows
+                                .map { it.firstPeriodIndex }
+                                .toMutableList()
+                                .move(sourceIndex, destinationIndex)
+                                .toIntArray(),
                         )
                     }
                     return@LaunchedEffect
