@@ -22,14 +22,22 @@ class RestoreRecoveryTest {
         val files = mutableMapOf<String, ByteArray>()
         var mutatingOps = 0
         var failAt = -1
+        var failAt2 = -1
+        var succeedThenFailAt = -1
         var failAsProcessKill = true
 
         private fun checkpoint() {
             mutatingOps++
-            if (mutatingOps == failAt) {
+            if (mutatingOps == failAt || mutatingOps == failAt2) {
                 if (failAsProcessKill) throw KilledException(mutatingOps)
                 throw RuntimeException("injected failure at op $mutatingOps")
             }
+        }
+
+        // A post-op throw models a native call that applied its effect (the rename happened) but still
+        // surfaced an error — the state after it must be recoverable, not a hidden partial move.
+        private fun postCheckpoint() {
+            if (mutatingOps == succeedThenFailAt) throw RuntimeException("post-op failure at op $mutatingOps")
         }
 
         override fun exists(path: String): Boolean = files.containsKey(path)
@@ -38,16 +46,19 @@ class RestoreRecoveryTest {
             checkpoint()
             val bytes = files.remove(from) ?: throw IllegalStateException("rename of missing $from")
             files[to] = bytes
+            postCheckpoint()
         }
 
         override fun delete(path: String) {
             checkpoint()
             files.remove(path)
+            postCheckpoint()
         }
 
         override fun writeAtomically(path: String, bytes: ByteArray) {
             checkpoint()
             files[path] = bytes
+            postCheckpoint()
         }
 
         override fun readBytes(path: String): ByteArray? = files[path]
@@ -365,6 +376,130 @@ class RestoreRecoveryTest {
         assertLiveEquals(ops, Side.OLD)
     }
 
+    /** The phase the journal on disk currently records; the test fails if it is unreadable. */
+    private fun currentPhase(ops: FakeFileOps): RestorePhase =
+        RestorePhaseJournal.decode(ops.files.getValue(JOURNAL).decodeToString()).phase
+
+    @Test
+    fun rollbackStepFailureInsideCommitKeepsTheJournal() {
+        val ops = seeded()
+        ops.failAsProcessKill = false
+        ops.failAt = 8 // inside the commit: the wal install fails after the database was promoted
+        ops.failAt2 = 10 // inside the rollback that follows: the first originals restore fails too
+        assertFailsWith<RuntimeException> { RestoreTransaction(ops, JOURNAL, targets()).commit() }
+        // A failed rollback step must not be swallowed: the journal stays at ORIGINALS_MOVED so the next
+        // recover() retries the restore instead of startup opening a half-restored database.
+        assertEquals(RestorePhase.ORIGINALS_MOVED, currentPhase(ops))
+        assertEquals(RecoveryOutcome.ROLLED_BACK, RestoreTransaction.recover(ops, JOURNAL))
+        assertLiveEquals(ops, Side.OLD)
+        assertFalse(ops.exists(JOURNAL))
+    }
+
+    @Test
+    fun runtimeSidecarsSurvivePendingApplyRecovery() {
+        // Room opened between the retained commit and the kill that stranded APPLYING: its wal is a runtime
+        // file, not a swap file, and must not by itself force a rollback or CORRUPT.
+        val ops = appliedOps(newWal = false)
+        ops.files["$LIVE_DB-wal"] = RUNTIME_WAL
+        assertEquals(RecoveryOutcome.PENDING_APPLY, RestoreTransaction.recover(ops, JOURNAL))
+        RestoreTransaction.resume(ops, JOURNAL)!!.finalize()
+        assertContentEquals(RUNTIME_WAL, ops.files["$LIVE_DB-wal"])
+        assertFalse(ops.exists(JOURNAL))
+    }
+
+    @Test
+    fun runtimeSidecarsDoNotCorruptCommittedRecovery() {
+        // Cleanup had already deleted the wal backup when the kill landed, and Room then created a fresh wal.
+        // Requiring sidecar presence to match the journal would read this as CORRUPT; it is a finished commit.
+        val ops = appliedOps(newWal = false)
+        val journal = RestorePhaseJournal.decode(ops.files.getValue(JOURNAL).decodeToString())
+        ops.files[JOURNAL] = RestorePhaseJournal(RestorePhase.COMMITTED, journal.targets).encode()
+        ops.files.remove("$BACKUP_DB-wal")
+        ops.files["$LIVE_DB-wal"] = RUNTIME_WAL
+        assertEquals(RecoveryOutcome.COMMITTED, RestoreTransaction.recover(ops, JOURNAL))
+        assertContentEquals(RUNTIME_WAL, ops.files["$LIVE_DB-wal"])
+        assertFalse(ops.exists(JOURNAL))
+    }
+
+    @Test
+    fun rollbackDeletesRuntimeSidecarsWithoutOriginals() {
+        // The old database never had a wal: a runtime wal created beside the new one must not survive the
+        // rollback and pair the restored db with a foreign wal.
+        val ops = appliedOps(oldWal = false, newWal = false)
+        ops.files["$LIVE_DB-wal"] = RUNTIME_WAL
+        RestoreTransaction.resume(ops, JOURNAL)!!.rollbackCommitted()
+        assertNull(ops.files["$LIVE_DB-wal"])
+        assertLiveEquals(ops, Side.OLD, oldWal = false, newWal = false)
+    }
+
+    @Test
+    fun rollbackRestoresTheOriginalSidecarOverRuntimeOnes() {
+        val ops = appliedOps(oldWal = true, newWal = false)
+        ops.files["$LIVE_DB-wal"] = RUNTIME_WAL
+        RestoreTransaction.resume(ops, JOURNAL)!!.rollbackCommitted()
+        assertContentEquals(OLD_WAL, ops.files["$LIVE_DB-wal"])
+        assertLiveEquals(ops, Side.OLD, oldWal = true, newWal = false)
+    }
+
+    @Test
+    fun killPointsDuringCommittedRollbackStillConverge() {
+        // A live file lost outside the swap leaves APPLYING inconsistent: recovery rolls the commit back, and
+        // a kill mid-rollback re-enters through ORIGINALS_MOVED — spent backups mean "already restored", never
+        // "missing original", so every kill point still converges to the old files.
+        val total = mutatingOpCountOf { ops ->
+            ops.files.remove(LIVE_SETTINGS)
+            RestoreTransaction.recover(ops, JOURNAL)
+        }
+        for (kill in 1..total) {
+            val ops = appliedOps()
+            ops.files.remove(LIVE_SETTINGS)
+            ops.mutatingOps = 0
+            ops.failAt = kill
+            assertFailsWith<KilledException> { RestoreTransaction.recover(ops, JOURNAL) }
+            ops.failAt = -1
+            assertEquals(
+                RecoveryOutcome.ROLLED_BACK,
+                RestoreTransaction.recover(ops, JOURNAL),
+                "kill #$kill",
+            )
+            assertLiveEquals(ops, Side.OLD)
+            assertFalse(ops.exists(JOURNAL), "kill #$kill")
+        }
+    }
+
+    @Test
+    fun postRenameFailureDuringCommittedRollbackRetries() {
+        // The restore rename landed but the op still reported failure: rollbackCommitted aborts mid-way, and
+        // the ORIGINALS_MOVED journal it wrote first lets recover() finish the same rollback.
+        val ops = appliedOps()
+        ops.mutatingOps = 0
+        ops.succeedThenFailAt = 3 // op 1 journals ORIGINALS_MOVED; ops 2.. are the restore renames
+        assertFailsWith<RuntimeException> {
+            RestoreTransaction.resume(ops, JOURNAL)!!.rollbackCommitted()
+        }
+        ops.succeedThenFailAt = -1
+        assertEquals(RestorePhase.ORIGINALS_MOVED, currentPhase(ops))
+        assertEquals(RecoveryOutcome.ROLLED_BACK, RestoreTransaction.recover(ops, JOURNAL))
+        assertLiveEquals(ops, Side.OLD)
+        assertFalse(ops.exists(JOURNAL))
+    }
+
+    @Test
+    fun postRenameFailureDuringRecoveryRollbackRetries() {
+        // Same post-op failure inside the recovery rollback itself: the thrown op already applied, the journal
+        // knows the phase, and the next recover() treats the restored targets as done rather than lost.
+        val ops = appliedOps()
+        ops.files.remove(LIVE_SETTINGS) // live set no longer matches APPLYING: full rollback path
+        ops.mutatingOps = 0
+        ops.succeedThenFailAt = 3 // op 1 journals ORIGINALS_MOVED; ops 2.. are the restore renames
+        assertFailsWith<RuntimeException> { RestoreTransaction.recover(ops, JOURNAL) }
+        ops.succeedThenFailAt = -1
+        assertEquals(RestorePhase.ORIGINALS_MOVED, currentPhase(ops))
+        assertEquals(RecoveryOutcome.ROLLED_BACK, RestoreTransaction.recover(ops, JOURNAL))
+        assertLiveEquals(ops, Side.OLD)
+        assertFalse(ops.exists(JOURNAL))
+    }
+
     private companion object {
         const val JOURNAL = "restore-pending/journal"
         const val LIVE_DB = "data/portable-state.db"
@@ -382,5 +517,6 @@ class RestoreRecoveryTest {
         val NEW_WAL = byteArrayOf(8, 8, 8)
         val NEW_SHM = byteArrayOf(7, 7, 7)
         val NEW_SETTINGS = byteArrayOf(6, 6, 6)
+        val RUNTIME_WAL = byteArrayOf(5, 5, 5)
     }
 }
