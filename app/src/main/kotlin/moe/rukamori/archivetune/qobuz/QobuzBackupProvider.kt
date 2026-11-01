@@ -21,6 +21,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
+import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import moe.rukamori.archivetune.utils.withAppProxy
@@ -36,6 +37,12 @@ object QobuzBackupProvider {
      * through [normalizeEndpoint] before any request is built.
      */
     private const val DEFAULT_ENDPOINT = "https://mls.kouzu.in"
+
+    /**
+     * Most body a probe reads, whatever the mirror sends. The FLAC header needs 42 bytes; a mirror that ignores
+     * the Range header must not be buffered whole just to sniff it.
+     */
+    private const val PROBE_BODY_BUDGET_BYTES = 64 * 1024
 
     /**
      * Heals a mirror URL before it is used. The app's network security policy blocks
@@ -376,6 +383,21 @@ object QobuzBackupProvider {
     }
 
     /**
+     * Reads at most [PROBE_BODY_BUDGET_BYTES] from [input]. The caller closes the stream, so the rest of the body
+     * is never downloaded, whether or not the mirror honoured the Range header.
+     */
+    private fun readBoundedPrefix(input: InputStream): ByteArray {
+        val buffer = ByteArray(PROBE_BODY_BUDGET_BYTES)
+        var filled = 0
+        while (filled < buffer.size) {
+            val read = input.read(buffer, filled, buffer.size - filled)
+            if (read < 0) break
+            filled += read
+        }
+        return buffer.copyOf(filled)
+    }
+
+    /**
      * Probes one mirror with a ranged GET and describes it, or returns null when it does not serve
      * audio for this track.
      */
@@ -395,7 +417,6 @@ object QobuzBackupProvider {
                     .build()
             client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) return@use null
-                val headerBytes = runCatching { response.body?.bytes() }.getOrNull()
                 val contentType = response.header("Content-Type")?.lowercase().orEmpty()
                 // A JSON body here is the CDN's {"detail":"Not Found"} envelope for a mirror that
                 // has not been populated for this track yet.
@@ -417,7 +438,9 @@ object QobuzBackupProvider {
                         ?.toLongOrNull()
                         ?: response.header("Content-Length")?.toLongOrNull()?.takeIf { response.code != 206 }
                 // Trust the bytes over the labels: a mirror that serves FLAC is FLAC even when the
-                // CDN mislabels the Content-Type, and the header is already in hand.
+                // CDN mislabels the Content-Type, and the header is already in hand. Only a bounded
+                // prefix is read, so a mirror that ignores Range cannot make the probe buffer a whole file.
+                val headerBytes = runCatching { response.body?.byteStream()?.use { readBoundedPrefix(it) } }.getOrNull()
                 val streamInfo = headerBytes?.let(FlacStreamInfo::parse)
                 val isFlac = streamInfo != null || contentType.contains("flac") || url.contains("/lossless/")
                 ResolvedStream(
