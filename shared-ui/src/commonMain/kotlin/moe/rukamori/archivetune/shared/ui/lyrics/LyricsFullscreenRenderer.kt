@@ -123,6 +123,14 @@ fun LyricsFullscreenRenderer(
     val shapes = remember(rows, measurer) { lyricsShapeCache(rows, measurer) }
     val activeRows by remember(scanner) { derivedStateOf { scanner.activeAt(clock.feedMs.longValue) } }
     val primary = activeRows.lastOrNull() ?: -1
+    // A row reads as passed once the feed clears its end, not only once a later row is active — that keeps
+    // instrumental gaps and the outro after the last line honest.
+    val passedRows by remember(scanner) {
+        derivedStateOf {
+            val feed = clock.feedMs.longValue
+            buildSet { rows.forEach { row -> if (isPassedLyricRow(row, feed)) add(row.index) } }
+        }
+    }
 
     val scrollOwner = rememberLyricsScrollOwner()
     // Only ENHANCED glides its rows into place on a line change, and reduced motion keeps every row still.
@@ -221,9 +229,9 @@ fun LyricsFullscreenRenderer(
                         row = row,
                         alignment = alignment,
                         active = row.index in activeRows,
-                        // A timed row behind the playhead keeps the faded active colour; unsynced
+                        // A timed row behind the lyric clock keeps the faded active colour; unsynced
                         // rows are static and never count as passed.
-                        passed = isPassedLyricRow(row, activeRows, primary),
+                        passed = row.index in passedRows,
                         selected = row.index in selection.indices,
                         mainStyle = styles.main(alignment),
                         phoneticStyle = styles.phonetic(alignment),

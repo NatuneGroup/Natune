@@ -280,11 +280,22 @@ private fun iosPlayerSlots(
         }
         romanization.publish(LyricsRomanizationPresentation(sessionKey, LyricsRomanizationSource.BUILT_IN, phonetics))
     }
-    val actions = remember(graph) {
+    val actions = remember(graph, document?.occurrenceId) {
+        val occurrenceId = document?.occurrenceId
         LyricsSurfaceActions(
-            onSeek = { graph.player.seekTo(it) },
+            // Seek and resume share the desktop's acceptance gate: a tap on stale lyrics, or an
+            // unseekable item, performs neither.
+            onSeek = { position ->
+                val accepted = graph.player.snapshot.value
+                if (accepted?.occurrenceId == occurrenceId && accepted?.isSeekable == true) {
+                    graph.player.seekTo(position)
+                }
+            },
             onShareCard = { },
-            onResume = { graph.player.play() },
+            onResume = {
+                val accepted = graph.player.snapshot.value
+                if (accepted?.occurrenceId == occurrenceId && accepted?.isSeekable == true) graph.player.play()
+            },
         )
     }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)

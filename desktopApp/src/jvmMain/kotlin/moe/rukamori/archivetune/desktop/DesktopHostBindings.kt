@@ -290,7 +290,8 @@ private fun desktopPlayerSlots(
                 if (graph.player.snapshot.value?.occurrenceId == occurrenceId && current != null) tools.share(card, current.item.title)
             },
             onResume = {
-                if (graph.player.snapshot.value?.occurrenceId == occurrenceId) graph.player.play()
+                val accepted = graph.player.snapshot.value
+                if (accepted?.occurrenceId == occurrenceId && accepted?.isSeekable == true) graph.player.play()
             },
         )
     }

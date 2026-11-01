@@ -50,8 +50,10 @@ object LyricsTapPolicy {
 }
 
 /**
- * Whether a row sits behind the playhead and reads as passed rather than upcoming. Only timed rows
- * can pass — unsynced text is static — and a row the playhead currently sings is active, not passed.
+ * Whether the lyric clock has moved past a row: the feed sits at or beyond [LyricsRenderRow.scanEndMs], so a
+ * finished line reads as passed through an instrumental gap and after the last line, whether or not any row
+ * is currently active. Only timed rows can pass — unsynced text is static — and a row the playhead currently
+ * sings is active, not passed, because its end is still ahead.
  */
-internal fun isPassedLyricRow(row: LyricsRenderRow, activeRows: List<Int>, primaryIndex: Int): Boolean =
-    row.isSynced && primaryIndex >= 0 && row.index < primaryIndex && row.index !in activeRows
+internal fun isPassedLyricRow(row: LyricsRenderRow, feedPositionMs: Long): Boolean =
+    row.isSynced && feedPositionMs >= row.scanEndMs

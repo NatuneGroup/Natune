@@ -1239,13 +1239,9 @@ class MusicService :
         idleStopJob = null
     }
 
-    private fun hasResumablePlaybackNotification(): Boolean {
-        val state = player.playbackState
-        return player.mediaItemCount > 0 &&
-            player.currentMediaItem != null &&
-            state != Player.STATE_IDLE &&
-            state != Player.STATE_ENDED
-    }
+    // Duration and seekability resolve after the first notification layout, so the long-content
+    // seek pair is re-set only when one of those inputs flips.
+    private val notificationLayoutGate = NotificationCustomLayoutGate()
 
     // Route string of the last session-activity PendingIntent ("album/<id>" or null), so the
     // PendingIntent is only rebuilt when the target actually changes.
@@ -1293,7 +1289,7 @@ class MusicService :
 
     private fun scheduleStopIfIdle() {
         if (hasBoundClients) return
-        if (hasResumablePlaybackNotification()) {
+        if (hasResumablePlaybackNotification(player)) {
             cancelIdleStop()
             promoteToStartedService()
             ensureStartedAsForeground()
@@ -1323,7 +1319,7 @@ class MusicService :
             scope.launch {
                 delay(delayMs)
                 if (hasBoundClients) return@launch
-                if (hasResumablePlaybackNotification()) return@launch
+                if (hasResumablePlaybackNotification(player)) return@launch
                 stopForegroundAndSelf()
             }
     }
@@ -5344,6 +5340,7 @@ class MusicService :
                     hasSong = currentSong.value != null,
                 ),
             )
+            notificationLayoutGate.markBuilt(player)
         } catch (e: Exception) {
             reportException(e)
         }
@@ -5351,7 +5348,7 @@ class MusicService :
 
     fun refreshPlaybackNotification() {
         updateNotification()
-        onUpdateNotification(mediaSession, hasResumablePlaybackNotification())
+        onUpdateNotification(mediaSession, hasResumablePlaybackNotification(player))
     }
 
     private suspend fun enrichFromAppleMusic(metadata: MediaMetadata): MediaMetadata {
@@ -7821,7 +7818,7 @@ class MusicService :
                 ensureAudioFocusForActivePlayback()
             }
             updateWakeLock()
-            if (hasResumablePlaybackNotification()) {
+            if (hasResumablePlaybackNotification(player)) {
                 cancelIdleStop()
                 promoteToStartedService()
                 ensureStartedAsForeground()
@@ -7886,6 +7883,7 @@ class MusicService :
         if (events.contains(EVENT_TIMELINE_CHANGED) && !isCrossfading) {
             scheduleCrossfade()
         }
+        notificationLayoutGate.onEvents(player, events) { updateNotification() }
 
         // Also handle immediate update for play state and media item transition events explicitly
         if (events.containsAny(
@@ -12837,7 +12835,7 @@ class MusicService :
         val shouldShowNotification =
             shouldShowPlaybackNotification(
                 startInForegroundRequired = startInForegroundRequired,
-                hasResumablePlayback = hasResumablePlaybackNotification(),
+                hasResumablePlayback = hasResumablePlaybackNotification(player),
             )
         if (!shouldShowNotification) return
 
