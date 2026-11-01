@@ -4,10 +4,17 @@ package moe.rukamori.archivetune.shared.data.backup
 
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
+import platform.posix.O_RDONLY
+import platform.posix.close
 import platform.posix.fclose
+import platform.posix.ferror
+import platform.posix.fflush
+import platform.posix.fileno
 import platform.posix.fopen
 import platform.posix.fread
+import platform.posix.fsync
 import platform.posix.fwrite
+import platform.posix.open
 
 private const val COPY_BUFFER_BYTES = 64 * 1024
 
@@ -34,6 +41,8 @@ fun readPortableFileBytes(path: String, maxBytes: Long): ByteArray {
                 chunks += buffer.copyOf(read.toInt())
             }
         }
+        // A short read can be end of file or an error; only the error may pass silently.
+        check(ferror(file) == 0) { "File read failed" }
         val bytes = ByteArray(total.toInt())
         var offset = 0
         chunks.forEach { chunk ->
@@ -42,7 +51,7 @@ fun readPortableFileBytes(path: String, maxBytes: Long): ByteArray {
         }
         return bytes
     } finally {
-        fclose(file)
+        check(fclose(file) == 0) { "File close failed" }
     }
 }
 
@@ -55,14 +64,19 @@ fun readPortableFilePrefix(path: String, count: Int): ByteArray {
         val buffer = ByteArray(count)
         buffer.usePinned { pinned ->
             val read = fread(pinned.addressOf(0), 1u, count.toULong(), file)
+            check(ferror(file) == 0) { "File read failed" }
             return buffer.copyOf(read.toInt())
         }
     } finally {
-        fclose(file)
+        check(fclose(file) == 0) { "File close failed" }
     }
 }
 
-/** Writes [bytes] to [path], replacing any file there; the parent directory must exist. */
+/**
+ * Writes [bytes] to [path] durably, replacing any file there; the parent directory must exist. Flush, fsync and
+ * close all report, so a caller that promotes what it wrote (a staged restore, a journal) never carries a page the
+ * kernel still holds. The rename that publishes the file wants [syncPortableDirectory] on its parent.
+ */
 fun writePortableFileBytes(path: String, bytes: ByteArray) {
     val file = fopen(path, "wb") ?: throw IllegalStateException("File could not be opened")
     try {
@@ -73,7 +87,20 @@ fun writePortableFileBytes(path: String, bytes: ByteArray) {
                 }
             }
         }
+        check(fflush(file) == 0) { "File flush failed" }
+        check(fsync(fileno(file)) == 0) { "File sync failed" }
     } finally {
-        fclose(file)
+        check(fclose(file) == 0) { "File close failed" }
+    }
+}
+
+/** Syncs the directory at [path], so the renames it recorded survive the process that made them. */
+fun syncPortableDirectory(path: String) {
+    val descriptor = open(path, O_RDONLY)
+    check(descriptor >= 0) { "Directory could not be opened" }
+    try {
+        check(fsync(descriptor) == 0) { "Directory sync failed" }
+    } finally {
+        check(close(descriptor) == 0) { "Directory close failed" }
     }
 }

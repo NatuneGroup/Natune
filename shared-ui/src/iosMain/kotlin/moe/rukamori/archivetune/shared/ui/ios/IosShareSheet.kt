@@ -3,6 +3,7 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.Dispatchers
@@ -31,49 +32,75 @@ internal fun iosShareText(host: IosHost, text: String) {
 }
 
 /**
- * Writes [text] to a temporary file and shares the file URL, so Save to Files and AirDrop carry a real
- * document. Follows the DiagnosticLogActions export contract: true once the sheet completes, null when the
- * user dismisses it and false when the write itself failed.
+ * Writes [text] to a request-owned temporary file and shares the file URL, so Save to Files and AirDrop carry a
+ * real document. Follows the DiagnosticLogActions export contract: true once the sheet completes, null when the
+ * user dismisses it and false when the write itself failed. The file and its directory go away with the sheet,
+ * however it ends.
  */
 internal suspend fun iosExportTextFile(host: IosHost, fileName: String, text: String): Boolean? {
-    val path = NSTemporaryDirectory() + fileName
+    val directory = iosShareScratchDirectory()
+    val path = "$directory/$fileName"
     val written =
         (text as NSString).writeToFile(path, atomically = true, encoding = NSUTF8StringEncoding, error = null)
-    if (!written) return false
-    return iosShareFileUrls(host, listOf(NSURL.fileURLWithPath(path)))
+    if (!written) {
+        NSFileManager.defaultManager.removeItemAtPath(directory, null)
+        return false
+    }
+    return iosShareFileUrls(host, listOf(NSURL.fileURLWithPath(path)), cleanup = directory)
 }
 
 /**
- * Writes [bytes] to a temporary file and shares the file URL, the binary-file counterpart of [iosExportTextFile]:
- * true once the sheet completes, null when the user dismisses it and false when the write itself failed.
+ * Writes [bytes] to a request-owned temporary file and shares the file URL, the binary-file counterpart of
+ * [iosExportTextFile]: true once the sheet completes, null when the user dismisses it and false when the write
+ * itself failed. A backup archive can carry account values in the open, so nothing stays in shared temp.
  */
 internal suspend fun iosExportDataFile(host: IosHost, fileName: String, bytes: ByteArray): Boolean? {
-    val path = NSTemporaryDirectory() + fileName
+    val directory = iosShareScratchDirectory()
+    val path = "$directory/$fileName"
     val written = bytes.usePinned { pinned ->
         NSData.create(
             bytes = if (bytes.isEmpty()) null else pinned.addressOf(0),
             length = bytes.size.toULong(),
         ).writeToFile(path, atomically = true)
     }
-    if (!written) return false
-    return iosShareFileUrls(host, listOf(NSURL.fileURLWithPath(path)))
+    if (!written) {
+        NSFileManager.defaultManager.removeItemAtPath(directory, null)
+        return false
+    }
+    return iosShareFileUrls(host, listOf(NSURL.fileURLWithPath(path)), cleanup = directory)
 }
 
 /**
  * Shares every file URL in one sheet, so Save to Files or AirDrop carries the documents together. True once the
- * sheet completes, null when the user dismisses it.
+ * sheet completes, null when the user dismisses it. [cleanup] names a request-owned directory deleted when the
+ * sheet resolves, is dismissed or fails, so shared documents never linger in shared temp.
  */
-internal suspend fun iosShareFileUrls(host: IosHost, urls: List<NSURL>): Boolean? {
+internal suspend fun iosShareFileUrls(host: IosHost, urls: List<NSURL>, cleanup: String? = null): Boolean? {
     if (urls.isEmpty()) return false
     return withContext(Dispatchers.Main) {
-        suspendCancellableCoroutine { continuation ->
-            val sheet = UIActivityViewController(activityItems = urls, applicationActivities = null)
-            sheet.completionWithItemsHandler = { _, completed, _, _ ->
-                continuation.resume(if (completed) true else null)
+        try {
+            suspendCancellableCoroutine { continuation ->
+                val sheet = UIActivityViewController(activityItems = urls, applicationActivities = null)
+                sheet.completionWithItemsHandler = { _, completed, _, _ ->
+                    continuation.resume(if (completed) true else null)
+                }
+                try {
+                    iosPresentShareSheet(host, sheet)
+                } catch (failure: Throwable) {
+                    continuation.resumeWithException(failure)
+                }
             }
-            iosPresentShareSheet(host, sheet)
+        } finally {
+            cleanup?.let { NSFileManager.defaultManager.removeItemAtPath(it, null) }
         }
     }
+}
+
+/** A fresh request-owned scratch directory beside the system temp root; the caller owns its lifetime. */
+private fun iosShareScratchDirectory(): String {
+    val directory = NSTemporaryDirectory() + "share-" + NSUUID().UUIDString
+    NSFileManager.defaultManager.createDirectoryAtPath(directory, true, null, null)
+    return directory
 }
 
 /** The report an export writes: the same identity header the desktop report leads with, then the rolling log. */

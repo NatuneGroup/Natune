@@ -181,6 +181,46 @@ class PortableBackupArchiveTest {
         assertNull(PortableBackupFormat.decodePendingMarker("""{"categories":["BOGUS"]}""".encodeToByteArray()))
     }
 
+    @Test
+    fun restoreJournalRoundTripAndRejectsGarbage() {
+        val journal = RestoreJournal(
+            movedAside = mutableListOf("", "-wal"),
+            swapped = true,
+            settingsStaged = true,
+        )
+        val decoded = RestoreJournal.decode(journal.encode())
+        assertEquals(listOf("", "-wal"), decoded.movedAside)
+        assertEquals(true, decoded.swapped)
+        assertEquals(true, decoded.settingsStaged)
+        RestoreJournal.decode("").also { empty ->
+            assertEquals(emptyList(), empty.movedAside)
+            assertEquals(false, empty.swapped)
+            assertEquals(false, empty.settingsStaged)
+        }
+        assertFailsWith<IllegalArgumentException> { RestoreJournal.decode("bogus\n") }
+        // noteMoved deduplicates a suffix the journal already names.
+        val again = RestoreJournal(movedAside = mutableListOf("-wal"))
+        again.noteMoved("-wal")
+        assertEquals(listOf("-wal"), again.movedAside)
+    }
+
+    @Test
+    fun emptyEntryRoundTripsThroughTheZip() {
+        val archive = PortableZip.write(
+            listOf("empty.bin" to byteArrayOf(), "data.bin" to "x".encodeToByteArray()), nowMillis = 0L,
+        )
+        val entries = PortableZip.read(archive, 16, { Long.MAX_VALUE }, Long.MAX_VALUE)
+        assertContentEquals(byteArrayOf(), entries.first { it.name == "empty.bin" }.data)
+        assertContentEquals("x".encodeToByteArray(), entries.first { it.name == "data.bin" }.data)
+    }
+
+    @Test
+    fun inflateRejectsTrailingCompressedBytes() {
+        val payload = "payload".encodeToByteArray()
+        val stream = portableDeflate(payload)
+        assertFailsWith<Throwable> { portableInflate(stream + byteArrayOf(0x00, 0x00), payload.size) }
+    }
+
     private fun assertProblem(problem: BackupArchiveProblem, block: () -> Unit) {
         val failure = assertFailsWith<BackupArchiveException> { block() }
         assertEquals(problem, failure.problem)

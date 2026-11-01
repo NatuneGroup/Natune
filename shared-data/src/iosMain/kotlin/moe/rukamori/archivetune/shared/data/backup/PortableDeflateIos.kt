@@ -5,6 +5,7 @@ package moe.rukamori.archivetune.shared.data.backup
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.sizeOf
 import kotlinx.cinterop.usePinned
@@ -74,7 +75,10 @@ internal actual fun portableInflate(data: ByteArray, size: Int): ByteArray {
                     // Z_FINISH returns Z_STREAM_END only when the stream ends inside the given output space, so a
                     // stream longer or shorter than the declared entry size fails here.
                     val status = inflate(stream.ptr, Z_FINISH)
-                    check(status == Z_STREAM_END && stream.total_out.toInt() == out.size) { "Invalid DEFLATE stream" }
+                    check(
+                        status == Z_STREAM_END && stream.total_out.toInt() == out.size &&
+                            stream.total_in.toInt() == data.size,
+                    ) { "Invalid DEFLATE stream" }
                     out
                 }
             }

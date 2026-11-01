@@ -18,6 +18,9 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_later
 import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_message
 import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_quit
 import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_title
+import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restore_failed_dismiss
+import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restore_failed_message
+import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restore_failed_title
 import moe.rukamori.archivetune.shared.ui.settings.BackupAndRestoreSettings
 import moe.rukamori.archivetune.shared.ui.settings.BackupExportResult
 import moe.rukamori.archivetune.shared.ui.settings.BackupRestoreCandidate
@@ -57,6 +60,7 @@ internal fun IosBackupRestorePage(
         modifier = Modifier.fillMaxSize(),
     )
     IosBackupRestartDialog(graph)
+    IosBackupRestoreFailedDialog(graph)
 }
 
 /**
@@ -121,6 +125,26 @@ internal fun IosBackupRestartDialog(graph: IosSessionGraph) {
         dismissButton = {
             TextButton(onClick = { graph.backup.dismissRestart() }) {
                 Text(stringResource(Res.string.ios_backup_restart_later))
+            }
+        },
+    )
+}
+
+/**
+ * The open-time report for a staged restore that failed: the previous library and settings are already back in
+ * place, the pending set rests under the failed-staging name, and this dialog holds the notice until answered.
+ */
+@Composable
+internal fun IosBackupRestoreFailedDialog(graph: IosSessionGraph) {
+    val failed by graph.backup.restoreFailed.collectAsState()
+    if (!failed) return
+    AlertDialog(
+        onDismissRequest = { graph.backup.dismissRestoreFailed() },
+        title = { Text(stringResource(Res.string.ios_backup_restore_failed_title)) },
+        text = { Text(stringResource(Res.string.ios_backup_restore_failed_message)) },
+        confirmButton = {
+            TextButton(onClick = { graph.backup.dismissRestoreFailed() }) {
+                Text(stringResource(Res.string.ios_backup_restore_failed_dismiss))
             }
         },
     )

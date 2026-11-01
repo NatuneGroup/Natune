@@ -99,4 +99,27 @@ class PortableZipInteropTest {
         val failure = assertFailsWith<BackupArchiveException> { PortableBackupArchive.parse(archive) }
         assertEquals(BackupArchiveProblem.NOT_A_BACKUP, failure.problem)
     }
+
+    @Test
+    fun emptyEntryRoundTripsBothWays() {
+        val archive = PortableZip.write(
+            listOf("empty.bin" to byteArrayOf(), "full.bin" to ByteArray(64) { it.toByte() }), nowMillis = 0L,
+        )
+        val names = ZipInputStream(ByteArrayInputStream(archive)).use { zip ->
+            generateSequence { zip.nextEntry }.map { it.name to zip.readBytes() }.toList()
+        }
+        assertContentEquals(byteArrayOf(), names.first { it.first == "empty.bin" }.second)
+
+        val output = ByteArrayOutputStream()
+        ZipOutputStream(output).use { zip ->
+            zip.putNextEntry(ZipEntry("empty.bin"))
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("full.bin"))
+            zip.write(ByteArray(32) { 0x55 })
+            zip.closeEntry()
+        }
+        val read = PortableZip.read(output.toByteArray(), 16, { Long.MAX_VALUE }, Long.MAX_VALUE)
+        assertContentEquals(byteArrayOf(), read.first { it.name == "empty.bin" }.data)
+        assertContentEquals(ByteArray(32) { 0x55 }, read.first { it.name == "full.bin" }.data)
+    }
 }
