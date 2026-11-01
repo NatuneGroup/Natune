@@ -35,6 +35,46 @@ fun YouTubePlaylistAddToChooser(
     onAdded: (songCount: Int, playlistNames: List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val picker = LocalPlaylistPickerContext.current
+    if (picker != null) {
+        // The multi-playlist chooser needs the occurrences up front, so the lazy load resolves once for it.
+        val loaded by produceState<List<ContentOccurrence>?>(null) {
+            value = try {
+                loadSongs().takeIf { it.isNotEmpty() } ?: emptyList()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val songs = loaded
+        if (songs.isNullOrEmpty()) {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(stringResource(Res.string.m6_add_playlist)) },
+                text = {
+                    Text(
+                        stringResource(
+                            if (songs == null) Res.string.m4_loading else Res.string.m6yp_playlist_action_failed,
+                        ),
+                    )
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.m6_cancel)) } },
+            )
+        } else {
+            PlaylistPickerDialog(
+                occurrences = songs,
+                context = picker,
+                library = library,
+                onFinished = { names ->
+                    if (names.isNotEmpty()) onAdded(songs.size, names)
+                    onDismiss()
+                },
+            )
+        }
+        return
+    }
     var saving by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

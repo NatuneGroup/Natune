@@ -84,18 +84,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.InnerTubeCookieKey
+import moe.rukamori.archivetune.constants.PlaylistPickerSortTypeKey
 import moe.rukamori.archivetune.db.entities.Playlist
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
 import moe.rukamori.archivetune.ui.component.CreatePlaylistDialog
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.PlaylistListItem
+import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import java.time.LocalDateTime
 import java.util.Locale
@@ -216,7 +219,8 @@ fun AddToPlaylistDialog(
     val playlistPlayCounts by database.playlistPlayCounts().collectAsStateWithLifecycle(initialValue = emptyList())
     val (innerTubeCookie) = rememberPreference(InnerTubeCookieKey, "")
     val isLoggedIn = remember(innerTubeCookie) { hasYouTubeLoginCookie(innerTubeCookie) }
-    var sortOption by rememberSaveable { mutableStateOf(AddToPlaylistSortOption.RECENTLY_CREATED) }
+    // The picker sort is one persisted preference, so a chosen order survives the next picker.
+    var sortOption by rememberEnumPreference(PlaylistPickerSortTypeKey, AddToPlaylistSortOption.RECENTLY_CREATED)
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var showSearchField by rememberSaveable { mutableStateOf(false) }
     val availablePlaylists =
@@ -239,6 +243,8 @@ fun AddToPlaylistDialog(
     var duplicateRetrySkips by remember { mutableStateOf(false) }
     var songIds by remember { mutableStateOf<List<String>?>(null) }
     var selectedPlaylistIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var membershipByPlaylist by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var addReport by remember { mutableStateOf<PlaylistAddReport?>(null) }
 
     suspend fun addSongsToPlaylistSafely(
         playlist: Playlist,
@@ -295,12 +301,44 @@ fun AddToPlaylistDialog(
         if (isVisible) {
             songIds = null
             selectedPlaylistIds = emptySet()
+            membershipByPlaylist = emptyMap()
+            addReport = null
             showDuplicateDialog = false
             playlistsWithDuplicates = emptyList()
             duplicateSongsMap = emptyMap()
             searchQuery = ""
             showSearchField = false
-            sortOption = AddToPlaylistSortOption.RECENTLY_CREATED
+            // Resolving the songs at once lets the membership check pre-select the playlists already holding them.
+            songIds = try {
+                onGetSong()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    LaunchedEffect(songIds, availablePlaylists) {
+        val ids = songIds ?: return@LaunchedEffect
+        membershipByPlaylist = emptyMap()
+        if (ids.isEmpty() || availablePlaylists.isEmpty()) return@LaunchedEffect
+        val found =
+            withContext(Dispatchers.IO) {
+                availablePlaylists.mapNotNull { playlist ->
+                    val duplicates =
+                        try {
+                            database.playlistDuplicates(playlist.id, ids)
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    if (duplicates.isEmpty()) null else playlist.id to duplicates
+                }.toMap()
+            }
+        membershipByPlaylist = found
+        // A playlist already holding every song is pre-selected; the row badge says why it is checked.
+        if (selectedPlaylistIds.isEmpty()) {
+            selectedPlaylistIds = found.filterValues { it.size >= ids.size }.keys
         }
     }
 
@@ -570,6 +608,19 @@ fun AddToPlaylistDialog(
                                         PlaylistListItem(
                                             playlist = playlist,
                                             modifier = Modifier.weight(1f),
+                                            badges = {
+                                                if (!membershipByPlaylist[playlist.id].isNullOrEmpty()) {
+                                                    Text(
+                                                        text =
+                                                            stringResource(
+                                                                R.string.already_in_playlist_name,
+                                                                playlist.playlist.name,
+                                                            ),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                    )
+                                                }
+                                            },
                                         )
 
                                         Checkbox(
@@ -607,12 +658,58 @@ fun AddToPlaylistDialog(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
+                        if (isAddingToPlaylist && addState.total > 0) {
+                            Text(
+                                text =
+                                    stringResource(
+                                        R.string.playlist_add_progress,
+                                        addState.processed,
+                                        addState.total,
+                                    ),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                            )
+                        }
+
                         if (addState.failed) {
                             Text(
                                 text = stringResource(R.string.playlist_add_incomplete),
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                             )
+                        }
+
+                        addReport?.let { report ->
+                            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                                Text(
+                                    text =
+                                        stringResource(
+                                            R.string.playlist_add_stopped,
+                                            report.settledTracks,
+                                            report.unconfirmedTracks,
+                                        ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                report.failed.forEach { failure ->
+                                    Text(
+                                        text =
+                                            stringResource(
+                                                R.string.could_not_add_to_playlist,
+                                                failure.name,
+                                                failure.reason,
+                                            ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                                if (report.uncertainIds.isNotEmpty()) {
+                                    Text(
+                                        text = stringResource(R.string.playlist_add_uncertain),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
                         }
 
                         FlowRow(
@@ -628,9 +725,18 @@ fun AddToPlaylistDialog(
                             }
 
                             Button(
-                                enabled = selectedPlaylistIds.isNotEmpty() && !isAddingToPlaylist,
+                                enabled =
+                                    !isAddingToPlaylist &&
+                                        (addReport != null || selectedPlaylistIds.isNotEmpty()),
                                 onClick = {
-                                    val targets = availablePlaylists.filter { it.id in selectedPlaylistIds }
+                                    val reportTargets = addReport
+                                    val targetIds =
+                                        if (reportTargets != null) {
+                                            reportTargets.failedIds + reportTargets.uncertainIds
+                                        } else {
+                                            selectedPlaylistIds
+                                        }
+                                    val targets = availablePlaylists.filter { it.id in targetIds }
                                     val cachedSongs = songIds
                                     operation.start(
                                         targets = targets,
@@ -639,35 +745,84 @@ fun AddToPlaylistDialog(
                                             val result = withContext(Dispatchers.IO) {
                                                 val tempDuplicatesMap = mutableMapOf<String, List<String>>()
                                                 val addedPlaylistIds = mutableSetOf<String>()
+                                                val failed = mutableListOf<FailedPlaylistAdd>()
+                                                val uncertainIds = mutableSetOf<String>()
+                                                var settledTracks = 0
+                                                var processedTracks = 0
                                                 val targetsToCheck = if (currentSongIds.isEmpty()) emptyList() else selectedPlaylists
+                                                val totalTracks = currentSongIds.size * targetsToCheck.size
+                                                reportProgress(0, totalTracks)
                                                 val (withDuplicates, withoutDuplicates) =
                                                     targetsToCheck.partition { playlist ->
                                                         ensureCurrent()
                                                         val dups = database.playlistDuplicates(playlist.id, currentSongIds)
+                                                        processedTracks += currentSongIds.size
+                                                        reportProgress(processedTracks, totalTracks)
                                                         if (dups.isNotEmpty()) {
                                                             tempDuplicatesMap[playlist.id] = dups
+                                                            // The songs already stored count as settled at once.
+                                                            settledTracks += dups.size
                                                             true
                                                         } else false
                                                     }
                                                 withoutDuplicates.forEach { playlist ->
                                                     ensureCurrent()
-                                                    val addedCount = addSongsToPlaylistSafely(playlist, currentSongIds) { ensureCurrent() }
-                                                    if (addedCount > 0) addedPlaylistIds += playlist.id
+                                                    try {
+                                                        val addedCount = addSongsToPlaylistSafely(playlist, currentSongIds) { ensureCurrent() }
+                                                        if (addedCount > 0) addedPlaylistIds += playlist.id
+                                                        settledTracks += addedCount
+                                                        if (addedCount < currentSongIds.size) {
+                                                            // Some songs of this playlist may still have committed.
+                                                            uncertainIds += playlist.id
+                                                        }
+                                                    } catch (cancelled: CancellationException) {
+                                                        throw cancelled
+                                                    } catch (failure: Exception) {
+                                                        failed +=
+                                                            FailedPlaylistAdd(
+                                                                playlist.id,
+                                                                playlist.playlist.name,
+                                                                failure.javaClass.simpleName ?: "error",
+                                                            )
+                                                    }
+                                                    processedTracks += currentSongIds.size
+                                                    reportProgress(processedTracks, totalTracks)
                                                 }
-                                                Triple(withDuplicates, tempDuplicatesMap, addedPlaylistIds)
+                                                AddBatchResult(
+                                                    withDuplicates = withDuplicates,
+                                                    duplicatesMap = tempDuplicatesMap,
+                                                    addedIds = addedPlaylistIds,
+                                                    failed = failed,
+                                                    uncertainIds = uncertainIds,
+                                                    settledTracks = settledTracks,
+                                                    unconfirmedTracks = totalTracks - settledTracks,
+                                                )
                                             }
                                             Triple(currentSongIds, selectedPlaylists, result)
                                         },
                                         onSuccess = { (currentSongIds, selectedPlaylists, result) ->
                                             songIds = currentSongIds
-                                            val (withDuplicates, duplicatesMap, addedIds) = result
-                                            val names = selectedPlaylists.filter { it.id in addedIds }.map { it.playlist.name }
+                                            addReport =
+                                                if (result.failed.isNotEmpty() || result.uncertainIds.isNotEmpty()) {
+                                                    PlaylistAddReport(
+                                                        failedIds = result.failed.mapTo(linkedSetOf()) { it.playlistId },
+                                                        failed = result.failed,
+                                                        uncertainIds = result.uncertainIds,
+                                                        settledTracks = result.settledTracks,
+                                                        unconfirmedTracks = result.unconfirmedTracks,
+                                                    )
+                                                } else {
+                                                    null
+                                                }
+                                            val names = selectedPlaylists.filter { it.id in result.addedIds }.map { it.playlist.name }
                                             if (names.isNotEmpty()) onAddComplete?.invoke(currentSongIds.size, names)
-                                            if (withDuplicates.isNotEmpty()) {
-                                                playlistsWithDuplicates = withDuplicates
-                                                duplicateSongsMap = duplicatesMap
+                                            if (result.withDuplicates.isNotEmpty()) {
+                                                playlistsWithDuplicates = result.withDuplicates
+                                                duplicateSongsMap = result.duplicatesMap
                                                 showDuplicateDialog = true
-                                            } else dismiss()
+                                            } else if (addReport == null) {
+                                                dismiss()
+                                            }
                                         },
                                     )
                                 },
@@ -688,7 +843,7 @@ fun AddToPlaylistDialog(
                                     Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                                     Text(
                                         text =
-                                            if (addState.failed) {
+                                            if (addState.failed || addReport != null) {
                                                 stringResource(R.string.retry)
                                             } else if (selectedPlaylistIds.size > 1) {
                                                 stringResource(R.string.add_to_n_playlists, selectedPlaylistIds.size)
@@ -749,7 +904,12 @@ fun AddToPlaylistDialog(
                 },
                 onSuccess = { (count, names) ->
                     if (count > 0) onAddComplete?.invoke(count, names)
-                    dismiss()
+                    // A failed or unconfirmed remainder from the main run keeps its report instead of closing.
+                    if (addReport == null) {
+                        dismiss()
+                    } else {
+                        showDuplicateDialog = false
+                    }
                 },
             )
         }

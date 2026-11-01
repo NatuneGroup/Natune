@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.domain.library
 
+import moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerSortType
+
 /**
  * The defaults a Library surface reads when its key was never written. Each value matches the default the Android
  * screen and view model use, so a fresh install shows the same Library.
@@ -17,6 +19,9 @@ object LibraryDefaults {
 
     /** A playlist keeps its own order until the user sorts it, and the playlist stores that choice per playlist. */
     val playlistSongSort = LibrarySortState(PlaylistSongSortType.CUSTOM, descending = true)
+
+    /** The add-to-playlist picker opens on the newest playlists first until the user chooses another order. */
+    val playlistPickerSort = LibrarySortState(PlaylistPickerSortType.CREATE_DATE, descending = true)
 
     val songFilter: SongFilter = SongFilter.LIKED
     val artistFilter: ArtistFilter = ArtistFilter.LIKED

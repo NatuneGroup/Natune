@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.ui.menu
 
+import moe.rukamori.archivetune.db.entities.Playlist
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -18,7 +19,39 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.coroutines.coroutineContext
 
-internal data class PlaylistAddState(val loading: Boolean = false, val failed: Boolean = false)
+internal data class PlaylistAddState(
+    val loading: Boolean = false,
+    val failed: Boolean = false,
+    /** Tracks fully processed across the batch, for the "Processed X of Y tracks" line. */
+    val processed: Int = 0,
+    val total: Int = 0,
+)
+
+/** One refused playlist add: the playlist id, its title and the sanitized reason class name. */
+internal data class FailedPlaylistAdd(val playlistId: String, val name: String, val reason: String)
+
+/**
+ * The batch result one [AddToPlaylistOperation] insert returns: the deferred-duplicate playlists, the ids that
+ * committed, the refused and unconfirmed playlists, and the settled/unconfirmed track counts for the report text.
+ */
+internal data class AddBatchResult(
+    val withDuplicates: List<Playlist>,
+    val duplicatesMap: Map<String, List<String>>,
+    val addedIds: Set<String>,
+    val failed: List<FailedPlaylistAdd>,
+    val uncertainIds: Set<String>,
+    val settledTracks: Int,
+    val unconfirmedTracks: Int,
+)
+
+/** The per-playlist outcome the dialog keeps open on, so a retry can be chosen without losing what committed. */
+internal data class PlaylistAddReport(
+    val failedIds: Set<String>,
+    val failed: List<FailedPlaylistAdd>,
+    val uncertainIds: Set<String>,
+    val settledTracks: Int,
+    val unconfirmedTracks: Int,
+)
 
 /** Owns the actual dialog fetch/insert work, even while its remembered scope stays composed. */
 internal class AddToPlaylistOperation(private val scope: CoroutineScope) {
@@ -74,6 +107,16 @@ internal class AddToPlaylistOperation(private val scope: CoroutineScope) {
         suspend fun ensureCurrent() {
             coroutineContext.ensureActive()
             if (!isCurrent()) throw CancellationException("Playlist add operation replaced")
+        }
+
+        /**
+         * The running track count of the batch. A superseded attempt reports nothing, so a replaced operation's
+         * stale totals never reach the open dialog.
+         */
+        internal fun reportProgress(processed: Int, total: Int) {
+            if (isCurrent()) {
+                mutableState.value = mutableState.value.copy(processed = processed, total = total)
+            }
         }
     }
 }

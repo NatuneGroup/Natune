@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.localmedia.IosLocalMediaSource
+import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -537,6 +538,10 @@ internal class IosSessionGraph private constructor(
                 ),
             )
             val uploads = IosYouTubeUploads(scope, vault, queue, report) { network.configure(this) }
+            // The custom cover store and its folder are shared with the artwork loader, which resolves a stored
+            // cover to its file URI and reads it locally.
+            val customArtworkFiles = IosCustomArtworkFiles()
+            val customArtwork = FileCustomArtworkRepository(customArtworkFiles, nowMillis = ::iosNowMillis)
             val handoffHold = scope.launch {
                 listenTogether.client.roomState.map { it != null }.distinctUntilChanged().collect { handoff.hold(it) }
             }
@@ -559,9 +564,9 @@ internal class IosSessionGraph private constructor(
                 pageOwners = pageOwners,
                 history = history,
                 lyrics = lyrics,
-                customArtwork = FileCustomArtworkRepository(IosCustomArtworkFiles(), nowMillis = ::iosNowMillis),
+                customArtwork = customArtwork,
                 playbackPool = playbackPool,
-                artworkLoader = IosArtworkLoader(http),
+                artworkLoader = IosArtworkLoader(http, customArtwork, customArtworkFiles),
                 listenTogether = listenTogether,
                 uploads = uploads,
                 downloads = downloads,
