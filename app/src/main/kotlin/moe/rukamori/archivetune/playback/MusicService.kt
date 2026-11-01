@@ -757,7 +757,7 @@ class MusicService :
     private val playbackErrorRecovery = PlaybackErrorRecovery()
     private val rebufferMonitor = RebufferMonitor()
     private val recoveryRetry =
-        PlaybackRecoveryRetry({ scope }, { player }, playbackStreamRecoveryTracker, rebufferMonitor)
+        PlaybackRecoveryRetry({ scope }, { player }, playbackStreamRecoveryTracker, rebufferMonitor, { playerCache })
 
     // Initial-buffer-stall recovery (ported from Metrolist).
     // A stream can stall in STATE_BUFFERING forever without surfacing an HTTP error the
@@ -4333,6 +4333,7 @@ class MusicService :
             mediaSession.player = player
             _playerFlow.value = player
             pausedPlaybackGate.sync(player)
+            recoveryRetry.cancelPending()
 
             // The rebuilt wrapper starts with playWhenReady=false regardless of what the promoted
             // ExoPlayer was doing, so the intent captured before the rebuild is re-applied here —
@@ -5248,8 +5249,7 @@ class MusicService :
                     if (externalStreamRecoveryEpoch != recoveryEpoch || player !== recoveryPlayer ||
                         player.currentMediaItemIndex != mediaItemIndex || player.currentMediaItem?.mediaId != mediaId
                     ) return@withContext
-                    player.seekTo(mediaItemIndex, positionMs)
-                    player.prepare()
+                    recoveryRetry.prepare(mediaId, resumePlaying = false, seekIndex = mediaItemIndex, seekPositionMs = positionMs)
                 }
             }
             return true
@@ -6148,6 +6148,7 @@ class MusicService :
         closeAudioEffectSession()
         consecutivePlaybackErr = 0
         playbackErrorRecovery.reset()
+        recoveryRetry.cancelPending()
         // Per-media-id resolution caches grow one entry per unique track played and were never
         // pruned, so a long listening session leaked them indefinitely. A full stop clears the
         // queue and leaves no active track, so every entry is now stale — drop them here. They
@@ -7241,6 +7242,7 @@ class MusicService :
         initialBufferRecoveryJob = null
         initialBufferRecoveryAttemptedMediaId = null
         updateInitialBufferRecovery(player.playbackState)
+        recoveryRetry.onMediaItemTransition(mediaItem?.mediaId)
 
         // Catch-all for user-initiated skips that bypass PlayerConnection (notification, lock
         // screen, Bluetooth, Android Auto): a SEEK transition while a crossfade fade loop is still
@@ -7696,6 +7698,7 @@ class MusicService :
         reason: Int,
     ) {
         super.onPlayWhenReadyChanged(playWhenReady, reason)
+        recoveryRetry.onPlayWhenReadyChanged(playWhenReady)
         val isEndOfOutgoingItemPause =
             !playWhenReady &&
                 reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
@@ -8024,6 +8027,7 @@ class MusicService :
         val isSeekDiscontinuity =
             reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
         if (isSeekDiscontinuity) {
+            recoveryRetry.onSeek()
             Timber.tag("PlaybackDiagnostics").d(
                 "Seek reason=%d fromMs=%d toMs=%d state=%d playWhenReady=%s isPlaying=%s gain=%.3f expectedGain=%.3f focusHeld=%s crossfadeProgress=%.3f",
                 reason,
@@ -8262,8 +8266,7 @@ class MusicService :
                 // fresh prepare cannot re-read the spans we just deleted.
                 withContext(Dispatchers.Main) {
                     if (recoveryRetry.allow(currentMediaId)) {
-                        player.seekTo(mediaItemIndex, resumePosition)
-                        player.prepare()
+                        recoveryRetry.prepare(currentMediaId, resumePlaying = false, seekIndex = mediaItemIndex, seekPositionMs = resumePosition)
                     } else {
                         // Retry budget for this item is spent; the recovery policy decides next.
                         stopOrAdvanceAfterError(error, currentMediaId)
@@ -8300,13 +8303,11 @@ class MusicService :
                         reportException(it)
                     }
                     withContext(Dispatchers.Main) {
-                        if (player.currentMediaItem?.mediaId == currentMediaId) {
-                            Timber.tag("MusicService").i(
-                                "Retrying playback for %s after refreshing stream session",
-                                currentMediaId,
-                            )
-                            player.prepare()
-                        }
+                        Timber.tag("MusicService").i(
+                            "Retrying playback for %s after refreshing stream session",
+                            currentMediaId,
+                        )
+                        recoveryRetry.prepare(currentMediaId, resumePlaying = false)
                     }
                 }
                 return
@@ -8363,26 +8364,21 @@ class MusicService :
                 codecRecoveryMaxAttempts,
             )
 
-            if (withinBudget) {
+            // The rebuffer freeze applies here too: a track whose stalls already froze its
+            // in-place retries does not get codec rebuilds either.
+            if (withinBudget && !rebufferMonitor.shouldSuppressRetries(currentMediaId)) {
                 codecRecoveryAttemptCount = attemptNumber
-                scope.launch(Dispatchers.Main) {
-                    try {
-                        // Give the OS a moment to finish releasing the dead codec instance
-                        // before we ask ExoPlayer to instantiate a fresh one. Without this,
-                        // the new codec can race the old one's teardown and fail with the
-                        // same 0x80000000 / Released-state signature on the very first
-                        // queueInputBuffer() call.
-                        if (attemptNumber > 1) {
-                            kotlinx.coroutines.delay(400L)
-                        }
-                        player.seekTo(mediaItemIndex, resumePosition)
-                        player.prepare()
-                        // Honor the user's prior play/pause intent — if they had paused,
-                        // keep it paused after recovery so we don't surprise-start playback.
-                        if (!player.playWhenReady) {
-                            player.pause()
-                        }
-                    } catch (recoveryThrowable: Throwable) {
+                // The 400 ms floor on repeats stays: a fresh codec must not race the dead
+                // instance's teardown (the 0x80000000 / Released-state signature). A paused user
+                // stays paused — the gate only calls play() when asked, and playWhenReady alone
+                // would resume a playing track the same way the old pause-guard did.
+                recoveryRetry.prepare(
+                    currentMediaId,
+                    resumePlaying = false,
+                    seekIndex = mediaItemIndex,
+                    seekPositionMs = resumePosition,
+                    minDelayMs = if (attemptNumber > 1) 400L else 0L,
+                    onFailure = { recoveryThrowable ->
                         Timber.tag("MusicService").e(
                             recoveryThrowable,
                             "Recovery re-prepare failed for %s (attempt %d); falling back to stop-on-error",
@@ -8390,8 +8386,8 @@ class MusicService :
                             attemptNumber,
                         )
                         stopOnError()
-                    }
-                }
+                    },
+                )
                 return
             } else {
                 Timber.tag("MusicService").w(

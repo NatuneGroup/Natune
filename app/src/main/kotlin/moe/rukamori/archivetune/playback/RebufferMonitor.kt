@@ -6,25 +6,73 @@ import android.os.SystemClock
  * Counts the rebuffer stalls one track suffers and degrades or freezes it when they come too
  * fast, the way Spotify steps down instead of spinning on a saturated link. A stall counts only
  * after the track reached READY once — the initial-buffer watchdog owns the earlier phase — and
- * only while playback was wanted; a stall shorter than [MIN_STALL_MS] is a seek flicker, not a
- * rebuffer. Once [DEGRADE_EVENTS] stalls land inside [WINDOW_MS], re-resolves for the track ask
- * for low quality; once [FREEZE_EVENTS] land, in-place recovery retries stop so a dead stream
- * cannot loop re-prepares. Both decisions fade with the window: a track that then plays cleanly
- * earns its normal posture back, and a media transition always starts a fresh count.
+ * only while playback was wanted; a stall shorter than [MIN_STALL_MS] or one opened within
+ * [SEEK_TAG_MS] of a user seek is a seek flicker, not a rebuffer, and a stall the user paused
+ * inside is discarded outright. Once [DEGRADE_EVENTS] stalls land inside [WINDOW_MS], re-resolves
+ * for the track ask for low quality; once [FREEZE_EVENTS] land, in-place recovery retries stop so
+ * a dead stream cannot loop re-prepares. Both decisions fade with the window: a track that then
+ * plays cleanly earns its normal posture back, and a media transition always starts a fresh count.
  *
- * Main-thread only, like the listener callbacks that drive it.
+ * Mutators run on the main thread with the listener callbacks. Queries may run on any thread:
+ * they read only the immutable [snapshot] swapped wholesale after every mutation.
  */
 internal class RebufferMonitor(
     private val nowMs: () -> Long = { SystemClock.elapsedRealtime() },
 ) {
+    /** Everything a query needs, immutable. Never publish partially-updated pieces. */
+    private data class Snapshot(
+        val mediaId: String? = null,
+        val stallOpenedAtMs: Long? = null,
+        val stallFromSeek: Boolean = false,
+        val stalls: List<Long> = emptyList(),
+    )
+
+    @Volatile
+    private var snapshot = Snapshot()
+
     private var mediaId: String? = null
     private var sawReady = false
 
-    /** Start time of the stall still open, or null. An open stall already counts provisionally. */
+    /** Start time of the stall still open, or null; tagged when it followed a user seek. */
     private var stallOpenedAtMs: Long? = null
+    private var stallFromSeek = false
+
+    /** The most recent user seek; a stall opening within [SEEK_TAG_MS] of it is seek-originated. */
+    private var lastSeekAtMs: Long = Long.MIN_VALUE
 
     /** Start times of counted stalls still inside the window. */
     private val stalls = ArrayDeque<Long>()
+
+    /**
+     * A media transition — even onto the same id again, as a repeat or duplicate occurrence —
+     * starts a fresh count: a gapless AUTO transition can land without ever leaving READY, so the
+     * state callback alone cannot be trusted to seed the new track.
+     */
+    fun onMediaItemChanged(mediaId: String?) {
+        reset(mediaId)
+        publish()
+    }
+
+    /**
+     * A user seek closes whatever stall was open — a stall interrupted by intent is real until
+     * then — and marks the next one: the BUFFERING a seek forces is user intent catching up, not
+     * evidence the link cannot keep up.
+     */
+    fun onSeek() {
+        val now = nowMs()
+        closeStall(now)
+        lastSeekAtMs = now
+        publish()
+    }
+
+    /** A stall the user paused inside is not rebuffering they suffered through; drop it uncounted. */
+    fun onPlayWhenReadyChanged(playing: Boolean) {
+        if (!playing && stallOpenedAtMs != null) {
+            stallOpenedAtMs = null
+            stallFromSeek = false
+            publish()
+        }
+    }
 
     /**
      * Feed every session-player state change: [buffering] and [ready] are the state the player
@@ -38,6 +86,7 @@ internal class RebufferMonitor(
             buffering ->
                 if (playWhenReady && sawReady && stallOpenedAtMs == null) {
                     stallOpenedAtMs = now
+                    stallFromSeek = lastSeekAtMs != Long.MIN_VALUE && now - lastSeekAtMs < SEEK_TAG_MS
                 }
             else -> {
                 if (ready) sawReady = true
@@ -45,22 +94,35 @@ internal class RebufferMonitor(
             }
         }
         prune(now)
+        publish()
     }
 
     /** True while the track's stall count asks for a low-quality re-resolve. */
-    fun shouldStepDownQuality(mediaId: String): Boolean = isTracked(mediaId) && stallCount(nowMs()) >= DEGRADE_EVENTS
+    fun shouldStepDownQuality(mediaId: String): Boolean =
+        stallCount(snapshot, nowMs(), mediaId) >= DEGRADE_EVENTS
 
     /** True while the track's stall count says in-place retries must stop entirely. */
-    fun shouldSuppressRetries(mediaId: String): Boolean = isTracked(mediaId) && stallCount(nowMs()) >= FREEZE_EVENTS
+    fun shouldSuppressRetries(mediaId: String): Boolean =
+        stallCount(snapshot, nowMs(), mediaId) >= FREEZE_EVENTS
 
-    private fun isTracked(mediaId: String): Boolean = this.mediaId == mediaId
+    private fun publish() {
+        snapshot = Snapshot(mediaId, stallOpenedAtMs, stallFromSeek, stalls.toList())
+    }
 
-    private fun stallCount(now: Long): Int = stalls.count { now - it < WINDOW_MS } + if (stallOpenedAtMs != null) 1 else 0
+    private fun stallCount(s: Snapshot, now: Long, mediaId: String): Int {
+        if (s.mediaId != mediaId) return 0
+        var count = s.stalls.count { now - it < WINDOW_MS }
+        val opened = s.stallOpenedAtMs
+        if (opened != null && !s.stallFromSeek && now - opened in MIN_STALL_MS until WINDOW_MS) count++
+        return count
+    }
 
     private fun closeStall(now: Long) {
         val openedAt = stallOpenedAtMs ?: return
         stallOpenedAtMs = null
-        if (now - openedAt >= MIN_STALL_MS) stalls.addLast(openedAt)
+        val fromSeek = stallFromSeek
+        stallFromSeek = false
+        if (!fromSeek && now - openedAt >= MIN_STALL_MS) stalls.addLast(openedAt)
     }
 
     private fun prune(now: Long) {
@@ -71,6 +133,8 @@ internal class RebufferMonitor(
         mediaId = newMediaId
         sawReady = false
         stallOpenedAtMs = null
+        stallFromSeek = false
+        lastSeekAtMs = Long.MIN_VALUE
         stalls.clear()
     }
 
@@ -80,6 +144,9 @@ internal class RebufferMonitor(
 
         /** A buffering spell shorter than this is a seek or tickle, never a rebuffer. */
         const val MIN_STALL_MS = 1_500L
+
+        /** A stall opening this soon after a user seek belongs to the seek, not the link. */
+        const val SEEK_TAG_MS = 2_000L
 
         /** Stalls inside the window that step the track's resolves down to low quality. */
         const val DEGRADE_EVENTS = 3
