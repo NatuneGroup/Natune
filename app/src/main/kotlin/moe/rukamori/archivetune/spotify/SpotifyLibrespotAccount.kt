@@ -318,7 +318,13 @@ object SpotifyLibrespotAccount {
                     }
                 }
                 if (catalogChanged) return@withLock null
-                refreshLibraryProductIfDue(context, grant.accessToken)
+                refreshLibraryProductIfDue(context, grant.accessToken, catalogSpDc)
+                // One last binding read before the token leaves: a catalog session swapped during
+                // the product recheck must not hand out a token minted under the old binding.
+                if (context.dataStore.data.first()[SpotifySpDcKey].orEmpty() != catalogSpDc) {
+                    context.dataStore.edit { it.clearLibrespotSession() }
+                    return@withLock null
+                }
                 grant.accessToken
             }
         }
@@ -339,6 +345,7 @@ object SpotifyLibrespotAccount {
     private suspend fun refreshLibraryProductIfDue(
         context: Context,
         accessToken: String,
+        catalogSpDc: String,
     ) {
         val prefs = context.dataStore.data.first()
         val now = System.currentTimeMillis()
@@ -354,8 +361,15 @@ object SpotifyLibrespotAccount {
         }
         val product = fetchMe(accessToken)?.product ?: return
         context.dataStore.edit {
-            it[SpotifyProductKey] = product
-            it[SpotifyProductCheckedAtKey] = now
+            // The /v1/me read ran under the binding captured before the fetch; if the catalog
+            // session changed since, its product would land on the new account — the grant goes
+            // instead of a write meant for the old one.
+            if (it[SpotifySpDcKey].orEmpty() != catalogSpDc) {
+                it.clearLibrespotSession()
+            } else {
+                it[SpotifyProductKey] = product
+                it[SpotifyProductCheckedAtKey] = now
+            }
         }
     }
 
