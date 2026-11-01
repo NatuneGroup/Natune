@@ -11,13 +11,19 @@ import platform.Foundation.NSUserDomainMask
 
 actual fun portableStateDriver(): SQLiteDriver = BundledSQLiteDriver()
 
-/** Opens the portable state file at [absolutePath]. The Android schema-36 `song.db` is never opened here. */
+/** Opens the portable state file at [absolutePath], or a throwaway in-memory database for `:memory:`. */
 fun openPortableStateDatabase(absolutePath: String): PortableStateDatabase {
-    require(absolutePath.startsWith("/")) { "Database path must be absolute" }
+    require(absolutePath == ":memory:" || absolutePath.startsWith("/")) {
+        "Database path must be absolute"
+    }
     require(!absolutePath.substringAfterLast('/').equals("song.db", ignoreCase = true)) {
         "Android song.db is owned by its schema-36 host"
     }
-    return Room.databaseBuilder<PortableStateDatabase>(name = absolutePath).buildPortableStateDatabase()
+    return if (absolutePath == ":memory:") {
+        Room.inMemoryDatabaseBuilder<PortableStateDatabase>().buildPortableStateDatabase()
+    } else {
+        Room.databaseBuilder<PortableStateDatabase>(name = absolutePath).buildPortableStateDatabase()
+    }
 }
 
 /**

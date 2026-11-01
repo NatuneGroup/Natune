@@ -44,16 +44,23 @@ internal fun IosMountedRoot(host: IosHost) {
         IosSessionState.SettingsUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_settings_unavailable)) }
         IosSessionState.GraphUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_host_graph_unavailable)) }
         is IosSessionState.Ready -> {
-            val uiScope = rememberCoroutineScope()
-            val recognition = remember(state.graph) { IosRecognitionMount(state.graph, uiScope) }
-            DisposableEffect(state.graph) { onDispose { recognition.close() } }
-            val bindings = remember(state.graph) { iosHostBindings(host, state.graph, recognition) }
-            ArchiveTuneRoot(
-                host = bindings,
-                visible = active,
-                resumed = active,
-                opticalCapabilities = IosOpticalCapabilities,
-            )
+            // A blocked restore runs on a throwaway database: the whole shell stays unmounted until the
+            // recovery screen resolves it, so no ordinary write can reach the stand-in.
+            val recovering by state.graph.backup.recoveryMode.collectAsState()
+            if (recovering) {
+                IosRestoreRecoveryScreen(state.graph)
+            } else {
+                val uiScope = rememberCoroutineScope()
+                val recognition = remember(state.graph) { IosRecognitionMount(state.graph, uiScope) }
+                DisposableEffect(state.graph) { onDispose { recognition.close() } }
+                val bindings = remember(state.graph) { iosHostBindings(host, state.graph, recognition) }
+                ArchiveTuneRoot(
+                    host = bindings,
+                    visible = active,
+                    resumed = active,
+                    opticalCapabilities = IosOpticalCapabilities,
+                )
+            }
         }
     }
     IosCrashOverlay(host)
