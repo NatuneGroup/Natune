@@ -9,6 +9,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import moe.rukamori.archivetune.innertube.NewPipeUtils
+import moe.rukamori.archivetune.shared.data.potoken.MintedPoTokens
+import moe.rukamori.archivetune.shared.data.potoken.appendPoTokenToStreamUrl
+import moe.rukamori.archivetune.shared.data.potoken.poTokenForWebClient
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
@@ -31,6 +34,7 @@ private const val WATCH_URL_PREFIX = "https://www.youtube.com/watch?v="
 internal class DesktopNewPipeTier(
     private val http: HttpClient,
     private val locale: () -> Locale = { Locale.getDefault() },
+    private val mint: suspend (videoId: String, visitorData: String?) -> MintedPoTokens? = { _, _ -> null },
 ) {
     @Volatile
     private var ready = false
@@ -42,9 +46,11 @@ internal class DesktopNewPipeTier(
         visitorData: String?,
     ): PreparedAudio? {
         ensureReady()
+        // One mint per resolve feeds both paths, as the shipped authState feeds every NewPipe URL.
+        val minted = mint(videoId, visitorData)
         var failure: Throwable? = null
         try {
-            fromStreamExtractor(videoId, quality, trusted)?.let { return it }
+            fromStreamExtractor(videoId, quality, trusted, minted)?.let { return it }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -52,7 +58,7 @@ internal class DesktopNewPipeTier(
         }
         for (client in ANONYMOUS_CLIENTS) {
             try {
-                fromPlayerClient(videoId, client, quality, trusted, visitorData)?.let { return it }
+                fromPlayerClient(videoId, client, quality, trusted, visitorData, minted)?.let { return it }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -130,6 +136,7 @@ internal class DesktopNewPipeTier(
         videoId: String,
         quality: DesktopYouTubeAudioQuality,
         trusted: Boolean,
+        minted: MintedPoTokens?,
     ): PreparedAudio? {
         // The extractor blocks; runInterruptible lets the tier timeout interrupt its calls instead of abandoning them.
         val extractor = runInterruptible(Dispatchers.IO) {
@@ -143,7 +150,9 @@ internal class DesktopNewPipeTier(
         val url = format.url ?: return null
         return PreparedAudio.Progressive(
             format.toDirectStream(
-                uri = url,
+                // The extractor path names no client, so like resolveGvsPoToken(null) the video-bound
+                // token travels whenever one was minted for this video.
+                uri = appendPoTokenToStreamUrl(url, minted?.playerToken),
                 label = "YouTube NewPipe ${format.bitrate / 1000} kbps",
                 title = runCatching { extractor.name }.getOrNull(),
                 author = runCatching { extractor.uploaderName }.getOrNull(),
@@ -160,6 +169,7 @@ internal class DesktopNewPipeTier(
         quality: DesktopYouTubeAudioQuality,
         trusted: Boolean,
         visitorData: String?,
+        minted: MintedPoTokens?,
     ): PreparedAudio? {
         val signatureTimestamp =
             if (client.useSignatureTimestamp) {
@@ -173,6 +183,7 @@ internal class DesktopNewPipeTier(
         val language = locale().toLanguageTag().ifBlank { "en" }
         val response = requestYouTubePlayer(
             http, videoId, null, client, signatureTimestamp, visitorData, region, language, signIn = null,
+            poToken = poTokenForWebClient(client.clientName, minted),
         )
         if (!response.playabilityStatus().equals("OK", ignoreCase = true)) return null
         val details = response.videoDetails()
@@ -188,7 +199,7 @@ internal class DesktopNewPipeTier(
             }
             return PreparedAudio.Progressive(
                 candidate.toDirectStream(
-                    uri = url,
+                    uri = appendPoTokenToStreamUrl(url, poTokenForWebClient(client.clientName, minted)),
                     label = "YouTube NewPipe ${client.friendlyName ?: client.clientName} ${candidate.bitrate / 1000} kbps",
                     title = details?.stringOf("title"),
                     author = details?.stringOf("author"),
