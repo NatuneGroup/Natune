@@ -94,7 +94,7 @@ import moe.rukamori.archivetune.playback.ExoDownloadService
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.ui.component.AlbumListItem
 import moe.rukamori.archivetune.ui.component.ListDialog
-import moe.rukamori.archivetune.ui.component.ListItem
+import moe.rukamori.archivetune.ui.component.ListItem as MenuListItem
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
@@ -265,7 +265,7 @@ fun AlbumMenu(
             },
         ) {
             item {
-                ListItem(
+                MenuListItem(
                     title = stringResource(R.string.already_in_playlist),
                     thumbnailContent = {
                         Image(

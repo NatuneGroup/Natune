@@ -397,7 +397,7 @@ import moe.rukamori.archivetune.playback.queues.PlaylistLoadState
 import moe.rukamori.archivetune.playback.queues.IncompleteYouTubePlaylistException
 import moe.rukamori.archivetune.playback.queues.alignLegacyFinitePlaylist
 import moe.rukamori.archivetune.playback.queues.finiteOccurrence
-import moe.rukamori.archivetune.playback.queues.toMediaItem
+import moe.rukamori.archivetune.playback.queues.toMediaItem as finiteEntryToMediaItem
 import moe.rukamori.archivetune.playback.queues.loadCompleteYouTubePlaylist
 import moe.rukamori.archivetune.playback.queues.filterBlockedArtists
 import moe.rukamori.archivetune.playback.queues.filterExplicit
@@ -5710,11 +5710,11 @@ class MusicService :
                                     // Existing MediaItems retain manual markers, shuffle order and position.
                                     val segments = alignment.savedIndices.mapIndexed { index, mergedIndex ->
                                         val from = if (index == 0) 0 else alignment.savedIndices[index - 1] + 1
-                                        alignment.entries.subList(from, mergedIndex).map { it.toMediaItem() }
+                                        alignment.entries.subList(from, mergedIndex).map { it.finiteEntryToMediaItem() }
                                             .filterExplicit(hideExplicit).filterVideo(hideVideo).filterBlockedArtists(blockedArtistIds)
                                     }
                                     val suffix = alignment.entries.drop(alignment.savedIndices.last() + 1)
-                                        .map { it.toMediaItem() }.filterExplicit(hideExplicit).filterVideo(hideVideo)
+                                        .map { it.finiteEntryToMediaItem() }.filterExplicit(hideExplicit).filterVideo(hideVideo)
                                         .filterBlockedArtists(blockedArtistIds)
                                     val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
                                     queue.accept(proposal)
