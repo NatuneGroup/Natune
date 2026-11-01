@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.shared.domain.playback.OutputMuteEvent
 import moe.rukamori.archivetune.shared.domain.playback.OutputMuteReconcile
 import moe.rukamori.archivetune.shared.domain.playback.OutputMuteState
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommandOrigin
 import moe.rukamori.archivetune.shared.domain.playback.outputMuteCommandUse
 import moe.rukamori.archivetune.shared.domain.playback.outputMuteReconcile
 import moe.rukamori.archivetune.shared.domain.playback.reduceOutputMute
@@ -81,6 +82,10 @@ internal class IosOutputMutePolicy(
     private var lastPlaying = false
     private var lastEnded = false
 
+    // The intent generation of the newest USER command notice this policy has processed; every
+    // POLICY submit tags it, so a user command still in flight makes the submit stale, not fresh.
+    private var observedGeneration = port.userIntentGeneration
+
     private var closed = false
 
     // The one mutating collector: every signal reduces here, Main-confined and in order.
@@ -103,10 +108,10 @@ internal class IosOutputMutePolicy(
             when (action) {
                 OutputMuteAction.NONE -> Unit
                 OutputMuteAction.PAUSE -> {
-                    port.submitPolicy(PlaybackCommand.Pause, port.userIntentGeneration)
+                    port.submitPolicy(PlaybackCommand.Pause, observedGeneration)
                     report("playback paused: the output is muted")
                 }
-                OutputMuteAction.RESUME -> port.submitPolicy(PlaybackCommand.Play, port.userIntentGeneration)
+                OutputMuteAction.RESUME -> port.submitPolicy(PlaybackCommand.Play, observedGeneration)
                 OutputMuteAction.RESTORE_VOLUME -> try {
                     restoreVolume(recoveryVolume)
                 } catch (cancelled: CancellationException) {
@@ -122,6 +127,7 @@ internal class IosOutputMutePolicy(
     // USER commands are the listener; the policy's own POLICY submissions never reduce.
     private val commandJob = scope.launch {
         port.commandEvents.collect { notice ->
+            if (notice.origin == PlaybackCommandOrigin.USER) observedGeneration = notice.intentGeneration
             when (outputMuteCommandUse(notice.command, notice.origin)) {
                 OutputMuteCommandUse.MANUAL_PAUSE ->
                     signals.send(OutputMuteSignal.Event(OutputMuteEvent.ManualPause))

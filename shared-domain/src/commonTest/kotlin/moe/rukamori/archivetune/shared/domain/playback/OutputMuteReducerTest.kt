@@ -136,6 +136,25 @@ class OutputMuteReducerTest {
     }
 
     @Test
+    fun policyCommandTaggedWithLastProcessedNoticeGenerationDrops() {
+        // The port's intent count stands at zero and the policy's observed generation starts there.
+        var portGeneration = 0L
+        var observedGeneration = portGeneration
+        // A USER pause dispatches: the loop bumps the count and the notice that carries it is still
+        // in flight, unprocessed.
+        portGeneration++
+        val pauseNotice = PlaybackCommandEvent(PlaybackCommand.Pause, PlaybackCommandOrigin.USER, id = 1L, intentGeneration = portGeneration)
+        // A queued unmute sample reduces RESUME and submits a POLICY Play tagged with the last
+        // processed notice's generation — still zero — so the loop drops it over the in-flight pause.
+        val resume = reduceOutputMute(mutePaused, OutputMuteEvent.VolumeSample(muted = false))
+        assertEquals(OutputMuteAction.RESUME, resume.second)
+        assertEquals(true, outputMuteIntentIsStale(observedGeneration, portGeneration))
+        // After the notice is processed the observed generation catches up and a tag lands fresh.
+        observedGeneration = pauseNotice.intentGeneration
+        assertEquals(false, outputMuteIntentIsStale(observedGeneration, portGeneration))
+    }
+
+    @Test
     fun manualPlayWhileMutedRestoresTheAppLevelWhenPossible() {
         val (next, action) = reduceOutputMute(idle, OutputMuteEvent.ManualPlay(freshMuted = true, volumeRestoreAvailable = true))
         assertEquals(OutputMuteState(pending = false, polling = true), next)

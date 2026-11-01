@@ -7,7 +7,6 @@ import kotlinx.cinterop.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedSendChannelException
-import kotlinx.coroutines.channels.receiveAsFlow
 import kotlinx.coroutines.flow.*
 import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.nativeaudio.*
@@ -85,8 +84,8 @@ class IosPlaybackPort : PlaybackPort {
      * handoff is an unbounded channel: accepting a command can never block on a slow consumer, and
      * no listener intent is ever dropped. There is one consumer, the output-mute policy.
      */
-    val commandEvents: Flow<PlaybackCommandEvent> = commandEventChannel.receiveAsFlow()
     private val commandEventChannel = Channel<PlaybackCommandEvent>(Channel.UNLIMITED)
+    val commandEvents: Flow<PlaybackCommandEvent> = commandEventChannel.receiveAsFlow()
     private var commandSequence = 0L
 
     /**
@@ -107,13 +106,15 @@ class IosPlaybackPort : PlaybackPort {
                         val stalePolicy = item.origin == PlaybackCommandOrigin.POLICY &&
                             outputMuteIntentIsStale(item.intentGeneration, intentGeneration)
                         if (!stalePolicy) {
+                            if (item.origin == PlaybackCommandOrigin.USER && tracksUserIntent(item.command)) {
+                                intentGeneration++
+                            }
+                            // The notice carries the generation as it stands after this dispatch:
+                            // a policy tags its commands with the newest USER generation it has seen.
                             commandEventChannel.trySend(
-                                PlaybackCommandEvent(item.command, item.origin, ++commandSequence),
+                                PlaybackCommandEvent(item.command, item.origin, ++commandSequence, intentGeneration),
                             )
                             apply(item.command)
-                        }
-                        if (item.origin == PlaybackCommandOrigin.USER && tracksUserIntent(item.command)) {
-                            intentGeneration++
                         }
                     }
                     is Inbound.Prepare -> beginPreparation(item)
