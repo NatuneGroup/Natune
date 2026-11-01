@@ -102,6 +102,31 @@ class StartupStateStoreTest {
         assertTrue(restarted.pendingExists())
     }
 
+    @Test fun aHealthyProcessCannotRetireAPossiblySameInstallMarker() {
+        // An install stamp only disproves a match when both sides recorded one.
+        val directory = temporary.newFolder()
+        StartupStateStore(directory)
+            .begin(StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 0L))
+        val restarted = StartupStateStore(directory)
+        assertFalse(
+            restarted.markHealthy(
+                StartupAttempt(200L, 11, "N20261101", versionCode = 100L, installedSinceMs = 1_000L),
+            ),
+        )
+        assertTrue(restarted.pendingExists())
+
+        val second = temporary.newFolder()
+        StartupStateStore(second)
+            .begin(StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 1_000L))
+        val unstamped = StartupStateStore(second)
+        assertFalse(
+            unstamped.markHealthy(
+                StartupAttempt(200L, 11, "N20261101", versionCode = 100L, installedSinceMs = 0L),
+            ),
+        )
+        assertTrue(unstamped.pendingExists())
+    }
+
     @Test fun aHealthyLaunchRetiresAMarkerFromAnotherInstall() {
         val directory = temporary.newFolder()
         StartupStateStore(directory)

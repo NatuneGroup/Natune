@@ -16,12 +16,17 @@ internal data class StartupAttempt(
     val installedSinceMs: Long = 0L,
 ) {
     /**
-     * Build + install identity captured at marker write time. Every field must match, so a marker
-     * left by a replaced build or install is told apart from this one without trusting the clock.
+     * Build + install identity captured at marker write time. A field only proves a foreign install
+     * when both sides recorded one; an unknown stamp or version code can never disprove a match, so
+     * a possibly-same-install marker is never retired early by a background restart.
      */
-    fun isSameInstall(other: StartupAttempt): Boolean =
-        version == other.version && versionCode == other.versionCode &&
+    fun isSameInstall(other: StartupAttempt): Boolean {
+        if (version != other.version) return false
+        if (versionCode != UNKNOWN_VERSION_CODE && other.versionCode != UNKNOWN_VERSION_CODE &&
+            versionCode != other.versionCode) return false
+        return installedSinceMs == 0L || other.installedSinceMs == 0L ||
             installedSinceMs == other.installedSinceMs
+    }
 }
 internal data class SavedJavaCrash(val timestampMs: Long, val thread: String, val stack: String, val truncated: Boolean)
 internal data class CappedText(val text: String, val truncated: Boolean)
@@ -85,6 +90,7 @@ internal class StartupStateStore(private val directory: File) {
                     truncated = content.length >= MAX_JAVA_CHARS,
                     versionName = build.versionName,
                     versionCode = build.versionCode,
+                    installedSinceMs = build.installedSinceMs,
                 ),
             )
         }
