@@ -17,6 +17,7 @@ import androidx.compose.ui.viewinterop.UIKitInteropInteractionMode
 import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitViewController
 import kotlinx.coroutines.flow.StateFlow
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsCredits
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.ui.IosNativeLyrics
@@ -24,7 +25,12 @@ import moe.rukamori.archivetune.shared.ui.IosNativeLyricsViewFactory
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRenderRows
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationState
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSurfaceSettings
+import moe.rukamori.archivetune.shared.ui.lyrics.NativeLyricsCredits
 import moe.rukamori.archivetune.shared.ui.lyrics.NativeLyricsDocument
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.lyrics_auto_created
+import moe.rukamori.archivetune.shared.ui.resources.lyrics_written_by
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * The Enhanced lyric look drawn by the native SwiftUI view, hosted inside the player. The rows, readings, clock and
@@ -43,15 +49,32 @@ internal fun IosNativeLyricsSurface(
     onSeek: (Long) -> Unit,
     visible: Boolean,
     modifier: Modifier,
+    /** The document's credits, for the writers footer and the machine-made badges. */
+    credits: LyricsCredits? = null,
 ) {
     key(sessionKey, playback, romanization, factory) {
         val bridge = remember { IosNativeLyrics() }
         val presentation by romanization.presentation.collectAsState()
         val phonetics = if (presentation.sessionKey == sessionKey) presentation.phonetics else emptyList()
-        val rows = remember(lines, phonetics) { LyricsRenderRows.build(lines, phonetics, splitBackground = true) }
+        val rows = remember(lines, phonetics, settings.backgroundVocals) {
+            LyricsRenderRows.build(lines, phonetics, splitBackground = settings.backgroundVocals)
+        }
         val color = MaterialTheme.colorScheme.onSurface.toArgb()
-        val document = remember(sessionKey, rows, settings, color) {
-            NativeLyricsDocument.from(sessionKey, rows, settings, color)
+        val glow = MaterialTheme.colorScheme.primary.toArgb()
+        // The localized strings resolve here, in Compose; the native document carries the finished text.
+        val writers = credits?.songwriters?.takeIf { it.isNotEmpty() }?.joinToString(", ")
+        val writtenBy = writers?.let { stringResource(Res.string.lyrics_written_by, it) }
+        val autoCreated =
+            if (credits != null && (credits.translationAutoCreated || credits.transliterationAutoCreated)) {
+                stringResource(Res.string.lyrics_auto_created)
+            } else {
+                null
+            }
+        val nativeCredits = credits?.takeIf { !it.isEmpty }?.let {
+            NativeLyricsCredits(writtenBy, autoCreated, it.translationAutoCreated, it.transliterationAutoCreated)
+        }
+        val document = remember(sessionKey, rows, settings, color, glow, nativeCredits) {
+            NativeLyricsDocument.from(sessionKey, rows, settings, color, glow, nativeCredits)
         }
         val latestSeek by rememberUpdatedState(onSeek)
         SideEffect { bridge.present(document, rows, settings.syncOffsetMs, visible) { latestSeek(it) } }

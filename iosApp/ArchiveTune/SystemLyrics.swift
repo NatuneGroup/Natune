@@ -70,8 +70,33 @@ private enum SystemLyricsMetrics {
     static let horizontalPadding: CGFloat = 28
     static let verticalMargin: CGFloat = 160
     static let backgroundRatio: CGFloat = 0.7
+    static let backgroundAlpha: Double = 0.72
     static let readingRatio: CGFloat = 0.55
-    static let lift: CGFloat = 2
+    static let revealSeconds: Double = 0.6
+    static let activeScaleSeconds: Double = 0.1
+    static let depthSeconds: Double = 0.45
+    static let scrollSeconds: Double = 0.35
+    static let featherFraction: CGFloat = 0.2
+    static let featherMin: CGFloat = 4
+    static let featherMax: CGFloat = 28
+    static let glowAlpha: Double = 0.35
+    static let glowCorner: CGFloat = 8
+    static let emphasisLift: CGFloat = 2
+    static let emphasisScale: CGFloat = 0.10
+    static let emphasisStagger: Double = 2.5
+    static let interludeDotDiameter: CGFloat = 10
+    static let interludeDotGap: CGFloat = 6
+    static let interludeEnterMs: Int64 = 400
+    static let interludeExitMs: Int64 = 400
+    static let interludeBreathMs: Int64 = 2400
+    static let interludeSwellMs: Int64 = 1500
+    static let interludeIdleLight: Double = 0.25
+    static let autoCreatedMark = "✦ "
+
+    /// The soft edge the sweep carries across a word: a share of its width, clamped like the shared sweep.
+    static func feather(of width: CGFloat) -> CGFloat {
+        min(featherMax, max(featherMin, width * featherFraction))
+    }
 }
 
 @available(iOS 18.0, *)
@@ -81,7 +106,6 @@ private struct SystemLyricsList: View {
     let lyrics: IosNativeLyrics
     let reduceMotion: Bool
 
-    @ScaledMetric(relativeTo: .largeTitle) private var mainSize: CGFloat = 30
     @State private var interacting = false
     @State private var following = true
     @State private var latestPrimary: Int32 = -1
@@ -90,24 +114,32 @@ private struct SystemLyricsList: View {
     var body: some View {
         let primary = frame.primaryLine
         let color = Color(argb: document.colorArgb)
+        let glow = Color(argb: document.glowArgb)
         let idleAlpha = document.synced ? Double(document.idleAlpha) : 1
+        let mainSize = CGFloat(document.mainSizeSp)
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(spacing: SystemLyricsMetrics.rowSpacing) {
                     ForEach(document.lines, id: \.index) { line in
                         let active = frame.isLineActive(index: line.index)
-                        let depth = (document.depthEffects && !interacting)
+                        // A listener reading ahead sees every row sharp until the list follows the playhead again.
+                        let depth = (document.depthEffects && following && !interacting)
                             ? frame.depth(index: line.index, reduceMotion: reduceMotion) : nil
                         SystemLyricsRow(
                             line: line,
                             active: active,
-                            positionMs: active ? frame.positionMs : -1,
+                            positionMs: frame.positionMs,
                             scale: CGFloat(depth?.scale ?? 1),
                             blur: CGFloat(depth?.blurPoints ?? 0),
                             alpha: Double(depth?.alpha ?? 1),
+                            stagger: Double(depth?.staggerMs ?? 0) / 1_000,
+                            popScale: CGFloat(document.activeScale),
                             color: color,
+                            glow: glow,
                             idleAlpha: idleAlpha,
                             mainSize: mainSize,
+                            minSweepMs: document.minSweepMs,
+                            autoCreatedLabel: document.credits?.autoCreatedLabel,
                             reduceMotion: reduceMotion
                         )
                         .equatable()
@@ -118,6 +150,23 @@ private struct SystemLyricsList: View {
                                 ShareLink(item: shareText)
                             }
                         }
+                    }
+                    if let credits = document.credits,
+                       credits.writtenBy != nil || credits.autoCreatedLabel != nil {
+                        VStack(spacing: 4) {
+                            if let writtenBy = credits.writtenBy {
+                                Text(writtenBy)
+                            }
+                            if let label = credits.autoCreatedLabel {
+                                Text(SystemLyricsMetrics.autoCreatedMark + label)
+                                    .foregroundStyle(color.opacity(idleAlpha * 0.8))
+                            }
+                        }
+                        .font(.system(size: mainSize * SystemLyricsMetrics.readingRatio, weight: .medium))
+                        .foregroundStyle(color.opacity(idleAlpha))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
                     }
                 }
                 .padding(.horizontal, SystemLyricsMetrics.horizontalPadding)
@@ -181,7 +230,8 @@ private struct SystemLyricsList: View {
     private func scroll(_ proxy: ScrollViewProxy, to index: Int32, animated: Bool) {
         guard index >= 0 else { return }
         if animated {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.86)) {
+            // The shared Enhanced follow eases a line change to the anchor on one fixed bezier.
+            withAnimation(.timingCurve(0.42, 0, 0.58, 1, duration: SystemLyricsMetrics.scrollSeconds)) {
                 proxy.scrollTo(index, anchor: SystemLyricsMetrics.anchor)
             }
         } else {
@@ -198,22 +248,43 @@ private struct SystemLyricsRow: View, Equatable {
     let scale: CGFloat
     let blur: CGFloat
     let alpha: Double
+    let stagger: Double
+    let popScale: CGFloat
     let color: Color
+    let glow: Color
     let idleAlpha: Double
     let mainSize: CGFloat
+    let minSweepMs: Int64
+    let autoCreatedLabel: String?
     let reduceMotion: Bool
+
+    /// The reading and translation slide in the first time their row is sung; a republished text appears in place.
+    @State private var revealed = false
 
     static func == (lhs: SystemLyricsRow, rhs: SystemLyricsRow) -> Bool {
         lhs.line === rhs.line && lhs.active == rhs.active && lhs.positionMs == rhs.positionMs &&
-            lhs.scale == rhs.scale && lhs.blur == rhs.blur && lhs.alpha == rhs.alpha && lhs.color == rhs.color &&
-            lhs.idleAlpha == rhs.idleAlpha && lhs.mainSize == rhs.mainSize && lhs.reduceMotion == rhs.reduceMotion
+            lhs.scale == rhs.scale && lhs.blur == rhs.blur && lhs.alpha == rhs.alpha && lhs.stagger == rhs.stagger &&
+            lhs.popScale == rhs.popScale && lhs.color == rhs.color && lhs.glow == rhs.glow &&
+            lhs.idleAlpha == rhs.idleAlpha && lhs.mainSize == rhs.mainSize && lhs.minSweepMs == rhs.minSweepMs &&
+            lhs.autoCreatedLabel == rhs.autoCreatedLabel && lhs.reduceMotion == rhs.reduceMotion
     }
 
     /// A second voice sits on the far side, and right-to-left text reads from the right.
     private var trailing: Bool { line.secondVoice != line.rightToLeft }
+    private var edgeAnchor: UnitPoint { trailing ? .trailing : .leading }
+    private var sublineFont: Font { .system(size: mainSize * SystemLyricsMetrics.readingRatio, weight: .medium) }
 
     var body: some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 6) {
+            if line.interludeStartMs >= 0 {
+                LyricInterludeDots(
+                    startMs: line.interludeStartMs,
+                    endMs: line.interludeEndMs,
+                    positionMs: positionMs,
+                    color: color,
+                    reduceMotion: reduceMotion
+                )
+            }
             LyricText(
                 text: line.text,
                 spans: line.spans,
@@ -221,45 +292,157 @@ private struct SystemLyricsRow: View, Equatable {
                 positionMs: positionMs,
                 font: .system(size: mainSize, weight: .bold),
                 color: color,
+                glow: glow,
                 idleAlpha: idleAlpha,
                 rightToLeft: line.rightToLeft,
-                lift: reduceMotion ? 0 : SystemLyricsMetrics.lift
+                reduceMotion: reduceMotion,
+                minSweepMs: minSweepMs
             )
+            // The shared look shows a backing line lit with the row, not swept word by word.
             if let background = line.background {
-                LyricText(
-                    text: background,
-                    spans: line.backgroundSpans,
-                    active: active,
-                    positionMs: positionMs,
-                    font: .system(size: mainSize * SystemLyricsMetrics.backgroundRatio, weight: .semibold),
-                    color: color.opacity(0.85),
-                    idleAlpha: idleAlpha,
-                    rightToLeft: line.rightToLeft,
-                    lift: 0
-                )
+                Text(background)
+                    .font(.system(size: mainSize * SystemLyricsMetrics.backgroundRatio, weight: .semibold))
+                    .foregroundStyle(color.opacity(active ? SystemLyricsMetrics.backgroundAlpha : idleAlpha))
             }
-            if let reading = line.phonetic {
-                Text(reading)
-                    .font(.system(size: mainSize * SystemLyricsMetrics.readingRatio, weight: .medium))
-                    .foregroundStyle(color.opacity(active ? 0.8 : idleAlpha * 0.8))
-            }
-            if let translation = line.translation {
-                Text(translation)
-                    .font(.system(size: mainSize * SystemLyricsMetrics.readingRatio, weight: .medium))
-                    .foregroundStyle(color.opacity(active ? 0.75 : idleAlpha * 0.75))
+            if revealed {
+                if let reading = line.phonetic {
+                    LyricSubline(
+                        text: reading,
+                        autoCreated: line.phoneticAutoCreated,
+                        autoCreatedLabel: autoCreatedLabel,
+                        font: sublineFont,
+                        color: color.opacity(active ? 0.8 : idleAlpha * 0.8)
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if let translation = line.translation {
+                    LyricSubline(
+                        text: translation,
+                        autoCreated: line.translationAutoCreated,
+                        autoCreatedLabel: autoCreatedLabel,
+                        font: sublineFont,
+                        color: color.opacity(active ? 0.75 : idleAlpha * 0.75)
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
         }
         .multilineTextAlignment(trailing ? .trailing : .leading)
         .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
-        .scaleEffect(scale, anchor: trailing ? .trailing : .leading)
+        .shadow(color: .black.opacity(0.45), radius: 3, y: 1.5)
+        .animation(reduceMotion ? nil : .easeInOut(duration: SystemLyricsMetrics.revealSeconds), value: revealed)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: active)
+        .scaleEffect(active ? popScale : 1, anchor: edgeAnchor)
+        .animation(reduceMotion ? nil : .easeOut(duration: SystemLyricsMetrics.activeScaleSeconds), value: active)
+        .scaleEffect(scale, anchor: edgeAnchor)
         .blur(radius: blur)
         .opacity(alpha)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.45), value: scale)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.45), value: blur)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: active)
+        .animation(reduceMotion ? nil : .smooth(duration: SystemLyricsMetrics.depthSeconds).delay(stagger), value: scale)
+        .animation(reduceMotion ? nil : .smooth(duration: SystemLyricsMetrics.depthSeconds).delay(stagger), value: blur)
+        .animation(reduceMotion ? nil : .smooth(duration: SystemLyricsMetrics.depthSeconds).delay(stagger), value: alpha)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(line.seekable ? .isButton : [])
+        .onAppear {
+            // A row that first composes while already sung shows its sublines at once, like the shared row.
+            if active && !revealed {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { revealed = true }
+            }
+        }
+        .onChange(of: active) { _, now in
+            if now && !revealed {
+                if reduceMotion {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { revealed = true }
+                } else {
+                    revealed = true
+                }
+            }
+        }
+    }
+}
+
+/// One reading or translation under the sung line, with the machine-made mark when the document badges it.
+@available(iOS 18.0, *)
+private struct LyricSubline: View {
+    let text: String
+    let autoCreated: Bool
+    let autoCreatedLabel: String?
+    let font: Font
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if autoCreated {
+                Text(SystemLyricsMetrics.autoCreatedMark)
+                    .accessibilityLabel(autoCreatedLabel ?? "")
+            }
+            Text(text)
+        }
+        .font(font)
+        .foregroundStyle(color)
+    }
+}
+
+/// The three dots of a long instrumental break: they light in turn, breathe slowly and swell as the
+/// next line arrives — the same clock-driven motion the shared Enhanced look draws, in points.
+@available(iOS 18.0, *)
+private struct LyricInterludeDots: View {
+    let startMs: Int64
+    let endMs: Int64
+    let positionMs: Int64
+    let color: Color
+    let reduceMotion: Bool
+
+    private var visibility: Double {
+        if positionMs < startMs || positionMs >= endMs { return 0 }
+        let enter = Double(positionMs - startMs) / Double(SystemLyricsMetrics.interludeEnterMs)
+        let exit = Double(endMs - positionMs) / Double(SystemLyricsMetrics.interludeExitMs)
+        return min(enter, exit, 1)
+    }
+
+    private var progress: Double {
+        min(max(Double(positionMs - startMs) / Double(max(1, endMs - startMs)), 0), 1)
+    }
+
+    /// The slow breath and the anticipation swell over the break's last stretch; the bigger one wins.
+    private var swell: Double {
+        if reduceMotion { return 1 }
+        let phase = Double(positionMs % SystemLyricsMetrics.interludeBreathMs) /
+            Double(SystemLyricsMetrics.interludeBreathMs)
+        let breath = 0.92 + 0.16 * (0.5 - 0.5 * cos(2 * .pi * phase))
+        var end = 0.0
+        let remaining = endMs - positionMs
+        if remaining > 0 && remaining <= SystemLyricsMetrics.interludeSwellMs {
+            let through = 1 - Double(remaining) / Double(SystemLyricsMetrics.interludeSwellMs)
+            end = 1.1 + 0.3 * through
+        }
+        return max(breath, end)
+    }
+
+    private func light(_ index: Int) -> Double {
+        let turn = progress * 3 - Double(index)
+        let share = reduceMotion ? (turn > 0 ? 1 : 0) : min(max(turn, 0), 1)
+        return SystemLyricsMetrics.interludeIdleLight + (1 - SystemLyricsMetrics.interludeIdleLight) * share
+    }
+
+    var body: some View {
+        Canvas { context, _ in
+            let visibility = self.visibility
+            guard visibility > 0 else { return }
+            let swell = self.swell
+            let radius = SystemLyricsMetrics.interludeDotDiameter / 2 * swell
+            for index in 0..<3 {
+                let centreX = SystemLyricsMetrics.interludeDotDiameter / 2 +
+                    CGFloat(index) * (SystemLyricsMetrics.interludeDotDiameter + SystemLyricsMetrics.interludeDotGap)
+                let rect = CGRect(x: centreX - radius, y: 7 - radius, width: radius * 2, height: radius * 2)
+                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(visibility * light(index))))
+            }
+        }
+        .frame(width: 42, height: 14)
     }
 }
 
@@ -273,9 +456,11 @@ private struct LyricText: View {
     let positionMs: Int64
     let font: Font
     let color: Color
+    let glow: Color
     let idleAlpha: Double
     let rightToLeft: Bool
-    let lift: CGFloat
+    let reduceMotion: Bool
+    let minSweepMs: Int64
 
     var body: some View {
         if active && !spans.isEmpty {
@@ -290,95 +475,223 @@ private struct LyricText: View {
         }
     }
 
-    /// Each word carries its index, so the renderer can find its timing among the laid-out runs.
+    /// Each word carries its index so the renderer can find its timing among the laid-out runs. A word that earned
+    /// the emphasis ripple arrives already cut into its cluster letters, between an optional prefix and the tail.
     private var sweptText: Text {
         var result = Text(verbatim: "")
         for (index, span) in spans.enumerated() {
-            result = result + Text(verbatim: span.text).customAttribute(LyricSpanAttribute(index: index))
+            if let letters = span.letters, !letters.isEmpty {
+                if !span.lettersPrefix.isEmpty {
+                    result = result + Text(verbatim: span.lettersPrefix)
+                        .customAttribute(LyricSpanAttribute(index: index, letter: -1))
+                }
+                for (letter, letterText) in letters.enumerated() {
+                    result = result + Text(verbatim: letterText)
+                        .customAttribute(LyricSpanAttribute(index: index, letter: letter))
+                }
+                let covered = span.lettersPrefix.count + letters.joined().count
+                if covered < span.text.count {
+                    result = result + Text(verbatim: String(span.text.dropFirst(covered)))
+                        .customAttribute(LyricSpanAttribute(index: index, letter: -1))
+                }
+            } else {
+                result = result + Text(verbatim: span.text)
+                    .customAttribute(LyricSpanAttribute(index: index, letter: -1))
+            }
         }
         return result
     }
 
     private var renderer: LyricSweepRenderer {
         LyricSweepRenderer(
-            starts: spans.map { $0.startMs },
-            ends: spans.map { $0.endMs },
+            spans: spans,
             positionMs: positionMs,
             idleAlpha: idleAlpha,
             rightToLeft: rightToLeft,
-            lift: lift
+            reduceMotion: reduceMotion,
+            minSweepMs: minSweepMs,
+            glow: glow
         )
     }
 }
 
 @available(iOS 18.0, *)
 private struct LyricSpanAttribute: TextAttribute {
+    /// The span the run belongs to, and its letter inside the span's emphasized word, -1 for a plain run.
     let index: Int
+    let letter: Int
 }
 
-/// Draws each word dim, then the sung part of it lit, with a soft edge that follows the voice. A word rises a little
-/// as it is sung, which Reduce Motion turns off.
+/// Draws each word dim, then the sung part of it lit, with a soft edge that follows the voice. A word that earned
+/// the shared emphasis has its letters cut out and drawn one at a time, rippling up as the edge crosses them.
 @available(iOS 18.0, *)
 private struct LyricSweepRenderer: TextRenderer {
-    let starts: [Int64]
-    let ends: [Int64]
+    let spans: [NativeLyricsSpan]
     let positionMs: Int64
     let idleAlpha: Double
     let rightToLeft: Bool
-    let lift: CGFloat
+    let reduceMotion: Bool
+    let minSweepMs: Int64
+    let glow: Color
 
-    private static let featherPoints: CGFloat = 14
+    /// One letter run of an emphasized word and the visual line it sits on.
+    private struct LetterSlice {
+        let layoutLine: Int
+        let rect: CGRect
+    }
 
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        // Group the letter runs by word so the sweep edge can cross each emphasized word as one region.
+        // A word whose letters land on two visual lines keeps the plain sweep, as the shared sweep does.
+        var slices: [Int: [LetterSlice]] = [:]
+        var layoutLine = 0
         for line in layout {
             for run in line {
-                guard let span = run[LyricSpanAttribute.self] else {
+                if let span = run[LyricSpanAttribute.self], span.letter >= 0 {
+                    slices[span.index, default: []].append(
+                        LetterSlice(layoutLine: layoutLine, rect: run.typographicBounds.rect)
+                    )
+                }
+            }
+            layoutLine += 1
+        }
+        let wrapped = Set(slices.filter { Set($0.value.map(\.layoutLine)).count > 1 }.keys)
+        var unions: [Int: CGRect] = [:]
+        for (index, group) in slices {
+            unions[index] = group.dropFirst().reduce(group[0].rect) { $0.union($1.rect) }
+        }
+        for line in layout {
+            for run in line {
+                guard let span = run[LyricSpanAttribute.self], span.index < spans.count else {
                     context.draw(run)
                     continue
                 }
-                let progress = fraction(span.index)
-                var base = context
-                base.translateBy(x: 0, y: -lift * progress)
-                var dim = base
-                dim.opacity = idleAlpha
-                dim.draw(run)
-                guard progress > 0 else { continue }
-                let bounds = run.typographicBounds.rect.insetBy(dx: 0, dy: -lift - 2)
-                let feather = min(Self.featherPoints, bounds.width * 0.4)
-                let reach = (bounds.width + feather) * progress
-                var lit = base
-                lit.clipToLayer { mask in
-                    let solid = max(0, reach - feather)
-                    let solidRect = rightToLeft
-                        ? CGRect(x: bounds.maxX - solid, y: bounds.minY, width: solid, height: bounds.height)
-                        : CGRect(x: bounds.minX, y: bounds.minY, width: solid, height: bounds.height)
-                    mask.fill(Path(solidRect), with: .color(.black))
-                    let edgeStart = rightToLeft ? bounds.maxX - solid : bounds.minX + solid
-                    let edgeEnd = rightToLeft ? edgeStart - feather : edgeStart + feather
-                    let edgeRect = CGRect(
-                        x: min(edgeStart, edgeEnd), y: bounds.minY, width: feather, height: bounds.height
+                let word = spans[span.index]
+                if span.letter >= 0,
+                   let group = slices[span.index],
+                   let union = unions[span.index],
+                   !wrapped.contains(span.index) {
+                    drawEmphasizedLetter(
+                        run: run, word: word, group: group, union: union, context: &context
                     )
-                    mask.fill(
-                        Path(edgeRect),
-                        with: .linearGradient(
-                            Gradient(colors: [.black, .clear]),
-                            startPoint: CGPoint(x: edgeStart, y: bounds.midY),
-                            endPoint: CGPoint(x: edgeEnd, y: bounds.midY)
-                        )
-                    )
+                } else {
+                    let bounds = span.letter >= 0 ? unions[span.index] : nil
+                    drawPlainRun(run: run, word: word, bounds: bounds, context: &context)
                 }
-                lit.draw(run)
             }
         }
     }
 
-    private func fraction(_ index: Int) -> CGFloat {
-        guard index < starts.count, index < ends.count else { return 0 }
-        let start = starts[index]
-        let end = ends[index]
-        if positionMs <= start { return 0 }
-        if positionMs >= end { return 1 }
-        return CGFloat(Double(positionMs - start) / Double(max(1, end - start)))
+    /// The plain sweep for one run: dim base, then bright clipped to the sweep edge with its feathered fade.
+    /// [bounds] is the run's own box, or the word's union box for letters that lost their emphasis to wrapping.
+    private func drawPlainRun(run: Text.Run, word: NativeLyricsSpan, bounds: CGRect?, in context: inout GraphicsContext) {
+        let progress = fraction(of: word)
+        var dim = context
+        dim.opacity = idleAlpha
+        dim.draw(run)
+        guard progress > 0 else { return }
+        let box = (bounds ?? run.typographicBounds.rect).insetBy(dx: 0, dy: -2)
+        let feather = SystemLyricsMetrics.feather(of: box.width)
+        let edge = rightToLeft ? box.maxX - box.width * progress : box.minX + box.width * progress
+        var lit = context
+        lit.clipToLayer { mask in
+            mask.fill(
+                Path(box),
+                with: .linearGradient(
+                    Gradient(colors: rightToLeft ? [.clear, .black] : [.black, .clear]),
+                    startPoint: CGPoint(x: edge - feather, y: box.midY),
+                    endPoint: CGPoint(x: edge + feather, y: box.midY)
+                )
+            )
+        }
+        lit.draw(run)
+    }
+
+    /// One letter of an emphasized word: it draws dim and bright like the plain sweep, but clipped to its own
+    /// window and riding the staggered ripple, with a glow behind it while it bumps.
+    private func drawEmphasizedLetter(
+        run: Text.Run,
+        word: NativeLyricsSpan,
+        group: [LetterSlice],
+        union: CGRect,
+        in context: inout GraphicsContext
+    ) {
+        let progress = fraction(of: word)
+        let width = max(0.5, union.width)
+        let edge = rightToLeft ? union.maxX - width * progress : union.minX + width * progress
+        let feather = SystemLyricsMetrics.feather(of: width)
+        let duration = max(1, word.endMs - word.startMs)
+        let index = run[LyricSpanAttribute.self]?.letter ?? 0
+        let bump = ripple(startMs: word.startMs, durationMs: duration, count: group.count, index: index)
+        let rect = run.typographicBounds.rect
+        let lift = SystemLyricsMetrics.emphasisLift * bump
+        let scale = 1 + SystemLyricsMetrics.emphasisScale * bump
+        let centreX = rect.midX
+        let centreY = union.midY
+        let pad = rect.width * 0.5 + SystemLyricsMetrics.emphasisLift + 4
+        if bump > 0 {
+            var glowLayer = context
+            glowLayer.fill(
+                Path(roundedRect: CGRect(
+                    x: rect.minX - pad * 0.3,
+                    y: union.minY - lift - 2,
+                    width: rect.width + pad * 0.6,
+                    height: union.height + 4
+                ), cornerRadius: SystemLyricsMetrics.glowCorner),
+                with: .color(glow.opacity(SystemLyricsMetrics.glowAlpha * bump))
+            )
+        }
+        let window = CGRect(
+            x: rect.minX - pad,
+            y: union.minY - lift - pad,
+            width: rect.width + pad * 2,
+            height: union.height + pad * 2
+        )
+        var moved = context
+        moved.clip(to: Path(window))
+        moved.translateBy(x: 0, y: -lift)
+        moved.translateBy(x: centreX, y: centreY)
+        moved.scaleBy(x: scale, y: scale)
+        moved.translateBy(x: -centreX, y: -centreY)
+        var dim = moved
+        dim.opacity = idleAlpha
+        dim.draw(run)
+        guard progress > 0 else { return }
+        // The line's edge mapped into the letter's scaled frame: a canvas x lands at cx + (x - cx) / scale.
+        let edgeLocal = centreX + (edge - centreX) / scale
+        let featherLocal = feather / scale
+        var lit = moved
+        lit.clipToLayer { mask in
+            mask.fill(
+                Path(window),
+                with: .linearGradient(
+                    Gradient(colors: rightToLeft ? [.clear, .black] : [.black, .clear]),
+                    startPoint: CGPoint(x: edgeLocal - featherLocal, y: centreY),
+                    endPoint: CGPoint(x: edgeLocal + featherLocal, y: centreY)
+                )
+            )
+        }
+        lit.draw(run)
+    }
+
+    /// The share of [word] that is sung, from 0 to 1. Reduced motion jumps between the two. A very short
+    /// word still travels across its glyphs, so its sweep runs at least the shared minimum sweep.
+    private func fraction(of word: NativeLyricsSpan) -> CGFloat {
+        if reduceMotion { return positionMs >= word.startMs ? 1 : 0 }
+        if positionMs <= word.startMs { return 0 }
+        let duration = Double(max(word.endMs - word.startMs, minSweepMs))
+        return CGFloat(min(max(Double(positionMs - word.startMs) / duration, 0), 1))
+    }
+
+    /// How much letter [index] of an emphasized word is bumping at the position, a staggered sine bump that
+    /// travels through the word — the same wave the shared sweep reads, so a seek lands on the same frame.
+    private func ripple(startMs: Int64, durationMs: Int64, count: Int, index: Int) -> CGFloat {
+        guard count > 0, index >= 0, index < count else { return 0 }
+        let duration = Double(max(1, durationMs))
+        let stagger = duration / SystemLyricsMetrics.emphasisStagger / Double(count)
+        let local = Double(positionMs - startMs) - stagger * Double(index)
+        guard local > 0, local < duration else { return 0 }
+        return CGFloat(sin(.pi * local / duration))
     }
 }
 
