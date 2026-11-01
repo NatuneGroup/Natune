@@ -10914,11 +10914,9 @@ class MusicService :
         }
         val mediaId = dataSpec.key ?: return dataSpec
         val lowDataModeActive = isLowDataModeActive()
-        // The rendition this resolution asks for; a degraded LOW rendition's bytes live in their own cache slot.
         val youtubeAudioQuality = recoveryRetry.audioQuality(mediaId, lowDataModeActive, audioQuality)
         val wantLow = youtubeAudioQuality == AudioQuality.LOW
-        // One settings snapshot for this whole resolution: the cache gates, the chain, the
-        // pins and the terminal YouTube gate cannot disagree with each other or the settings UI.
+        // One settings snapshot for this whole resolution: every gate below reads the same order and toggles.
         val prefs = sourcePrefsSnapshot()
         val authenticityRejectedSources = rejectedPlaybackSources(mediaId)
         val storedFormat =
@@ -10954,6 +10952,8 @@ class MusicService :
                 mediaId = mediaId,
                 includePlayerCache = allowPlayerCacheShortCircuit,
                 youtubeSampleRateHz = storedFormat?.sampleRate,
+                youtubeItag = storedFormat?.itag,
+                formatContentLength = storedFormat?.contentLength,
                 prefs = prefs,
             )?.let { cachedDataSpec ->
                 Timber.tag("PlaybackDiagnostics").d(
@@ -10981,7 +10981,6 @@ class MusicService :
             AudioSourceType.YOUTUBE !in authenticityRejectedSources &&
             requiredCachedLength != null
         ) {
-            // The bare mediaId is a legacy slot: only a fully cached range is ever served from it.
             val isFullyCached =
                 downloadCache.isCached(mediaId, dataSpec.position, requiredCachedLength) ||
                     (
@@ -10994,16 +10993,13 @@ class MusicService :
             }
         }
 
-        // Multi-source: attempt to resolve a lossless stream (Tidal) before YouTube.
         resolveMultiSourceDataSpec(dataSpec, mediaId, lowDataModeActive, prefs = prefs)?.let { sourceDataSpec ->
             scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
             return sourceDataSpec
         }
 
-        // No lossless source matched. YouTube is the terminal fallback — and it is a toggleable
-        // source like the others, so a user who turned it off gets the standard no-stream failure
-        // here rather than a YouTube stream they explicitly declined. Everything below this gate
-        // is YouTube resolution (cached URL short-circuit or a fresh player response).
+        // No lossless source matched. YouTube is the terminal fallback — toggleable like the
+        // rest, so an off switch gets the standard no-stream failure here.
         if (AudioSourceType.YOUTUBE !in prefs.enabled || AudioSourceType.YOUTUBE in authenticityRejectedSources) {
             Timber.tag("PlaybackDiagnostics").w(
                 "Terminal source unavailable provider=youtube enabled=%s previouslyRejected=%s",
@@ -11027,7 +11023,6 @@ class MusicService :
         val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
         playbackUrlCache[mediaId]
             ?.takeUnless { lowDataModeActive }
-            // A cached URL whose stored rendition class is not the requested one is rejected.
             ?.takeIf { it.matchesRendition(wantLow) && it.isValidFor(authFingerprint, minimumRemainingMs = YTPlayerUtils.STREAM_URL_EXPIRY_SAFETY_MS) }
             ?.let {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
@@ -11264,17 +11259,19 @@ class MusicService :
         mediaId: String,
         includePlayerCache: Boolean = true,
         youtubeSampleRateHz: Int? = null,
+        youtubeItag: Int? = null,
+        formatContentLength: Long? = null,
         prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
     ): DataSpec? {
-        // Find the first key (enabled sources in the user's own preference order, YouTube's
-        // bare key last and only while YouTube is enabled — PlaybackSourceChain.cacheKeyOrder;
-        // resolved YouTube fetches key their bytes "<mediaId>#i<itag>" instead) that has the
+        // Find the first key (enabled sources in the user's own preference order, then the
+        // itag-scoped and legacy YouTube slots while it is enabled — cacheKeyOrder) that has the
         // requested byte range fully cached. Returning the DataSpec with the matching key is
         // critical — without it the CacheDataSource would look up the bytes under the bare
         // mediaId and miss the lossless FLAC bytes cached under "qobuz:$mediaId" / "tidal:$mediaId".
         // A disabled source's key is left out entirely: neither its player cache nor its
         // persistent downloads are served while the source is switched off.
-        val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId)
+        val itagKey = PlaybackSourceChain.itagCacheKey(mediaId, youtubeItag)
+        val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId, youtubeItag)
         val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         val transportRejectedSources = externalStreamRecovery.rejectedSources(mediaId) +
             listOfNotNull(externalStreamRecovery.refreshSource(mediaId))
@@ -11299,7 +11296,10 @@ class MusicService :
                     resolveCachedReadWindow(
                         position = dataSpec.position,
                         requestedLength = dataSpec.length,
-                        knownContentLength = if (dataSpec.length >= 0L) null else recordedLength,
+                        knownContentLength =
+                            if (dataSpec.length >= 0L) null
+                            else if (key == itagKey) PlaybackSourceChain.itagCoverageLength(recordedLength, formatContentLength)
+                            else recordedLength,
                     ) ?: return@firstNotNullOfOrNull null
                 val cachedLength =
                     getContinuousCachedLengthForKey(
