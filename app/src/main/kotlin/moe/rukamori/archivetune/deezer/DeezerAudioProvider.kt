@@ -706,7 +706,7 @@ object DeezerAudioProvider {
      */
     private fun JSONObject.isPreviewMedia(): Boolean =
         optBoolean("sample", false) || optBoolean("preview", false) ||
-            textOrNull("type")?.lowercase() in setOf("preview", "sample") ||
+            textOrNull("type")?.lowercase()?.let { it in setOf("preview", "sample") } == true ||
             textOrNull("assetPresentation").equals("PREVIEW", ignoreCase = true) ||
             textOrNull("trackPresentation").equals("PREVIEW", ignoreCase = true) ||
             optJSONObject("data")?.isPreviewMedia() == true
