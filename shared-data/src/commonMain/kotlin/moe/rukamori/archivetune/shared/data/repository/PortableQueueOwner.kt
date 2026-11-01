@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.repository
 
 import kotlin.random.Random
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -25,6 +26,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
 import moe.rukamori.archivetune.shared.data.persistence.AlbumCompletionIndex
 import moe.rukamori.archivetune.shared.data.repository.QueueStreamRecovery.Prepared
+import moe.rukamori.archivetune.shared.domain.persistence.PositionRestorePolicy
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
@@ -108,6 +110,8 @@ class PortableQueueOwner(
     /** Durable host preference changes also cancel an in-flight append when the queue UI is closed. */
     autoLoadMoreChanges: Flow<Boolean> = emptyFlow(),
     monotonicTimeMs: () -> Long = queueMonotonicClock(),
+    /** Wall clock for checkpoint stamps; the monotonic clock above must not measure wall-time ages. */
+    private val wallTimeMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     /** The wall clock for locator expiresAtEpochMs: an epoch instant, never the monotonic clock's ticks. */
     epochNowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : TypedQueueOwnerPort, QueueEditingCommands {
@@ -261,7 +265,7 @@ class PortableQueueOwner(
         // The hidden-content rules of `Queue.Status.filterPlaybackContent` apply to every queue load.
         loaded = loaded.filterPlaybackContent()
         if (loaded.isEmpty()) throw IncompleteFinitePlaylistException("Collection returned no songs")
-        requireUnique(loaded)
+        QueueEditPolicy.requireUnique(loaded)
 
         val startIndex = startIndexOf(loaded, request.start)
         val order: List<Int> = if (request.shuffle) {
@@ -298,7 +302,7 @@ class PortableQueueOwner(
 
     override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) {
         requireInside()
-        requireUnique(entries)
+        QueueEditPolicy.requireUnique(entries)
         val start = entries.firstOrNull { it.occurrenceId == startOccurrenceId }
             ?: throw IllegalArgumentException("Start occurrence is not in the replacement queue")
         val playRequest = requestFor(start)
@@ -345,7 +349,7 @@ class PortableQueueOwner(
                 return 0
             }
         }
-        requireNewOccurrences(queue.entries, batch)
+        QueueEditPolicy.requireNewOccurrences(queue.entries, batch)
         val currentIndex = queue.currentOccurrenceId?.let { id ->
             queue.entries.indexOfFirst { it.occurrenceId == id }.takeIf { it >= 0 }
         }
@@ -356,7 +360,7 @@ class PortableQueueOwner(
             itemCount = queue.entries.size,
             currentIndex = currentIndex,
             shuffleEnabled = queue.shuffleEnabled,
-            upcoming = { upcomingKinds(queue) },
+            upcoming = { UserQueuePolicy.upcomingKinds(queue) },
         ) ?: return 0
 
         val newIds = batch.map { it.occurrenceId }
@@ -605,7 +609,7 @@ class PortableQueueOwner(
         } else {
             0L
         }
-        return QueueCheckpoint(queue, position)
+        return QueueCheckpoint(queue, position, savedAtEpochMs = wallTimeMs())
     }
 
     /** Publishes the saved queue with its saved revision, then loads its current song paused at the saved position. */
@@ -624,7 +628,18 @@ class PortableQueueOwner(
             forgetHandoff()
             player.stop()
         } else {
-            startPrepared(playRequest, checkpoint.positionMs, playWhenReady = false)
+            // The position belongs to the restored current item; a stamp older than the resume
+            // window (or an unstamped legacy checkpoint) restarts it from zero.
+            val currentItemId = queue.entries.firstOrNull { it.occurrenceId == current }?.item?.ref?.id
+            val positionMs =
+                PositionRestorePolicy.positionMs(
+                    savedItemId = currentItemId,
+                    restoredItemId = currentItemId,
+                    savedAtEpochMs = checkpoint.savedAtEpochMs,
+                    positionMs = checkpoint.positionMs,
+                    nowEpochMs = wallTimeMs(),
+                )
+            startPrepared(playRequest, positionMs, playWhenReady = false)
         }
     }
 
@@ -976,24 +991,4 @@ class PortableQueueOwner(
 
     private fun requireInside() = check(inside) { "Queue changes must run inside withQueueAccess" }
 
-    private fun upcomingKinds(queue: QueueState): List<UserQueuedKind> {
-        val current = queue.currentOccurrenceId ?: return emptyList()
-        val position = queue.playOrder.indexOf(current)
-        if (position < 0) return emptyList()
-        return queue.playOrder.drop(position + 1)
-            .takeWhile { queue.manualKinds.containsKey(it) }
-            .map { queue.manualKinds.getValue(it) }
-    }
-
-    private fun requireUnique(entries: List<ContentOccurrence>) {
-        require(entries.mapTo(HashSet()) { it.occurrenceId }.size == entries.size) {
-            "Queue occurrence ids must be unique"
-        }
-    }
-
-    private fun requireNewOccurrences(existing: List<ContentOccurrence>, incoming: List<ContentOccurrence>) {
-        requireUnique(incoming)
-        val known = existing.mapTo(HashSet()) { it.occurrenceId }
-        require(incoming.none { it.occurrenceId in known }) { "Occurrence is already queued" }
-    }
 }

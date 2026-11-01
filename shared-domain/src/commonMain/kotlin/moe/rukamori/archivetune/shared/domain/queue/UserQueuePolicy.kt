@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.domain.queue
 
+import moe.rukamori.archivetune.shared.domain.repository.QueueState
+
 /**
  * The manual action that put a song in the queue. Hand-queued songs take priority over the radio or
  * autoplay tail, so the kind of each one decides where the next manual song goes.
@@ -31,6 +33,19 @@ data class UserQueuePlacement(
 )
 
 object UserQueuePolicy {
+    /**
+     * The kind of each hand-queued song right after the current one, in play order — the [upcoming]
+     * list [skipCount] reads. The block ends at the first song nobody queued by hand.
+     */
+    fun upcomingKinds(queue: QueueState): List<UserQueuedKind> {
+        val current = queue.currentOccurrenceId ?: return emptyList()
+        val position = queue.playOrder.indexOf(current)
+        if (position < 0) return emptyList()
+        return queue.playOrder.drop(position + 1)
+            .takeWhile { queue.manualKinds.containsKey(it) }
+            .map { queue.manualKinds.getValue(it) }
+    }
+
     /**
      * How many of the upcoming songs, in play order, a new [adding] song goes after.
      *
