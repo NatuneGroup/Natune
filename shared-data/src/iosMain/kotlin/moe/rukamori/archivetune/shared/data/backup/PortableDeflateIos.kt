@@ -31,7 +31,7 @@ import platform.zlib.z_stream
  * carry, where the GZIP adapter uses 31 (15 + 16) for its wrapper.
  */
 internal actual fun portableDeflate(data: ByteArray): ByteArray {
-    if (data.isEmpty()) return data
+    if (data.isEmpty()) return EMPTY_RAW_STREAM
     return memScoped {
         val stream = alloc<z_stream>()
         memset(stream.ptr, 0, sizeOf<z_stream>().toULong())
@@ -85,3 +85,6 @@ internal actual fun portableInflate(data: ByteArray, size: Int): ByteArray {
         } finally { inflateEnd(stream.ptr) }
     }
 }
+
+/** The shortest valid raw DEFLATE stream: one final fixed-Huffman block holding only its end-of-block code. */
+private val EMPTY_RAW_STREAM = byteArrayOf(0x03, 0x00)

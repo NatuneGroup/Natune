@@ -6,28 +6,35 @@ object DownloadExportNaming {
 
     /**
      * The file name without its extension: artist - title with no filesystem-hostile character, capped by UTF-8
-     * bytes so the name plus its extension stays under the 255-byte component limit every target filesystem
-     * enforces. The cap reserves the dot and the longest extension the export emits ("flac", "webm").
+     * bytes so the name plus a collision marker and its extension stays under the 255-byte component limit every
+     * target filesystem enforces. The cap reserves the dot, the longest extension the export emits ("flac",
+     * "webm") and the largest collision marker the hosts append (" (9999)").
      */
     fun fileBaseName(title: String, artists: String): String {
         val raw = if (artists.isBlank()) title else "$artists - $title"
         return raw.replace(forbidden, "_").trim().trimEnd('.').capUtf8Bytes(MAX_NAME_BYTES).ifBlank { "song" }
     }
 
-    /** The leading characters whose UTF-8 encoding fits [limit] bytes; a multi-byte character is never split. */
+    /** The leading characters whose UTF-8 encoding fits [limit] bytes; a code point is never split. */
     private fun String.capUtf8Bytes(limit: Int): String {
         if (encodeToByteArray().size <= limit) return this
         var used = 0
-        val end = indexOfFirst { char ->
-            used += when {
+        var index = 0
+        while (index < length) {
+            val char = this[index]
+            val width =
+                if (char.isHighSurrogate() && index + 1 < length && this[index + 1].isLowSurrogate()) 2 else 1
+            val bytes = when {
+                width == 2 -> 4
                 char.code < 0x80 -> 1
                 char.code < 0x800 -> 2
-                char.isSurrogate() -> 2
                 else -> 3
             }
-            used > limit
+            if (used + bytes > limit) break
+            used += bytes
+            index += width
         }
-        return if (end < 0) this else substring(0, end)
+        return substring(0, index)
     }
 
     /** Download files carry no extension, so the container is read from the first bytes. */
@@ -47,5 +54,6 @@ object DownloadExportNaming {
         }
     }
 
-    private const val MAX_NAME_BYTES = 255 - 5
+    /** ".webm" is the longest emitted extension and " (9999)" the largest appended collision marker. */
+    private const val MAX_NAME_BYTES = 255 - 5 - 7
 }
