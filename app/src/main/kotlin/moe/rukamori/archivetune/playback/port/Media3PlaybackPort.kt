@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import moe.rukamori.archivetune.playback.queues.finiteOccurrence
+import moe.rukamori.archivetune.shared.domain.playback.BufferingDebouncePolicy
 import moe.rukamori.archivetune.shared.domain.playback.MonotonicClock
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
@@ -53,6 +54,8 @@ class Media3PlaybackPort(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val tracker = PlaybackSessionTracker()
     private val latest = MutableStateFlow<PlaybackSnapshot?>(null)
+    private val bufferingDebounce = BufferingDebouncePolicy()
+    private var bufferingFlush: Runnable? = null
     private val publishedFailures = MutableSharedFlow<PlaybackFailure>(extraBufferCapacity = FAILURE_BUFFER)
 
     override val snapshots: StateFlow<PlaybackSnapshot?> = latest.asStateFlow()
@@ -110,6 +113,9 @@ class Media3PlaybackPort(
         attachedPlayer?.removeListener(listener)
         attachedPlayer = newPlayer
         newPlayer.addListener(listener)
+        // A held transition belongs to the previous player; the new one starts unbuffered.
+        bufferingDebounce.reset()
+        scheduleBufferingFlush(null)
         // A different player instance is a different output, so it starts a new playback generation.
         startSession(newPlayer, repeatOfSameItem = false)
     }
@@ -124,6 +130,8 @@ class Media3PlaybackPort(
         attachedPlayer?.removeListener(listener)
         attachedPlayer = null
         session = null
+        bufferingDebounce.reset()
+        scheduleBufferingFlush(null)
     }
 
     /**
@@ -157,6 +165,14 @@ class Media3PlaybackPort(
         val player = attachedPlayer ?: return
         if (session == null) return
         val state = player.playbackState
+        // The raw STATE_BUFFERING goes through the debounce: a transition younger than the window
+        // publishes as not-buffering, and the flush below re-runs this publish if it survives.
+        val debounced = bufferingDebounce.onEvent(
+            rawBuffering = state == Player.STATE_BUFFERING,
+            alreadyPublished = latest.value?.isBuffering == true,
+            nowMs = clock.nowNanos() / NANOS_PER_MS,
+        )
+        scheduleBufferingFlush(debounced.retryAfterMs)
         val observation = PlaybackObservation(
             positionMs = player.currentPosition,
             durationMs = player.duration.takeIf { it != C.TIME_UNSET && it >= 0L },
@@ -165,11 +181,24 @@ class Media3PlaybackPort(
             playbackSpeed = player.playbackParameters.speed.takeIf { it.isFinite() && it > 0f } ?: 1f,
             playWhenReady = player.playWhenReady,
             isPlaying = player.isPlaying,
-            isBuffering = state == Player.STATE_BUFFERING,
+            isBuffering = debounced.visibleBuffering,
             isEnded = state == Player.STATE_ENDED,
             outputRoute = player.deviceInfo.outputRoute(),
         )
         latest.value = tracker.observe(observation, clock.nowNanos())
+    }
+
+    /** Re-evaluates a held buffering transition once its debounce window ends. */
+    private fun scheduleBufferingFlush(retryAfterMs: Long?) {
+        bufferingFlush?.let { mainHandler.removeCallbacks(it) }
+        bufferingFlush = null
+        if (retryAfterMs == null) return
+        val flush = Runnable {
+            bufferingFlush = null
+            publish()
+        }
+        bufferingFlush = flush
+        mainHandler.postDelayed(flush, retryAfterMs)
     }
 
     private fun execute(command: PlaybackCommand) {
@@ -206,6 +235,7 @@ class Media3PlaybackPort(
 
     private companion object {
         const val FAILURE_BUFFER = 8
+        const val NANOS_PER_MS = 1_000_000L
 
         // Media3 error codes are grouped by thousands: 2xxx I/O, 5xxx audio renderer.
         val IO_ERROR_CODES = 2000..2999
