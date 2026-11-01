@@ -108,6 +108,8 @@ val desktopCredentialNames = listOf(
     "ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID",
     "ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID",
     "ARCHIVETUNE_SPOTIFY_AUDIO_IV",
+    // The registered public PKCE client id for the Librespot OAuth flow (repository variable, not a secret).
+    "ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID",
     // The YouTube device-code pair, under the names Android's BuildConfig reads, so no client literal is committed.
     // Without it the code sign-in reads as not configured.
     "ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID",

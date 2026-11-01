@@ -81,6 +81,14 @@ Sign-in is a registered OAuth authorization-code flow with PKCE (`spotify/Spotif
   refresh grant (Spotify rotates refresh tokens; a new one replaces the stored one) and re-checks
   the plan when the observation is stale. Null means no session — the caller treats it as signed out.
 
+On desktop the same flow runs without a deeplink: `DesktopSpotifyLibrespot` opens the shared
+authorize URL in the system browser and serves the registered loopback redirect
+(`http://127.0.0.1:43821/spotify/callback`, bound to loopback only, one attempt at a time,
+strict state match, five-minute deadline) instead of an activity. The client id comes through
+`DesktopCredentials` (`ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID`); the stored grant, the catalog
+fingerprint binding and every `accessToken()` guard are the ones listed above, and the
+unofficial pipelines get no credentials while the effective engine is Librespot.
+
 The audio path itself (the librespot session and its byte stream) lands with the native bindings;
 until then the Librespot engine carries the sign-in and the credentials the session will need.
 

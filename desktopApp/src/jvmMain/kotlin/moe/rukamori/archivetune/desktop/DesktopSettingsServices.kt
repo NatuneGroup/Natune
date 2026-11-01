@@ -317,7 +317,8 @@ internal class DesktopSettingsServices(
                 AudioSourceType.AMAZON -> preferences.amazonInstanceList().firstOrNull()
                     ?.let { probeReachable(it) } ?: false
                 AudioSourceType.QQ -> probeReachable("https://c.y.qq.com/")
-                AudioSourceType.SPOTIFY -> preferences.spotifyStreamingSignedIn()
+                AudioSourceType.SPOTIFY ->
+                    preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective())
                 AudioSourceType.JIOSAAVN -> probeReachable("https://www.jiosaavn.com/api.php?__call=webapi.getLaunchData&_format=json&_marker=0")
                 AudioSourceType.YOUTUBE -> probeReachable(PROXY_PROBE_URL)
             }
