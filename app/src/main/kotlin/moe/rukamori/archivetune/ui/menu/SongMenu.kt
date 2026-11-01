@@ -542,6 +542,7 @@ fun SongMenu(
     val bottomSheetPageState = LocalBottomSheetPageState.current
     val isLocalSong = song.song.isLocal
     val shareSong = rememberSongShareAction(song.id, isLocalSong, song.format?.mimeType, onDismiss)
+    val copySongLink = rememberSongCopyLinkAction(song.id, isLocalSong, onDismiss)
     // Telegram tracks have no YouTube watch endpoint, so YouTube-only actions (e.g. Start radio)
     // are hidden for them — they still support play next / add to queue / add to playlist.
     val isTelegramSong = song.song.id.isTelegramMediaId()
@@ -551,6 +552,7 @@ fun SongMenu(
     val addToQueueText = stringResource(R.string.add_to_queue)
     val addToPlaylistText = stringResource(R.string.add_to_playlist)
     val shareText = stringResource(R.string.share)
+    val copyLinkText = stringResource(R.string.copy_link)
     val editText = stringResource(R.string.edit_song_info)
 
     val primaryActions =
@@ -560,7 +562,9 @@ fun SongMenu(
             playNextText,
             addToQueueText,
             shareText,
+            copyLinkText,
             shareSong,
+            copySongLink,
             editText,
             isLocalSong,
             isTelegramSong,
@@ -621,20 +625,11 @@ fun SongMenu(
                         },
                     ),
                 )
-                add(
-                    NewAction(
-                        icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.share),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        text = shareText,
-                        onClick = shareSong,
-                    ),
-                )
+                add(menuGridAction(R.drawable.share, shareText, shareSong))
+                // Local files have no link to copy; a Telegram song resolves its real message link.
+                if (!isLocalSong || isTelegramSong) {
+                    add(copyLinkMenuAction(copyLinkText, copySongLink))
+                }
                 add(
                     NewAction(
                         icon = {
@@ -836,61 +831,13 @@ fun SongMenu(
                             )
                         }
 
-                        if (playlistSong != null) {
-                            ListItem(
-                                headlineContent = {
-                                    Text(
-                                        text = stringResource(R.string.remove_from_playlist),
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                },
-                                leadingContent = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.delete),
-                                        tint = MaterialTheme.colorScheme.error,
-                                        contentDescription = null,
-                                    )
-                                },
-                                modifier =
-                                    Modifier.clickable {
-                                        val map = playlistSong.map
-                                        coroutineScope.launch(Dispatchers.IO) {
-                                            val browseId = playlistBrowseId
-                                            if (browseId != null) {
-                                                val remoteResult = removeSongFromRemotePlaylist(browseId, map)
-                                                if (remoteResult.isFailure) {
-                                                    withContext(Dispatchers.Main) {
-                                                        Toast
-                                                            .makeText(
-                                                                context,
-                                                                context.getString(R.string.error_unknown),
-                                                                Toast.LENGTH_SHORT,
-                                                            ).show()
-                                                        onDismiss()
-                                                    }
-                                                    return@launch
-                                                }
-                                            }
-                                            database.withTransaction {
-                                                val maxPosition = maxPlaylistSongPosition(map.playlistId) ?: map.position
-                                                if (map.position < maxPosition) {
-                                                    move(map.playlistId, map.position, maxPosition)
-                                                }
-                                                delete(map)
-                                            }
-                                            withContext(Dispatchers.Main) {
-                                                onDismiss()
-                                            }
-                                        }
-                                    },
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            )
-
-                            HorizontalDivider(
-                                modifier = dividerModifier,
-                                color = MaterialTheme.colorScheme.outlineVariant,
-                            )
-                        }
+                        PlaylistSongMenuItems(
+                            playlistSong = playlistSong,
+                            playlistBrowseId = playlistBrowseId,
+                            database = database,
+                            dividerModifier = dividerModifier,
+                            onDismiss = onDismiss,
+                        )
 
                         if (isFromCache) {
                             ListItem(

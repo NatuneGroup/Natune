@@ -410,6 +410,21 @@ fun YouTubeAlbumMenu(
                                     context.startActivity(Intent.createChooser(intent, null))
                                 },
                             ),
+                            NewAction(
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.link),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(28.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                },
+                                text = stringResource(R.string.copy_link),
+                                onClick = {
+                                    onDismiss()
+                                    context.copyLinkToClipboard(albumItem.shareLink)
+                                },
+                            ),
                         ),
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                 )

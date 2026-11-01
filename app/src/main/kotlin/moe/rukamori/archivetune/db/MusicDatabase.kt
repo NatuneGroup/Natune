@@ -61,7 +61,7 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 
 private const val TAG = "MusicDatabase"
-private const val CURRENT_VERSION = 38
+private const val CURRENT_VERSION = 39
 
 class MusicDatabase(
     private val delegate: InternalDatabase,
@@ -174,8 +174,10 @@ abstract class InternalDatabase : RoomDatabase() {
         const val DB_NAME = "song.db"
 
         fun newInstance(context: Context): MusicDatabase {
+            // v39 is additive (song.lyricsOffset only): 38 -> 39 goes through MIGRATION_38_39,
+            // never the reconciling rebuild, so the universal range stops at 37.
             val universalMigrations =
-                (2 until CURRENT_VERSION)
+                (2 until CURRENT_VERSION - 1)
                     .map { from -> UniversalMigration(context, from, CURRENT_VERSION) }
                     .toTypedArray()
 
@@ -186,6 +188,7 @@ abstract class InternalDatabase : RoomDatabase() {
                         MIGRATION_1_2,
                         *universalMigrations,
                         PodcastProgressMigration,
+                        MIGRATION_38_39,
                     ).addCallback(DatabaseCallback())
                     .fallbackToDestructiveMigration()
                     .fallbackToDestructiveMigrationOnDowngrade()
@@ -838,6 +841,25 @@ private val MIGRATION_1_2 =
                     contentValuesOf("playlistId" to it.playlistId, "songId" to it.songId, "position" to it.position),
                 )
             }
+        }
+    }
+
+// =============================================================================
+// LEGACY MIGRATION v38 -> v39 (additive per-song lyrics offset)
+// =============================================================================
+
+/**
+ * v39 adds one column, `song.lyricsOffset` (entity default 0, matching
+ * `app/schemas/.../39.json`). This path must stay a plain ALTER: the reconciling
+ * [UniversalMigration] rebuilds `song` (rename to `_old_song`, recreate, copy, drop), which
+ * retargets the foreign keys of `playlist_song_map`, `event`, `related_song_map`,
+ * `library_top_mix_song_map`, `song_artist_map` and `song_album_map` at `_old_song`, so rows
+ * are cascade-dropped with foreign keys on and left dangling with foreign keys off.
+ */
+private val MIGRATION_38_39 =
+    object : Migration(38, 39) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `song` ADD COLUMN `lyricsOffset` INTEGER NOT NULL DEFAULT 0")
         }
     }
 

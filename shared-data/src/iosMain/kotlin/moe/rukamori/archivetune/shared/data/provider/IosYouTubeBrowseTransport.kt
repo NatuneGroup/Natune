@@ -247,6 +247,11 @@ class IosYouTubeBrowseTransport(
         val item = json.decodeFromJsonElement<PanelVideo>(wrapped)
         val videoId = item.videoId ?: return null
         val title = item.title?.runs?.text().takeUnless { it.isNullOrBlank() } ?: return null
+        // The byline carries the artist and album credit links exactly like a list row's, so the
+        // queue entry and the song a refetch refreshes keep the identities the provider gave.
+        val groups = item.longBylineText?.runs?.splitBySeparator().orEmpty()
+        val artists = groups.artistCredits()
+        val album = groups.firstNotNullOfOrNull { group -> group.firstNotNullOfOrNull { run -> run.albumId() } }
         return YouTubeEntry(
             kind = ContentKind.SONG,
             id = videoId,
@@ -254,7 +259,12 @@ class IosYouTubeBrowseTransport(
             subtitle = item.longBylineText?.runs?.text().orEmpty(),
             artworkUri = item.thumbnail?.thumbnails?.lastOrNull()?.url,
             durationSeconds = item.lengthText?.runs?.text()?.toSeconds(),
+            explicit = item.badges.orEmpty().any { it.musicInlineBadgeRenderer?.iconType == "MUSIC_EXPLICIT_BADGE" },
             setVideoId = item.playlistEntryId,
+            album = album?.second,
+            artists = artists,
+            albumId = album?.first,
+            isVideo = item.videoType == "MUSIC_VIDEO_TYPE_OMV" || item.videoType == "MUSIC_VIDEO_TYPE_UGC",
         )
     }
 
@@ -701,6 +711,8 @@ private data class PanelVideo(
     val thumbnail: Thumbnails? = null,
     val playlistSetVideoId: String? = null,
     val setVideoId: String? = null,
+    val badges: List<Badge>? = null,
+    val videoType: String? = null,
 ) {
     val playlistEntryId: String? get() = playlistSetVideoId ?: setVideoId
 }

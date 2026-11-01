@@ -219,6 +219,87 @@ class IosTelegramClient(
         }
     }
 
+    /**
+     * The t.me link of one channel message, resolved through the admitted TDLib session the same way
+     * the Android `TdApi.GetMessageLink` call resolves it: TDLib builds the link for its opaque message
+     * id, never the app. Null while no verified account runs or when TDLib cannot build the link.
+     */
+    suspend fun messageLink(chatId: Long, messageId: Long): String? {
+        val admitted = lock.guarded {
+            !closeRequested && client != null &&
+                admissionFlow.value is IosTelegramNativeAdmission.Admitted &&
+                stateFlow.value is TelegramAuthState.Ready
+        }
+        if (!admitted) return null
+        return try {
+            request(
+                "getMessageLink",
+                buildJsonObject {
+                    put("@type", "getMessageLink")
+                    put("chat_id", chatId)
+                    put("message_id", messageId)
+                },
+                AUTH_REQUEST_TIMEOUT_MS,
+            ).telegramText("link")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            log("getMessageLink failed: ${failure.message ?: failure::class.simpleName}")
+            null
+        }
+    }
+
+    /**
+     * Downloads one file to completion and answers its local path, the same call the desktop session makes for the
+     * `tgart:` artwork chain: `getFile` short-circuits a finished download, otherwise `downloadFile` runs
+     * synchronously at the artwork priority. Answers null for an unadmitted session, a failed request or a reply
+     * without a usable path; a cover lookup that yields nothing falls through to the caller's fallback.
+     */
+    suspend fun downloadFileBlocking(fileId: Int): String? {
+        if (fileId <= 0) return null
+        // The admission gate is the same one the playback file operations pass, so artwork never reads through a
+        // client that is still logging in, is unverified, or was closed.
+        if (fileOperations() == null) return null
+        val existing = try {
+            request(
+                "getFile",
+                buildJsonObject {
+                    put("@type", "getFile")
+                    put("file_id", fileId)
+                },
+                ARTWORK_REQUEST_TIMEOUT_MS,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        existing?.telegramObject("local")?.let { local ->
+            if (local.telegramFlag("is_downloading_completed")) {
+                local.telegramText("path")?.takeIf(String::isNotBlank)?.let { return it }
+            }
+        }
+        val downloaded = try {
+            request(
+                "downloadFile",
+                buildJsonObject {
+                    put("@type", "downloadFile")
+                    put("file_id", fileId)
+                    put("priority", ARTWORK_DOWNLOAD_PRIORITY)
+                    put("offset", 0)
+                    put("limit", 0)
+                    put("synchronous", true)
+                },
+                ARTWORK_REQUEST_TIMEOUT_MS,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        return downloaded?.telegramObject("local")?.telegramText("path")?.takeIf(String::isNotBlank)
+    }
+
     /** Sends one request and returns its reply. A TDLib `error` reply throws, as does a missing reply within [timeoutMs]. */
     internal suspend fun request(operation: String, query: JsonObject, timeoutMs: Long): JsonObject {
         val answer = exchange(operation, query, timeoutMs)
@@ -429,6 +510,10 @@ class IosTelegramClient(
         /** Login steps wait on Telegram's servers; the getMe check uses the same bound. */
         private const val AUTH_REQUEST_TIMEOUT_MS = 30_000L
         private const val CLOSE_CONFIRM_TIMEOUT_MS = 10_000L
+
+        /** An artwork file download gets the same bound a synchronous artwork fetch gets on desktop. */
+        private const val ARTWORK_REQUEST_TIMEOUT_MS = 30_000L
+        private const val ARTWORK_DOWNLOAD_PRIORITY = 32
 
         /** Short enough that the receiver notices a destroyed client promptly, long enough not to spin. */
         private const val RECEIVE_TIMEOUT_SECONDS = 1.0

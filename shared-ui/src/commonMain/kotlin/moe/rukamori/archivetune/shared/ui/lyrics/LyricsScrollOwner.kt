@@ -2,6 +2,9 @@ package moe.rukamori.archivetune.shared.ui.lyrics
 
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -38,6 +41,9 @@ internal class LyricsScrollOwner {
     /** The last discontinuity count handled. A different count means a seek or a new session. */
     var handledDiscontinuity: Int = 0
 
+    /** The last feed re-anchor handled. A different count means the feed jumped on the same timeline. */
+    var handledReanchor: Int = 0
+
     /** The line the list last followed. A different line is a line change, which may settle rather than animate. */
     var handledPrimary: Int = -1
 
@@ -57,9 +63,11 @@ internal fun rememberLyricsScrollOwner(): LyricsScrollOwner = remember { LyricsS
 
 /**
  * The only code that scrolls the lyric list. A listener scroll starts the hold, and when the hold expires the
- * list follows the playhead again. A seek or a session change jumps. Ordinary playhead movement animates, unless
- * reduced motion is on, in which case it also jumps. For a look that holds while dragged, the hold does not
- * start until the drag ends, so a finger resting on the list is not followed out from under it.
+ * list follows the playhead again. A seek or a session change jumps back to the playhead at once. A feed jump
+ * on the same timeline only snaps the scroll instead of animating it — it never ends the hold. Ordinary playhead
+ * movement animates, unless reduced motion is on, in which case it also jumps. For a look that holds while
+ * dragged, the hold does not start until the drag ends, so a finger resting on the list is not followed out
+ * from under it.
  *
  * A line change on a look with [settle] moves the list at once and lets the rows glide from where they were, so the
  * change ripples outward from the sung line. Every other move keeps the single animated scroll.
@@ -70,6 +78,7 @@ internal fun LyricsAutoFollow(
     listState: LazyListState,
     primary: Int,
     discontinuity: Int,
+    reanchor: Int,
     visible: Boolean,
     reduceMotion: Boolean,
     profile: LyricsModeProfile,
@@ -90,20 +99,28 @@ internal fun LyricsAutoFollow(
     LaunchedEffect(settleGeneration) {
         if (settle != null && settleGeneration > 0) settle.runSettle()
     }
-    LaunchedEffect(primary, discontinuity, owner.resumeGeneration, visible) {
+    LaunchedEffect(primary, discontinuity, reanchor, owner.resumeGeneration, visible) {
         val jump = discontinuity != owner.handledDiscontinuity
+        // A feed jump on the same timeline re-anchors like a seek — the list snaps rather than animating
+        // the distance — but it is not a discontinuity, so it never ends a listener's hold.
+        val reanchored = reanchor != owner.handledReanchor
         // The first line a fresh owner follows is not a change, so it animates and never glides in.
         val moved = owner.handledPrimary >= 0 && primary != owner.handledPrimary
         owner.handledDiscontinuity = discontinuity
+        owner.handledReanchor = reanchor
         owner.handledPrimary = primary
         if (jump) owner.following = true
         if (!visible || !owner.following || primary < 0) return@LaunchedEffect
         val viewportHeight = listState.awaitViewportHeight()
         val anchor = -(viewportHeight * profile.anchorFraction).roundToInt()
         // Only a line that is laid out now can settle; a line off screen animates as it always did.
-        val fromTop = if (settle != null && moved && !jump && !dragged) listState.itemTopOrNull(primary) else null
+        val fromTop = if (settle != null && moved && !jump && !reanchored && !dragged) {
+            listState.itemTopOrNull(primary)
+        } else {
+            null
+        }
         when {
-            jump || reduceMotion -> {
+            jump || reanchored || reduceMotion -> {
                 settle?.clear()
                 listState.scrollToItem(primary, anchor)
             }
@@ -111,7 +128,24 @@ internal fun LyricsAutoFollow(
                 settle.start(primary, fromTop)
                 listState.scrollToItem(primary, anchor)
             }
-            else -> listState.animateScrollToItem(primary, anchor)
+            else -> {
+                // A line at hand eases to the anchor on the fixed scroll; a far one keeps the
+                // distance-covering animation.
+                val top = listState.itemTopOrNull(primary)
+                if (top != null) {
+                    val anchorTop = listState.layoutInfo.beforeContentPadding - anchor
+                    if (top != anchorTop) {
+                        listState.animateScrollBy(
+                            value = (top - anchorTop).toFloat(),
+                            animationSpec = tween(AUTO_SCROLL_MS, easing = AUTO_SCROLL_EASE),
+                        )
+                        // Land on the exact anchored scroll offset in case the glide rounded.
+                        listState.scrollToItem(primary, anchor)
+                    }
+                } else {
+                    listState.animateScrollToItem(primary, anchor)
+                }
+            }
         }
     }
 }
@@ -119,6 +153,10 @@ internal fun LyricsAutoFollow(
 /** Where the row starts in the viewport now, or null while it is not laid out. */
 private fun LazyListState.itemTopOrNull(index: Int): Int? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
+
+/** The one animated scroll speed of a line change: a fixed ease-in-out over this many ms. */
+private const val AUTO_SCROLL_MS = 350
+private val AUTO_SCROLL_EASE = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 
 /** The list is not measured on its first frame, so the anchor waits for a real viewport height. */
 private suspend fun LazyListState.awaitViewportHeight(): Int {

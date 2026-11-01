@@ -48,29 +48,32 @@ YTDLnis does) after NewPipe; the plugin is optional, so it is not part of the li
 
 ## InnerTubeX version and scope
 
-The existing dependency is pinned to
-`com.github.MetrolistGroup.innertubex:innertubex:v0.9.2`, released from
-`MetrolistGroup/innertubex` tag `v0.9.2` at
-`c19d4860b0bc8afa0b1b3cc717abeb8119bbb605`. Its GPL-3.0 license is unchanged.
+The dependency is pinned to
+`com.github.MetrolistGroup.innertubex:innertubex:v0.11.2`, released from
+`MetrolistGroup/innertubex` tag `v0.11.2` at
+`c863ddf15be01a1abfa4630329bdc0a1e95f1531` (2026-10-22). Its GPL-3.0 license is unchanged.
 The existing JitPack group scope, app dependency and Hilt construction are retained;
 this is not a replacement of the separate `:core` client or its gitlink.
 
-The saved source/publication inspection compared the actual Android AARs and found matching
-public descriptors for all ten adapter-facing contracts. The downloaded target sources match
-the pinned source. No mandatory adapter API change was found. The Android dependency requests
-are unchanged from 0.8.4; no SDK/JDK, Media3 or compiler bump is part of this update.
-Target Gradle resolution, compilation, aligned dependencies/native packaging and focused
-regression execution still await the final exact-head remote BUILD and TESTS gates.
-Source compatibility inspection is not a successful build or live playback test.
+v0.11.2 is the latest stable library release and the one every host consumes: the Android
+variant through the root coordinate, the desktop `jvm("desktop")` module and the two iOS
+modules all resolve the same tag. The v0.11 line moved the player cipher to the pure-Kotlin
+QuackJS library (`com.github.MetrolistGroup.quackjs`, already in the JitPack allow-list), so
+the artifact no longer requests a QuickJS native engine the way v0.9.2 did; the package's only
+QuickJS runtime stays the app's own quickjs-kt dependency. It is built with Kotlin 2.4.21, the
+same release our toolchain compiles, and requests Ktor 3.6.0, kotlinx-serialization 1.12.0 and
+coroutines 1.11.0; aligned resolution remains a remote build gate, not a verified one.
 
-At the recorded upstream comparison, v0.9.2 is the latest stable **library** release, while
-`MetrolistGroup/Metrolist` at `76fa5a78b5110674442884b6f21c0cef51cdb782` still pins
-v0.8.4. This does not copy Metrolist's authenticated facade or token-provider integration.
-Our fallback keeps its own anonymous client, disabled remote player-config repository and no
-personal/pool cookie or token-provider bridge. It requests `wantVideo=false` with HLS, SABR
-and bounded-range capabilities disabled, and independently rejects prohibited results.
-LOW/HIGH quality mapping, MP4-first non-LOW downloads, cancellation and retryable failed
-prewarm remain unchanged.
+Source inspection against the tag found every adapter-facing contract unchanged, so no call-site
+adaptation was required: the anonymous `InnerTube` client, disabled `PlayerConfigRepository`,
+`YtConfigParserImpl`/`YouTubeCipherService`/`InnerTubeExtractor` wiring, the `extract`
+hints and `ExtractedStream` fields all keep their signatures. The library's `TokenProvider`
+hook exists since v0.9.2 and stays unbound (`UnavailableTokenProvider`) — the tier remains
+anonymous, with no personal/pool cookie or token-provider bridge, and this does not copy
+Metrolist's authenticated facade. It requests `wantVideo=false` with HLS, SABR and
+bounded-range capabilities disabled, and independently rejects prohibited results. LOW/HIGH
+quality mapping, MP4-first non-LOW downloads, cancellation and retryable failed prewarm remain
+unchanged.
 
 This adapter resolves an already-selected media ID. The pin bump does not fix playlist
 metadata, queue paging/order or Login WebView navigation/cookie capture; those are separate
@@ -85,16 +88,17 @@ The desktop host walks the same tier order through the shared `OrderedAudioResol
 each writing one host diagnostic line with its outcome. Echo is Android-only, so the desktop
 Echo tier answers null.
 
-- The desktop InnerTubeX tier uses `innertubexDesktopVersion` (`v0.11.0`), the first release
-  whose `jvm("desktop")` target the desktop app resolves. Its cipher is the pure-Kotlin QuackJS
-  library, so the desktop package gains no native library. The Android pin stays at v0.9.2, so
-  the repository check reports the two versions as cross-module drift on purpose. The tier keeps
-  the Android adapter's anonymous client, disabled player-config repository, direct-audio hints
-  and prohibited-result guards.
+- The desktop InnerTubeX tier uses `innertubexDesktopVersion`, today the same `v0.11.2`
+  release as the Android pin — the version key stays separate only so a host can diverge again
+  if a regression ever forces a split, not because the pins differ. Its cipher is the pure-Kotlin
+  QuackJS library, so the desktop package gains no native library. The tier keeps the Android
+  adapter's anonymous client, disabled player-config repository, direct-audio hints and
+  prohibited-result guards.
 - The desktop NewPipe tier runs NewPipe's stream extractor first and then asks ANDROID_MUSIC, iOS
   and WEB_REMIX as a visitor, deciphering `signatureCipher`/`cipher` formats and the n parameter
   through NewPipe's JavaScript player. The primary desktop walk skips ciphered formats, so this
-  tier is also the desktop's only cipher path.
+  tier is also the desktop's only cipher path. Its one BotGuard mint is optional and bounded well
+  inside the tier budget, so a stalled minting endpoint leaves untokened extraction its time.
 
 ## The cipher seam
 

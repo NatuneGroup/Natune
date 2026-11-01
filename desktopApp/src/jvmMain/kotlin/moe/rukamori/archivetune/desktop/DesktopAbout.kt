@@ -25,6 +25,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
+import moe.rukamori.archivetune.shared.ui.settings.AboutBundledNotices
 import moe.rukamori.archivetune.shared.ui.settings.AboutContributor
 import moe.rukamori.archivetune.shared.ui.settings.AboutContributorsState
 import moe.rukamori.archivetune.shared.ui.settings.AboutDialog
@@ -39,7 +40,8 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 /**
  * The baseline About lists on desktop: GitHub contributors and the Weblate translators per `values-*` folder, read from
  * the same repository endpoints as Android. Results stay in memory for the session; Android's DataStore cache has no
- * desktop counterpart. The dependency license list comes from a generated Android library catalog, so it is unavailable.
+ * desktop counterpart. The generated Android dependency catalog is unavailable here, so the licenses dialog
+ * lists the bundled data notices instead.
  */
 internal class DesktopAboutRepository(private val http: HttpClient) {
     private val lock = Mutex()
@@ -216,7 +218,7 @@ internal fun DesktopAboutPage(
         memberAvatar = { url, _, modifier -> DesktopRemoteArtwork(url, graph.artworkLoader, modifier) },
         contributorsState = contributorsState,
         translationsState = translationsState,
-        licensesState = AboutLicensesState.Failed(AboutFailureMessages.unavailableOnHost),
+        licensesState = AboutLicensesState.Loaded(AboutBundledNotices.entries, bundledOnly = true),
         activeDialog = dialog,
         navigate = { navigation.open(it) },
         onOpenUri = { openDesktopUri(it, graph::report) },

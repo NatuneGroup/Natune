@@ -24,16 +24,19 @@ internal fun liveMainProcessId(context: Context): Int? = runCatching {
  */
 internal fun previousLaunchReport(context: Context): StartupReport? {
     val store = StartupRecovery.store(context)
+    val install = currentInstall(context)
     val pending = store.pendingAttempt()
     val last = store.lastAttempt()
     val reviewed = store.acknowledgedThrough()
-    val incomplete = previousStartupIncomplete(store.pendingExists(), pending?.pid, liveMainProcessId(context))
+    val incomplete = previousStartupIncomplete(
+        store.pendingExists(), pending, liveMainProcessId(context), install,
+    )
     val historyUnavailable = importCrashRecords(context, store)
-    val install = currentInstall(context)
     val since = reportSince(last?.timestampMs, reviewed)
     val listed = store.listRecords().filter { it.timestampMs > since }
     val interrupting = listed.filter { it.interruptsStartup(install) }
-    if (!incomplete && interrupting.isEmpty()) return null
+    val stalePending = staleAttemptUnacknowledged(pending, install, reviewed)
+    if (!incomplete && !stalePending && interrupting.isEmpty()) return null
 
     val safeMode = incomplete || interrupting.any { it.kind == ProcessExitKind.INITIALIZATION_FAILURE }
     val text = buildString {
@@ -46,7 +49,15 @@ internal fun previousLaunchReport(context: Context): StartupReport? {
                 formatCrashTime(context, it.timestampMs), it.pid.toString()))
         }
         appendLine()
-        appendLine(context.getString(if (incomplete) R.string.startup_incomplete_explanation else R.string.startup_previous_exit_explanation))
+        appendLine(
+            context.getString(
+                when {
+                    incomplete -> R.string.startup_incomplete_explanation
+                    stalePending -> R.string.startup_outdated_attempt_explanation
+                    else -> R.string.startup_previous_exit_explanation
+                },
+            ),
+        )
         if (listed.none { it.captured }) appendLine(context.getString(R.string.startup_report_no_java))
         for (record in listed) {
             appendLine()
@@ -74,6 +85,44 @@ internal fun previousLaunchReport(context: Context): StartupReport? {
 
 internal fun previousStartupIncomplete(pendingExists: Boolean, pendingPid: Int?, livePid: Int?): Boolean =
     pendingExists && (livePid == null || pendingPid != livePid)
+
+/**
+ * An attempt recorded by a different build or install survived an app update. It stays in the
+ * report for diagnosis but can never put the current build into safe mode. New markers carry the
+ * install identity captured at write time, so a backward clock correction cannot mislabel a marker
+ * of this build. An install stamp counts only when both sides recorded one: when either is unknown
+ * the build identity alone decides, so a possibly-same-install marker still gates. Legacy markers
+ * without a version code still fall back to wall-clock and version-name inference.
+ */
+internal fun isStaleAttempt(attempt: StartupAttempt, install: InstallWindow): Boolean {
+    if (attempt.versionCode != UNKNOWN_VERSION_CODE) {
+        if (attempt.versionCode != install.versionCode) return true
+        if (attempt.version.isNotEmpty() && attempt.version != install.versionName) return true
+        return attempt.installedSinceMs != 0L && install.installedSinceMs != 0L &&
+            attempt.installedSinceMs != install.installedSinceMs
+    }
+    return attempt.timestampMs < install.installedSinceMs ||
+        (attempt.version.isNotEmpty() && attempt.version != install.versionName)
+}
+
+/** Only a pending attempt of the installed build counts as an unfinished startup. */
+internal fun previousStartupIncomplete(
+    pendingExists: Boolean,
+    pending: StartupAttempt?,
+    livePid: Int?,
+    install: InstallWindow,
+): Boolean =
+    (pending == null || !isStaleAttempt(pending, install)) &&
+        previousStartupIncomplete(pendingExists, pending?.pid, livePid)
+
+/** A stale attempt surfaces once, until the report that covers its timestamp is acknowledged. */
+internal fun staleAttemptUnacknowledged(
+    pending: StartupAttempt?,
+    install: InstallWindow,
+    acknowledgedThroughMs: Long,
+): Boolean =
+    pending != null && pending.timestampMs > acknowledgedThroughMs &&
+        isStaleAttempt(pending, install)
 
 internal fun reportSince(lastStartMs: Long?, reviewedThroughMs: Long): Long =
     maxOf(reviewedThroughMs, (lastStartMs ?: 1L) - 1L)

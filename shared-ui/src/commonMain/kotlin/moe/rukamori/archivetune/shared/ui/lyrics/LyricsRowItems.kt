@@ -1,8 +1,16 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +33,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -33,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.resources.lyrics_auto_created
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_clear_selection
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_selected_count
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_share
@@ -46,6 +60,17 @@ private const val PHONETIC_SIZE_RATIO = 0.55f
 private const val SELECTED_ROW_ALPHA = 0.16f
 private const val BACKGROUND_SIZE_RATIO = 0.7f
 private const val BACKGROUND_ACTIVE_ALPHA = 0.72f
+
+/**
+ * The soft dark lift under every sung glyph. Artwork behind the rows can be bright or busy, so a
+ * short-radius shadow keeps the edges reading on any palette without a visible outline.
+ */
+private val LYRICS_TEXT_SHADOW =
+    Shadow(
+        color = Color.Black.copy(alpha = 0.45f),
+        offset = Offset(0f, 1.5f),
+        blurRadius = 6f,
+    )
 
 /** One lyric row: the swept line with its reading and translation beneath. Tap and long press are host-decided. */
 @Composable
@@ -71,6 +96,11 @@ internal fun LyricsRowItem(
     settle: LyricsLineSettle? = null,
     refined: Boolean = false,
     interlude: LyricsInterlude? = null,
+    /** The quick scale the sung line pops to, like [LyricsModeProfile.activeScale]; 1 keeps its size. */
+    activeScale: Float = 1f,
+    /** Machine-made readings/translations carry the badge when the document says so. */
+    autoCreatedPhonetic: Boolean = false,
+    autoCreatedTranslation: Boolean = false,
 ) {
     // Unsynced text has no timing to follow, so it reads at full strength rather than as an idle line.
     val linePalette = if (row.isSynced) palette else palette.copy(dim = palette.bright)
@@ -85,6 +115,7 @@ internal fun LyricsRowItem(
                 },
             )
             .then(if (settle != null) Modifier.lyricsSettle(settle, staggerMs) else Modifier)
+            .then(Modifier.lyricsActiveScale(active, activeScale, animate = !reduceMotion, alignment))
             .testTag(lyricsRowTag(row.index))
             .background(if (selected) palette.glow.copy(alpha = SELECTED_ROW_ALPHA) else Color.Transparent)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
@@ -114,8 +145,74 @@ internal fun LyricsRowItem(
                 color = if (active) palette.bright.copy(alpha = BACKGROUND_ACTIVE_ALPHA) else palette.dim,
             )
         }
-        row.phonetic?.let { Text(text = it, style = phoneticStyle, color = palette.dim) }
-        row.translation?.let { Text(text = it, style = phoneticStyle, color = palette.dim) }
+        val autoCreatedLabel = stringResource(Res.string.lyrics_auto_created)
+        row.phonetic?.let {
+            RevealedSubline(
+                text = it,
+                style = phoneticStyle,
+                color = palette.dim,
+                reduceMotion = reduceMotion,
+                autoCreated = autoCreatedPhonetic,
+                autoCreatedLabel = autoCreatedLabel,
+            )
+        }
+        row.translation?.let {
+            RevealedSubline(
+                text = it,
+                style = phoneticStyle,
+                color = palette.dim,
+                reduceMotion = reduceMotion,
+                autoCreated = autoCreatedTranslation,
+                autoCreatedLabel = autoCreatedLabel,
+            )
+        }
+    }
+}
+
+/** The reading and translation slide in under the line over ~0.6s when the line activates. */
+private const val REVEAL_MS = 600
+
+/** The mark a machine-made reading or translation carries, named for screen readers. */
+private const val AUTO_CREATED_MARK = "✦ "
+
+/**
+ * One revealed line: it slides in when its text publishes to its row — the row may not be the sung one,
+ * as a listener reading ahead still sees every reading — and it stays while the row stays composed.
+ * Reduced motion shows it without the slide.
+ */
+@Composable
+private fun RevealedSubline(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    reduceMotion: Boolean,
+    autoCreated: Boolean,
+    autoCreatedLabel: String,
+) {
+    val reveal = remember(text) { MutableTransitionState(false) }
+    LaunchedEffect(text) {
+        reveal.targetState = true
+    }
+    AnimatedVisibility(
+        visibleState = reveal,
+        enter = if (reduceMotion) {
+            EnterTransition.None
+        } else {
+            expandVertically(expandFrom = Alignment.Top, animationSpec = tween(REVEAL_MS)) +
+                fadeIn(animationSpec = tween(REVEAL_MS))
+        },
+    ) {
+        Row {
+            if (autoCreated) {
+                Text(
+                    text = AUTO_CREATED_MARK,
+                    style = style,
+                    color = color,
+                    modifier = Modifier.semantics { contentDescription = autoCreatedLabel },
+                )
+            }
+            Text(text = text, style = style, color = color)
+        }
     }
 }
 
@@ -173,6 +270,37 @@ private fun Modifier.lyricsDepth(
  */
 private fun Modifier.lyricsSettle(settle: LyricsLineSettle, staggerMs: Long): Modifier =
     graphicsLayer { translationY = settle.offsetPx(staggerMs) }
+
+private const val ACTIVE_SCALE_MS = 100
+
+/**
+ * The quick pop the sung line takes on activation. It scales from the edge its text starts at, so it
+ * grows out of the line instead of swelling from the middle.
+ */
+@Composable
+private fun Modifier.lyricsActiveScale(
+    active: Boolean,
+    targetScale: Float,
+    animate: Boolean,
+    alignment: LyricsLineAlignment,
+): Modifier {
+    val scale by animateFloatAsState(
+        targetValue = if (active && targetScale > 1f) targetScale else 1f,
+        animationSpec = if (animate) tween(ACTIVE_SCALE_MS) else snap(),
+        label = "lyrics-active-scale",
+    )
+    if (targetScale <= 1f) return this
+    val originX = when (alignment) {
+        LyricsLineAlignment.START -> 0f
+        LyricsLineAlignment.CENTER -> 0.5f
+        LyricsLineAlignment.END -> 1f
+    }
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+        transformOrigin = TransformOrigin(originX, 0.5f)
+    }
+}
 
 /** Below this the softening is invisible, and skipping it spares the row an offscreen layer. */
 private const val BLUR_THRESHOLD_DP = 0.05f
@@ -236,11 +364,12 @@ internal fun lyricsMainStyle(profile: LyricsModeProfile, alignment: LyricsLineAl
         lineHeight = (profile.mainSizeSp * profile.lineSpacingFactor * LINE_HEIGHT_FACTOR).sp,
         fontWeight = FontWeight.Bold,
         textAlign = alignment.textAlign(),
+        shadow = LYRICS_TEXT_SHADOW,
     )
 
 /** The reading and translation rows sit at 0.55 of the main size, as the Android renderers set them. */
 internal fun lyricsPhoneticStyle(profile: LyricsModeProfile, alignment: LyricsLineAlignment): TextStyle =
-    TextStyle(fontSize = (profile.mainSizeSp * PHONETIC_SIZE_RATIO).sp, textAlign = alignment.textAlign())
+    TextStyle(fontSize = (profile.mainSizeSp * PHONETIC_SIZE_RATIO).sp, textAlign = alignment.textAlign(), shadow = LYRICS_TEXT_SHADOW)
 
 /**
  * The text styles of one look, one pair per alignment. A row is shaped in the style it is drawn with, so the shape

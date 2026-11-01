@@ -32,9 +32,9 @@ class LyricsModeTest {
 
     @Test
     fun fullscreenLooksKeepTheirBaselineManualScrollHolds() {
-        assertEquals(3_000L, LyricsModeProfile.MANUAL_SCROLL_HOLD_MS)
+        assertEquals(4_500L, LyricsModeProfile.MANUAL_SCROLL_HOLD_MS)
         listOf(LyricsMode.ENHANCED, LyricsMode.V2, LyricsMode.SPOTIFY).forEach { mode ->
-            assertEquals(3_000L, LyricsModeProfile.of(mode).manualScrollHoldMs, "hold for $mode")
+            assertEquals(4_500L, LyricsModeProfile.of(mode).manualScrollHoldMs, "hold for $mode")
         }
         assertEquals(4_000L, LyricsModeProfile.of(LyricsMode.SIMPMUSIC).manualScrollHoldMs, "hold for SIMPMUSIC")
     }

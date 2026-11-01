@@ -85,7 +85,7 @@ private fun <T> List<T>.sortedByCollated(keySelector: (T) -> String): List<T> {
 }
 
 @Dao
-interface DatabaseDao {
+interface DatabaseDao : LyricsOffsetDao {
     @Transaction
     @Query("SELECT * FROM song WHERE inLibrary IS NOT NULL ORDER BY rowId")
     fun songsByRowIdAsc(): Flow<List<Song>>

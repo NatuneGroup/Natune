@@ -56,11 +56,17 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.shared.ui.component.AuthWebViewLayout
 
-/** Renders [factory]'s WebView inside the shared Spotify-style sign-in sheet. */
+/**
+ * Renders [factory]'s WebView inside the shared Spotify-style sign-in sheet. The WebView stays
+ * single-windowed: a popup running the shared diagnostic client would bypass the provider's own
+ * redirect interception, cookie capture and JS bridges, so only [authPopupsEnabled] providers may
+ * opt in — and none of the routed sign-ins does. Spotify's own sheet keeps its popup host.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthWebViewScreen(
     navController: NavController,
+    provider: String,
     title: String,
     subtitle: String,
     modifier: Modifier = Modifier,
@@ -70,7 +76,8 @@ fun AuthWebViewScreen(
     statusContent: (@Composable () -> Unit)? = null,
     factory: (Context) -> WebView,
 ) {
-    // Real state, so assigning from the factory recomposes and enables the BackHandler below.
+    // In state, not a plain var: a plain var resets to null on recomposition (the factory runs
+    // once) and never triggers one, leaving BackHandler permanently disabled.
     var webView by remember { mutableStateOf<WebView?>(null) }
 
     AuthWebViewSheet(
@@ -86,7 +93,14 @@ fun AuthWebViewScreen(
                     .fillMaxWidth()
                     .weight(1f)
                     .clip(MaterialTheme.shapes.large),
-            factory = { ctx -> factory(ctx).also { webView = it } },
+            factory = { ctx ->
+                factory(ctx).apply {
+                    // The routed providers all sign in inside one window; multi-window is a policy
+                    // decision the flow opts into, never a default the shell applies.
+                    settings.setSupportMultipleWindows(authPopupsEnabled(provider))
+                    webView = this
+                }
+            },
             onRelease = { released ->
                 onRelease?.invoke(released)
                 if (webView === released) webView = null
@@ -95,10 +109,10 @@ fun AuthWebViewScreen(
     }
 
     // Enabled purely on presence: canGoBack() is polled at press time because it changes during
-    // in-page navigation without recomposing.
+    // in-page navigation without recomposing, so keying `enabled` on it goes stale either way.
     BackHandler(enabled = webView != null) {
         val view = webView
-        if (navigateBackInWebView && view != null && view.canGoBack()) {
+        if (navigateBackInWebView && view?.canGoBack() == true) {
             view.goBack()
         } else {
             onDismiss?.invoke() ?: run { navController.navigateUp() }
@@ -125,6 +139,9 @@ internal fun AuthWebViewSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surface,
         contentWindowInsets = { WindowInsets.safeDrawing },
+        // A WebView scroll is a page drag, not a sheet drag: letting the sheet take vertical
+        // swipes both stole scrolling from the form and dismissed in-progress sign-ins.
+        sheetGesturesEnabled = false,
     ) {
         AuthWebViewLayout(
             modifier = Modifier

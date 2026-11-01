@@ -79,6 +79,29 @@ object CrossfadePolicy {
         return target
     }
 
+    /**
+     * Two consecutive queue items belong to one album sequence when they carry the same album
+     * identity. The host supplies the best key it has (provider album id first, album title when
+     * no id exists); a missing key on either side can never prove a sequence.
+     */
+    fun isSequentialAlbumTransition(currentAlbumKey: String?, nextAlbumKey: String?): Boolean =
+        currentAlbumKey != null && currentAlbumKey == nextAlbumKey
+
+    /**
+     * Whether a blend — a crossfade or an automix — may arm at all. Repeat-one replays the same
+     * item, so there is nothing to blend into, and a same-album sequence keeps its mastered gap
+     * (a gapless splice, never a mix), so both suppress the blend while the queue's ordinary
+     * transition still applies. [resolveTargetIndex] itself is untouched: it only describes where
+     * a blend would land, and hosts may consult it for other purposes.
+     */
+    fun suppressesBlend(
+        repeatOne: Boolean,
+        gaplessAlbums: Boolean,
+        currentAlbumKey: String?,
+        nextAlbumKey: String?,
+    ): Boolean =
+        repeatOne || (gaplessAlbums && isSequentialAlbumTransition(currentAlbumKey, nextAlbumKey))
+
     /** Snapshot of the incoming player used to decide whether a fade may start. */
     data class ReadinessSnapshot(
         val isReady: Boolean,

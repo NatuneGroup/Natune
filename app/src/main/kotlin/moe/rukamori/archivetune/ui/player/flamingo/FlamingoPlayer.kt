@@ -168,7 +168,6 @@ import androidx.media3.common.Player.REPEAT_MODE_ALL
 import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.REPEAT_MODE_ONE
 import androidx.media3.common.Timeline
-import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.db.entities.ArtistEntity
@@ -2766,7 +2765,6 @@ private fun FlamingoPlayingList(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val localPlayer = playerConnection.localPlayer
     val density = LocalDensity.current
     val queueListState = rememberLazyListState(initialFirstVisibleItemIndex = (currentWindowIndex + 1).coerceAtLeast(0))
 
@@ -3048,22 +3046,17 @@ private fun FlamingoPlayingList(
                             }
 
                         if (sourceIndex != destinationIndex) {
-                            justCommittedDragUid = completedDrag.draggedItemUid
-                            if (!shuffleModeEnabled) {
-                                playerConnection.player.moveMediaItem(sourceIndex, destinationIndex)
-                            } else {
-                                localPlayer.setShuffleOrder(
-                                    DefaultShuffleOrder(
-                                        queueWindows
-                                            .map { it.firstPeriodIndex }
-                                            .toMutableList()
-                                            .move(sourceIndex, destinationIndex)
-                                            .toIntArray(),
-                                        System.currentTimeMillis(),
-                                    ),
-                                )
+                            val accepted =
+                                if (!shuffleModeEnabled) {
+                                    playerConnection.moveQueueItem(sourceIndex, destinationIndex)
+                                } else {
+                                    playerConnection.reorderShuffledQueue(sourceIndex, destinationIndex)
+                                }
+                            if (accepted) {
+                                justCommittedDragUid = completedDrag.draggedItemUid
+                                return@LaunchedEffect
                             }
-                            return@LaunchedEffect
+                            // Refused by the lock: no event follows, so fall through and resync.
                         }
                     }
                 }
@@ -3195,11 +3188,10 @@ private fun FlamingoPlayingList(
                                     val absIndex =
                                         queueWindows.indexOfFirst { it.uid == window.uid }
                                     if (absIndex > 0) {
-                                        playerConnection.player.moveMediaItem(
+                                        playerConnection.moveQueueItem(
                                             absIndex,
                                             currentWindowIndex + 1,
                                         )
-                                        true
                                     } else {
                                         false
                                     }
@@ -3208,8 +3200,7 @@ private fun FlamingoPlayingList(
                                     val absIndex =
                                         queueWindows.indexOfFirst { it.uid == window.uid }
                                     if (absIndex != -1) {
-                                        playerConnection.player.removeMediaItem(absIndex)
-                                        true
+                                        playerConnection.removeQueueItemAt(absIndex)
                                     } else {
                                         false
                                     }
@@ -3272,6 +3263,7 @@ private fun FlamingoQueueMusicListItem(
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     val addedToQueueToast = stringResource(id = R.string.flamingo_queue_added_toast)
+    val queueLocked = moe.rukamori.archivetune.utils.rememberPreference(moe.rukamori.archivetune.constants.QueueLockedKey, defaultValue = false)
     val music = window.mediaItem.metadata
     var rowWidthPx by remember(window.uid) {
         mutableFloatStateOf(0f)
@@ -3346,13 +3338,9 @@ private fun FlamingoQueueMusicListItem(
 
                 resetAnimationJob?.cancel()
                 resetAnimationJob = coroutineScope.launch {
-                    if (shouldRemove && onRemove != null) {
+                    if (shouldRemove && onRemove != null && !queueLocked.value) {
                         deleteAnimating = true
-                        deleteHeightPx = if (rowHeightPx > 0f) {
-                            rowHeightPx
-                        } else {
-                            with(density) { QueueRowHeight.toPx() }
-                        }
+                        deleteHeightPx = if (rowHeightPx > 0f) rowHeightPx else with(density) { QueueRowHeight.toPx() }
 
                         androidx.compose.animation.core.animate(
                             initialValue = swipeOffsetPx,
@@ -3381,6 +3369,8 @@ private fun FlamingoQueueMusicListItem(
 
                         onRemove.invoke()
                         return@launch
+                    } else if (shouldRemove && onRemove != null) {
+                        Toast.makeText(context, R.string.queue_locked_toast, Toast.LENGTH_SHORT).show()
                     }
 
                     if (shouldMoveToNextQueue && onMoveToNextQueue?.invoke() == true) {

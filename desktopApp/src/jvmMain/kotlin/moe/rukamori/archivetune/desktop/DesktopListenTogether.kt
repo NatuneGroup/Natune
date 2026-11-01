@@ -413,7 +413,11 @@ internal class DesktopListenTogether(
 
     private fun isHostInRoom(): Boolean = client.role.value == ListenTogetherRole.HOST && client.roomState.value != null
 
-    private fun isGuestInRoom(): Boolean = client.role.value == ListenTogetherRole.GUEST && client.roomState.value != null
+    /**
+     * Whether this process is an in-room guest right now. Transport owners read it to leave queue order and seek
+     * position to the room host while the user is a guest.
+     */
+    fun isGuestInRoom(): Boolean = client.role.value == ListenTogetherRole.GUEST && client.roomState.value != null
 
     // Host side
 

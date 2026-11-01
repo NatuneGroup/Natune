@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.ui.player
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.flow.StateFlow
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsCredits
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.ui.lyrics.*
@@ -29,11 +30,13 @@ fun playerLyricsSlots(
     fullVisible: Boolean,
     compactVisible: Boolean,
     resumed: Boolean,
+    /** The document's credits, for the writer footer and the machine-made badges. */
+    credits: LyricsCredits? = null,
 ): PlayerLyricsSlots = PlayerLyricsSlots(
     full = { modifier ->
         key(sessionKey,playback,romanization) {
             LyricsFullscreenRenderer(lines,sessionKey,playback,romanization,settings,actions,
-                modifier,visible=fullVisible,resumed=resumed)
+                modifier,credits=credits,visible=fullVisible,resumed=resumed)
         }
     },
     compact = { modifier ->

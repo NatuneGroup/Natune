@@ -15,9 +15,11 @@ enum class PlayerStyleSetting {
 private val SharedThumbnailStyles =
     setOf(PlayerDesignStyle.V1, PlayerDesignStyle.V2, PlayerDesignStyle.V3, PlayerDesignStyle.V4, PlayerDesignStyle.V6)
 
-/** Whether the style reads the hidden-sleeve flag of the player presentation; V10 hides its die-cut cover but keeps its own shape. */
+/** Whether the style reads the hidden-sleeve flag of the player presentation; V10 hides its die-cut cover but keeps its own shape, and Metrolist fades its square artwork in place. */
 val PlayerDesignStyle.presentsHiddenSleeve: Boolean
-    get() = hasOrdinarySleeve || this == PlayerDesignStyle.V8 || this == PlayerDesignStyle.V9 || this == PlayerDesignStyle.V10
+    get() =
+        hasOrdinarySleeve || this == PlayerDesignStyle.V8 || this == PlayerDesignStyle.V9 ||
+            this == PlayerDesignStyle.V10 || this == PlayerDesignStyle.METROLIST_KMP
 
 val PlayerDesignStyle.presentsSleeveRadius: Boolean
     get() = hasOrdinarySleeve || this == PlayerDesignStyle.V8 || this == PlayerDesignStyle.V9

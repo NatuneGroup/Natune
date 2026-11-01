@@ -144,7 +144,7 @@ private class TestQueue(override val player: MusicPlayerController): QueueContro
         "track@1",listOf("track@1","track@0")))
     override suspend fun select(occurrenceId: String,positionMs: Long) { state.value=state.value.copy(currentOccurrenceId=occurrenceId) }
     override suspend fun replace(entries: List<ContentOccurrence>,startOccurrenceId: String,playWhenReady: Boolean) { error("not called") }
-    override suspend fun insert(entries: List<ContentOccurrence>,kind: UserQueuedKind) { error("not called") }
+    override suspend fun insert(entries: List<ContentOccurrence>,kind: UserQueuedKind): Int { error("not called") }
     override suspend fun remove(occurrenceIds: Set<String>) { error("not called") }
     override suspend fun move(occurrenceId: String,beforeOccurrenceId: String?) { error("not called") }
 }

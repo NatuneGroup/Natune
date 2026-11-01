@@ -23,11 +23,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,12 +47,17 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +67,11 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.androidauto.AndroidAutoActionSlot
 import moe.rukamori.archivetune.androidauto.AndroidAutoConnectionStatus
 import moe.rukamori.archivetune.androidauto.AndroidAutoCustomAction
+import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylist
+import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylistKind
+import moe.rukamori.archivetune.androidauto.AndroidAutoPinnedPlaylists
+import moe.rukamori.archivetune.androidauto.AndroidAutoPlaylistOption
+import moe.rukamori.archivetune.androidauto.AndroidAutoPlaylistPickerState
 import moe.rukamori.archivetune.androidauto.AndroidAutoSettingsSnapshot
 import moe.rukamori.archivetune.ui.component.ListPreference
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
@@ -162,6 +180,7 @@ private fun AndroidAutoSettingsBody(
     modifier: Modifier = Modifier,
 ) {
     val configuration = model.snapshot.configuration
+    var showPinnedPicker by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier =
             modifier
@@ -249,6 +268,42 @@ private fun AndroidAutoSettingsBody(
             }
         }
 
+        PreferenceGroup(title = stringResource(R.string.android_auto_driving_playlists)) {
+            item {
+                PreferenceEntry(
+                    title = { Text(stringResource(R.string.android_auto_choose_pinned_playlists)) },
+                    description =
+                        stringResource(
+                            R.string.android_auto_pinned_playlists_count,
+                            model.snapshot.pinnedPlaylists.size,
+                            AndroidAutoPinnedPlaylists.MAX_PINNED_PLAYLISTS,
+                        ),
+                    icon = { Icon(painterResource(R.drawable.push_pin), null) },
+                    onClick =
+                        remember(onAction) {
+                            {
+                                showPinnedPicker = true
+                                onAction(AndroidAutoSettingsAction.LoadPlaylistCandidates)
+                            }
+                        },
+                    isEnabled = !model.busy,
+                )
+            }
+            item {
+                SwitchPreference(
+                    title = { Text(stringResource(R.string.android_auto_pinned_play_in_order)) },
+                    description = stringResource(R.string.android_auto_pinned_play_in_order_desc),
+                    icon = { Icon(painterResource(R.drawable.playlist_play), null) },
+                    checked = !configuration.pinnedPlaylistShuffle,
+                    onCheckedChange =
+                        remember(onAction) {
+                            { onAction(AndroidAutoSettingsAction.SetPinnedPlayInOrder(it)) }
+                        },
+                    isEnabled = !model.busy,
+                )
+            }
+        }
+
         PreferenceGroup(title = stringResource(R.string.android_auto_controls)) {
             item {
                 ListPreference(
@@ -298,6 +353,167 @@ private fun AndroidAutoSettingsBody(
                         }
                     },
                     isEnabled = !model.busy,
+                )
+            }
+        }
+    }
+
+    if (showPinnedPicker) {
+        PinnedPlaylistsDialog(
+            picker = model.picker,
+            pinned = model.snapshot.pinnedPlaylists,
+            onToggle = { onAction(AndroidAutoSettingsAction.TogglePinnedPlaylist(it)) },
+            onDismiss = { showPinnedPicker = false },
+        )
+    }
+}
+
+@Composable
+private fun PinnedPlaylistsDialog(
+    picker: AndroidAutoPlaylistPickerState,
+    pinned: List<AndroidAutoPinnedPlaylist>,
+    onToggle: (AndroidAutoPlaylistOption) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val pinnedSet = remember(pinned) { pinned.toSet() }
+    val atLimit = pinned.size >= AndroidAutoPinnedPlaylists.MAX_PINNED_PLAYLISTS
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dismiss))
+            }
+        },
+        title = { Text(stringResource(R.string.android_auto_choose_pinned_playlists)) },
+        text = {
+            Column {
+                Text(
+                    text =
+                        stringResource(
+                            R.string.android_auto_pinned_playlists_count,
+                            pinned.size,
+                            AndroidAutoPinnedPlaylists.MAX_PINNED_PLAYLISTS,
+                        ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                when {
+                    picker.loading ->
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+
+                    picker.options.isEmpty() ->
+                        Text(
+                            text =
+                                stringResource(
+                                    if (picker.failed) {
+                                        R.string.android_auto_playlists_load_failed
+                                    } else {
+                                        R.string.android_auto_no_playlists
+                                    },
+                                ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 16.dp),
+                        )
+
+                    else ->
+                        LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                            val localOptions =
+                                picker.options.filter { it.kind == AndroidAutoPinnedPlaylistKind.LOCAL }
+                            val onlineOptions =
+                                picker.options.filter { it.kind == AndroidAutoPinnedPlaylistKind.ONLINE }
+                            if (localOptions.isNotEmpty()) {
+                                item {
+                                    Text(
+                                        text = stringResource(R.string.playlists),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                                    )
+                                }
+                                items(localOptions, key = { "local_${it.id}" }) { option ->
+                                    PinnedPlaylistRow(
+                                        option = option,
+                                        checked = option.asPin() in pinnedSet,
+                                        enabled = option.asPin() in pinnedSet || !atLimit,
+                                        onToggle = { onToggle(option) },
+                                    )
+                                }
+                            }
+                            if (onlineOptions.isNotEmpty()) {
+                                item {
+                                    Text(
+                                        text = stringResource(R.string.your_youtube_playlists),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                                    )
+                                }
+                                items(onlineOptions, key = { "online_${it.id}" }) { option ->
+                                    PinnedPlaylistRow(
+                                        option = option,
+                                        checked = option.asPin() in pinnedSet,
+                                        enabled = option.asPin() in pinnedSet || !atLimit,
+                                        onToggle = { onToggle(option) },
+                                    )
+                                }
+                            }
+                            if (picker.failed) {
+                                item {
+                                    Text(
+                                        text = stringResource(R.string.android_auto_playlists_load_failed),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                    )
+                                }
+                            }
+                        }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun PinnedPlaylistRow(
+    option: AndroidAutoPlaylistOption,
+    checked: Boolean,
+    enabled: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled, onClick = onToggle)
+                .padding(vertical = 4.dp),
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(
+                text = option.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val subtitle =
+                option.subtitle
+                    ?: option.songCount?.let { pluralStringResource(R.plurals.n_song, it, it) }
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import org.drinkless.tdlib.TdApi
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.shared.domain.customartwork.localPlaylistCoverUri
 import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
 import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
 import moe.rukamori.archivetune.shared.domain.repository.radioQueueRequest
@@ -69,6 +70,8 @@ import moe.rukamori.archivetune.shared.ui.menu.PlaylistMenuFacts
 import moe.rukamori.archivetune.shared.ui.menu.PlaylistMenuHost
 import moe.rukamori.archivetune.shared.ui.menu.PlaylistOverflowMenu
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
+import moe.rukamori.archivetune.shared.ui.screens.PlaylistArtwork
+import moe.rukamori.archivetune.shared.ui.screens.customartwork.BoundCustomArtworkEditDialog
 import moe.rukamori.archivetune.shared.ui.screens.AssignPlaylistTagsActions
 import moe.rukamori.archivetune.shared.ui.screens.AssignPlaylistTagsDialog
 import moe.rukamori.archivetune.shared.ui.screens.AssignPlaylistTagsUi
@@ -95,14 +98,23 @@ internal class DesktopPlaylistMenuState(
     private val openRoute: (String) -> Unit,
 ) {
     /** The playlist the overflow menu is open for, with its complete song list once it is read. */
-    data class MenuTarget(val item: ContentItem, val complete: FinitePlaylistCompleteList<ContentOccurrence>?)
+    data class MenuTarget(
+        val item: ContentItem,
+        val complete: FinitePlaylistCompleteList<ContentOccurrence>?,
+        val previewItems: List<ContentItem> = emptyList(),
+    )
 
     /** The tag dialog: one playlist, or the bulk picker when [playlist] is null. */
     data class TagTarget(val playlist: ContentRef?)
 
+    /** The playlist whose custom cover editor is open, with its mosaic items for the preview. */
+    data class CoverTarget(val item: ContentItem, val previewItems: List<ContentItem>)
+
     var menu: MenuTarget? by mutableStateOf(null)
         private set
     var tags: TagTarget? by mutableStateOf(null)
+        private set
+    var cover: CoverTarget? by mutableStateOf(null)
         private set
     var message: String? by mutableStateOf(null)
         private set
@@ -157,8 +169,19 @@ internal class DesktopPlaylistMenuState(
             menu = null
             tags = TagTarget(playlist)
         }
-        override fun changePlaylistCover(playlist: ContentRef) { unavailable() }
-        override suspend fun removePlaylistCover(playlist: ContentRef) { unavailable() }
+        /**
+         * The cover row opens the shared artwork editor over the playlist's pseudo-URL, so the stored file replaces
+         * the mosaic on every surface the same artwork identity resolves.
+         */
+        override fun changePlaylistCover(playlist: ContentRef) {
+            val target = menu?.takeIf { it.item.ref == playlist } ?: return unavailable()
+            menu = null
+            cover = CoverTarget(target.item, target.previewItems)
+        }
+        override suspend fun removePlaylistCover(playlist: ContentRef) {
+            require(playlist.provider == ContentProvider.LOCAL.id) { "Only local playlist covers are removed here" }
+            graph.customArtwork.removeCover(localPlaylistCoverUri(playlist.id))
+        }
         override suspend fun syncToYouTube(playlist: ContentRef) { unavailable() }
         override suspend fun setHidden(playlist: ContentRef, hidden: Boolean) { unavailable() }
         override suspend fun deletePlaylist(playlist: ContentRef) {
@@ -180,6 +203,7 @@ internal class DesktopPlaylistMenuState(
     /** A local playlist has no share link, so the export row stands in for share; a link is copied when one exists. */
     val sharing = MenuShareHandler(object : MenuSharing {
         override suspend fun shareLink(url: String) = copyToDesktopClipboard(url)
+        override suspend fun copyLink(url: String) = copyToDesktopClipboard(url)
         override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) { unavailable() }
         override suspend fun telegramMessageLink(mediaId: String): String? {
             val track = TelegramTrackRef.fromMediaId(mediaId) ?: return null
@@ -196,7 +220,7 @@ internal class DesktopPlaylistMenuState(
         graph.scope.launch {
             try {
                 val row = graph.libraryContent.playlistRows().first().firstOrNull { it.item.ref == ref } ?: return@launch
-                menu = MenuTarget(row.item, null)
+                menu = MenuTarget(row.item, null, row.previewItems)
                 val page = graph.libraryContent.currentList(
                     ContentRequest(ContentProvider.LOCAL, ContentSurface.LIBRARY_PLAYLIST_ITEMS, parent = ref),
                 )
@@ -208,7 +232,7 @@ internal class DesktopPlaylistMenuState(
                         },
                     )
                 }
-                if (menu?.item?.ref == ref) menu = MenuTarget(row.item, complete)
+                if (menu?.item?.ref == ref) menu = MenuTarget(row.item, complete, row.previewItems)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -219,6 +243,10 @@ internal class DesktopPlaylistMenuState(
 
     fun dismissMenu() {
         menu = null
+    }
+
+    fun dismissCover() {
+        cover = null
     }
 
     fun openTags(ref: ContentRef) {
@@ -309,6 +337,24 @@ internal fun DesktopPlaylistMenuOverlay(state: DesktopPlaylistMenuState, graph: 
         }
     }
     val settingsSnapshot by graph.settings.snapshots.collectAsState()
+    val artworkOverrides by graph.customArtwork.overrides.collectAsState()
+    state.cover?.let { target ->
+        BoundCustomArtworkEditDialog(
+            artworkUrl = target.item.artworkUri,
+            songId = null,
+            repository = graph.customArtwork,
+            pick = ::pickDesktopArtworkFile,
+            onDismiss = state::dismissCover,
+            preview = { modifier ->
+                PlaylistArtwork(
+                    target.item,
+                    target.previewItems,
+                    { cell, cellModifier -> DesktopRemoteArtwork(cell.artworkUri, graph.artworkLoader, cellModifier) },
+                    modifier,
+                )
+            },
+        )
+    }
     state.menu?.let { target ->
         val ref = target.item.ref
         val pinned = settingsSnapshot?.let { snapshot ->
@@ -337,8 +383,8 @@ internal fun DesktopPlaylistMenuOverlay(state: DesktopPlaylistMenuState, graph: 
                         automatic = false,
                         downloadPlaylist = false,
                         telegramChannel = ref.provider == ContentProvider.LOCAL.id && ref.id.startsWith("LPtg"),
-                        canChangeCover = false,
-                        canRemoveCover = false,
+                        canChangeCover = ref.provider == ContentProvider.LOCAL.id && ref.kind == ContentKind.PLAYLIST,
+                        canRemoveCover = artworkOverrides.hasCover(target.item.artworkUri),
                     ),
                     queue = graph.queue,
                     library = graph.library,

@@ -19,9 +19,17 @@ import moe.rukamori.archivetune.shared.domain.playback.SystemMonotonicClock
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import platform.MediaPlayer.*
 
+/** Next/previous enablement for the system transport, from the queue successors the on-screen controls compute. */
+data class IosTransportAvailability(val canPrevious: Boolean, val canNext: Boolean)
+
 /**
  * Main-queue system controls dispatch to the existing controller/queue owner, not a new playlist.
  * [metadata] is keyed by occurrence, so repeated media do not inherit another occurrence's labels.
+ *
+ * [commandAvailability] drives the enabled flag of the next/previous remote commands from the queue's successors,
+ * the way the Android media session advertises its transport actions. A host that supplies none keeps the commands
+ * always enabled, as before; a host that supplies one sees them disabled while the queue reports no successor, and a
+ * null snapshot disables them either way because there is nothing to skip from.
  */
 class IosNowPlaying(
     private val player: MusicPlayerController,
@@ -29,6 +37,7 @@ class IosNowPlaying(
     private val next: () -> Unit,
     private val previous: () -> Unit,
     metadataChanges: Flow<*>? = null,
+    commandAvailability: Flow<IosTransportAvailability>? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val center = MPNowPlayingInfoCenter.defaultCenter()
@@ -43,6 +52,7 @@ class IosNowPlaying(
     private var artwork: MPMediaItemArtwork? = null
     private var artworkLoad: Job? = null
     private var artworkGeneration = 0L
+    private var transportAvailability: IosTransportAvailability? = null
     private val artworkCache = LinkedHashMap<NowPlayingArtworkKey, MPMediaItemArtwork>()
 
     init {
@@ -64,7 +74,12 @@ class IosNowPlaying(
             }
             remote.changePlaybackPositionCommand.enabled = false
             center.nowPlayingInfo = null
-            combine(player.snapshot, metadataChanges ?: flowOf(Unit)) { snapshot, _ -> snapshot }.collect { snapshot ->
+            combine(
+                player.snapshot,
+                metadataChanges ?: flowOf(Unit),
+                commandAvailability ?: flowOf(null),
+            ) { snapshot, _, availability -> snapshot to availability }.collect { (snapshot, availability) ->
+                transportAvailability = availability
                 publish(snapshot)
             }
         }
@@ -72,6 +87,11 @@ class IosNowPlaying(
 
     private fun publish(snapshot: PlaybackSnapshot?, artworkChanged: Boolean = false) {
         if (closed) return
+        // With no availability source the commands keep the enabled state `bind` gave them, as before.
+        transportAvailability?.let { availability ->
+            remote.nextTrackCommand.enabled = availability.canNext
+            remote.previousTrackCommand.enabled = availability.canPrevious
+        }
         if (snapshot == null) {
             selectArtwork(null)
             if (projection != null) center.nowPlayingInfo = null

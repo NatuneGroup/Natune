@@ -12,6 +12,7 @@ fun settingsSearchRoute(parentKey: String, scrollKey: String?): String? {
     if (owner == "developer_options" && scrollKey == "acoustic_quality") return "$route?scrollTo=acoustic_quality"
     val supportsScroll = owner !in setOf(
         "developer_options", "about", "po_token", "account", "logcat", "listen_together", "canvas", "android_auto",
+        "crash_logs",
     )
     val target = if (owner == "lyrics" && scrollKey == "use_lyrics_v2") "lyrics_mode" else scrollKey
     return if (!supportsScroll || target.isNullOrBlank()) route else "$route?scrollTo=$target"
@@ -23,6 +24,7 @@ private val routes = mapOf(
     "appearance_theme" to "settings/appearance", "appearance_player" to "settings/appearance",
     "appearance_interface" to "settings/appearance", "appearance_extras" to "settings/appearance/extras",
     "aod" to "settings/appearance/aod_customized", "navigation_bar" to "settings/appearance/navigation_bar",
+    "liquid_glass" to "settings/appearance/liquid_glass",
     "lyrics_animations" to "settings/appearance/lyrics_animations", "playback" to "settings/player",
     "ytdlp" to SettingsRoutes.YTDLP, "sources" to "settings/sources", "applemusic" to "settings/applemusic",
     "jiosaavn" to "settings/jiosaavn", "amazon" to "settings/amazon", "deezer" to "settings/deezer",
@@ -35,6 +37,7 @@ private val routes = mapOf(
     "logcat" to "settings/logcat", "about" to "settings/about", "discord" to "settings/discord",
     "discord_experimental" to "settings/discord/experimental", "tidal" to "settings/tidal",
     "qobuz" to "settings/qobuz", "telegram" to "settings/telegram", "lastfm" to "settings/lastfm",
+    "crash_logs" to "settings/crash_logs",
     "ai_integration" to "settings/ai_integration", "language_packs" to "settings/language_packs",
     "po_token" to "settings/po_token", "update" to "settings/update", "changelog" to "settings/changelog",
     "spotify_streaming" to "settings/spotify_streaming", "qqmusic" to "settings/qqmusic",
@@ -72,6 +75,12 @@ private val crossPageOwners = buildMap {
         "deezer_audio_quality", "jiosaavn_enable", "jiosaavn_audio_quality", "applemusic_enable", "amazon_source_enable",
         "qq_music_enable", "qq_music_account", "youtube_source_enable")
     own("ytdlp", "playback", "ytdlp")
+    own("crash_logs", "developer_options", "crash_logs")
+    own("liquid_glass", "appearance",
+        "glass_intensity", "glass_refraction_height", "glass_refraction_amount", "glass_blur_radius",
+        "glass_tint_opacity", "glass_shadow_depth", "glass_depth_3d", "glass_chromatic_aberration",
+        "glass_backdrop_vibrancy", "glass_adaptive_luminance", "glass_reset",
+        "liquid_glass_general", "liquid_glass_optics", "liquid_glass_quality", "liquid_glass_reset_group")
     own("sources", "deezer", "deezer_enable", "deezer_audio_quality")
     own("qobuz", "sources", "qobuz")
     own("tidal", "sources", "tidal")

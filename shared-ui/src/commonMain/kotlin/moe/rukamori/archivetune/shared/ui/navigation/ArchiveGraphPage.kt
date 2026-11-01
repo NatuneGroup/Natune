@@ -7,6 +7,7 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.home.*
 import moe.rukamori.archivetune.shared.ui.home.variants.BitChordHomeActions
 import moe.rukamori.archivetune.shared.ui.home.variants.BitChordHomeUi
+import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantImage
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantNowPlaying
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantThumbnailAspectRatio
@@ -43,6 +44,16 @@ sealed interface ArchiveGraphPage {
         val refreshing: Boolean = false, val refresh: (() -> Unit)? = null,
         /** Per-item frame ratio from the owner (crop-to-square policy and video metadata). Square when the owner supplies none. */
         val thumbnailAspectRatio: (ContentItem) -> Float = { HomeSquareCardRatio },
+        /**
+         * The feed's category chips and the selected chip's key, null while nothing filters the feed. [selectChip]
+         * asks the owner to re-read the feed under the tapped chip, and a re-tap on the selected one clears it; the
+         * owner never answers with a made-up shelf. [showChips] is the host's category-chips preference: off hides
+         * the row, and the owner keeps the feed unfiltered while it is hidden.
+         */
+        val chips: List<HomeVariantChip> = emptyList(),
+        val selectedChipKey: String? = null,
+        val selectChip: (HomeVariantChip) -> Unit = {},
+        val showChips: Boolean = true,
     ) : ArchiveGraphPage
     /**
      * Rukamori Home. The variant owns its greeting, chips, pull gesture and load-more trigger; [image] draws avatars and
@@ -83,7 +94,12 @@ sealed interface ArchiveGraphPage {
         val mixHeader: LibraryMixHeaderBinding? = null,
     ) : ArchiveGraphPage
     data class Discovery(val state: DiscoveryUi, val tab: (DiscoveryTab) -> Unit, val refresh: () -> Unit, val retry: () -> Unit) : ArchiveGraphPage
-    data class Charts(val sections: List<BrowseShelfUi>, val loading: Boolean, val failed: Boolean, val retry: () -> Unit) : ArchiveGraphPage
+    /**
+     * The charts sheet: ranked shelves first, then genre and new-release shelves. [continuation] is the next shelf
+     * batch's token and [loadMore] pages it in; a host that reaches the list end with a token still open asks for it.
+     */
+    data class Charts(val sections: List<BrowseShelfUi>, val loading: Boolean, val failed: Boolean, val retry: () -> Unit,
+        val continuation: String? = null, val loadMore: () -> Unit = {}) : ArchiveGraphPage
     data class Moods(val moods: List<MoodGenreUi>, val loading: Boolean, val failed: Boolean, val retry: () -> Unit) : ArchiveGraphPage
     data class Browse(val title: String, val collection: ContentRequest, val page: PagedContentState,
         val loadMore: () -> Unit, val retry: () -> Unit) : ArchiveGraphPage
@@ -138,6 +154,8 @@ sealed interface ArchiveGraphPage {
         val page: PagedContentState,
         val actions: DetailActions,
         val control: PlaylistDetailControl? = null,
+        /** A local playlist's first rows' items, drawn as its header's 2x2 mosaic when it has no custom cover. */
+        val headerMosaicItems: List<ContentItem> = emptyList(),
     ) : ArchiveGraphPage
     /**
      * Artist page from the artist/album owner. [page] is null while the provider page loads and [pageFailed] reports a

@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.shared.data.persistence
 
 import androidx.room.*
 import androidx.sqlite.SQLiteDriver
+import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskDao
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskRow
@@ -20,7 +21,8 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
  * [PortableStateMigrations.V6_TO_V7]. Version 8 adds the persisted download queue and local-media scan table, the
  * search history and video-id lookup tables, and the hidden flag on playlists, by
  * [PortableStateMigrations.V7_TO_V8]. Version 9 adds the podcast episode progress table, by
- * [PortableStateMigrations.V8_TO_V9]. Version 10 adds per-song display edits by [SongMetadataOverrideMigration].
+ * [PortableStateMigrations.V8_TO_V9]. Version 10 adds per-song display edits by [SongMetadataOverrideMigration]. Version 11 adds the persisted
+ * per-song lyrics offset by [SongLyricsOffsetMigration].
  */
 @Database(
     entities = [QueueCheckpointRow::class, LibraryItemRow::class, PortablePlaylistRow::class,
@@ -29,8 +31,8 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
         PortableStoredSongRow::class, PortableAlbumCompleteRow::class, PortableAlbumTrackRow::class,
         PortableDownloadTaskRow::class, PortableLocalTrackRow::class,
         PortableSearchHistoryRow::class, PortableSetVideoIdRow::class, PortablePodcastProgressRow::class,
-        PortableSongMetadataOverrideRow::class],
-    version = 10,
+        PortableSongMetadataOverrideRow::class, PortableSongLyricsOffsetRow::class],
+    version = 11,
     exportSchema = true,
 )
 @ConstructedBy(PortableStateDatabaseConstructor::class)
@@ -47,6 +49,7 @@ abstract class PortableStateDatabase : RoomDatabase() {
     abstract fun setVideoIds(): PortableSetVideoIdDao
     abstract fun podcastProgress(): PortablePodcastProgressDao
     abstract fun songMetadataOverrides(): PortableSongMetadataOverrideDao
+    abstract fun songLyricsOffsets(): PortableSongLyricsOffsetDao
 }
 
 expect object PortableStateDatabaseConstructor : RoomDatabaseConstructor<PortableStateDatabase> {
@@ -69,6 +72,7 @@ fun RoomDatabase.Builder<PortableStateDatabase>.buildPortableStateDatabase(): Po
         PortableStateMigrations.V7_TO_V8,
         PortableStateMigrations.V8_TO_V9,
         SongMetadataOverrideMigration,
+        SongLyricsOffsetMigration,
     )
         .setDriver(portableStateDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
 
@@ -101,7 +105,18 @@ abstract class QueueCheckpointDao {
         val checkpoint = QueueCheckpointJson.decode(row.json)
         require(checkpoint.queue.revision == row.revision)
         if (checkpoint.queue.currentOccurrenceId != occurrenceId) return false
-        put(row.copy(json = QueueCheckpointJson.encode(checkpoint.copy(positionMs = positionMs))))
+        // A position tick is a fresh capture: its age, not the queue's first-write time, is what the TTL measures.
+        put(
+            row.copy(
+                json =
+                    QueueCheckpointJson.encode(
+                        checkpoint.copy(
+                            positionMs = positionMs,
+                            savedAtEpochMs = Clock.System.now().toEpochMilliseconds(),
+                        ),
+                    ),
+            ),
+        )
         return true
     }
 }

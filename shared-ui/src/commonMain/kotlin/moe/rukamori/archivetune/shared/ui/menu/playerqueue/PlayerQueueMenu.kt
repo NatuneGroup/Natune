@@ -181,6 +181,20 @@ fun PlayerQueueMenu(
                         },
                     ),
                 )
+                // Only the playing track can carry a live position; queue rows keep the plain link.
+                if (!isQueue) {
+                    add(
+                        PlayerQueueGridItem(
+                            label = Res.string.share_tempo_copy_url_at_current_time,
+                            enabled = true,
+                            leading = { icon(PlayerQueueMenuIcon.LINK, LocalContentColor.current, Modifier.size(28.dp)) },
+                            onClick = {
+                                actions.copyLinkAtCurrentPosition(trackUrl)
+                                onDismiss()
+                            },
+                        ),
+                    )
+                }
             }
             if (!track.isLocal) {
                 add(
@@ -531,6 +545,8 @@ fun PlayerQueueMenu(
         PlayerQueueTempoPitchDialog(
             initialSpeed = state.playbackSpeed,
             initialPitch = state.playbackPitch,
+            presets = state.tempoPitchPresets,
+            remembered = state.tempoPitchRemembered,
             actions = actions,
             icon = icon,
             onDismiss = { showTempoPitchDialog = false },

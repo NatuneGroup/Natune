@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package moe.rukamori.archivetune.shared.ui.ios
 
 import androidx.compose.foundation.Image
@@ -19,6 +21,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.Url
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readAvailable
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -28,28 +31,80 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.useContents
+import kotlin.math.max
+import kotlin.math.min
+import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
+import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkDirectory
+import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
+import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkKeys
+import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkLimits
+import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkOverrides
+import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
 import moe.rukamori.archivetune.shared.ui.player.rememberCoverImage
 import org.jetbrains.skia.Image as SkiaImage
+import platform.CoreGraphics.CGRectMake
+import platform.CoreGraphics.CGSizeMake
+import platform.Foundation.NSData
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileSize
+import platform.Foundation.NSNumber
+import platform.Foundation.NSURL
+import platform.Foundation.dataWithContentsOfFile
+import platform.UIKit.UIGraphicsImageRenderer
+import platform.UIKit.UIGraphicsImageRendererFormat
+import platform.UIKit.UIImage
+import platform.UIKit.UIImagePNGRepresentation
 
 /**
  * Fetches and decodes the artwork the iOS app shows: a public http or https image, requested with no cookie and no
  * account header, so a thumbnail never carries a credential. A missing, oversized, slow or undecodable image reads as
  * no image, and its frame keeps the placeholder. Decoded images sit in a bounded least-recently-used cache.
  */
-internal class IosArtworkLoader(private val http: HttpClient) {
+internal class IosArtworkLoader(
+    private val http: HttpClient,
+    private val customArtwork: CustomArtworkRepository? = null,
+    private val customArtworkFiles: CustomArtworkFiles? = null,
+) {
     private val lock = Mutex()
     private val cache = LinkedHashMap<String, ImageBitmap>()
     private val permits = Semaphore(MAX_CONCURRENT_FETCHES)
+    private val telegramArtwork = IosTelegramArtwork(http)
+
+    /** The Telegram session the `tgart:` chain downloads through; null until the host hands its session in. */
+    @Volatile private var telegram: IosTelegramClient? = null
+
+    /**
+     * Hands the admitted Telegram session to the artwork path, the same hand the desktop loader's `telegramFile`
+     * accessor gets. A session is only ever attached when the host attaches it, so a logged-out client is never
+     * asked for a file.
+     */
+    fun attachTelegram(session: IosTelegramClient) {
+        telegram = session
+    }
+
+    /** The stored custom covers, so a slot recomposes when one is set or removed. Null when the host has none. */
+    val overrides: StateFlow<CustomArtworkOverrides>? get() = customArtwork?.overrides
+
+    /** What a slot for [uri] shows: the custom cover file that replaces it, or [uri] itself. */
+    fun displayUri(uri: String?, overrides: CustomArtworkOverrides? = customArtwork?.overrides?.value): String? {
+        val files = customArtworkFiles ?: return uri
+        val key = CustomArtworkKeys.coverKey(uri) ?: return uri
+        val name = overrides?.covers?.get(key) ?: return uri
+        return files.uriOf(CustomArtworkDirectory.COVERS, name)
+    }
 
     /**
      * The image already decoded for [uri], read during composition without a network request. While a load holds the
      * cache this answers null, and the slot then waits for [load] instead.
      */
     fun cached(uri: String?): ImageBitmap? {
-        val key = uri ?: return null
+        val key = displayUri(uri) ?: return null
         if (!lock.tryLock()) return null
         return try {
             cache[key]
@@ -60,10 +115,25 @@ internal class IosArtworkLoader(private val http: HttpClient) {
 
     /** Loads [uri] once, within the time, size and concurrency bounds. Null means no image can be shown. */
     suspend fun load(uri: String?): ImageBitmap? {
-        val target = uri?.takeIf(::isPublicWebImage) ?: return null
+        val target = displayUri(uri) ?: return null
+        val kind = when {
+            target.startsWith("tgart:") -> ArtworkKind.TELEGRAM
+            target.startsWith("file:") -> ArtworkKind.LOCAL_FILE
+            isPublicWebImage(target) -> ArtworkKind.REMOTE
+            else -> return null
+        }
         lock.withLock { cache[target]?.let { held -> cache.remove(target); cache[target] = held; return held } }
         val bitmap = try {
-            withTimeout(FETCH_TIMEOUT_MS) { permits.withPermit { fetchAndDecode(target) } }
+            withTimeout(FETCH_TIMEOUT_MS) {
+                permits.withPermit {
+                    when (kind) {
+                        ArtworkKind.REMOTE -> fetchAndDecode(target)
+                        ArtworkKind.LOCAL_FILE -> readLocalImage(target)
+                        ArtworkKind.TELEGRAM -> telegramArtwork.fetchBytes(target, telegram)
+                            ?.let { bytes -> withContext(Dispatchers.Default) { decode(bytes) } }
+                    }
+                }
+            }
         } catch (_: TimeoutCancellationException) {
             null
         } catch (cancelled: CancellationException) {
@@ -79,11 +149,39 @@ internal class IosArtworkLoader(private val http: HttpClient) {
     }
 
     private suspend fun fetchAndDecode(uri: String): ImageBitmap? {
+        if (uri.startsWith("file:")) return readLocalImage(uri)
         val bytes = http.prepareGet(uri).execute { response ->
             if (!response.status.isSuccess()) return@execute null
             response.readBoundedBytes(MAX_IMAGE_BYTES)
         } ?: return null
         return withContext(Dispatchers.Default) { decode(bytes) }
+    }
+
+    /**
+     * A file the app stored itself, such as the picked player background. A picked photo is often larger than a
+     * thumbnail and can be HEIC, so UIKit decodes and downsamples it to the cache's edge bound before Skia keeps the
+     * bounded copy, the way the desktop loader subsamples a picked cover instead of refusing it.
+     */
+    private suspend fun readLocalImage(uri: String): ImageBitmap? = withContext(Dispatchers.Default) {
+        val url = NSURL.URLWithString(uri)?.takeIf { it.scheme == "file" } ?: return@withContext null
+        val path = url.path ?: return@withContext null
+        val attributes = NSFileManager.defaultManager.attributesOfItemAtPath(path, null) ?: return@withContext null
+        val fileBytes = (attributes[NSFileSize] as? NSNumber)?.longLongValue ?: return@withContext null
+        if (fileBytes <= 0L || fileBytes > CustomArtworkLimits.MAX_COVER_BYTES) return@withContext null
+        val data = NSData.dataWithContentsOfFile(path) ?: return@withContext null
+        val image = UIImage(data = data) ?: return@withContext null
+        val (width, height) = image.size.useContents { width to height }
+        if (width <= 0.0 || height <= 0.0) return@withContext null
+        val scale = min(1.0, MAX_IMAGE_EDGE.toDouble() / max(width, height))
+        val targetWidth = max(1.0, width * scale)
+        val targetHeight = max(1.0, height * scale)
+        // The renderer draws at the screen's scale by default, which would triple the kept pixels.
+        val format = UIGraphicsImageRendererFormat.defaultFormat().apply { this.scale = 1.0 }
+        val scaled = UIGraphicsImageRenderer(size = CGSizeMake(targetWidth, targetHeight), format = format)
+            .imageWithActions { _ -> image.drawInRect(CGRectMake(0.0, 0.0, targetWidth, targetHeight)) }
+        val png = UIImagePNGRepresentation(scaled) ?: return@withContext null
+        val bytes = png.bytes?.readBytes(png.length.toInt()) ?: return@withContext null
+        decode(bytes)
     }
 
     /** Refuses an image whose edge is out of bounds before its pixels are kept, so one image cannot dominate memory. */
@@ -106,7 +204,12 @@ internal class IosArtworkLoader(private val http: HttpClient) {
         const val FETCH_TIMEOUT_MS = 15_000L
         const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
         const val MAX_IMAGE_EDGE = 1024
+
+        /** A local artwork file may be a full-size cover, so it keeps the same bound the desktop file branch uses. */
+        const val MAX_COVER_FILE_BYTES = 20L * 1024L * 1024L
     }
+
+    private enum class ArtworkKind { REMOTE, LOCAL_FILE, TELEGRAM }
 }
 
 /** Only public http and https locations are requested. A location with user information or without a host is refused. */
@@ -156,7 +259,9 @@ private suspend fun HttpResponse.readBoundedBytes(maxBytes: Int): ByteArray? {
  */
 @Composable
 internal fun IosRemoteArtwork(uri: String?, loader: IosArtworkLoader, modifier: Modifier) {
-    val image by produceState(initialValue = loader.cached(uri), key1 = uri) {
+    val overrides = loader.overrides?.collectAsState()?.value
+    val shown = loader.displayUri(uri, overrides)
+    val image by produceState(initialValue = loader.cached(uri), key1 = uri, key2 = shown) {
         val held = loader.cached(uri)
         value = held
         if (held == null) value = loader.load(uri)
@@ -179,7 +284,9 @@ internal fun IosQueueArtwork(occurrenceId: String?, graph: IosSessionGraph, modi
     val target = occurrenceId ?: queue.currentOccurrenceId
     val uri = queue.entries.firstOrNull { it.occurrenceId == target }?.item?.artworkUri
     val loader = graph.artworkLoader
-    val image = rememberCoverImage(key = uri, cached = { loader.cached(uri) }, load = { loader.load(uri) })
+    val overrides = loader.overrides?.collectAsState()?.value
+    val shown = loader.displayUri(uri, overrides)
+    val image = rememberCoverImage(key = shown, cached = { loader.cached(uri) }, load = { loader.load(uri) })
     if (image == null) IosArtworkPlaceholder(modifier)
     else Image(bitmap = image, contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
 }

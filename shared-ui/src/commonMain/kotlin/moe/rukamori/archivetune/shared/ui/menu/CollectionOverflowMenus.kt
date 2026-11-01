@@ -83,7 +83,19 @@ internal fun OccurrenceOverflowMenu(
         "add_playlist", Res.string.m6_add_playlist, !selected.isNullOrEmpty(), dismissOnSuccess = false,
     ) { choosingPlaylist = true }
     SharedOverflowMenu(identity, expanded && !choosingPlaylist, onDismiss, commands, onFailure)
-    if (expanded && choosingPlaylist) AlertDialog(
+    val picker = LocalPlaylistPickerContext.current
+    if (expanded && choosingPlaylist && picker != null && !selected.isNullOrEmpty()) {
+        // The host-owned chooser: multi-select, membership hints, the persisted picker sort and a reported batch add.
+        PlaylistPickerDialog(
+            occurrences = selected,
+            context = picker,
+            library = library,
+            onFinished = {
+                choosingPlaylist = false
+                if (latestLifetime === lifetime) onDismiss()
+            },
+        )
+    } else if (expanded && choosingPlaylist) AlertDialog(
         onDismissRequest = { if (!saving) choosingPlaylist = false },
         title = { Text(stringResource(Res.string.m6_add_playlist)) },
         text = { LazyColumn(Modifier.heightIn(max = 400.dp)) {

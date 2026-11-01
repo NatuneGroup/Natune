@@ -77,4 +77,8 @@ private fun developerSettingsRows(
         "debug_logs", Res.string.m6_dev_debug_logs, run = { navigate("settings/logcat") },
         description = Res.string.m6_dev_debug_logs_desc,
     ),
+    SettingsRow.Action(
+        "crash_logs", Res.string.m6_crash_logs_title, run = { navigate(CrashLogsRoute) },
+        description = Res.string.m6_crash_logs_desc,
+    ),
 )

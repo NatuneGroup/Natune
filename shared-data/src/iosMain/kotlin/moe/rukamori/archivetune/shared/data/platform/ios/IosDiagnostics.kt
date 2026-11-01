@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.diagnostics.DiagnosticLogFile
 import moe.rukamori.archivetune.shared.data.diagnostics.DiagnosticLogFiles
+import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogKind
+import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogRecord
 import moe.rukamori.archivetune.shared.domain.diagnostics.CrashReport
 import kotlin.native.ReportUnhandledExceptionHook
 import kotlin.native.setUnhandledExceptionHook
@@ -25,6 +27,7 @@ import platform.posix.fread
 import platform.posix.fseeko
 import platform.posix.ftello
 import platform.posix.fwrite
+import platform.posix.getpid
 import platform.posix.remove
 import platform.posix.uname
 import platform.posix.utsname
@@ -121,6 +124,7 @@ object IosCrashCapture {
     private var reportPath: String? = null
     private var appVersion = ""
     private var packageName = ""
+    private var recordStore: IosCrashLogStore? = null
 
     /** Installed once per process. The hook chains to an earlier one, after which the runtime ends the process. */
     fun install(directory: String, appVersion: String, packageName: String) {
@@ -128,9 +132,10 @@ object IosCrashCapture {
         this.appVersion = appVersion
         this.packageName = packageName
         reportPath = "$directory/$REPORT_FILE"
+        recordStore = IosCrashLogStore("$directory/records")
         var previous: ReportUnhandledExceptionHook? = null
         previous = setUnhandledExceptionHook { error ->
-            capture(error.stackTraceToString())
+            capture(error.stackTraceToString(), CrashLogKind.KOTLIN)
             previous?.invoke(error)
         }
     }
@@ -141,7 +146,7 @@ object IosCrashCapture {
             append(name)
             if (!reason.isNullOrBlank()) append(": ").append(reason)
             callStack.forEach { frame -> append("\n\tat ").append(frame) }
-        })
+        }, CrashLogKind.NS)
     }
 
     fun stored(): CrashReport? {
@@ -156,12 +161,13 @@ object IosCrashCapture {
         return !NSFileManager.defaultManager.fileExistsAtPath(path) || remove(path) == 0
     }
 
-    private fun capture(rawTrace: String) {
+    private fun capture(rawTrace: String, kind: CrashLogKind) {
         val path = reportPath ?: return
         try {
             val now = NSDate()
+            val capturedAt = (now.timeIntervalSince1970 * 1000.0).toLong()
             val report = CrashReport(
-                capturedAtMillis = (now.timeIntervalSince1970 * 1000.0).toLong(),
+                capturedAtMillis = capturedAt,
                 timestampText = NSDateFormatter().apply { dateFormat = "yyyy-MM-dd HH:mm:ss" }.stringFromDate(now),
                 appVersion = appVersion,
                 packageName = packageName,
@@ -172,6 +178,19 @@ object IosCrashCapture {
             val output = fopen(path, "wb") ?: return
             bytes.usePinned { fwrite(it.addressOf(0), 1uL, bytes.size.toULong(), output) }
             fclose(output)
+            recordStore?.save(
+                CrashLogRecord(
+                    timestampMs = capturedAt,
+                    pid = getpid(),
+                    kind = kind,
+                    status = 0,
+                    process = packageName,
+                    thread = NSThread.currentThread.name ?: "",
+                    body = report.stackTrace,
+                    truncated = false,
+                    versionName = appVersion,
+                )
+            )
         } catch (_: Throwable) {
             // Nothing can be reported from a crashing process; the original failure still ends it.
         }

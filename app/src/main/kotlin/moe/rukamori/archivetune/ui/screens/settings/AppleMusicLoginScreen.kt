@@ -25,14 +25,13 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppleMusicDevTokenKey
 import moe.rukamori.archivetune.constants.AppleMusicMediaUserTokenKey
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
-import android.webkit.HttpAuthHandler
-import moe.rukamori.archivetune.utils.AppProxy
 
 const val APPLE_MUSIC_LOGIN_ROUTE = "settings/applemusic/login"
 
@@ -102,6 +101,7 @@ fun AppleMusicLoginScreen(navController: NavController) {
 
     AuthWebViewScreen(
         navController = navController,
+        provider = "applemusic",
         title = stringResource(R.string.applemusic_login),
         subtitle = stringResource(R.string.applemusic_login_subtitle),
         // The injected poll is a live 500 ms timer, and it would otherwise keep running — with the
@@ -111,17 +111,7 @@ fun AppleMusicLoginScreen(navController: NavController) {
         factory = { ctx ->
             createAuthWebView(ctx).apply {
                 webViewClient =
-                    object : android.webkit.WebViewClient() {
-                        override fun onReceivedHttpAuthRequest(
-                            view: WebView?,
-                            handler: HttpAuthHandler?,
-                            host: String?,
-                            realm: String?,
-                        ) {
-                            if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-                            super.onReceivedHttpAuthRequest(view, handler, host, realm)
-                        }
-
+                    object : AuthSignInWebViewClient("applemusic", setOf("apple.com")) {
                         override fun onPageFinished(
                             view: WebView,
                             url: String?,

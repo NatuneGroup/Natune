@@ -38,12 +38,14 @@ interface MprisRoot : DBusInterface {
 
 @DBusInterfaceName(MPRIS_PLAYER)
 @DBusProperty(name = "PlaybackStatus", type = String::class, access = DBusProperty.Access.READ)
-@DBusProperty(name = "Metadata", type = StringVariantMap::class, access = DBusProperty.Access.READ)
-@DBusProperty(name = "Position", type = Long::class, access = DBusProperty.Access.READ)
+@DBusProperty(name = "LoopStatus", type = String::class)
 @DBusProperty(name = "Rate", type = Double::class)
+@DBusProperty(name = "Shuffle", type = Boolean::class)
+@DBusProperty(name = "Metadata", type = StringVariantMap::class, access = DBusProperty.Access.READ)
+@DBusProperty(name = "Volume", type = Double::class)
+@DBusProperty(name = "Position", type = Long::class, access = DBusProperty.Access.READ)
 @DBusProperty(name = "MinimumRate", type = Double::class, access = DBusProperty.Access.READ)
 @DBusProperty(name = "MaximumRate", type = Double::class, access = DBusProperty.Access.READ)
-@DBusProperty(name = "Volume", type = Double::class, access = DBusProperty.Access.READ)
 @DBusProperty(name = "CanGoNext", type = Boolean::class, access = DBusProperty.Access.READ)
 @DBusProperty(name = "CanGoPrevious", type = Boolean::class, access = DBusProperty.Access.READ)
 @DBusProperty(name = "CanPlay", type = Boolean::class, access = DBusProperty.Access.READ)
@@ -97,6 +99,20 @@ class MenuItemProperties(
     @field:Position(0) val id: Int,
     @field:Position(1) val properties: Map<String, Variant<*>>,
 ) : Struct()
+
+/** The xdg-desktop-portal settings object; GNOME color-scheme is read and watched through it. */
+@DBusInterfaceName("org.freedesktop.portal.Settings")
+interface PortalSettings : DBusInterface {
+    fun Read(namespace: String, key: String): Variant<*>
+    fun ReadAll(namespace: String): Map<String, Variant<*>>
+    @DBusInterfaceName("org.freedesktop.portal.Settings")
+    class SettingChanged(
+        path: String,
+        @JvmField val namespace: String,
+        @JvmField val key: String,
+        @JvmField val value: Variant<*>,
+    ) : DBusSignal(path, namespace, key, value)
+}
 
 @DBusInterfaceName("com.canonical.dbusmenu")
 interface DbusMenu : DBusInterface {

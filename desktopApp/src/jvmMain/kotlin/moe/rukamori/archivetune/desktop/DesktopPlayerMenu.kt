@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
@@ -75,12 +76,24 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.ArtistSeparatorsKey
+import moe.rukamori.archivetune.shared.domain.settings.encodeTempoPitchPresets
+import moe.rukamori.archivetune.shared.domain.settings.newTempoPitchPresetId
+import moe.rukamori.archivetune.shared.domain.settings.parseTempoPitchPresets
+import moe.rukamori.archivetune.shared.domain.settings.PlaybackPitchKey
+import moe.rukamori.archivetune.shared.domain.settings.PlaybackSpeedKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerMenuStyle
 import moe.rukamori.archivetune.shared.domain.settings.playerMenuStyle
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceEditor
+import moe.rukamori.archivetune.shared.domain.settings.removeTempoPitchPreset
+import moe.rukamori.archivetune.shared.domain.settings.renameTempoPitchPreset
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceAmazonPickKey
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
+import moe.rukamori.archivetune.shared.domain.settings.TempoPitchPreset
+import moe.rukamori.archivetune.shared.domain.settings.TempoPitchPresetsJsonKey
+import moe.rukamori.archivetune.shared.domain.settings.TempoPitchRememberedKey
+import moe.rukamori.archivetune.shared.domain.settings.upsertTempoPitchPreset
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzBackupVideoIdKey
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzTrackIdKey
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
@@ -105,6 +118,7 @@ import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenu
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenuActions
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenuIcon
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenuState
+import moe.rukamori.archivetune.shared.ui.menu.shareLinkAtPosition
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenuTrigger
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueuePlaylistLoadState
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueSheetCollapse
@@ -222,13 +236,74 @@ internal class DesktopPlayerQueueActions(
 
     override fun addToQueue(track: PlayerQueueTrack) = enqueue(track, UserQueuedKind.ADD_TO_QUEUE)
 
-    // Tempo and pitch: live playback parameters, as the baseline applies them.
+    // Tempo and pitch: live playback parameters, as the baseline applies them. While the opt-in "remember"
+    // flag holds, every applied pair is persisted for the next launch's restore.
 
     override fun applyPlaybackParameters(speed: Float, pitch: Float) {
         graph.player.setPlaybackSpeed(speed)
         graph.player.setPlaybackPitch(pitch)
         appliedSpeed.value = speed
         appliedPitch.value = pitch
+        if (graph.settings.snapshots.value?.get(TempoPitchRememberedKey) == true) {
+            persistTempoPitch {
+                set(PlaybackSpeedKey, speed)
+                set(PlaybackPitchKey, pitch)
+            }
+        }
+    }
+
+    override fun copyLinkAtCurrentPosition(url: String) =
+        copyToDesktopClipboard(shareLinkAtPosition(url, graph.player.positionMs() ?: 0L))
+
+    override fun setTempoPitchRemembered(remembered: Boolean) =
+        persistTempoPitch {
+            set(TempoPitchRememberedKey, remembered)
+            // Opting in stores the applied pair at once; opting out keeps the last stored values unread.
+            if (remembered) {
+                set(PlaybackSpeedKey, appliedSpeed.value)
+                set(PlaybackPitchKey, appliedPitch.value)
+            }
+        }
+
+    override fun saveTempoPitchPreset(name: String, speed: Float, pitch: Float) {
+        val preset = TempoPitchPreset(newTempoPitchPresetId(), name.trim(), speed, pitch)
+        if (!preset.isValid) return
+        persistTempoPitch {
+            set(
+                TempoPitchPresetsJsonKey,
+                encodeTempoPitchPresets(upsertTempoPitchPreset(parseTempoPitchPresets(get(TempoPitchPresetsJsonKey)), preset)),
+            )
+        }
+    }
+
+    override fun renameTempoPitchPreset(id: String, name: String) {
+        if (name.isBlank()) return
+        persistTempoPitch {
+            set(
+                TempoPitchPresetsJsonKey,
+                encodeTempoPitchPresets(renameTempoPitchPreset(parseTempoPitchPresets(get(TempoPitchPresetsJsonKey)), id, name)),
+            )
+        }
+    }
+
+    override fun deleteTempoPitchPreset(id: String) =
+        persistTempoPitch {
+            set(
+                TempoPitchPresetsJsonKey,
+                encodeTempoPitchPresets(removeTempoPitchPreset(parseTempoPitchPresets(get(TempoPitchPresetsJsonKey)), id)),
+            )
+        }
+
+    private fun persistTempoPitch(change: PreferenceEditor.() -> Unit) {
+        graph.scope.launch {
+            try {
+                graph.settings.edit(change)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("tempo/pitch preference was not saved: ${failure.javaClass.simpleName}")
+            }
+        }
     }
 
     // The source chooser: per-song pins persisted exactly as the portable codecs store them, consulted by the
@@ -474,6 +549,7 @@ private fun desktopPlayerQueueIcon(icon: PlayerQueueMenuIcon, tint: Color, modif
         PlayerQueueMenuIcon.EQUALIZER -> Icons.Filled.Equalizer
         PlayerQueueMenuIcon.SPEED -> Icons.Filled.Speed
         PlayerQueueMenuIcon.DISCOVER_TUNE -> Icons.Filled.Tune
+        PlayerQueueMenuIcon.EDIT -> Icons.Filled.Edit
         PlayerQueueMenuIcon.REMOVE -> Icons.Filled.Remove
         PlayerQueueMenuIcon.ADD -> Icons.Filled.Add
         PlayerQueueMenuIcon.SKIP_NEXT -> Icons.Filled.SkipNext
@@ -549,6 +625,8 @@ internal fun DesktopPlayerMenuDialog(
         acousticQualitySupported = false,
         equalizerSupported = true,
         downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
+        tempoPitchPresets = parseTempoPitchPresets(snapshot?.get(TempoPitchPresetsJsonKey)),
+        tempoPitchRemembered = snapshot?.get(TempoPitchRememberedKey) ?: false,
         menuStyle = snapshot?.playerMenuStyle() ?: PlayerMenuStyle.Default,
     )
 

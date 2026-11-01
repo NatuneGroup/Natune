@@ -25,6 +25,19 @@ class TransitionCrossfadePolicyTest {
     }
 
     @Test
+    fun repeatOneOrASequentialAlbumSuppressesTheBlend() {
+        // Repeat-one replays the same item — there is nothing to blend into.
+        assertTrue(CrossfadePolicy.suppressesBlend(true, false, "album", "other"))
+        // A same-album adjacency keeps its mastered gap when the setting is on.
+        assertTrue(CrossfadePolicy.suppressesBlend(false, true, "album", "album"))
+        assertFalse(CrossfadePolicy.suppressesBlend(false, false, "album", "album"))
+        assertFalse(CrossfadePolicy.suppressesBlend(false, true, "album", "other"))
+        assertFalse(CrossfadePolicy.suppressesBlend(false, true, null, null))
+        assertTrue(CrossfadePolicy.isSequentialAlbumTransition("album", "album"))
+        assertFalse(CrossfadePolicy.isSequentialAlbumTransition(null, "album"))
+    }
+
+    @Test
     fun invalidTargetsResolveToNoCrossfade() {
         assertNull(CrossfadePolicy.resolveTargetIndex(false, 9, -1, 10, -1))
         assertNull(CrossfadePolicy.resolveTargetIndex(false, 2, 2, 10, -1))

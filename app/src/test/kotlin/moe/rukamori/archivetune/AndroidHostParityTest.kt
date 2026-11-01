@@ -4,6 +4,7 @@ import moe.rukamori.archivetune.constants.InterfaceStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.db.entities.PlaylistEntity
 import moe.rukamori.archivetune.extensions.toEnum
+import moe.rukamori.archivetune.shared.ui.player.MetrolistPresentation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -11,12 +12,12 @@ import org.junit.Test
 class AndroidHostParityTest {
 
     @Test
-    fun `player styles keep the seventeen persisted names in order`() {
+    fun `player styles keep the persisted names in order`() {
         assertEquals(
             listOf(
                 "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9",
                 "APPLE_MUSIC", "V10", "BITCHORD", "TIKTOK", "SIMPMUSIC",
-                "SPATIALFLOW", "LOOPER", "FLAMINGO",
+                "SPATIALFLOW", "LOOPER", "FLAMINGO", "METROLIST_KMP",
             ),
             PlayerDesignStyle.entries.map { it.name },
         )
@@ -24,8 +25,11 @@ class AndroidHostParityTest {
     }
 
     @Test
-    fun `stored style names this host does not mount fall back to V4`() {
-        assertEquals(PlayerDesignStyle.V4, "METROLIST_KMP".toEnum(defaultValue = PlayerDesignStyle.V4))
+    fun `stored style names decode by enum name and unknown ones fall back to V4`() {
+        assertEquals(PlayerDesignStyle.METROLIST_KMP, "METROLIST_KMP".toEnum(defaultValue = PlayerDesignStyle.V4))
+        assertEquals(PlayerDesignStyle.V4, "NOT_A_STYLE".toEnum(defaultValue = PlayerDesignStyle.V4))
+        assertEquals(MetrolistPresentation.VINTAGE, "VINTAGE".toEnum(defaultValue = MetrolistPresentation.MODERN))
+        assertEquals(MetrolistPresentation.MODERN, "NOPE".toEnum(defaultValue = MetrolistPresentation.MODERN))
     }
 
     @Test

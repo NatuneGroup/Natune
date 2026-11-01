@@ -65,6 +65,47 @@ class IosPlatformFiles : PlatformFiles {
         }
     }
 
+    /**
+     * The export counterpart of [pickDocument]: the system document picker offers a destination and
+     * copies [urls] there itself, so an exported file never leaves the app without a user choice.
+     * Resumes true when a destination was picked, null on cancel. A file outside the app container
+     * needs the same security scope a picked document does; app-container files qualify directly.
+     */
+    suspend fun exportDocuments(presenter: UIViewController, urls: List<NSURL>): Boolean? =
+        withContext(Dispatchers.Main) {
+            require(urls.isNotEmpty())
+            check(picker == null) { "Document picker already active" }
+            val controller = UIDocumentPickerViewController(forExportingURLs = urls, asCopy = true)
+            controller.allowsMultipleSelection = false
+            picker = controller
+            try {
+                suspendCancellableCoroutine { continuation ->
+                    cancelPicker = { continuation.cancel() }
+                    val delegate = object : NSObject(), UIDocumentPickerDelegateProtocol {
+                        override fun documentPicker(controller: UIDocumentPickerViewController, didPickDocumentsAtURLs: List<*>) {
+                            if (!continuation.isActive) return
+                            continuation.resume(true)
+                        }
+                        override fun documentPickerWasCancelled(controller: UIDocumentPickerViewController) {
+                            if (continuation.isActive) continuation.resume(null)
+                        }
+                    }
+                    pickerDelegate = delegate
+                    controller.delegate = delegate
+                    continuation.invokeOnCancellation {
+                        dispatch_async(dispatch_get_main_queue()) { controller.dismissViewControllerAnimated(true, null) }
+                    }
+                    presenter.presentViewController(controller, animated = true, completion = null)
+                }
+            } finally {
+                controller.delegate = null
+                controller.dismissViewControllerAnimated(true, null)
+                pickerDelegate = null
+                picker = null
+                cancelPicker = null
+            }
+        }
+
     fun close() {
         dispatch_async(dispatch_get_main_queue()) { cancelPicker?.invoke() }
     }

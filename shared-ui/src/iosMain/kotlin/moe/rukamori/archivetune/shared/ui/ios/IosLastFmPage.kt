@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,7 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_services_lastfm_status_s
 import moe.rukamori.archivetune.shared.ui.resources.ios_services_lastfm_status_title
 import moe.rukamori.archivetune.shared.ui.resources.ios_services_lastfm_waiting_description
 import moe.rukamori.archivetune.shared.ui.resources.ios_services_lastfm_waiting_title
+import moe.rukamori.archivetune.shared.ui.resources.m6_profile_lastfm_dashboard
 import moe.rukamori.archivetune.shared.ui.settings.LastFmSettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import org.jetbrains.compose.resources.stringResource
@@ -53,6 +55,7 @@ internal fun IosLastFmSettingsPage(
     onFailure: () -> Unit,
     scrollTo: String?,
     report: (String) -> Unit,
+    openDashboard: () -> Unit,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
@@ -65,6 +68,10 @@ internal fun IosLastFmSettingsPage(
     Column(Modifier.fillMaxSize()) {
         IosLastFmStatusRow(preferences, lastFm)
         IosLastFmSignInCard(signIn, lastFm, report)
+        ListItem(
+            headlineContent = { Text(stringResource(Res.string.m6_profile_lastfm_dashboard)) },
+            modifier = Modifier.clickable(onClick = openDashboard),
+        )
         LastFmSettingsPage(
             controller = controller,
             defaultApiKey = lastFm.defaultApiKey,

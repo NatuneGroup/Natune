@@ -85,7 +85,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Timeline
-import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -327,10 +326,11 @@ fun Queue(
             }
     }
 
-    val onRemoveWithUndo: (Timeline.Window) -> Unit = { window ->
+    val onRemoveWithUndo: (Timeline.Window) -> Boolean = { window ->
         playerConnection.service.removeQueueItemsWithUndo(listOf(window))?.let {
             showQueueUndo(it.ticket, it.count, window.mediaItem.metadata?.title)
-        }
+            true
+        } ?: false
     }
 
     val onRemoveMultipleWithUndo: (List<Timeline.Window>) -> Unit = { windows ->
@@ -556,9 +556,9 @@ fun Queue(
                     )
                 }
 
-                // Looper draws its own transport but opens the shared queue sheet (its onQueueClick),
-                // so it keeps the modern collapsed peek rather than opting out of the sheet.
-                PlayerDesignStyle.V9, PlayerDesignStyle.V10, PlayerDesignStyle.LOOPER -> {
+                // Metrolist joins Looper here: both draw their own transport but keep the
+                // shared queue sheet's collapsed peek via onQueueClick.
+                PlayerDesignStyle.V9, PlayerDesignStyle.V10, PlayerDesignStyle.LOOPER, PlayerDesignStyle.METROLIST_KMP -> {
                     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
                     QueueCollapsedContentV9(
                         showCodecOnPlayer = showCodecOnPlayer,
@@ -802,21 +802,15 @@ fun Queue(
                     destinationIndex != null &&
                     sourceIndex != destinationIndex
                 ) {
-                    if (!playerConnection.player.shuffleModeEnabled) {
-                        playerConnection.player.moveMediaItem(sourceIndex, destinationIndex)
-                    } else {
-                        playerConnection.localPlayer.setShuffleOrder(
-                            DefaultShuffleOrder(
-                                queueWindows
-                                    .map { it.firstPeriodIndex }
-                                    .toMutableList()
-                                    .move(sourceIndex, destinationIndex)
-                                    .toIntArray(),
-                                System.currentTimeMillis(),
-                            ),
-                        )
-                    }
-                    return@LaunchedEffect
+                    val accepted =
+                        if (!playerConnection.player.shuffleModeEnabled) {
+                            playerConnection.moveQueueItem(sourceIndex, destinationIndex)
+                        } else {
+                            playerConnection.reorderShuffledQueue(sourceIndex, destinationIndex)
+                        }
+                    if (accepted) return@LaunchedEffect
+                    // The lock gate refused and sends no timeline event: the resync below is
+                    // the only thing that puts the displayed order back.
                 }
             }
 
@@ -1004,7 +998,9 @@ fun Queue(
                                     )
                                 ) {
                                     processedDismiss = true
-                                    onRemoveWithUndo(currentItem)
+                                    if (!onRemoveWithUndo(currentItem)) {
+                                        dismissBoxState.reset()
+                                    }
                                 }
                                 if (dv == SwipeToDismissBoxValue.Settled) {
                                     processedDismiss = false
@@ -1053,7 +1049,7 @@ fun Queue(
                                                             navController = navController,
                                                             playerBottomSheetState = playerBottomSheetState,
                                                             isQueueTrigger = true,
-                                                            onPlayNextFromQueue = onPlayNextFromQueue,
+                                                            onPlayNextFromQueue = onPlayNextFromQueue?.let { cb -> { cb() } },
                                                             onRemoveFromQueue = {
                                                                 onRemoveWithUndo(window)
                                                             },

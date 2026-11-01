@@ -12,6 +12,7 @@
     <string name="startup_report_attempt">Recorded process start: %1$s at %2$s (PID %3$s)</string>
     <string name="startup_incomplete_explanation">The previous process ended before startup was marked healthy. A crash, force-stop, restart, or memory pressure can cause this. Safe mode has skipped normal initialization. Copy or share the report, then use Continue normally to retry. This screen does not reset app data.</string>
     <string name="startup_previous_exit_explanation">Android or the local crash recorder retained a previous process failure. Normal initialization is paused while you review this report. Continue normally opens the app; this screen does not reset app data.</string>
+    <string name="startup_outdated_attempt_explanation">The recorded process start belongs to an app version that has since been replaced. It is kept for diagnosis only and cannot put this build into safe mode. Continue normally opens the app; this screen does not reset app data.</string>
     <string name="startup_report_java">Saved Java exception: %1$s\nThread: %2$s</string>
     <string name="startup_report_no_java">No saved Java stack trace. Native crashes and deaths before application attachment may not run a Java exception handler.</string>
     <string name="startup_report_exit">Android exit: %1$s\nReason: %2$s\nPID: %3$s; status or signal: %4$s</string>
@@ -361,6 +362,14 @@
     <string name="dislike_all">Dislike all</string>
     <string name="sort_by_last_updated">Date updated</string>
     <string name="link_copied">Link copied to clipboard</string>
+    <string name="copy_link_at_current_time">Copy URL at current time</string>
+    <string name="remember_speed_and_pitch">Remember speed and pitch</string>
+    <string name="tempo_pitch_presets">Presets</string>
+    <string name="tempo_pitch_preset_values">x%1$s • x%2$s</string>
+    <string name="save_current_as_preset">Save current as preset</string>
+    <string name="preset_name">Preset name</string>
+    <string name="new_preset">New preset</string>
+    <string name="rename_preset">Rename preset</string>
     <string name="block_artist">Block artist</string>
     <string name="unblock_artist">Unblock artist</string>
     <string name="dont_recommend_song_again">Don\'t recommend this song again</string>
@@ -485,6 +494,11 @@
     <string name="player_design_spatialflow">SpatialFlow</string>
     <string name="player_design_looper">Looper</string>
     <string name="player_design_flamingo">Flamingo</string>
+    <string name="player_design_metrolist_kmp">Metrolist KMP</string>
+    <string name="metrolist_presentation">Metrolist presentation</string>
+    <string name="metrolist_presentation_desc">Pick between the clean modern look and the framed vintage sleeve.</string>
+    <string name="metrolist_presentation_modern">Modern</string>
+    <string name="metrolist_presentation_vintage">Vintage</string>
     <string name="flamingo_settings_background_effect">Moving blur</string>
     <string name="flamingo_settings_background_effect_desc">Let the blurred artwork drift behind the player.</string>
     <string name="rich_synced">Rich Synced</string>
@@ -933,7 +947,7 @@
     <string name="about_contributor_translation">Contributor Translation</string>
     <string name="about_license_unknown">Unknown license</string>
     <string name="about_position_lead_dev">Eh?</string>
-    <string name="about_position_vossgraves">merely added tidal and qobuz integration</string>
+    <string name="about_position_vossgraves">Kotlin Multiplatform port | Natune</string>
     <string name="about_position_developers">Developer | Team</string>
     <string name="about_position_yuki">dummy reze | admin</string>
     <string name="about_position_mo_agamy">Base Framework | Metrolist</string>
@@ -1071,6 +1085,13 @@
     <string name="android_auto_app_permissions">App permissions</string>
     <string name="android_auto_settings_load_failed">Could not load Android Auto settings</string>
     <string name="android_auto_settings_update_failed">Could not update Android Auto settings</string>
+    <string name="android_auto_driving_playlists">Driving playlists</string>
+    <string name="android_auto_choose_pinned_playlists">Choose playlists</string>
+    <string name="android_auto_pinned_playlists_count">Pinned: %1$d of %2$d</string>
+    <string name="android_auto_no_playlists">No playlists found</string>
+    <string name="android_auto_playlists_load_failed">Could not load playlists</string>
+    <string name="android_auto_pinned_play_in_order">Play pinned playlists in order</string>
+    <string name="android_auto_pinned_play_in_order_desc">Start at the first song instead of shuffling</string>
     <string name="media_info_itag" translatable="false">Itag</string>
     <string name="playing_from">Playing from %1$s</string>
     <string name="remaining_time" translatable="false">-%1$s</string>
@@ -1129,6 +1150,15 @@
     <string name="swipe_up_to_open_queue">Swipe up to open queue</string>
     <string name="swipe_up_to_open_queue_desc">When off, only the queue button opens it, so seeking or tapping never opens it by accident</string>
     <string name="queue_add_after_manual">Keep added songs in order</string>
+    <string name="queue_prevent_duplicates">Prevent duplicate songs in queue</string>
+    <string name="queue_prevent_duplicates_desc">Re-adding a song that is already queued moves it to its new position instead of listing it twice; the song playing now is never duplicated</string>
+    <string name="queue_locked">Lock queue</string>
+    <string name="queue_locked_desc">Removing, moving and clearing songs in the queue is disabled while locked; adding, shuffling and undo still work</string>
+    <string name="queue_locked_toast">Queue is locked</string>
+    <plurals name="queue_skipped_duplicates">
+        <item quantity="one">Skipped %d duplicate</item>
+        <item quantity="other">Skipped %d duplicates</item>
+    </plurals>
     <string name="search_bar_position_bottom_desc">A floating pill that follows the navigation bar style: corner radius, insets and surface</string>
     <string name="queue_add_after_manual_desc">Play next lines up behind your earlier Play next songs and Add to queue goes after all your added songs, both ahead of radio and autoplay songs</string>
     <string name="hide_translation">Hide Translation</string>
@@ -1285,6 +1315,13 @@
     <string name="youtube_playlist_reload">Reload playlist from beginning</string>
     <string name="youtube_playlist_cancel">Cancel playlist loading</string>
     <string name="playlist_add_incomplete">Could not finish adding songs. Retry or cancel. Songs already added are kept.</string>
+    <string name="playlist_add_progress">Processed %1$d of %2$d tracks</string>
+    <string name="playlist_add_uncertain">The last request may have succeeded. Check the playlist before retrying.</string>
+    <string name="playlist_add_stopped">%1$d tracks completed or already present; %2$d tracks remain unconfirmed. Completed additions were kept.</string>
+    <string name="could_not_add_to_playlist">Couldn\'t add to %1$s: %2$s</string>
+    <string name="already_in_playlist_name">Already in %1$s</string>
+    <string name="move_to_top">Move to top</string>
+    <string name="move_to_bottom">Move to bottom</string>
     <string name="queue_infinite">Infinite queue</string>
     <string name="queue_infinite_description">Automatically add related music near the end of the queue. Repeat modes keep the current queue.</string>
     <string name="queue_autoplay_off">Autoplay is off</string>

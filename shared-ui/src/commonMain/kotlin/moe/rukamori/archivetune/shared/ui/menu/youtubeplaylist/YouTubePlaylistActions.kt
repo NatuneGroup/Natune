@@ -99,6 +99,9 @@ fun youTubePlaylistOverflowActions(
         add(OverflowAction(id = "share", label = Res.string.m6_share) {
             check(sharing.playlist(ref.id, facts.shareLink)) { "Share target unavailable" }
         })
+        add(OverflowAction(id = "copy_link", label = Res.string.m5pq_copy_link) {
+            check(sharing.copyPlaylistLink(ref.id, facts.shareLink)) { "Link unavailable" }
+        })
         if (canSelect) {
             add(OverflowAction(id = "select", label = Res.string.m6yp_select) { onSelect() })
         }

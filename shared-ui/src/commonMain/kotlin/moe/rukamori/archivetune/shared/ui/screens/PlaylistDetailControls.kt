@@ -142,6 +142,16 @@ internal fun PlaylistMoveControls(
     move: (ContentOccurrence, ContentOccurrence, Boolean) -> Unit,
 ) {
     val row = rows[index]
+    // Top and bottom name the end rows of the complete order, so they land the song first or last in one move.
+    // They appear only when a plain up or down move would not already reach that end.
+    rows.firstOrNull()?.takeIf { index > 1 }?.let { first ->
+        TextButton(
+            onClick = { move(row, first, false) },
+            modifier = Modifier.testTag("playlist-song-top-${row.occurrenceId}"),
+        ) {
+            Text(stringResource(Res.string.playlist_move_to_top))
+        }
+    }
     rows.getOrNull(index - 1)?.let { above ->
         TextButton(
             onClick = { move(row, above, false) },
@@ -156,6 +166,14 @@ internal fun PlaylistMoveControls(
             modifier = Modifier.testTag("playlist-song-down-${row.occurrenceId}"),
         ) {
             Text(stringResource(Res.string.m4_move_down))
+        }
+    }
+    rows.lastOrNull()?.takeIf { index < rows.lastIndex - 1 }?.let { last ->
+        TextButton(
+            onClick = { move(row, last, true) },
+            modifier = Modifier.testTag("playlist-song-bottom-${row.occurrenceId}"),
+        ) {
+            Text(stringResource(Res.string.playlist_move_to_bottom))
         }
     }
 }

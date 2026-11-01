@@ -8,6 +8,8 @@
 package moe.rukamori.archivetune.ui.menu
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.widget.Toast
@@ -49,6 +51,43 @@ internal fun rememberSongShareAction(
                 try {
                     val activity = requireNotNull(context.menuActivity())
                     check(MenuShareHandler(AndroidMenuSharing(activity)).song(mediaId, local, mimeType))
+                    dismissed()
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { Toast.makeText(context, R.string.error_unknown, Toast.LENGTH_SHORT).show() }
+                finally { busy = false }
+            }
+        }
+    }
+}
+
+/** The clipboard write and copied toast of the player menu's copy-link row, reused by every menu. */
+internal fun Context.copyLinkToClipboard(url: String) {
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.copy_link), url))
+    Toast.makeText(this, R.string.link_copied, Toast.LENGTH_SHORT).show()
+}
+
+/**
+ * Resolves the share URL through the same plumbing the share row uses, so a Telegram song copies its real
+ * message link and a local file reports failure instead of writing an empty clipboard entry.
+ */
+@Composable
+internal fun rememberSongCopyLinkAction(
+    mediaId: String,
+    local: Boolean,
+    onCopied: () -> Unit,
+): () -> Unit {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dismissed by rememberUpdatedState(onCopied)
+    var busy by remember { mutableStateOf(false) }
+    return {
+        if (!busy) {
+            busy = true
+            scope.launch {
+                try {
+                    val activity = requireNotNull(context.menuActivity())
+                    check(MenuShareHandler(AndroidMenuSharing(activity)).copySongLink(mediaId, local))
                     dismissed()
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { Toast.makeText(context, R.string.error_unknown, Toast.LENGTH_SHORT).show() }

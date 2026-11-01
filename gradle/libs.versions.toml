@@ -59,8 +59,9 @@ kuromojiIpadic = "0.9.0"
 # ICU4J is the desktop/JVM counterpart of android.icu.text.Transliterator for the generic
 # "Any-Latin; Latin-ASCII" pass. Unicode-3.0 license; 79.1 is the current release on the mirror.
 icu4j = "79.1"
-# NewPipeExtractor's release tag. Kept because `newpipe-extractor` below still
-# points at it — :core has used either fork at different times.
+# NewPipeExtractor's release tag; v0.26.5 (2026-08-15) is the latest upstream
+# release. Kept because `newpipe-extractor` below still points at it — :core
+# has used either fork at different times.
 extractor = "0.26.5"
 
 # MetrolistExtractor needs its own version: it is a different artifact from
@@ -87,25 +88,34 @@ extractor = "0.26.5"
 # JitPack (no Maven Central release) and has no git tags — JitPack resolves the
 # short commit hash. To move to a newer commit, the CI JDK and :core's
 # `jvmToolchain(...)` both need to be bumped to ≥ 25.
+#
+# The MetrolistGroup/MetrolistExtractor repository is no longer publicly
+# accessible (observed 2026-11); the pinned commit still resolves through
+# JitPack's build cache, and there is no newer consumable release while the
+# toolchain constraint above stands. The app and desktop NewPipe tiers declare
+# `libs.metrolist.extractor` directly so they can drive the extractor beside
+# :core's copy.
 metrolistExtractor = "08a64867704c"
 graphicsShapes = "1.0.1"
 quickjsKt = "1.0.10"
 
 # InnerTubeX — MetrolistGroup's Kotlin Multiplatform InnerTube client, the first extractor tier
 # behind the shipped YouTube resolver (playback/stream/YouTubeFailsafeChain). Published on JitPack
-# only; v0.9.2 is tag c19d4860b0bc8afa0b1b3cc717abeb8119bbb605 (GPL-3.0 unchanged).
-#   - Built with Kotlin 2.4.20; compatibility with our 2.4.21 compiler awaits the remote build.
-#   - The AAR declares minCompileSdk 37, minSdk 23 and minAndroidGradlePluginVersion 1.0.0 —
-#     :app is compileSdk 37 / minSdk 24 on AGP 9.2.1.
-#   - Its classes are Java 21 bytecode, matching :app's jvmTarget 21.
-# Ktor 3.6.0 and quickjs-kt 1.0.15 requests are unchanged from 0.8.4; final aligned resolution
-# and single QuickJS native packaging remain remote gates. See docs/extraction.md for scope.
-innertubexVersion = "v0.9.2"
-# The desktop host's InnerTubeX tier. v0.11.0 publishes the jvm("desktop") target the desktop app resolves and solves
-# the player cipher with the pure-Kotlin QuackJS library (com.github.MetrolistGroup.quackjs, GPL-3.0), so it adds no
-# native library to the desktop package. Built with Kotlin 2.4.20 and Ktor 3.6.0, the same requests the Android pin
-# makes; the aligned desktop resolution is a remote build gate. The Android pin above is unchanged.
-innertubexDesktopVersion = "v0.11.0"
+# only; v0.11.2 is tag c863ddf15be01a1abfa4630329bdc0a1e95f1531 (GPL-3.0 unchanged), released
+# 2026-10-22.
+#   - Built with Kotlin 2.4.21, the same release our toolchain compiles with.
+#   - Its player cipher is the pure-Kotlin QuackJS 0.1.2 library (com.github.MetrolistGroup.quackjs,
+#     GPL-3.0), so the artifact no longer requests a QuickJS native engine the way v0.9.2 did.
+#   - The AAR declares minSdk 23 and its classes are Java 21 bytecode; :app is compileSdk 37 /
+#     minSdk 24 on AGP 9.2.1 with jvmTarget 21.
+# Ktor 3.6.0, kotlinx-serialization 1.12.0 and coroutines 1.11.0 requests; final aligned
+# resolution remains a remote gate. See docs/extraction.md for scope.
+innertubexVersion = "v0.11.2"
+# The desktop host's and the iOS targets' InnerTubeX artifacts (innertubex-desktop,
+# innertubex-iosarm64, innertubex-iossimulatorarm64) are per-target modules of the same release.
+# The key stays separate only so a host can diverge again if a regression ever forces a split;
+# today every module runs the same v0.11.2 and there is no cross-module drift.
+innertubexDesktopVersion = "v0.11.2"
 bouncyCastle = "1.85"
 translator = "1.1.1"
 rhino = "1.9.1"

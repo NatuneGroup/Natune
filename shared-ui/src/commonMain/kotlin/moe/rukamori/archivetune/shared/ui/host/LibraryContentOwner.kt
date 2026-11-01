@@ -144,6 +144,7 @@ class LibraryContentOwner(
                 createdEpochMs = summary.createdSeq,
                 updatedEpochMs = summary.newestAddedSeq,
                 hidden = summary.hidden,
+                previewItems = summary.previewItems,
             )
         }
     }
@@ -154,8 +155,10 @@ class LibraryContentOwner(
      */
     fun localPlaylist(playlistId: String): Flow<LocalPlaylistView?> {
         val ref = ContentRef(ContentProvider.LOCAL.id, ContentKind.PLAYLIST, playlistId)
+        // The summary is kept, not only the header item, so the header artwork can draw the playlist's first rows
+        // as its mosaic cover.
         val header = library.observeLocalPlaylists().map { summaries ->
-            summaries.firstOrNull { it.occurrence.item.ref == ref }?.occurrence?.item
+            summaries.firstOrNull { it.occurrence.item.ref == ref }
         }
         // A playlist that is gone keeps the default order, and no other playlist's stored order is ever read in its place.
         val order = library.observePlaylistSongSort(playlistId).map { sort ->
@@ -165,8 +168,8 @@ class LibraryContentOwner(
             .map { snapshot -> snapshot[PlaylistEditLockKey] ?: true }
             .distinctUntilChanged()
         return combine(header, library.observeSortedPlaylist(playlistId, textOrder, blocked), order, locked) {
-                item, page, sort, isLocked ->
-            LocalPlaylistView(item, page, sort, isLocked)
+                summary, page, sort, isLocked ->
+            LocalPlaylistView(summary?.occurrence?.item, page, sort, isLocked, summary?.previewItems.orEmpty())
         }
     }
 
@@ -435,6 +438,8 @@ data class LocalPlaylistView(
     val page: ContentPage?,
     val sort: LibrarySortState<PlaylistSongSortType>,
     val locked: Boolean,
+    /** The playlist's first rows' items in the stored order, feeding the header's local mosaic cover. */
+    val previewItems: List<ContentItem> = emptyList(),
 )
 
 /** The liked songs as the screen needs them, with the auto-playlist order that orders them. */

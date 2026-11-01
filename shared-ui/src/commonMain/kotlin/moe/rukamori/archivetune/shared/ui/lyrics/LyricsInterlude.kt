@@ -24,7 +24,7 @@ internal data class LyricsInterlude(
 /** Finds the silences long enough to show the three dots, and the row whose item shows each one. */
 internal object LyricsInterludes {
     /** Shorter silences read as ordinary phrasing and keep the plain line rhythm. */
-    const val MIN_BREAK_MS = 4_000L
+    const val MIN_BREAK_MS = 9_000L
 
     /**
      * The break each row's item shows, keyed by row index. A sung row owns the silence before it. An instrumental
@@ -60,6 +60,22 @@ internal object LyricsInterludeMotion {
     private const val BREATH_MIN = 0.92f
     private const val BREATH_MAX = 1.08f
     private const val IDLE_LIGHT = 0.25f
+
+    /** Over the last [END_SWELL_MS] of the break the dots swell toward the arriving line. */
+    const val END_SWELL_MS = 1_500L
+    const val END_SWELL_FROM = 1.1f
+    const val END_SWELL_TO = 1.4f
+
+    /**
+     * The anticipation swell, from [END_SWELL_FROM] to [END_SWELL_TO] over the last [END_SWELL_MS] of
+     * the break, and 0 before it, so the dots grow just as the next line is about to start.
+     */
+    fun endSwell(interlude: LyricsInterlude, positionMs: Long): Float {
+        val remaining = interlude.endMs - positionMs
+        if (remaining <= 0L || remaining > END_SWELL_MS) return 0f
+        val through = 1f - remaining.toFloat() / END_SWELL_MS
+        return END_SWELL_FROM + (END_SWELL_TO - END_SWELL_FROM) * through
+    }
 
     /** How visible the whole indicator is at [positionMs]. It fades in as the break starts and out before it ends. */
     fun visibility(interlude: LyricsInterlude, positionMs: Long): Float {
@@ -116,10 +132,11 @@ internal fun LyricsInterludeDots(
     )
 }
 
-private const val DOTS_WIDTH_DP = 38
-private const val DOTS_HEIGHT_DP = 12
-private const val DOT_DIAMETER_DP = 8
-private const val DOT_GAP_DP = 7
+// Three 10dp dots 6dp apart; the band is tall enough for the 1.4x end swell.
+private const val DOTS_WIDTH_DP = 42
+private const val DOTS_HEIGHT_DP = 14
+private const val DOT_DIAMETER_DP = 10
+private const val DOT_GAP_DP = 6
 
 private fun DrawScope.drawInterludeDots(
     interlude: LyricsInterlude,
@@ -130,7 +147,14 @@ private fun DrawScope.drawInterludeDots(
     val visibility = LyricsInterludeMotion.visibility(interlude, positionMs)
     if (visibility <= 0f) return
     val progress = LyricsInterludeMotion.progress(interlude, positionMs)
-    val breath = if (reduceMotion) 1f else LyricsInterludeMotion.breath(positionMs)
+    val breath = if (reduceMotion) {
+        1f
+    } else {
+        maxOf(
+            LyricsInterludeMotion.breath(positionMs),
+            LyricsInterludeMotion.endSwell(interlude, positionMs),
+        )
+    }
     val diameter = DOT_DIAMETER_DP.dp.toPx()
     val gap = DOT_GAP_DP.dp.toPx()
     val radius = diameter / 2f * breath

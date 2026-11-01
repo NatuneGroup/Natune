@@ -20,8 +20,12 @@ class LinuxSystemIntegration(
     private val openUri: (String) -> Unit,
     private val connection: DBusConnection = DBusConnectionBuilder.forSessionBus().withShared(false).build(),
 ) : DesktopSystemIntegration {
-    private data class Published(val snapshot: PlaybackSnapshot?, val metadata: DesktopMediaMetadata?)
-    private val published = AtomicReference(Published(null, null))
+    private data class Published(
+        val snapshot: PlaybackSnapshot?,
+        val metadata: DesktopMediaMetadata?,
+        val transport: DesktopTransportState,
+    )
+    private val published = AtomicReference(Published(null, null, DesktopTransportState()))
     val busName = "org.mpris.MediaPlayer2.ArchiveTune"
     private val daemon = connection.getRemoteObject("org.freedesktop.DBus", "/org/freedesktop/DBus", DBus::class.java)
     @Volatile private var registeredWatcher: String? = null
@@ -75,15 +79,15 @@ class LinuxSystemIntegration(
         } catch (_: Exception) { registeredWatcher = null }
     }
 
-    override fun update(snapshot: PlaybackSnapshot?, metadata: DesktopMediaMetadata?) {
+    override fun update(snapshot: PlaybackSnapshot?, metadata: DesktopMediaMetadata?, transport: DesktopTransportState) {
         val safe = metadata?.takeIf { it.occurrenceId == snapshot?.occurrenceId }
-        val previous = published.getAndSet(Published(snapshot, safe))
+        val previous = published.getAndSet(Published(snapshot, safe, transport))
         val changed = media.GetAll(MPRIS_PLAYER).filterKeys { it != "Position" }
         val old = playerProperties(previous).filterKeys { it != "Position" }
         val differences = changed.filter { (key, value) -> old[key] != value }
         if (differences.isNotEmpty()) connection.sendMessage(Properties.PropertiesChanged(MPRIS_PATH, MPRIS_PLAYER, differences, emptyList()))
         if (isSeekDiscontinuity(previous.snapshot, snapshot)) {
-            connection.sendMessage(MprisPlayer.Seeked(MPRIS_PATH, micros(snapshot!!.positionMs)))
+            connection.sendMessage(MprisPlayer.Seeked(MPRIS_PATH, mprisMicros(snapshot!!.positionMs)))
         }
     }
 
@@ -97,35 +101,8 @@ class LinuxSystemIntegration(
         connection.close()
     }
 
-    private fun playerProperties(value: Published): Map<String, Variant<*>> {
-        val snapshot = value.snapshot
-        val metadata = value.metadata
-        val track = linkedMapOf<String, Variant<*>>()
-        if (snapshot != null) {
-            track["mpris:trackid"] = Variant(DBusPath(trackPath(snapshot.occurrenceId)))
-            snapshot.durationMs?.let { track["mpris:length"] = Variant(micros(it)) }
-            metadata?.let {
-                track["xesam:title"] = Variant(it.title)
-                track["xesam:artist"] = Variant(it.artists, "as")
-                track["xesam:album"] = Variant(it.album)
-                it.artworkUri?.takeIf { art -> art.startsWith("file:") }?.let { art -> track["mpris:artUrl"] = Variant(art) }
-            }
-        }
-        return linkedMapOf(
-            "PlaybackStatus" to Variant(snapshot.mprisStatus()),
-            "Rate" to Variant(snapshot?.playbackSpeed?.toDouble() ?: 1.0),
-            "Metadata" to Variant(track, "a{sv}"),
-            "Position" to Variant(snapshot?.let { micros(PlaybackClock.positionMs(it, SystemMonotonicClock.nowNanos())) } ?: 0L),
-            "MinimumRate" to Variant(0.25), "MaximumRate" to Variant(4.0),
-            "Volume" to Variant(1.0),
-            "CanGoNext" to Variant(metadata?.canNext == true),
-            "CanGoPrevious" to Variant(metadata?.canPrevious == true),
-            "CanPlay" to Variant(snapshot != null && !snapshot.isEnded),
-            "CanPause" to Variant(snapshot != null && !snapshot.isEnded),
-            "CanSeek" to Variant(snapshot?.isSeekable == true && !snapshot.isEnded),
-            "CanControl" to Variant(true),
-        )
-    }
+    private fun playerProperties(value: Published) =
+        mprisPlayerProperties(value.snapshot, value.metadata, value.transport, SystemMonotonicClock.nowNanos())
 
     inner class Media : MprisRoot, MprisPlayer, Properties {
         override fun getObjectPath() = MPRIS_PATH
@@ -149,12 +126,41 @@ class LinuxSystemIntegration(
             (GetAll(interfaceName)[propertyName] ?: throw DBusExecutionException("Unknown property")) as A
         override fun <A> Set(interfaceName: String, propertyName: String, value: A) {
             val unwrapped = if (value is Variant<*>) value.value else value
-            if (interfaceName == MPRIS_PLAYER && propertyName == "Rate" && unwrapped is Number) {
-                val speed = unwrapped.toFloat()
-                if (speed.isFinite() && speed in 0.25f..4f) { controls.submit(DesktopTransportAction.Speed(speed)); return }
-                throw DBusExecutionException("Invalid playback rate")
+            if (interfaceName != MPRIS_PLAYER) throw DBusExecutionException("Property is read-only or unsupported")
+            when (propertyName) {
+                "Rate" -> {
+                    val speed = (unwrapped as? Number)?.toFloat()
+                    if (speed != null && speed.isFinite() && speed in 0.25f..4f) {
+                        controls.submit(DesktopTransportAction.Speed(speed))
+                        return
+                    }
+                    throw DBusExecutionException("Invalid playback rate")
+                }
+                "Volume" -> {
+                    val level = (unwrapped as? Number)?.toDouble()?.let(::mprisVolumeLevel)
+                    if (level != null) {
+                        controls.submit(DesktopTransportAction.SetVolume(level))
+                        return
+                    }
+                    throw DBusExecutionException("Invalid volume")
+                }
+                "Shuffle" -> {
+                    if (unwrapped is Boolean) {
+                        controls.submit(DesktopTransportAction.SetShuffle(unwrapped))
+                        return
+                    }
+                    throw DBusExecutionException("Invalid shuffle value")
+                }
+                "LoopStatus" -> {
+                    val repeat = (unwrapped as? String)?.let(::mprisLoopStatusRepeat)
+                    if (repeat != null) {
+                        controls.submit(DesktopTransportAction.SetRepeat(repeat))
+                        return
+                    }
+                    throw DBusExecutionException("Invalid loop status")
+                }
+                else -> throw DBusExecutionException("Property is read-only or unsupported")
             }
-            throw DBusExecutionException("Property is read-only or unsupported")
         }
         override fun GetAll(interfaceName: String): Map<String, Variant<*>> = when (interfaceName) {
             MPRIS_PLAYER -> playerProperties(published.get())
@@ -257,8 +263,48 @@ class LinuxSystemIntegration(
         }
         return IconPixmap(32, 32, bytes)
     }
-    private fun micros(ms: Long) = ms.coerceIn(0, Long.MAX_VALUE / 1000) * 1000
 }
+
+/**
+ * The org.mpris.MediaPlayer2.Player property map. Position interpolates from the accepted snapshot at [nowNanos];
+ * every other property publishes its stored value. Kept pure so the mapping is testable without a session bus.
+ */
+internal fun mprisPlayerProperties(
+    snapshot: PlaybackSnapshot?,
+    metadata: DesktopMediaMetadata?,
+    transport: DesktopTransportState,
+    nowNanos: Long,
+): Map<String, Variant<*>> {
+    val track = linkedMapOf<String, Variant<*>>()
+    if (snapshot != null) {
+        track["mpris:trackid"] = Variant(DBusPath(trackPath(snapshot.occurrenceId)))
+        snapshot.durationMs?.let { track["mpris:length"] = Variant(mprisMicros(it)) }
+        metadata?.let {
+            track["xesam:title"] = Variant(it.title)
+            track["xesam:artist"] = Variant(it.artists, "as")
+            track["xesam:album"] = Variant(it.album)
+            it.artworkUri?.takeIf { art -> art.startsWith("file:") }?.let { art -> track["mpris:artUrl"] = Variant(art) }
+        }
+    }
+    return linkedMapOf(
+        "PlaybackStatus" to Variant(snapshot.mprisStatus()),
+        "LoopStatus" to Variant(transport.repeat.mprisLoopStatus()),
+        "Rate" to Variant(snapshot?.playbackSpeed?.toDouble() ?: 1.0),
+        "Shuffle" to Variant(transport.shuffleEnabled),
+        "Metadata" to Variant(track, "a{sv}"),
+        "Volume" to Variant(transport.volume.toDouble().coerceIn(0.0, 1.0)),
+        "Position" to Variant(snapshot?.let { mprisMicros(PlaybackClock.positionMs(it, nowNanos)) } ?: 0L),
+        "MinimumRate" to Variant(0.25), "MaximumRate" to Variant(4.0),
+        "CanGoNext" to Variant(metadata?.canNext == true),
+        "CanGoPrevious" to Variant(metadata?.canPrevious == true),
+        "CanPlay" to Variant(snapshot != null && !snapshot.isEnded),
+        "CanPause" to Variant(snapshot != null && !snapshot.isEnded),
+        "CanSeek" to Variant(snapshot?.isSeekable == true && !snapshot.isEnded),
+        "CanControl" to Variant(true),
+    )
+}
+
+private fun mprisMicros(ms: Long) = ms.coerceIn(0, Long.MAX_VALUE / 1000) * 1000
 
 /**
  * Mirrors the deep-link intake limits (length and control characters), so a bus caller cannot hand
