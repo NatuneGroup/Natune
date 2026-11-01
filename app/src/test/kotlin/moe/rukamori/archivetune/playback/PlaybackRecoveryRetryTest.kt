@@ -5,6 +5,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import moe.rukamori.archivetune.constants.AudioQuality
+import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -35,7 +36,6 @@ class PlaybackRecoveryRetryTest {
             player = { throw AssertionError("the default fire never runs in scheduler tests") },
             tracker = tracker,
             rebuffer = monitor,
-            playerCache = { throw AssertionError("the cache is not read unless degraded") },
             backoff = PlaybackRetryBackoff(baseDelayMs = 1_000L, maxDelayMs = 60_000L, random = Random(3)),
             nowMs = { now },
             fire = { mediaId, resumePlaying, seekIndex, seekPositionMs ->
@@ -73,7 +73,7 @@ class PlaybackRecoveryRetryTest {
     }
 
     @Test
-    fun `stop cancels a pending retry`() = runTest {
+    fun `a stop command cancels a pending retry`() = runTest {
         track("song")
         val gate = newGate(this)
         gate.allow("song")
@@ -234,7 +234,6 @@ class PlaybackRecoveryRetryTest {
                 player = { throw AssertionError() },
                 tracker = tracker,
                 rebuffer = monitor,
-                playerCache = { throw AssertionError() },
                 fire = { _, _, _, _ -> throw boom },
             )
         gate.prepare("song", resumePlaying = true, onFailure = { failed = it })
@@ -247,6 +246,18 @@ class PlaybackRecoveryRetryTest {
         val gate = newGate(kotlinx.coroutines.test.TestScope())
         assertFalse(gate.allow("song"))
         assertEquals(0, tracker.attemptCount("song"))
+    }
+
+    @Test
+    fun `the degraded low rendition gets its own cache key and download keys stay untouched`() {
+        freeze("song")
+        val gate = newGate(kotlinx.coroutines.test.TestScope())
+        // Degraded: the LOW rendition writes under its own ephemeral key.
+        assertEquals("song#low", gate.playbackCacheKey("song", "song"))
+        // Not degraded: the ordinary key passes through.
+        assertEquals("song", gate.playbackCacheKey("other", "song"))
+        // Download/offline key spaces never carry the rendition suffix.
+        assertTrue(DownloadSourceConfig.cacheKeysFor("song").none { it.contains("#low") })
     }
 
     @Test

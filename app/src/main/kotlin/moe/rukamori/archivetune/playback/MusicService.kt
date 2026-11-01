@@ -757,7 +757,7 @@ class MusicService :
     private val playbackErrorRecovery = PlaybackErrorRecovery()
     private val rebufferMonitor = RebufferMonitor()
     private val recoveryRetry =
-        PlaybackRecoveryRetry({ scope }, { player }, playbackStreamRecoveryTracker, rebufferMonitor, { playerCache })
+        PlaybackRecoveryRetry({ scope }, { player }, playbackStreamRecoveryTracker, rebufferMonitor)
 
     // Initial-buffer-stall recovery (ported from Metrolist).
     // A stream can stall in STATE_BUFFERING forever without surfacing an HTTP error the
@@ -1506,9 +1506,8 @@ class MusicService :
             toggleLike = ::toggleLike
             toggleStartRadio = ::toggleStartRadio
             toggleLibrary = ::toggleLibrary
-            isListenTogetherGuestActive = {
-                listenTogetherManager.isInRoom && !listenTogetherManager.isHost
-            }
+            isListenTogetherGuestActive = { listenTogetherManager.isInRoom && !listenTogetherManager.isHost }
+            onStopCommand = { recoveryRetry.cancelPending() }
         }
         mediaSession =
             MediaLibrarySession
@@ -7244,8 +7243,7 @@ class MusicService :
         initialBufferRecoveryJob = null
         initialBufferRecoveryAttemptedMediaId = null
         updateInitialBufferRecovery(player.playbackState)
-        recoveryRetry.onMediaItemTransition(
-            mediaItem?.mediaId, player.playbackState == Player.STATE_READY, player.playbackState == Player.STATE_BUFFERING)
+        recoveryRetry.onMediaItemTransition(mediaItem?.mediaId, player.playbackState == Player.STATE_READY, player.playbackState == Player.STATE_BUFFERING)
 
         // Catch-all for user-initiated skips that bypass PlayerConnection (notification, lock
         // screen, Bluetooth, Android Auto): a SEEK transition while a crossfade fade loop is still
@@ -8342,8 +8340,7 @@ class MusicService :
             val resumePosition = player.currentPosition.coerceAtLeast(0L)
             val mediaItemIndex = player.currentMediaItemIndex
 
-            // A different media item resets the budget; so does READY held for 10 s — a brief
-            // READY between decoder failures must not refill it.
+            // New item, or READY held for 10 s: refill; a brief READY between failures must not.
             val stableReadyMs = if (codecRecoveryReadyAtMs == Long.MIN_VALUE) 0L else android.os.SystemClock.elapsedRealtime() - codecRecoveryReadyAtMs
             if (currentMediaId != codecRecoveryMediaId || stableReadyMs >= 10_000L) {
                 codecRecoveryMediaId = currentMediaId
@@ -11032,6 +11029,7 @@ class MusicService :
             }?.let {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
                 val resolvedDataSpec = dataSpec.withUri(it.url.toUri())
+                    .buildUpon().setKey(recoveryRetry.playbackCacheKey(mediaId, dataSpec.key ?: mediaId)).build()
                 val length =
                     resolveStreamChunkLength(
                         requestedLength = dataSpec.length,
@@ -11240,6 +11238,7 @@ class MusicService :
                 )
         }
         val resolvedDataSpec = dataSpec.withUri(streamUrl.toUri())
+            .buildUpon().setKey(recoveryRetry.playbackCacheKey(mediaId, dataSpec.key ?: mediaId)).build()
         val length =
             resolveStreamChunkLength(
                 requestedLength = dataSpec.length,
