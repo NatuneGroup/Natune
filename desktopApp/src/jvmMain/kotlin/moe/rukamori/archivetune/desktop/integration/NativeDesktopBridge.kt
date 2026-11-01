@@ -13,6 +13,13 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackOutputRoute
+import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
+
+/** The Windows AppUserModelID; packaged taskbar grouping, SMTC identity and toast attribution read it. */
+internal const val DESKTOP_WINDOWS_AUMID = "moe.rukamori.archivetune"
+
+/** SMTC AutoRepeatMode (None/Track/List) numbers the modes exactly like the stored repeat preference. */
+internal fun nativeRepeatMode(mode: Int): QueueRepeatMode = QueueRepeatMode.fromStoredValue(mode)
 
 /** App-owned JNI, linked only to the host's public MediaPlayer/WinRT/AppKit/Shell APIs. */
 internal object NativeDesktopBridge {
@@ -37,6 +44,11 @@ internal object NativeDesktopBridge {
     external fun release(handle: Long)
     external fun pickFiles(window: Long, folder: Boolean, multiple: Boolean, title: String): Array<String>?
     external fun registerUriScheme(executable: String): Boolean
+    /** Added after [update]; an older library lacks the export, which the caller treats as absent, not as a failure. */
+    external fun updateTransport(handle: Long, shuffle: Boolean, repeatMode: Int)
+    /** 1 dark, 0 light, -1 when the OS theme cannot be read. */
+    external fun systemThemeDark(): Int
+    external fun setAppIdentity(appUserModelId: String, displayName: String): Boolean
 }
 
 class NativeSystemIntegration(
@@ -45,8 +57,11 @@ class NativeSystemIntegration(
     private val raise: () -> Unit,
     private val quit: () -> Unit,
     private val activity: (occluded: Boolean, resumed: Boolean) -> Unit,
+    private val systemTheme: (dark: Boolean) -> Unit = {},
 ) : DesktopSystemIntegration {
     @Volatile private var handle: Long = 0L
+    // A system library older than this bridge has no updateTransport export; the first miss disables the call.
+    @Volatile private var transportNative = true
     private val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var artworkJob: Job? = null
     private var artworkKey: Pair<String, String?>? = null
@@ -76,6 +91,9 @@ class NativeSystemIntegration(
                 "stop" -> controls.submit(DesktopTransportAction.Stop)
                 "next" -> controls.submit(DesktopTransportAction.Next)
                 "previous" -> controls.submit(DesktopTransportAction.Previous)
+                "shuffle" -> controls.submit(DesktopTransportAction.SetShuffle(positionMicros != 0L))
+                "repeat" -> controls.submit(DesktopTransportAction.SetRepeat(nativeRepeatMode(positionMicros.toInt())))
+                "theme" -> systemTheme(positionMicros != 0L)
             }
         } catch (error: Exception) {
             System.err.println("desktop transport callback failed: ${error.javaClass.simpleName}")
@@ -92,6 +110,11 @@ class NativeSystemIntegration(
             micros(snapshot?.positionMs ?: 0), micros(snapshot?.durationMs ?: 0), snapshot?.playbackSpeed?.toDouble() ?: 1.0,
             snapshot?.isSeekable == true && !snapshot.isEnded, safe?.canNext == true, safe?.canPrevious == true,
             snapshot?.isAudioAdvancing == true && !snapshot.isBuffering && snapshot.outputRoute == PlaybackOutputRoute.LOCAL)
+        if (transportNative) try {
+            NativeDesktopBridge.updateTransport(handle, transport.shuffleEnabled, transport.repeat.storedValue)
+        } catch (error: UnsatisfiedLinkError) {
+            transportNative = false
+        }
         val key = snapshot?.let { trackPath(it.occurrenceId) }.orEmpty() to safe?.artworkUri
         if (artworkKey != key) {
             artworkKey = key

@@ -29,8 +29,17 @@ class DesktopWindowActivityObserver(private val window: Window) : AutoCloseable 
         override fun windowStateChanged(e: WindowEvent) = refresh()
     }
     init { window.addComponentListener(component); window.addWindowListener(events); window.addWindowStateListener(events) }
+    // Compositor occlusion and compositor-reported workspace placement are separate inputs that merge into occluded.
+    private var nativeOccluded = false
+    private var workspaceHidden = false
     @Synchronized fun nativeActivity(occluded: Boolean, resumed: Boolean) {
-        state.value = state.value.copy(occluded = occluded, resumed = resumed)
+        nativeOccluded = occluded
+        state.value = state.value.copy(occluded = occluded || workspaceHidden, resumed = resumed)
+    }
+    /** The compositor moved the window to an unseen workspace; Wayland compositors report no occlusion for that. */
+    @Synchronized fun nativeWorkspaceHidden(hidden: Boolean) {
+        workspaceHidden = hidden
+        state.value = state.value.copy(occluded = nativeOccluded || hidden)
     }
     @Synchronized private fun refresh() {
         state.value = state.value.copy(

@@ -54,7 +54,8 @@ static NSString* string(JNIEnv* env, jstring value) {
     MPRemoteCommandCenter* center = MPRemoteCommandCenter.sharedCommandCenter;
     NSArray* commands = @[center.playCommand, center.pauseCommand, center.togglePlayPauseCommand,
         center.stopCommand, center.nextTrackCommand, center.previousTrackCommand,
-        center.changePlaybackPositionCommand, center.changePlaybackRateCommand];
+        center.changePlaybackPositionCommand, center.changePlaybackRateCommand,
+        center.changeShuffleModeCommand, center.changeRepeatModeCommand];
     for (NSUInteger i = 0; i < self.targets.count; ++i) {
         [commands[i] removeTarget:self.targets[i]];
         [commands[i] setEnabled:NO];
@@ -62,6 +63,7 @@ static NSString* string(JNIEnv* env, jstring value) {
     for (id observer in self.notifications) {
         [NSNotificationCenter.defaultCenter removeObserver:observer];
         [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:observer];
+        [NSDistributedNotificationCenter.defaultCenter removeObserver:observer];
     }
     [NSStatusBar.systemStatusBar removeStatusItem:self.status];
     MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = nil;
@@ -100,8 +102,9 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
         MPRemoteCommandCenter* center = MPRemoteCommandCenter.sharedCommandCenter;
         NSArray<MPRemoteCommand*>* commands = @[center.playCommand, center.pauseCommand, center.togglePlayPauseCommand,
             center.stopCommand, center.nextTrackCommand, center.previousTrackCommand,
-            center.changePlaybackPositionCommand, center.changePlaybackRateCommand];
-        const char* names[] = {"play", "pause", "toggle", "stop", "next", "previous", "seek", "speed"};
+            center.changePlaybackPositionCommand, center.changePlaybackRateCommand,
+            center.changeShuffleModeCommand, center.changeRepeatModeCommand];
+        const char* names[] = {"play", "pause", "toggle", "stop", "next", "previous", "seek", "speed", "shuffle", "repeat"};
         __weak ATSystem* weak = session;
         for (NSUInteger i = 0; i < commands.count; ++i) {
             commands[i].enabled = YES;
@@ -117,6 +120,12 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
                         strong->callbacks->emit(action, strong.track.UTF8String, position);
                     } else if ([event isKindOfClass:MPChangePlaybackRateCommandEvent.class]) {
                         strong->callbacks->emit(action, "", 0, ((MPChangePlaybackRateCommandEvent*)event).playbackRate);
+                    } else if ([event isKindOfClass:MPChangeShuffleModeCommandEvent.class]) {
+                        auto type = ((MPChangeShuffleModeCommandEvent*)event).shuffleType;
+                        strong->callbacks->emit(action, "", type == MPShuffleTypeOff ? 0 : 1);
+                    } else if ([event isKindOfClass:MPChangeRepeatModeCommandEvent.class]) {
+                        strong->callbacks->emit(action, "",
+                            static_cast<jlong>(((MPChangeRepeatModeCommandEvent*)event).repeatType));
                     } else strong->callbacks->emit(action);
                     result = MPRemoteCommandHandlerStatusSuccess;
                 });
@@ -138,6 +147,19 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
                 }];
             [session.notifications addObject:observer];
         }
+        // Interface-style changes arrive as distributed notifications; the host re-reads the resolved appearance.
+        id theme = [NSDistributedNotificationCenter.defaultCenter
+            addObserverForName:@"AppleInterfaceThemeChangedNotification" object:nil
+            queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification*) {
+                ATSystem* strong = weak;
+                if (strong && !strong.closed) {
+                    NSAppearance* appearance = NSApp.effectiveAppearance;
+                    BOOL dark = [appearance bestMatchFromAppearancesWithNames:
+                        @[NSAppearanceNameDarkAqua, NSAppearanceNameAqua]] == NSAppearanceNameDarkAqua;
+                    strong->callbacks->emit("theme", "", dark ? 1 : 0);
+                }
+            }];
+        [session.notifications addObject:theme];
         [session visibility];
     });
     return session ? reinterpret_cast<jlong>(CFBridgingRetain(session)) : 0;
@@ -231,4 +253,33 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_pickFiles(
         env->SetObjectArrayElement(result, i, value); env->DeleteLocalRef(value);
     }
     return result;
+}
+extern "C" JNIEXPORT void JNICALL
+Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_updateTransport(
+    JNIEnv*, jobject, jlong handle, jboolean shuffle, jint repeat) {
+    ATSystem* session = (__bridge ATSystem*)reinterpret_cast<void*>(handle);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (session.closed) return;
+        MPRemoteCommandCenter* center = MPRemoteCommandCenter.sharedCommandCenter;
+        center.changeShuffleModeCommand.currentShuffleType = shuffle ? MPShuffleTypeItems : MPShuffleTypeOff;
+        jint bounded = repeat < 0 ? 0 : repeat > 2 ? 2 : repeat;
+        center.changeRepeatModeCommand.currentRepeatType = static_cast<MPRepeatType>(bounded);
+    });
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_systemThemeDark(JNIEnv*, jobject) {
+    __block jint result = -1;
+    mainSync(^{
+        NSAppearance* appearance = NSApp.effectiveAppearance;
+        if (!appearance) appearance = NSAppearance.currentAppearance;
+        result = [appearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameDarkAqua, NSAppearanceNameAqua]] ==
+            NSAppearanceNameDarkAqua ? 1 : 0;
+    });
+    return result;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_setAppIdentity(
+    JNIEnv*, jobject, jstring, jstring) {
+    // App identity is a Windows taskbar/registry concern; macOS identity comes from the app bundle.
+    return JNI_FALSE;
 }

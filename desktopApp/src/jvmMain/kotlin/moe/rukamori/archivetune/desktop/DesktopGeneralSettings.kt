@@ -53,7 +53,7 @@ internal fun DesktopGeneralSettingsPage(
     when (path) {
         AppearanceRoute, in AppearanceSectionRoutes.keys -> AppearanceSettings(
             controller = controller,
-            systemDark = isSystemInDarkTheme(),
+            systemDark = LocalDesktopSystemDark.current ?: isSystemInDarkTheme(),
             lowRam = false,
             nativeDynamicColors = false,
             wallpaperPermissionNeeded = false,
