@@ -10,8 +10,6 @@
 
 package moe.rukamori.archivetune.ui.menu
 
-import android.content.Intent
-import android.media.audiofx.AudioEffect
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -539,18 +537,10 @@ fun PlayerMenu(
         EqualizerDialog(
             onDismiss = { showEqualizerDialog = false },
             openSystemEqualizer = {
-                val intent =
-                    Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
-                        putExtra(
-                            AudioEffect.EXTRA_AUDIO_SESSION,
-                            playerConnection.localPlayer.audioSessionId,
-                        )
-                        putExtra(AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
-                        putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                    }
-                if (intent.resolveActivity(context.packageManager) != null) {
-                    activityResultLauncher.launch(intent)
-                }
+                context.launchSystemEqualizerPanel(
+                    audioSessionId = playerConnection.localPlayer.audioSessionId,
+                    launch = { intent -> activityResultLauncher.launch(intent) },
+                )
             },
         )
     }
