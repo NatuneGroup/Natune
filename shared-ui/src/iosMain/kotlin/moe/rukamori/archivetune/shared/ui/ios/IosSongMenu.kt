@@ -291,6 +291,7 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, inLibrary: 
 
 private fun iosMenuSharing(state: IosItemMenuState, host: IosHost): MenuSharing = object : MenuSharing {
     override suspend fun shareLink(url: String) = withContext(Dispatchers.Main) { iosShareText(host, url) }
+    override suspend fun copyLink(url: String) = withContext(Dispatchers.Main) { copyToIosClipboard(url) }
     override suspend fun shareLocalAudio(mediaId: String, mimeType: String?) = state.unavailable()
     // Link resolution needs the signed-in Telegram client's message-link query, which this host does not expose.
     override suspend fun telegramMessageLink(mediaId: String): String? = null

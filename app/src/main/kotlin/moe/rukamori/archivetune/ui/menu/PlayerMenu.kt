@@ -741,51 +741,26 @@ fun PlayerMenu(
                             // MenuSurfaceSection below, not chips in this grid.
                             add(
                                 if (isLocalMedia || mediaMetadata.id.startsWith("telegram://")) {
-                                    NewAction(
-                                        icon = {
-                                            Icon(
-                                                painter = painterResource(R.drawable.share),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        },
-                                        text = stringResource(R.string.share),
-                                        onClick = shareSelectedSong,
-                                    )
+                                    menuGridAction(R.drawable.share, stringResource(R.string.share), shareSelectedSong)
                                 } else {
-                                    NewAction(
-                                        icon = {
-                                            Icon(
-                                                painter = painterResource(R.drawable.link),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        },
-                                        text = stringResource(R.string.copy_link),
-                                        onClick = {
-                                            val clipboard =
-                                                context.getSystemService(
-                                                    android.content.Context.CLIPBOARD_SERVICE,
-                                                ) as android.content.ClipboardManager
-                                            val clip =
-                                                android.content.ClipData.newPlainText(
-                                                    context.getString(R.string.copy_link),
-                                                    "https://music.youtube.com/watch?v=${mediaMetadata.id}",
-                                                )
-                                            clipboard.setPrimaryClip(clip)
-                                            android.widget.Toast
-                                                .makeText(
-                                                    context,
-                                                    R.string.link_copied,
-                                                    android.widget.Toast.LENGTH_SHORT,
-                                                ).show()
-                                            onDismiss()
-                                        },
-                                    )
+                                    copyLinkMenuAction(stringResource(R.string.copy_link)) {
+                                        context.copyLinkToClipboard("https://music.youtube.com/watch?v=${mediaMetadata.id}")
+                                        onDismiss()
+                                    }
                                 },
                             )
+                            // Only the playing YouTube track can carry a live position, as the baseline gate did.
+                            if (!isLocalMedia && isQueueTrigger != true && !mediaMetadata.id.startsWith("telegram://")) {
+                                add(
+                                    copyLinkAtCurrentTimeAction(
+                                        text = stringResource(R.string.copy_link_at_current_time),
+                                        context = context,
+                                        url = "https://music.youtube.com/watch?v=${mediaMetadata.id}",
+                                        positionMs = { playerConnection.player.currentPosition },
+                                        onDismiss = onDismiss,
+                                    ),
+                                )
+                            }
                             if (!isLocalMedia) {
                                 add(
                                     NewAction(
@@ -1346,12 +1321,16 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
         )
     }
 
+    val context = LocalContext.current
+
     val applyPlaybackParameters: (Float, Float) -> Unit = { speed, pitchMultiplier ->
         playerConnection.player.playbackParameters =
             PlaybackParameters(
                 speed.coerceIn(TempoMin, TempoMax),
                 pitchMultiplier.coerceIn(PitchMin, PitchMax),
             )
+        // Opt-in restore: while "remember" holds, every applied pair is stored for the next launch.
+        persistRememberedTempoPitch(context, speed, pitchMultiplier)
     }
 
     AlertDialog(
@@ -1647,6 +1626,12 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
                             }
                         }
                     }
+                }
+
+                TempoPitchPresetsSection(tempo, pitch) { speed, pitchMultiplier ->
+                    tempo = speed
+                    pitch = pitchMultiplier
+                    applyPlaybackParameters(tempo, pitch)
                 }
             }
         },
