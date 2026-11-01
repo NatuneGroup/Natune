@@ -40,6 +40,7 @@ import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.YouTubeResolutionPort
+import moe.rukamori.archivetune.shared.data.provider.racePoolAttempts
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.PlatformSecret
@@ -221,9 +222,10 @@ private suspend fun VaultProviderAccountStore.admitPoolEntry(
  * TIDAL over the personal account lease, the Playback Pool accounts and the HiFi instances (the user's own, then the
  * pool's discovered ones), in the shipped order: the accounts first while "account first" is on (the default),
  * otherwise the instances first. The instances form one racing route for the session, so their health and cooldowns
- * persist across resolves, as the desktop host's do. A failed attempt moves to the next one. A terminal authentication
- * failure of the personal account stops the source; a pooled account that fails authentication or answers HTTP 401 is
- * reported dead to the pool and the next one is tried.
+ * persist across resolves, as the desktop host's do. The pooled accounts race through the shared [racePoolAttempts]
+ * helper the way the Android resolver does — bounded lanes, the first answer wins and the losers are cancelled — while
+ * the personal account and the instances stay in order. A terminal authentication failure of the personal account
+ * stops the source; a pooled account that fails authentication or answers HTTP 401 is reported dead to the pool.
  */
 private class IosTidalSource(
     private val http: HttpClient,
@@ -276,26 +278,32 @@ private class IosTidalSource(
         val accountAttempts = listOfNotNull(personal) + pooled
         val attempts = if (accountFirst) accountAttempts + instances else instances + accountAttempts
         var failure: Exception? = null
-        for (attempt in attempts) {
-            try {
-                attempt.repository.resolve(request)?.let { resolved ->
-                    if (attempt.pooled) pool?.noteSuccess(IosPlaybackPool.TIDAL, attempt.poolId)
-                    return resolved
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (auth: TerminalPlaybackAuthentication) {
-                if (!attempt.pooled) throw auth
-                pool?.report(IosPlaybackPool.TIDAL, attempt.poolId, "dead")
-                pool?.noteFailure(IosPlaybackPool.TIDAL, attempt.poolId)
-            } catch (error: Exception) {
-                if (attempt.pooled) {
-                    if ((error as? ProviderHttpFailure)?.status == 401) pool?.report(IosPlaybackPool.TIDAL, attempt.poolId, "dead")
-                    pool?.noteFailure(IosPlaybackPool.TIDAL, attempt.poolId)
-                }
-                failure = error
-            }
+        // Only un-pooled attempts reach this walker, so a terminal refusal still ends the source.
+        suspend fun sequential(attempt: Attempt): PreparedAudio? = try {
+            attempt.repository.resolve(request)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (auth: TerminalPlaybackAuthentication) {
+            throw auth
+        } catch (error: Exception) {
+            failure = error
+            null
         }
+        val firstPooled = attempts.indexOfFirst { it.pooled }.let { if (it < 0) attempts.size else it }
+        val raced = attempts.drop(firstPooled).takeWhile { it.pooled }
+        for (attempt in attempts.take(firstPooled)) sequential(attempt)?.let { return it }
+        if (raced.isNotEmpty()) {
+            val outcome = racePoolAttempts(
+                attempts = raced,
+                resolve = { it.repository.resolve(request) },
+                reportDead = { pool?.report(IosPlaybackPool.TIDAL, it.poolId, "dead") },
+                noteSuccess = { pool?.noteSuccess(IosPlaybackPool.TIDAL, it.poolId) },
+                noteFailure = { pool?.noteFailure(IosPlaybackPool.TIDAL, it.poolId) },
+            )
+            outcome.winner?.let { return it }
+            outcome.failure?.let { failure = it }
+        }
+        for (attempt in attempts.drop(firstPooled + raced.size)) sequential(attempt)?.let { return it }
         failure?.let { throw it }
         return null
     }
