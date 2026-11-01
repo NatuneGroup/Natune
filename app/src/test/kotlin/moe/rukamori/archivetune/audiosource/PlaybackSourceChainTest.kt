@@ -15,6 +15,7 @@ import moe.rukamori.archivetune.constants.DownloadSource
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -181,6 +182,45 @@ class PlaybackSourceChainTest {
         val middle = snapshot("DEEZER,YOUTUBE,TIDAL", AudioSourceType.DEEZER, AudioSourceType.YOUTUBE, AudioSourceType.TIDAL)
 
         assertEquals(listOf("deezer:id1", "id1"), PlaybackSourceChain.cacheKeyOrder(middle, "id1"))
+    }
+
+    @Test
+    fun cacheKeyOrderProbesOnlySourceAndLegacyKeys() {
+        val prefs = snapshot("TIDAL,YOUTUBE", AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)
+
+        // The bare mediaId is the only YouTube probe: it serves complete legacy copies only,
+        // and no rendition-scoped "#i" key is ever probed before a resolve picks one.
+        val order = PlaybackSourceChain.cacheKeyOrder(prefs, "id1")
+        assertEquals(listOf("tidal:id1", "id1"), order)
+        assertTrue(order.none { it.contains("#") })
+    }
+
+    @Test
+    fun theItagScopedSlotProbesBeforeTheLegacyKey() {
+        val prefs = snapshot("TIDAL,YOUTUBE", AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)
+
+        // A persisted format row lets the rendition slot serve a fully cached copy offline;
+        // the legacy bare key remains a fallback.
+        assertEquals(
+            listOf("tidal:id1", "id1#i140", "id1"),
+            PlaybackSourceChain.cacheKeyOrder(prefs, "id1", youtubeItag = 140),
+        )
+    }
+
+    @Test
+    fun itagCacheKeyNamesTheRenditionSlotAndRejectsNonYoutubeItags() {
+        assertEquals("id1#i140", PlaybackSourceChain.itagCacheKey("id1", 140))
+        // External-source format rows persist itag 0 — that names no rendition slot.
+        assertNull(PlaybackSourceChain.itagCacheKey("id1", null))
+        assertNull(PlaybackSourceChain.itagCacheKey("id1", 0))
+    }
+
+    @Test
+    fun itagCoverageLengthPrefersTheKeysRecordThenTheFormatRow() {
+        assertEquals(500L, PlaybackSourceChain.itagCoverageLength(500L, 300L))
+        assertEquals(300L, PlaybackSourceChain.itagCoverageLength(null, 300L))
+        assertNull(PlaybackSourceChain.itagCoverageLength(null, null))
+        assertNull(PlaybackSourceChain.itagCoverageLength(0L, -5L))
     }
 
     @Test
