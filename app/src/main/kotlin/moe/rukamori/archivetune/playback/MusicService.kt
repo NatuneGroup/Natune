@@ -7498,11 +7498,12 @@ class MusicService :
                     // playback path will not use a YouTube URL for this track.
                     if (!isSourceEnabled(AudioSourceType.YOUTUBE)) return@runCatching
 
+                    val prefetchQuality = recoveryRetry.audioQuality(mediaId, lowData, audioQuality)
                     val result =
                         retryWithoutPlaybackLoginContext {
                             YTPlayerUtils.playerResponseForPlayback(
                                 mediaId,
-                                audioQuality = recoveryRetry.audioQuality(mediaId, lowData, audioQuality),
+                                audioQuality = prefetchQuality,
                                 connectivityManager = connectivityManager,
                                 preferredStreamClient = preferredStreamClient,
                                 networkMetered = lowData,
@@ -7515,6 +7516,7 @@ class MusicService :
                             url = playbackData.streamUrl,
                             expiresAtMs = expiresAtMs,
                             authFingerprint = playbackData.authFingerprint,
+                            low = prefetchQuality == AudioQuality.LOW,
                         )
                         Timber.tag(TAG).d(
                             "Prefetch: YouTube stream URL cached for %s (expires in %ds)",
@@ -10879,7 +10881,7 @@ class MusicService :
     }
 
     private fun sourceForCacheKey(key: String, mediaId: String): AudioSourceType? {
-        if (key == mediaId) return AudioSourceType.YOUTUBE
+        if (key == mediaId || key == "$mediaId#low") return AudioSourceType.YOUTUBE
         return AudioSourceType.values().firstOrNull { sourceCacheKey(it, mediaId) == key }
     }
 
@@ -10911,9 +10913,12 @@ class MusicService :
         }
         val mediaId = dataSpec.key ?: return dataSpec
         val lowDataModeActive = isLowDataModeActive()
-        // One settings snapshot for this whole resolution: the cache gates, the multi-source
-        // chain, the pins and the terminal YouTube gate below all read the same order and
-        // toggles, so they cannot disagree with each other or with the settings UI.
+        // The rendition this resolution asks for; a degraded LOW rendition's bytes live in their own cache slot.
+        val youtubeAudioQuality = recoveryRetry.audioQuality(mediaId, lowDataModeActive, audioQuality)
+        val wantLow = youtubeAudioQuality == AudioQuality.LOW
+        val youtubeCacheKey = if (wantLow) "$mediaId#low" else mediaId
+        // One settings snapshot for this whole resolution: the cache gates, the chain, the
+        // pins and the terminal YouTube gate cannot disagree with each other or the settings UI.
         val prefs = sourcePrefsSnapshot()
         val authenticityRejectedSources = rejectedPlaybackSources(mediaId)
         val storedFormat =
@@ -10930,7 +10935,7 @@ class MusicService :
                     .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
             }.getOrNull()?.takeIf { it > 0L } ?: runCatching {
                 playerCache
-                    .getContentMetadata(mediaId)
+                    .getContentMetadata(youtubeCacheKey)
                     .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
             }.getOrNull()?.takeIf { it > 0L }
 
@@ -10949,6 +10954,7 @@ class MusicService :
                 mediaId = mediaId,
                 includePlayerCache = allowPlayerCacheShortCircuit,
                 youtubeSampleRateHz = storedFormat?.sampleRate,
+                low = wantLow,
                 prefs = prefs,
             )?.let { cachedDataSpec ->
                 Timber.tag("PlaybackDiagnostics").d(
@@ -10976,15 +10982,14 @@ class MusicService :
             AudioSourceType.YOUTUBE !in authenticityRejectedSources &&
             requiredCachedLength != null
         ) {
-            val isFullyCached =
-                downloadCache.isCached(mediaId, dataSpec.position, requiredCachedLength) ||
-                    (
-                        allowPlayerCacheShortCircuit &&
-                            playerCache.isCached(mediaId, dataSpec.position, requiredCachedLength)
-                    )
-            if (isFullyCached) {
+            val downloadFullyCached =
+                downloadCache.isCached(mediaId, dataSpec.position, requiredCachedLength)
+            val playerFullyCached =
+                allowPlayerCacheShortCircuit &&
+                    playerCache.isCached(youtubeCacheKey, dataSpec.position, requiredCachedLength)
+            if (downloadFullyCached || playerFullyCached) {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
-                return dataSpec
+                return if (downloadFullyCached) dataSpec else dataSpec.buildUpon().setKey(youtubeCacheKey).build() // downloads keep the bare key
             }
         }
 
@@ -11021,15 +11026,13 @@ class MusicService :
         val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
         playbackUrlCache[mediaId]
             ?.takeUnless { lowDataModeActive }
-            ?.takeIf {
-                it.isValidFor(
-                    authFingerprint = authFingerprint,
-                    minimumRemainingMs = YTPlayerUtils.STREAM_URL_EXPIRY_SAFETY_MS,
-                )
-            }?.let {
+            // A cached URL whose stored rendition is not the requested one is rejected and
+            // re-resolved rather than writing bytes under the other rendition's key.
+            ?.takeIf { it.matchesRendition(wantLow) && it.isValidFor(authFingerprint, minimumRemainingMs = YTPlayerUtils.STREAM_URL_EXPIRY_SAFETY_MS) }
+            ?.let {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
                 val resolvedDataSpec = dataSpec.withUri(it.url.toUri())
-                    .buildUpon().setKey(recoveryRetry.playbackCacheKey(mediaId, dataSpec.key ?: mediaId)).build()
+                    .buildUpon().setKey(youtubeCacheKey).build()
                 val length =
                     resolveStreamChunkLength(
                         requestedLength = dataSpec.length,
@@ -11049,7 +11052,7 @@ class MusicService :
                 retryWithoutPlaybackLoginContext {
                     YTPlayerUtils.playerResponseForPlayback(
                         mediaId,
-                        audioQuality = recoveryRetry.audioQuality(mediaId, lowDataModeActive, audioQuality),
+                        audioQuality = youtubeAudioQuality,
                         connectivityManager = connectivityManager,
                         preferredStreamClient = preferredStreamClient,
                         networkMetered = lowDataModeActive,
@@ -11075,7 +11078,7 @@ class MusicService :
                         mediaId = mediaId,
                         primaryFailure = primaryFailure,
                         shippedStartedAtMs = youtubeResolveStartedAt,
-                        audioQuality = recoveryRetry.audioQuality(mediaId, lowDataModeActive, audioQuality),
+                        audioQuality = youtubeAudioQuality,
                         networkMetered = lowDataModeActive,
                         purpose = moe.rukamori.archivetune.playback.stream.StreamPurpose.PLAYBACK,
                         connectivityManager = connectivityManager,
@@ -11235,10 +11238,11 @@ class MusicService :
                     url = streamUrl,
                     expiresAtMs = trackingExpiryMs,
                     authFingerprint = nonNullPlayback.authFingerprint,
+                    low = wantLow,
                 )
         }
         val resolvedDataSpec = dataSpec.withUri(streamUrl.toUri())
-            .buildUpon().setKey(recoveryRetry.playbackCacheKey(mediaId, dataSpec.key ?: mediaId)).build()
+            .buildUpon().setKey(youtubeCacheKey).build()
         val length =
             resolveStreamChunkLength(
                 requestedLength = dataSpec.length,
@@ -11259,22 +11263,18 @@ class MusicService :
         mediaId: String,
         includePlayerCache: Boolean = true,
         youtubeSampleRateHz: Int? = null,
+        low: Boolean = false,
         prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
     ): DataSpec? {
-        // Find the first key (enabled sources in the user's own preference order, YouTube's bare
-        // key last and only while YouTube is enabled — PlaybackSourceChain.cacheKeyOrder) that
-        // has the requested byte range fully cached. Returning the DataSpec with the matching
-        // key is critical — without it the CacheDataSource would look up the bytes under the
-        // bare mediaId and miss the lossless FLAC bytes cached under "qobuz:$mediaId" /
-        // "tidal:$mediaId", then fall through to the YouTube resolver and serve a lossy MP3
-        // stream — producing Code 3003 when the Media3 extractors then tried to read MP3 bytes
-        // under a FLAC FormatEntity.
-        //
-        // A disabled source's key is left out entirely: neither its player cache nor its
-        // persistent downloads are served while the source is switched off, matching the
-        // download chain, which skips disabled playback sources too. Re-enabling the source
-        // plays those bytes again.
-        val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId)
+        // Find the first key (enabled sources in the user's own preference order, YouTube's
+        // key last and only while YouTube is enabled — PlaybackSourceChain.cacheKeyOrder, which
+        // keys the degraded LOW rendition as "<mediaId>#low") that has the requested byte range
+        // fully cached. Returning the DataSpec with the matching key is critical — without it
+        // the CacheDataSource would look up the bytes under the bare mediaId and miss the
+        // lossless FLAC bytes cached under "qobuz:$mediaId" / "tidal:$mediaId". A disabled
+        // source's key is left out entirely: neither its player cache nor its persistent
+        // downloads are served while the source is switched off.
+        val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId, low)
         val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         val transportRejectedSources = externalStreamRecovery.rejectedSources(mediaId) +
             listOfNotNull(externalStreamRecovery.refreshSource(mediaId))

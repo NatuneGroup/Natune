@@ -184,6 +184,21 @@ class PlaybackSourceChainTest {
     }
 
     @Test
+    fun cacheKeyOrderKeysTheDegradedLowRenditionSeparately() {
+        val prefs = snapshot("TIDAL,QOBUZ,YOUTUBE", AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)
+
+        // A LOW request probes its own rendition slot; a HIGH request never sees it.
+        assertEquals(
+            listOf("tidal:id1", "id1#low"),
+            PlaybackSourceChain.cacheKeyOrder(prefs, "id1", low = true),
+        )
+        assertEquals(
+            listOf("tidal:id1", "id1"),
+            PlaybackSourceChain.cacheKeyOrder(prefs, "id1"),
+        )
+    }
+
+    @Test
     fun cacheKeyOrderBelowDisabledYouTubeIsStillUnreachable() {
         val prefs = snapshot("YOUTUBE,TIDAL", AudioSourceType.TIDAL)
 

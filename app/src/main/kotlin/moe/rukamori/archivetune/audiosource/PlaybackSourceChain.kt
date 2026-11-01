@@ -78,9 +78,18 @@ object PlaybackSourceChain {
     fun cacheKeyOrder(
         snapshot: PlaybackSourceSnapshot,
         mediaId: String,
+        low: Boolean = false,
     ): List<String> =
         baseChain(snapshot).mapNotNull { source -> cacheProbeKey(source, mediaId) } +
-            listOfNotNull(mediaId.takeIf { AudioSourceType.YOUTUBE in snapshot.enabled })
+            listOfNotNull(
+                // The degraded LOW rendition lives in its own ephemeral slot: a LOW request
+                // probes it, a HIGH request never sees it, and downloads keep the bare key.
+                if (AudioSourceType.YOUTUBE in snapshot.enabled) {
+                    if (low) "$mediaId#low" else mediaId
+                } else {
+                    null
+                },
+            )
 
     /**
      * The cache key [source]'s bytes are probed under, or null when the source has none. The

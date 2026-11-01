@@ -257,12 +257,12 @@ class MediaLibrarySessionCallback
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
 
-        override fun onPlayerCommandRequestFinished(
-            session: MediaSession, controller: MediaSession.ControllerInfo, commands: Player.Commands,
-        ): ListenableFuture<SessionResult> =
-            // A controller stop() reaches the player with no listener-visible change at all.
-            super.onPlayerCommandRequestFinished(session, controller, commands)
-                .also { if (commands.contains(Player.COMMAND_STOP)) onStopCommand() }
+        @Suppress("DEPRECATION")
+        override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
+            val result = super.onPlayerCommandRequest(session, controller, playerCommand)
+            if (playerCommand == Player.COMMAND_STOP && result == SessionResult.RESULT_SUCCESS) onStopCommand() // a stop() emits no listener-visible change
+            return result
+        }
 
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
