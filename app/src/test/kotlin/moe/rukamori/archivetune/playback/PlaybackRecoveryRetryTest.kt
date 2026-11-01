@@ -5,7 +5,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import moe.rukamori.archivetune.constants.AudioQuality
-import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -246,18 +245,6 @@ class PlaybackRecoveryRetryTest {
         val gate = newGate(kotlinx.coroutines.test.TestScope())
         assertFalse(gate.allow("song"))
         assertEquals(0, tracker.attemptCount("song"))
-    }
-
-    @Test
-    fun `the degraded low rendition gets its own cache key and download keys stay untouched`() {
-        freeze("song")
-        val gate = newGate(kotlinx.coroutines.test.TestScope())
-        // Degraded: the LOW rendition writes under its own ephemeral key.
-        assertEquals("song#low", gate.playbackCacheKey("song", "song"))
-        // Not degraded: the ordinary key passes through.
-        assertEquals("song", gate.playbackCacheKey("other", "song"))
-        // Download/offline key spaces never carry the rendition suffix.
-        assertTrue(DownloadSourceConfig.cacheKeysFor("song").none { it.contains("#low") })
     }
 
     @Test

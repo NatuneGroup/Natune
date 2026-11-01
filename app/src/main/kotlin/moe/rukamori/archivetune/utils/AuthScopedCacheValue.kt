@@ -12,7 +12,16 @@ data class AuthScopedCacheValue(
     val url: String,
     val expiresAtMs: Long,
     val authFingerprint: String,
+    /**
+     * The rendition the URL was resolved for. The ephemeral player cache keys renditions
+     * separately ("<mediaId>#low"), and a cached URL is reusable only while its rendition is
+     * the one the next resolution asks for.
+     */
+    val low: Boolean = false,
 ) {
+    /** True when this URL's stored rendition is the one a resolution asks for. */
+    fun matchesRendition(requestedLow: Boolean): Boolean = low == requestedLow
+
     fun isValidFor(
         authFingerprint: String,
         nowMs: Long = System.currentTimeMillis(),

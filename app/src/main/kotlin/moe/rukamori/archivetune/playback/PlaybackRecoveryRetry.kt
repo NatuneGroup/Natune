@@ -188,15 +188,6 @@ internal class PlaybackRecoveryRetry(
     fun audioQuality(mediaId: String, lowData: Boolean, configured: AudioQuality): AudioQuality =
         if (lowData || rebuffer.shouldStepDownQuality(mediaId)) AudioQuality.LOW else configured
 
-    /**
-     * The ephemeral playback-cache key a (re-)resolve writes under. A degraded track fetches its
-     * LOW rendition under [baseKey] suffixed with `#low`, so its bytes never mix with the HIGH
-     * spans cached under the ordinary key — no span surgery, no cross-key races. Download and
-     * offline keys are a different list entirely and stay untouched.
-     */
-    fun playbackCacheKey(mediaId: String, baseKey: String): String =
-        if (rebuffer.shouldStepDownQuality(mediaId)) "$baseKey#low" else baseKey
-
     private companion object {
         /** The longest a recovery seek's deferred discontinuity may take before its mark expires. */
         const val RECOVERY_SEEK_WINDOW_MS = 2_000L
