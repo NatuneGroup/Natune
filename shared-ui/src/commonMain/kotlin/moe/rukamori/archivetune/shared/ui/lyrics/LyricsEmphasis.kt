@@ -94,4 +94,18 @@ object LyricsEmphasis {
         if (local <= 0L || local >= duration) return 0f
         return sin(PI.toFloat() * (local.toFloat() / duration))
     }
+
+    /**
+     * The bump letter [index] gets at [positionMs], stilling the wave when reduced motion is on: a listener
+     * who asked for no motion never sees the letters ride. The platform lyric renderer reads this so its
+     * lift, scale and glow all share the one gate.
+     */
+    fun bumpAt(
+        wordStartMs: Long,
+        durationMs: Long,
+        clusterCount: Int,
+        index: Int,
+        positionMs: Long,
+        reduceMotion: Boolean,
+    ): Float = if (reduceMotion) 0f else rippleAt(wordStartMs, durationMs, clusterCount, index, positionMs)
 }

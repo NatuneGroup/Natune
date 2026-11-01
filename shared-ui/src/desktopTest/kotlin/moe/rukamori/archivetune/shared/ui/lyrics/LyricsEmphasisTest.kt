@@ -62,4 +62,18 @@ class LyricsEmphasisTest {
         assertEquals(0f, LyricsEmphasis.rippleAt(word, duration, count, 5, word + duration / 2))
         assertEquals(0f, LyricsEmphasis.rippleAt(word, duration, 0, 0, word + duration / 2))
     }
+
+    @Test
+    fun reducedMotionStillsTheWave() {
+        val word = 2_000L
+        val duration = 1_500L
+        // Mid-word the wave would ride, but a still preference leaves every letter flat.
+        assertTrue(LyricsEmphasis.rippleAt(word, duration, 5, 0, word + duration / 2) > 0f)
+        assertEquals(0f, LyricsEmphasis.bumpAt(word, duration, 5, 0, word + duration / 2, reduceMotion = true))
+        // With motion on the gate is transparent: the bump is the ripple.
+        assertEquals(
+            LyricsEmphasis.rippleAt(word, duration, 5, 2, word + duration / 2),
+            LyricsEmphasis.bumpAt(word, duration, 5, 2, word + duration / 2, reduceMotion = false),
+        )
+    }
 }
