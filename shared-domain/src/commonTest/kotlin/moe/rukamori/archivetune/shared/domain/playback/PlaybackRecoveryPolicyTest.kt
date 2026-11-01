@@ -57,7 +57,7 @@ class PlaybackRecoveryPolicyTest {
     fun withoutEvidenceTheReasonDecides() {
         val base = PlaybackFailure("occ", PlaybackFailureReason.OPEN_FAILED, "failed")
         val cases = listOf(
-            PlaybackFailureReason.DECODE_FAILED to PlaybackFailureCategory.DECODER,
+            PlaybackFailureReason.DECODE_FAILED to PlaybackFailureCategory.UNKNOWN,
             PlaybackFailureReason.OUTPUT_FAILED to PlaybackFailureCategory.RENDERER,
             PlaybackFailureReason.SOURCE_UNAVAILABLE to PlaybackFailureCategory.UNAVAILABLE,
             PlaybackFailureReason.OPEN_FAILED to PlaybackFailureCategory.UNKNOWN,
