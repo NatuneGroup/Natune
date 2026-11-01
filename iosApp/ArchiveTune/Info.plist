@@ -22,6 +22,8 @@
     <key>ArchiveTuneListenerPresenceUrl</key><string>$(ARCHIVETUNE_LISTENER_PRESENCE_URL)</string>
     <key>ArchiveTuneLastFmApiKey</key><string>$(ARCHIVETUNE_LASTFM_API_KEY)</string>
     <key>ArchiveTuneLastFmApiSecret</key><string>$(ARCHIVETUNE_LASTFM_API_SECRET)</string>
+    <key>ArchiveTuneAmazonTurnstileSitekey</key><string>$(ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY)</string>
+    <key>ArchiveTuneAmazonTurnstileOrigin</key><string>$(ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>

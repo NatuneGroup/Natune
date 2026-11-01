@@ -115,15 +115,22 @@ import moe.rukamori.archivetune.shared.ui.settings.settingsNoticeText
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSByteCountFormatter
 import platform.Foundation.NSByteCountFormatterCountStyleFile
+import platform.UIKit.UIViewController
 
 /**
  * The settings owners of the iOS host: one controller over the graph's settings, and the graph's sign-in lifecycle and
  * TIDAL account endpoints. The device link shows when this build carries a TIDAL device client, and a pasted refresh
  * token is always verified with TIDAL.
  */
-internal class IosSettingsOwners(internal val graph: IosSessionGraph, browser: IosCookieOnlyBrowserAuth) {
+internal class IosSettingsOwners(
+    internal val graph: IosSessionGraph,
+    browser: IosCookieOnlyBrowserAuth,
+    presenter: () -> UIViewController,
+) {
     val deezerWeb = IosDeezerWebSignIn(graph, browser)
     val spotifyCatalog = IosSpotifyCatalogAccount(graph, browser)
+    val spotifyStreaming = IosSpotifyStreamingAccount(graph, browser)
+    val amazonAuthorize = IosAmazonAuthorize(graph, presenter)
     val controller = SettingsController(
         graph.settings,
         graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY,
@@ -550,7 +557,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 IntegrationSettings(
                     controller = owners.controller,
                     poolConfigured = owners.poolConfigured,
-                    // The catalog account signs in here; streaming sign-in stays honestly unavailable on this host.
+                    // The catalog account signs in here; the separate streaming sign-in lives on its own page.
                     spotifyAccount = spotifyAccount,
                     spotifyError = spotifyError,
                     navigate = navigate,

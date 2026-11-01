@@ -117,7 +117,7 @@ internal fun iosHostBindings(
     recognition: IosRecognitionMount,
 ): ArchiveTuneHostBindings {
     val controls = IosPlayerControls(graph)
-    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser)
+    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser) { host.viewController }
     val itemMenu = IosItemMenuState()
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)

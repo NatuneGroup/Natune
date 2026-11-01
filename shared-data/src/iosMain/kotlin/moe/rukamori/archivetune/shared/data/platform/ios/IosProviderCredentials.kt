@@ -57,5 +57,11 @@ object IosProviderCredentials {
     val jioSaavnDesKey: ByteArray?
         get() = iosBuildSetting("ArchiveTuneJioSaavnDesKey").encodeToByteArray().takeIf { it.size == 8 }
 
+    /** The Cloudflare Turnstile sitekey of the Amazon authorization challenge. Blank means not configured. */
+    val amazonTurnstileSitekey: String get() = iosBuildSetting("ArchiveTuneAmazonTurnstileSitekey")
+
+    /** The HTTPS origin the Turnstile sitekey is locked to, without a trailing slash. Blank means not configured. */
+    val amazonTurnstileOrigin: String get() = iosBuildSetting("ArchiveTuneAmazonTurnstileOrigin").trimEnd('/')
+
     private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
 }
