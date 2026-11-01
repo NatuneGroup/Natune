@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
+import moe.rukamori.archivetune.shared.data.platform.ios.IosAppleMusicLoginSheet
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTidalPkceSheet
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramNativeAdmission
 import moe.rukamori.archivetune.shared.data.platform.ios.iosDiagnosticTime
@@ -77,6 +78,12 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavail
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
 import moe.rukamori.archivetune.shared.ui.settings.AccountSettings
+import moe.rukamori.archivetune.shared.ui.settings.AppleMusicLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogActions
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogRecordRoute
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogRecordSettings
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogsRoute
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogsSettings
 import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings
 import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
@@ -125,9 +132,11 @@ import platform.UIKit.UIViewController
 internal class IosSettingsOwners(
     internal val graph: IosSessionGraph,
     browser: IosCookieOnlyBrowserAuth,
+    appleMusicSheet: IosAppleMusicLoginSheet,
     presenter: () -> UIViewController,
 ) {
     val deezerWeb = IosDeezerWebSignIn(graph, browser)
+    val appleMusicWeb = IosAppleMusicWebSignIn(graph, appleMusicSheet)
     val spotifyCatalog = IosSpotifyCatalogAccount(graph, browser)
     val spotifyStreaming = IosSpotifyStreamingAccount(graph, browser)
     val amazonAuthorize = IosAmazonAuthorize(graph, presenter)
@@ -380,6 +389,7 @@ internal fun iosMountsSettings(route: ArchiveRoute): Boolean = route.value.subst
 
 private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
+    AppleMusicLoginRoute, CrashLogsRoute, CrashLogRecordRoute,
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
     "settings/account", YouTubeAccountRoute, YouTubeLoginRoute,
     "settings/integration", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
@@ -440,6 +450,33 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                     onCancel = owners.deezerWeb::cancel,
                     onDone = { navigation.back() },
                 )
+            }
+            AppleMusicLoginRoute -> {
+                val signInState by owners.appleMusicWeb.state.collectAsState()
+                ProviderSignInPage(
+                    kind = ProviderSignInKind.APPLE_MUSIC_WEB,
+                    state = signInState,
+                    onStart = { scope.launch { owners.appleMusicWeb.signIn() } },
+                    onCancel = owners.appleMusicWeb::cancel,
+                    onDone = { navigation.back() },
+                )
+            }
+            CrashLogsRoute, CrashLogRecordRoute -> {
+                val store = host.crashLogs
+                if (store == null) {
+                    IosUnboundSurface(Modifier.fillMaxSize())
+                } else {
+                    val crashActions = CrashLogActions(
+                        back = { navigation.back() },
+                        copyToClipboard = ::copyToIosClipboard,
+                        share = { text -> iosShareText(host, text) },
+                    )
+                    if (route.value.substringBefore('?') == CrashLogsRoute) {
+                        CrashLogsSettings(store, ::iosDiagnosticTime, navigate, crashActions, onFailure)
+                    } else {
+                        CrashLogRecordSettings(store, route.arguments["id"], ::iosDiagnosticTime, crashActions, onFailure)
+                    }
+                }
             }
             TidalLoginRoute -> {
                 val signInState by owners.tidalWebState.collectAsState()

@@ -94,9 +94,15 @@ import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamingSignedIn
 import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings
 import moe.rukamori.archivetune.shared.ui.settings.AmazonSettings
+import moe.rukamori.archivetune.shared.ui.settings.AppleMusicLoginRoute
 import moe.rukamori.archivetune.shared.ui.settings.AppleMusicSettings
 import moe.rukamori.archivetune.shared.ui.settings.CanvasSettings
 import moe.rukamori.archivetune.shared.ui.settings.ContentSettings
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogActions
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogRecordRoute
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogRecordSettings
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogsRoute
+import moe.rukamori.archivetune.shared.ui.settings.CrashLogsSettings
 import moe.rukamori.archivetune.shared.ui.settings.DiscordSettings
 import moe.rukamori.archivetune.shared.ui.settings.DownloadsSettings
 import moe.rukamori.archivetune.shared.ui.settings.JioSaavnSettings
@@ -131,6 +137,10 @@ internal class DesktopSettingsOwners(private val graph: DesktopSessionGraph) {
     val spotify = DesktopSpotifyAccounts(graph, controller)
     val deezerWeb = DesktopDeezerWebSignIn(graph)
     val tidalWeb = DesktopTidalWebSignIn(graph)
+    val appleMusicWeb = DesktopAppleMusicWebSignIn(graph)
+    val crashLogStore = DesktopCrashLogStore(
+        graph.instanceDirectory.toAbsolutePath().normalize().resolve("feedback").resolve("records"),
+    )
 
     private val qobuzVerifier = QobuzAccountVerifier(graph.http)
     private val qobuzScrape = QobuzBundleScrape(graph.http)
@@ -275,6 +285,7 @@ private val DESKTOP_SETTINGS_ROUTES = setOf(
     "settings/content", "settings/discord", "settings/downloads", "settings/internet", "settings/jiosaavn",
     "settings/language_packs", "settings/lyrics/romanisation", "settings/player/ytdlp", "settings/po_token",
     "settings/sources", "settings/storage", "settings/update",
+    AppleMusicLoginRoute, CrashLogsRoute, CrashLogRecordRoute,
 )
 
 /**
@@ -542,7 +553,26 @@ internal fun DesktopSettingsScreen(
                     scrollTo = scrollTo,
                 )
             }
-            "settings/applemusic" -> AppleMusicSettings(owners.controller, onFailure, scrollTo)
+            "settings/applemusic" -> AppleMusicSettings(
+                owners.controller, onFailure, scrollTo,
+                onOpenLogin = { navigate(AppleMusicLoginRoute) },
+            )
+            AppleMusicLoginRoute -> DesktopAppleMusicLoginPage(owners.appleMusicWeb, navigation)
+            CrashLogsRoute, CrashLogRecordRoute -> {
+                val crashActions = CrashLogActions(
+                    back = { navigation.back() },
+                    copyToClipboard = ::copyToDesktopClipboard,
+                    // The desktop has no share sheet, so Share copies the report text, as on the debug-log page.
+                    share = { text -> copyToDesktopClipboard(text); show(DesktopStrings["logs_copied"]) },
+                )
+                if (path == CrashLogsRoute) {
+                    CrashLogsSettings(owners.crashLogStore, ::formatDiagnosticTime, navigate, crashActions, onFailure)
+                } else {
+                    CrashLogRecordSettings(
+                        owners.crashLogStore, route.arguments["id"], ::formatDiagnosticTime, crashActions, onFailure,
+                    )
+                }
+            }
             "settings/canvas" -> {
                 val connectivity by produceState<CanvasConnectivity?>(null) {
                     value = owners.services.canvasConnectivity()

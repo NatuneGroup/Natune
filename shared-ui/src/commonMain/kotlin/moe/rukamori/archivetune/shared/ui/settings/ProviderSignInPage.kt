@@ -23,7 +23,7 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /** Which host-owned provider sign-in a consumer page shows. These are labels only; the host runs the destination. */
-enum class ProviderSignInKind { DEEZER_WEB, TIDAL_WEB, QOBUZ_WEB, SPOTIFY_STREAMING, DISCORD }
+enum class ProviderSignInKind { DEEZER_WEB, TIDAL_WEB, QOBUZ_WEB, SPOTIFY_STREAMING, DISCORD, APPLE_MUSIC_WEB }
 
 /**
  * Where a host-owned sign-in stands. The host reports each transition after the matching work has happened:
@@ -164,6 +164,7 @@ private fun ProviderSignInKind.titleResource(): StringResource = when (this) {
     ProviderSignInKind.QOBUZ_WEB -> Res.string.m6_provider_sign_in_qobuz_title
     ProviderSignInKind.SPOTIFY_STREAMING -> Res.string.m6_provider_sign_in_spotify_title
     ProviderSignInKind.DISCORD -> Res.string.m6_provider_sign_in_discord_title
+    ProviderSignInKind.APPLE_MUSIC_WEB -> Res.string.m6_provider_sign_in_apple_title
 }
 
 private fun ProviderSignInKind.subtitleResource(): StringResource = when (this) {
@@ -172,6 +173,7 @@ private fun ProviderSignInKind.subtitleResource(): StringResource = when (this) 
     ProviderSignInKind.QOBUZ_WEB -> Res.string.m6_provider_sign_in_qobuz_subtitle
     ProviderSignInKind.SPOTIFY_STREAMING -> Res.string.m6_provider_sign_in_spotify_subtitle
     ProviderSignInKind.DISCORD -> Res.string.m6_provider_sign_in_discord_subtitle
+    ProviderSignInKind.APPLE_MUSIC_WEB -> Res.string.m6_provider_sign_in_apple_subtitle
 }
 
 private fun ProviderSignInFailure.messageResource(): StringResource = when (this) {
