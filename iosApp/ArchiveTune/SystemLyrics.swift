@@ -578,7 +578,7 @@ private struct LyricSweepRenderer: TextRenderer {
 
     /// The plain sweep for one run: dim base, then bright clipped to the sweep edge with its feathered fade.
     /// [bounds] is the run's own box, or the word's union box for letters that lost their emphasis to wrapping.
-    private func drawPlainRun(run: Text.Run, word: NativeLyricsSpan, bounds: CGRect?, in context: inout GraphicsContext) {
+    private func drawPlainRun(run: Text.Layout.Run, word: NativeLyricsSpan, bounds: CGRect?, in context: inout GraphicsContext) {
         let progress = fraction(of: word)
         var dim = context
         dim.opacity = idleAlpha
@@ -609,7 +609,7 @@ private struct LyricSweepRenderer: TextRenderer {
     /// One letter of an emphasized word: it draws dim and bright like the plain sweep, but clipped to its own
     /// window and riding the staggered ripple, with a glow behind it while it bumps.
     private func drawEmphasizedLetter(
-        run: Text.Run,
+        run: Text.Layout.Run,
         word: NativeLyricsSpan,
         group: [LetterSlice],
         union: CGRect,
