@@ -65,6 +65,7 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsRow
 import moe.rukamori.archivetune.shared.ui.settings.SourcePoolRefreshOutcome
 import moe.rukamori.archivetune.shared.ui.settings.SourceSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.YouTubeHiddenPlaylistsRoute
 import moe.rukamori.archivetune.shared.ui.settings.aodSettingsRows
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.ISOCountryCodes
@@ -153,6 +154,7 @@ internal fun IosLaneSettingsPage(
         "customize_background", "settings/customize_background" ->
             IosCustomBackgroundPage(host, owners.graph, owners.controller, onFailure)
         IosLastFmDashboardRoute -> IosLastFmDashboardPage(owners.graph, navigation, unavailable)
+        YouTubeHiddenPlaylistsRoute -> IosHiddenPlaylistsPage(owners.graph, onNotice, onFailure)
         else -> IosLaneServiceSettingsPage(path, host, owners, channel, navigate, onNotice, onFailure, unavailable, scrollTo)
     }
 }

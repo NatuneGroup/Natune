@@ -5,9 +5,10 @@ annotation = "1.10.0"
 json = "20250517"
 kotlin = "2.4.21"
 kotlinMetadata = "2.4.21"
-# Must match the kotlinx-serialization version the other dependencies (ktor) already pull,
-# so the proto runtime and the JSON runtime share one serialization-core.
-kotlinxSerialization = "1.11.0"
+# Must match the kotlinx-serialization version the rest of the graph already resolves:
+# the InnerTubeX artifacts below request Ktor 3.6.0 and kotlinx-serialization 1.12.0, so the
+# proto runtime and the JSON runtime share one serialization-core wherever they land.
+kotlinxSerialization = "1.12.0"
 compose = "1.12.0-beta02"
 # Compose Multiplatform plugin for the private KMP shared-ui and desktopApp modules. Its Compose
 # compiler plugin is applied at the Kotlin version (`kotlin`), not at this value.

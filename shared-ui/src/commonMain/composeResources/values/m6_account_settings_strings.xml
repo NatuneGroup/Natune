@@ -34,6 +34,9 @@
     <string name="m6_account_oauth_signed_out">Signed out of the code session</string>
     <string name="m6_account_hidden_playlists">Hidden playlists</string>
     <string name="m6_account_hidden_playlists_desc">Playlists hidden from library appear here</string>
+    <string name="m6_account_no_hidden_playlists">No hidden playlists</string>
+    <string name="m6_account_hidden_playlists_unhide">Unhide</string>
+    <string name="m6_account_hidden_playlist_unhidden">Playlist is visible again</string>
     <string name="m6_account_po_token">PO Token Generation</string>
     <string name="m6_account_po_token_desc">Playback verification and visitor data</string>
     <string name="m6_account_reveal_credentials">Reveal login block</string>
