@@ -806,6 +806,7 @@ jobs:
           umask 077
           target="iosApp/Configuration/Credentials.xcconfig"
           : > "$target"
+          # shellcheck disable=SC2016 # the literal $( and ${ patterns are matched and written on purpose
           write_setting() {
             local name="$1" value="${2:-}"
             if [[ "$value" == *$'\n'* || "$value" == *'$('* || "$value" == *'${'* ]]; then
