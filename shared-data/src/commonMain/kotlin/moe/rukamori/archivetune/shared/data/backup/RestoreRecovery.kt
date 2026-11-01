@@ -328,6 +328,28 @@ class RestoreTransaction(
         }
 
         /**
+         * True when a [recover] call on [journalPath] can only end by undoing the swap: a journal pinned before
+         * `COMMITTED` is rolled back unconditionally, and a retained commit whose staged file can no longer
+         * reach its live slot takes the same path. Reads only — nothing is moved or deleted — so a caller can
+         * persist its own undo decision before [recover] starts moving files. False for a missing or unreadable
+         * journal: those are the `NOTHING` and `CORRUPT` ends, which do not undo files.
+         */
+        fun recoverEndsInRollback(ops: RestoreFileOps, journalPath: String): Boolean {
+            val journal = try {
+                ops.readBytes(journalPath)?.decodeToString()?.let(RestorePhaseJournal::decode)
+            } catch (failure: Exception) {
+                null
+            } ?: return false
+            return when (journal.phase) {
+                RestorePhase.COMMITTED, RestorePhase.APPLYING ->
+                    journal.targets.any { entry ->
+                        entry.hasStaged && !ops.exists(entry.livePath) && !ops.exists(entry.stagedPath)
+                    }
+                RestorePhase.STAGED, RestorePhase.ORIGINALS_MOVED, RestorePhase.ROLLED_BACK -> true
+            }
+        }
+
+        /**
          * Returns every live file to its original: each backup that exists goes back (overwriting a staged install
          * that already landed), an install at a target that never had a live file is removed, and a backup that is
          * already restored is skipped. Deleting a staged leftover or re-entering after a kill converges on the

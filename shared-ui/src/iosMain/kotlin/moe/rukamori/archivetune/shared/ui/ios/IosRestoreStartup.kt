@@ -105,6 +105,20 @@ internal object IosRestoreStartup {
         }
         val ops = IosRestoreFileOps()
         val journalPath = transactionJournalPath(pending.directory)
+        // recover() ends a rollback by deleting the journal, so the abort decision must be durable first:
+        // a kill in between leaves nothing to re-derive it from, and the next start re-reads the rolled-back
+        // set as fresh staging while the merged vault snapshot waits forever. Only a journal whose recovery
+        // can end no other way earns the marker — a resumable apply or a finished commit must not be flipped
+        // into an undo — and a marker that cannot be written blocks the set rather than undoing blind.
+        val abortPath = IosRestoreRecovery.abortMarkerPath(pending.directory)
+        if (!ops.exists(abortPath) && RestoreTransaction.recoverEndsInRollback(ops, journalPath)) {
+            try {
+                ops.writeAtomically(abortPath, RESTORE_ABORT_SENTINEL)
+            } catch (failure: Exception) {
+                report("restore abort marker not written: ${failure::class.simpleName}")
+                return blockedStart(ops, instanceDirectory, pending, report)
+            }
+        }
         val outcome = try {
             RestoreTransaction.recover(ops, journalPath)
         } catch (failure: Exception) {
@@ -167,6 +181,12 @@ internal object IosRestoreStartup {
             transaction.commit(retainBackups = true)
         } catch (failure: Exception) {
             report("restored library not applied: ${failure::class.simpleName}")
+            if (ops.exists(journalPath)) {
+                // The rollback left the journal behind — its own undo failed or never finished — so files may
+                // sit mid-swap. Hold the instance for recovery mode instead of opening around them.
+                report("restore rollback incomplete; journal still present")
+                return blockedStart(ops, instanceDirectory, pending, report)
+            }
             runCatching { pending.markFailed() }
             return IosRestoreStart(pending = pending)
         }
