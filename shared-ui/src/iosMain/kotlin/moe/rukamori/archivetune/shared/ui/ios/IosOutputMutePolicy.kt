@@ -20,6 +20,9 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 import platform.AVFAudio.AVAudioSession
 import platform.Foundation.NSKeyValueObservingOptionNew
+import platform.Foundation.NSKeyValueObservingProtocol
+import platform.Foundation.addObserver
+import platform.Foundation.removeObserver
 import platform.darwin.NSObject
 
 private const val OUTPUT_VOLUME_KEY_PATH = "outputVolume"
@@ -139,7 +142,7 @@ internal class IosOutputMutePolicy(
  * arrive on the queue that changed the property, so the observer only writes the state flow, which
  * is safe from any queue.
  */
-private class IosVolumeObserver(private val onVolume: (Float) -> Unit) : NSObject() {
+private class IosVolumeObserver(private val onVolume: (Float) -> Unit) : NSObject(), NSKeyValueObservingProtocol {
     override fun observeValueForKeyPath(
         keyPath: String?,
         ofObject: Any?,

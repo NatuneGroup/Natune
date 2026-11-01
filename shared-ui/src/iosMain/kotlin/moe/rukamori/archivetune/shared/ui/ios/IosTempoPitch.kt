@@ -93,6 +93,15 @@ internal class IosTempoPitchActions(private val graph: IosSessionGraph) : Player
     val playbackPitch: StateFlow<Float> = appliedPitch.asStateFlow()
     private var pitchNoticeShown = false
 
+    init {
+        // With "Remember" on, the stored tempo restores at startup through the one player, as the
+        // Android session restores it; the port holds the value until an output exists. Pitch stays
+        // stored only, because this engine cannot express it.
+        if (graph.settings.snapshots.value?.get(TempoPitchRememberedKey) == true) {
+            graph.player.setPlaybackSpeed(appliedSpeed.value)
+        }
+    }
+
     private fun storedValue(key: PreferenceKey<Float>): Float =
         graph.settings.snapshots.value?.get(key)?.takeIf { it.isFinite() && it > 0f } ?: 1f
 
