@@ -230,6 +230,18 @@ class DesktopSessionGraph internal constructor(
      */
     internal val equalizer = DesktopEqualizer(scope = scope, settings = settings, playback = playback)
 
+    /**
+     * The one pause-on-device-mute driver of this process: the stored option over the observed output
+     * level, pausing and resuming [player] and restoring the app volume as Android restores its stream.
+     */
+    internal val outputMutePolicy = DesktopOutputMutePolicy(
+        scope = scope,
+        settings = settings,
+        player = player,
+        playback = playback,
+        restoreVolume = { level -> setVolume(level) },
+    )
+
     /** The crossfade or automix blend armed into the next song, which the player artwork follows. */
     internal val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
 
@@ -249,6 +261,16 @@ class DesktopSessionGraph internal constructor(
                 desktopDiagnostic("volume was not saved: ${failure.javaClass.simpleName}")
             }
         }
+    }
+
+    /**
+     * Mutes or unmutes the output as gain on every live deck, including a transition's preloaded one,
+     * without closing the device or touching the stored volume: a muted occurrence keeps rendering and
+     * keeps its position, as a system-level mute behaves. A mute-transition policy may also observe it
+     * through the port's published flag.
+     */
+    fun setAudioOutputEnabled(enabled: Boolean) {
+        playback.setAudioOutputEnabled(enabled)
     }
 
     /** Writes one sanitized diagnostic line to the local log. Host diagnostics are not telemetry. */
