@@ -35,7 +35,8 @@ class KtorQobuzRepository(
     private val instance = instanceBase?.let(::endpoint)
     private val instanceResolver = resolver ?: QobuzInstanceResolver(client, nowMs)
     init {
-        require(access != null || instance != null || instances().isNotEmpty())
+        // A pool-discovered instance list is reachable through the resolver, not the user's list.
+        require(access != null || instance != null || instances().isNotEmpty() || instanceResolver.hasInstances())
         require(access == null || digest != null) { "Account playback requires its request signer" }
     }
     private fun headers() = access?.let { mapOf("X-App-Id" to it.appId, "X-User-Auth-Token" to it.userToken) }.orEmpty()
@@ -69,6 +70,7 @@ class KtorQobuzRepository(
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         if (access != null && !access.isActive()) throw UnsupportedContentOperation()
+        if (request.forceFreshStream) instanceResolver.invalidate(request.mediaId)
         // Per the original's orderedBackends: the signed-in Qobuz API token runs first, then the
         // proxy-instance backends.
         if (access != null) resolveViaAccount(request)?.let { return it }

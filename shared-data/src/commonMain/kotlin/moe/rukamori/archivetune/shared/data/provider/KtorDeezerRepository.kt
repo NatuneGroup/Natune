@@ -8,6 +8,8 @@ import kotlinx.serialization.json.*
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 
 class DeezerAccess(val scope: String, val arl: String,
     val credentialScope: CredentialScope = CredentialScope.PERSONAL,
@@ -73,8 +75,8 @@ class KtorDeezerRepository(
     private class CachedStream(val prepared: PreparedAudio, val expiresAtMs: Long)
     private val sessionMutex = Mutex()
     private var cachedSession: Session? = null
-    private val streamCache = mutableMapOf<String, CachedStream>()
-    private val failureCache = mutableMapOf<String, Long>()
+    private val streamCache = StreamUrlCache<String, CachedStream>()
+    private val failureCache = StreamUrlCache<String, Long>()
     private fun cookie() = mapOf("Cookie" to "arl=${requireNotNull(access).arl}")
     private suspend fun gateway(method: String, apiToken: String, payload: JsonObject = buildJsonObject {}): JsonObject {
         val root = http.json(gateway, mapOf("method" to method, "input" to "3", "api_version" to "1.0",
@@ -115,21 +117,42 @@ class KtorDeezerRepository(
         return parse(result)
     }
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
+        if (request.forceFreshStream) invalidate(request.mediaId)
         val cacheKey = "${request.mediaId}:${request.qualities[source].orEmpty()}"
         val now = nowMs()
-        streamCache[cacheKey]?.takeIf { it.expiresAtMs > now }?.let { return it.prepared }
+        streamCache[cacheKey]?.let {
+            if (it.expiresAtMs > now) return it.prepared
+            streamCache.discard(cacheKey, it)
+        }
         failureCache[cacheKey]?.takeIf { it > now }?.let { return null }
+        val streamGeneration = streamCache.generation
+        val failureGeneration = failureCache.generation
 
         resolveViaAccount(request)?.let { prepared ->
-            streamCache[cacheKey] = CachedStream(prepared, now + STREAM_CACHE_MS)
+            if (!cacheStream(cacheKey, prepared, now, streamGeneration)) return null
             return prepared
         }
         resolveViaInstance(request)?.let { prepared ->
-            streamCache[cacheKey] = CachedStream(prepared, now + STREAM_CACHE_MS)
+            if (!cacheStream(cacheKey, prepared, now, streamGeneration)) return null
             return prepared
         }
-        failureCache[cacheKey] = now + FAILURE_CACHE_MS
+        failureCache.putIfCurrent(cacheKey, now + FAILURE_CACHE_MS, failureGeneration)
         return null
+    }
+
+    fun invalidate(mediaId: String) {
+        streamCache.invalidateWhere { it.startsWith("$mediaId:") }
+        failureCache.invalidateWhere { it.startsWith("$mediaId:") }
+    }
+
+    private fun cacheStream(key: String, prepared: PreparedAudio, now: Long, generation: StreamUrlCache.Generation): Boolean {
+        val expiry = when (prepared) {
+            is PreparedAudio.Progressive -> prepared.stream.expiresAtEpochMs
+            is PreparedAudio.DeezerEncrypted -> prepared.stream.expiresAtEpochMs
+            else -> null
+        }
+        val deadline = StreamUrlExpiry.cacheDeadline(now, STREAM_CACHE_MS, expiry)
+        return deadline > now && streamCache.putIfCurrent(key, CachedStream(prepared, deadline), generation)
     }
 
     /** The signed-in account path: gateway session + media.deezer.com get_url -> BF_CBC_STRIPE. */
@@ -214,6 +237,7 @@ class KtorDeezerRepository(
                 trustedDirectId = request.directIds[source] == match.item.ref.id,
                 sampleRate = if (stream.flac) 44_100 else null,
                 bitDepth = if (stream.flac) 16 else null,
+                expiresAtEpochMs = StreamUrlExpiry.fromUrl(stream.url),
             ),
         )
     }

@@ -69,8 +69,9 @@ jobs:
         env:
           PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+          # Canonical names first; the legacy secrets remain a fallback for repositories that still hold them.
+          ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY || secrets.LASTFM_API_KEY }}
+          ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET || secrets.LASTFM_SECRET }}
           START_IO_APP_ID: ${{ secrets.START_IO_APP_ID }}
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
           SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}

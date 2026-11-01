@@ -5,8 +5,15 @@ import java.net.URLDecoder
 import java.security.MessageDigest
 import java.util.UUID
 
-/** Memory-only OAuth attempts; no credentials, callback codes or state are logged or persisted. */
-class DesktopDeepLinks(private val schemes: Set<String>, private val appHosts: Set<String>) {
+/**
+ * Memory-only OAuth attempts; no credentials, callback codes or state are logged or persisted. [authorityless] names
+ * the schemes whose registered OAuth redirect has no host, such as discord-<id>:/authorize/callback.
+ */
+class DesktopDeepLinks(
+    private val schemes: Set<String>,
+    private val appHosts: Set<String>,
+    private val authorityless: Set<String> = emptySet(),
+) {
     private data class Attempt(val id: UUID, val redirect: URI, val state: String, val consume: (String) -> Unit)
     private val attempts = mutableMapOf<String, Attempt>()
     private val pending = ArrayDeque<String>()
@@ -65,9 +72,13 @@ class DesktopDeepLinks(private val schemes: Set<String>, private val appHosts: S
 
     private fun parse(raw: String): URI? = try {
         if (raw.length > 8192 || raw.any { it.code < 32 }) null else URI(raw).takeIf {
-            !it.isOpaque && !it.host.isNullOrEmpty() && it.userInfo == null && it.port == -1 && it.rawFragment == null
+            !it.isOpaque && acceptedShape(it) && it.userInfo == null && it.port == -1 && it.rawFragment == null
         }
     } catch (_: Exception) { null }
 
-    private fun endpoint(uri: URI) = "${uri.scheme}://${uri.host}${uri.rawPath.orEmpty()}"
+    // An authorityless scheme has exactly one slash before its absolute path; "//" would start an authority instead.
+    private fun acceptedShape(uri: URI): Boolean = !uri.host.isNullOrEmpty() || (uri.scheme in authorityless &&
+        uri.rawSchemeSpecificPart.let { it.startsWith("/") && !it.startsWith("//") })
+
+    private fun endpoint(uri: URI) = "${uri.scheme}:${uri.host?.let { "//$it" }.orEmpty()}${uri.rawPath.orEmpty()}"
 }

@@ -459,7 +459,9 @@ internal class DesktopDiscordPresence(
     companion object {
         // Public Discord application id for ArchiveTune OAuth (same default as the Android build).
         private const val APPLICATION_ID = "1165706613961789445"
-        private const val REDIRECT_URI = "discord-$APPLICATION_ID://authorize/callback"
+        // The redirect the application registers, the same string the Android build sends. It has no host, so the
+        // callback is matched on its path (DesktopDeepLinks, authorityless schemes).
+        private const val REDIRECT_URI = "discord-$APPLICATION_ID:/authorize/callback"
         private const val OAUTH_SCOPES = "openid identify sdk.social_layer_presence"
         private const val AUTHORIZE_ENDPOINT = "https://discord.com/oauth2/authorize"
         private const val TOKEN_ENDPOINT = "https://discord.com/api/oauth2/token"

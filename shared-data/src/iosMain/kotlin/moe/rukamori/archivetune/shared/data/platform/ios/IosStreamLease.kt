@@ -141,7 +141,7 @@ internal class IosStreamLease private constructor(
         ): ULong {
             val origin = StreamOrigin.parse(locator.url) ?: return 0uL
             val http = IosHttpRangeSource(
-                leaseFor(PLAYBACK_PROVIDER, origin, locator.url),
+                leaseFor(PLAYBACK_PROVIDER, origin, locator.url, locator.expiresAtEpochMs),
                 locator.url,
                 locator.headers,
                 emptyList(),
@@ -162,7 +162,7 @@ internal class IosStreamLease private constructor(
         ): ULong {
             val origin = StreamOrigin.parse(locator.url) ?: return 0uL
             val ciphertext = IosHttpRangeSource(
-                leaseFor(DEEZER_PROVIDER, origin, locator.url),
+                leaseFor(DEEZER_PROVIDER, origin, locator.url, locator.expiresAtEpochMs),
                 locator.url,
                 locator.headers,
                 emptyList(),
@@ -275,11 +275,16 @@ private fun streamClose(opaque: COpaquePointer?) {
  * The lease for one header-bearing or Deezer URL. Only its own origin is permitted, so a redirect elsewhere is refused and
  * its credentials never travel. The cache key drops the query, which carries per-request signatures.
  */
-private fun leaseFor(provider: String, origin: StreamOrigin, url: String): ByteSourceLease = ByteSourceLease(
+private fun leaseFor(
+    provider: String,
+    origin: StreamOrigin,
+    url: String,
+    expiresAtEpochMs: Long?,
+): ByteSourceLease = ByteSourceLease(
     account = ByteSourceAccount(provider = provider, accountId = null),
     primaryOrigin = origin,
     permittedOrigins = setOf(origin),
     cacheKey = url.substringBefore('?'),
-    expiresAtEpochMs = null,
+    expiresAtEpochMs = expiresAtEpochMs,
     lengthBytes = null,
 )

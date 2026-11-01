@@ -2,6 +2,8 @@ package moe.rukamori.archivetune.shared.domain.repository
 
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
+import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
 
 /**
  * Turns one queue occurrence into the locator the engine may open. Provider routing, account gates and
@@ -9,6 +11,22 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
  */
 interface QueueLocatorResolver {
     suspend fun locate(occurrence: ContentOccurrence): PlaybackLocator
+
+    /** Null means this host cannot recover the stream; local files and Telegram never enter this path. */
+    suspend fun recover(occurrence: ContentOccurrence, recovery: QueueSourceRecovery): PlaybackLocator? = null
+}
+
+/** Refresh is restricted to one still-enabled source; fallback uses the ordinary order minus rejected attempts. */
+data class QueueSourceRecovery(
+    val refreshSource: AudioSourceType? = null,
+    val rejectedSources: Set<AudioSourceType> = emptySet(),
+) {
+    fun settings(snapshot: PlaybackSourceSnapshot): PlaybackSourceSnapshot = refreshSource?.let {
+        snapshot.copy(enabled = snapshot.enabled.intersect(setOf(it)))
+    } ?: snapshot
+
+    fun pinned(original: AudioSourceType?): AudioSourceType? =
+        refreshSource ?: original?.takeUnless { it in rejectedSources }
 }
 
 /**

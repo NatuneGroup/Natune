@@ -10,6 +10,9 @@
 
 package moe.rukamori.archivetune.deezer
 
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
+
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
@@ -245,6 +248,7 @@ object DeezerAudioProvider {
         val matchedDurationMs: Long?,
         val sampleRate: Int?,
         val bitDepth: Int?,
+        val expiresAtEpochMs: Long? = null,
     )
 
     private class CachedStream(
@@ -254,8 +258,8 @@ object DeezerAudioProvider {
 
     private val sessions = ConcurrentHashMap<String, Session>()
     private val searchCache = ConcurrentHashMap<String, Pair<TrackMatching.Candidate?, Long>>()
-    private val streamCache = ConcurrentHashMap<String, CachedStream>()
-    private val failureCache = ConcurrentHashMap<String, Long>()
+    private val streamCache = StreamUrlCache<String, CachedStream>()
+    private val failureCache = StreamUrlCache<String, Long>()
 
     /** Track id of the most recent successful resolve, used by settings screens as a health probe. */
     @Volatile
@@ -299,6 +303,12 @@ object DeezerAudioProvider {
         failureCache.remove(key)
     }
 
+    /** Playback only has the queue id; retire all quality variants and any in-flight URL for that song. */
+    fun invalidate(mediaId: String) {
+        streamCache.invalidateWhere { it.startsWith("$mediaId|") }
+        failureCache.invalidateWhere { it.startsWith("$mediaId|") }
+    }
+
     /**
      * Resolves a playable stream for [query] at [format] (`FLAC`, `MP3_320` or `MP3_128` — see
      * `DeezerAudioQuality.toFormatName()`), degrading to the next tier down when the account's plan
@@ -326,12 +336,14 @@ object DeezerAudioProvider {
         val cacheKey = query.cacheKey() + ":" + format
         streamCache[cacheKey]?.let { cached ->
             if (cached.expiresAt > now) return cached.stream
-            streamCache.remove(cacheKey)
+            streamCache.discard(cacheKey, cached)
         }
         failureCache[cacheKey]?.let { failedUntil ->
             if (failedUntil > now) return null
-            failureCache.remove(cacheKey)
+            failureCache.discard(cacheKey, failedUntil)
         }
+        val streamGeneration = streamCache.generation
+        val failureGeneration = failureCache.generation
 
         // Accounts with a paid plan come first so a FLAC request has the best chance of being served
         // at full quality. An account whose plan cannot cover the requested tier is NOT skipped: it
@@ -404,8 +416,14 @@ object DeezerAudioProvider {
                     // assumed to be CD quality.
                     sampleRate = null,
                     bitDepth = null,
+                    expiresAtEpochMs = StreamUrlExpiry.fromUrl(media.url),
                 )
-            streamCache[cacheKey] = CachedStream(stream, System.currentTimeMillis() + STREAM_CACHE_MS)
+            if (!streamCache.putIfCurrent(
+                    cacheKey,
+                    CachedStream(stream, StreamUrlExpiry.cacheDeadline(System.currentTimeMillis(), STREAM_CACHE_MS, stream.expiresAtEpochMs)),
+                    streamGeneration,
+                )
+            ) return null
             return stream
         }
 
@@ -413,12 +431,17 @@ object DeezerAudioProvider {
         // already-decrypted audio from the instance's own accounts.
         if (AudioSourceAttemptScope.current()?.isExpired() == true) return null
         resolveViaInstance(query)?.let { stream ->
-            streamCache[cacheKey] = CachedStream(stream, System.currentTimeMillis() + STREAM_CACHE_MS)
+            if (!streamCache.putIfCurrent(
+                    cacheKey,
+                    CachedStream(stream, StreamUrlExpiry.cacheDeadline(System.currentTimeMillis(), STREAM_CACHE_MS, stream.expiresAtEpochMs)),
+                    streamGeneration,
+                )
+            ) return null
             return stream
         }
 
         if (AudioSourceAttemptScope.current()?.isExpired() != true) {
-            failureCache[cacheKey] = System.currentTimeMillis() + FAILURE_CACHE_MS
+            failureCache.putIfCurrent(cacheKey, System.currentTimeMillis() + FAILURE_CACHE_MS, failureGeneration)
         }
         return null
     }
@@ -473,6 +496,7 @@ object DeezerAudioProvider {
             matchedDurationMs = match.durationMs,
             sampleRate = if (stream.flac) 44_100 else null,
             bitDepth = if (stream.flac) 16 else null,
+            expiresAtEpochMs = StreamUrlExpiry.fromUrl(stream.url),
         )
     }
 
@@ -664,14 +688,6 @@ object DeezerAudioProvider {
     // Stream URL
     // ---------------------------------------------------------------------------------------------
 
-    private class Media(
-        val url: String,
-        val flac: Boolean,
-        /** The tier the gateway served, which may be lower than the one requested. */
-        val format: String,
-        val contentLength: Long?,
-    )
-
     /**
      * Exchanges a track id for a CDN URL via the media endpoint.
      *
@@ -730,25 +746,7 @@ object DeezerAudioProvider {
                 JSONObject(response.body?.string().orEmpty())
             }
 
-        val first = json.optJSONArray("data")?.optJSONObject(0) ?: return null
-        val media = first.optJSONArray("media")?.optJSONObject(0) ?: return null
-        val source = media.optJSONArray("sources")?.optJSONObject(0) ?: return null
-        val url = source.optString("url").takeIf { it.isNotBlank() } ?: return null
-        // The tier the gateway actually served, which may be lower than the one requested.
-        val servedFormat = media.optString("format")
-        val flac = servedFormat.equals(FORMAT_FLAC, ignoreCase = true)
-
-        // song.getData carries a per-format size (FILESIZE_FLAC, FILESIZE_MP3_320, ...). The encrypted
-        // stream is byte-for-byte the same length as the decrypted one because BF_CBC_STRIPE adds no
-        // padding, so this size is valid for the decrypted output and saves a HEAD probe. Null is fine:
-        // DirectStream treats an unknown length as "ask the CDN".
-        val sizeField = "FILESIZE_${servedFormat.uppercase()}"
-        val results = trackJson.optJSONObject("results")
-        val contentLength =
-            results?.optString(sizeField)?.toLongOrNull()?.takeIf { it > 0L }
-                ?: results?.optString("FILESIZE")?.toLongOrNull()?.takeIf { it > 0L }
-
-        return Media(url = url, flac = flac, format = servedFormat, contentLength = contentLength)
+        return selectStreamMedia(json, trackJson, formats)
     }
 
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaTypeOrNull()

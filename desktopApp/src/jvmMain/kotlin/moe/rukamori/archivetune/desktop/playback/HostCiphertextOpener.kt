@@ -11,6 +11,7 @@ import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.bytesource.cookiesForLease
 import moe.rukamori.archivetune.shared.data.stream.NativeCiphertextOpener
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
+import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 
 /**
  * The host transport for the ciphertext of one native recipe: a ranged HTTP(S) source for each URL that the shared
@@ -51,8 +52,8 @@ internal class HostCiphertextOpener(
                 permittedOrigins = setOf(origin),
                 // The query string often carries a signed token, so it never becomes part of the cache key.
                 cacheKey = url.substringBefore('?'),
-                // The shared view that prepared the stream owns the signature window and checks it on every read.
-                expiresAtEpochMs = null,
+                // The shared DASH view can impose a stronger window; the transport must never extend the URL's.
+                expiresAtEpochMs = StreamUrlExpiry.fromUrl(url),
                 lengthBytes = null,
             )
         val stored = cookies?.cookiesForLease(lease, origin) ?: emptyList()
