@@ -58,6 +58,9 @@ internal class IosArtworkLoader(private val http: HttpClient) {
         }
     }
 
+    /** Drops every held image; the storage page's cache clear empties the decoded-image store with the URL cache. */
+    suspend fun clear() = lock.withLock { cache.clear() }
+
     /** Loads [uri] once, within the time, size and concurrency bounds. Null means no image can be shown. */
     suspend fun load(uri: String?): ImageBitmap? {
         val target = uri?.takeIf(::isPublicWebImage) ?: return null

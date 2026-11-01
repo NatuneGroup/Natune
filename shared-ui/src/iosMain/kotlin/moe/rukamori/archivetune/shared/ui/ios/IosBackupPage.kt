@@ -1,0 +1,127 @@
+package moe.rukamori.archivetune.shared.ui.ios
+
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveException
+import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveProblem
+import moe.rukamori.archivetune.shared.domain.backup.DriveAppDataLimits
+import moe.rukamori.archivetune.shared.domain.backup.PreparedArchive
+import moe.rukamori.archivetune.shared.ui.IosHost
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_later
+import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_message
+import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_quit
+import moe.rukamori.archivetune.shared.ui.resources.ios_backup_restart_title
+import moe.rukamori.archivetune.shared.ui.settings.BackupAndRestoreSettings
+import moe.rukamori.archivetune.shared.ui.settings.BackupExportResult
+import moe.rukamori.archivetune.shared.ui.settings.BackupRestoreCandidate
+import moe.rukamori.archivetune.shared.ui.settings.BackupRestorePreparation
+import moe.rukamori.archivetune.shared.ui.settings.BackupRestoreProblem
+import moe.rukamori.archivetune.shared.ui.settings.BackupSelectionCategory
+import moe.rukamori.archivetune.shared.ui.settings.SettingsController
+import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
+import org.jetbrains.compose.resources.stringResource
+import platform.Foundation.NSDate
+import platform.Foundation.NSDateFormatter
+import platform.posix.exit
+
+/**
+ * Settings > Backup and restore on this host: manual archives through the document picker and the share sheet. The
+ * archive is the same portable format the desktop host writes, so a file crosses platforms unchanged. The scheduled,
+ * Drive and playlist rows do not appear: this host has no OAuth client and no folder picker for them.
+ */
+@Composable
+internal fun IosBackupRestorePage(
+    host: IosHost,
+    graph: IosSessionGraph,
+    controller: SettingsController,
+    onNotice: (SettingsNotice) -> Unit,
+    onFailure: () -> Unit,
+    scrollTo: String?,
+) {
+    BackupAndRestoreSettings(
+        controller = controller,
+        createBackup = { selected -> saveIosBackup(host, graph, selected) },
+        prepareRestore = { openIosBackup(host, graph) },
+        discardPreparedBackup = graph.backup::discardPrepared,
+        restoreBackup = graph.backup::restorePrepared,
+        onNotice = onNotice,
+        onFailure = onFailure,
+        scrollTo = scrollTo,
+        modifier = Modifier.fillMaxSize(),
+    )
+    IosBackupRestartDialog(graph)
+}
+
+/**
+ * Writes the archive beside the share sheet's temporary file and shares it, the Save to Files and AirDrop
+ * counterpart of the desktop save dialog. A dismissed sheet is a cancel; a failed write throws, so the page reports
+ * the export as failed rather than saved.
+ */
+private suspend fun saveIosBackup(
+    host: IosHost,
+    graph: IosSessionGraph,
+    selected: Set<BackupSelectionCategory>,
+): BackupExportResult {
+    val archive = graph.backup.archives.create(selected.map { it.toDataCategory() }.toSet())
+    val stamp = NSDateFormatter().apply { dateFormat = "yyyyMMddHHmmss" }.stringFromDate(NSDate())
+    return when (iosExportDataFile(host, "Natune_$stamp.backup", archive)) {
+        true -> BackupExportResult.SAVED
+        null -> BackupExportResult.CANCELLED
+        else -> throw BackupArchiveException(BackupArchiveProblem.UNAVAILABLE)
+    }
+}
+
+/**
+ * Opens the document picker, reads the file within the shared archive bound and prepares it for the section dialog.
+ * An oversized document fails the bounded read, which the page reports as a failed restore rather than a bad backup.
+ */
+private suspend fun openIosBackup(host: IosHost, graph: IosSessionGraph): BackupRestorePreparation {
+    val handle = host.files.pickDocument(host.viewController) ?: return BackupRestorePreparation.Cancelled
+    val archive = host.files.read(handle, DriveAppDataLimits.MAX_ARCHIVE_BYTES.toLong())
+    return when (val prepared = graph.backup.restores.prepare(archive)) {
+        is PreparedArchive.Ready -> BackupRestorePreparation.Ready(
+            BackupRestoreCandidate(prepared.handle, prepared.categories.map { it.toSelection() }.toSet()),
+        )
+        is PreparedArchive.Rejected -> when (prepared.problem) {
+            BackupArchiveProblem.NOT_A_BACKUP -> BackupRestorePreparation.Rejected(BackupRestoreProblem.NOT_A_BACKUP)
+            BackupArchiveProblem.NO_RESTORABLE_DATA ->
+                BackupRestorePreparation.Rejected(BackupRestoreProblem.NO_RESTORABLE_DATA)
+            BackupArchiveProblem.CORRUPTED -> BackupRestorePreparation.Rejected(BackupRestoreProblem.CORRUPTED)
+            // Not a property of the file: the page reports these as a failed restore, not as a bad backup.
+            BackupArchiveProblem.INSUFFICIENT_STORAGE, BackupArchiveProblem.UNAVAILABLE ->
+                throw BackupArchiveException(prepared.problem)
+        }
+    }
+}
+
+/**
+ * The restart a staged restore needs. iOS has no relaunch mechanism, so Quit now ends the process and the next launch
+ * applies the restore; Later keeps the current library and settings until the next start.
+ */
+@Composable
+internal fun IosBackupRestartDialog(graph: IosSessionGraph) {
+    val requested by graph.backup.restartRequested.collectAsState()
+    if (!requested) return
+    AlertDialog(
+        onDismissRequest = { graph.backup.dismissRestart() },
+        title = { Text(stringResource(Res.string.ios_backup_restart_title)) },
+        text = { Text(stringResource(Res.string.ios_backup_restart_message)) },
+        confirmButton = {
+            TextButton(onClick = { exit(0) }) {
+                Text(stringResource(Res.string.ios_backup_restart_quit))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { graph.backup.dismissRestart() }) {
+                Text(stringResource(Res.string.ios_backup_restart_later))
+            }
+        },
+    )
+}

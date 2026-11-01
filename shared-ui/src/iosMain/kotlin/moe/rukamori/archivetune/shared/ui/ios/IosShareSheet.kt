@@ -3,6 +3,8 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
 import kotlin.coroutines.resume
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -38,13 +40,34 @@ internal suspend fun iosExportTextFile(host: IosHost, fileName: String, text: St
     val written =
         (text as NSString).writeToFile(path, atomically = true, encoding = NSUTF8StringEncoding, error = null)
     if (!written) return false
+    return iosShareFileUrls(host, listOf(NSURL.fileURLWithPath(path)))
+}
+
+/**
+ * Writes [bytes] to a temporary file and shares the file URL, the binary-file counterpart of [iosExportTextFile]:
+ * true once the sheet completes, null when the user dismisses it and false when the write itself failed.
+ */
+internal suspend fun iosExportDataFile(host: IosHost, fileName: String, bytes: ByteArray): Boolean? {
+    val path = NSTemporaryDirectory() + fileName
+    val written = bytes.usePinned { pinned ->
+        NSData.create(
+            bytes = if (bytes.isEmpty()) null else pinned.addressOf(0),
+            length = bytes.size.toULong(),
+        ).writeToFile(path, atomically = true)
+    }
+    if (!written) return false
+    return iosShareFileUrls(host, listOf(NSURL.fileURLWithPath(path)))
+}
+
+/**
+ * Shares every file URL in one sheet, so Save to Files or AirDrop carries the documents together. True once the
+ * sheet completes, null when the user dismisses it.
+ */
+internal suspend fun iosShareFileUrls(host: IosHost, urls: List<NSURL>): Boolean? {
+    if (urls.isEmpty()) return false
     return withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { continuation ->
-            val sheet =
-                UIActivityViewController(
-                    activityItems = listOf(NSURL.fileURLWithPath(path)),
-                    applicationActivities = null,
-                )
+            val sheet = UIActivityViewController(activityItems = urls, applicationActivities = null)
             sheet.completionWithItemsHandler = { _, completed, _, _ ->
                 continuation.resume(if (completed) true else null)
             }
