@@ -32,6 +32,12 @@ internal class LyricsClock {
     /** Counts discontinuity resets. A change tells the scroll owner to jump rather than animate. */
     val discontinuities: MutableIntState = mutableIntStateOf(0)
 
+    /**
+     * Counts same-timeline feed jumps past the seek bound. A change snaps the scroll to the new line rather
+     * than animating the distance, but it is not a seek: it never resumes following on its own.
+     */
+    val reanchors: MutableIntState = mutableIntStateOf(0)
+
     fun accept(snapshot: PlaybackSnapshot, nowNanos: Long): LyricsAnchorChange {
         val change = smooth.accept(snapshot, nowNanos)
         if (change != LyricsAnchorChange.STALE) {
@@ -40,32 +46,32 @@ internal class LyricsClock {
         if (change == LyricsAnchorChange.RESET) {
             discontinuities.intValue += 1
         }
-        publish(smooth.advance(nowNanos))
+        publish(smooth.advance(nowNanos), reanchorOnJump = change != LyricsAnchorChange.RESET)
         return change
     }
 
     fun advance(nowNanos: Long) {
-        publish(smooth.advance(nowNanos))
+        publish(smooth.advance(nowNanos), reanchorOnJump = true)
     }
 
     fun retime(syncOffsetMs: Long, leadMs: Long) {
         this.syncOffsetMs = syncOffsetMs
         this.leadMs = leadMs
-        publish(smooth.positionMs)
+        publish(smooth.positionMs, reanchorOnJump = true)
     }
 
-    private fun publish(positionMs: Long) {
+    private fun publish(positionMs: Long, reanchorOnJump: Boolean) {
         // Output delay is wall time; convert it at the media rate without changing row timestamps or tap-to-seek.
         val feed = LyricsFeedTiming.feedMs(positionMs, syncOffsetMs, leadMs)
         val next = if (feed < Long.MIN_VALUE + outputDelayMs) Long.MIN_VALUE else feed - outputDelayMs
         val previous = feedMs.longValue
         feedMs.longValue = next
-        // A position jump past the seek bound is a re-anchor: the scroll owner snaps to the new line
+        // A feed jump past the seek bound is a re-anchor: the scroll owner snaps to the new line
         // instead of animating the distance, even when no formal discontinuity arrived.
-        if (previous != Long.MIN_VALUE && next != Long.MIN_VALUE &&
+        if (reanchorOnJump && previous != Long.MIN_VALUE && next != Long.MIN_VALUE &&
             kotlin.math.abs(next - previous) > FEED_JUMP_DISCONTINUITY_MS
         ) {
-            discontinuities.intValue += 1
+            reanchors.intValue += 1
         }
     }
 }

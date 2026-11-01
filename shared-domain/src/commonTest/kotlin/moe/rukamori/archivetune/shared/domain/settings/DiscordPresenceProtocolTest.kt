@@ -115,12 +115,26 @@ class DiscordPresenceProtocolTest {
         assertEquals(41250L, hello.heartbeatIntervalMs)
         assertNull(hello.sequence)
 
-        val dispatch = parseDiscordGatewayEvent("""{"op":0,"s":9,"t":"READY"}""")
+        val dispatch = parseDiscordGatewayEvent("""{"op":0,"s":9,"t":"READY","d":{"user":{"id":"1"}}}""")
         assertNotNull(dispatch)
+        assertEquals(0, dispatch.op)
         assertEquals(9, dispatch.sequence)
+        assertNull(dispatch.heartbeatIntervalMs)
 
-        val ack = parseDiscordGatewayEvent("""{"op":11}""")
+        // ACKs and heartbeat requests carry `d` as null or a number; only HELLO's `d` is an object, so those
+        // shapes must parse instead of throwing inside the runCatching and dropping healthy frames.
+        val ack = parseDiscordGatewayEvent("""{"op":11,"d":null}""")
         assertNotNull(ack)
+        assertEquals(11, ack.op)
+        assertNull(ack.heartbeatIntervalMs)
+
+        val heartbeatRequest = parseDiscordGatewayEvent("""{"op":1,"d":null}""")
+        assertNotNull(heartbeatRequest)
+        assertEquals(1, heartbeatRequest.op)
+        val heartbeatRequestSeq = parseDiscordGatewayEvent("""{"op":1,"d":7}""")
+        assertNotNull(heartbeatRequestSeq)
+        assertNull(heartbeatRequestSeq.heartbeatIntervalMs)
+
         assertNull(parseDiscordGatewayEvent("{}"))
         assertNull(parseDiscordGatewayEvent("junk"))
     }

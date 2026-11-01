@@ -132,6 +132,7 @@ fun LyricsFullscreenRenderer(
         listState = listState,
         primary = primary,
         discontinuity = clock.discontinuities.intValue,
+        reanchor = clock.reanchors.intValue,
         visible = visible,
         reduceMotion = settings.reduceMotion,
         profile = profile,

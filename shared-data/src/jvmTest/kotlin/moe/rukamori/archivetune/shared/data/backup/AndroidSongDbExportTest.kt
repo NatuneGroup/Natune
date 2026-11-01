@@ -17,7 +17,7 @@ import moe.rukamori.archivetune.shared.data.persistence.SequenceTimes
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 
 /**
- * The Android export is checked against the importer: the rich schema-36 fixture is imported, exported as schema 38
+ * The Android export is checked against the importer: the rich schema-36 fixture is imported, exported as schema 39
  * and imported again, and every mapped table must come back with the same rows.
  */
 class AndroidSongDbExportTest {
@@ -70,16 +70,16 @@ class AndroidSongDbExportTest {
         assertEquals(0, again.droppedEntries)
     }
 
-    @Test fun exportCarriesTheSchemaThirtyEightIdentityAndRows() = withPortable { root, portable, _ ->
+    @Test fun exportCarriesTheSchemaThirtyNineIdentityAndRows() = withPortable { root, portable, _ ->
         val songDb = root.resolve("song.db")
         AndroidSongDbExport.export(portable, songDb, now)
         val connection = BundledSQLiteDriver().open(songDb.toString())
         try {
-            assertEquals(38L, connection.long("PRAGMA user_version"))
+            assertEquals(39L, connection.long("PRAGMA user_version"))
             connection.prepare("SELECT identity_hash FROM room_master_table WHERE id = 42").use {
                 assertTrue(it.step())
-                // Public identity of app/schemas/...InternalDatabase/38.json.
-                assertEquals("db2d6e2258ab375d62fdf5e543be2b09", it.getText(0))
+                // Public identity of app/schemas/...InternalDatabase/39.json.
+                assertEquals("5d24a191640ead2be1499cd924f7155d", it.getText(0))
             }
             assertEquals(21L + 1L, connection.long(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,6 +32,8 @@ const val DISCORD_GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json"
 private const val DISCORD_HEX = "0123456789ABCDEF"
 
 private val discordProtocolJson = Json { ignoreUnknownKeys = true }
+
+private const val DISCORD_OP_HELLO = 10
 
 /**
  * The authorize URL the host's browser surface loads: PKCE S256, the public application id and the fixed scopes the
@@ -66,10 +69,10 @@ class DiscordTokenGrant(val accessToken: String, val refreshToken: String?, val 
 /** Parses a token endpoint body. Missing or malformed payloads are null, never partially trusted. */
 fun parseDiscordTokenGrant(body: String): DiscordTokenGrant? = runCatching {
     val root = discordProtocolJson.parseToJsonElement(body).jsonObject
-    val access = root["access_token"]?.jsonPrimitive?.content ?: return null
+    val access = root["access_token"]?.jsonPrimitive?.contentOrNull ?: return null
     DiscordTokenGrant(
         accessToken = access,
-        refreshToken = root["refresh_token"]?.jsonPrimitive?.content,
+        refreshToken = root["refresh_token"]?.jsonPrimitive?.contentOrNull,
         expiresInSeconds = root["expires_in"]?.jsonPrimitive?.longOrNull ?: 0L,
     )
 }.getOrNull()
@@ -77,10 +80,10 @@ fun parseDiscordTokenGrant(body: String): DiscordTokenGrant? = runCatching {
 /** Parses the `users/@me` body into profile facts; the avatar joins the CDN URL only when both parts exist. */
 fun parseDiscordAccountFacts(body: String): DiscordAccountFacts? = runCatching {
     val root = discordProtocolJson.parseToJsonElement(body).jsonObject
-    val username = root["username"]?.jsonPrimitive?.content ?: return null
-    val display = root["global_name"]?.jsonPrimitive?.content ?: username
-    val id = root["id"]?.jsonPrimitive?.content
-    val avatar = root["avatar"]?.jsonPrimitive?.content
+    val username = root["username"]?.jsonPrimitive?.contentOrNull ?: return null
+    val display = root["global_name"]?.jsonPrimitive?.contentOrNull ?: username
+    val id = root["id"]?.jsonPrimitive?.contentOrNull
+    val avatar = root["avatar"]?.jsonPrimitive?.contentOrNull
     val avatarUrl = if (id != null && avatar != null) "https://cdn.discordapp.com/avatars/$id/$avatar.png" else null
     DiscordAccountFacts(username = username, displayName = display, avatarUrl = avatarUrl)
 }.getOrNull()
@@ -115,9 +118,11 @@ data class DiscordGatewayEvent(val op: Int, val heartbeatIntervalMs: Long?, val 
 fun parseDiscordGatewayEvent(frame: String): DiscordGatewayEvent? = runCatching {
     val event = discordProtocolJson.parseToJsonElement(frame).jsonObject
     val op = event["op"]?.jsonPrimitive?.intOrNull ?: return null
+    // `d` is an object only on HELLO; ACKs send null and heartbeat requests the sequence number.
+    val data = event["d"] as? JsonObject
     DiscordGatewayEvent(
         op = op,
-        heartbeatIntervalMs = event["d"]?.jsonObject?.get("heartbeat_interval")?.jsonPrimitive?.longOrNull,
+        heartbeatIntervalMs = if (op == DISCORD_OP_HELLO) data?.get("heartbeat_interval")?.jsonPrimitive?.longOrNull else null,
         sequence = event["s"]?.jsonPrimitive?.intOrNull,
     )
 }.getOrNull()
