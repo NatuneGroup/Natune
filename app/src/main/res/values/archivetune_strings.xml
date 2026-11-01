@@ -1136,6 +1136,14 @@
     <string name="swipe_up_to_open_queue">Swipe up to open queue</string>
     <string name="swipe_up_to_open_queue_desc">When off, only the queue button opens it, so seeking or tapping never opens it by accident</string>
     <string name="queue_add_after_manual">Keep added songs in order</string>
+    <string name="queue_prevent_duplicates">Prevent duplicate songs in queue</string>
+    <string name="queue_prevent_duplicates_desc">Re-adding a song that is already queued moves it to its new position instead of listing it twice; the song playing now is never duplicated</string>
+    <string name="queue_locked">Lock queue</string>
+    <string name="queue_locked_desc">Removing, moving and clearing songs in the queue is disabled while locked; adding, shuffling and undo still work</string>
+    <plurals name="queue_skipped_duplicates">
+        <item quantity="one">Skipped %d duplicate</item>
+        <item quantity="other">Skipped %d duplicates</item>
+    </plurals>
     <string name="search_bar_position_bottom_desc">A floating pill that follows the navigation bar style: corner radius, insets and surface</string>
     <string name="queue_add_after_manual_desc">Play next lines up behind your earlier Play next songs and Add to queue goes after all your added songs, both ahead of radio and autoplay songs</string>
     <string name="hide_translation">Hide Translation</string>

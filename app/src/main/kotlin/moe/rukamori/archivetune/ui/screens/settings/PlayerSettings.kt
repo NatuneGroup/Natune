@@ -113,7 +113,6 @@ import moe.rukamori.archivetune.constants.FloatDspEnabledKey
 import moe.rukamori.archivetune.constants.LastwaveAudioProcessingKey
 import moe.rukamori.archivetune.constants.TryptifyAudioProcessingKey
 import moe.rukamori.archivetune.constants.UsbExclusiveAudioKey
-import moe.rukamori.archivetune.constants.QueueAddAfterManualKey
 import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
 import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
@@ -190,8 +189,6 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         )
     val (swipeUpToOpenQueue, onSwipeUpToOpenQueueChange) =
         prefs.state(SwipeUpToOpenQueueKey, defaultValue = true)
-    val (queueAddAfterManual, onQueueAddAfterManualChange) =
-        prefs.state(QueueAddAfterManualKey, defaultValue = true)
     val (bitPerfectUsb) =
         prefs.state(
             BitPerfectUsbOutputKey,
@@ -1028,17 +1025,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     }
                 }
 
-                item {
-                    Column(modifier = positions.modifierFor("queue_after_manual")) {
-                        SwitchPreference(
-                            title = { Text(stringResource(R.string.queue_add_after_manual)) },
-                            description = stringResource(R.string.queue_add_after_manual_desc),
-                            icon = { Icon(painterResource(R.drawable.queue_music), null) },
-                            checked = queueAddAfterManual,
-                            onCheckedChange = onQueueAddAfterManualChange,
-                        )
-                    }
-                }
+                queuePolicyRows(prefs, positions)
 
                 item {
                     Column(modifier = positions.modifierFor("swipe_to_song")) {

@@ -104,6 +104,64 @@ class CrossfadePolicyTest {
     }
 
     @Test
+    fun repeatOneSuppressesTheBlendEntirely() {
+        // Fading a song into itself is not a transition: repeat-one never arms a blend.
+        assertTrue(
+            CrossfadePolicy.suppressesBlend(
+                repeatOne = true,
+                gaplessAlbums = false,
+                currentAlbumKey = "album",
+                nextAlbumKey = "album",
+            ),
+        )
+        assertTrue(
+            CrossfadePolicy.suppressesBlend(
+                repeatOne = true,
+                gaplessAlbums = true,
+                currentAlbumKey = "album",
+                nextAlbumKey = "other",
+            ),
+        )
+    }
+
+    @Test
+    fun sameAlbumSequencesSuppressOnlyWithTheGaplessSetting() {
+        assertTrue(
+            CrossfadePolicy.suppressesBlend(
+                repeatOne = false,
+                gaplessAlbums = true,
+                currentAlbumKey = "album",
+                nextAlbumKey = "album",
+            ),
+        )
+        assertFalse(
+            CrossfadePolicy.suppressesBlend(
+                repeatOne = false,
+                gaplessAlbums = false,
+                currentAlbumKey = "album",
+                nextAlbumKey = "album",
+            ),
+        )
+        // Different albums and unknown album keys never count as a gapless splice.
+        assertFalse(
+            CrossfadePolicy.suppressesBlend(
+                repeatOne = false,
+                gaplessAlbums = true,
+                currentAlbumKey = "album",
+                nextAlbumKey = "other",
+            ),
+        )
+        assertFalse(
+            CrossfadePolicy.suppressesBlend(
+                repeatOne = false,
+                gaplessAlbums = true,
+                currentAlbumKey = null,
+                nextAlbumKey = null,
+            ),
+        )
+    }
+
+    @Test
     fun effectiveDurationIsClamped() {
         assertEquals(
             5_000L,
