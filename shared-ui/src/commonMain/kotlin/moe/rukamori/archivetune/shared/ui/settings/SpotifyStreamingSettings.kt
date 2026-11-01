@@ -13,7 +13,12 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
+import moe.rukamori.archivetune.shared.domain.source.SpotifyProduct
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamAccountBinding
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
+import moe.rukamori.archivetune.shared.domain.source.streamAccountBinding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
@@ -92,16 +97,52 @@ fun SpotifyStreamingSettings(
             ))
         }
         add(SettingsRow.Header("spotify_stream_playback", Res.string.m6_integration_spotify_streaming))
+        val storedEngine = preferences.spotifyStreamEngine()
+        val binding = storedEngine.streamAccountBinding()
+        val sessionPresent = preferences.spotifyStreamSessionPresent(storedEngine)
+        val toggleDescription = when {
+            sessionPresent -> Res.string.m6_spotify_stream_enabled_desc
+            binding == SpotifyStreamAccountBinding.LIBRARY -> Res.string.m6_spotify_stream_needs_library
+            else -> Res.string.m6_spotify_stream_needs_account
+        }
         add(SettingsRow.Toggle(
             "spotify_stream_enabled", Res.string.m6_spotify_stream_enabled, SpotifyStreamEnabledKey, false,
-            description = if (signedIn) Res.string.m6_spotify_stream_enabled_desc else Res.string.m6_spotify_stream_needs_account,
-            enabled = signedIn || preferences[SpotifyStreamEnabledKey, false],
+            description = toggleDescription,
+            enabled = sessionPresent || preferences[SpotifyStreamEnabledKey, false],
             read = { it.spotifyStreamingEnabledForSettings() },
             write = { setSpotifyStreamingEnabled(it) },
         ))
         add(SettingsRow.Choice(
+            "spotify_stream_engine", Res.string.m6_spotify_stream_engine,
+            SpotifyStreamEngineKey, SpotifyStreamEngine.Default.name, streamEngineOptions(preferences),
+            write = { setSpotifyStreamEngine(SpotifyStreamEngine.fromPreference(it)) },
+        ))
+        add(SettingsRow.Status(
+            "spotify_stream_binding", Res.string.m6_spotify_stream_binding,
+            stringResource(
+                if (binding == SpotifyStreamAccountBinding.LIBRARY) {
+                    Res.string.m6_spotify_stream_binding_library
+                } else {
+                    Res.string.m6_spotify_stream_binding_dedicated
+                },
+            ),
+        ))
+        add(SettingsRow.Status(
+            "spotify_stream_plan", Res.string.m6_spotify_stream_plan,
+            stringResource(planResource(preferences.spotifyStreamAccountProduct(storedEngine))),
+        ))
+        if (storedEngine == SpotifyStreamEngine.LIBRESPOT &&
+            preferences.spotifyStreamEngineEffective() != storedEngine
+        ) {
+            add(SettingsRow.Status(
+                "spotify_stream_engine_degraded", Res.string.m6_spotify_stream_engine_degraded_title,
+                stringResource(Res.string.m6_spotify_stream_engine_degraded), fullText = true,
+            ))
+        }
+        add(SettingsRow.Choice(
             "spotify_stream_method", Res.string.m6_spotify_stream_method,
             SpotifyStreamResolveMethodKey, SpotifyStreamResolveMethod.Default.name, resolveMethodOptions,
+            enabled = preferences.spotifyStreamEngineEffective() == SpotifyStreamEngine.UNOFFICIAL,
             write = { setSpotifyStreamResolveMethod(SpotifyStreamResolveMethod.fromPreference(it)) },
         ))
         add(SettingsRow.Status(
@@ -127,6 +168,32 @@ fun SpotifyStreamingSettings(
             confirmButton = { TextButton(onClick = onDismissSignInRefusal) { Text(stringResource(Res.string.m6_done)) } },
         )
     }
+}
+
+private fun streamEngineOptions(preferences: PreferenceSnapshot): List<SettingsRow.Option> {
+    val librespotAllowed = preferences.spotifyLibrarySignedIn() &&
+        SpotifyPremiumPolicy.librespotAllowed(preferences.spotifyLibraryProduct())
+    return listOf(
+        SettingsRow.Option(
+            SpotifyStreamEngine.UNOFFICIAL.name, Res.string.m6_spotify_stream_engine_unofficial,
+            description = Res.string.m6_spotify_stream_engine_unofficial_desc,
+        ),
+        SettingsRow.Option(
+            SpotifyStreamEngine.LIBRESPOT.name, Res.string.m6_spotify_stream_engine_librespot,
+            enabled = librespotAllowed,
+            description = if (librespotAllowed) {
+                Res.string.m6_spotify_stream_engine_librespot_desc
+            } else {
+                Res.string.m6_spotify_stream_engine_librespot_needs_premium
+            },
+        ),
+    )
+}
+
+private fun planResource(product: SpotifyProduct): StringResource = when (product) {
+    SpotifyProduct.PREMIUM -> Res.string.m6_spotify_stream_plan_premium
+    SpotifyProduct.FREE -> Res.string.m6_spotify_stream_plan_free
+    SpotifyProduct.UNKNOWN -> Res.string.m6_spotify_stream_plan_unknown
 }
 
 private val resolveMethodOptions = listOf(

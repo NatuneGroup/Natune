@@ -31,9 +31,13 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifySpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccessTokenExpiresAtKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccessTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccountNameKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductCheckedAtKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamUserIdKey
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamProduct
+import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInDecision
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
@@ -56,7 +60,7 @@ private val SPOTIFY_LOGIN_ORIGINS: Set<AuthorizedHttpsOrigin> = listOf(
 ).map { AuthorizedHttpsOrigin(it) }.toSet()
 
 /** A streaming account as Spotify's own REST profile reports it. */
-private class IosSpotifyStreamingProfile(val userId: String, val displayName: String?)
+private class IosSpotifyStreamingProfile(val userId: String, val displayName: String?, val product: String?)
 
 /**
  * The iOS Spotify streaming account, kept apart from the catalog account exactly as on Android and the desktop
@@ -94,6 +98,7 @@ internal class IosSpotifyStreamingAccount(
                 this[SpotifyStreamAccessTokenKey] = accessToken
                 this[SpotifyStreamAccessTokenExpiresAtKey] = expiresAtMs
             }
+            refreshStreamProductIfDue(accessToken)
         },
         collidesWithCatalog = { spDc -> collidesWithCatalog(spDc) },
     )
@@ -130,6 +135,28 @@ internal class IosSpotifyStreamingAccount(
             } finally {
                 busyFlow.value = false
             }
+        }
+    }
+
+    /**
+     * The refresh-time product re-check: a fresh token just minted is the only moment the plan is re-read,
+     * and only once the stored observation is stale per [SpotifyPremiumPolicy.recheckDue]. A failed read
+     * keeps the stored product, so an outage cannot masquerade as a lost subscription.
+     */
+    private suspend fun refreshStreamProductIfDue(accessToken: String) {
+        val prefs = snapshot()
+        val now = Clock.System.now().toEpochMilliseconds()
+        val due = SpotifyPremiumPolicy.recheckDue(
+            product = prefs.spotifyStreamProduct(),
+            checkedAtMs = prefs[SpotifyStreamProductCheckedAtKey] ?: 0L,
+            nowMs = now,
+            tokenJustMinted = true,
+        )
+        if (!due) return
+        val product = auth.fetchProduct(accessToken) ?: return
+        graph.settings.edit {
+            this[SpotifyStreamProductKey] = product
+            this[SpotifyStreamProductCheckedAtKey] = now
         }
     }
 
@@ -216,6 +243,8 @@ internal class IosSpotifyStreamingAccount(
                     this[SpotifyStreamAccessTokenExpiresAtKey] = accepted.accessTokenExpirationTimestampMs
                     this[SpotifyStreamUserIdKey] = account.userId
                     this[SpotifyStreamAccountNameKey] = account.displayName.orEmpty()
+                    this[SpotifyStreamProductKey] = account.product
+                    this[SpotifyStreamProductCheckedAtKey] = Clock.System.now().toEpochMilliseconds()
                 }
                 null
             }
@@ -283,7 +312,11 @@ internal class IosSpotifyStreamingAccount(
             null
         } ?: return null
         val userId = profile.text("id")?.takeIf { it.isNotBlank() } ?: return null
-        return IosSpotifyStreamingProfile(userId, profile.text("display_name")?.takeIf { it.isNotBlank() })
+        return IosSpotifyStreamingProfile(
+            userId,
+            profile.text("display_name")?.takeIf { it.isNotBlank() },
+            profile.text("product")?.takeIf { it.isNotBlank() },
+        )
     }
 }
 
