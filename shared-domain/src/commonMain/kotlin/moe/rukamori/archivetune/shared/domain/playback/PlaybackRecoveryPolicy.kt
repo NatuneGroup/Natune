@@ -163,12 +163,11 @@ object PlaybackFailureClassifier {
         for (cause in failure.causes) {
             val name = cause.substringBefore(':').trim()
             when {
-                name.contains("Sabr", ignoreCase = true) -> return
-                    if (name.contains("Attestation", ignoreCase = true)) {
-                        PlaybackFailureCategory.SABR_ATTESTATION
-                    } else {
-                        PlaybackFailureCategory.SABR_PROTOCOL
-                    }
+                name.contains("Sabr", ignoreCase = true) -> return if (name.contains("Attestation", ignoreCase = true)) {
+                    PlaybackFailureCategory.SABR_ATTESTATION
+                } else {
+                    PlaybackFailureCategory.SABR_PROTOCOL
+                }
                 name.contains("Timeout", ignoreCase = true) -> return PlaybackFailureCategory.TIMEOUT
                 name.contains("Decoder", ignoreCase = true) -> return PlaybackFailureCategory.DECODER
                 name.contains("Renderer", ignoreCase = true) -> return PlaybackFailureCategory.RENDERER
@@ -177,7 +176,9 @@ object PlaybackFailureClassifier {
             }
         }
         return when (failure.reason) {
-            PlaybackFailureReason.DECODE_FAILED -> PlaybackFailureCategory.DECODER
+            // A bare DECODE_FAILED is not decoder evidence: native engines also report expired leases
+            // and refused reads under it, so it keeps UNKNOWN's conservative re-resolution. Only a
+            // cause name above can still earn DECODER.
             PlaybackFailureReason.OUTPUT_FAILED -> PlaybackFailureCategory.RENDERER
             PlaybackFailureReason.SOURCE_UNAVAILABLE -> PlaybackFailureCategory.UNAVAILABLE
             else -> PlaybackFailureCategory.UNKNOWN
