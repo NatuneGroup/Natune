@@ -38,6 +38,9 @@ import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate
+import moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsMode
@@ -94,6 +97,12 @@ internal fun desktopHostBindings(
     return ArchiveTuneHostBindings(
         queue = DesktopPodcastQueue(graph.queue, podcasts),
         songMetadata = graph.library.songMetadata,
+        customArtwork = graph.customArtwork,
+        // The multi-playlist add picker reads the one library repository's candidates.
+        playlistPicker = object : PlaylistPickerSource {
+            override fun candidates(occurrences: List<ContentOccurrence>): Flow<List<PlaylistPickerCandidate>> =
+                graph.library.observePlaylistPicker(occurrences)
+        },
         settings = graph.settings,
         actionScope = graph.scope,
         // Deep links from the desktop intake open their page through the root. Back arrives from the window.

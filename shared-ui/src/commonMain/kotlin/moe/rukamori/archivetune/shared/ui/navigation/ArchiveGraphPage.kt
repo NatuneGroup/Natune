@@ -154,6 +154,8 @@ sealed interface ArchiveGraphPage {
         val page: PagedContentState,
         val actions: DetailActions,
         val control: PlaylistDetailControl? = null,
+        /** A local playlist's first rows' items, drawn as its header's 2x2 mosaic when it has no custom cover. */
+        val headerMosaicItems: List<ContentItem> = emptyList(),
     ) : ArchiveGraphPage
     /**
      * Artist page from the artist/album owner. [page] is null while the provider page loads and [pageFailed] reports a

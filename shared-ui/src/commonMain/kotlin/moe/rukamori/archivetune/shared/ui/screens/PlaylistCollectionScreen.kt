@@ -23,6 +23,8 @@ data class PlaylistCollectionRow(
     val item: ContentItem, val songCount: Int, val createdEpochMs: Long = 0, val updatedEpochMs: Long = 0,
     val hidden: Boolean = false, val tagIds: Set<String> = emptySet(), val editable: Boolean = true,
     val exportable: Boolean = false,
+    /** The first rows' items in the stored order, drawn as the local 2x2 mosaic cover when no custom cover is set. */
+    val previewItems: List<ContentItem> = emptyList(),
 )
 data class PlaylistCollectionUi(
     val rows: List<PlaylistCollectionRow>, val tags: List<PlaylistTagUi> = emptyList(),
@@ -111,7 +113,7 @@ fun PlaylistCollectionScreen(
                     Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         group.forEach { row -> Card(Modifier.weight(1f)) {
                             Column(Modifier.fillMaxWidth().padding(8.dp).clickable { actions.open(row.item.ref) }) {
-                                artwork(row.item, Modifier.fillMaxWidth().aspectRatio(1f))
+                                PlaylistArtwork(row.item, row.previewItems, artwork, Modifier.fillMaxWidth().aspectRatio(1f))
                                 Text(row.item.title, style = MaterialTheme.typography.titleMedium)
                                 PlaylistCollectionControls(row, state.busy, actions)
                             }
@@ -123,7 +125,7 @@ fun PlaylistCollectionScreen(
                 Column {
                     ListItem(headlineContent = { Text(row.item.title) },
                         supportingContent = { Text(stringResource(Res.string.m4_song_count, row.songCount)) },
-                        leadingContent = { artwork(row.item, Modifier.size(56.dp)) },
+                        leadingContent = { PlaylistArtwork(row.item, row.previewItems, artwork, Modifier.size(56.dp)) },
                         modifier = Modifier.clickable { actions.open(row.item.ref) })
                     PlaylistCollectionControls(row, state.busy, actions)
                     if (!state.locked && state.sort == PlaylistSortType.CUSTOM) Row {

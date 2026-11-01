@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.library.librarySortState
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTag
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistEditLockKey
@@ -229,7 +230,15 @@ internal fun iosPlaylistsPage(
         // The same tags page the settings row opens; the page carries the manager, the filter chips just read its ids.
         manageTags = tagState::manageTags,
         open = {},
-        more = { menu.refuse() },
+        // A local playlist row's overflow opens the shared playlist menu on a synthesized occurrence of the row.
+        more = { ref ->
+            val row = rows.orEmpty().firstOrNull { it.item.ref == ref }
+            if (row != null && ref.provider == ContentProvider.LOCAL.id) {
+                menu.open(ContentOccurrence("menu:${ref.provider}:${ref.id}", row.item))
+            } else {
+                menu.refuse()
+            }
+        },
         assignTags = { ref -> if (ref.provider == ContentProvider.LOCAL.id) tagState.openTags(ref) else menu.refuse() },
         exportCsv = { menu.refuse() },
         move = { _, _, _ -> menu.refuse() },
