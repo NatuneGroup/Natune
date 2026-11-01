@@ -185,7 +185,9 @@ class IosPlaybackPool(
         discovered[service] = (cached?.first ?: emptyList()) to now
         val body = fetch("$base/api/discovery/$service")
         if (body == null || body.first != 200 || !enabled()) return cached?.first ?: emptyList()
-        val urls = parseDiscoveredInstances(body.second).mapNotNull(::normalizeInstanceUrl).distinct()
+        // Only the TIDAL feed drops squid.wtf hosts. squid.wtf is a working Qobuz proxy, as on Android.
+        val urls = parseDiscoveredInstances(body.second, dropSquidWtf = service == TIDAL)
+            .mapNotNull(::normalizeInstanceUrl).distinct()
         discovered[service] = urls to now
         return urls
     }
@@ -193,6 +195,11 @@ class IosPlaybackPool(
     suspend fun tidalInstances(): List<String> = discoveredInstances(TIDAL)
 
     suspend fun qobuzInstances(): List<String> = discoveredInstances(QOBUZ)
+
+    /** The deployment base and read key the Deezer instance resolver discovers through while the switch is on. */
+    fun discoveryBaseUrl(): String = if (enabled()) baseUrl.orEmpty() else ""
+
+    fun discoveryReadKey(): String = if (enabled()) readKey else ""
 
     suspend fun noteFailure(service: String, id: Long?) {
         if (id == null || id <= 0L) return
@@ -587,13 +594,13 @@ class IosPlaybackPool(
          * A discovery payload: an object of URL arrays (`streaming`, `instances`, then `api`),
          * a plain array of URLs or objects with `url`/`host`, or whitespace-separated URLs.
          */
-        internal fun parseDiscoveredInstances(body: String): List<String> {
+        internal fun parseDiscoveredInstances(body: String, dropSquidWtf: Boolean = true): List<String> {
             val trimmed = body.trim().takeIf { it.isNotEmpty() } ?: return emptyList()
             val element = runCatching { json.parseToJsonElement(trimmed) }.getOrNull()
             when (element) {
                 is JsonObject -> {
                     val urls = listOf("streaming", "instances", "api").flatMap { key -> urlsOf(element[key] as? JsonArray) }
-                        .filterNot { it.contains(".squid.wtf", ignoreCase = true) }
+                        .filterNot { dropSquidWtf && it.contains(".squid.wtf", ignoreCase = true) }
                     if (urls.isNotEmpty()) return urls
                 }
                 is JsonArray -> urlsOf(element).takeIf { it.isNotEmpty() }?.let { return it }

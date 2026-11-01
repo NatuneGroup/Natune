@@ -35,7 +35,8 @@ class KtorQobuzRepository(
     private val instance = instanceBase?.let(::endpoint)
     private val instanceResolver = resolver ?: QobuzInstanceResolver(client, nowMs)
     init {
-        require(access != null || instance != null || instances().isNotEmpty())
+        // A pool-discovered instance list is reachable through the resolver, not the user's list.
+        require(access != null || instance != null || instances().isNotEmpty() || instanceResolver.hasInstances())
         require(access == null || digest != null) { "Account playback requires its request signer" }
     }
     private fun headers() = access?.let { mapOf("X-App-Id" to it.appId, "X-User-Auth-Token" to it.userToken) }.orEmpty()

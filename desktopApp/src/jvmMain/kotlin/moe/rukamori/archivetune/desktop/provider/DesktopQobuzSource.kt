@@ -40,7 +40,14 @@ internal class DesktopQobuzSource(
     override val source = AudioSourceType.QOBUZ
     private val gate = Mutex()
     private val digest = JvmQobuzRequestDigest()
-    private val instances = QobuzInstanceResolver(http, System::currentTimeMillis)
+    /** One resolver for the session, so its cooldowns and discovery persist. The Pool switch gates its discovery. */
+    private val instances = QobuzInstanceResolver(
+        http,
+        System::currentTimeMillis,
+        poolEnabled = { pool?.enabled() == true },
+        sourceProviderUrl = { pool?.discoveryBaseUrl().orEmpty() },
+        sourceProviderKey = { pool?.discoveryReadKey().orEmpty() },
+    )
     private class Cached(val lease: DesktopSourceAdmissions.Lease, val repository: KtorQobuzRepository)
     private data class CacheKey(val entry: QobuzTokenEntry, val pooled: Boolean)
     private class Credential(val key: CacheKey, val scope: CredentialScope, val current: () -> Boolean,
@@ -99,13 +106,16 @@ internal class DesktopQobuzSource(
             }
         }
         val bases = preferences()?.qobuzInstanceList().orEmpty()
-        if (bases.isNotEmpty()) {
+        // The user's list is the resolver's manual list. Syncing it here keeps a removed base from lingering.
+        instances.setInstances(bases)
+        // Pool-discovered instances count as reachable only while the Pool switch is on, through the resolver itself.
+        if (bases.isNotEmpty() || instances.hasInstances()) {
             KtorQobuzRepository(http, System::currentTimeMillis, resolver = instances, instances = {
                 preferences()?.qobuzInstanceList().orEmpty()
             }).resolve(request)?.let { return it }
         }
         failure?.let { throw it }
-        if (saved.isEmpty() && bases.isEmpty()) throw AudioProviderUnavailable(AudioProviderUnavailableReason.ACCOUNT_REQUIRED)
+        if (saved.isEmpty() && !instances.hasInstances()) throw AudioProviderUnavailable(AudioProviderUnavailableReason.ACCOUNT_REQUIRED)
         return null
     }
 

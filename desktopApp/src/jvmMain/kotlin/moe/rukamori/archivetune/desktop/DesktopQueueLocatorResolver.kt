@@ -27,16 +27,11 @@ import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.PlaybackSourceSnapshot
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.domain.settings.SongSourceOverrideKey
-import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzBackupVideoIdKey
-import moe.rukamori.archivetune.shared.domain.settings.SongSourceQobuzTrackIdKey
-import moe.rukamori.archivetune.shared.domain.settings.SongSourceAmazonPickKey
 import moe.rukamori.archivetune.shared.domain.source.SongSourceOverride
-import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzBackupVideoId
-import moe.rukamori.archivetune.shared.domain.source.SongSourceQobuzTrackId
-import moe.rukamori.archivetune.shared.domain.source.SongSourceAmazonPick
 import moe.rukamori.archivetune.shared.ui.host.hostSourceSnapshot
 import moe.rukamori.archivetune.shared.ui.host.toAudioResolveRequest
 import moe.rukamori.archivetune.shared.ui.host.unresolvedSourceReason
+import moe.rukamori.archivetune.shared.ui.host.withSourcePins as sharedWithSourcePins
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 
 /** The local-file provider id. A local song has no provider to search, so it is refused until a local owner exists. */
@@ -177,7 +172,7 @@ internal fun desktopAudioProviders(
 ): List<AudioProviderRepository> = listOfNotNull(
     DesktopTidalSource(http, accounts, preferences, tidalSessionRefresh, pool),
     KtorQobuzBackupRepository(http),
-    DesktopDeezerSource(http, accounts, pool),
+    DesktopDeezerSource(http, accounts, pool, preferences),
     desktopJioSaavnSource(http),
     DesktopQqMusicSource(http, accounts),
 )
@@ -185,19 +180,9 @@ internal fun desktopAudioProviders(
 private fun ContentOccurrence.toResolveRequest(preferences: PreferenceSnapshot?): AudioResolveRequest =
     toAudioResolveRequest(preferences)
 
-/** The per-source catalogue ids the menu's source chooser stored, added to the request's authoritative ids. */
-internal fun AudioResolveRequest.withSourcePins(preferences: PreferenceSnapshot?, songId: String): AudioResolveRequest {
-    val qobuzTrack = preferences?.get(SongSourceQobuzTrackIdKey)?.let { SongSourceQobuzTrackId.get(it, songId) }
-    val backupVideo = preferences?.get(SongSourceQobuzBackupVideoIdKey)?.let { SongSourceQobuzBackupVideoId.get(it, songId) }
-    val extras = listOfNotNull(
-        qobuzTrack?.let { AudioSourceType.QOBUZ to it },
-        backupVideo?.let { AudioSourceType.QOBUZ_BACKUP to it },
-    )
-    val amazon = if (SongSourceOverride.get(preferences?.get(SongSourceOverrideKey), songId) == AudioSourceType.AMAZON) {
-        SongSourceAmazonPick.get(preferences?.get(SongSourceAmazonPickKey), songId)
-    } else null
-    return if (extras.isEmpty() && amazon == null) this else copy(directIds = directIds + extras.toMap(), amazonPick = amazon)
-}
+/** The per-source catalogue ids the menu's source chooser stored; the shared host owns the rule on every platform. */
+internal fun AudioResolveRequest.withSourcePins(preferences: PreferenceSnapshot?, songId: String): AudioResolveRequest =
+    sharedWithSourcePins(preferences, songId)
 
 private fun unavailableReason(occurrence: ContentOccurrence, attempts: List<AudioAttempt>): String =
     unresolvedSourceReason(occurrence, attempts, host = "desktop")

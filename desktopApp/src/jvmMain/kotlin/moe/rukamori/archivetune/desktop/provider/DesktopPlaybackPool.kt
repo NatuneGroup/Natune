@@ -149,6 +149,14 @@ internal class DesktopPlaybackPool(
         return discovered
     }
 
+    /**
+     * The deployment base and read key that the Deezer and Qobuz instance resolvers discover through. Both are empty
+     * while the switch is off, so their discovery stops with it.
+     */
+    fun discoveryBaseUrl(): String = if (enabled()) baseUrl.orEmpty() else ""
+
+    fun discoveryReadKey(): String = if (enabled()) readKey else ""
+
     fun noteFailure(service: String, id: Long?) {
         if (id == null || id <= 0L) return
         cooldownUntil["$service:$id"] = nowMs() + ACCOUNT_COOLDOWN_MS

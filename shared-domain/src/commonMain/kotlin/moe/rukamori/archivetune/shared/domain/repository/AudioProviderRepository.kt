@@ -7,6 +7,9 @@ import moe.rukamori.archivetune.shared.domain.source.*
 data class ProviderTrack(val item: ContentItem, val artists: List<String>, val album: String?,
     val isrc: String?, val rawJson: String) {
     fun candidate() = TrackMatching.Candidate(item.ref.id, item.title, artists, album, item.durationMs)
+
+    /** The item a queue occurrence carries: the catalog item with the ISRC the provider gave, when it gave one. */
+    fun queueItem(): ContentItem = item.copy(isrc = isrc?.takeIf { it.isNotBlank() })
 }
 enum class AudioPurpose { PLAYBACK, DOWNLOAD }
 data class AudioResolveRequest(
