@@ -3,6 +3,7 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,8 +58,10 @@ internal class IosBackupGateway(
     private val snapshotDatabase: suspend (String) -> Unit,
     private val instanceDirectory: String,
     private val nowMillis: () -> Long,
+    private val recoveryMode: () -> Boolean = { false },
 ) : BackupArchiveGateway {
     override suspend fun create(selected: Set<BackupDataCategory>): ByteArray {
+        check(!recoveryMode()) { "Restore recovery holds the library; archive work is unavailable" }
         require(selected.isNotEmpty())
         return withScratch { scratch ->
             val database = if (BackupDataCategory.LIBRARY in selected) {
@@ -81,8 +84,9 @@ internal class IosBackupGateway(
      * Stages the [selected] sections and reports that a restart applies them. A previously staged restore is replaced
      * only after the new one is complete, so a failure here leaves the earlier choice, or nothing, in place.
      */
-    override suspend fun restore(archive: ByteArray, selected: Set<BackupDataCategory>): BackupRestoreOutcome =
-        withScratch { scratch ->
+    override suspend fun restore(archive: ByteArray, selected: Set<BackupDataCategory>): BackupRestoreOutcome {
+        check(!recoveryMode()) { "Restore recovery holds the library; archive work is unavailable" }
+        return withScratch { scratch ->
             val parsed = parse(archive, scratch)
             val chosen = selected intersect parsed.categories
             if (chosen.isEmpty()) throw BackupArchiveException(BackupArchiveProblem.NO_RESTORABLE_DATA)
@@ -96,6 +100,7 @@ internal class IosBackupGateway(
             }
             BackupRestoreOutcome(restartRequired = true)
         }
+    }
 
     /**
      * The shared checks of [PortableBackupArchive.parse], plus the database inspection the desktop parser runs: the
@@ -148,6 +153,9 @@ internal class IosPendingRestore private constructor(
 
     /** The staged settings snapshot the vault apply still owes; false for library-only restores. */
     val hasStagedSettings: Boolean get() = existsAt("$directory/${PortableBackupFormat.SETTINGS}")
+
+    /** The pre-apply vault snapshot a joint abort still owes the settings store. */
+    val hasSettingsBefore: Boolean get() = existsAt(IosRestoreRecovery.settingsBeforePath(directory))
 
     /** A swap or apply step failed and [markFailed] moved the pending set aside; nothing may apply it again. */
     var failed = false
@@ -375,11 +383,14 @@ internal class IosPendingRestore private constructor(
 internal class IosBackupOwner(
     settings: VaultSettingsStore,
     snapshotDatabase: suspend (String) -> Unit,
-    instanceDirectory: String,
-    nowMillis: () -> Long = ::iosNowMillis,
+    private val instanceDirectory: String,
+    private val nowMillis: () -> Long = ::iosNowMillis,
     initialRestoreFailed: Boolean = false,
+    initialRecoveryMode: Boolean = false,
 ) {
-    val archives = IosBackupGateway(settings, snapshotDatabase, instanceDirectory, nowMillis)
+    private val recovering = MutableStateFlow(initialRecoveryMode)
+    val archives =
+        IosBackupGateway(settings, snapshotDatabase, instanceDirectory, nowMillis) { recovering.value }
     val restores: PreparedRestoreRegistry = InMemoryPreparedRestoreRegistry(archives)
     private val restarting = MutableStateFlow(false)
     private val failedRestore = MutableStateFlow(initialRestoreFailed)
@@ -389,6 +400,40 @@ internal class IosBackupOwner(
 
     /** True when the staged restore failed at open; the page reports it until the user answers. */
     val restoreFailed: StateFlow<Boolean> = failedRestore.asStateFlow()
+
+    /**
+     * True while an unresolved-corruption marker holds the library: the session runs on a throwaway database
+     * and the host shows the resolution surface instead of the normal one. The gateway refuses archive work
+     * for as long as it stands.
+     */
+    val recoveryMode: StateFlow<Boolean> = recovering.asStateFlow()
+
+    /** True when the failed set still keeps the originals [resolveRestoreRecovery] can put back. */
+    val previousLibraryAvailable: Boolean
+        get() = IosRestoreRecovery.hasRestorableBackup(instanceDirectory, PortableBackupFormat.DATABASE)
+
+    /**
+     * Runs the user's resolution of a blocked library — the previous files back, or a clean start — moving
+     * everything displaced into a dated quarantine instead of deleting. On success the restart dialog carries
+     * the session out; iOS cannot relaunch itself.
+     */
+    suspend fun resolveRestoreRecovery(restorePrevious: Boolean): Boolean {
+        val resolved = withContext(Dispatchers.Default) {
+            runCatching {
+                if (restorePrevious) {
+                    IosRestoreRecovery.restorePreviousLibrary(
+                        instanceDirectory, PortableBackupFormat.DATABASE, nowMillis(),
+                    )
+                } else {
+                    IosRestoreRecovery.startEmptyLibrary(
+                        instanceDirectory, PortableBackupFormat.DATABASE, nowMillis(),
+                    )
+                }
+            }.isSuccess
+        }
+        if (resolved) restarting.value = true
+        return resolved
+    }
 
     /**
      * Applies the selected sections of a prepared archive. Wire it to the page's restore callback; a failure leaves
