@@ -700,6 +700,8 @@
     <string name="equalizer">Equalizer</string>
     <string name="eq_waiting_for_audio_session">Waiting for audio session</string>
     <string name="eq_open_system_equalizer">Open system equalizer</string>
+    <string name="equalizer_not_found">No system equalizer is available on this device</string>
+    <string name="equalizer_stream_unavailable">The equalizer is unavailable until music is playing</string>
     <string name="eq_screen_subtitle">Shape playback for your ears and equipment</string>
     <string name="eq_sound_shaping_on">Sound shaping is on</string>
     <string name="eq_sound_shaping_off">Sound shaping is off</string>

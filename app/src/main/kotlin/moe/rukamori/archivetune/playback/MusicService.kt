@@ -29,7 +29,6 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.audiofx.AudioEffect
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
@@ -1104,7 +1103,7 @@ class MusicService :
         private set
     private val pausedPlaybackGate = PausedPlaybackGate()
     private lateinit var castPlaybackRepository: CastPlaybackRepository
-    private lateinit var mediaSession: MediaLibrarySession
+    internal lateinit var mediaSession: MediaLibrarySession
 
     private var isAudioEffectSessionOpened = false
     private var openedAudioSessionId: Int? = null
@@ -1491,6 +1490,9 @@ class MusicService :
             toggleLike = ::toggleLike
             toggleStartRadio = ::toggleStartRadio
             toggleLibrary = ::toggleLibrary
+            isListenTogetherGuestActive = {
+                listenTogetherManager.isInRoom && !listenTogetherManager.isHost
+            }
         }
         mediaSession =
             MediaLibrarySession
@@ -6807,6 +6809,9 @@ class MusicService :
 
     private fun openAudioEffectSession() {
         if (isAudioEffectSessionOpened) return
+        // The OPEN broadcast invites external equalizer apps to attach to the audio session;
+        // suppressing it keeps the bit-perfect stream free of any control-session effects.
+        if (bitPerfectOutputActive && BitPerfectUsbOutput.enabled) return
         val sessionId = localPlayer.audioSessionId
         if (sessionId <= 0) return
         isAudioEffectSessionOpened = true
@@ -6827,6 +6832,7 @@ class MusicService :
 
     private fun rebindAudioEffectSession(newSessionId: Int) {
         if (newSessionId <= 0 || !shouldKeepAudioEffectSessionOpen()) return
+        if (bitPerfectOutputActive && BitPerfectUsbOutput.enabled) return
         val oldSessionId = openedAudioSessionId
         if (!isAudioEffectSessionOpened) {
             openAudioEffectSession()
@@ -6843,25 +6849,6 @@ class MusicService :
         openedAudioSessionId = newSessionId
         ensureAudioEffects(newSessionId)
         sendOpenAudioEffectSessionBroadcast(newSessionId)
-    }
-
-    private fun sendOpenAudioEffectSessionBroadcast(sessionId: Int) {
-        sendBroadcast(
-            Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
-                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
-                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
-                putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-            },
-        )
-    }
-
-    private fun sendCloseAudioEffectSessionBroadcast(sessionId: Int) {
-        sendBroadcast(
-            Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
-                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
-                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
-            },
-        )
     }
 
     private fun historyThresholdMs(): Long =
@@ -12995,6 +12982,10 @@ class MusicService :
                     player.skipKeepingPlayState { seekToPrevious() }
                 }
             }
+
+            ACTION_REFRESH_AUTOMOTIVE_LIBRARY -> {
+                refreshAutomotiveLibrary()
+            }
         }
         super.onStartCommand(intent, flags, startId)
         return START_NOT_STICKY
@@ -13075,6 +13066,8 @@ class MusicService :
         const val SPOTIFY_PLAYLIST = "spotify_playlist"
         const val SPOTIFY_LIKED = "spotify_liked"
         const val ONLINE_PLAYLIST = "online_playlist"
+        const val QUEUE = "queue"
+        const val PINNED_PLAYLISTS = "pinned_playlists"
 
         private const val TAG = "MusicService"
         private const val SessionActivityAlbumLinkRequestCode = 889
@@ -13085,6 +13078,8 @@ class MusicService :
         const val CHANNEL_ID = "music_channel_01"
         const val ACTION_MEDIA_NOTIFICATION_DISMISSED =
             "moe.rukamori.archivetune.action.MEDIA_NOTIFICATION_DISMISSED"
+        const val ACTION_REFRESH_AUTOMOTIVE_LIBRARY =
+            "moe.rukamori.archivetune.action.REFRESH_AUTOMOTIVE_LIBRARY"
         const val EXTRA_MEDIA_NOTIFICATION_DELETE_INTENT =
             "moe.rukamori.archivetune.extra.MEDIA_NOTIFICATION_DELETE_INTENT"
         const val NOTIFICATION_ID = 888

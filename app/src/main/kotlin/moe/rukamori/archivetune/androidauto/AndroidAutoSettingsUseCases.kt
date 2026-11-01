@@ -20,11 +20,13 @@ class AndroidAutoSettingsUseCases @Inject constructor(
     fun observeSettings(): Flow<AndroidAutoSettingsSnapshot> = combine(
         repository.configuration,
         repository.connectionStatus,
-    ) { configuration, connectionStatus ->
+        repository.pinnedPlaylists,
+    ) { configuration, connectionStatus, pinnedPlaylists ->
         AndroidAutoSettingsSnapshot(
             configuration = configuration,
             connectionStatus = connectionStatus,
             hasLocalAudioPermission = repository.hasLocalAudioPermission(),
+            pinnedPlaylists = pinnedPlaylists,
         )
     }
 
@@ -46,6 +48,10 @@ class AndroidAutoSettingsUseCases @Inject constructor(
     suspend fun setLocalSongs(enabled: Boolean) = repository.setLocalSongs(enabled)
     suspend fun setMeteredPlayback(enabled: Boolean) = repository.setMeteredPlayback(enabled)
     suspend fun setMeteredArtwork(enabled: Boolean) = repository.setMeteredArtwork(enabled)
+
+    suspend fun togglePinnedPlaylist(entry: AndroidAutoPinnedPlaylist) = repository.togglePinnedPlaylist(entry)
+
+    suspend fun setPinnedPlaylistShuffle(enabled: Boolean) = repository.setPinnedPlaylistShuffle(enabled)
 
     suspend fun setAction(
         slot: AndroidAutoActionSlot,
