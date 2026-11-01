@@ -55,7 +55,7 @@ fun parseCreateChallenge(rawResponse: String): BotGuardChallenge {
         try {
             poTokenJson.parseToJsonElement(rawResponse).jsonArray
         } catch (failure: Exception) {
-            throw PoTokenMintException("BotGuard Create response is not a JSON array", failure)
+            throw malformedCreate()
         }
 
     val challenge =
@@ -69,7 +69,7 @@ fun parseCreateChallenge(rawResponse: String): BotGuardChallenge {
         } catch (failure: PoTokenMintException) {
             throw failure
         } catch (failure: Exception) {
-            throw PoTokenMintException("BotGuard Create challenge array is malformed", failure)
+            throw malformedCreate()
         }
 
     return try {
@@ -92,7 +92,7 @@ fun parseCreateChallenge(rawResponse: String): BotGuardChallenge {
                     ?.content,
         )
     } catch (failure: Exception) {
-        throw PoTokenMintException("BotGuard Create challenge fields are missing", failure)
+        throw malformedCreate()
     }
 }
 
@@ -123,7 +123,7 @@ fun parseIntegrityToken(rawResponse: String): BotGuardIntegrityToken {
         try {
             poTokenJson.parseToJsonElement(rawResponse).jsonArray
         } catch (failure: Exception) {
-            throw PoTokenMintException("BotGuard GenerateIT response is not a JSON array", failure)
+            throw malformedIntegrityToken()
         }
     return try {
         BotGuardIntegrityToken(
@@ -133,7 +133,7 @@ fun parseIntegrityToken(rawResponse: String): BotGuardIntegrityToken {
     } catch (failure: PoTokenMintException) {
         throw failure
     } catch (failure: Exception) {
-        throw PoTokenMintException("BotGuard GenerateIT fields are missing", failure)
+        throw malformedIntegrityToken()
     }
 }
 
@@ -249,9 +249,18 @@ private fun base64ToByteArray(base64: String): ByteArray {
     return try {
         Base64.decode(normalised)
     } catch (failure: Exception) {
-        throw PoTokenMintException("Cannot decode base64: ${base64.take(40)}…", failure)
+        throw PoTokenMintException("BotGuard response payload is not valid base64")
     }
 }
+
+/**
+ * The malformed-body classifications, deliberately fixed text: a parse or decode failure's own
+ * message and its cause can echo the response it choked on, so neither travels in the exception.
+ */
+private fun malformedCreate(): PoTokenMintException = PoTokenMintException("BotGuard Create response is malformed")
+
+private fun malformedIntegrityToken(): PoTokenMintException =
+    PoTokenMintException("BotGuard GenerateIT response is malformed")
 
 /** A JavaScript double-quoted string literal: every non-ASCII unit escapes, including separators. */
 internal fun poTokenJsString(value: String): String = buildString(value.length + 2) {

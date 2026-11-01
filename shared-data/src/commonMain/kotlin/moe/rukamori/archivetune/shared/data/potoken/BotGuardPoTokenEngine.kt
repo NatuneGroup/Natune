@@ -113,7 +113,8 @@ class BotGuardPoTokenEngine(
                     mintTokenLocked(identifier, sessionId).also { cacheIdentifier(identifier, it.playerToken) }
                 }
             } catch (timeout: TimeoutCancellationException) {
-                report("PoToken mint timed out after ${timeout}ms")
+                // The caller's own shorter budget can fire first, so the report names no duration.
+                report("PoToken mint timed out")
                 destroyEngineLocked()
                 null
             } catch (cancelled: CancellationException) {
@@ -171,9 +172,14 @@ class BotGuardPoTokenEngine(
                 mintOn(rt, identifier)
             } catch (failure: Throwable) {
                 if (failure is CancellationException) throw failure
-                if (wasNew) throw failure
+                if (wasNew) throw classifyJsFailure(failure)
                 val (freshRuntime, freshSessionToken) = getOrCreateEngineLocked(sessionId, forceNew = true)
-                return MintedPoTokens(playerToken = mintOn(freshRuntime, identifier), sessionToken = freshSessionToken)
+                return try {
+                    MintedPoTokens(playerToken = mintOn(freshRuntime, identifier), sessionToken = freshSessionToken)
+                } catch (retry: Throwable) {
+                    if (retry is CancellationException) throw retry
+                    throw classifyJsFailure(retry)
+                }
             }
         return MintedPoTokens(playerToken = playerToken, sessionToken = sessionToken)
     }
@@ -241,7 +247,7 @@ class BotGuardPoTokenEngine(
             val integrityToken = parseIntegrityToken(generateItBody)
 
             val minterState = rt.evaluate("__bgCreateMinter(${bytesToJsUint8Array(integrityToken.tokenBytes)})")
-            check(minterState == "ok") { "BotGuard minter answered $minterState" }
+            if (minterState != "ok") throw PoTokenMintException("BotGuard minter did not initialize")
 
             val sessionToken = mintOn(rt, sessionId)
             val expiry =
@@ -294,12 +300,16 @@ class BotGuardPoTokenEngine(
         }
     }
 
-    /** Like Android's `classifyJsError`: interpreter SyntaxErrors mark the engine permanently unusable. */
+    /**
+     * Like Android's `classifyJsError`: interpreter SyntaxErrors mark the engine permanently unusable.
+     * Anything else gets one fixed classification — a raw engine message can echo the remote BotGuard
+     * program or a response fragment, so it never reaches a report line or an exception message.
+     */
     private fun classifyJsFailure(failure: Throwable): Exception =
         if (failure.message?.contains("SyntaxError") == true) {
-            BrokenPoTokenRuntimeException(failure.message ?: "BotGuard JS failed")
+            BrokenPoTokenRuntimeException("BotGuard interpreter rejected its program")
         } else {
-            failure as? Exception ?: PoTokenMintException("BotGuard mint failed", failure)
+            PoTokenMintException("BotGuard minting failed")
         }
 
     companion object {
