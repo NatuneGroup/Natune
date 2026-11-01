@@ -56,6 +56,7 @@ import moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.ui.host.CatalogPageOwners
+import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
@@ -232,7 +233,7 @@ class DesktopSessionGraph internal constructor(
     }.getOrNull()
 
     /** The one sleep timer of this process. It only pauses [player], so every window shares it. */
-    internal val sleepTimer = DesktopSleepTimer(this)
+    internal val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause) { System.currentTimeMillis() }
 
     /**
      * The one equalizer of this process. Its bands reach the engine through [playback], and its levels are saved in

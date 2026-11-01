@@ -279,9 +279,10 @@ class IosHost {
         next: () -> Unit,
         previous: () -> Unit,
         metadataChanges: kotlinx.coroutines.flow.Flow<*>? = null,
+        commandAvailability: kotlinx.coroutines.flow.Flow<IosTransportAvailability>? = null,
     ): IosNowPlaying {
         check(!closed && nowPlaying == null)
-        return IosNowPlaying(player, metadata, next, previous, metadataChanges).also { nowPlaying = it }
+        return IosNowPlaying(player, metadata, next, previous, metadataChanges, commandAvailability).also { nowPlaying = it }
     }
 
     /** Final process shutdown, called only by the Swift app session at willTerminate. Idempotent. */
@@ -432,6 +433,7 @@ class IosHost {
             metadataChanges = opening.queue.state,
             next = { opening.scope.launch { opening.skipNext() } },
             previous = { opening.scope.launch { opening.skipPrevious() } },
+            commandAvailability = opening.transportAvailability,
         )
         sessionState.value = IosSessionState.Ready(opening)
     }
