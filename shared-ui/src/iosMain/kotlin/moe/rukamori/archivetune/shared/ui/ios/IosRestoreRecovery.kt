@@ -12,8 +12,8 @@ import moe.rukamori.archivetune.shared.data.backup.RestoreTarget
 import moe.rukamori.archivetune.shared.data.backup.decodeRestoreResolution
 import moe.rukamori.archivetune.shared.data.backup.decideRestoreResolution
 import moe.rukamori.archivetune.shared.data.backup.encodeRestoreResolution
-import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSUUID
 
 /**
  * The file vocabulary and resolution actions of the restore recovery mode. Two markers carry the durable
@@ -50,11 +50,14 @@ internal object IosRestoreRecovery {
     fun isBlocked(instanceDirectory: String): Boolean = exists(blockedMarkerPath(instanceDirectory))
 
     /**
-     * Persists the blocked decision atomically. The file's presence is the marker and its content — the write
-     * instant — is the block's id, which every resolution journal records to bind itself to this block.
+     * Persists the blocked decision atomically. The file's presence is the marker and its content — a fresh
+     * UUID — is the block's id, which every resolution journal records to bind itself to this block. A marker
+     * already standing keeps its id: a retried or re-attempted block never orphans a journal mid-flight.
      */
     fun block(ops: RestoreFileOps, instanceDirectory: String) {
-        ops.writeAtomically(blockedMarkerPath(instanceDirectory), iosNowMillis().toString().encodeToByteArray())
+        val path = blockedMarkerPath(instanceDirectory)
+        if (ops.exists(path)) return
+        ops.writeAtomically(path, NSUUID().UUIDString.encodeToByteArray())
     }
 
     /** The resolution a kill left in flight, or null while none was chosen or the journal does not parse. */
@@ -128,11 +131,20 @@ internal object IosRestoreRecovery {
         val recorded = recordedResolution(ops, instanceDirectory)?.takeIf {
             it.blockToken != null && it.blockToken == blockToken
         }
+        // "Dead" is decided from the pinned manifest: at least one recorded file still waiting in the pinned
+        // source or already live keeps the recorded restore alive — a main file promoted and a WAL still in
+        // source is exactly that case. Main-file presence below only matters for a fresh pick.
+        val pinnedFilesPresent = recorded?.let { entry ->
+            entry.source?.let { dir ->
+                entry.files.any { exists("$dir/$it") || exists("$instanceDirectory/$it") }
+            }
+        } ?: false
         val step = decideRestoreResolution(
             RestoreResolutionFacts(
                 recorded = recorded,
                 chosen = resolution,
                 journalBound = recorded != null,
+                pinnedFilesPresent = pinnedFilesPresent,
                 originalsInPending = exists("$instanceDirectory/$PENDING_DIRECTORY/$PREVIOUS_DIRECTORY/$databaseFile"),
                 originalsInFailed = exists("$instanceDirectory/$FAILED_DIRECTORY/$PREVIOUS_DIRECTORY/$databaseFile"),
             ),

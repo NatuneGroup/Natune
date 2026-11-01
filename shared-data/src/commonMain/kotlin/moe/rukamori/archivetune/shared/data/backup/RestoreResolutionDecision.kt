@@ -92,14 +92,15 @@ fun decodeRestoreResolution(text: String): RestoreResolutionEntry? {
 
 /**
  * What the host gathers before touching a file: the journaled choice (if one survived a kill), whether that
- * journal still belongs to the block on disk, the user's fresh pick when there is none, and where original
- * files still sit — the failed set's `previous/` or the still-pending set's — so "restore previous" is only
- * promised when they exist.
+ * journal still belongs to the block on disk, the user's fresh pick when there is none, whether any file in
+ * the journal's pinned manifest survives — in the pinned source or already at its live slot — and where
+ * original main files still sit (the failed set's `previous/` or the still-pending set's) for a fresh pick.
  */
 data class RestoreResolutionFacts(
     val recorded: RestoreResolutionEntry?,
     val chosen: RestoreResolution,
     val journalBound: Boolean,
+    val pinnedFilesPresent: Boolean,
     val originalsInPending: Boolean,
     val originalsInFailed: Boolean,
 ) {
@@ -130,9 +131,12 @@ fun decideRestoreResolution(facts: RestoreResolutionFacts): RestoreResolutionSte
     if (recorded != null) {
         if (recorded.resolution == RestoreResolution.RESTORE_PREVIOUS &&
             facts.chosen == RestoreResolution.START_EMPTY &&
-            !facts.originalsAvailable
+            !facts.pinnedFilesPresent
         ) {
-            // The recorded restore has nothing left to put back; the user's empty start takes over.
+            // Only a manifest-wide loss makes the recorded restore dead: every pinned file absent from the
+            // pinned source AND its live slot. A single pinned file still in source — the WAL a kill left
+            // behind after the main file promoted — keeps the recorded choice alive, and "start empty"
+            // must not override it. No pinned manifest at all reads as dead too.
             return RestoreResolutionStep.RESOLVE_EMPTY
         }
         return when (recorded.resolution) {

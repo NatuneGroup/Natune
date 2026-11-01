@@ -17,12 +17,14 @@ class RestoreResolutionDecisionTest {
         resolution: RestoreResolution = RestoreResolution.START_EMPTY,
         recorded: RestoreResolutionEntry? = null,
         journalBound: Boolean = true,
+        pinnedFilesPresent: Boolean = false,
         originalsInPending: Boolean = false,
         originalsInFailed: Boolean = false,
     ) = RestoreResolutionFacts(
         recorded = recorded,
         chosen = resolution,
         journalBound = journalBound,
+        pinnedFilesPresent = pinnedFilesPresent,
         originalsInPending = originalsInPending,
         originalsInFailed = originalsInFailed,
     )
@@ -44,7 +46,7 @@ class RestoreResolutionDecisionTest {
                             source = "/instance/restore-failed/previous",
                             files = listOf("natune.db", "natune.db-wal"),
                         ),
-                        originalsInFailed = true,
+                        pinnedFilesPresent = true,
                     ),
                 ),
                 "recorded restore-previous at $stage",
@@ -109,6 +111,7 @@ class RestoreResolutionDecisionTest {
                         source = "/instance/restore-pending/previous",
                         files = listOf("natune.db"),
                     ),
+                    pinnedFilesPresent = true,
                 ),
             ),
         )
@@ -151,9 +154,33 @@ class RestoreResolutionDecisionTest {
     }
 
     @Test
+    fun walStillInSourceKeepsRecordedRestoreAlive() {
+        // The main file promoted and its WAL never did: the pinned manifest still has a file waiting in
+        // source, so the recorded restore is not dead — "start empty" must not override it — even though no
+        // kept set flags a main file anymore.
+        assertEquals(
+            RestoreResolutionStep.RESOLVE_PREVIOUS,
+            decideRestoreResolution(
+                facts(
+                    resolution = RestoreResolution.START_EMPTY,
+                    recorded = RestoreResolutionEntry(
+                        RestoreResolution.RESTORE_PREVIOUS,
+                        RestoreResolutionStage.RESTORING,
+                        blockToken = "block-1",
+                        source = "/instance/restore-failed/previous",
+                        files = listOf("natune.db", "natune.db-wal"),
+                    ),
+                    pinnedFilesPresent = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun deadRecordedRestoreYieldsToStartEmpty() {
-        // The only exception to recorded-wins: a journaled restore-previous whose originals are all gone can
-        // never finish, so an explicit "start empty" pick takes over instead of blocking forever.
+        // The only exception to recorded-wins: a journaled restore-previous whose pinned manifest is entirely
+        // gone — nothing left in source, nothing live — can never finish, so an explicit "start empty" pick
+        // takes over instead of blocking forever.
         assertEquals(
             RestoreResolutionStep.RESOLVE_EMPTY,
             decideRestoreResolution(
