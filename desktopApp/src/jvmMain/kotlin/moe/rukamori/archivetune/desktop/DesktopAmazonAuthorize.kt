@@ -25,7 +25,10 @@ internal sealed interface AmazonAuthorizeOutcome {
     data class Authorized(val expiresAtMs: Long) : AmazonAuthorizeOutcome
     data object Cancelled : AmazonAuthorizeOutcome
 
-    /** This build carries no Turnstile sitekey, so no challenge page is loaded and no request is sent. */
+    /**
+     * This build carries no Turnstile sitekey or no valid origin for it, so no challenge page is loaded and no request
+     * is sent.
+     */
     data object NotConfigured : AmazonAuthorizeOutcome
 
     /** The settings page already refuses the row without an instance; this is the same refusal behind the window. */
@@ -50,25 +53,27 @@ internal sealed interface AmazonChallengeReport {
  * The Cloudflare Turnstile page the authorization window runs. Android loads the same widget into its WebView with
  * `loadDataWithBaseURL(monochrome.tf)`, because the sitekey is domain-locked to that origin and a challenge from any
  * other origin is refused by Cloudflare. The desktop window therefore loads this document *as* the sign-in origin (the
- * native `openHtml`), and the page reports back by navigating to [RESULT_PREFIX], which the native side cancels after
+ * native `openHtml`), and the page reports back by navigating to [resultPrefix], which the native side cancels after
  * delivering the URL — the same intercept the OAuth capture prefix uses, and the token never enters a page title.
  *
  * Only the widget result crosses: a token, or a short reason. No cookie and no other page value is read.
  */
 internal object AmazonTurnstileChallenge {
-    /** The origin the sitekey is registered for. The same value the exchange request sends as its Origin header. */
-    const val DOCUMENT_URL = "https://monochrome.tf/"
+    /** The document the window loads: the root of the sign-in origin the build names, which the sitekey is locked to. */
+    fun documentUrl(origin: String): String = "$origin/"
 
-    /** The navigation the page uses to answer. Inside [DOCUMENT_URL]'s origin, so the window may navigate to it. */
-    const val RESULT_PREFIX = "https://monochrome.tf/turnstile-result"
+    /** The navigation the page uses to answer. Inside the sign-in origin, so the window may navigate to it. */
+    fun resultPrefix(origin: String): String = "$origin/turnstile-result"
 
     /** Cloudflare renders the widget in a frame from this origin, so the frame's response must be allowed too. */
     const val CHALLENGE_FRAME_ORIGIN = "https://challenges.cloudflare.com:443"
 
-    /** The canonical document origin the native policy compares by exact match. */
-    const val DOCUMENT_ORIGIN = "https://monochrome.tf:443"
-
-    val ORIGINS: List<String> = listOf(DOCUMENT_ORIGIN, CHALLENGE_FRAME_ORIGIN)
+    /** The canonical origins the native policy matches exactly: the sign-in origin with its port, then the frame. */
+    fun origins(origin: String): Array<String> {
+        val hostAndPort = origin.removePrefix("https://")
+        val documentOrigin = if (':' in hostAndPort) "https://$hostAndPort" else "https://$hostAndPort:443"
+        return arrayOf(documentOrigin, CHALLENGE_FRAME_ORIGIN)
+    }
 
     /** A Turnstile token is a few kilobytes; anything longer is not one and is refused before it is used. */
     const val MAX_TOKEN_LENGTH = 4096
@@ -81,9 +86,10 @@ internal object AmazonTurnstileChallenge {
      * The challenge page. A hidden interaction-only widget is tried first, exactly as the Android screen does, and a
      * failure escalates once to the visible widget the user can act on. [checking] is the host's status line.
      */
-    fun page(sitekey: String, checking: String): String {
+    fun page(sitekey: String, checking: String, resultPrefix: String): String {
         val status = jsString(checking)
         val site = jsString(sitekey)
+        val prefix = jsString(resultPrefix)
         return """
             <!DOCTYPE html>
             <html>
@@ -101,7 +107,7 @@ internal object AmazonTurnstileChallenge {
               <div id="cf"></div>
               <div id="msg"></div>
               <script>
-                var prefix = '$RESULT_PREFIX';
+                var prefix = $prefix;
                 var attempts = 0;
                 var usedVisible = false;
                 var settled = false;
@@ -154,9 +160,9 @@ internal object AmazonTurnstileChallenge {
      * Reads a reported result URL. A token must look like one and stay inside the length bound, so a page cannot hand
      * the exchange a header or a body fragment; a reason is bounded and reduced to characters a log line can hold.
      */
-    fun parse(url: String): AmazonChallengeReport {
-        if (!url.startsWith(RESULT_PREFIX + "?")) return AmazonChallengeReport.Ignored
-        val query = url.substring(RESULT_PREFIX.length + 1)
+    fun parse(url: String, resultPrefix: String): AmazonChallengeReport {
+        if (!url.startsWith(resultPrefix + "?")) return AmazonChallengeReport.Ignored
+        val query = url.substring(resultPrefix.length + 1)
         val fields = query.split('&').mapNotNull { part ->
             val index = part.indexOf('=')
             if (index <= 0) null else decode(part.substring(0, index)) to decode(part.substring(index + 1))
@@ -217,11 +223,13 @@ internal class DesktopAmazonAuthorize(
             // The sitekey is a build-time value, so a build without it has no challenge to run and loads nothing.
             val sitekey = DesktopCredentials.value(TURNSTILE_SITEKEY_NAME).trim()
             if (sitekey.isEmpty()) return AmazonAuthorizeOutcome.NotConfigured
+            // The origin is paired with the sitekey; without a valid one the challenge is refused, so nothing loads.
+            val origin = DesktopCredentials.amazonTurnstileOrigin ?: return AmazonAuthorizeOutcome.NotConfigured
             val snapshot = graph.settings.snapshots.value ?: return AmazonAuthorizeOutcome.Failed("settings-unavailable")
             val instance = snapshot.amazonInstanceList().firstOrNull() ?: return AmazonAuthorizeOutcome.NoInstance
             val operatorToken = snapshot[AmazonBypassTokenKey, ""].trim().ifBlank { null }
-            val sink = ChallengeSink()
-            handle = openChallenge(sink, sitekey)
+            val sink = ChallengeSink(AmazonTurnstileChallenge.resultPrefix(origin))
+            handle = openChallenge(sink, sitekey, origin)
             if (handle == 0L) return AmazonAuthorizeOutcome.Failed("browser-unavailable")
             val report = withTimeoutOrNull(CHALLENGE_TIMEOUT_MS) { sink.result.await() }
                 ?: return AmazonAuthorizeOutcome.Failed("challenge-timeout")
@@ -235,7 +243,7 @@ internal class DesktopAmazonAuthorize(
                 AmazonChallengeReport.Ignored -> return AmazonAuthorizeOutcome.Failed("challenge-unreported")
             }
             val jwt = try {
-                KtorAmazonAuthorization(graph.http, instance).exchangeTurnstile(token, operatorToken)
+                KtorAmazonAuthorization(graph.http, instance, origin).exchangeTurnstile(token, operatorToken)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -263,18 +271,19 @@ internal class DesktopAmazonAuthorize(
      * The window opens on the IO dispatcher because the native open waits for the browser owner, and it is not
      * cancellable so a cancelled caller still learns the handle it has to close.
      */
-    private suspend fun openChallenge(sink: ChallengeSink, sitekey: String): Long {
-        val page = AmazonTurnstileChallenge.page(sitekey, DesktopStrings["amazon_challenge_checking"])
+    private suspend fun openChallenge(sink: ChallengeSink, sitekey: String, origin: String): Long {
+        val resultPrefix = AmazonTurnstileChallenge.resultPrefix(origin)
+        val page = AmazonTurnstileChallenge.page(sitekey, DesktopStrings["amazon_challenge_checking"], resultPrefix)
         return withContext(Dispatchers.IO + NonCancellable) {
             try {
                 NativeCookieBrowser.ensureLoaded()
                 NativeCookieBrowser.openHtml(
-                    documentUrl = AmazonTurnstileChallenge.DOCUMENT_URL,
+                    documentUrl = AmazonTurnstileChallenge.documentUrl(origin),
                     html = page,
-                    origins = AmazonTurnstileChallenge.ORIGINS.toTypedArray(),
+                    origins = AmazonTurnstileChallenge.origins(origin),
                     title = DesktopStrings["amazon_challenge_title"],
                     doneLabel = DesktopStrings["close"],
-                    capturePrefix = AmazonTurnstileChallenge.RESULT_PREFIX,
+                    capturePrefix = resultPrefix,
                     listener = NativeCookieBrowserListener(sink),
                 )
             } catch (_: LinkageError) {
@@ -284,7 +293,7 @@ internal class DesktopAmazonAuthorize(
     }
 
     /** The window's events. The first report wins; a later one changes nothing. */
-    private class ChallengeSink : NativeCookieBrowserSink {
+    private class ChallengeSink(private val resultPrefix: String) : NativeCookieBrowserSink {
         val result = CompletableDeferred<AmazonChallengeReport>()
 
         override fun onFinish() {
@@ -298,7 +307,7 @@ internal class DesktopAmazonAuthorize(
         }
 
         override fun onNavigate(url: String) {
-            when (val report = AmazonTurnstileChallenge.parse(url)) {
+            when (val report = AmazonTurnstileChallenge.parse(url, resultPrefix)) {
                 AmazonChallengeReport.Ignored -> Unit
                 else -> result.complete(report)
             }
