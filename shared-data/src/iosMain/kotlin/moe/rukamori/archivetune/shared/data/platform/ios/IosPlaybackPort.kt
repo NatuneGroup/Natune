@@ -79,11 +79,44 @@ class IosPlaybackPort : PlaybackPort {
     override val snapshots: StateFlow<PlaybackSnapshot?> = state.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = errors.asSharedFlow()
 
+    /**
+     * Every command the loop accepted, with its origin and a monotonic id, in submit order. The
+     * handoff is an unbounded channel: accepting a command can never block on a slow consumer, and
+     * no listener intent is ever dropped. There is one consumer, the output-mute policy.
+     */
+    private val commandEventChannel = Channel<PlaybackCommandEvent>(Channel.UNLIMITED)
+    val commandEvents: Flow<PlaybackCommandEvent> = commandEventChannel.receiveAsFlow()
+    private var commandSequence = 0L
+
+    /**
+     * How many USER Pause/Stop/Play/Load commands the loop has dispatched. A policy submit tags the
+     * count it observed, and the loop drops it when the count has moved — so a policy command can
+     * never apply over a user command that was queued first.
+     */
+    val userIntentGeneration: Long get() = intentGeneration
+    private var intentGeneration = 0L
+
     init {
         scope.launch {
             for (item in inbox) {
                 when (item) {
-                    is Inbound.Command -> apply(item.command)
+                    is Inbound.Command -> {
+                        // A policy command whose tagged intent generation is stale: the listener
+                        // queued a Pause, Stop, Play or Load ahead of it, so it must not apply.
+                        val stalePolicy = item.origin == PlaybackCommandOrigin.POLICY &&
+                            outputMuteIntentIsStale(item.intentGeneration, intentGeneration)
+                        if (!stalePolicy) {
+                            if (item.origin == PlaybackCommandOrigin.USER && tracksUserIntent(item.command)) {
+                                intentGeneration++
+                            }
+                            // The notice carries the generation as it stands after this dispatch:
+                            // a policy tags its commands with the newest USER generation it has seen.
+                            commandEventChannel.trySend(
+                                PlaybackCommandEvent(item.command, item.origin, ++commandSequence, intentGeneration),
+                            )
+                            apply(item.command)
+                        }
+                    }
                     is Inbound.Prepare -> beginPreparation(item)
                     is Inbound.Prepared -> applyPrepared(item)
                     is Inbound.TelegramResolved -> applyTelegram(item)
@@ -102,10 +135,30 @@ class IosPlaybackPort : PlaybackPort {
         }
     }
 
-    override fun submit(command: PlaybackCommand) {
+    override fun submit(command: PlaybackCommand) =
+        submit(command, PlaybackCommandOrigin.USER, intentGeneration)
+
+    /**
+     * A session policy's tagged submit: [observedIntentGeneration] is the USER intent count the
+     * policy reduced against, and the loop drops the command when the count has moved — so the
+     * policy's own pause and play never read as manual intent on [commandEvents] and never apply
+     * over a user command that was queued first.
+     */
+    fun submitPolicy(command: PlaybackCommand, observedIntentGeneration: Long) =
+        submit(command, PlaybackCommandOrigin.POLICY, observedIntentGeneration)
+
+    private fun submit(command: PlaybackCommand, origin: PlaybackCommandOrigin, intentGeneration: Long) {
         val occurrence = (command as? PlaybackCommand.Load)?.request?.occurrenceId ?: state.value?.occurrenceId
         val attempt = if (command is PlaybackCommand.Load) command.request.attemptId else request?.attemptId
-        enqueue(Inbound.Command(command), occurrence, attempt)
+        enqueue(Inbound.Command(command, origin, intentGeneration), occurrence, attempt)
+    }
+
+    /** Commands that change what the listener asked the engine to do: pause, stop, play, load. */
+    private fun tracksUserIntent(command: PlaybackCommand): Boolean = when (command) {
+        is PlaybackCommand.Load,
+        PlaybackCommand.Play, PlaybackCommand.Pause, PlaybackCommand.Stop,
+        -> true
+        is PlaybackCommand.SeekTo, is PlaybackCommand.SetSpeed, is PlaybackCommand.SetPitch -> false
     }
 
     /**
@@ -775,7 +828,11 @@ class IosPlaybackPort : PlaybackPort {
 
     /** Work for the one command loop, which runs it in arrival order: a command, a preparation to start, or its result. */
     private sealed interface Inbound {
-        class Command(val command: PlaybackCommand) : Inbound
+        class Command(
+            val command: PlaybackCommand,
+            val origin: PlaybackCommandOrigin,
+            val intentGeneration: Long,
+        ) : Inbound
 
         class Prepare(
             val occurrenceId: String,
