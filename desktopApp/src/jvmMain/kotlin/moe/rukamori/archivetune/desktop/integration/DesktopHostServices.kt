@@ -13,16 +13,21 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.linux.LinuxSystemIntegration
 import moe.rukamori.archivetune.desktop.integration.linux.LinuxWindowVisibility
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 
 /** The real host binding: borrows (never creates/closes) the app's one player/queue owner. */
 class DesktopHostServices(
     private val window: Window,
     controller: MusicPlayerController,
     metadata: StateFlow<DesktopMediaMetadata?>,
+    transport: StateFlow<DesktopTransportState>,
     scope: CoroutineScope,
     dispatchToOwner: (() -> Unit) -> Unit,
     next: () -> Unit,
     previous: () -> Unit,
+    setShuffle: (Boolean) -> Unit,
+    setRepeat: (QueueRepeatMode) -> Unit,
+    setVolume: (Float) -> Unit,
     openUri: (String) -> Unit,
     quit: () -> Unit,
     private val reportUnavailable: (String) -> Unit,
@@ -30,7 +35,7 @@ class DesktopHostServices(
     val windowActivity = DesktopWindowActivityObserver(window)
     val filePickers = DesktopFilePickers(window)
     private val controls = DesktopMediaControls({ controller.snapshot.value }, dispatchToOwner) {
-        controller.consumeDesktopTransport(it, next, previous)
+        controller.consumeDesktopTransport(it, next, previous, setShuffle, setRepeat, setVolume)
     }
     @Volatile private var integration: DesktopSystemIntegration? = null
     private val visibility: AutoCloseable?
@@ -68,8 +73,8 @@ class DesktopHostServices(
             reportUnavailable("X11 visibility: ${error.javaClass.simpleName}"); null
         } else null
         collector = scope.launch {
-            combine(controller.snapshot, metadata) { snapshot, display -> snapshot to display }.collect { (snapshot, display) ->
-                try { integration?.update(snapshot, display) }
+            combine(controller.snapshot, metadata, transport, ::Triple).collect { (snapshot, display, state) ->
+                try { integration?.update(snapshot, display, state) }
                 catch (error: Exception) { reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}") }
             }
         }

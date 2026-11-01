@@ -83,7 +83,7 @@ class NativeSystemIntegration(
     }
     fun onActivity(occluded: Boolean, resumed: Boolean) = activity(occluded, resumed)
     @get:Synchronized override val trayAvailable: Boolean get() = handle != 0L && NativeDesktopBridge.trayAvailable(handle)
-    @Synchronized override fun update(snapshot: PlaybackSnapshot?, metadata: DesktopMediaMetadata?) {
+    @Synchronized override fun update(snapshot: PlaybackSnapshot?, metadata: DesktopMediaMetadata?, transport: DesktopTransportState) {
         if (handle == 0L) return
         val safe = metadata?.takeIf { it.occurrenceId == snapshot?.occurrenceId }
         fun micros(ms: Long) = ms.coerceIn(0, Long.MAX_VALUE / 10_000) * 1000

@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.backup.DesktopBackup
 import moe.rukamori.archivetune.shared.data.playlistimport.PlaylistImportOwner
 import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImportSearch
+import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
@@ -265,9 +266,16 @@ internal suspend fun assembleDesktopSessionOwners(
             desktopDiagnostic("download reconciliation failed: ${failure.javaClass.simpleName}")
         }
     }
-    val metadata = combine(queue.state, player.snapshot) { state, snapshot ->
-        state.metadataFor(snapshot?.occurrenceId, repeatModeOf(vault.snapshots.value))
+    val metadata = combine(queue.state, player.snapshot, vault.snapshots) { state, snapshot, preferences ->
+        state.metadataFor(snapshot?.occurrenceId, repeatModeOf(preferences))
     }.stateIn(scope, SharingStarted.Eagerly, null)
+    val transport = combine(queue.state, vault.snapshots) { state, preferences ->
+        DesktopTransportState(
+            shuffleEnabled = state.shuffleEnabled,
+            repeat = repeatModeOf(preferences),
+            volume = preferences?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f,
+        )
+    }.stateIn(scope, SharingStarted.Eagerly, DesktopTransportState())
     val listenDriver = ListenHistoryDriver(
         scope = scope,
         player = player,
@@ -478,6 +486,7 @@ internal suspend fun assembleDesktopSessionOwners(
         queue = queue,
         radio = DesktopRadioOwner(owner),
         metadata = metadata,
+        transport = transport,
         textOrder = textOrder,
         libraryContent = libraryContent,
         owner = owner,

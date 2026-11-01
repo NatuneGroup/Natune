@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.backup.DesktopBackup
 import moe.rukamori.archivetune.desktop.backup.DesktopPendingRestore
 import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
+import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
@@ -102,6 +103,8 @@ class DesktopSessionGraph internal constructor(
     internal val radio: DesktopRadioOwner,
     /** Lifetime-bound projection of the queue and the player for the OS media controls. Never a second queue. */
     val metadata: StateFlow<DesktopMediaMetadata?>,
+    /** Shuffle, repeat and output volume for the OS media controls; unlike [metadata] it is not track-scoped. */
+    val transport: StateFlow<DesktopTransportState>,
     /** The one device collator every sorted list of this host uses, so one artist never splits into two groups. */
     val textOrder: Comparator<String>,
     /** The one owner of the Library sections and playlist orders, read through [settings] and [library]. */
