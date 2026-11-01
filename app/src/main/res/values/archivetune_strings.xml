@@ -12,6 +12,7 @@
     <string name="startup_report_attempt">Recorded process start: %1$s at %2$s (PID %3$s)</string>
     <string name="startup_incomplete_explanation">The previous process ended before startup was marked healthy. A crash, force-stop, restart, or memory pressure can cause this. Safe mode has skipped normal initialization. Copy or share the report, then use Continue normally to retry. This screen does not reset app data.</string>
     <string name="startup_previous_exit_explanation">Android or the local crash recorder retained a previous process failure. Normal initialization is paused while you review this report. Continue normally opens the app; this screen does not reset app data.</string>
+    <string name="startup_outdated_attempt_explanation">The recorded process start belongs to an app version that has since been replaced. It is kept for diagnosis only and cannot put this build into safe mode. Continue normally opens the app; this screen does not reset app data.</string>
     <string name="startup_report_java">Saved Java exception: %1$s\nThread: %2$s</string>
     <string name="startup_report_no_java">No saved Java stack trace. Native crashes and deaths before application attachment may not run a Java exception handler.</string>
     <string name="startup_report_exit">Android exit: %1$s\nReason: %2$s\nPID: %3$s; status or signal: %4$s</string>
