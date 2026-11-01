@@ -39,6 +39,10 @@ private const val VOLUME_POLL_MS = 1_000L
  */
 private sealed interface OutputMuteSignal {
     data class Event(val event: OutputMuteEvent) : OutputMuteSignal
+    /** A USER command notice and the intent generation it carried; the actor adopts it at process
+     * time so a queued signal cannot see a generation that has not reduced yet. */
+    data class UserCommand(val use: OutputMuteCommandUse, val generation: Long) : OutputMuteSignal
+    /** An option turned on while playback is wanted resolves like a play edge, without intent. */
     data object ManualPlayRequest : OutputMuteSignal
 }
 
@@ -82,8 +86,9 @@ internal class IosOutputMutePolicy(
     private var lastPlaying = false
     private var lastEnded = false
 
-    // The intent generation of the newest USER command notice this policy has processed; every
+    // The intent generation of the newest USER command notice the actor has processed; every
     // POLICY submit tags it, so a user command still in flight makes the submit stale, not fresh.
+    // Actor-owned: it is read and written only inside the actor coroutine.
     private var observedGeneration = port.userIntentGeneration
 
     private var closed = false
@@ -94,15 +99,18 @@ internal class IosOutputMutePolicy(
             if (closed) break
             val event = when (signal) {
                 is OutputMuteSignal.Event -> signal.event
-                OutputMuteSignal.ManualPlayRequest -> {
-                    val freshSystemVolume = AVAudioSession.sharedInstance().outputVolume
-                    systemVolume.value = freshSystemVolume
-                    OutputMuteEvent.ManualPlay(
-                        freshMuted = enabled && (freshSystemVolume <= 0f || appVolume <= 0f),
-                        volumeRestoreAvailable = recoveryVolume > 0f && freshSystemVolume > 0f,
-                    )
+                is OutputMuteSignal.UserCommand -> {
+                    observedGeneration = signal.generation
+                    when (signal.use) {
+                        OutputMuteCommandUse.MANUAL_PAUSE -> OutputMuteEvent.ManualPause
+                        OutputMuteCommandUse.MANUAL_STOP -> OutputMuteEvent.ManualStop
+                        OutputMuteCommandUse.RESOLVE_PLAY -> manualPlay()
+                        OutputMuteCommandUse.IGNORED -> null
+                    }
                 }
+                OutputMuteSignal.ManualPlayRequest -> manualPlay()
             }
+            if (event == null) continue
             val (next, action) = reduceOutputMute(state.value, event)
             state.value = next
             when (action) {
@@ -127,14 +135,9 @@ internal class IosOutputMutePolicy(
     // USER commands are the listener; the policy's own POLICY submissions never reduce.
     private val commandJob = scope.launch {
         port.commandEvents.collect { notice ->
-            if (notice.origin == PlaybackCommandOrigin.USER) observedGeneration = notice.intentGeneration
-            when (outputMuteCommandUse(notice.command, notice.origin)) {
-                OutputMuteCommandUse.MANUAL_PAUSE ->
-                    signals.send(OutputMuteSignal.Event(OutputMuteEvent.ManualPause))
-                OutputMuteCommandUse.MANUAL_STOP ->
-                    signals.send(OutputMuteSignal.Event(OutputMuteEvent.ManualStop))
-                OutputMuteCommandUse.RESOLVE_PLAY -> signals.send(OutputMuteSignal.ManualPlayRequest)
-                OutputMuteCommandUse.IGNORED -> Unit
+            val use = outputMuteCommandUse(notice.command, notice.origin)
+            if (use != OutputMuteCommandUse.IGNORED) {
+                signals.send(OutputMuteSignal.UserCommand(use, notice.intentGeneration))
             }
         }
     }
@@ -201,6 +204,16 @@ internal class IosOutputMutePolicy(
             volumePoll?.cancel()
             volumePoll = null
         }
+    }
+
+    /** The ManualPlay a play-resolution signal carries, muted on the actor's own fresh read. */
+    private fun manualPlay(): OutputMuteEvent.ManualPlay {
+        val freshSystemVolume = AVAudioSession.sharedInstance().outputVolume
+        systemVolume.value = freshSystemVolume
+        return OutputMuteEvent.ManualPlay(
+            freshMuted = enabled && (freshSystemVolume <= 0f || appVolume <= 0f),
+            volumeRestoreAvailable = recoveryVolume > 0f && freshSystemVolume > 0f,
+        )
     }
 
     /** Whether the output counts as muted under the option right now: either level at zero. */

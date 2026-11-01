@@ -155,6 +155,26 @@ class OutputMuteReducerTest {
     }
 
     @Test
+    fun queuedUnmuteBehindAUserPauseTagsTheStaleGeneration() {
+        // Actor queue: [VolumeSample(unmuted), UserCommand(gen = 1)] with observedGeneration = 0.
+        var portGeneration = 0L
+        var observedGeneration = portGeneration
+        // The USER pause dispatches: the port count moves to 1 while its notice sits in the queue.
+        portGeneration++
+        // The actor reaches the older sample first: RESUME reduces, but it tags the generation the
+        // policy actually processed — zero — so the port drops the POLICY Play over the pause.
+        val (afterSample, resumeAction) = reduceOutputMute(mutePaused, OutputMuteEvent.VolumeSample(muted = false))
+        assertEquals(OutputMuteAction.RESUME, resumeAction)
+        assertEquals(true, outputMuteIntentIsStale(observedGeneration, portGeneration))
+        // The notice follows in order: the actor adopts its generation before reducing it.
+        observedGeneration = 1L
+        val (afterPause, pauseAction) = reduceOutputMute(afterSample, OutputMuteEvent.ManualPause)
+        assertEquals(OutputMuteState(pending = false, polling = false), afterPause)
+        assertEquals(OutputMuteAction.NONE, pauseAction)
+        assertEquals(false, outputMuteIntentIsStale(observedGeneration, portGeneration))
+    }
+
+    @Test
     fun manualPlayWhileMutedRestoresTheAppLevelWhenPossible() {
         val (next, action) = reduceOutputMute(idle, OutputMuteEvent.ManualPlay(freshMuted = true, volumeRestoreAvailable = true))
         assertEquals(OutputMuteState(pending = false, polling = true), next)
