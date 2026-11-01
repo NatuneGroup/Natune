@@ -98,9 +98,15 @@ class TempoPitchPresetsTest {
         val added = upsertTempoPitchPreset(emptyList(), nightcore)
         assertEquals(listOf(nightcore), added)
         val updated = nightcore.copy(name = "Renamed", speed = 1.4f)
-        assertEquals(listOf(nightcore, slow), upsertTempoPitchPreset(listOf(nightcore, slow), nightcore.copy(name = "Other")))
+        assertEquals(
+            listOf(nightcore.copy(name = "Other"), slow),
+            upsertTempoPitchPreset(listOf(nightcore, slow), nightcore.copy(name = "Other")),
+        )
         assertEquals(listOf(updated, slow), upsertTempoPitchPreset(listOf(nightcore, slow), updated))
-        assertEquals(listOf(nightcore, slow), upsertTempoPitchPreset(listOf(nightcore, slow), slow.copy(id = "p9")))
+        assertEquals(
+            listOf(nightcore, slow, slow.copy(id = "p9")),
+            upsertTempoPitchPreset(listOf(nightcore, slow), slow.copy(id = "p9")),
+        )
     }
 
     @Test
