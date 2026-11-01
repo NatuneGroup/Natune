@@ -142,6 +142,8 @@ internal class IosSessionGraph private constructor(
     val customArtwork: FileCustomArtworkRepository,
     val playbackPool: IosPlaybackPool,
     val artworkLoader: IosArtworkLoader,
+    /** The on-disk canvas frame store the canvas owner and the canvas cache settings share. */
+    val canvasStore: IosCanvasCacheStore,
     /** The room, chat and settings owner over the one Listen Together engine, started and closed with the graph. */
     val listenTogether: IosListenTogetherOwner,
     /** The YouTube Music uploads owner: picker transfers over its own client, closed with the graph. */
