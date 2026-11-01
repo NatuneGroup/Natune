@@ -91,7 +91,9 @@ internal class AuthPopupWebChromeClient(
                 ),
             )
         }
-        return false
+        // Always consumed: returning false lets Chromium echo the raw message and its source URL
+        // to logcat, outside every redaction boundary.
+        return true
     }
 
     /**
