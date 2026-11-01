@@ -53,7 +53,7 @@ import moe.rukamori.archivetune.shared.ui.screens.YouTubeLoginStatus
 import moe.rukamori.archivetune.shared.ui.screens.YouTubeLoginUi
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import org.jetbrains.compose.resources.stringResource
-import platform.Foundation.NSLocale
+import platform.Foundation.*
 
 private const val YOUTUBE_ACCOUNT_PROVIDER = "youtube"
 private const val YOUTUBE_ACCOUNT_LOGIN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com"
@@ -202,9 +202,11 @@ internal class IosYouTubeAccountOwner(
     /** The account calls send the platform's own region and language, as the desktop host sends its default locale. */
     private fun accountLocale(): YouTubeAccountLocale {
         val locale = NSLocale.currentLocale
+        val region = locale.countryCode?.uppercase()?.takeIf { it.length == 2 }
+        val language = locale.languageCode.ifBlank { "en" }
         return YouTubeAccountLocale(
-            region = locale.countryCode?.uppercase()?.takeIf { it.length == 2 } ?: "US",
-            language = locale.localeIdentifier.substringBefore('@').replace('_', '-').ifBlank { "en" },
+            region = region ?: "US",
+            language = if (region == null) language else "$language-$region",
         )
     }
 }
