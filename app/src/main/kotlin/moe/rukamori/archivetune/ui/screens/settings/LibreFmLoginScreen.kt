@@ -14,7 +14,6 @@ import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.net.Uri
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,13 +37,12 @@ import moe.rukamori.archivetune.lastfm.LastFM
 import moe.rukamori.archivetune.lastfm.LastFmAppCredentials
 import moe.rukamori.archivetune.lastfm.models.Authentication
 import moe.rukamori.archivetune.scrobbling.lastFmSignInKeys
+import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
-import android.webkit.HttpAuthHandler
-import moe.rukamori.archivetune.utils.AppProxy
 
 const val LASTFM_LIBREFM_LOGIN_ROUTE = "settings/lastfm/librefm-login"
 
@@ -145,21 +143,12 @@ fun LibreFmLoginScreen(navController: NavController) {
 
     AuthWebViewScreen(
         navController = navController,
+        provider = "librefm",
         title = stringResource(R.string.lastfm_connect_librefm_button),
         subtitle = stringResource(R.string.auth_webview_librefm_subtitle),
         factory = { ctx ->
             createAuthWebView(ctx).apply {
-                webViewClient = object : WebViewClient() {
-                    override fun onReceivedHttpAuthRequest(
-                        view: WebView?,
-                        handler: HttpAuthHandler?,
-                        host: String?,
-                        realm: String?,
-                    ) {
-                        if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
-                        super.onReceivedHttpAuthRequest(view, handler, host, realm)
-                    }
-
+                webViewClient = object : AuthSignInWebViewClient("librefm", setOf("libre.fm")) {
                     override fun onPageStarted(
                         view: WebView,
                         url: String?,
