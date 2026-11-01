@@ -73,13 +73,21 @@ fun PreferenceSnapshot.spotifyStreamEngineEffective(): SpotifyStreamEngine {
 fun PreferenceSnapshot.spotifyStreamSessionPresent(engine: SpotifyStreamEngine): Boolean =
     streamSessionPresent({ this[it] }, engine)
 
+/**
+ * A Librespot session counts as present only while its OAuth refresh token is stored. The catalog
+ * sign-in remains the Premium gate and the metadata account, but it is not itself a streaming
+ * session: the engine plays through the OAuth grant, which signs in to the library account itself.
+ */
+fun PreferenceSnapshot.spotifyLibrespotSignedIn(): Boolean =
+    !this[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
+
 private fun streamSessionPresent(
     read: (StringPreferenceKey) -> String?,
     engine: SpotifyStreamEngine,
 ): Boolean =
     when (engine.streamAccountBinding()) {
         SpotifyStreamAccountBinding.DEDICATED -> !read(SpotifyStreamSpDcKey).isNullOrBlank()
-        SpotifyStreamAccountBinding.LIBRARY -> !read(SpotifySpDcKey).isNullOrBlank()
+        SpotifyStreamAccountBinding.LIBRARY -> !read(SpotifyLibrespotRefreshTokenKey).isNullOrBlank()
     }
 
 /**
@@ -110,6 +118,39 @@ fun PreferenceEditor.recordSpotifyLibraryProduct(productField: String?, checkedA
 fun PreferenceEditor.recordSpotifyStreamProduct(productField: String?, checkedAtMs: Long) {
     this[SpotifyStreamProductKey] = productField?.takeIf { it.isNotBlank() }
     this[SpotifyStreamProductCheckedAtKey] = checkedAtMs
+}
+
+/**
+ * Stores a completed Librespot OAuth grant. The refresh token is the session; the access token and
+ * its expiry are cached so the engine can start without a refresh round-trip.
+ */
+fun PreferenceEditor.setSpotifyLibrespotSession(
+    refreshToken: String,
+    accessToken: String,
+    accessTokenExpiresAtMs: Long,
+    userId: String,
+    accountName: String,
+) {
+    this[SpotifyLibrespotRefreshTokenKey] = refreshToken
+    this[SpotifyLibrespotAccessTokenKey] = accessToken
+    this[SpotifyLibrespotAccessTokenExpiresAtKey] = accessTokenExpiresAtMs
+    this[SpotifyLibrespotUserIdKey] = userId
+    this[SpotifyLibrespotAccountNameKey] = accountName
+}
+
+/**
+ * Forgets the Librespot OAuth grant in one edit and, like the dedicated sign-out, turns streaming
+ * off when the stored engine is the one that just lost its session.
+ */
+fun PreferenceEditor.clearSpotifyLibrespotSession() {
+    this[SpotifyLibrespotRefreshTokenKey] = null
+    this[SpotifyLibrespotAccessTokenKey] = null
+    this[SpotifyLibrespotAccessTokenExpiresAtKey] = null
+    this[SpotifyLibrespotUserIdKey] = null
+    this[SpotifyLibrespotAccountNameKey] = null
+    if (SpotifyStreamEngine.fromPreference(this[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT) {
+        this[SpotifyStreamEnabledKey] = false
+    }
 }
 
 fun PreferenceEditor.setSpotifyStreamResolveMethod(method: SpotifyStreamResolveMethod) {

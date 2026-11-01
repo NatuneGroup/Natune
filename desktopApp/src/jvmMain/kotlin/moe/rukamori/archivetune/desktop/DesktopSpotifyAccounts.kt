@@ -60,6 +60,7 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamUserIdKey
+import moe.rukamori.archivetune.shared.domain.settings.clearSpotifyLibrespotSession
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInDecision
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
@@ -467,6 +468,7 @@ internal class DesktopSpotifyAccounts(
                 this[SpotifyProductCheckedAtKey] = null
                 this[SpotifyLibraryPlaylistsCacheKey] = null
                 clearCatalogSnapshots()
+                clearSpotifyLibrespotSession()
             }
             Spotify.accessToken = null
             Spotify.forgetAccount()

@@ -11,7 +11,10 @@ signed in.
 
 The catalog integration (home, library, search, playlist import, history) signs in once and keeps
 its session in `SpotifySpDcKey` / `SpotifyAccessTokenKey`, with the global `Spotify.accessToken`.
-Streaming uses a **second** account:
+Streaming uses a **second** account when the Unofficial engine is selected. The engine choice lives
+in `SpotifyStreamEngineKey` (`SpotifyStreamEngine`): `UNOFFICIAL` (the original path, separate
+account) or `LIBRESPOT` (a librespot-protocol Connect client bound to the catalog account — the one
+exception to the two-accounts rule; see the Librespot section).
 
 | | Catalog | Streaming |
 |---|---|---|
@@ -47,7 +50,39 @@ Without multi-profile support the sheet falls back to the shared jar: it wipes i
 (the catalog sign-in does the same on every open) and wipes it again after capture, so the
 streaming session is not left behind for the next sign-in. Credentials only ever live in DataStore.
 
+## The Librespot engine (catalog account, Premium)
+
+`LIBRESPOT` is the second engine: a librespot-protocol client that registers as an ordinary Connect
+device on the **catalog** account — deliberately the same account, which is what makes it the
+lower-risk option. It requires Spotify Premium, which is checked at sign-in and re-checked on token
+refresh (`SpotifyPremiumPolicy`, 12 h observation cache).
+
+Sign-in is a registered OAuth authorization-code flow with PKCE (`spotify/SpotifyLibrespotAccount.kt`):
+
+- The client id is a build-time public value, `ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID` (`BuildConfig`;
+  legacy `SPOTIFY_CLIENT_ID` resolves too, see `docs/build-credentials.md`). No client secret exists
+  — PKCE proves the caller. A build without the id reports "not configured" and sends nothing.
+- The authorize URL (shared-domain `source/SpotifyLibrespotOAuth.kt`) goes to the system browser;
+  the redirect `natune://spotify-callback` lands in `SpotifyLibrespotCallbackActivity`, which emits
+  into `SpotifyLibrespotAuthCoordinator` for the settings screen to complete.
+- Acceptance is `SpotifyStreamingPolicy.decideLibrespotSignIn`: the authorized account must equal
+  the catalog sign-in (a `/v1/me` comparison — the inverse of the dedicated account's refusal) and
+  must read `product == "premium"`. A free plan or a different account is refused with its own
+  message and nothing is stored.
+- The grant persists as `spotify_librespot_*` keys (refresh token, cached access token + expiry,
+  user id, display name — the refresh token alone is the session). Signing out of the catalog or of
+  the Librespot session clears them, and turns streaming off while the stored engine is Librespot.
+- `SpotifyLibrespotAccount.accessToken()` is the hand-off the engine consumes as
+  `Credentials::with_access_token`: it returns the stored token while fresh and otherwise runs the
+  refresh grant (Spotify rotates refresh tokens; a new one replaces the stored one) and re-checks
+  the plan when the observation is stale. Null means no session — the caller treats it as signed out.
+
+The audio path itself (the librespot session and its byte stream) lands with the native bindings;
+until then the Librespot engine carries the sign-in and the credentials the session will need.
+
 ## Resolve methods
+
+These apply to the Unofficial engine; the Librespot engine resolves through its own session.
 
 `SpotifyStreamResolveMethodKey` (`SpotifyStreamResolveMethod`):
 

@@ -37,4 +37,6 @@
     <string name="m6_spotify_stream_error_catalog_unverifiable">The catalog account could not be checked, so it is not possible to confirm the two accounts are different. Try again when online.</string>
     <string name="m6_spotify_stream_error_session">Spotify did not accept this sign-in. Try signing in again.</string>
     <string name="m6_spotify_stream_error_profile">Spotify did not return the account profile. Try again later.</string>
+    <string name="m6_spotify_stream_error_different_account">Librespot streaming plays as the library account — authorize the same account the catalog is signed in with.</string>
+    <string name="m6_spotify_stream_error_not_premium">Librespot streaming requires Spotify Premium. This account is on the free plan.</string>
 </resources>

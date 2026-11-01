@@ -41,6 +41,7 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifyRecentlyPlayedCach
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyRecentlyPlayedCacheKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpKeyKey
+import moe.rukamori.archivetune.shared.domain.settings.clearSpotifyLibrespotSession
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyCatalogAccountState
 import moe.rukamori.archivetune.shared.ui.settings.preferredCookieValue
 
@@ -250,6 +251,7 @@ internal class IosSpotifyCatalogAccount(
                 this[SpotifyProductCheckedAtKey] = null
                 this[SpotifyLibraryPlaylistsCacheKey] = null
                 clearCatalogSnapshots()
+                clearSpotifyLibrespotSession()
             }
         }
         browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_CATALOG)
