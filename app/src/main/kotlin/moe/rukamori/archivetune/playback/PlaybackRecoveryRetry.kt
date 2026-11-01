@@ -1,10 +1,12 @@
 package moe.rukamori.archivetune.playback
 
+import android.os.SystemClock
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.ContentMetadata
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,6 +31,7 @@ internal class PlaybackRecoveryRetry(
     private val rebuffer: RebufferMonitor,
     private val playerCache: () -> Cache,
     private val backoff: PlaybackRetryBackoff = PlaybackRetryBackoff(),
+    private val nowMs: () -> Long = { SystemClock.elapsedRealtime() },
     private val fire: ((mediaId: String, resumePlaying: Boolean, seekIndex: Int, seekPositionMs: Long) -> Unit)? = null,
 ) {
     /** A bound reference cannot live in a constructor default, so the member lands here. */
@@ -41,10 +44,11 @@ internal class PlaybackRecoveryRetry(
     /**
      * Recovery-driven seeks whose position discontinuities have not been observed yet. ExoPlayer
      * delivers a seek's discontinuity after the call returns, so a plain flag cannot tell it from
-     * a user seek — the count can: the next [onSeek] per outstanding recovery seek is consumed
-     * here instead of tagging the monitor or cancelling the retry it belongs to.
+     * a user seek — the count can, but a seek the player ignores produces no discontinuity at
+     * all, so the marks also die at [recoverySeeksDeadlineMs] instead of standing forever.
      */
     private var recoverySeeksPending = 0
+    private var recoverySeeksDeadlineMs = Long.MIN_VALUE
 
     /**
      * True when this media item may still retry in place: the rebuffer freeze has not fired for
@@ -99,11 +103,20 @@ internal class PlaybackRecoveryRetry(
         seekPositionMs: Long,
         onFailure: ((Throwable) -> Unit)?,
     ) {
-        // The discontinuity the recovery seek produces arrives on this thread after the fire
-        // returns; tag it now so onSeek can tell it from a user seek.
-        if (seekIndex != C.INDEX_UNSET) recoverySeeksPending++
+        // The discontinuity a recovery seek produces arrives on this thread only after the fire
+        // returns; mark it, but bounded — a seek that never happens or is ignored must not keep
+        // the mark alive long enough to swallow a later user seek.
+        if (seekIndex != C.INDEX_UNSET) {
+            recoverySeeksPending++
+            recoverySeeksDeadlineMs = nowMs() + RECOVERY_SEEK_WINDOW_MS
+        }
         if (onFailure == null) {
-            fireImpl(mediaId, resumePlaying, seekIndex, seekPositionMs)
+            try {
+                fireImpl(mediaId, resumePlaying, seekIndex, seekPositionMs)
+            } catch (t: Throwable) {
+                if (seekIndex != C.INDEX_UNSET) recoverySeeksPending--
+                throw t
+            }
         } else {
             runCatching { fireImpl(mediaId, resumePlaying, seekIndex, seekPositionMs) }
                 .onFailure {
@@ -116,8 +129,20 @@ internal class PlaybackRecoveryRetry(
 
     private fun fireOnPlayer(mediaId: String, resumePlaying: Boolean, seekIndex: Int, seekPositionMs: Long) {
         val player = player()
-        if (player.currentMediaItem?.mediaId != mediaId) return
-        if (seekIndex != C.INDEX_UNSET) player.seekTo(seekIndex, seekPositionMs)
+        if (player.currentMediaItem?.mediaId != mediaId) {
+            // Never issued: no discontinuity will follow, so the mark must not stand.
+            if (seekIndex != C.INDEX_UNSET) recoverySeeksPending--
+            return
+        }
+        if (seekIndex != C.INDEX_UNSET) {
+            // Media3 silently ignores a seek whose index fell out of the timeline while the
+            // backoff ran — it produces no discontinuity, so it must not stay marked.
+            if (seekIndex in 0 until player.currentTimeline.windowCount) {
+                player.seekTo(seekIndex, seekPositionMs)
+            } else {
+                recoverySeeksPending--
+            }
+        }
         player.prepare()
         if (resumePlaying && player.playWhenReady) player.play()
     }
@@ -128,6 +153,7 @@ internal class PlaybackRecoveryRetry(
         pending?.cancel()
         pending = null
         recoverySeeksPending = 0
+        recoverySeeksDeadlineMs = Long.MIN_VALUE
     }
 
     /**
@@ -136,42 +162,50 @@ internal class PlaybackRecoveryRetry(
      * transition never leaves READY, so the monitor could not learn it from a state callback.
      */
     fun onMediaItemTransition(mediaId: String?, ready: Boolean = false, buffering: Boolean = false) {
+        // The outgoing item's streak is about to reset; retiring its partial player-cache spans
+        // is only safe once the player no longer holds it, which is exactly now.
+        val retiredMediaId =
+            rebuffer.currentMediaId()?.takeIf { it != mediaId && rebuffer.shouldStepDownQuality(it) }
         rebuffer.onMediaItemChanged(mediaId, ready, buffering)
         cancelPending()
+        if (retiredMediaId != null) {
+            scope().launch(Dispatchers.IO) { retirePartialPlayerCacheSpans(retiredMediaId) }
+        }
     }
 
     /** A seek is user intent catching up, not evidence against the link; it also supersedes retries. */
     fun onSeek() {
-        if (recoverySeeksPending > 0) {
+        // Consume the deferred discontinuity a recovery seek produced — but only while its mark
+        // is still fresh; an ignored or dropped seek must not swallow the next user seek forever.
+        if (recoverySeeksPending > 0 && nowMs() <= recoverySeeksDeadlineMs) {
             recoverySeeksPending--
             return
         }
+        recoverySeeksPending = 0
+        recoverySeeksDeadlineMs = Long.MIN_VALUE
         rebuffer.onSeek()
         cancelPending()
     }
 
-    /** Pausing ends a stall where it stands; resuming inside buffering opens a fresh timer. */
-    fun onPlayWhenReadyChanged(playWhenReady: Boolean) = rebuffer.onPlayWhenReadyChanged(playWhenReady)
+    /**
+     * Pausing ends a stall where it stands, and a deliberate pause supersedes a pending retry:
+     * it must not surprise-resume after the user asked for quiet.
+     */
+    fun onPlayWhenReadyChanged(playWhenReady: Boolean) {
+        if (!playWhenReady) cancelPending()
+        rebuffer.onPlayWhenReadyChanged(playWhenReady)
+    }
 
     /** The quality a (re-)resolve for [mediaId] asks for: the configured tier, or LOW once degraded. */
     fun audioQuality(mediaId: String, lowData: Boolean, configured: AudioQuality): AudioQuality =
-        if (lowData || !rebuffer.shouldStepDownQuality(mediaId)) {
-            if (lowData) AudioQuality.LOW else configured
-        } else {
-            retirePartialPlayerCacheSpans(mediaId)
-            AudioQuality.LOW
-        }
+        if (lowData || rebuffer.shouldStepDownQuality(mediaId)) AudioQuality.LOW else configured
 
     /**
-     * The LOW rendition reuses the same playback-cache key, so partial spans fetched under HIGH
-     * would mix with the replacement's LOW bytes. Retiring the partials here is safe while
-     * ExoPlayer may still hold a CacheDataSource on the key: SimpleCache.removeResource (via
-     * removeSpan) cannot remove a locked span — a span being written or read by the live source
-     * is skipped, never corrupted or yanked mid-read — so the unread tail is deleted now and any
-     * locked leftovers are retired on unlock or by ordinary LRU eviction. Only keys without a
-     * complete item are touched, so a finished cache entry is never disturbed, and the user's
-     * downloads live in a different cache entirely. Chosen over rendition-scoped cache keys
-     * because scoping would change every resolver/downloader key path for one edge case.
+     * Drop the partial playback-cache spans of a track that just left the player while degraded,
+     * so a later LOW re-resolve under the same key does not mix its bytes with the partial HIGH
+     * fetch. Called only once the item is no longer current — deleting spans of an item the
+     * player may still be reading is not safe — and never touches complete items or the user's
+     * downloads, which live in a different cache entirely.
      */
     private fun retirePartialPlayerCacheSpans(mediaId: String) {
         val cache = runCatching { playerCache() }.getOrNull() ?: return
@@ -183,5 +217,10 @@ internal class PlaybackRecoveryRetry(
                 }.getOrDefault(false)
             if (!complete) runCatching { cache.removeResource(key) }
         }
+    }
+
+    private companion object {
+        /** The longest a recovery seek's deferred discontinuity may take before its mark expires. */
+        const val RECOVERY_SEEK_WINDOW_MS = 2_000L
     }
 }

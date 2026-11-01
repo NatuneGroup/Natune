@@ -5239,6 +5239,7 @@ class MusicService :
                 invalidateExternalStream(mediaId, requireNotNull(externalSource))
             }
         ) {
+            if (!recoveryRetry.allow(mediaId)) return false // decided now, not in the async tail, so denial reaches the terminal path
             val recoveryEpoch = ++externalStreamRecoveryEpoch
             val recoveryPlayer = player
             val mediaItemIndex = player.currentMediaItemIndex
@@ -5250,7 +5251,7 @@ class MusicService :
                     if (externalStreamRecoveryEpoch != recoveryEpoch || player !== recoveryPlayer ||
                         player.currentMediaItemIndex != mediaItemIndex || player.currentMediaItem?.mediaId != mediaId
                     ) return@withContext
-                    if (recoveryRetry.allow(mediaId)) recoveryRetry.prepare(mediaId, resumePlaying = false, seekIndex = mediaItemIndex, seekPositionMs = positionMs)
+                    recoveryRetry.prepare(mediaId, resumePlaying = false, seekIndex = mediaItemIndex, seekPositionMs = positionMs)
                 }
             }
             return true
@@ -7563,11 +7564,11 @@ class MusicService :
         )
 
         updateHistoryTrackingPlaybackState()
-        updateInitialBufferRecovery(playbackState)
+        updateInitialBufferRecovery(playbackState); if (playbackState != Player.STATE_READY) codecRecoveryReadyAtMs = Long.MIN_VALUE
         rebufferMonitor.onPlaybackStateChanged(
             player.currentMediaItem?.mediaId, playbackState == Player.STATE_BUFFERING, playbackState == Player.STATE_READY, player.playWhenReady)
         if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
-            enqueueCurrentHistorySessionForFinalization(); if (playbackState == Player.STATE_IDLE && player.playerError == null) recoveryRetry.cancelPending() // user stop() reaches IDLE cleanly; an error-IDLE keeps its pending retry
+            enqueueCurrentHistorySessionForFinalization()
             // IDLE also follows a playback error that the source chain retries in place; resetting
             // there would restart the listen count and could scrobble the same play twice.
             if (playbackState == Player.STATE_ENDED || player.currentMediaItem == null) {
@@ -7813,10 +7814,8 @@ class MusicService :
         ) {
             playbackStreamRecoveryTracker.onPlaybackRecovered(currentMediaId)
             playbackErrorRecovery.onPlaybackRecovered()
-            // READY alone does not prove the codec healthy — only sustained READY does. Stamp the
-            // (re-)entry; the attempt counter refills at the next codec error only when the player
-            // held READY for a stable window, so a READY blip between decoder deaths cannot refill it.
-            codecRecoveryReadyAtMs = android.os.SystemClock.elapsedRealtime()
+            // Stamp only a real READY entry; isPlaying must not restart the stability window.
+            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_READY) codecRecoveryReadyAtMs = android.os.SystemClock.elapsedRealtime()
             currentMediaId
                 ?.let(playbackUrlCache::get)
                 ?.url
