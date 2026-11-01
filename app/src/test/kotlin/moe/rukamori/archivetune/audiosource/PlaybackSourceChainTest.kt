@@ -184,18 +184,14 @@ class PlaybackSourceChainTest {
     }
 
     @Test
-    fun cacheKeyOrderKeysTheDegradedLowRenditionSeparately() {
-        val prefs = snapshot("TIDAL,QOBUZ,YOUTUBE", AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)
+    fun cacheKeyOrderProbesOnlySourceAndLegacyKeys() {
+        val prefs = snapshot("TIDAL,YOUTUBE", AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)
 
-        // A LOW request probes its own rendition slot; a HIGH request never sees it.
-        assertEquals(
-            listOf("tidal:id1", "id1#low"),
-            PlaybackSourceChain.cacheKeyOrder(prefs, "id1", low = true),
-        )
-        assertEquals(
-            listOf("tidal:id1", "id1"),
-            PlaybackSourceChain.cacheKeyOrder(prefs, "id1"),
-        )
+        // The bare mediaId is the only YouTube probe: it serves complete legacy copies only,
+        // and no rendition-scoped "#i" key is ever probed before a resolve picks one.
+        val order = PlaybackSourceChain.cacheKeyOrder(prefs, "id1")
+        assertEquals(listOf("tidal:id1", "id1"), order)
+        assertTrue(order.none { it.contains("#") })
     }
 
     @Test

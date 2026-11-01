@@ -13,14 +13,22 @@ data class AuthScopedCacheValue(
     val expiresAtMs: Long,
     val authFingerprint: String,
     /**
-     * The rendition the URL was resolved for. The ephemeral player cache keys renditions
-     * separately ("<mediaId>#low"), and a cached URL is reusable only while its rendition is
-     * the one the next resolution asks for.
+     * The rendition class the URL was resolved for; a cached URL is reusable only while its
+     * rendition class is the one the next resolution asks for.
      */
     val low: Boolean = false,
+    /** The selected format's itag — the rendition identity the player byte-cache keys under. */
+    val itag: Int? = null,
 ) {
-    /** True when this URL's stored rendition is the one a resolution asks for. */
+    /** True when this URL's stored rendition class is the one a resolution asks for. */
     fun matchesRendition(requestedLow: Boolean): Boolean = low == requestedLow
+
+    /**
+     * The ephemeral player-cache key bytes fetched through this URL belong under: the resolved
+     * itag scopes the key ("<mediaId>#i<itag>") so two renditions never mix partial spans. A
+     * legacy entry without an itag reads and writes the bare mediaId key it always had.
+     */
+    fun playbackCacheKey(mediaId: String): String = if (itag != null) "$mediaId#i$itag" else mediaId
 
     fun isValidFor(
         authFingerprint: String,
