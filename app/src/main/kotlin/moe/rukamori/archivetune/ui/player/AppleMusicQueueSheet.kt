@@ -253,19 +253,17 @@ fun AppleMusicQueueSheet(
                     }
 
                 if (sourceIndex != destinationIndex) {
-                    justCommittedDragUid = completedDrag.draggedItemUid
-                    if (!shuffleModeEnabled) {
-                        playerConnection.moveQueueItem(sourceIndex, destinationIndex)
-                    } else {
-                        playerConnection.reorderShuffledQueue(
-                            queueWindows
-                                .map { it.firstPeriodIndex }
-                                .toMutableList()
-                                .move(sourceIndex, destinationIndex)
-                                .toIntArray(),
-                        )
+                    val accepted =
+                        if (!shuffleModeEnabled) {
+                            playerConnection.moveQueueItem(sourceIndex, destinationIndex)
+                        } else {
+                            playerConnection.reorderShuffledQueue(sourceIndex, destinationIndex)
+                        }
+                    if (accepted) {
+                        justCommittedDragUid = completedDrag.draggedItemUid
+                        return@LaunchedEffect
                     }
-                    return@LaunchedEffect
+                    // Refused by the lock: no event follows, so fall through and resync.
                 }
             }
         }
@@ -452,7 +450,9 @@ fun AppleMusicQueueSheet(
                             (dv == SwipeToDismissBoxValue.StartToEnd || dv == SwipeToDismissBoxValue.EndToStart)
                         ) {
                             processedDismiss = true
-                            playerConnection.removeQueueItemAt(window.firstPeriodIndex)
+                            if (!playerConnection.removeQueueItemAt(window.firstPeriodIndex)) {
+                                dismissBoxState.reset()
+                            }
                         }
                         if (dv == SwipeToDismissBoxValue.Settled) {
                             processedDismiss = false

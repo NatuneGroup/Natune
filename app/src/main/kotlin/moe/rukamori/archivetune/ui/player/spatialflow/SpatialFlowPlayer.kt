@@ -1073,13 +1073,7 @@ fun SpatialFlowPlayerContent(
                     if (!playerConnection.player.shuffleModeEnabled) {
                         playerConnection.moveQueueItem(from, to)
                     } else {
-                        playerConnection.reorderShuffledQueue(
-                            queueWindows
-                                .map { it.firstPeriodIndex }
-                                .toMutableList()
-                                .move(from, to)
-                                .toIntArray(),
-                        )
+                        playerConnection.reorderShuffledQueue(from, to)
                     }
                 },
                 onPlaySongAtIndex = { windowIndex ->

@@ -3046,19 +3046,17 @@ private fun FlamingoPlayingList(
                             }
 
                         if (sourceIndex != destinationIndex) {
-                            justCommittedDragUid = completedDrag.draggedItemUid
-                            if (!shuffleModeEnabled) {
-                                playerConnection.moveQueueItem(sourceIndex, destinationIndex)
-                            } else {
-                                playerConnection.reorderShuffledQueue(
-                                    queueWindows
-                                        .map { it.firstPeriodIndex }
-                                        .toMutableList()
-                                        .move(sourceIndex, destinationIndex)
-                                        .toIntArray(),
-                                )
+                            val accepted =
+                                if (!shuffleModeEnabled) {
+                                    playerConnection.moveQueueItem(sourceIndex, destinationIndex)
+                                } else {
+                                    playerConnection.reorderShuffledQueue(sourceIndex, destinationIndex)
+                                }
+                            if (accepted) {
+                                justCommittedDragUid = completedDrag.draggedItemUid
+                                return@LaunchedEffect
                             }
-                            return@LaunchedEffect
+                            // Refused by the lock: no event follows, so fall through and resync.
                         }
                     }
                 }
@@ -3194,7 +3192,6 @@ private fun FlamingoPlayingList(
                                             absIndex,
                                             currentWindowIndex + 1,
                                         )
-                                        true
                                     } else {
                                         false
                                     }
@@ -3204,7 +3201,6 @@ private fun FlamingoPlayingList(
                                         queueWindows.indexOfFirst { it.uid == window.uid }
                                     if (absIndex != -1) {
                                         playerConnection.removeQueueItemAt(absIndex)
-                                        true
                                     } else {
                                         false
                                     }

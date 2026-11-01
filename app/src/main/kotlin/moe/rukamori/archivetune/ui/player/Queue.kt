@@ -326,10 +326,11 @@ fun Queue(
             }
     }
 
-    val onRemoveWithUndo: (Timeline.Window) -> Unit = { window ->
+    val onRemoveWithUndo: (Timeline.Window) -> Boolean = { window ->
         playerConnection.service.removeQueueItemsWithUndo(listOf(window))?.let {
             showQueueUndo(it.ticket, it.count, window.mediaItem.metadata?.title)
-        }
+            true
+        } ?: false
     }
 
     val onRemoveMultipleWithUndo: (List<Timeline.Window>) -> Unit = { windows ->
@@ -801,18 +802,15 @@ fun Queue(
                     destinationIndex != null &&
                     sourceIndex != destinationIndex
                 ) {
-                    if (!playerConnection.player.shuffleModeEnabled) {
-                        playerConnection.moveQueueItem(sourceIndex, destinationIndex)
-                    } else {
-                        playerConnection.reorderShuffledQueue(
-                            queueWindows
-                                .map { it.firstPeriodIndex }
-                                .toMutableList()
-                                .move(sourceIndex, destinationIndex)
-                                .toIntArray(),
-                        )
-                    }
-                    return@LaunchedEffect
+                    val accepted =
+                        if (!playerConnection.player.shuffleModeEnabled) {
+                            playerConnection.moveQueueItem(sourceIndex, destinationIndex)
+                        } else {
+                            playerConnection.reorderShuffledQueue(sourceIndex, destinationIndex)
+                        }
+                    if (accepted) return@LaunchedEffect
+                    // The lock gate refused and sends no timeline event: the resync below is
+                    // the only thing that puts the displayed order back.
                 }
             }
 
@@ -1000,7 +998,9 @@ fun Queue(
                                     )
                                 ) {
                                     processedDismiss = true
-                                    onRemoveWithUndo(currentItem)
+                                    if (!onRemoveWithUndo(currentItem)) {
+                                        dismissBoxState.reset()
+                                    }
                                 }
                                 if (dv == SwipeToDismissBoxValue.Settled) {
                                     processedDismiss = false

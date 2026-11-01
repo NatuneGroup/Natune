@@ -6082,14 +6082,14 @@ class MusicService :
 
     fun removeQueueItemsWithUndo(windows: List<Timeline.Window>): QueueRemoval? {
         // QueueLocked gates user removes, moves and clears only; undo stays unaffected.
-        if (dataStore.get(QueueLockedKey, false)) return null
+        if (dataStore.get(QueueLockedKey, false)) { showQueueLockedToast(); return null }
         return queueRemovals.remove(windows.map { it.uid }.toSet())
     }
 
     fun undoQueueRemoval(ticket: Long): Boolean = queueRemovals.undo(ticket)
 
     fun clearQueueWithUndo(): QueueRemoval? {
-        if (dataStore.get(QueueLockedKey, false)) return null
+        if (dataStore.get(QueueLockedKey, false)) { showQueueLockedToast(); return null }
         // Cancel before mutating: transitions caused by removal must not refill the queue.
         infiniteQueuePreferenceEnabled = false
         cancelInfiniteQueueBootstrap(newQueue = false)
