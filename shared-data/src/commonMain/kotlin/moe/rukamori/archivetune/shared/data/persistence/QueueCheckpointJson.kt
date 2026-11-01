@@ -17,6 +17,7 @@ object QueueCheckpointJson {
         put("version", 1)
         put("revision", queue.revision)
         put("positionMs", checkpoint.positionMs)
+        checkpoint.savedAtEpochMs?.let { put("savedAtEpochMs", it) }
         put("current", queue.currentOccurrenceId?.let(::JsonPrimitive) ?: JsonNull)
         put("phase", queue.phase.name)
         put("order", JsonArray(queue.playOrder.map(::JsonPrimitive)))
@@ -44,7 +45,12 @@ object QueueCheckpointJson {
             manualKinds = root.manualKinds(),
             tail = root.optionalObject("tail")?.let { decodeTail(it) },
         )
-        return QueueCheckpoint(queue, root.getValue("positionMs").jsonPrimitive.long)
+        return QueueCheckpoint(
+            queue,
+            root.getValue("positionMs").jsonPrimitive.long,
+            // Optional: checkpoints written before the resume-TTL policy carry no stamp.
+            savedAtEpochMs = root["savedAtEpochMs"]?.jsonPrimitive?.longOrNull,
+        )
     }
 
     /** A paging tail keeps the exact request that issued its continuation, so the token never meets another query. */
