@@ -11,7 +11,7 @@ class PoolAccountRaceTest {
     private class Reports {
         val successes = mutableListOf<Int>()
         val failures = mutableListOf<Int>()
-        val dead = mutableListOf<Int>()
+        val dead = mutableListOf<Pair<Int, String>>()
     }
 
     private suspend fun race(
@@ -22,7 +22,7 @@ class PoolAccountRaceTest {
     ) = racePoolAttempts(
         attempts = attempts,
         resolve = resolve,
-        reportDead = { reports.dead += it },
+        report = { id, type -> reports.dead += id to type },
         noteSuccess = { reports.successes += it },
         noteFailure = { reports.failures += it },
         maxConcurrent = maxConcurrent,
@@ -72,7 +72,11 @@ class PoolAccountRaceTest {
         assertNull(outcome.winner)
         assertTrue(reports.successes.isEmpty())
         assertEquals(setOf(1, 2, 3), reports.failures.toSet(), "every failed attempt reports its failure once")
-        assertEquals(setOf(1, 2), reports.dead.toSet(), "401 and the auth refusal report dead; a plain failure does not")
+        assertEquals(
+            setOf(1 to PoolDeadReportPolicy.DEAD, 2 to PoolDeadReportPolicy.DEAD),
+            reports.dead.toSet(),
+            "401 and the auth refusal report dead; a plain failure does not",
+        )
         // Attempt 4 only missed, so it reported nothing; the last ordinary failure is attempt 3's —
         // the terminal authentication refusal reports dead but never becomes the thrown failure.
         assertTrue(outcome.failure === protocol)
