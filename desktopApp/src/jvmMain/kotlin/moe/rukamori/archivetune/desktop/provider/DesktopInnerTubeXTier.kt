@@ -9,6 +9,7 @@ import com.metrolist.innertubex.extraction.ContentHints
 import com.metrolist.innertubex.extraction.ExtractedStream
 import com.metrolist.innertubex.extraction.InnerTubeExtractor
 import com.metrolist.innertubex.extraction.StreamExtractor
+import com.metrolist.innertubex.extraction.TokenProvider
 import com.metrolist.innertubex.extraction.YtConfigParserImpl
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
@@ -37,6 +38,7 @@ private const val REQUEST_TIMEOUT_MS = 30_000L
 internal class DesktopInnerTubeXTier(
     private val http: HttpClient,
     private val extractorOverride: StreamExtractor? = null,
+    private val tokenProvider: TokenProvider? = null,
 ) {
     // A derived client shares the graph's engine and adds what InnerTubeX expects: status exceptions and JSON bodies.
     // It is never closed on its own, because closing it would close the shared engine; the graph closes that.
@@ -92,6 +94,7 @@ internal class DesktopInnerTubeXTier(
             configParser = YtConfigParserImpl(client, innerTube, playerConfigStore),
             cipherService = YouTubeCipherService(client, playerConfigStore),
             innerTube = innerTube,
+            tokenProvider = tokenProvider,
         )
     }
 

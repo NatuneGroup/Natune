@@ -251,7 +251,14 @@ internal fun IosLaneServiceSettingsPage(
         )
         "settings/po_token" -> PoTokenSettings(
             controller = owners.controller,
-            generateTokens = { PoTokenGeneration.Failed(null) },
+            // The real BotGuard recipe through the shared QuickJS engine: the source URL is the
+            // Android WebView destination and stays informational; unconfigured credentials or a
+            // refused challenge surface as an honest failure, never fabricated tokens.
+            generateTokens = { sourceUrl ->
+                owners.graph.poTokens.generate(owners.controller.store.snapshots.value)
+                    ?.let { PoTokenGeneration.Complete(it.visitorData, it.gvsToken, it.playerToken) }
+                    ?: PoTokenGeneration.Failed(null)
+            },
             copyToClipboard = ::copyToIosClipboard,
             onFailure = onFailure,
         )

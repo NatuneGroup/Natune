@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
 import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
 import moe.rukamori.archivetune.desktop.telegram.TdlightClientSession
@@ -112,6 +113,8 @@ class DesktopSessionGraph internal constructor(
     internal val libraryContent: LibraryContentOwner,
     /** The YouTube resolve owner; the source chooser's refresh drops its searched-id cache entry. */
     internal val youtubeResolver: DesktopYouTubeResolver,
+    /** The one BotGuard poToken owner; settings generation and the resolver tiers share it. */
+    internal val poTokens: DesktopPoTokenOwner,
     private val owner: PortableQueueOwner,
     /** The engine behind [player], reached directly only for the output volume, which is not a queue command. */
     private val playback: DesktopPlaybackPort,

@@ -522,11 +522,13 @@ internal class DesktopSettingsServices(
     }
 
     /**
-     * PO token minting on desktop needs the JS attestation pipeline the innertubex TokenProvider
-     * does not ship, so generation reports an honest failure rather than fabricating tokens.
-     * Vault-stored token preferences still mount real.
+     * PO token minting runs the real BotGuard recipe through the shared QuickJS engine — the same
+     * owner the resolver mints from. [sourceUrl] is the Android WebView destination and stays
+     * informational on this host; unconfigured credentials or a refused challenge surface as an
+     * honest failure rather than fabricated tokens.
      */
-    suspend fun generatePoTokens(sourceUrl: String): PoTokenGeneration = PoTokenGeneration.Failed(null)
+    suspend fun generatePoTokens(sourceUrl: String): PoTokenGeneration =
+        graph.poTokens.generate(sourceUrl, controller.store.snapshots.value)
 
     private suspend fun httpGet(url: String, vararg headers: Pair<String, String>): String? =
         runCatching {
