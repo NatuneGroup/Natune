@@ -2,6 +2,9 @@ package moe.rukamori.archivetune.shared.ui.lyrics
 
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -111,7 +114,24 @@ internal fun LyricsAutoFollow(
                 settle.start(primary, fromTop)
                 listState.scrollToItem(primary, anchor)
             }
-            else -> listState.animateScrollToItem(primary, anchor)
+            else -> {
+                // A line at hand eases to the anchor on the fixed scroll; a far one keeps the
+                // distance-covering animation.
+                val top = listState.itemTopOrNull(primary)
+                if (top != null) {
+                    val anchorTop = listState.layoutInfo.beforeContentPadding - anchor
+                    if (top != anchorTop) {
+                        listState.animateScrollBy(
+                            value = (top - anchorTop).toFloat(),
+                            animationSpec = tween(AUTO_SCROLL_MS, easing = AUTO_SCROLL_EASE),
+                        )
+                        // Land on the exact anchored scroll offset in case the glide rounded.
+                        listState.scrollToItem(primary, anchor)
+                    }
+                } else {
+                    listState.animateScrollToItem(primary, anchor)
+                }
+            }
         }
     }
 }
@@ -119,6 +139,10 @@ internal fun LyricsAutoFollow(
 /** Where the row starts in the viewport now, or null while it is not laid out. */
 private fun LazyListState.itemTopOrNull(index: Int): Int? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset
+
+/** The one animated scroll speed of a line change: a fixed ease-in-out over this many ms. */
+private const val AUTO_SCROLL_MS = 350
+private val AUTO_SCROLL_EASE = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 
 /** The list is not measured on its first frame, so the anchor waits for a real viewport height. */
 private suspend fun LazyListState.awaitViewportHeight(): Int {

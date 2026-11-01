@@ -36,6 +36,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.StateFlow
+import moe.rukamori.archivetune.shared.domain.lyrics.LyricsCredits
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 
@@ -87,6 +88,8 @@ fun LyricsFullscreenRenderer(
     settings: LyricsSurfaceSettings,
     actions: LyricsSurfaceActions,
     modifier: Modifier = Modifier,
+    /** The document's credits: songwriters close the list, and machine-made lines carry the badge. */
+    credits: LyricsCredits? = null,
     visible: Boolean = true,
     resumed: Boolean = true,
     listState: LazyListState = rememberLazyListState(),
@@ -196,7 +199,12 @@ fun LyricsFullscreenRenderer(
                     // hold ends, so a listener reading ahead is never shown blurred lines.
                     val holding = dragged || (profile.refinedMotion && !scrollOwner.following)
                     val depth = if (settings.depthEffects && !holding) {
-                        val steps = LyricsDepth.of(distance, reduceMotion = settings.reduceMotion)
+                        // The refined look softens every non-sung row by the same veil, not a per-step ramp.
+                        val steps = LyricsDepth.of(
+                            distance,
+                            reduceMotion = settings.reduceMotion,
+                            uniformBlurDp = if (profile.refinedMotion) LyricsDepth.UNIFORM_BLUR_DP else 0f,
+                        )
                         // Reduced effects keep the static fade but drop the blur, the costly offscreen layer.
                         if (profile.refinedMotion && settings.reduceMotion) steps.copy(blurDp = 0f) else steps
                     } else {
@@ -220,6 +228,11 @@ fun LyricsFullscreenRenderer(
                         settle = settle,
                         refined = profile.refinedMotion,
                         interlude = interludes[row.index],
+                        activeScale = profile.activeScale,
+                        // Only the document's own reading is badged; a host or AI reading is not the
+                        // machine-made one.
+                        autoCreatedPhonetic = credits?.transliterationAutoCreated == true && row.providerRomanized,
+                        autoCreatedTranslation = credits?.translationAutoCreated == true,
                         onTap = {
                             when (LyricsTapPolicy.onTap(row, selection.isActive, settings.tapToSeek)) {
                                 is LyricsTapAction.Seek -> {
@@ -233,6 +246,15 @@ fun LyricsFullscreenRenderer(
                         },
                         onLongPress = { selection = selection.toggled(row.index) },
                     )
+                }
+                credits?.takeIf { !it.isEmpty }?.let { documentCredits ->
+                    item(key = "lyrics-credits", contentType = "lyrics-credits") {
+                        LyricsCreditsFooter(
+                            credits = documentCredits,
+                            style = styles.phonetic(LyricsLineAlignment.CENTER),
+                            palette = palette,
+                        )
+                    }
                 }
             }
         }
