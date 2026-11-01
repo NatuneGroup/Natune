@@ -92,6 +92,33 @@ class LrcTranslationMergeTest {
     }
 
     @Test
+    fun saveableTranslationMergesAResultSharingOnlyTheBlankSpacer() {
+        // A blank spacer row ([00:10.00]) matches nothing sung: a translation-only result that
+        // restamps it is not a bilingual rebuild and must merge so the source rows survive.
+        val result = "[00:10.00]\nPremiere ligne\nDeuxieme ligne"
+        val saved = LrcTranslationMerge.saveableTranslation(source, result)
+        assertTrue("[00:01.00]First line" in saved)
+        assertTrue("[00:05.50]Second line" in saved)
+        assertTrue("[translatedLyrics]" in saved)
+        assertEquals(1, saved.lines().count { it == "[00:01.00]First line" })
+        assertTrue(saved.substringAfter("[translatedLyrics]").contains("Premiere ligne"))
+    }
+
+    @Test
+    fun saveableTranslationMergesATimestampedOnlyResult() {
+        // Fully stamped translations still carry none of the sung source rows: they merge into
+        // a section rather than being mistaken for a bilingual document.
+        val result = "[00:01.00]Eins\n[00:05.50]Zwei"
+        val saved = LrcTranslationMerge.saveableTranslation(source, result)
+        assertTrue("[00:01.00]First line" in saved)
+        assertTrue("[translatedLyrics]" in saved)
+        assertTrue("[00:01.00]Eins" in saved)
+        val lines = LyricsParser.parse(saved)
+        assertEquals("Eins", lines[0].providerTranslationText)
+        assertEquals("Zwei", lines[1].providerTranslationText)
+    }
+
+    @Test
     fun saveableTranslationFallsBackToTheResultWithoutASource() {
         assertEquals("plain translation", LrcTranslationMerge.saveableTranslation(null, "plain translation"))
         assertEquals(
