@@ -206,8 +206,9 @@ class TidalInstanceResolver(
     @kotlin.concurrent.Volatile
     private var customEndpoints: List<TidalDownloadEndpoint> = emptyList()
 
-    @kotlin.concurrent.Volatile
-    private var poolDiscoveredInstanceUrls: Set<String> = emptySet()
+    @kotlin.concurrent.Volatile private var poolDiscoveredInstanceUrls: Set<String> = emptySet()
+
+    @kotlin.concurrent.Volatile private var discoveryFetchedAtMs = 0L
 
     private val activeEndpoints: List<TidalDownloadEndpoint>
         get() = customEndpoints
@@ -234,14 +235,14 @@ class TidalInstanceResolver(
             customEndpoints = customEndpoints.filterNot { it.baseUrl in discovered }
             poolDiscoveredInstanceUrls = emptySet()
         }
+        discoveryFetchedAtMs = 0L
     }
 
     /** Normalizes an instance URL to `scheme://host[:port]` form, or null when it is not valid. */
     fun normalizeInstanceUrl(raw: String): String? {
         val trimmed = raw.trim().trimEnd('/')
         if (trimmed.isEmpty()) return null
-        val withScheme =
-            if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed else "https://$trimmed"
+        val withScheme = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed else "https://$trimmed"
         val url = runCatching { Url(withScheme) }.getOrNull() ?: return null
         if (url.host.isBlank() || !url.host.contains('.')) return null
         return withScheme
@@ -254,9 +255,7 @@ class TidalInstanceResolver(
         val normalized = normalizeInstanceUrl(baseUrl) ?: return null
         return runCatching {
             val start = nowMs()
-            healthGet("$normalized/", HEALTH_TIMEOUT_MS).let { reply ->
-                if (reply.status in 200..499) nowMs() - start else null
-            }
+            healthGet("$normalized/", HEALTH_TIMEOUT_MS).let { if (it.status in 200..499) nowMs() - start else null }
         }.getOrNull()
     }
 
@@ -367,6 +366,8 @@ class TidalInstanceResolver(
             clearPoolDiscovery()
             return emptyList()
         }
+        if (discoveryFetchedAtMs != 0L && nowMs() - discoveryFetchedAtMs < DISCOVERY_TTL_MS) return emptyList()
+        discoveryFetchedAtMs = nowMs()
         val discovered = discoverInstancesWithinAttempt()
         if (!poolEnabled()) {
             clearPoolDiscovery()
@@ -381,11 +382,9 @@ class TidalInstanceResolver(
         for (source in INSTANCE_DISCOVERY_SOURCES) {
             if (!poolEnabled()) break
             val answered = runCatching {
-                val headers =
-                    sourceProviderKey()
-                        .takeIf { it.isNotBlank() }
-                        ?.let { mapOf("Authorization" to "Bearer $it") }
-                        ?: emptyMap()
+                val headers = sourceProviderKey().takeIf { it.isNotBlank() }
+                    ?.let { mapOf("Authorization" to "Bearer $it") }
+                    ?: emptyMap()
                 val reply = healthGet(source, HEALTH_TIMEOUT_MS, headers = headers)
                 if (!poolEnabled() || ArchivePoolEndpoints.isFailoverStatus(reply.status)) return@runCatching false
                 ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
@@ -2029,6 +2028,7 @@ class TidalInstanceResolver(
         private const val HEALTH_TIMEOUT_MS = 6_000L
         private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L
         private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L
+        private const val DISCOVERY_TTL_MS = 30 * 60 * 1000L
         private const val STRONG_MATCH_SCORE = 150
         private const val REJECT_SCORE = -1_000_000
 

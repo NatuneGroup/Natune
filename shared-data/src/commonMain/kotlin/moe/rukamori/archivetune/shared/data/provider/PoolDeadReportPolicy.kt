@@ -82,21 +82,30 @@ class PoolReportGate(
     /** True the first time (service, id, type) asks inside a window; entries prune lazily. */
     suspend fun allow(service: String, id: Long?, type: String): Boolean {
         if (id == null || id <= 0L) return false
-        val key = "$service:$id:$type"
-        return lock.withLock {
-            val now = nowMs()
-            val last = admittedAt[key]
-            if (last != null && now - last < windowMs) return@withLock false
-            admittedAt[key] = now
-            admittedAt.entries.removeAll { now - it.value > windowMs }
-            true
-        }
+        return admit("$service:$id:$type")
     }
+
+    /** True the first time (service, type) asks inside a window, across every account. */
+    suspend fun allowService(service: String, type: String): Boolean = admit("$service:$type")
 
     /** Removes an admission: the caller that took it never finished the work it paid for. */
     suspend fun rollback(service: String, id: Long?, type: String) {
         if (id == null || id <= 0L) return
         lock.withLock { admittedAt.remove("$service:$id:$type") }
+    }
+
+    /** Removes a service-scoped admission. */
+    suspend fun rollbackService(service: String, type: String) {
+        lock.withLock { admittedAt.remove("$service:$type") }
+    }
+
+    private suspend fun admit(key: String): Boolean = lock.withLock {
+        val now = nowMs()
+        val last = admittedAt[key]
+        if (last != null && now - last < windowMs) return@withLock false
+        admittedAt[key] = now
+        admittedAt.entries.removeAll { now - it.value > windowMs }
+        true
     }
 }
 
@@ -139,9 +148,9 @@ sealed interface PoolRecovery<out C> {
  *
  * [stale] and the value [current] re-reads are opaque credential markers (usually the token
  * string); a recovery "moved" the lease only when the marker changed. Recovery is single-flight
- * per account and throttled to one round-trip per [recoveryWindowMs], and reports dedupe to one
- * per account and type per [reportWindowMs] — concurrent failures cause one refresh and at most
- * one report.
+ * per account and throttled to one round-trip per service per [recoveryWindowMs], and reports
+ * dedupe to one per account and type per [reportWindowMs] — concurrent failures cause one refresh
+ * and at most one report.
  */
 class PoolDeadReporter(
     private val nowMs: () -> Long,
@@ -158,10 +167,11 @@ class PoolDeadReporter(
     }
 
     /**
-     * Runs [recover] at most once at a time per account and at most once per recovery window.
-     * Callers that queued behind an in-flight recovery re-check [current] inside the flight and
-     * reuse the winner's result instead of recovering again — the tidalapi compare-inside-lock
-     * pattern. The answer is explicit: [PoolRecovery.Recovered] when the lease moved,
+     * Runs [recover] at most once at a time per account and at most once per recovery window per
+     * service — one feed fetch refreshes every account a provider serves, so a second account's
+     * failure reuses the same round-trip. Callers that queued behind an in-flight recovery re-check
+     * [current] inside the flight and reuse the winner's result instead of recovering again — the
+     * tidalapi compare-inside-lock pattern. The answer is explicit: [PoolRecovery.Recovered] when the lease moved,
      * [PoolRecovery.Unchanged] when it did not, [PoolRecovery.Unavailable] when no round-trip
      * could run. A leader cancelled inside [recover] gives its admission back so a queued waiter
      * can take over immediately instead of waiting out the window.
@@ -178,11 +188,11 @@ class PoolDeadReporter(
         block = {
             // Only the first caller inside the window pays for the round-trip; a caller that
             // arrives after a completed run just re-reads whatever it left.
-            if (recoveryGate.allow(service, id, "recover")) {
+            if (recoveryGate.allowService(service, "recover")) {
                 try {
                     recover()
                 } catch (cancelled: CancellationException) {
-                    recoveryGate.rollback(service, id, "recover")
+                    recoveryGate.rollbackService(service, "recover")
                     throw cancelled
                 } catch (_: Exception) {
                     // A failed round-trip leaves the marker read to answer Unavailable/Unchanged.

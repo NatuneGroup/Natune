@@ -31,6 +31,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
+import moe.rukamori.archivetune.shared.data.provider.PoolAuthBackoff
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReporter
 import moe.rukamori.archivetune.shared.data.stream.aes.AesGcm
@@ -126,6 +127,8 @@ class IosPlaybackPool(
     private val discovered = HashMap<String, Pair<List<String>, Long>>()
     private val cooldownUntil = HashMap<String, Long>()
     private val reportedAt = HashMap<String, Long>()
+    private val expiredReLeaseAt = HashMap<String, Long>()
+    private val authBackoff = PoolAuthBackoff()
 
     /** The shared dead-report policy: recover-then-retry once, dedupe per account per window. */
     val deadReports = PoolDeadReporter(nowMs)
@@ -146,9 +149,23 @@ class IosPlaybackPool(
     suspend fun tidalAccounts(): List<TidalPoolAccount> {
         if (!enabled()) return emptyList()
         ensureLoaded()
-        if (tidal.any { accessTokenExpired(it.token, nowMs()) }) refresh(force = true)
+        if (tidal.any { accessTokenExpired(it.token, nowMs()) }) reLeaseExpired(TIDAL)
         if (!enabled()) return emptyList()
         return ordered(TIDAL, tidal, { it.id }, { it.premium })
+    }
+
+    /**
+     * One forced re-lease per service inside [PoolDeadReportPolicy.RECOVERY_DEDUPE_MS]. A token
+     * already known expired still earns a feed fetch, but a feed that keeps serving expiring
+     * leases can no longer turn every resolve into a request.
+     */
+    private suspend fun reLeaseExpired(service: String) {
+        val now = nowMs()
+        val due = mapLock.withLock {
+            val last = expiredReLeaseAt[service] ?: 0L
+            (now - last >= PoolDeadReportPolicy.RECOVERY_DEDUPE_MS).also { if (it) expiredReLeaseAt[service] = now }
+        }
+        if (due) refresh(force = true)
     }
 
     /** The credential the feed last served, with no load or refresh — the marker a recovery compares. */
@@ -309,6 +326,11 @@ class IosPlaybackPool(
         ensureLoaded()
         return mutex.withLock {
             if (!enabled()) return@withLock false
+            // A refused read key earns a persisted exponential backoff even forced calls respect;
+            // it lifts on its own success or when the presented key changes.
+            val keyHash = readKey.hashCode()
+            if (authBackoff.clearsFor(keyHash)) authBackoff.reset()
+            if (authBackoff.blocked(nowMs())) return@withLock hasAccounts()
             if (!shouldRefresh(nowMs(), lastAttemptAtMs, refreshIntervalMs(), force)) return@withLock hasAccounts()
             lastAttemptAtMs = nowMs()
             var result = fetch("/api/accounts")
@@ -316,6 +338,7 @@ class IosPlaybackPool(
             val root = result?.takeIf { it.first == 200 }?.second?.let(::parseObject)
             when {
                 root != null && enabled() -> {
+                    authBackoff.reset()
                     val decrypt = decryptorFor(root)
                     val nextTidal = parseTidal(accountsArray(root, TIDAL), decrypt)
                     val nextQobuz = parseQobuz(accountsArray(root, QOBUZ), decrypt)
@@ -335,7 +358,10 @@ class IosPlaybackPool(
                     }
                 }
                 result == null -> log("Playback Pool could not be reached")
-                result.first == 401 -> log("Playback Pool rejected the read key (HTTP 401)")
+                result.first == 401 -> {
+                    authBackoff.onAuthRejected(nowMs(), keyHash)
+                    log("Playback Pool rejected the read key (HTTP 401)")
+                }
                 result.first == 404 -> log("Playback Pool: no pool API at the configured deployment (HTTP 404)")
                 else -> log("Playback Pool feed returned HTTP ${result.first}")
             }
@@ -376,6 +402,11 @@ class IosPlaybackPool(
                 vault.read(CACHE_KEY)?.let(::parseObject)?.let { cached ->
                     val passthrough: (String) -> String? = { it }
                     lastAttemptAtMs = (cached["attemptAt"] as? JsonPrimitive)?.longOrNull ?: 0L
+                    authBackoff.restore(
+                        (cached["authFailAt"] as? JsonPrimitive)?.longOrNull ?: 0L,
+                        (cached["authBackoffMs"] as? JsonPrimitive)?.longOrNull ?: 0L,
+                        (cached["authKeyHash"] as? JsonPrimitive)?.longOrNull?.toInt() ?: 0,
+                    )
                     if (enabled()) {
                         tidal = parseTidal(cached[TIDAL] as? JsonArray, passthrough)
                         qobuz = parseQobuz(cached[QOBUZ] as? JsonArray, passthrough)
@@ -397,6 +428,9 @@ class IosPlaybackPool(
     private suspend fun persist() {
         val document = buildJsonObject {
             put("attemptAt", lastAttemptAtMs)
+            put("authFailAt", authBackoff.failedAtMs)
+            put("authBackoffMs", authBackoff.windowMs)
+            put("authKeyHash", authBackoff.failedKeyHash)
             put(TIDAL, buildJsonArray {
                 tidal.forEach { account ->
                     add(buildJsonObject {
