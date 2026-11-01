@@ -23,6 +23,7 @@ import moe.rukamori.archivetune.shared.data.provider.DeezerAccess
 import moe.rukamori.archivetune.shared.data.provider.DeezerInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.IosJioSaavnUrlDecoder
 import moe.rukamori.archivetune.shared.data.provider.IosQobuzRequestDigest
+import moe.rukamori.archivetune.shared.data.provider.KtorAmazonAuthorization
 import moe.rukamori.archivetune.shared.data.provider.KtorAmazonRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorAppleMusicRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorDeezerRepository
@@ -681,6 +682,9 @@ private class IosAmazonSource(
         val bypass = snapshot[AmazonBypassTokenKey]?.takeIf { it.isNotBlank() }
         val jwtExpiry = snapshot[AmazonTurnstileJwtExpiryMsKey]
         val turnstile = snapshot[AmazonTurnstileJwtKey]?.takeIf { it.isNotBlank() && (jwtExpiry ?: 0L) > iosNowMillis() }
+        // The Origin the sitekey is locked to: the build's validated sign-in origin, or the shared
+        // default when the build names none — the same value the authorization sheet exchanges with.
+        val turnstileOrigin = iosAmazonTurnstileOrigin() ?: KtorAmazonAuthorization.TURNSTILE_ORIGIN
         if (bypass != null || turnstile != null) {
             val scope = providerAccountScope(ContentProvider.AMAZON.id, CredentialScope.PERSONAL)
             if (scope != null) {
@@ -688,7 +692,7 @@ private class IosAmazonSource(
                     attempts += Attempt(
                         KtorAmazonRepository(http, base, AmazonInstanceAccess(scope, bypass, turnstile) {
                             preferences()?.let { it[AmazonBypassTokenKey] == bypass || it[AmazonTurnstileJwtKey] == turnstile } == true
-                        }),
+                        }, turnstileOrigin = turnstileOrigin),
                     )
                 }
             }
@@ -709,7 +713,7 @@ private class IosAmazonSource(
                 },
             ) ?: continue
             attempts += Attempt(
-                KtorAmazonRepository(http, base, AmazonInstanceAccess(scope, operator, poolJwt) { pool?.enabled() == true }),
+                KtorAmazonRepository(http, base, AmazonInstanceAccess(scope, operator, poolJwt) { pool?.enabled() == true }, turnstileOrigin = turnstileOrigin),
                 poolId = feedId,
                 pooled = true,
             )

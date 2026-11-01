@@ -20,7 +20,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeoutOrNull
@@ -1171,7 +1170,7 @@ class TidalInstanceResolver(
 
         val reply = streamGet(url, STREAM_REQUEST_TIMEOUT_MS, params)
         if (reply.status == 429) {
-            throw TidalRateLimitedException(rateLimitRetryAfterMs(reply))
+            throw TidalRateLimitedException(rateLimitRetryAfterMs(reply.retryAfter, reply.body, RATE_LIMIT_COOLDOWN_MS))
         }
         if (reply.status !in 200..299) {
             val detail = "TIDAL ${endpoint.name} HTTP ${reply.status}: ${reply.body.take(180)}"
@@ -1181,7 +1180,11 @@ class TidalInstanceResolver(
             throw TidalAudioResolutionException(detail)
         }
         // 202 is a 2xx that carries a queue ticket instead of the playback payload.
-        val payload = if (reply.status == 202) awaitQueuedPlayback(endpoint, reply, deadlineMs) else reply.body
+        val payload = if (reply.status == 202) {
+            queuedPlaybackWaiter.await(endpoint, reply.body, reply.retryAfter, reply.location, deadlineMs)
+        } else {
+            reply.body
+        }
         val root =
             Json.parseToJsonElement(payload).jsonObjectOrNull
                 ?: throw TidalAudioResolutionException("TIDAL FLAC resolver returned no data")
@@ -1836,90 +1839,22 @@ class TidalInstanceResolver(
     // endregion
 
     // region queued playback (hifi-api 202 protocol)
-    /** Header seconds, else the body's retry_after, else the cooldown; shared by direct and polled 429s. */
-    private fun rateLimitRetryAfterMs(reply: Reply): Long {
-        val headerRetryAfterMs = reply.retryAfter?.toLongOrNull()?.times(1000L)?.coerceAtLeast(60_000L)
-        val bodyRetryAfterMs =
-            runCatching {
-                Json.parseToJsonElement(reply.body).jsonObjectOrNull
-                    ?.long("retry_after")
-                    ?.takeIf { it > 0L }
-                    ?.times(1000L)
-            }.getOrNull()
-        return headerRetryAfterMs ?: bodyRetryAfterMs ?: RATE_LIMIT_COOLDOWN_MS
-    }
-
     /**
-     * Waits out a 202 ticket and returns the completed playback body. The status URL reports on the
-     * queued request and finishes with the payload a direct 200 would carry. Every exit that leaves the
-     * ticket open cancels it best-effort, including cancellation by the race, so the account's single
-     * in-flight slot is released rather than held until the server expires the record.
+     * The live wait of the 202 protocol. The resolver lends it the stream exchange, the ticket cancel,
+     * the cooldown book and the deadline clock; the poll cadence and ticket URLs stay with
+     * [TidalQueuedPlayback] like on the Android side.
      */
-    private suspend fun awaitQueuedPlayback(
-        endpoint: TidalDownloadEndpoint,
-        accepted: Reply,
-        deadlineMs: Long,
-    ): String {
-        val acceptedJson = runCatching { Json.parseToJsonElement(accepted.body).jsonObjectOrNull }.getOrNull()
-        val statusUrl =
-            TidalQueuedPlayback.requestUrl(endpoint.baseUrl, acceptedJson?.stringOrNull("statusUrl"))
-                ?: TidalQueuedPlayback.requestUrl(endpoint.baseUrl, accepted.location)
-        val cancelTarget =
-            TidalQueuedPlayback.requestUrl(endpoint.baseUrl, acceptedJson?.stringOrNull("cancelUrl")) ?: statusUrl
-        var settled = false
-        try {
-            val pollUrl =
-                statusUrl ?: throw TidalAudioResolutionException(
-                    "TIDAL ${endpoint.name} queued playback has no usable status URL",
-                )
-            var waitMs = TidalQueuedPlayback.pollDelayMs(accepted.retryAfter, nowMs())
-            while (true) {
-                // A poll that would land at or after the deadline cannot help, so give up and cancel now.
-                if (nowMs() + waitMs >= deadlineMs) throw queuedDeadlineException(endpoint)
-                delay(waitMs)
-                val remainingMs = deadlineMs - nowMs()
-                if (remainingMs <= 0L) throw queuedDeadlineException(endpoint)
-                val poll = streamGet(pollUrl, minOf(STREAM_REQUEST_TIMEOUT_MS, remainingMs))
-                if (poll.status == 429) {
-                    val retryAfterMs = rateLimitRetryAfterMs(poll)
-                    markInstanceRateLimited(endpoint.baseUrl, retryAfterMs)
-                    throw TidalRateLimitedException(retryAfterMs)
-                }
-                if (poll.status == 202) {
-                    waitMs = TidalQueuedPlayback.pollDelayMs(poll.retryAfter, nowMs())
-                    continue
-                }
-                if (poll.status == 404 || poll.status == 410) {
-                    // The server has already dropped the record, so a cancel would only add noise.
-                    settled = true
-                    throw TidalAudioResolutionException(
-                        "TIDAL ${endpoint.name} queued playback expired (HTTP ${poll.status})",
-                    )
-                }
-                if (poll.status !in 200..299) {
-                    throw TidalAudioResolutionException(
-                        "TIDAL ${endpoint.name} queued playback HTTP ${poll.status}: ${poll.body.take(180)}",
-                    )
-                }
-                val pollJson = runCatching { Json.parseToJsonElement(poll.body).jsonObjectOrNull }.getOrNull()
-                if (pollJson?.obj("data") != null) {
-                    settled = true
-                    return poll.body
-                }
-                val state = pollJson?.stringOrNull("status")
-                if (TidalQueuedPlayback.isFailedState(state)) {
-                    settled = true
-                    throw TidalAudioResolutionException("TIDAL ${endpoint.name} queued playback ended: $state")
-                }
-                waitMs = TidalQueuedPlayback.pollDelayMs(poll.retryAfter, nowMs())
-            }
-        } finally {
-            if (!settled && cancelTarget != null) cancelQueuedPlayback(cancelTarget)
-        }
-    }
-
-    private fun queuedDeadlineException(endpoint: TidalDownloadEndpoint): TidalAudioResolutionException =
-        TidalAudioResolutionException("TIDAL ${endpoint.name} queued playback did not finish before the attempt deadline")
+    private val queuedPlaybackWaiter =
+        TidalQueuedPlaybackWaiter(
+            nowMs = nowMs,
+            streamRequestTimeoutMs = STREAM_REQUEST_TIMEOUT_MS,
+            get = { url, timeoutMs ->
+                streamGet(url, timeoutMs).let { TidalQueuedPlaybackWaiter.Poll(it.status, it.body, it.retryAfter) }
+            },
+            cancel = ::cancelQueuedPlayback,
+            onRateLimited = { baseUrl, retryAfterMs -> markInstanceRateLimited(baseUrl, retryAfterMs) },
+            rateLimitCooldownMs = RATE_LIMIT_COOLDOWN_MS,
+        )
 
     /** Fire-and-forget on [cancelScope]: the race must not wait for it, and a failed cancel changes nothing. */
     private fun cancelQueuedPlayback(cancelUrl: String) {
@@ -2034,35 +1969,6 @@ class TidalInstanceResolver(
                 throw TidalAudioResolutionException("TIDAL request failed: ${error::class.simpleName}", error)
             }
         } ?: throw TidalTimeoutException()
-    // endregion
-
-    // region JSON helpers
-    private fun JsonObject.stringOrNull(key: String): String? =
-        (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
-
-    private fun JsonObject.longOrNull(key: String): Long? =
-        if (containsKey(key)) (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull?.takeIf { it > 0L } else null
-
-    private fun JsonObject.doubleOrNull(key: String): Double? =
-        if (containsKey(key)) {
-            (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.doubleOrNull?.takeIf { it > 0.0 && !it.isNaN() }
-        } else {
-            null
-        }
-
-    private val kotlinx.serialization.json.JsonElement.jsonObjectOrNull: JsonObject?
-        get() = this as? JsonObject
-
-    private val kotlinx.serialization.json.JsonElement.jsonPrimitiveOrNull: kotlinx.serialization.json.JsonPrimitive?
-        get() = this as? kotlinx.serialization.json.JsonPrimitive
-
-    private fun JsonArray.firstStringOrNull(): String? {
-        for (element in this) {
-            val value = element.jsonPrimitiveOrNull?.content?.takeIf { it.isNotBlank() }
-            if (value != null) return value
-        }
-        return null
-    }
     // endregion
 
     // region XML helpers
