@@ -52,6 +52,10 @@ data class SongEntity(
     // the user can permanently banish a track from auto-generated radio/mixes regardless of
     // artist. Mirrors ArtistEntity.blockedAt semantics. Cleared by re-tapping the menu item.
     val blockedAt: LocalDateTime? = null,
+    // The per-song lyrics offset from the lyrics menu dialog, persisted so the correction
+    // survives restarts and applies on every lyrics surface. Milliseconds; positive delays.
+    @ColumnInfo(defaultValue = "0")
+    val lyricsOffset: Int = 0,
 ) {
     fun localToggleLike() =
         copy(

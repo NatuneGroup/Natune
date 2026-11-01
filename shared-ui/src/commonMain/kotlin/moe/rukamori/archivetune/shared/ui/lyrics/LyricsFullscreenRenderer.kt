@@ -106,7 +106,10 @@ fun LyricsFullscreenRenderer(
         if (profile.refinedMotion) LyricsInterludes.byRow(rows) else emptyMap<Int, LyricsInterlude>()
     }
     val frameLoop = LyricsFrameGate.runsFrameLoop(visible, resumed, settings.reduceMotion, snapshot)
-    val clock = rememberLyricsClock(snapshot, settings.syncOffsetMs, LyricsFeedTiming.leadMsFor(rows), frameLoop)
+    val deadlines = remember(rows, profile.minSweepMs, profile.refinedMotion) {
+        LyricsDeadlineSchedule.of(rows, profile.minSweepMs, profile.refinedMotion)
+    }
+    val clock = rememberLyricsClock(snapshot, settings.syncOffsetMs, LyricsFeedTiming.leadMsFor(rows), frameLoop, deadlines)
     val measurer = rememberTextMeasurer()
     val shapes = remember(rows, measurer) { lyricsShapeCache(rows, measurer) }
     val activeRows by remember(scanner) { derivedStateOf { scanner.activeAt(clock.feedMs.longValue) } }
