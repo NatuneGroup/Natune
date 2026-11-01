@@ -2,9 +2,11 @@
 
 package moe.rukamori.archivetune.shared.ui.ios
 
-import kotlinx.cinterop.COpaquePointer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -19,13 +21,9 @@ import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 import platform.AVFAudio.AVAudioSession
-import platform.Foundation.NSKeyValueObservingOptionNew
-import platform.Foundation.NSKeyValueObservingProtocol
-import platform.Foundation.addObserver
-import platform.Foundation.removeObserver
-import platform.darwin.NSObject
 
-private const val OUTPUT_VOLUME_KEY_PATH = "outputVolume"
+/** How often the playing session samples the system output level. */
+private const val VOLUME_POLL_MS = 1_000L
 
 /**
  * One output-mute sample of the iOS session: everything [PauseOnMuteController.observe] asks for,
@@ -44,14 +42,16 @@ private data class IosMuteSample(
 /**
  * The iOS binding of the "pause on device mute" and "device mute playback recovery volume"
  * settings. It feeds [PauseOnMuteController] from the stored option, the stored app output level,
- * the audio session's system output volume — observed through key-value observing, the documented
- * route for `outputVolume` — and the player's snapshots, and applies the returned pause, resume or
- * volume restore through the same player and volume the listener drives.
+ * the audio session's system output volume — sampled on the main queue once a second while
+ * playback is expected, because Kotlin/Native has no key-value observing surface — and the
+ * player's snapshots, and applies the returned pause, resume or volume restore through the same
+ * player and volume the listener drives.
  *
  * The policy is a collector, not a command hook: a play request while muted needs no interception,
- * because the resulting playing sample is the edge the controller acts on. The system output level
- * cannot be lifted programmatically, so a stored recovery volume only answers a mute that came from
- * the app level; a system-volume mute pauses and waits for the listener's own unmute.
+ * because the resulting playing sample is the edge the controller acts on. A paused or ended
+ * session does not poll: only a playing one can act on a mute, and the first read after play
+ * resumes catches whatever the level became meanwhile. The system output level cannot be lifted
+ * programmatically, so a stored recovery volume only answers a mute that came from the app level.
  */
 internal class IosOutputMutePolicy(
     scope: CoroutineScope,
@@ -63,16 +63,26 @@ internal class IosOutputMutePolicy(
 ) {
     private val controller = PauseOnMuteController()
     private val systemVolume = MutableStateFlow(AVAudioSession.sharedInstance().outputVolume)
-    private val observer = IosVolumeObserver { systemVolume.value = it }
+    private var volumePoll: Job? = null
     private var closed = false
 
     init {
-        AVAudioSession.sharedInstance().addObserver(
-            observer,
-            forKeyPath = OUTPUT_VOLUME_KEY_PATH,
-            options = NSKeyValueObservingOptionNew,
-            context = null,
-        )
+        scope.launch {
+            player.snapshot.collect { snapshot ->
+                val playing = snapshot?.let { it.playWhenReady && !it.isEnded } == true
+                if (playing && !closed && volumePoll == null) {
+                    volumePoll = launch(Dispatchers.Main) {
+                        while (true) {
+                            systemVolume.value = AVAudioSession.sharedInstance().outputVolume
+                            delay(VOLUME_POLL_MS)
+                        }
+                    }
+                } else if (!playing) {
+                    volumePoll?.cancel()
+                    volumePoll = null
+                }
+            }
+        }
         scope.launch {
             combine(
                 settings.snapshots,
@@ -94,11 +104,12 @@ internal class IosOutputMutePolicy(
         }
     }
 
-    /** Detaches the volume observer; the collecting coroutine ends with the session's scope. */
+    /** Stops the volume poll at once; the collecting coroutines end with the session's scope. */
     fun close() {
         if (closed) return
         closed = true
-        AVAudioSession.sharedInstance().removeObserver(observer, forKeyPath = OUTPUT_VOLUME_KEY_PATH)
+        volumePoll?.cancel()
+        volumePoll = null
     }
 
     private fun sampleOf(
@@ -133,24 +144,6 @@ internal class IosOutputMutePolicy(
             } catch (failure: Exception) {
                 report("mute recovery volume was not applied: ${failure::class.simpleName}")
             }
-        }
-    }
-}
-
-/**
- * Reads the audio session's output volume on every change notification. Key-value observing calls
- * arrive on the queue that changed the property, so the observer only writes the state flow, which
- * is safe from any queue.
- */
-private class IosVolumeObserver(private val onVolume: (Float) -> Unit) : NSObject(), NSKeyValueObservingProtocol {
-    override fun observeValueForKeyPath(
-        keyPath: String?,
-        ofObject: Any?,
-        change: Map<Any?, *>?,
-        context: COpaquePointer?,
-    ) {
-        if (keyPath == OUTPUT_VOLUME_KEY_PATH) {
-            (ofObject as? AVAudioSession)?.let { onVolume(it.outputVolume) }
         }
     }
 }
