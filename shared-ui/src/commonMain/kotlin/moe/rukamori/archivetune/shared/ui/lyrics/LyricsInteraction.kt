@@ -48,3 +48,10 @@ object LyricsTapPolicy {
             else -> LyricsTapAction.None
         }
 }
+
+/**
+ * Whether a row sits behind the playhead and reads as passed rather than upcoming. Only timed rows
+ * can pass — unsynced text is static — and a row the playhead currently sings is active, not passed.
+ */
+internal fun isPassedLyricRow(row: LyricsRenderRow, activeRows: List<Int>, primaryIndex: Int): Boolean =
+    row.isSynced && primaryIndex >= 0 && row.index < primaryIndex && row.index !in activeRows
