@@ -267,7 +267,7 @@ object QobuzAudioProvider {
                     }
                     val body = response.body?.string().orEmpty()
                     if (body.isBlank()) return@use true
-                    val obj = JSONObject(body)
+                    val obj = runCatching { JSONObject(body) }.getOrNull() ?: return@use true
                     for (key in listOf("streaming", "instances", "api")) {
                         val arr = obj.optJSONArray(key) ?: continue
                         for (i in 0 until arr.length()) {

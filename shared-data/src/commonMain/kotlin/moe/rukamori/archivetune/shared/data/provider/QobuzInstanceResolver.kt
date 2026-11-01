@@ -7,6 +7,7 @@ import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -339,18 +340,19 @@ class QobuzInstanceResolver(
                 for (url in poolFeedUrls()) {
                     val reply =
                         try {
-                            http.json(url, headers = headers)
+                            http.exchange(url, headers = headers)
                         } catch (cancel: CancellationException) {
                             throw cancel
-                        } catch (failure: ProviderHttpFailure) {
-                            if (ArchivePoolEndpoints.isFailoverStatus(failure.status)) continue
-                            ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
-                            break
                         } catch (_: Exception) {
                             continue
                         }
+                    if (ArchivePoolEndpoints.isFailoverStatus(reply.status)) continue
                     ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
-                    root = runCatching { reply.jsonObject }.getOrNull()
+                    if (reply.status == 200) {
+                        // The status is classified before decoding: a 200 with an unusable
+                        // payload is definitive (a payload failure), not a failover.
+                        root = runCatching { Json.parseToJsonElement(reply.body).jsonObject }.getOrNull()
+                    }
                     break
                 }
                 if (!poolEnabled() || root == null) {
