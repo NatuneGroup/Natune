@@ -64,35 +64,43 @@ internal class JvmBotGuardJsRuntime private constructor(
                 Executors.newSingleThreadExecutor { runnable ->
                     Thread(runnable, "botguard-quickjs").apply { isDaemon = true }
                 }.asCoroutineDispatcher()
+            // The native handle lives outside withContext: a cancelled resumption can drop the
+            // block's return value, and a dropped QuickJS runtime still has to be closed on its
+            // own thread before the worker goes away.
+            var runtime: QuickJs? = null
             try {
-                val runtime =
-                    withContext(worker) {
-                        QuickJs.create(worker).apply {
-                            // BotGuard's interpreter plus program is far heavier than a provider
-                            // challenge; the cap only protects the host, it never shapes a valid run.
-                            memoryLimit = 512L * 1024 * 1024
-                            maxStackSize = 1024L * 1024
-                            // Kotlin-side cancellation interrupts a runaway evaluation; this is only
-                            // a last-resort bound.
-                            evaluationTimeoutMillis = 60_000L
-                            defineBinding("__hostSleep", AsyncFunctionBinding<Any?> { args ->
-                                val ms =
-                                    (args.getOrNull(0) as? Number)?.toLong()?.coerceIn(0L, 3_600_000L) ?: 0L
-                                delay(ms)
-                                null
-                            })
-                            defineBinding("__hostRandom", FunctionBinding<ByteArray> { args ->
-                                val count =
-                                    (args.getOrNull(0) as? Number)?.toInt()?.coerceIn(0, 1_048_576) ?: 0
-                                ByteArray(count).also(secureRandom::nextBytes)
-                            })
-                        }
+                withContext(worker) {
+                    QuickJs.create(worker).also { runtime = it }.apply {
+                        // BotGuard's interpreter plus program is far heavier than a provider
+                        // challenge; the cap only protects the host, it never shapes a valid run.
+                        memoryLimit = 512L * 1024 * 1024
+                        maxStackSize = 1024L * 1024
+                        // Kotlin-side cancellation interrupts a runaway evaluation; this is only
+                        // a last-resort bound.
+                        evaluationTimeoutMillis = 60_000L
+                        defineBinding("__hostSleep", AsyncFunctionBinding<Any?> { args ->
+                            val ms =
+                                (args.getOrNull(0) as? Number)?.toLong()?.coerceIn(0L, 3_600_000L) ?: 0L
+                            delay(ms)
+                            null
+                        })
+                        defineBinding("__hostRandom", FunctionBinding<ByteArray> { args ->
+                            val count =
+                                (args.getOrNull(0) as? Number)?.toInt()?.coerceIn(0, 1_048_576) ?: 0
+                            ByteArray(count).also(secureRandom::nextBytes)
+                        })
                     }
-                return JvmBotGuardJsRuntime(runtime, worker)
+                }
             } catch (failure: Throwable) {
+                runCatching {
+                    runtime?.let { live ->
+                        withContext(NonCancellable + worker) { runCatching { live.close() } }
+                    }
+                }
                 runCatching { worker.close() }
                 throw failure
             }
+            return JvmBotGuardJsRuntime(checkNotNull(runtime), worker)
         }
     }
 }

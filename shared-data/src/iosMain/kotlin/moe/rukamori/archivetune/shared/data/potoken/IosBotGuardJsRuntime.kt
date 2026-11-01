@@ -1,4 +1,4 @@
-@file:OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+@file:OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 
 package moe.rukamori.archivetune.shared.data.potoken
 
@@ -54,35 +54,43 @@ internal class IosBotGuardJsRuntime private constructor(
             // The runtime's own thread: creation, every evaluate, the async-job queue and the final
             // close all serialize on it; the engine mutex keeps minting single-flight.
             val worker = newSingleThreadContext("ArchiveTune BotGuard")
+            // The native handle lives outside withContext: a cancelled resumption can drop the
+            // block's return value, and a dropped QuickJS runtime still has to be closed on its
+            // own thread before the worker goes away.
+            var runtime: QuickJs? = null
             try {
-                val runtime =
-                    withContext(worker) {
-                        QuickJs.create(worker).apply {
-                            // BotGuard's interpreter plus program is far heavier than a provider
-                            // challenge; the cap only protects the host, it never shapes a valid run.
-                            memoryLimit = 512L * 1024 * 1024
-                            maxStackSize = 1024L * 1024
-                            // Kotlin-side cancellation interrupts a runaway evaluation; this is only
-                            // a last-resort bound.
-                            evaluationTimeoutMillis = 60_000L
-                            defineBinding("__hostSleep", AsyncFunctionBinding<Any?> { args ->
-                                val ms =
-                                    (args.getOrNull(0) as? Number)?.toLong()?.coerceIn(0L, 3_600_000L) ?: 0L
-                                delay(ms)
-                                null
-                            })
-                            defineBinding("__hostRandom", FunctionBinding<ByteArray> { args ->
-                                val count =
-                                    (args.getOrNull(0) as? Number)?.toInt()?.coerceIn(0, 1_048_576) ?: 0
-                                iosSecureRandomBytes(count)
-                            })
-                        }
+                withContext(worker) {
+                    QuickJs.create(worker).also { runtime = it }.apply {
+                        // BotGuard's interpreter plus program is far heavier than a provider
+                        // challenge; the cap only protects the host, it never shapes a valid run.
+                        memoryLimit = 512L * 1024 * 1024
+                        maxStackSize = 1024L * 1024
+                        // Kotlin-side cancellation interrupts a runaway evaluation; this is only
+                        // a last-resort bound.
+                        evaluationTimeoutMillis = 60_000L
+                        defineBinding("__hostSleep", AsyncFunctionBinding<Any?> { args ->
+                            val ms =
+                                (args.getOrNull(0) as? Number)?.toLong()?.coerceIn(0L, 3_600_000L) ?: 0L
+                            delay(ms)
+                            null
+                        })
+                        defineBinding("__hostRandom", FunctionBinding<ByteArray> { args ->
+                            val count =
+                                (args.getOrNull(0) as? Number)?.toInt()?.coerceIn(0, 1_048_576) ?: 0
+                            iosSecureRandomBytes(count)
+                        })
                     }
-                return IosBotGuardJsRuntime(runtime, worker)
+                }
             } catch (failure: Throwable) {
+                runCatching {
+                    runtime?.let { live ->
+                        withContext(NonCancellable + worker) { runCatching { live.close() } }
+                    }
+                }
                 runCatching { worker.close() }
                 throw failure
             }
+            return IosBotGuardJsRuntime(checkNotNull(runtime), worker)
         }
     }
 }
