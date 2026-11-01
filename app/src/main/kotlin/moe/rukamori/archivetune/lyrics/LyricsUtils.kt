@@ -15,7 +15,6 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.betterlyrics.QRCParser
 import moe.rukamori.archivetune.betterlyrics.TTMLParser
 import moe.rukamori.archivetune.db.entities.LyricsEntity
-import moe.rukamori.archivetune.shared.domain.lyrics.romanization.MandarinRomanization
 import java.lang.Character.UnicodeScript
 import java.text.Normalizer
 import java.util.Locale
@@ -2066,10 +2065,6 @@ object LyricsUtils {
                 text
             }
         }
-
-    /** Mandarin via the bundled pinyin table first; ICU stays the fallback for characters the table misses. */
-    private suspend fun romanizeChinese(text: String): String =
-        MandarinRomanization.romanize(text) ?: romanizeWithIcu(text)
 
     internal fun normalizeRomanizedText(
         original: String,

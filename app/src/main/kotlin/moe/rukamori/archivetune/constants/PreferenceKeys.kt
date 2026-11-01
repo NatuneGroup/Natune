@@ -1584,7 +1584,6 @@ val LyricsV2InterludeDotsKey = booleanPreferencesKey("lyricsV2InterludeDots")
 // Queue lyrics pre-load settings
 val PreloadQueueLyricsEnabledKey = booleanPreferencesKey("preload_queue_lyrics_enabled")
 val QueueLyricsPreloadCountKey = intPreferencesKey("queue_lyrics_preload_count")
-val GlobalLyricsOffsetMsKey = intPreferencesKey("globalLyricsOffsetMs")
 
 val PlayerVolumeKey = floatPreferencesKey("playerVolume")
 val RepeatModeKey = intPreferencesKey("repeatMode")

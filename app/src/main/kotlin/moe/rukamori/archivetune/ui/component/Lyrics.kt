@@ -145,6 +145,7 @@ import moe.rukamori.archivetune.constants.LyricsTextPositionKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.lyrics.LyricsDeadlineSchedule
+import moe.rukamori.archivetune.lyrics.sleepUntilNext
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.lyrics.LyricsUtils.findCurrentLineIndex
@@ -177,26 +178,10 @@ private const val LyricsWordSyncLeadMs = 300L
 /** The shortest span a drawn word fill sweeps for; below it the fill still takes this long. */
 private const val WORD_SWEEP_MIN_MS = 150L
 
-/** The slowest the lyrics clock re-checks its feed while idle; matches the native held-position poll. */
-private const val IDLE_POLL_MS = 250L
+/** The paused position poll; idle sleeps are bounded by sleepUntilNext's 250 ms default. */
 private const val PAUSED_POLL_MS = 100L
 
 val LyricsPreviewTime = 2.seconds
-
-private fun rtlAwareHorizontalGradient(
-    isRtl: Boolean,
-    vararg colorStops: Pair<Float, Color>,
-): Brush {
-    val stops =
-        if (isRtl) {
-            colorStops
-                .map { (f, c) -> (1f - f).coerceIn(0f, 1f) to c }
-                .sortedBy { it.first }
-        } else {
-            colorStops.toList()
-        }
-    return Brush.horizontalGradient(*stops.toTypedArray())
-}
 
 /**
  * Renders a single word with karaoke fill animation.
@@ -652,11 +637,7 @@ fun Lyrics(
                 seekingNow -> if (isTtmlLyrics) withFrameNanos { } else delay(50L)
                 !playerConnection.player.isPlaying -> delay(PAUSED_POLL_MS)
                 isTtmlLyrics && schedule.isLive(syncedPosition) -> withFrameNanos { }
-                else -> {
-                    val next = schedule.nextChangeAfter(syncedPosition)
-                    val floor = if (isTtmlLyrics) 16L else 50L
-                    delay(if (next == null) IDLE_POLL_MS else (next - syncedPosition).coerceIn(floor, IDLE_POLL_MS))
-                }
+                else -> schedule.sleepUntilNext(syncedPosition, if (isTtmlLyrics) 16L else 50L)
             }
         }
     }
