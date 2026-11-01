@@ -150,6 +150,17 @@ class IosPlaybackPool(
         return ordered(TIDAL, tidal, { it.id }, { it.premium })
     }
 
+    /** The credential the feed last served, with no load or refresh — the marker a recovery compares. */
+    fun tidalSnapshot(): List<TidalPoolAccount> = tidal
+
+    fun qobuzSnapshot(): List<QobuzPoolAccount> = qobuz
+
+    fun deezerSnapshot(): List<DeezerPoolAccount> = deezer
+
+    fun appleMusicSnapshot(): List<AppleMusicPoolAccount> = appleMusic
+
+    fun amazonSnapshot(): List<AmazonPoolAccount> = amazon
+
     suspend fun qobuzAccounts(): List<QobuzPoolAccount> {
         if (!enabled()) return emptyList()
         ensureLoaded()

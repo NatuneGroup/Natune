@@ -134,6 +134,13 @@ internal class DesktopPlaybackPool(
         return qobuz.sortedWith(compareBy({ coolingDown(QOBUZ, it.id) }, { !it.premium }))
     }
 
+    /** The credential the feed last served, with no load or refresh — the marker a recovery compares. */
+    fun tidalSnapshot(): List<TidalPoolAccount> = tidal
+
+    fun deezerSnapshot(): List<DeezerPoolAccount> = deezer
+
+    fun qobuzSnapshot(): List<QobuzPoolAccount> = qobuz
+
     /** A replaced feed credential must revoke an already-prepared source, not only the next pool lookup. */
     fun admitsQobuz(account: QobuzPoolAccount): Boolean = enabled() && qobuz.any {
         it.id == account.id && it.token == account.token && it.appId == account.appId && it.appSecret == account.appSecret

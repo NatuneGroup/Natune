@@ -5,9 +5,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.rukamori.archivetune.App
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.qobuz.QobuzToken
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
 import moe.rukamori.archivetune.shared.data.provider.PoolDeadReporter
+import moe.rukamori.archivetune.shared.data.provider.PoolFailureKind
+import moe.rukamori.archivetune.shared.data.provider.PoolRecovery
+import moe.rukamori.archivetune.shared.data.provider.PoolRetryOutcome
+import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
+import moe.rukamori.archivetune.shared.data.provider.classifyPoolFailure
 import moe.rukamori.archivetune.tidal.TidalAccountManager
 import timber.log.Timber
 
@@ -16,9 +22,9 @@ import timber.log.Timber
  * just refused is usually only holding a stale lease — pooled Tidal access tokens live ~an hour
  * while the feed cache lives a day — so a refusal buys one re-lease, single-flight per account,
  * then one retry with the credential the server now serves. A dead report fires only when the
- * credential still fails for real afterwards: revoked, banned or entitlement gone. This is what
- * used to turn healthy accounts into ~2,000 false dead reports a day and made the pool hammer
- * Tidal's refresh endpoint until it answered `abuse_detected`.
+ * recovered credential is refused again for real: revoked, banned or entitlement gone. This is
+ * what used to turn healthy accounts into ~2,000 false dead reports a day and made the pool
+ * hammer Tidal's refresh endpoint until it answered `abuse_detected`.
  */
 object PoolAccountRecovery {
     private const val TAG = "PoolRecovery"
@@ -31,10 +37,11 @@ object PoolAccountRecovery {
 
     /**
      * Re-leases the Source Pool once for (service, id): single-flight per account, throttled to one
-     * feed fetch per recovery window, and waiters reuse the winner's fresh cache. [current] re-reads
-     * the credential the feed now serves for the account; the lease counts as moved only when it
-     * differs from [stale]. Answers the fresh credential, or null when the lease did not move (no
-     * context, a failed fetch, or the same credential came back).
+     * feed fetch per recovery window, and waiters reuse the winner's fresh cache. [current] reads
+     * only the cached credential — never the network; the network round-trip lives solely inside
+     * the gated recovery callback. The answer is explicit: [PoolRecovery.Recovered] carries the
+     * credential the feed now serves, [PoolRecovery.Unchanged] means the same credential came back
+     * and [PoolRecovery.Unavailable] means no round-trip ran — neither justifies a dead verdict.
      */
     suspend fun <C : Any> reLease(
         context: Context?,
@@ -42,8 +49,8 @@ object PoolAccountRecovery {
         id: Long?,
         stale: C,
         current: suspend () -> C?,
-    ): C? {
-        val application = application(context) ?: return null
+    ): PoolRecovery<C> {
+        val application = application(context) ?: return PoolRecovery.Unavailable
         return reporter.reLease(service, id, stale, current) {
             PoolAccountManager.refresh(application, force = true)
         }
@@ -56,7 +63,7 @@ object PoolAccountRecovery {
         id: Long?,
         stale: C,
         current: () -> C?,
-    ): C? = runBlocking(Dispatchers.IO) { reLease(context, service, id, stale) { current() } }
+    ): PoolRecovery<C> = runBlocking(Dispatchers.IO) { reLease(context, service, id, stale) { current() } }
 
     /**
      * Reports a dead pooled account through the pool's own fire-and-forget channel — so the
@@ -70,10 +77,32 @@ object PoolAccountRecovery {
     }
 
     /**
+     * Maps a Tidal resolve failure onto the shared failure kinds. The typed auth rejection is a
+     * [TidalAccountManager.TidalUnauthorizedException]; every other HTTP refusal surfaces as a
+     * status-bearing [ProviderHttpFailure] and is classified by status, so a 403 earns recovery
+     * like a 401 while a 402 reports `not_premium` and a 429 or 5xx stays transient.
+     */
+    private fun tidalFailureKind(root: Throwable?): PoolFailureKind {
+        if (TidalAccountManager.isUnauthorized(root)) return PoolFailureKind.AUTH_REJECTED
+        val stack = ArrayDeque<Throwable>()
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+        root?.let { stack.addLast(it) }
+        while (stack.isNotEmpty()) {
+            val t = stack.removeLast()
+            if (!seen.add(t)) continue
+            if (t is ProviderHttpFailure) return classifyPoolFailure(t)
+            t.cause?.let { stack.addLast(it) }
+            t.suppressed.forEach { stack.addLast(it) }
+        }
+        return PoolFailureKind.TRANSIENT
+    }
+
+    /**
      * Resolves through one pooled Tidal account the way the personal-token path already recovers:
-     * a 401 buys one re-lease, then one retry with the credential the server now serves; only a
-     * second refusal reports the account dead. Non-auth failures leave the pool alone. Answers the
-     * stream or null.
+     * a credential refusal (401/403) buys one re-lease, then one retry with the credential the
+     * server now serves; only the retry's own rejection earns a verdict — `dead` on a second auth
+     * refusal, `not_premium` on a 402. A lease that did not move, a recovery that could not run
+     * and transient failures all leave the pool alone. Answers the stream or null.
      */
     suspend fun resolvePooledTidal(
         context: Context?,
@@ -82,56 +111,76 @@ object PoolAccountRecovery {
         attempt: suspend (token: String, country: String) -> DirectStream?,
     ): DirectStream? {
         val first = runCatching { attempt(account.token, country) }
+        first.exceptionOrNull()?.rethrowIfAudioSourceCancelled()
         if (first.isSuccess) return first.getOrNull()
-        if (!TidalAccountManager.isUnauthorized(first.exceptionOrNull())) {
+        val kind = tidalFailureKind(first.exceptionOrNull())
+        if (kind != PoolFailureKind.AUTH_REJECTED && kind != PoolFailureKind.ENTITLEMENT_LOST) {
             Timber.tag(TAG).w(first.exceptionOrNull(), "Tidal pool account %s resolve failed", account.id)
             return null
         }
-        val freshToken = reLease(context, "tidal", account.id, stale = account.token) {
-            PoolAccountManager.tidalAccounts().firstOrNull { it.id == account.id }?.token
-        }
-        if (freshToken != null) {
-            val retried = runCatching { attempt(freshToken, country) }
-            if (retried.isSuccess) return retried.getOrNull()
-            if (!TidalAccountManager.isUnauthorized(retried.exceptionOrNull())) {
-                Timber.tag(TAG).w(retried.exceptionOrNull(), "Tidal pool account %s retry failed", account.id)
-                return null
-            }
-        }
-        reportDead("tidal", account.id)
-        return null
+        val application = application(context) ?: return null
+        return reporter.recoverAndReport(
+            "tidal", account.id, kind,
+            stale = account.token,
+            current = { PoolAccountManager.tidalAccounts().firstOrNull { it.id == account.id }?.token },
+            recover = { PoolAccountManager.refresh(application, force = true) },
+            retry = { fresh ->
+                val retried = runCatching { attempt(fresh, country) }
+                retried.exceptionOrNull()?.rethrowIfAudioSourceCancelled()
+                when {
+                    retried.isSuccess -> retried.getOrNull()
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                    else -> PoolRetryOutcome.Failure(tidalFailureKind(retried.exceptionOrNull()))
+                }
+            },
+            report = { type -> PoolAccountManager.report("tidal", "account", account.id, type) },
+        )
     }
 
     /**
-     * Re-leases once after a 401/403 on a pooled Qobuz token and runs [retry] with whatever the feed
-     * now serves. The retried call applies the same recovery on a second refusal; when the lease
-     * never moved, the credential the server still believes healthy is the one that just failed, so
-     * it is reported dead (deduped).
+     * Re-leases once after a 401/403 on a pooled Qobuz credential and runs [retry] once with
+     * whatever the feed now serves. The pool can rotate the user token, the appId and the
+     * appSecret independently, so the moved-lease check compares the whole tuple. Only a retry
+     * whose own refusal is typed auth (the retried call throws [ProviderHttpFailure] on a second
+     * 401/403) earns the dead report; any other outcome leaves the pool alone.
      */
     fun <R : Any> retryOrReportQobuz(
         poolId: Long,
         token: QobuzToken,
         retry: (QobuzToken) -> R?,
     ): R? {
-        val freshToken = reLeaseBlocking(null, "qobuz", poolId, stale = token.token) {
-            PoolAccountManager.qobuzAccounts().firstOrNull { it.id == poolId }?.token
+        val recovery = reLeaseBlocking(
+            null, "qobuz", poolId,
+            stale = Triple(token.token, token.appId, token.appSecret),
+        ) {
+            PoolAccountManager.qobuzAccounts().firstOrNull { it.id == poolId }
+                ?.let { Triple(it.token, it.appId, it.appSecret) }
         }
-        if (freshToken == null) {
-            reportDead("qobuz", poolId)
-            return null
+        if (recovery !is PoolRecovery.Recovered) return null
+        val credential = recovery.credential
+        val retried =
+            runCatching {
+                retry(
+                    QobuzToken(
+                        token = credential.first,
+                        userId = token.userId,
+                        appId = credential.second,
+                        appSecret = credential.third,
+                        label = token.label,
+                        subscription = token.subscription,
+                        poolId = poolId,
+                    ),
+                )
+            }
+        retried.exceptionOrNull()?.rethrowIfAudioSourceCancelled()
+        return when {
+            retried.isSuccess -> retried.getOrNull()
+            classifyPoolFailure(retried.exceptionOrNull()) == PoolFailureKind.AUTH_REJECTED -> {
+                reportDead("qobuz", poolId)
+                null
+            }
+            else -> null
         }
-        val account = PoolAccountManager.qobuzAccounts().firstOrNull { it.id == poolId }
-        return runCatching {
-            retry(
-                QobuzToken(
-                    token = freshToken,
-                    appId = account?.appId ?: token.appId,
-                    appSecret = account?.appSecret ?: token.appSecret,
-                    label = token.label,
-                    subscription = token.subscription,
-                    poolId = poolId,
-                ),
-            )
-        }.getOrNull()
     }
 }

@@ -851,7 +851,7 @@ object QobuzAudioProvider {
 
     private fun searchItemsDirect(
         token: QobuzToken,
-        searchQuery: String,
+        searchQuery: String, attempt: Int = 0,
     ): JSONArray? {
         val url =
             "$QOBUZ_API_BASE/track/search"
@@ -863,7 +863,7 @@ object QobuzAudioProvider {
                 .build()
         client.newCall(directRequest(url.toString(), token)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
-                token.poolId?.let { return moe.rukamori.archivetune.utils.PoolAccountRecovery.retryOrReportQobuz(it, token) { fresh -> searchItemsDirect(fresh, searchQuery) } }
+                token.poolId?.let { if (attempt > 0) throw moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure(response.code); return moe.rukamori.archivetune.utils.PoolAccountRecovery.retryOrReportQobuz(it, token) { fresh -> searchItemsDirect(fresh, searchQuery, attempt = 1) } }
             }
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
@@ -881,11 +881,11 @@ object QobuzAudioProvider {
     private fun fetchDownloadDirect(
         token: QobuzToken,
         trackId: String,
-        formatId: Int,
+        formatId: Int, attempt: Int = 0,
     ): DownloadResult? {
         client.newCall(directDownloadRequest(token, trackId, formatId)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
-                token.poolId?.let { return moe.rukamori.archivetune.utils.PoolAccountRecovery.retryOrReportQobuz(it, token) { fresh -> fetchDownloadDirect(fresh, trackId, formatId) } }
+                token.poolId?.let { if (attempt > 0) throw moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure(response.code); return moe.rukamori.archivetune.utils.PoolAccountRecovery.retryOrReportQobuz(it, token) { fresh -> fetchDownloadDirect(fresh, trackId, formatId, attempt = 1) } }
             }
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
