@@ -69,6 +69,7 @@ internal fun appearanceSettingsItem(
             SettingsChild("Player design style", "player_design_style", listOf("player design", "player layout", "player style")),
             SettingsChild("Player menu style", "player_menu_style", listOf("player menu", "menu style", "three dot menu", "lyrics menu", "material 3 list", "apple music menus")),
             SettingsChild("Show lyrics on main player (TikTok)", "tiktok_main_lyrics", listOf("tiktok lyrics", "main player lyrics", "current line lyrics", "karaoke line", "tiktok player")) { SearchResultSwitch(TikTokMainLyricsEnabledKey, false) },
+            SettingsChild(context.getString(R.string.metrolist_presentation), "metrolist_presentation", listOf("metrolist", "metrolist presentation", "modern", "vintage", "player style")),
             SettingsChild("Player background style", "player_background_style", listOf("player background", "player bg", "background style")),
             SettingsChild("Lyrics background style", "lyrics_background_style", listOf("lyrics background", "lyrics bg")),
             SettingsChild("Mini player background style", "mini_player_background_style", listOf("mini player", "mini player background")),

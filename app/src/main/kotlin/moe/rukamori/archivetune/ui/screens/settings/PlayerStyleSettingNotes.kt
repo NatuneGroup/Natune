@@ -8,6 +8,7 @@ import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
 import moe.rukamori.archivetune.constants.PlayerStyleSetting
 import moe.rukamori.archivetune.constants.honors
+import moe.rukamori.archivetune.shared.ui.player.MetrolistPresentation
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 
 @Composable
@@ -31,6 +32,16 @@ internal fun playerDesignStyleLabel(style: PlayerDesignStyle): String =
             PlayerDesignStyle.SPATIALFLOW -> R.string.player_design_spatialflow
             PlayerDesignStyle.LOOPER -> R.string.player_design_looper
             PlayerDesignStyle.FLAMINGO -> R.string.player_design_flamingo
+            PlayerDesignStyle.METROLIST_KMP -> R.string.player_design_metrolist_kmp
+        },
+    )
+
+@Composable
+internal fun metrolistPresentationLabel(presentation: MetrolistPresentation): String =
+    stringResource(
+        when (presentation) {
+            MetrolistPresentation.MODERN -> R.string.metrolist_presentation_modern
+            MetrolistPresentation.VINTAGE -> R.string.metrolist_presentation_vintage
         },
     )
 
