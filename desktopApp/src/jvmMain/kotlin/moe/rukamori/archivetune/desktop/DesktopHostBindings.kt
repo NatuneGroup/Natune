@@ -67,6 +67,8 @@ internal fun desktopHostBindings(
     recognition: DesktopRecognitionMount,
     feedback: DesktopFeedbackMount,
     quit: () -> Unit,
+    /** The F key's window fullscreen toggle; the root binds it where a window state exists. */
+    toggleFullscreen: () -> Unit = {},
 ): ArchiveTuneHostBindings {
     val dates = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     // One row menu per host: a row's overflow opens it, and the overlay of the page the row is on shows it.
@@ -140,6 +142,7 @@ internal fun desktopHostBindings(
         // The desktop root has no screen beneath it, so back at the root has nothing to pop.
         onBackAtRoot = { },
         podcastProgress = graph.podcastProgress.observeAll(),
+        toggleWindowFullscreen = toggleFullscreen,
     )
 }
 

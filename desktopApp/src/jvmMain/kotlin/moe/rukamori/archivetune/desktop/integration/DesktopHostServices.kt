@@ -7,9 +7,12 @@ import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.desktop.integration.linux.HyprlandWorkspaceVisibility
+import moe.rukamori.archivetune.desktop.integration.linux.LinuxAppearanceTheme
 import moe.rukamori.archivetune.desktop.integration.linux.LinuxSystemIntegration
 import moe.rukamori.archivetune.desktop.integration.linux.LinuxWindowVisibility
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
@@ -30,15 +33,25 @@ class DesktopHostServices(
     setVolume: (Float) -> Unit,
     openUri: (String) -> Unit,
     quit: () -> Unit,
+    /** True while the user is a Listen Together guest: transport keeps play/pause but refuses queue and position. */
+    private val guestLocked: () -> Boolean = { false },
     private val reportUnavailable: (String) -> Unit,
 ) : AutoCloseable {
     val windowActivity = DesktopWindowActivityObserver(window)
     val filePickers = DesktopFilePickers(window)
     private val controls = DesktopMediaControls({ controller.snapshot.value }, dispatchToOwner) {
-        controller.consumeDesktopTransport(it, next, previous, setShuffle, setRepeat, setVolume)
+        if (!guestLocked() || it.guestAllowed()) {
+            controller.consumeDesktopTransport(it, next, previous, setShuffle, setRepeat, setVolume)
+        }
     }
+    private val darkTheme = MutableStateFlow<Boolean?>(null)
+
+    /** The OS light/dark state where the platform reports it; null leaves the caller's own theme query in charge. */
+    val systemDark: StateFlow<Boolean?> = darkTheme
     @Volatile private var integration: DesktopSystemIntegration? = null
     private val visibility: AutoCloseable?
+    private val workspace: AutoCloseable?
+    private val appearance: AutoCloseable?
     private val collector: Job
     init {
         require(EventQueue.isDispatchThread()) { "Attach desktop host services on the AWT event thread" }
@@ -47,8 +60,19 @@ class DesktopHostServices(
         val exit = { EventQueue.invokeLater(quit); Unit }
         val attach = {
             try {
-                integration = if (linux) LinuxSystemIntegration(controls, raise, exit, openUri)
-                    else NativeSystemIntegration(window, controls, raise, exit, windowActivity::nativeActivity)
+                integration = if (linux) {
+                    LinuxSystemIntegration(controls, raise, exit, { uri -> if (!guestLocked()) openUri(uri) })
+                } else {
+                    NativeSystemIntegration(window, controls, raise, exit, windowActivity::nativeActivity,
+                        systemTheme = { dark -> darkTheme.value = dark })
+                }
+                if (!linux) darkTheme.value = runCatching {
+                    when (val dark = NativeDesktopBridge.systemThemeDark()) {
+                        0 -> false
+                        1 -> true
+                        else -> null
+                    }
+                }.getOrNull()
             } catch (error: Exception) {
                 reportUnavailable("${DesktopStrings["integration_unavailable"]}: ${error.javaClass.simpleName}")
             } catch (error: LinkageError) {
@@ -72,6 +96,20 @@ class DesktopHostServices(
         } catch (error: LinkageError) {
             reportUnavailable("X11 visibility: ${error.javaClass.simpleName}"); null
         } else null
+        workspace = if (linux && HyprlandWorkspaceVisibility.supported()) try {
+            HyprlandWorkspaceVisibility((window as? Frame)?.title, windowActivity::nativeWorkspaceHidden)
+        } catch (error: Exception) {
+            reportUnavailable("Hyprland visibility: ${error.javaClass.simpleName}"); null
+        } catch (error: LinkageError) {
+            reportUnavailable("Hyprland visibility: ${error.javaClass.simpleName}"); null
+        } else null
+        appearance = if (linux) try {
+            LinuxAppearanceTheme { dark -> darkTheme.value = dark }
+        } catch (error: Exception) {
+            reportUnavailable("Desktop appearance: ${error.javaClass.simpleName}"); null
+        } catch (error: LinkageError) {
+            reportUnavailable("Desktop appearance: ${error.javaClass.simpleName}"); null
+        } else null
         collector = scope.launch {
             combine(controller.snapshot, metadata, transport, ::Triple).collect { (snapshot, display, state) ->
                 try { integration?.update(snapshot, display, state) }
@@ -89,6 +127,8 @@ class DesktopHostServices(
     override fun close() {
         collector.cancel()
         visibility?.close()
+        workspace?.close()
+        appearance?.close()
         windowActivity.close()
         filePickers.close()
         integration?.close()
