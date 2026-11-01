@@ -37,6 +37,7 @@ class PlaybackRecoveryRetryTest {
             rebuffer = monitor,
             playerCache = { throw AssertionError("the cache is not read unless degraded") },
             backoff = PlaybackRetryBackoff(baseDelayMs = 1_000L, maxDelayMs = 60_000L, random = Random(3)),
+            nowMs = { now },
             fire = { mediaId, resumePlaying, seekIndex, seekPositionMs ->
                 fired += Fire(mediaId, resumePlaying, seekIndex, seekPositionMs)
             },
@@ -91,6 +92,18 @@ class PlaybackRecoveryRetryTest {
         gate.allow("song")
         gate.prepare("song", resumePlaying = true)
         gate.onSeek()
+        advanceUntilIdle()
+        assertTrue(fired.isEmpty())
+    }
+
+    @Test
+    fun `a pause cancels a pending retry`() = runTest {
+        track("song")
+        val gate = newGate(this)
+        gate.allow("song")
+        gate.allow("song")
+        gate.prepare("song", resumePlaying = true)
+        gate.onPlayWhenReadyChanged(false)
         advanceUntilIdle()
         assertTrue(fired.isEmpty())
     }
@@ -165,6 +178,20 @@ class PlaybackRecoveryRetryTest {
         gate.onSeek()
         repeat(3) { stall("song") }
         assertTrue(monitor.shouldStepDownQuality("song"))
+    }
+
+    @Test
+    fun `an ignored recovery seek does not swallow a later user seek`() = runTest {
+        track("song")
+        val gate = newGate(this)
+        gate.prepare("song", resumePlaying = false, seekIndex = 1, seekPositionMs = 5_000L)
+        // The player ignored it (its index left the timeline during the backoff): no
+        // discontinuity ever arrives, so the mark must expire and the next user seek behave
+        // normally instead of being consumed.
+        now += 5_000L
+        gate.onSeek()
+        repeat(3) { stall("song") }
+        assertFalse(monitor.shouldStepDownQuality("song"))
     }
 
     @Test
