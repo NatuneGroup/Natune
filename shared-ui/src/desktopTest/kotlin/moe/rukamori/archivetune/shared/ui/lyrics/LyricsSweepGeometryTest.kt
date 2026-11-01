@@ -26,7 +26,9 @@ class LyricsSweepGeometryTest {
 
     @Test
     fun reducedMotionJumpsWordToWord() {
-        assertEquals(0f, LyricsSweepGeometry.progressAt(1_000L, 2_000L, 1_500L, reduceMotion = true))
+        // Before the word starts nothing is lit; once it starts the jump is the whole word.
+        assertEquals(0f, LyricsSweepGeometry.progressAt(1_000L, 2_000L, 999L, reduceMotion = true))
+        assertEquals(1f, LyricsSweepGeometry.progressAt(1_000L, 2_000L, 1_500L, reduceMotion = true))
         assertEquals(1f, LyricsSweepGeometry.progressAt(1_000L, 2_000L, 1_000L, reduceMotion = true))
     }
 
