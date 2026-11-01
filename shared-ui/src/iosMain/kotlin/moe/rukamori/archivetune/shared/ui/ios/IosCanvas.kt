@@ -92,14 +92,14 @@ import moe.rukamori.archivetune.shared.ui.resources.content_canvas_not_found
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.skia.Image as SkiaImage
 import platform.AVFoundation.AVAssetImageGenerator
+import platform.AVFoundation.AVAssetTrack
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.AVURLAsset
-import platform.AVFoundation.URLAssetWithURL
 import platform.CoreGraphics.CGImageRelease
 import platform.CoreMedia.CMTime
 import platform.CoreMedia.CMTimeGetSeconds
+import platform.CoreMedia.CMTimeMake
 import platform.CoreMedia.CMTimeMakeWithSeconds
-import platform.CoreMedia.kCMTimeZero
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
@@ -374,11 +374,11 @@ internal class IosCanvasFrames(
         try {
             val path = canvasLocalPath(target.uri) ?: error("canvas loop has no local file")
             val asset = AVURLAsset.URLAssetWithURL(NSURL.fileURLWithPath(path), null)
-            if (asset.tracksWithMediaType(AVMediaTypeVideo).isEmpty()) error("canvas loop has no video track")
+            if (asset.tracks.none { (it as? AVAssetTrack)?.mediaType == AVMediaTypeVideo }) error("canvas loop has no video track")
             val generator = AVAssetImageGenerator(asset = asset)
             generator.appliesPreferredTrackTransform = true
-            generator.requestedTimeToleranceBefore = kCMTimeZero
-            generator.requestedTimeToleranceAfter = kCMTimeZero
+            generator.requestedTimeToleranceBefore = CMTimeMake(0, 1)
+            generator.requestedTimeToleranceAfter = CMTimeMake(0, 1)
             val durationMs = CMTimeGetSeconds(asset.duration)
                 .takeIf { it.isFinite() && it > 0.0 }
                 ?.let { (it * 1000.0).toLong() }

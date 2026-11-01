@@ -217,7 +217,7 @@ internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistEntries(): List<A
     )
 
 internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistItems(): List<MediaItem> =
-    pinnedPlaylistEntries().mapNotNull(::pinnedPlaylistItem)
+    pinnedPlaylistEntries().mapNotNull { entry -> pinnedPlaylistItem(entry) }
 
 internal suspend fun MediaLibrarySessionCallback.pinnedPlaylistItem(entry: AndroidAutoPinnedPlaylist): MediaItem? {
     val source =

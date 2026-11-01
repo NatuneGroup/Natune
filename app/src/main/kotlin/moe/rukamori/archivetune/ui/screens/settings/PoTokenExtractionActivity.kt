@@ -411,3 +411,4 @@ class PoTokenExtractionActivity : ComponentActivity() {
         }
     }
 }
+}

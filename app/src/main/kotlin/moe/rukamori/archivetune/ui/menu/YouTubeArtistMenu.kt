@@ -169,8 +169,9 @@ fun YouTubeArtistMenu(
                                         onDismiss()
                                     },
                                 ),
-                                add(
-                                    NewAction(
+                            )
+                            add(
+                                NewAction(
                                         icon = {
                                             Icon(
                                                 painter = painterResource(R.drawable.link),
@@ -186,7 +187,6 @@ fun YouTubeArtistMenu(
                                         },
                                     ),
                                 )
-                            )
                         },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                 )

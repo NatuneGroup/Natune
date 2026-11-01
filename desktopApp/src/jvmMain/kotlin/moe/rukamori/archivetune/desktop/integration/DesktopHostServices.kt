@@ -104,7 +104,7 @@ class DesktopHostServices(
             reportUnavailable("Hyprland visibility: ${error.javaClass.simpleName}"); null
         } else null
         appearance = if (linux) try {
-            LinuxAppearanceTheme { dark -> darkTheme.value = dark }
+            LinuxAppearanceTheme(onDark = { dark -> darkTheme.value = dark })
         } catch (error: Exception) {
             reportUnavailable("Desktop appearance: ${error.javaClass.simpleName}"); null
         } catch (error: LinkageError) {

@@ -610,7 +610,7 @@ fun MetrolistPlayerDispatch(
     val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
     val canSkipNext by playerConnection.canSkipNext.collectAsStateWithLifecycle()
     val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
-    val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle()
+    val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
 
     MetrolistPlayerContent(
         mediaMetadata = metadata,

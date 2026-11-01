@@ -99,7 +99,7 @@ class MediaLibrarySessionCallback
         var isListenTogetherGuestActive: () -> Boolean = { false }
         private val controllerClassifier = MediaSessionControllerClassifier(context)
 
-        private data class AutoPlaylistSortOption(
+        internal data class AutoPlaylistSortOption(
             val sortType: PlaylistSongSortType,
             val descending: Boolean,
             @StringRes val titleRes: Int,
