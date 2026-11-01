@@ -421,13 +421,13 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
             s->seek = s->controls.PlaybackPositionChangeRequested([state](SystemMediaTransportControls const&, PlaybackPositionChangeRequestedEventArgs const& event) {
                 if (state->closing) return;
                 MediaUpdate value; { std::lock_guard<std::mutex> guard(state->mutex); value = state->update; }
-                if (value.seek) state->callbacks.emit("seek", value.track, event.RequestedPlaybackPosition().Value().count() / 10);
+                if (value.seek) state->callbacks.emit("seek", value.track, event.RequestedPlaybackPosition().count() / 10);
             });
             s->rate = s->controls.PlaybackRateChangeRequested([state](SystemMediaTransportControls const&, PlaybackRateChangeRequestedEventArgs const& event) {
-                if (!state->closing) state->callbacks.emit("speed", "", 0, event.RequestedPlaybackRate().Value());
+                if (!state->closing) state->callbacks.emit("speed", "", 0, event.RequestedPlaybackRate());
             });
             s->shuffle = s->controls.ShuffleEnabledChangeRequested([state](SystemMediaTransportControls const&, ShuffleEnabledChangeRequestedEventArgs const& event) {
-                if (!state->closing) state->callbacks.emit("shuffle", "", event.RequestedShuffle().Value() ? 1 : 0);
+                if (!state->closing) state->callbacks.emit("shuffle", "", event.RequestedShuffleEnabled() ? 1 : 0);
             });
             s->repeat = s->controls.AutoRepeatModeChangeRequested([state](SystemMediaTransportControls const&, AutoRepeatModeChangeRequestedEventArgs const& event) {
                 if (!state->closing) state->callbacks.emit("repeat", "", static_cast<jlong>(event.RequestedAutoRepeatMode()));
