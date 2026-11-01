@@ -144,6 +144,7 @@ import moe.rukamori.archivetune.constants.LyricsScrollKey
 import moe.rukamori.archivetune.constants.LyricsTextPositionKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
+import moe.rukamori.archivetune.lyrics.LyricsDeadlineSchedule
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.lyrics.LyricsUtils.findCurrentLineIndex
@@ -172,6 +173,13 @@ import kotlin.time.Duration.Companion.seconds
 
 private val SmoothDecelerateEasing = CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f)
 private const val LyricsWordSyncLeadMs = 300L
+
+/** The shortest span a drawn word fill sweeps for; below it the fill still takes this long. */
+private const val WORD_SWEEP_MIN_MS = 150L
+
+/** The slowest the lyrics clock re-checks its feed while idle; matches the native held-position poll. */
+private const val IDLE_POLL_MS = 250L
+private const val PAUSED_POLL_MS = 100L
 
 val LyricsPreviewTime = 2.seconds
 
@@ -616,15 +624,11 @@ fun Lyrics(
         }
 
         val isTtmlLyrics = isTtml(lyrics!!)
+        val schedule = LyricsDeadlineSchedule.of(lines, WORD_SWEEP_MIN_MS)
         while (isActive) {
             if (isAppMinimized) {
                 delay(250L)
                 continue
-            }
-            if (isTtmlLyrics) {
-                withFrameNanos { }
-            } else {
-                delay(50L)
             }
             val sliderPosition = sliderPositionProvider()
             val seekingNow = sliderPosition != null
@@ -639,6 +643,20 @@ fun Lyrics(
             val newLineIndex = findCurrentLineIndex(lines, position + lyricsSyncOffset.toLong(), leadMs = lineSyncLeadMs)
             if (currentLineIndex != newLineIndex) {
                 currentLineIndex = newLineIndex
+            }
+            // A frame is only requested while a word sweep is in flight; between word and line
+            // boundaries the drawn state is static, so the loop sleeps to the next deadline
+            // (bounded by the slow poll so a seek still lands within a moment) instead of
+            // drawing an unchanged frame every vsync.
+            when {
+                seekingNow -> if (isTtmlLyrics) withFrameNanos { } else delay(50L)
+                !playerConnection.player.isPlaying -> delay(PAUSED_POLL_MS)
+                isTtmlLyrics && schedule.isLive(syncedPosition) -> withFrameNanos { }
+                else -> {
+                    val next = schedule.nextChangeAfter(syncedPosition)
+                    val floor = if (isTtmlLyrics) 16L else 50L
+                    delay(if (next == null) IDLE_POLL_MS else (next - syncedPosition).coerceIn(floor, IDLE_POLL_MS))
+                }
             }
         }
     }

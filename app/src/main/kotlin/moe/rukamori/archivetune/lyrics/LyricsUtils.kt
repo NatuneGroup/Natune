@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.betterlyrics.QRCParser
 import moe.rukamori.archivetune.betterlyrics.TTMLParser
 import moe.rukamori.archivetune.db.entities.LyricsEntity
+import moe.rukamori.archivetune.shared.domain.lyrics.romanization.MandarinRomanization
 import java.lang.Character.UnicodeScript
 import java.text.Normalizer
 import java.util.Locale
@@ -1925,7 +1926,7 @@ object LyricsUtils {
                 preferences.romanizeJapanese && looksJapanese(text, sourceLanguage, contextText) -> romanizeJapanese(text)
                 preferences.romanizeKorean && isKorean(text) -> romanizeKorean(text)
                 preferences.romanizeHindi && isHindi(text) -> romanizeHindi(text)
-                preferences.romanizeChinese && !looksJapanese(text, sourceLanguage, contextText) && isChinese(text) -> romanizeWithIcu(text)
+                preferences.romanizeChinese && !looksJapanese(text, sourceLanguage, contextText) && isChinese(text) -> romanizeChinese(text)
                 preferences.romanizeOther && hasOtherRomanizableScript(text) -> romanizeWithIcu(text)
                 else -> null
             }
@@ -1946,7 +1947,7 @@ object LyricsUtils {
                 preferences.romanizeJapanese && looksJapanese(lineText, sourceLanguage, contextText) -> romanizeJapanese(word)
                 preferences.romanizeKorean && isKorean(lineText) -> romanizeKorean(word)
                 preferences.romanizeHindi && isHindi(lineText) -> romanizeHindi(word)
-                preferences.romanizeChinese && !looksJapanese(lineText, sourceLanguage, contextText) && isChinese(lineText) -> romanizeWithIcu(word)
+                preferences.romanizeChinese && !looksJapanese(lineText, sourceLanguage, contextText) && isChinese(lineText) -> romanizeChinese(word)
                 preferences.romanizeOther && hasOtherRomanizableScript(lineText) -> romanizeWithIcu(word)
                 else -> null
             }
@@ -2065,6 +2066,10 @@ object LyricsUtils {
                 text
             }
         }
+
+    /** Mandarin via the bundled pinyin table first; ICU stays the fallback for characters the table misses. */
+    private suspend fun romanizeChinese(text: String): String =
+        MandarinRomanization.romanize(text) ?: romanizeWithIcu(text)
 
     internal fun normalizeRomanizedText(
         original: String,

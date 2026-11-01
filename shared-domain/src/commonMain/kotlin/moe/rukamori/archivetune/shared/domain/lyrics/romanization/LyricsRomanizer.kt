@@ -32,6 +32,9 @@ class LyricsRomanizer(
             text
         }
 
+    /** Mandarin via the bundled pinyin table first; ICU stays the fallback for characters the table misses. */
+    internal fun romanizeChinese(text: String): String? = MandarinRomanization.romanize(text) ?: romanizeWithIcu(text)
+
     /** The whole-line reading for [text], or null when no engine applies or the result adds nothing. */
     fun romanizeLyricsLine(
         text: String,
@@ -49,7 +52,7 @@ class LyricsRomanizer(
                 preferences.romanizeHindi && LyricsScriptPredicates.isHindi(text) -> romanizeHindi(text)
                 preferences.romanizeChinese &&
                     !LyricsScriptPredicates.looksJapanese(text, sourceLanguage, contextText) &&
-                    LyricsScriptPredicates.isChinese(text) -> romanizeWithIcu(text)
+                    LyricsScriptPredicates.isChinese(text) -> romanizeChinese(text)
                 preferences.romanizeOther && hasOtherRomanizableScript(text) -> romanizeWithIcu(text)
                 else -> null
             }
@@ -77,7 +80,7 @@ class LyricsRomanizer(
                 preferences.romanizeHindi && LyricsScriptPredicates.isHindi(lineText) -> romanizeHindi(word)
                 preferences.romanizeChinese &&
                     !LyricsScriptPredicates.looksJapanese(lineText, sourceLanguage, contextText) &&
-                    LyricsScriptPredicates.isChinese(lineText) -> romanizeWithIcu(word)
+                    LyricsScriptPredicates.isChinese(lineText) -> romanizeChinese(word)
                 preferences.romanizeOther && hasOtherRomanizableScript(lineText) -> romanizeWithIcu(word)
                 else -> null
             }

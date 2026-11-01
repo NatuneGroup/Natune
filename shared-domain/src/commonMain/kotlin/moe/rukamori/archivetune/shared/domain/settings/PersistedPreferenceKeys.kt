@@ -435,6 +435,9 @@ val LyricsV2EmphasizeLastWordKey = BooleanPreferenceKey("lyricsV2EmphasizeLastWo
 val LyricsV2InterludeDotsKey = BooleanPreferenceKey("lyricsV2InterludeDots")
 val PreloadQueueLyricsEnabledKey = BooleanPreferenceKey("preload_queue_lyrics_enabled")
 val QueueLyricsPreloadCountKey = IntPreferenceKey("queue_lyrics_preload_count")
+
+/** Milliseconds added to every lyric clock on top of a song's persisted per-song offset; matches the legacy dialog semantics. */
+val GlobalLyricsOffsetMsKey = IntPreferenceKey("globalLyricsOffsetMs")
 val PlayerVolumeKey = FloatPreferenceKey("playerVolume")
 val RepeatModeKey = IntPreferenceKey("repeatMode")
 val SearchSourceKey = StringPreferenceKey("searchSource")

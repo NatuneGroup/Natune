@@ -16,6 +16,7 @@ fun lyricsSettingsRows(navigate: (String) -> Unit): List<SettingsRow> = listOf(
     SettingsRow.Toggle("lyrics_click", Res.string.m6_lyrics_click, LyricsClickKey, true),
     SettingsRow.Toggle("lyrics_scroll", Res.string.m6_lyrics_scroll, LyricsScrollKey, true),
     SettingsRow.Number("preload_queue_lyrics", Res.string.m6_lyrics_preload, QueueLyricsPreloadCountKey, 3, 0..10),
+    SettingsRow.Number("global_lyrics_offset", Res.string.m6_global_lyrics_offset, GlobalLyricsOffsetMsKey, 0, -2_000..2_000),
 )
 
 /** Word-sync is a preliminary sweep, not an override of the fallback or manual provider controls. */
