@@ -79,4 +79,19 @@ class TransitionTwoDeckSchedulerTest {
         assertTrue(scheduler.arm(TransitionDeck.FIRST, crossfade.copy(startFrame = 3_000L)))
         assertEquals(TransitionDeck.FIRST, scheduler.armedIncomingDeck)
     }
+
+    @Test
+    fun adoptActiveSwapsTheDeckAndDropsAnyArmedHandoff() {
+        val scheduler = TwoDeckTransitionScheduler()
+        scheduler.arm(TransitionDeck.SECOND, crossfade)
+
+        scheduler.adoptActive(TransitionDeck.SECOND)
+
+        assertEquals(TransitionDeck.SECOND, scheduler.activeDeck)
+        assertNull(scheduler.armedIncomingDeck)
+        assertNull(scheduler.armedPlan)
+        assertEquals(TransitionGains(outgoing = 1f, incoming = 0f), scheduler.gainsAt(1_200L))
+        // The deck the engine dropped is armed again as the incoming one.
+        assertTrue(scheduler.arm(TransitionDeck.FIRST, crossfade))
+    }
 }
