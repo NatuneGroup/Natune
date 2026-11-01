@@ -39,7 +39,6 @@ import moe.rukamori.archivetune.shared.data.provider.KtorQqMusicRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorTidalRepository
 import moe.rukamori.archivetune.shared.data.provider.OrderedAudioResolver
 import moe.rukamori.archivetune.shared.data.provider.PoolFailureKind
-import moe.rukamori.archivetune.shared.data.provider.PoolRetryOutcome
 import moe.rukamori.archivetune.shared.data.provider.QobuzAccess
 import moe.rukamori.archivetune.shared.data.provider.QobuzInstanceResolver
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
@@ -278,31 +277,14 @@ private class IosTidalSource(
         attempt: Attempt,
         kind: PoolFailureKind,
         request: AudioResolveRequest,
-    ): PreparedAudio? {
-        val owner = pool ?: return null
-        val poolId = attempt.poolId ?: return null
-        return owner.deadReports.recoverAndReport(
-            IosPlaybackPool.TIDAL, poolId, kind,
-            stale = attempt.stale,
-            current = { owner.tidalSnapshot().firstOrNull { it.id == poolId }?.token },
-            recover = { owner.refresh(force = true) },
-            retry = {
-                val fresh = owner.tidalSnapshot().firstOrNull { it.id == poolId }
-                if (fresh == null) {
-                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } else try {
-                    pooledAttempt(fresh)?.repository?.resolve(request)
-                        ?.let { PoolRetryOutcome.Success(it) }
-                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (e: Exception) {
-                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
-                }
-            },
-            report = { type -> owner.report(IosPlaybackPool.TIDAL, poolId, type) },
-        )
-    }
+    ): PreparedAudio? = pool?.recoverPooledAccount(
+        IosPlaybackPool.TIDAL, attempt.poolId, attempt.stale, kind,
+        current = { pool?.tidalSnapshot()?.firstOrNull { it.id == attempt.poolId }?.token },
+        resolveFresh = {
+            pool?.tidalSnapshot()?.firstOrNull { it.id == attempt.poolId }
+                ?.let { pooledAttempt(it) }?.repository?.resolve(request)
+        },
+    )
 
     /** The session's one anonymous racing route. It is rebuilt only when its merged list, country or Pool switch changes. */
     private class AnonymousRoute(val instances: List<String>, val country: String, val poolOn: Boolean,
@@ -505,30 +487,14 @@ private class IosDeezerSource(
         account: DeezerPoolAccount,
         kind: PoolFailureKind,
         request: AudioResolveRequest,
-    ): PreparedAudio? {
-        val poolId = account.id ?: return null
-        return owner.deadReports.recoverAndReport(
-            IosPlaybackPool.DEEZER, poolId, kind,
-            stale = account.arl,
-            current = { owner.deezerSnapshot().firstOrNull { it.id == poolId }?.arl },
-            recover = { owner.refresh(force = true) },
-            retry = {
-                val fresh = owner.deezerSnapshot().firstOrNull { it.id == poolId }
-                if (fresh == null) {
-                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } else try {
-                    pooledRepository(owner, fresh).resolve(request)
-                        ?.let { PoolRetryOutcome.Success(it) }
-                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (e: Exception) {
-                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
-                }
-            },
-            report = { type -> owner.report(IosPlaybackPool.DEEZER, poolId, type) },
-        )
-    }
+    ): PreparedAudio? = owner.recoverPooledAccount(
+        IosPlaybackPool.DEEZER, account.id, account.arl, kind,
+        current = { owner.deezerSnapshot().firstOrNull { it.id == account.id }?.arl },
+        resolveFresh = {
+            owner.deezerSnapshot().firstOrNull { it.id == account.id }
+                ?.let { pooledRepository(owner, it) }?.resolve(request)
+        },
+    )
 
     private suspend fun resolvePooled(request: AudioResolveRequest): PreparedAudio? {
         val owner = pool ?: return null
@@ -605,31 +571,17 @@ private class IosQobuzSource(
         attempt: Attempt,
         kind: PoolFailureKind,
         request: AudioResolveRequest,
-    ): PreparedAudio? {
-        val owner = pool ?: return null
-        val poolId = attempt.poolId ?: return null
-        return owner.deadReports.recoverAndReport(
-            IosPlaybackPool.QOBUZ, poolId, kind,
-            stale = attempt.stale,
-            current = { owner.qobuzSnapshot().firstOrNull { it.id == poolId }?.let { Triple(it.token, it.appId, it.appSecret) } },
-            recover = { owner.refresh(force = true) },
-            retry = {
-                val fresh = owner.qobuzSnapshot().firstOrNull { it.id == poolId }
-                if (fresh == null) {
-                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } else try {
-                    pooledAttempt(fresh)?.repository?.resolve(request)
-                        ?.let { PoolRetryOutcome.Success(it) }
-                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (e: Exception) {
-                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
-                }
-            },
-            report = { type -> owner.report(IosPlaybackPool.QOBUZ, poolId, type) },
-        )
-    }
+    ): PreparedAudio? = pool?.recoverPooledAccount(
+        IosPlaybackPool.QOBUZ, attempt.poolId, attempt.stale, kind,
+        current = {
+            pool?.qobuzSnapshot()?.firstOrNull { it.id == attempt.poolId }
+                ?.let { Triple(it.token, it.appId, it.appSecret) }
+        },
+        resolveFresh = {
+            pool?.qobuzSnapshot()?.firstOrNull { it.id == attempt.poolId }
+                ?.let { pooledAttempt(it) }?.repository?.resolve(request)
+        },
+    )
 
     /**
      * One resolver for the session, so its cooldowns, probe results and discovered instances persist across resolves. The
@@ -783,32 +735,19 @@ private class IosAppleMusicSource(
         attempt: Attempt,
         kind: PoolFailureKind,
         request: AudioResolveRequest,
-    ): PreparedAudio? {
-        val owner = pool ?: return null
-        val poolId = attempt.poolId ?: return null
-        return owner.deadReports.recoverAndReport(
-            IosPlaybackPool.APPLE, poolId, kind,
-            stale = attempt.stale,
-            current = { owner.appleMusicSnapshot().firstOrNull { it.id == poolId }?.mediaUserToken },
-            recover = { owner.refresh(force = true) },
-            retry = {
-                val fresh = owner.appleMusicSnapshot().firstOrNull { it.id == poolId }
-                val dev = devToken.bearer()
-                if (fresh == null || dev == null) {
-                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } else try {
-                    pooledAttempt(dev, fresh)?.repository?.resolve(request)
-                        ?.let { PoolRetryOutcome.Success(it) }
-                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (e: Exception) {
-                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
-                }
-            },
-            report = { type -> owner.report(IosPlaybackPool.APPLE, poolId, type) },
-        )
-    }
+    ): PreparedAudio? = pool?.recoverPooledAccount(
+        IosPlaybackPool.APPLE, attempt.poolId, attempt.stale, kind,
+        current = { pool?.appleMusicSnapshot()?.firstOrNull { it.id == attempt.poolId }?.mediaUserToken },
+        resolveFresh = {
+            val dev = devToken.bearer()
+            if (dev == null) {
+                null
+            } else {
+                pool?.appleMusicSnapshot()?.firstOrNull { it.id == attempt.poolId }
+                    ?.let { pooledAttempt(dev, it) }?.repository?.resolve(request)
+            }
+        },
+    )
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         val dev = devToken.bearer() ?: return null
@@ -910,31 +849,14 @@ private class IosAmazonSource(
         attempt: Attempt,
         kind: PoolFailureKind,
         request: AudioResolveRequest,
-    ): PreparedAudio? {
-        val owner = pool ?: return null
-        val poolId = attempt.poolId ?: return null
-        return owner.deadReports.recoverAndReport(
-            IosPlaybackPool.AMAZON, poolId, kind,
-            stale = attempt.stale,
-            current = { owner.amazonSnapshot().firstOrNull { it.id == poolId }?.let { marker(it) } },
-            recover = { owner.refresh(force = true) },
-            retry = {
-                val fresh = owner.amazonSnapshot().firstOrNull { it.id == poolId }
-                if (fresh == null) {
-                    PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } else try {
-                    pooledAttempt(fresh, turnstileOrigin())?.repository?.resolve(request)
-                        ?.let { PoolRetryOutcome.Success(it) }
-                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (e: Exception) {
-                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
-                }
-            },
-            report = { type -> owner.report(IosPlaybackPool.AMAZON, poolId, type) },
-        )
-    }
+    ): PreparedAudio? = pool?.recoverPooledAccount(
+        IosPlaybackPool.AMAZON, attempt.poolId, attempt.stale, kind,
+        current = { pool?.amazonSnapshot()?.firstOrNull { it.id == attempt.poolId }?.let { marker(it) } },
+        resolveFresh = {
+            pool?.amazonSnapshot()?.firstOrNull { it.id == attempt.poolId }
+                ?.let { pooledAttempt(it, turnstileOrigin()) }?.repository?.resolve(request)
+        },
+    )
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         val snapshot = preferences() ?: return null
