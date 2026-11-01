@@ -94,7 +94,8 @@ Echo tier answers null.
 - The desktop NewPipe tier runs NewPipe's stream extractor first and then asks ANDROID_MUSIC, iOS
   and WEB_REMIX as a visitor, deciphering `signatureCipher`/`cipher` formats and the n parameter
   through NewPipe's JavaScript player. The primary desktop walk skips ciphered formats, so this
-  tier is also the desktop's only cipher path.
+  tier is also the desktop's only cipher path. Its one BotGuard mint is optional and bounded well
+  inside the tier budget, so a stalled minting endpoint leaves untokened extraction its time.
 
 ## The cipher seam
 

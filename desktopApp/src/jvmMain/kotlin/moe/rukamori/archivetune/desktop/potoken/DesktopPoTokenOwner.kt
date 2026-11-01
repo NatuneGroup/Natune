@@ -5,6 +5,8 @@ import com.metrolist.innertubex.extraction.TokenProvider
 import com.metrolist.innertubex.extraction.TokenProviderCapabilities
 import com.metrolist.innertubex.extraction.strategy.PoTokenProviderKind
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.DesktopCredentials
 import moe.rukamori.archivetune.desktop.DesktopDiagnosticLog
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeSignIn
@@ -126,7 +128,19 @@ internal class DesktopPoTokenOwner(
             ): PoTokenResult? {
                 if (!enabled()) return null
                 val sessionId = poTokenSessionId(null, visitorData, hasLoginContext = false) ?: return null
-                val minted = engine.mintToken(identifier = videoId, sessionId = sessionId) ?: return null
+                // InnerTubeX calls this inside its own 12 s tier bound, so the mint keeps a short
+                // budget of its own: a stalled BotGuard endpoint leaves the request untokened
+                // instead of eating the whole tier.
+                val minted =
+                    try {
+                        withTimeoutOrNull(MINT_BUDGET_MS) {
+                            engine.mintToken(identifier = videoId, sessionId = sessionId)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        null
+                    } ?: return null
                 return PoTokenResult(
                     playerRequestToken = minted.sessionToken,
                     streamingDataToken = minted.playerToken,
@@ -142,5 +156,8 @@ internal class DesktopPoTokenOwner(
     private companion object {
         // A fixed sanitized detail; never a credential fragment.
         const val NOT_CONFIGURED_DETAIL = "BotGuard credentials are not configured"
+
+        /** The mint allowance a bounded extractor tier grants, leaving the rest to extraction. */
+        const val MINT_BUDGET_MS = 3_000L
     }
 }

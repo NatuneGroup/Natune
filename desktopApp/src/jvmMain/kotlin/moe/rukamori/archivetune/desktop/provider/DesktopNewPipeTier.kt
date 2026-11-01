@@ -8,6 +8,7 @@ import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.innertube.NewPipeUtils
 import moe.rukamori.archivetune.shared.data.potoken.MintedPoTokens
 import moe.rukamori.archivetune.shared.data.potoken.appendPoTokenToStreamUrl
@@ -47,7 +48,16 @@ internal class DesktopNewPipeTier(
     ): PreparedAudio? {
         ensureReady()
         // One mint per resolve feeds both paths, as the shipped authState feeds every NewPipe URL.
-        val minted = mint(videoId, visitorData)
+        // The mint stays optional and bounded well inside the 12 s tier budget: a stalled BotGuard
+        // endpoint must not starve extraction, so a timed-out or failed mint just proceeds untokened.
+        val minted =
+            try {
+                withTimeoutOrNull(MINT_BUDGET_MS) { mint(videoId, visitorData) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
         var failure: Throwable? = null
         try {
             fromStreamExtractor(videoId, quality, trusted, minted)?.let { return it }
@@ -251,6 +261,9 @@ internal class DesktopNewPipeTier(
         }
 
     private companion object {
+        /** The BotGuard mint allowance inside the 12 s tier bound, leaving the rest to extraction. */
+        const val MINT_BUDGET_MS = 3_000L
+
         /** Visitor-capable clients, most likely first, as the Android tier walks them. */
         val ANONYMOUS_CLIENTS = listOf(
             DesktopYouTubeClients.ANDROID_MUSIC,
