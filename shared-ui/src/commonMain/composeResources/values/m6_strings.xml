@@ -32,6 +32,8 @@
     <string name="m6_bundled">Bundled (self-hosted)</string>
     <string name="m6_bundled_endpoint">Bundled server URL</string>
     <string name="m6_bundled_signing_key">Bundled signing key</string>
+    <string name="m6_bundled_builtin_server">Built-in server</string>
+    <string name="m6_bundled_custom_endpoint">Custom Bundled server URL</string>
     <string name="m6_bini">BiniLyrics</string>
     <string name="m6_lrc_red">lrc.red</string>
     <string name="m6_genius">Genius</string>

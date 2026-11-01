@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.desktop
 
 import moe.rukamori.archivetune.desktop.backup.GoogleDesktopClient
+import moe.rukamori.archivetune.shared.data.lyrics.BundledEndpoint
 import moe.rukamori.archivetune.shared.data.provider.TidalClientCredentials
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramApiCredentials
 
@@ -87,6 +88,20 @@ internal object DesktopCredentials {
     val amazonTurnstileOrigin: String?
         get() = value("ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN").trimEnd('/').takeIf { HTTPS_ORIGIN.matches(it) }
 
+    /**
+     * The built-in Bundled lyrics server pair; the unprefixed names are accepted at run time like the
+     * other desktop credentials. Both values must be present for [bundledEndpoint] to exist, and a
+     * user's own server entry in settings always wins over it. The key is never logged or persisted.
+     */
+    val bundledBaseUrl: String
+        get() = value("ARCHIVETUNE_BUNDLED_BASE_URL").ifBlank { runtime("BUNDLED_BASE_URL") }
+
+    val bundledHmacKey: String
+        get() = value("ARCHIVETUNE_BUNDLED_HMAC_KEY").ifBlank { runtime("BUNDLED_HMAC_KEY") }
+
+    val bundledEndpoint: BundledEndpoint?
+        get() = BundledEndpoint.parse(bundledBaseUrl, bundledHmacKey)
+
     private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
 
     private val HTTPS_ORIGIN = Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
@@ -110,6 +125,8 @@ internal object DesktopCredentials {
         "ARCHIVETUNE_JIOSAAVN_DES_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_JIOSAAVN_DES_KEY
         "ARCHIVETUNE_LASTFM_API_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_LASTFM_API_KEY
         "ARCHIVETUNE_LASTFM_API_SECRET" -> DesktopBuildCredentials.ARCHIVETUNE_LASTFM_API_SECRET
+        "ARCHIVETUNE_BUNDLED_BASE_URL" -> DesktopBuildCredentials.ARCHIVETUNE_BUNDLED_BASE_URL
+        "ARCHIVETUNE_BUNDLED_HMAC_KEY" -> DesktopBuildCredentials.ARCHIVETUNE_BUNDLED_HMAC_KEY
         "ARCHIVETUNE_LISTENER_PRESENCE_URL" -> DesktopBuildCredentials.ARCHIVETUNE_LISTENER_PRESENCE_URL
         "ARCHIVETUNE_TELEGRAM_API_ID" -> DesktopBuildCredentials.ARCHIVETUNE_TELEGRAM_API_ID
         "ARCHIVETUNE_TELEGRAM_API_HASH" -> DesktopBuildCredentials.ARCHIVETUNE_TELEGRAM_API_HASH

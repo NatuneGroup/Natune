@@ -19,12 +19,19 @@ fun lyricsSettingsRows(navigate: (String) -> Unit): List<SettingsRow> = listOf(
     SettingsRow.Number("global_lyrics_offset", Res.string.m6_global_lyrics_offset, GlobalLyricsOffsetMsKey, 0, -2_000..2_000),
 )
 
-/** Word-sync is a preliminary sweep, not an override of the fallback or manual provider controls. */
+/**
+ * Word-sync is a preliminary sweep, not an override of the fallback or manual provider controls.
+ * [bundledBuiltInServerLabel] is the localized "built-in server" label when the host baked a Bundled
+ * endpoint into the build, or empty when there is none: while the user has entered no endpoint of
+ * their own the row reports the bundled server instead of asking for one, and the signing-key row —
+ * which would only ever show the user's own key — stays hidden.
+ */
 fun lyricsProviderSettingsRows(
     preferences: PreferenceSnapshot,
     showOrder: () -> Unit,
     showStats: () -> Unit,
     checkEndpoints: () -> Unit,
+    bundledBuiltInServerLabel: String = "",
 ): List<SettingsRow> = buildList {
     val enabled = true
     add(SettingsRow.Action("lyrics_provider_order", Res.string.m6_provider_order, showOrder, enabled))
@@ -33,8 +40,19 @@ fun lyricsProviderSettingsRows(
     LyricsProviderPreference.entries.filter { !it.name.startsWith("PAXSENIX_") }.forEach { provider ->
         provider.key?.let { add(SettingsRow.Toggle(provider.anchor(), provider.label(), it, provider.defaultEnabled, enabled = enabled)) }
         if (provider == LyricsProviderPreference.BUNDLED && preferences[EnableBundledLyricsKey, false]) {
-            add(SettingsRow.Text("bundled_endpoint", Res.string.m6_bundled_endpoint, BundledEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
-            add(SettingsRow.Text("bundled_signing_key", Res.string.m6_bundled_signing_key, BundledSigningKeyKey, masked = true, valid = ::validBundledSigningKey, enabled = enabled))
+            // Mirrors resolveBundledEndpoint: the bundled endpoint applies only while both user
+            // fields are blank, so the status row and the hidden key row follow the same condition.
+            val builtIn = bundledBuiltInServerLabel.isNotEmpty() &&
+                preferences[BundledEndpointKey].orEmpty().isBlank() &&
+                preferences[BundledSigningKeyKey].orEmpty().isBlank()
+            if (builtIn) {
+                // The build supplies the endpoint; the user's own entry still wins once they set one.
+                add(SettingsRow.Status("bundled_endpoint", Res.string.m6_bundled_endpoint, bundledBuiltInServerLabel))
+                add(SettingsRow.Text("bundled_endpoint_custom", Res.string.m6_bundled_custom_endpoint, BundledEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
+            } else {
+                add(SettingsRow.Text("bundled_endpoint", Res.string.m6_bundled_endpoint, BundledEndpointKey, valid = ::validLyricsEndpoint, enabled = enabled))
+                add(SettingsRow.Text("bundled_signing_key", Res.string.m6_bundled_signing_key, BundledSigningKeyKey, masked = true, valid = ::validBundledSigningKey, enabled = enabled))
+            }
         }
     }
     add(SettingsRow.Toggle("enable_bini_lyrics", Res.string.m6_bini, EnableBiniLyricsKey, true, enabled = enabled))

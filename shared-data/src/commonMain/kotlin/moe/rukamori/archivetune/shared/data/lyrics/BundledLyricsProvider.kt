@@ -61,6 +61,26 @@ class BundledEndpoint private constructor(
     }
 }
 
+/**
+ * The endpoint a Bundled lookup uses. A user's own pair always wins once either field is entered: a
+ * partial entry is still theirs, so the built-in key never signs requests to a user-chosen server.
+ * Only when both user fields are blank does the build-time pair apply, and only when both build
+ * values are present and parse — a missing or malformed build value simply leaves Bundled
+ * unconfigured. The build values are read at lookup time and are never written to preferences.
+ */
+fun resolveBundledEndpoint(
+    userBaseUrl: String,
+    userSigningKeyBase64: String,
+    buildBaseUrl: String,
+    buildSigningKeyBase64: String,
+): BundledEndpoint? {
+    if (userBaseUrl.isNotBlank() || userSigningKeyBase64.isNotBlank()) {
+        return BundledEndpoint.parse(userBaseUrl, userSigningKeyBase64)
+    }
+    if (buildBaseUrl.isBlank() || buildSigningKeyBase64.isBlank()) return null
+    return BundledEndpoint.parse(buildBaseUrl, buildSigningKeyBase64)
+}
+
 @Serializable
 internal data class BundledLyricsRequest(
     val title: String,
