@@ -5,8 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,11 +53,15 @@ sealed interface AboutLicensesState {
     data object Loading : AboutLicensesState
     data object Empty : AboutLicensesState
     data class Failed(val message: StringResource) : AboutLicensesState
-    data class Loaded(val entries: List<AboutLicenseEntry>) : AboutLicensesState
+    /** [bundledOnly] marks a list of only bundled-data notices, flagged so the dialog explains the catalog is absent. */
+    data class Loaded(val entries: List<AboutLicenseEntry>, val bundledOnly: Boolean = false) : AboutLicensesState
 }
 
-/** A null [license] is shown as the localized unknown-license label, never as an empty value. */
-data class AboutLicenseEntry(val name: String, val version: String?, val license: String?)
+/**
+ * A null [license] is shown as the localized unknown-license label, never as an empty value.
+ * A non-null [noticeResource] names a bundled `files/` compose resource the entry opens on tap.
+ */
+data class AboutLicenseEntry(val name: String, val version: String?, val license: String?, val noticeResource: String? = null)
 
 /** The open full-screen list. The host owns it because the host starts the loader that fills the list. */
 enum class AboutDialog { NONE, TRANSLATION_CONTRIBUTORS, DEPENDENCY_LICENSES }
@@ -546,16 +552,60 @@ private fun LicensesDialogContent(
         is AboutLicensesState.Failed -> AboutStatus(
             stringResource(state.message), showRetry = true, onRetry = onRetry, modifier = modifier,
         )
-        is AboutLicensesState.Loaded -> LazyColumn(modifier = modifier) {
-            items(state.entries) { entry ->
-                val details = listOfNotNull(
-                    entry.version,
-                    entry.license ?: stringResource(Res.string.m6_about_unknown_license),
-                ).joinToString(separator = " · ")
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text(entry.name, style = MaterialTheme.typography.bodyLarge)
-                    Text(details, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        is AboutLicensesState.Loaded -> {
+            var detail by remember { mutableStateOf<AboutLicenseEntry?>(null) }
+            LazyColumn(modifier = modifier) {
+                items(state.entries) { entry ->
+                    val details = listOfNotNull(
+                        entry.version,
+                        entry.license ?: stringResource(Res.string.m6_about_unknown_license),
+                    ).joinToString(separator = " · ")
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (entry.noticeResource != null) Modifier.clickable { detail = entry } else Modifier)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text(entry.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(details, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
+                if (state.bundledOnly) {
+                    item(key = "licenses_bundled_note") {
+                        Text(
+                            stringResource(Res.string.m6_about_bundled_notices_only),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+            }
+            detail?.let { entry ->
+                val notice by produceState<String?>(initialValue = null, entry) {
+                    value = AboutBundledNotices.readNotice(entry).orEmpty()
+                }
+                AlertDialog(
+                    onDismissRequest = { detail = null },
+                    confirmButton = {
+                        TextButton(onClick = { detail = null }) {
+                            Text(stringResource(Res.string.m6_about_close))
+                        }
+                    },
+                    title = { Text(entry.name) },
+                    text = {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            Text(
+                                when (notice) {
+                                    null -> stringResource(Res.string.m6_about_loading)
+                                    "" -> stringResource(Res.string.m6_about_unknown_license)
+                                    else -> notice.orEmpty()
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    },
+                )
             }
         }
     }

@@ -47,7 +47,7 @@ class PortableStateMigrationTest {
             }
             for (table in listOf(
                 "portable_search_history", "portable_set_video_id", "portable_podcast_progress",
-                "portable_song_metadata_override",
+                "portable_song_metadata_override", "portable_song_lyrics_offset",
             )) {
                 migrated.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").use {
                     it.bindText(1, table)

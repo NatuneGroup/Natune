@@ -247,7 +247,7 @@ internal class DesktopBackupArchiveGateway(
     }
 
     /**
-     * An archive in the Android app's own format: `settings.xml` and a schema-38 `song.db` written from the library
+     * An archive in the Android app's own format: `settings.xml` and a schema-39 `song.db` written from the library
      * snapshot by [AndroidSongDbExport]. The retained codec checks the result as the Android restore would.
      */
     suspend fun createAndroid(selected: Set<BackupDataCategory>): ByteArray {
