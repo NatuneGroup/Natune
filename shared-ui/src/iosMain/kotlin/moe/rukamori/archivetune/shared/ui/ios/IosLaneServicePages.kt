@@ -7,6 +7,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -15,27 +16,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.isSuccess
 import kotlin.time.Clock
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProxyTestResult
 import moe.rukamori.archivetune.shared.domain.settings.CanvasConnectivity
 import moe.rukamori.archivetune.shared.domain.settings.CanvasHealthProvider
 import moe.rukamori.archivetune.shared.domain.settings.CanvasProbeState
 import moe.rukamori.archivetune.shared.domain.settings.CanvasProviderProbes
-import moe.rukamori.archivetune.shared.domain.settings.DiscordAccountCheck
-import moe.rukamori.archivetune.shared.domain.settings.DiscordAccountFacts
 import moe.rukamori.archivetune.shared.domain.settings.UpdateChannel
 import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
 import moe.rukamori.archivetune.shared.domain.update.UpdateRepository
@@ -80,7 +71,7 @@ import platform.Foundation.dateWithTimeIntervalSince1970
 
 /**
  * The lane pages that need a host service behind them: reachability probes, the release-notes checker, the Discord
- * token check, the proxy probe, Last.fm scrobbling, the Amazon Turnstile challenge and the Spotify streaming
+ * presence owner, the proxy probe, Last.fm scrobbling, the Amazon Turnstile challenge and the Spotify streaming
  * sign-in are real; cache clearing, storage moves and PO-token extraction have no owner on this host and report
  * themselves unavailable rather than faking a result. The internet page mounts the saved static route with the
  * limits the Darwin engine imposes.
@@ -182,24 +173,24 @@ internal fun IosLaneServiceSettingsPage(
                 onOpenUrl = { url -> openIosUri(url, host::report) },
             )
         }
-        "settings/discord" -> DiscordSettings(
-            controller = owners.controller,
-            // Rich Presence needs the Discord Gateway, which this host does not connect; sign-in needs an OAuth
-            // redirect surface this host does not have. The saved-token check below is a real Discord API read.
-            presenceSupported = false,
-            currentTimeMillis = { Clock.System.now().toEpochMilliseconds() },
-            authorize = {
-                unavailable()
-                null
-            },
-            verifyAccount = { token -> iosLaneVerifyDiscordAccount(owners.graph.http, token) },
-            refreshPresence = { false },
-            signOut = { },
-            navigate = navigate,
-            onNotice = onNotice,
-            onFailure = onFailure,
-            scrollTo = scrollTo,
-        )
+        "settings/discord" -> {
+            // Presence updates follow playback only; the driver starts when the page is visited, as the desktop's does.
+            LaunchedEffect(Unit) { owners.discord.startPresenceDriver() }
+            DiscordSettings(
+                controller = owners.controller,
+                presenceSupported = true,
+                currentTimeMillis = { Clock.System.now().toEpochMilliseconds() },
+                authorize = owners.discord::authorize,
+                verifyAccount = owners.discord::verifyAccount,
+                refreshPresence = owners.discord::refreshPresence,
+                signOut = owners.discord::signOut,
+                navigate = navigate,
+                onNotice = onNotice,
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+                avatar = { url, _, modifier -> IosRemoteArtwork(url, owners.graph.artworkLoader, modifier) },
+            )
+        }
         "settings/downloads" -> DownloadsSettings(
             controller = owners.controller,
             poolConfigured = owners.poolConfigured,
@@ -357,49 +348,3 @@ private fun CanvasProviderProbes.withState(provider: CanvasHealthProvider, state
         CanvasHealthProvider.SPOTIFY -> copy(spotify = state)
     }
 
-/**
- * One real Discord API read of the saved token: the profile the bearer token names. Rejected means Discord refused
- * the token outright; any other failure is Unverified, so the row never claims a check that did not happen.
- */
-private suspend fun iosLaneVerifyDiscordAccount(
-    http: io.ktor.client.HttpClient,
-    accessToken: String,
-): DiscordAccountCheck = try {
-    val response = http.get("https://discord.com/api/v10/users/@me") {
-        header("Authorization", "Bearer $accessToken")
-        header("Accept", "application/json")
-    }
-    when {
-        response.status.isSuccess() -> {
-            val body = Json { ignoreUnknownKeys = true }
-                .parseToJsonElement(response.bodyAsText()) as? JsonObject
-            val username = body?.text("username")
-            if (username.isNullOrBlank()) {
-                DiscordAccountCheck.Unverified
-            } else {
-                val id = body.text("id")
-                val avatarHash = body.text("avatar")
-                DiscordAccountCheck.Verified(
-                    DiscordAccountFacts(
-                        username = username,
-                        displayName = body.text("global_name") ?: username,
-                        avatarUrl = if (id != null && avatarHash != null) {
-                            "https://cdn.discordapp.com/avatars/$id/$avatarHash.png"
-                        } else {
-                            null
-                        },
-                    ),
-                )
-            }
-        }
-        response.status.value == 401 || response.status.value == 403 -> DiscordAccountCheck.Rejected
-        else -> DiscordAccountCheck.Unverified
-    }
-} catch (cancelled: CancellationException) {
-    throw cancelled
-} catch (_: Exception) {
-    DiscordAccountCheck.Unverified
-}
-
-private fun JsonObject.text(name: String): String? =
-    (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content

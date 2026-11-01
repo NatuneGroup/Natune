@@ -30,6 +30,11 @@ import platform.posix.memcpy
  */
 class IosListenTogetherSocketFactory(
     private val session: NSURLSession,
+    /**
+     * When true, sends go out as text frames rather than binary. Listen Together keeps the default; the Discord
+     * Gateway client asks for text because JSON frames are strings on that protocol.
+     */
+    private val textFrames: Boolean = false,
 ) : ListenTogetherSocketFactory {
 
     override fun open(url: String, listener: ListenTogetherSocketListener): ListenTogetherSocket {
@@ -38,7 +43,7 @@ class IosListenTogetherSocketFactory(
         require(nsUrl.scheme == "ws" || nsUrl.scheme == "wss") {
             "Listen Together connects over ws or wss only"
         }
-        val socket = IosSocket(listener)
+        val socket = IosSocket(listener, textFrames)
         val task = session.webSocketTaskWithURL(nsUrl)
         socket.attach(task)
         task.resume()
@@ -47,6 +52,7 @@ class IosListenTogetherSocketFactory(
 
     private class IosSocket(
         private val listener: ListenTogetherSocketListener,
+        private val textFrames: Boolean,
     ) : ListenTogetherSocket {
         /** Set by the first terminal outcome: a failure, a close from the server or a cancel. */
         @Volatile
@@ -141,7 +147,11 @@ class IosListenTogetherSocketFactory(
         override fun send(frame: ByteArray): Boolean {
             val current = task ?: return false
             if (terminated) return false
-            val message = NSURLSessionWebSocketMessage(frame.toNSData())
+            val message = if (textFrames) {
+                NSURLSessionWebSocketMessage(string = frame.decodeToString())
+            } else {
+                NSURLSessionWebSocketMessage(frame.toNSData())
+            }
             var accepted = true
             current.sendMessage(message) { error ->
                 if (error != null) {
