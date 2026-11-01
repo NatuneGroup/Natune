@@ -49,6 +49,8 @@ object MediaSessionAuthorization {
             MediaSessionConstants.ACTION_TOGGLE_START_RADIO,
             MediaSessionConstants.ACTION_TOGGLE_SHUFFLE,
             MediaSessionConstants.ACTION_TOGGLE_REPEAT_MODE,
+            MediaSessionConstants.ACTION_SEEK_BACK_30,
+            MediaSessionConstants.ACTION_SEEK_FORWARD_30,
         )
 
     val ALL_CUSTOM_ACTIONS: Set<String> =

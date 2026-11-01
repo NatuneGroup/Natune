@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.ui.lyrics
 
+import androidx.compose.ui.graphics.Color
 import moe.rukamori.archivetune.shared.domain.lyrics.KaraokeLine
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsLine
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsWord
@@ -311,6 +312,49 @@ class LyricsModeTest {
         assertTrue(leftEdge(LyricsLineAlignment.START) < 1f)
         assertTrue(leftEdge(LyricsLineAlignment.CENTER) in 100f..300f)
         assertTrue(leftEdge(LyricsLineAlignment.END) > 300f)
+    }
+
+    @Test
+    fun aPassedLineReadsAsTheActiveColourAtSeventyPercent() {
+        val palette = LyricsPalette(dim = Color.Black, bright = Color.White, glow = Color.Red)
+
+        assertEquals(LyricsPalette.PASSED_ALPHA, palette.passed.alpha, 0.0001f)
+        assertEquals(palette.bright.copy(alpha = LyricsPalette.PASSED_ALPHA), palette.passed)
+        assertEquals(LyricsPalette.PASSED_ALPHA, 0.7f, 0.0001f)
+    }
+
+    @Test
+    fun onlySyncedRowsBehindThePlayheadCountAsPassed() {
+        val rows = LyricsRenderRows.build(
+            listOf(
+                SyncedLine(time = 1_000, text = "one"),
+                SyncedLine(time = 2_000, text = "two"),
+                SyncedLine(time = 3_000, text = "three"),
+            ),
+        )
+
+        // A row passes once the feed clears its end (the next start here), not when a later row is active.
+        assertFalse(isPassedLyricRow(rows[0], 1_000))
+        assertFalse(isPassedLyricRow(rows[1], 2_500))
+        assertTrue(isPassedLyricRow(rows[0], 2_000))
+        assertTrue(isPassedLyricRow(rows[0], 2_500))
+        assertFalse(isPassedLyricRow(rows[0].copy(isSynced = false), 9_000))
+    }
+
+    @Test
+    fun aFinishedRowStaysPassedThroughGapsAndPastTheLastLine() {
+        val rows = LyricsRenderRows.build(
+            listOf(
+                SyncedLine(time = 1_000, text = "one", durationMs = 500),
+                SyncedLine(time = 5_000, text = "two", durationMs = 1_000),
+            ),
+        )
+
+        // The feed sits in the instrumental gap between the lines, where no row is active.
+        assertTrue(isPassedLyricRow(rows[0], 3_000))
+        assertFalse(isPassedLyricRow(rows[1], 3_000))
+        // And past the last line's span the outro still counts it as passed.
+        assertTrue(isPassedLyricRow(rows[1], 7_000))
     }
 
     private fun row(line: LyricsLine): LyricsRenderRow = LyricsRenderRows.build(listOf(line)).single()

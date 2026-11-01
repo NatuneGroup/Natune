@@ -280,7 +280,24 @@ private fun iosPlayerSlots(
         }
         romanization.publish(LyricsRomanizationPresentation(sessionKey, LyricsRomanizationSource.BUILT_IN, phonetics))
     }
-    val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
+    val actions = remember(graph, document?.occurrenceId) {
+        val occurrenceId = document?.occurrenceId
+        LyricsSurfaceActions(
+            // Seek and resume share the desktop's acceptance gate: a tap on stale lyrics, or an
+            // unseekable item, performs neither.
+            onSeek = { position ->
+                val accepted = graph.player.snapshot.value
+                if (accepted?.occurrenceId == occurrenceId && accepted?.isSeekable == true) {
+                    graph.player.seekTo(position)
+                }
+            },
+            onShareCard = { },
+            onResume = {
+                val accepted = graph.player.snapshot.value
+                if (accepted?.occurrenceId == occurrenceId && accepted?.isSeekable == true) graph.player.play()
+            },
+        )
+    }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
     // The resolver runs only while a canvas-capable style shows the player surface.
     LaunchedEffect(canvas, expanded, active, style) {
@@ -327,7 +344,11 @@ private fun iosPlayerSlots(
             playback = graph.player.snapshot,
             romanization = romanization,
             settings = lyricsSettings,
-            onSeek = actions.onSeek,
+            onSeek = { position ->
+                actions.onSeek(position)
+                // The native surface owns no renderer to add this: a tapped line resumes a paused song.
+                if (graph.player.snapshot.value?.playWhenReady == false) actions.onResume()
+            },
             visible = expanded && active,
             modifier = modifier,
             credits = document?.credits,

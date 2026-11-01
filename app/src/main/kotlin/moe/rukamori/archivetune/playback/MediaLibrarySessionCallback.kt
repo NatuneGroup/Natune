@@ -64,8 +64,6 @@ import moe.rukamori.archivetune.innertube.models.PlaylistItem
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.filterExplicit
 import moe.rukamori.archivetune.innertube.models.filterVideo
-import moe.rukamori.archivetune.models.PersistQueue
-import moe.rukamori.archivetune.playback.MusicService.Companion.PERSISTENT_QUEUE_FILE
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
 import moe.rukamori.archivetune.spotify.SpotifyMapper
 import moe.rukamori.archivetune.spotify.SpotifyPlaybackResolver
@@ -73,7 +71,6 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.telegram.isTelegramMediaId
 import moe.rukamori.archivetune.utils.isLocalMediaId
-import java.io.ObjectInputStream
 import java.text.Collator
 import java.time.LocalDateTime
 import java.util.Locale
@@ -179,7 +176,7 @@ class MediaLibrarySessionCallback
                 val currentItems = List(player.mediaItemCount) { index -> player.getMediaItemAt(index) }
                 val persistedItems =
                     withContext(Dispatchers.IO) {
-                        readPersistentQueue()?.let { queue ->
+                        readPersistentQueue(context)?.let { queue ->
                             PlaybackResumptionPlanner.PersistedItems(
                                 items = queue.items.map { it.toMediaItem() },
                                 mediaItemIndex = queue.mediaItemIndex,
@@ -201,20 +198,6 @@ class MediaLibrarySessionCallback
                     result.startPositionMs,
                 )
             }
-
-        private fun readPersistentQueue(): PersistQueue? {
-            val file = context.filesDir.resolve(PERSISTENT_QUEUE_FILE)
-            if (!file.exists() || !file.isFile) return null
-            return try {
-                file.inputStream().use { fis ->
-                    ObjectInputStream(fis).use { input ->
-                        input.readObject() as? PersistQueue
-                    }
-                }
-            } catch (e: Exception) {
-                null
-            }
-        }
 
         override fun onCustomCommand(
             session: MediaSession,
@@ -253,6 +236,10 @@ class MediaLibrarySessionCallback
                 MediaSessionConstants.ACTION_TOGGLE_REPEAT_MODE -> {
                     session.player.toggleRepeatMode()
                 }
+
+                MediaSessionConstants.ACTION_SEEK_BACK_30,
+                MediaSessionConstants.ACTION_SEEK_FORWARD_30 ->
+                    handleSeekStepCustomCommand(session.player, customCommand.customAction)
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
