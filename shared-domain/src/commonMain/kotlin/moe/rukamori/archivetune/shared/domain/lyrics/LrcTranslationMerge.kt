@@ -55,10 +55,10 @@ object LrcTranslationMerge {
 
     /**
      * The document to persist for a translation result: [translatedResult] verbatim when it already
-     * carries both languages — a `[translatedLyrics]` section, or a translator rebuild that kept the
-     * source rows (interleaved pairs repeat the source row at its own timestamp) — and the merged
-     * source+section otherwise. Merging a bilingual result again would duplicate every sung row
-     * under a fresh translation header.
+     * carries both languages — a `[translatedLyrics]` section, or a translator rebuild that kept
+     * every sung source row (interleaved pairs repeat each source row at its own timestamp) — and
+     * the merged source+section otherwise. Merging a bilingual result again would duplicate every
+     * sung row under a fresh translation header.
      */
     fun saveableTranslation(sourceLrc: String?, translatedResult: String): String {
         if (alreadyBilingual(translatedResult, sourceLrc)) return translatedResult
@@ -68,9 +68,11 @@ object LrcTranslationMerge {
     }
 
     /**
-     * True when [result] already holds a translation section or reuses at least one synced row of
-     * [sourceLrc], the signature of a rebuilt bilingual document. A plain translation reusing one
-     * source row verbatim (timestamp and text) still counts: re-stamping it could only corrupt it.
+     * True when [result] already holds a translation section or preserves every nonblank synced row
+     * of [sourceLrc], the signature of a rebuilt bilingual document. The whole set is required: a
+     * translation-only result can legitimately restamp one source line verbatim, and a blank spacer
+     * row such as `[00:10.00]` matches nothing sung — either alone would wrongly save a
+     * translation-only document verbatim and lose the original text.
      */
     private fun alreadyBilingual(result: String, sourceLrc: String?): Boolean {
         if (SECTION_HEADER.containsMatchIn(result)) return true
@@ -80,13 +82,16 @@ object LrcTranslationMerge {
                 .lineSequence()
                 .mapNotNull(LrcParser::parseLineSyncedLrcLine)
                 .flatten()
+                .filter { it.text.isNotBlank() }
                 .mapTo(mutableSetOf()) { it.time to it.text }
         if (sourceRows.isEmpty()) return false
-        return result
-            .lineSequence()
-            .mapNotNull(LrcParser::parseLineSyncedLrcLine)
-            .flatten()
-            .any { (it.time to it.text) in sourceRows }
+        val resultRows =
+            result
+                .lineSequence()
+                .mapNotNull(LrcParser::parseLineSyncedLrcLine)
+                .flatten()
+                .mapTo(mutableSetOf()) { it.time to it.text }
+        return resultRows.containsAll(sourceRows)
     }
 
     /** `mm:ss.xx`, the centisecond stamp the LRC parser accepts. */
