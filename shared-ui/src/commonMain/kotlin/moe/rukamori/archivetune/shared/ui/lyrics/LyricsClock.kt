@@ -57,7 +57,16 @@ internal class LyricsClock {
     private fun publish(positionMs: Long) {
         // Output delay is wall time; convert it at the media rate without changing row timestamps or tap-to-seek.
         val feed = LyricsFeedTiming.feedMs(positionMs, syncOffsetMs, leadMs)
-        feedMs.longValue = if (feed < Long.MIN_VALUE + outputDelayMs) Long.MIN_VALUE else feed - outputDelayMs
+        val next = if (feed < Long.MIN_VALUE + outputDelayMs) Long.MIN_VALUE else feed - outputDelayMs
+        val previous = feedMs.longValue
+        feedMs.longValue = next
+        // A position jump past the seek bound is a re-anchor: the scroll owner snaps to the new line
+        // instead of animating the distance, even when no formal discontinuity arrived.
+        if (previous != Long.MIN_VALUE && next != Long.MIN_VALUE &&
+            kotlin.math.abs(next - previous) > FEED_JUMP_DISCONTINUITY_MS
+        ) {
+            discontinuities.intValue += 1
+        }
     }
 }
 
@@ -101,3 +110,5 @@ internal fun rememberLyricsClock(
 
 /** The slowest the clock re-checks its feed while idle; matches the native surface's held-position poll. */
 private const val IDLE_POLL_MS = 250L
+/** A feed jump beyond this is treated as a seek and re-anchors the list at once. */
+private const val FEED_JUMP_DISCONTINUITY_MS = 1_000L
