@@ -11,10 +11,10 @@ import moe.rukamori.archivetune.shared.data.provider.KtorDeezerRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorJioSaavnRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorQqMusicRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorTidalRepository
-import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalInstanceResolver
+import moe.rukamori.archivetune.shared.data.provider.racePoolAttempts
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.AudioProviderRepository
@@ -39,11 +39,13 @@ import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
 /**
  * TIDAL over the personal account lease, the Playback Pool accounts and the HiFi instances (the user's own, then the
  * pool's discovered ones), in the shipped order: the accounts first while "account first" is on (the default), otherwise
- * the instances first. Attempts run in that order; the Android resolver races pool accounts, which this host does not do
- * yet. A failed attempt moves to the next one. A terminal authentication failure of the personal account stops the
- * source; a pooled account that is refused is reported dead and the next one is tried. The app ships no TIDAL catalog
- * token: instances search anonymously, and a direct TIDAL id needs an account. With no account, no pool and no instance
- * the source answers no match, and the TIDAL settings page asks the user to sign in.
+ * the instances first. The personal account and the anonymous instances still run in that order; the pooled accounts
+ * race through the shared [racePoolAttempts] helper the way the Android resolver does — bounded lanes, the first
+ * answer wins and the losers are cancelled. A failed attempt moves to the next one. A terminal authentication failure
+ * of the personal account stops the source; a pooled account that is refused is reported dead and the next one is
+ * tried. The app ships no TIDAL
+ * catalog token: instances search anonymously, and a direct TIDAL id needs an account. With no account, no pool and
+ * no instance the source answers no match, and the TIDAL settings page asks the user to sign in.
  */
 internal class DesktopTidalSource(
     private val http: HttpClient,
@@ -121,26 +123,33 @@ internal class DesktopTidalSource(
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         var failure: Exception? = null
-        for (attempt in attempts(preferences(), search = false)) {
-            try {
-                attempt.repository.resolve(request)?.let { resolved ->
-                    if (attempt.pooled) pool?.noteSuccess(DesktopPlaybackPool.TIDAL, attempt.poolId)
-                    return resolved
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (auth: TerminalPlaybackAuthentication) {
-                if (!attempt.pooled) throw auth
-                pool?.report(DesktopPlaybackPool.TIDAL, attempt.poolId, "dead")
-                pool?.noteFailure(DesktopPlaybackPool.TIDAL, attempt.poolId)
-            } catch (error: Exception) {
-                if (attempt.pooled) {
-                    if ((error as? ProviderHttpFailure)?.status == 401) pool?.report(DesktopPlaybackPool.TIDAL, attempt.poolId, "dead")
-                    pool?.noteFailure(DesktopPlaybackPool.TIDAL, attempt.poolId)
-                }
-                failure = error
-            }
+        // Only un-pooled attempts reach this walker, so a terminal refusal still ends the source.
+        suspend fun sequential(attempt: Attempt): PreparedAudio? = try {
+            attempt.repository.resolve(request)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (auth: TerminalPlaybackAuthentication) {
+            throw auth
+        } catch (error: Exception) {
+            failure = error
+            null
         }
+        val ordered = attempts(preferences(), search = false)
+        val firstPooled = ordered.indexOfFirst { it.pooled }.let { if (it < 0) ordered.size else it }
+        val pooled = ordered.drop(firstPooled).takeWhile { it.pooled }
+        for (attempt in ordered.take(firstPooled)) sequential(attempt)?.let { return it }
+        if (pooled.isNotEmpty()) {
+            val outcome = racePoolAttempts(
+                attempts = pooled,
+                resolve = { it.repository.resolve(request) },
+                reportDead = { pool?.report(DesktopPlaybackPool.TIDAL, it.poolId, "dead") },
+                noteSuccess = { pool?.noteSuccess(DesktopPlaybackPool.TIDAL, it.poolId) },
+                noteFailure = { pool?.noteFailure(DesktopPlaybackPool.TIDAL, it.poolId) },
+            )
+            outcome.winner?.let { return it }
+            outcome.failure?.let { failure = it }
+        }
+        for (attempt in ordered.drop(firstPooled + pooled.size)) sequential(attempt)?.let { return it }
         failure?.let { throw it }
         return null
     }
