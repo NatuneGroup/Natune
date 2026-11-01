@@ -47,7 +47,6 @@ import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
 import moe.rukamori.archivetune.shared.data.potoken.IosPoTokenSupport
-import moe.rukamori.archivetune.shared.data.potoken.poTokenSessionId
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalPkceClient
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeBrowseTransport
 import moe.rukamori.archivetune.shared.data.provider.IosYouTubeResolver
@@ -350,18 +349,9 @@ internal class IosSessionGraph private constructor(
                 report = report,
             )
             // The shipped app warms BotGuard once the auth state names a session, so a cold mint
-            // never lands inside a resolve; the same warm runs off the graph scope.
-            scope.launch {
-                val session = youtubeTransport.innerTubeSession.sessionSnapshot()
-                val signedIn = session.sapisid?.isNotBlank() == true
-                val sessionId =
-                    poTokenSessionId(
-                        session.dataSyncId,
-                        session.visitorData,
-                        hasLoginContext = signedIn && !session.dataSyncId.isNullOrBlank(),
-                    )
-                if (sessionId != null) poTokens.preWarm(sessionId)
-            }
+            // never lands inside a resolve; the owner derives the session id from the transport
+            // itself and stays a no-op while the poToken preference is off.
+            scope.launch { poTokens.preWarm() }
             // The shelf feeds read the same session, so a signed-in home feed and the account listings agree.
             val youtubeCatalogue = youtubeTransport.catalogueTransport()
             val youtubeAccount = YouTubeAccountBinding(

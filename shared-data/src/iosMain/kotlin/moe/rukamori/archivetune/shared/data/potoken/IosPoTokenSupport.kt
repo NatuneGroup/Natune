@@ -55,9 +55,21 @@ class IosPoTokenSupport(
         return engine.mintToken(identifier = videoId, sessionId = sessionId)
     }
 
-    /** The shipped preWarm for [sessionId]; a no-op while the poToken preference is off. */
-    suspend fun preWarm(sessionId: String) {
+    /**
+     * The shipped preWarm, mirroring the shipped app's warm on first auth state: the session id
+     * comes from the live transport session exactly like [mintForPlayback] binds it. A no-op while
+     * the poToken preference is off or the session has nothing to bind yet.
+     */
+    suspend fun preWarm() {
         if (!enabled()) return
+        val session = transport.innerTubeSession.sessionSnapshot()
+        val signedIn = session.sapisid?.isNotBlank() == true
+        val sessionId =
+            poTokenSessionId(
+                session.dataSyncId,
+                session.visitorData,
+                hasLoginContext = signedIn && !session.dataSyncId.isNullOrBlank(),
+            ) ?: return
         engine.preWarm(sessionId)
     }
 
