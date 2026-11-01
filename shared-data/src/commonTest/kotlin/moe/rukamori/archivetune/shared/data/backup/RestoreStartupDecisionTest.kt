@@ -125,4 +125,41 @@ class RestoreStartupDecisionTest {
     fun corruptStaysCorrupt() {
         assertEquals(RestoreStartStep.CORRUPT, decideRestoreStart(facts(outcome = RecoveryOutcome.CORRUPT)))
     }
+
+    @Test
+    fun persistedAbortOutlivesItsJournal() {
+        // The abort marker is persisted before recovery may delete the journal, so a start that finds the
+        // marker with the journal already gone still completes the vault rollback instead of re-staging.
+        assertEquals(
+            RestoreStartStep.JOINT_ABORT,
+            decideRestoreStart(
+                facts(outcome = RecoveryOutcome.NOTHING, abortMarker = true, settingsBefore = true),
+            ),
+        )
+    }
+
+    @Test
+    fun unpersistableAbortDecisionBlocks() {
+        // When the abort marker itself cannot be written the host writes the blocked marker instead, and
+        // that marker outranks whatever a later start re-reads from the pending set.
+        RecoveryOutcome.entries.forEach { outcome ->
+            assertEquals(
+                RestoreStartStep.BLOCKED,
+                decideRestoreStart(facts(outcome = outcome, blocked = true, settingsBefore = true)),
+                "blocked after a failed abort persist, $outcome",
+            )
+        }
+    }
+
+    @Test
+    fun unfinishableRollbackReadsCorrupt() {
+        // A rollback whose journal is still there — unreadable or interrupted — is corruption the blocked
+        // surface resolves, not a staged set to retry, even while a vault snapshot is on disk.
+        assertEquals(
+            RestoreStartStep.CORRUPT,
+            decideRestoreStart(
+                facts(outcome = RecoveryOutcome.CORRUPT, settingsBefore = true, stagedSettings = true),
+            ),
+        )
+    }
 }
