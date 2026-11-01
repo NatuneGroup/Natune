@@ -47,7 +47,7 @@ internal fun MusicService.sendCloseAudioEffectSessionBroadcast(sessionId: Int) {
  * [MusicService.ACTION_REFRESH_AUTOMOTIVE_LIBRARY].
  */
 internal fun MusicService.refreshAutomotiveLibrary() {
-    if (!this::mediaSession.isInitialized) return
+    if (runCatching { mediaSession }.isFailure) return
     val pinnedCount =
         runCatching {
             AndroidAutoPinnedPlaylists

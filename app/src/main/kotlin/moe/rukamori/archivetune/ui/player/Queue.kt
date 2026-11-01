@@ -1049,7 +1049,7 @@ fun Queue(
                                                             navController = navController,
                                                             playerBottomSheetState = playerBottomSheetState,
                                                             isQueueTrigger = true,
-                                                            onPlayNextFromQueue = onPlayNextFromQueue,
+                                                            onPlayNextFromQueue = onPlayNextFromQueue?.let { cb -> { cb() } },
                                                             onRemoveFromQueue = {
                                                                 onRemoveWithUndo(window)
                                                             },

@@ -461,6 +461,8 @@ fun AlbumMenu(
                                             context.startActivity(Intent.createChooser(intent, null))
                                         },
                                     ),
+                                )
+                                add(
                                     NewAction(
                                         icon = {
                                             Icon(

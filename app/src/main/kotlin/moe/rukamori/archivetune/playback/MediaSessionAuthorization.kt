@@ -71,7 +71,6 @@ object MediaSessionAuthorization {
             Player.COMMAND_GET_TIMELINE,
             Player.COMMAND_GET_METADATA,
             Player.COMMAND_GET_TRACKS,
-            Player.COMMAND_GET_PARAMETERS,
         )
 
     fun tierOf(

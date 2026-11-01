@@ -2757,7 +2757,7 @@ fun BottomSheetPlayer(
                         onQueueClick = openQueue,
                         onLyricsClick = { isLyricsScreenVisible = true },
                         onSliderValueChange = onSliderValueChange,
-                        onSliderValueChangeFinished = onSliderValueChangeFinished,
+                        onSliderValueChangeFinished = onSliderValueChangeFinished, landscape = false,
                         modifier = Modifier.fillMaxSize().nestedScroll(state.preUpPostDownNestedScrollConnection),
                     )
             } else {
