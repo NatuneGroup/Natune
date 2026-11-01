@@ -91,6 +91,75 @@ class YouTubeShelfWireTest {
     }
 
     @Test
+    fun chipSelectionMirrorsTheAndroidToggle() {
+        val relax = YouTubeFeedChip("Relax", "chip-relax", "chip-relax-off")
+        val energise = YouTubeFeedChip("Energise", "chip-energise", null)
+        val labelOnly = YouTubeFeedChip("Podcasts", null, null)
+        assertEquals("chip-relax", relax.stableKey)
+        assertEquals("Podcasts", labelOnly.stableKey)
+        // A first tap selects the chip and re-reads under its own params.
+        val first = selectYouTubeFeedChip(null, relax)
+        assertEquals(relax, first.selected)
+        assertEquals("chip-relax", first.params)
+        // A different chip switches the selection to its params.
+        val second = selectYouTubeFeedChip(first.selected, energise)
+        assertEquals(energise, second.selected)
+        assertEquals("chip-energise", second.params)
+        // Re-tapping the selected chip deselects through the provider's own deselect params when it gave them.
+        val deselected = selectYouTubeFeedChip(relax, relax)
+        assertNull(deselected.selected)
+        assertEquals("chip-relax-off", deselected.params)
+        // Without a deselect endpoint the un-filtered feed re-reads, like Android restoring the base page.
+        val cleared = selectYouTubeFeedChip(energise, energise)
+        assertNull(cleared.selected)
+        assertNull(cleared.params)
+        // A null tap clears the filter outright, and a re-parsed chip still matches by its stable key.
+        assertNull(selectYouTubeFeedChip(relax, null).params)
+        val reparsed = selectYouTubeFeedChip(relax, relax.copy(deselectParams = "drifted"))
+        assertNull(reparsed.selected)
+        assertEquals("drifted", reparsed.params)
+    }
+
+    @Test
+    fun aHomeContinuationPageKeepsItsShelvesAndDropsChips() {
+        val page = youTubeHomeShelfPage(obj("""
+            {
+              "contents":[{"musicCarouselShelfRenderer":{
+                "header":{"musicCarouselShelfBasicHeaderRenderer":{
+                  "title":{"runs":[{"text":"More shelf"}]}}},
+                "contents":[${song("cont_song01")}]
+              }}],
+              "continuations":[{"continuationEndpoint":{"continuationCommand":{"token":"home-next-2"}}}]
+            }
+        """.trimIndent()))
+        assertEquals("home-next-2", page.continuation)
+        assertTrue(page.chips.isEmpty())
+        assertEquals("More shelf#0", page.shelves.single().key)
+        assertEquals("cont_song01", page.shelves.single().entries.single().id)
+    }
+
+    @Test
+    fun chartsContinuationPagesReadTheirOwnShelvesAndCursor() {
+        val page = youTubeChartsShelfPage(
+            sectionList = null,
+            continuationSectionList = obj("""
+                {"contents":[
+                  {"musicCarouselShelfRenderer":{"header":{"musicCarouselShelfBasicHeaderRenderer":{
+                    "title":{"runs":[{"text":"Top music videos"}]}}},"contents":[${song("video_001")}]}},
+                  {"gridRenderer":{"header":{"gridHeaderRenderer":{"title":{"runs":[{"text":"Genres"}]}}},
+                    "items":[${album("MPRE-chart02")}]}}
+                ],
+                "continuations":[{"nextRadioContinuationData":{"continuation":"chart-next-2"}}]}
+            """.trimIndent()),
+        )
+        assertEquals("chart-next-2", page.continuation)
+        assertEquals(listOf("Top music videos#0", "Genres#1"), page.shelves.map { it.key })
+        assertTrue(page.shelves[0].numbered)
+        assertTrue(page.shelves[1].grid)
+        assertEquals("video_001", page.shelves[0].entries.single().id)
+    }
+
+    @Test
     fun exploreFindsTheReleaseAndMoodCarouselsByTheirMoreTarget() {
         val page = youTubeExplorePage(obj("""
             {"contents":[

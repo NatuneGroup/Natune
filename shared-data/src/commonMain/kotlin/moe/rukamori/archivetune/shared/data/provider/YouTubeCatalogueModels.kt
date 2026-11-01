@@ -36,6 +36,28 @@ data class YouTubeShelfPage(
 /** A home feed chip: [params] selects it, [deselectParams] un-selects it when the provider gave one. */
 data class YouTubeFeedChip(val title: String, val params: String?, val deselectParams: String?)
 
+/**
+ * The chip's stable identity across re-reads: its params select it, and its title is the label and the last-resort
+ * key. A chip row keys its items and its selection on this, so a re-parsed page still marks the right chip.
+ */
+val YouTubeFeedChip.stableKey: String get() = params ?: title
+
+/** What one chip tap commits: the newly selected chip (null when the tap cleared the filter) and the params to read. */
+data class YouTubeFeedChipSelection(val selected: YouTubeFeedChip?, val params: String?)
+
+/**
+ * The chip toggle the Android home applies: a different chip selects it and the feed re-reads under its params, a
+ * re-tap on the selected chip clears the selection and re-reads the provider's own deselect params (the un-filtered
+ * feed when it gave none), and a null tap clears outright.
+ */
+fun selectYouTubeFeedChip(current: YouTubeFeedChip?, tapped: YouTubeFeedChip?): YouTubeFeedChipSelection =
+    when {
+        tapped == null -> YouTubeFeedChipSelection(null, null)
+        current != null && tapped.stableKey == current.stableKey ->
+            YouTubeFeedChipSelection(null, tapped.deselectParams)
+        else -> YouTubeFeedChipSelection(tapped, tapped.params)
+    }
+
 /** A mood or genre tile: the stripe color and the section it browses to. */
 data class YouTubeMoodGenre(val title: String, val stripeArgb: Long, val section: ContentSection)
 
