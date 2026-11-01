@@ -36,6 +36,12 @@ data class PersistQueue(
     val queueData: QueueData? = null,
     val shuffleOrder: List<Int>? = null,
     val manualQueueKinds: List<Int?>? = null,
+    /**
+     * When this queue file was written; the position restores only inside the resume window
+     * [PositionRestorePolicy] defines. Queues serialized before the field existed decode as 0,
+     * which reads as expired — their position is dropped rather than trusted.
+     */
+    val savedAtEpochMs: Long = 0L,
 ) : Serializable {
     companion object {
         private const val serialVersionUID = 1L
