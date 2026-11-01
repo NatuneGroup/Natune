@@ -94,7 +94,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import dagger.hilt.android.AndroidEntryPoint
@@ -185,10 +184,6 @@ import moe.rukamori.archivetune.constants.LastFMUseNowPlaying
 import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
 import moe.rukamori.archivetune.constants.ListenBrainzTokenKey
 import moe.rukamori.archivetune.constants.MaxSongCacheSizeKey
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleLike
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleRepeatMode
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleShuffle
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleStartRadio
 import moe.rukamori.archivetune.constants.PauseListenHistoryKey
 import moe.rukamori.archivetune.constants.SyncPlaybackToYouTubeHistoryKey
 import moe.rukamori.archivetune.constants.PauseOnDeviceMuteKey
@@ -5341,58 +5336,14 @@ class MusicService :
 
     private fun updateNotification() {
         try {
-            val customLayout =
-                listOf(
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(
-                                if (currentSong.value?.song?.liked == true) {
-                                    R.string.action_remove_like
-                                } else {
-                                    R.string.action_like
-                                },
-                            ),
-                        ).setIconResId(if (currentSong.value?.song?.liked == true) R.drawable.favorite else R.drawable.favorite_border)
-                        .setSessionCommand(CommandToggleLike)
-                        .setEnabled(currentSong.value != null)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(
-                                when (player.repeatMode) {
-                                    REPEAT_MODE_OFF -> R.string.repeat_mode_off
-                                    REPEAT_MODE_ONE -> R.string.repeat_mode_one
-                                    REPEAT_MODE_ALL -> R.string.repeat_mode_all
-                                    else -> R.string.repeat_mode_off
-                                },
-                            ),
-                        ).setIconResId(
-                            when (player.repeatMode) {
-                                REPEAT_MODE_OFF -> R.drawable.repeat
-                                REPEAT_MODE_ONE -> R.drawable.repeat_one_on
-                                REPEAT_MODE_ALL -> R.drawable.repeat_on
-                                else -> R.drawable.repeat
-                            },
-                        ).setSessionCommand(CommandToggleRepeatMode)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(if (player.shuffleModeEnabled) R.string.action_shuffle_off else R.string.action_shuffle_on),
-                        ).setIconResId(if (player.shuffleModeEnabled) R.drawable.shuffle_on else R.drawable.shuffle)
-                        .setSessionCommand(CommandToggleShuffle)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(getString(R.string.start_radio))
-                        .setIconResId(R.drawable.radio)
-                        .setSessionCommand(CommandToggleStartRadio)
-                        .setEnabled(currentSong.value != null)
-                        .build(),
-                )
-            mediaSession.setCustomLayout(customLayout)
+            mediaSession.setCustomLayout(
+                buildNotificationCustomLayout(
+                    context = this,
+                    player = player,
+                    liked = currentSong.value?.song?.liked == true,
+                    hasSong = currentSong.value != null,
+                ),
+            )
         } catch (e: Exception) {
             reportException(e)
         }
