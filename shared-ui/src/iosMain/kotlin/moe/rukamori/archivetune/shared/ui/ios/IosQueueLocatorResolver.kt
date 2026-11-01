@@ -354,7 +354,13 @@ private class IosTidalSource(
                         recoverPooled(attempt, classifyPoolFailure(error), request) ?: throw error
                     }
                 },
-                reportDead = { pool?.report(IosPlaybackPool.TIDAL, it.poolId, "dead") },
+                report = { attempt, type ->
+                    pool?.let { owner ->
+                        owner.deadReports.report(IosPlaybackPool.TIDAL, attempt.poolId, type) {
+                            owner.report(IosPlaybackPool.TIDAL, attempt.poolId, type)
+                        }
+                    }
+                },
                 noteSuccess = { pool?.noteSuccess(IosPlaybackPool.TIDAL, it.poolId) },
                 noteFailure = { pool?.noteFailure(IosPlaybackPool.TIDAL, it.poolId) },
             )

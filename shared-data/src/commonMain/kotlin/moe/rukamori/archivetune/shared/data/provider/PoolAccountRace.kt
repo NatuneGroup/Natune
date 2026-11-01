@@ -28,17 +28,17 @@ private class PoolRaceResult<R>(val resolved: R?, val error: Exception?, val can
  * Races the pooled-account tier of a resolve: at most [maxConcurrent] attempts are in flight, the
  * first non-null answer wins and the still-running losers are cancelled. Every attempt that
  * actually ran reports to the pool exactly the way the sequential walk reports today — the winner
- * calls [noteSuccess] once; a terminal authentication refusal or an HTTP 401 calls [reportDead]
- * and then [noteFailure]; any other exception calls [noteFailure] alone. An attempt cancelled
- * because another attempt won reports nothing, and an attempt still queued when the race settles
- * reports nothing either, so no account is counted twice or blamed for work it never did. A
- * [CancellationException] out of an attempt aborts the whole race and propagates, as the sequential
- * walk does. Each account is tried once — no retries inside the race.
+ * calls [noteSuccess] once; a failure [PoolDeadReportPolicy.reportTypeFor] maps to a report type
+ * calls [report] with that type and then [noteFailure]; any other exception calls [noteFailure]
+ * alone. An attempt cancelled because another attempt won reports nothing, and an attempt still
+ * queued when the race settles reports nothing either, so no account is counted twice or blamed for
+ * work it never did. A [CancellationException] out of an attempt aborts the whole race and
+ * propagates, as the sequential walk does. Each account is tried once — no retries inside the race.
  */
 suspend fun <A, R : Any> racePoolAttempts(
     attempts: List<A>,
     resolve: suspend (A) -> R?,
-    reportDead: suspend (A) -> Unit,
+    report: suspend (A, String) -> Unit,
     noteSuccess: suspend (A) -> Unit,
     noteFailure: suspend (A) -> Unit,
     maxConcurrent: Int = MAX_CONCURRENT_POOL_ATTEMPTS,
@@ -83,11 +83,8 @@ suspend fun <A, R : Any> racePoolAttempts(
                     }
                     result.error != null -> {
                         val error = result.error
-                        if (error is TerminalPlaybackAuthentication ||
-                            (error as? ProviderHttpFailure)?.status == 401
-                        ) {
-                            reportDead(attempt)
-                        }
+                        PoolDeadReportPolicy.reportTypeFor(classifyPoolFailure(error))
+                            ?.let { type -> report(attempt, type) }
                         noteFailure(attempt)
                         if (error !is TerminalPlaybackAuthentication) failure = error
                     }

@@ -191,7 +191,13 @@ internal class DesktopTidalSource(
                         recoverPooled(attempt, classifyPoolFailure(error), request) ?: throw error
                     }
                 },
-                reportDead = { pool?.report(DesktopPlaybackPool.TIDAL, it.poolId, "dead") },
+                report = { attempt, type ->
+                    pool?.let { owner ->
+                        owner.deadReports.report(DesktopPlaybackPool.TIDAL, attempt.poolId, type) {
+                            owner.report(DesktopPlaybackPool.TIDAL, attempt.poolId, type)
+                        }
+                    }
+                },
                 noteSuccess = { pool?.noteSuccess(DesktopPlaybackPool.TIDAL, it.poolId) },
                 noteFailure = { pool?.noteFailure(DesktopPlaybackPool.TIDAL, it.poolId) },
             )
