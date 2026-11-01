@@ -97,6 +97,7 @@ class MediaLibrarySessionCallback
         var toggleStartRadio: () -> Unit = {}
         var toggleLibrary: () -> Unit = {}
         var isListenTogetherGuestActive: () -> Boolean = { false }
+        var onStopCommand: () -> Unit = {}
         private val controllerClassifier = MediaSessionControllerClassifier(context)
 
         internal data class AutoPlaylistSortOption(
@@ -256,6 +257,13 @@ class MediaLibrarySessionCallback
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
 
+        @Suppress("DEPRECATION")
+        override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
+            val result = super.onPlayerCommandRequest(session, controller, playerCommand)
+            if (playerCommand == Player.COMMAND_STOP && result == SessionResult.RESULT_SUCCESS) onStopCommand() // a stop() emits no listener-visible change
+            return result
+        }
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -311,10 +319,7 @@ class MediaLibrarySessionCallback
                 }
 
                 val requested = (safePage + 1) * safePageSize
-                // No hard cap on returned items: a `min(requested, 200)` cap truncates Android Auto /
-                // browse results above 200 entries. Allocate the ArrayList at the requested size;
-                // the underlying queries already paginate and interleave cleanly without an upper
-                // bound.
+                // No hard cap on returned items: the queries already paginate cleanly, so the list is allocated at the requested size.
                 val items = ArrayList<MediaItem>(requested)
 
                 val offlineSongs = searchOfflineSongs(q, previewSize = requested)
@@ -533,9 +538,7 @@ class MediaLibrarySessionCallback
                         MusicService.PLAYLIST -> {
                             val likedSongCount = database.likedSongsCount().first()
                             val downloadedSongCount = downloadUtil.downloads.value.size
-                            // Read once — spotifyLikedFolder() and spotifyPlaylistFolder() below
-                            // each default to this same dataStore read, which duplicated it every
-                            // time this list was built.
+                            // Read once — the folder lookups below each default to this same dataStore read.
                             val showSpotifyPlaylists = context.dataStore.get(ShowSpotifyPlaylistsKey, false)
                             listOf(
                                 queueMediaItem(
@@ -669,9 +672,7 @@ class MediaLibrarySessionCallback
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> =
             scope.future(Dispatchers.IO) {
-                // The fixed top-level and Home folders are identical whether reached as a child
-                // in onGetChildren or looked up directly here; staticFolderItem is the one place
-                // that builds them, instead of duplicating each item's title/icon/type twice.
+                // staticFolderItem is the one place the fixed top-level and Home folders get built, identical from either lookup.
                 val staticItem = staticFolderItem(mediaId)
                 when {
                     mediaId == MusicService.ROOT -> {
@@ -1008,8 +1009,7 @@ class MediaLibrarySessionCallback
                     }
 
                     MusicService.QUEUE -> {
-                        // A car queue tap replays the tapped entry inside the existing queue
-                        // instead of rebuilding a queue around it.
+                        // A car queue tap replays the tapped entry inside the existing queue.
                         val entry = AutoQueueMediaIds.parse(firstItem.mediaId) ?: return@future defaultResult
                         withContext(Dispatchers.Main) {
                             val player = mediaSession.player
