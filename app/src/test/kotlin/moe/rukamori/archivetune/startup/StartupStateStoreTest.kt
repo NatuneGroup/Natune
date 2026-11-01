@@ -73,6 +73,45 @@ class StartupStateStoreTest {
         assertFalse(restarted.pendingExists())
     }
 
+    @Test fun aMarkerRoundTripsItsInstallIdentity() {
+        val directory = temporary.newFolder()
+        val attempt = StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 1_000L)
+        StartupStateStore(directory).begin(attempt)
+        assertEquals(attempt, StartupStateStore(directory).pendingAttempt())
+        assertEquals(attempt, StartupStateStore(directory).lastAttempt())
+    }
+
+    @Test fun aLegacyThreeLineMarkerStillParses() {
+        val directory = temporary.newFolder()
+        File(directory, "startup_pending").writeText("100\n10\nN20261031")
+        val attempt = StartupStateStore(directory).pendingAttempt()!!
+        assertEquals(100L, attempt.timestampMs)
+        assertEquals(10, attempt.pid)
+        assertEquals("N20261031", attempt.version)
+        assertEquals(UNKNOWN_VERSION_CODE, attempt.versionCode)
+        assertEquals(0L, attempt.installedSinceMs)
+    }
+
+    @Test fun aHealthyProcessCannotRetireAnotherProcesssMarkerOfTheSameInstall() {
+        val directory = temporary.newFolder()
+        StartupStateStore(directory)
+            .begin(StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 1_000L))
+        val restarted = StartupStateStore(directory)
+        val sameInstall = StartupAttempt(200L, 11, "N20261101", versionCode = 100L, installedSinceMs = 1_000L)
+        assertFalse(restarted.markHealthy(sameInstall))
+        assertTrue(restarted.pendingExists())
+    }
+
+    @Test fun aHealthyLaunchRetiresAMarkerFromAnotherInstall() {
+        val directory = temporary.newFolder()
+        StartupStateStore(directory)
+            .begin(StartupAttempt(100L, 10, "N20261101", versionCode = 100L, installedSinceMs = 500L))
+        val restarted = StartupStateStore(directory)
+        val current = StartupAttempt(200L, 11, "N20261101", versionCode = 100L, installedSinceMs = 1_000L)
+        assertTrue(restarted.markHealthy(current))
+        assertFalse(restarted.pendingExists())
+    }
+
     @Test fun javaCaptureIsBoundedAndContainsTheTimestampEvenWithALargeMessage() {
         val directory = temporary.newFolder()
         val store = StartupStateStore(directory)

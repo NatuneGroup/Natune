@@ -8,7 +8,21 @@ import java.io.InputStream
 import java.io.PrintWriter
 import java.io.Writer
 
-internal data class StartupAttempt(val timestampMs: Long, val pid: Int, val version: String)
+internal data class StartupAttempt(
+    val timestampMs: Long,
+    val pid: Int,
+    val version: String,
+    val versionCode: Long = UNKNOWN_VERSION_CODE,
+    val installedSinceMs: Long = 0L,
+) {
+    /**
+     * Build + install identity captured at marker write time. Every field must match, so a marker
+     * left by a replaced build or install is told apart from this one without trusting the clock.
+     */
+    fun isSameInstall(other: StartupAttempt): Boolean =
+        version == other.version && versionCode == other.versionCode &&
+            installedSinceMs == other.installedSinceMs
+}
 internal data class SavedJavaCrash(val timestampMs: Long, val thread: String, val stack: String, val truncated: Boolean)
 internal data class CappedText(val text: String, val truncated: Boolean)
 internal data class CappedBytes(val bytes: ByteArray, val truncated: Boolean)
@@ -23,16 +37,17 @@ internal class StartupStateStore(private val directory: File) {
     fun begin(attempt: StartupAttempt) {
         // A service/provider restart must not replace the failed attempt before the launcher reads it.
         if (pendingExists()) return
-        val encoded = "${attempt.timestampMs}\n${attempt.pid}\n${attempt.version.take(128)}"
+        val encoded = "${attempt.timestampMs}\n${attempt.pid}\n${attempt.version.take(128)}\n" +
+            "${attempt.versionCode}\n${attempt.installedSinceMs}"
         writeSync(LAST_ATTEMPT_FILE, encoded)
         writeSync(PENDING_FILE, encoded)
     }
 
     fun markHealthy(attempt: StartupAttempt): Boolean {
         val stored = pendingAttempt()
-        // Only a same-build attempt owned by another (dead) process is protected until the launcher
-        // reads it. A healthy launch retires a leftover from another build or an unreadable marker.
-        if (stored != attempt && stored?.version == attempt.version) return false
+        // Only a marker of this install owned by another (dead) process is protected until the
+        // launcher reads it. A healthy launch retires anything else, including unreadable markers.
+        if (stored != attempt && stored?.isSameInstall(attempt) == true) return false
         return clearPending()
     }
 
@@ -128,9 +143,16 @@ internal class StartupStateStore(private val directory: File) {
     }
 
     private fun readAttempt(name: String): StartupAttempt? {
-        val lines = read(name, 512)?.split('\n', limit = 3) ?: return null
-        if (lines.size != 3) return null
-        return StartupAttempt(lines[0].toLongOrNull() ?: return null, lines[1].toIntOrNull() ?: return null, lines[2])
+        // Markers written before install identity was recorded have exactly three lines.
+        val lines = read(name, 512)?.split('\n', limit = 5) ?: return null
+        if (lines.size < 3) return null
+        return StartupAttempt(
+            timestampMs = lines[0].toLongOrNull() ?: return null,
+            pid = lines[1].toIntOrNull() ?: return null,
+            version = lines[2],
+            versionCode = lines.getOrNull(3)?.toLongOrNull() ?: UNKNOWN_VERSION_CODE,
+            installedSinceMs = lines.getOrNull(4)?.toLongOrNull() ?: 0L,
+        )
     }
 
     private fun read(name: String, maxBytes: Int): String? =
