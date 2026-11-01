@@ -1,7 +1,6 @@
 package moe.rukamori.archivetune.desktop.provider
 
 import io.ktor.client.HttpClient
-import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
@@ -10,13 +9,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
-import java.io.IOException
 import java.util.Locale
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -27,6 +22,9 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import moe.rukamori.archivetune.shared.data.provider.delegatedSessionIdOrNull
+import moe.rukamori.archivetune.shared.data.provider.withTransientRetry
+import moe.rukamori.archivetune.shared.data.provider.youTubeSapisidAuthorization
 
 /*
  * Desktop protocol layer for the retained YouTube Music player request. It mirrors the baseline
@@ -41,18 +39,11 @@ private const val ORIGIN_YOUTUBE = "https://www.youtube.com"
 private const val ORIGIN_YOUTUBE_MUSIC = "https://music.youtube.com"
 private const val REFERER_YOUTUBE_MUSIC = "$ORIGIN_YOUTUBE_MUSIC/"
 private const val REFERER_YOUTUBE_TV = "$ORIGIN_YOUTUBE/tv"
-private const val SW_JS_DATA_URL = "https://music.youtube.com/sw.js_data"
 private const val USER_AGENT_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
 private const val USER_AGENT_WEB_REMIX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
 /** Bounds on attacker- or outage-controlled bodies; a real player response is far below these. */
 private const val MAX_PLAYER_RESPONSE_CHARS = 8 * 1024 * 1024
-private const val MAX_SW_JS_DATA_CHARS = 2 * 1024 * 1024
-
-private const val RETRY_ATTEMPTS = 3
-private const val RETRY_INITIAL_DELAY_MS = 500L
-
-private val VISITOR_DATA_REGEX = Regex("^Cg[t|s]")
 
 /** One InnerTube client identity. Field names and flags mirror the core `YouTubeClient` model. */
 internal data class DesktopYouTubeClient(
@@ -457,64 +448,6 @@ private fun contextJson(
             },
         )
     }
-
-/**
- * Reads the anonymous visitor identity from the web player's service-worker data, the same source
- * the shipped `YouTube.visitorData()` uses. A failure is not fatal: the request is still sent, just
- * without the visitor header, which is the baseline's behaviour for a cold visitor.
- */
-internal suspend fun fetchYouTubeVisitorData(http: HttpClient): String? {
-    val raw =
-        withTransientRetry {
-            val response =
-                http.get(SW_JS_DATA_URL) {
-                    header(HttpHeaders.UserAgent, USER_AGENT_WEB)
-                }
-            if (response.status.value !in 200..299) null else response.bodyAsText()
-        } ?: return null
-    if (raw.length > MAX_SW_JS_DATA_CHARS) return null
-    // The payload is prefixed by five guard characters before its JSON array.
-    val root = runCatching { Json.parseToJsonElement(raw.drop(5)) }.getOrNull() as? JsonArray ?: return null
-    val section = (root.getOrNull(0) as? JsonArray)?.getOrNull(2) ?: return null
-    return firstVisitorData(section, depth = 0)
-}
-
-private fun firstVisitorData(
-    element: JsonElement,
-    depth: Int,
-): String? {
-    if (depth > MAX_VISITOR_SEARCH_DEPTH) return null
-    return when (element) {
-        is JsonPrimitive ->
-            if (element.isString) {
-                element.contentOrNull?.takeIf { VISITOR_DATA_REGEX.containsMatchIn(it) }
-            } else {
-                null
-            }
-        is JsonArray -> element.firstNotNullOfOrNull { firstVisitorData(it, depth + 1) }
-        is JsonObject -> element.values.firstNotNullOfOrNull { firstVisitorData(it, depth + 1) }
-    }
-}
-
-private const val MAX_VISITOR_SEARCH_DEPTH = 6
-
-/** Retries transient transport failures only. Protocol refusals are answers, not transient faults. */
-internal suspend fun <T> withTransientRetry(block: suspend () -> T): T {
-    var delayMs = RETRY_INITIAL_DELAY_MS
-    var attempt = 1
-    while (true) {
-        try {
-            return block()
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (transient: IOException) {
-            if (attempt >= RETRY_ATTEMPTS) throw transient
-            delay(delayMs)
-            delayMs *= 2
-            attempt++
-        }
-    }
-}
 
 internal fun JsonObject.stringOf(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
