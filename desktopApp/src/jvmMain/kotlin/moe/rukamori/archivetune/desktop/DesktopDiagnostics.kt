@@ -33,6 +33,8 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.data.diagnostics.JvmDiagnosticLogFiles
 import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
+import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogKind
+import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogRecord
 import moe.rukamori.archivetune.shared.domain.diagnostics.CrashReport
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLogStore
@@ -191,6 +193,7 @@ internal fun desktopCrashDeviceInfo(): List<Pair<String, String>> {
  */
 internal object DesktopCrashCapture {
     private val newest = MutableStateFlow<CrashReport?>(null)
+    private var recordsDirectory: Path? = null
 
     /** A crash this process survived, for the open window. */
     val latest: StateFlow<CrashReport?> = newest.asStateFlow()
@@ -200,6 +203,8 @@ internal object DesktopCrashCapture {
 
     /** Chains to the handler already installed, so the JVM still prints and handles the failure as before. */
     fun install(instanceDirectory: Path) {
+        recordsDirectory =
+            instanceDirectory.toAbsolutePath().normalize().resolve("feedback").resolve("records")
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             capture(instanceDirectory, thread, error)
@@ -229,6 +234,21 @@ internal object DesktopCrashCapture {
             file.writeText(CrashReport.encode(report))
             DesktopDiagnosticLog.append(DiagnosticLevel.ERROR, "Crash", "FATAL EXCEPTION: ${thread.name}\n$trace")
             newest.value = report
+            recordsDirectory?.let { directory ->
+                DesktopCrashLogStore(directory).save(
+                    CrashLogRecord(
+                        timestampMs = report.capturedAtMillis,
+                        pid = ProcessHandle.current().pid().toInt(),
+                        kind = CrashLogKind.JAVA,
+                        status = 0,
+                        process = APPLICATION_ID,
+                        thread = DiagnosticRedaction.redact(thread.name),
+                        body = report.stackTrace,
+                        truncated = false,
+                        versionName = DesktopBuildIdentity.VERSION_NAME,
+                    )
+                )
+            }
         } catch (failure: Exception) {
             System.err.println("Natune desktop: crash capture failed: ${failure.javaClass.simpleName}")
         }

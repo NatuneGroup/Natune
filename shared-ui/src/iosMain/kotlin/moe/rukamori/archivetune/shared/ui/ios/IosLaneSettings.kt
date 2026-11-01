@@ -29,21 +29,13 @@ import io.ktor.client.request.get
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.rukamori.archivetune.shared.domain.settings.AppleMusicAccountNameKey
-import moe.rukamori.archivetune.shared.domain.settings.AppleMusicDevTokenKey
-import moe.rukamori.archivetune.shared.domain.settings.AppleMusicExperienceKey
-import moe.rukamori.archivetune.shared.domain.settings.AppleMusicMediaUserTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentCountryKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentLanguageKey
 import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
-import moe.rukamori.archivetune.shared.domain.settings.InterfaceStyle
 import moe.rukamori.archivetune.shared.domain.settings.JioSaavnEnabledKey
-import moe.rukamori.archivetune.shared.domain.settings.PreferenceDefaults
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SaavnAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
-import moe.rukamori.archivetune.shared.domain.settings.applyInterfaceStyle
-import moe.rukamori.archivetune.shared.domain.settings.interfaceStyle
 import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamingSignedIn
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
@@ -52,10 +44,6 @@ import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.ios_lane_aod_note
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
-import moe.rukamori.archivetune.shared.ui.resources.m6_apple_music_account_name
-import moe.rukamori.archivetune.shared.ui.resources.m6_apple_music_dev_token
-import moe.rukamori.archivetune.shared.ui.resources.m6_apple_music_experience
-import moe.rukamori.archivetune.shared.ui.resources.m6_apple_music_user_token
 import moe.rukamori.archivetune.shared.ui.resources.m6_audio_quality
 import moe.rukamori.archivetune.shared.ui.resources.m6_content_country
 import moe.rukamori.archivetune.shared.ui.resources.m6_content_language
@@ -66,6 +54,10 @@ import moe.rukamori.archivetune.shared.ui.resources.m6_quality_320
 import moe.rukamori.archivetune.shared.ui.resources.m6_quality_96
 import moe.rukamori.archivetune.shared.ui.resources.m6_source_jio
 import moe.rukamori.archivetune.shared.ui.resources.m6_system_default
+import moe.rukamori.archivetune.shared.ui.settings.AppleMusicLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.AppleMusicSettings
+import moe.rukamori.archivetune.shared.ui.settings.LiquidGlassSettings
+import moe.rukamori.archivetune.shared.ui.settings.NavigationBarSettingsPage
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SettingsPage
@@ -91,6 +83,7 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
     "settings/backup_restore", "settings/storage/export_songs", "settings/appearance/palette_picker",
     "settings/appearance/icon", "settings/appearance/aod_customized", "settings/appearance/navigation_bar",
+    "settings/appearance/liquid_glass",
     "settings/android_auto", "settings/sources", "settings/jiosaavn", "settings/amazon", "settings/applemusic",
     "settings/content", "settings/canvas", "settings/changelog", "settings/internet", "settings/storage",
     "settings/downloads", "settings/discord", "settings/qqmusic", "settings/lastfm", "settings/spotify_streaming",
@@ -121,7 +114,13 @@ internal fun IosLaneSettingsPage(
     when (path) {
         in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage()
         "settings/appearance/navigation_bar" ->
-            IosNavigationBarSettingsPage(owners.controller, onFailure, scrollTo)
+            NavigationBarSettingsPage(
+                owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo,
+            )
+        "settings/appearance/liquid_glass" ->
+            LiquidGlassSettings(
+                owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo,
+            )
         "settings/appearance/aod_customized" -> IosLaneAodSettingsPage(owners.controller, onFailure, scrollTo)
         "settings/jiosaavn" -> IosLaneRowsPage(owners.controller, scrollTo, onFailure) { preferences ->
             listOf(
@@ -138,30 +137,10 @@ internal fun IosLaneSettingsPage(
             )
         }
         "settings/content" -> IosLaneContentSettingsPage(owners.controller, onFailure, scrollTo)
-        "settings/applemusic" -> IosLaneRowsPage(owners.controller, scrollTo, onFailure) {
-            listOf(
-                SettingsRow.Toggle(
-                    "apple_music_experience", Res.string.m6_apple_music_experience, AppleMusicExperienceKey,
-                    PreferenceDefaults.appleMusicExperience,
-                    read = { it.interfaceStyle() == InterfaceStyle.APPLE_MUSIC },
-                    write = {
-                        applyInterfaceStyle(
-                            if (it) InterfaceStyle.APPLE_MUSIC else InterfaceStyle.MATERIAL_EXPRESSIVE
-                        )
-                    },
-                ),
-                SettingsRow.Text(
-                    "apple_music_dev_token", Res.string.m6_apple_music_dev_token, AppleMusicDevTokenKey, masked = true,
-                ),
-                SettingsRow.Text(
-                    "apple_music_user_token", Res.string.m6_apple_music_user_token, AppleMusicMediaUserTokenKey,
-                    masked = true,
-                ),
-                SettingsRow.Text(
-                    "apple_music_account_name", Res.string.m6_apple_music_account_name, AppleMusicAccountNameKey,
-                ),
-            )
-        }
+        "settings/applemusic" -> AppleMusicSettings(
+            owners.controller, onFailure, scrollTo,
+            onOpenLogin = { navigate(AppleMusicLoginRoute) },
+        )
         "settings/sources" -> IosLaneSourceSettingsPage(owners, navigate, onFailure, scrollTo)
         TelegramLoginRoute -> {
             val session by host.telegram.collectAsState()
