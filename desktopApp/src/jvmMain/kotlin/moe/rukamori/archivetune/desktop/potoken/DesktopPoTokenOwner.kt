@@ -34,7 +34,7 @@ internal class DesktopPoTokenOwner(
     private val enabled: () -> Boolean,
     private val log: (String) -> Unit = { DesktopDiagnosticLog.playbackTier(it) },
 ) {
-    private val engine by lazy {
+    private val engineRef = lazy {
         BotGuardPoTokenEngine(
             http = http,
             credentials = { credentials() },
@@ -42,6 +42,7 @@ internal class DesktopPoTokenOwner(
             report = log,
         )
     }
+    private val engine get() = engineRef.value
 
     private fun credentials(): PoTokenCredentials? =
         PoTokenCredentials(
@@ -66,6 +67,17 @@ internal class DesktopPoTokenOwner(
         return engine.mintToken(identifier = videoId, sessionId = sessionId)
     }
 
+    /** The shipped preWarm for [sessionId]; a no-op while the poToken preference is off. */
+    internal suspend fun preWarm(sessionId: String) {
+        if (!enabled()) return
+        engine.preWarm(sessionId)
+    }
+
+    /** Drops the QuickJS runtime and the token caches, if a session ever minted. */
+    internal suspend fun close() {
+        if (engineRef.isInitialized()) engine.invalidate()
+    }
+
     /** The token one web-client player request or stream URL carries; null outside the web set. */
     fun tokenFor(clientName: String, minted: MintedPoTokens?): String? =
         poTokenForWebClient(clientName, minted)
@@ -87,7 +99,13 @@ internal class DesktopPoTokenOwner(
         val hasLoginContext = session != null && !session.dataSyncId.isNullOrBlank()
         val visitor =
             session?.visitorData?.takeIf(String::isNotBlank)
-                ?: runCatching { fetchYouTubeVisitorData(http) }.getOrNull()
+                ?: try {
+                    fetchYouTubeVisitorData(http)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
                 ?: return PoTokenGeneration.Failed(null)
         // tokenBindingId = sessionId ?: visitorData, as the Android extraction activity binds it.
         val sessionId =
