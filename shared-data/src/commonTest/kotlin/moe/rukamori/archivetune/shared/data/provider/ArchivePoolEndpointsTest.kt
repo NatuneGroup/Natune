@@ -74,14 +74,59 @@ class ArchivePoolEndpointsTest {
     }
 
     @Test
-    fun reportsFailoverOnlyOnServerErrors() {
-        // A definitive 2xx/4xx answer means the report was already seen and must not be re-sent.
-        for (status in listOf(200, 400, 401, 402, 404, 429)) {
-            assertFalse(ArchivePoolEndpoints.isFailoverStatus(status, report = true), "HTTP $status must not re-report")
+    fun failoverAnswersAreNeverRemembered() = kotlinx.coroutines.test.runTest {
+        for (status in listOf(402, 503)) {
+            ArchivePoolEndpoints.lastGood = null
+            ArchivePoolEndpoints.acrossEndpoints("https://archivepool.example.workers.dev") { Pair(status, "") }
+            assertNull(ArchivePoolEndpoints.lastGood, "HTTP $status must never be remembered")
         }
-        for (status in listOf(500, 503)) {
-            assertTrue(ArchivePoolEndpoints.isFailoverStatus(status, report = true), "HTTP $status may re-report")
-        }
+    }
+
+    @Test
+    fun aDefinitiveAnswerIsRememberedWhateverItsBody() = kotlinx.coroutines.test.runTest {
+        val tried = mutableListOf<String>()
+        val answer =
+            ArchivePoolEndpoints.acrossEndpoints("https://archivepool.example.workers.dev") { endpoint ->
+                tried += endpoint
+                Pair(200, "not-json-at-all")
+            }
+        assertEquals(Pair(200, "not-json-at-all"), answer)
+        assertEquals(listOf("https://archivepool.example.workers.dev"), tried)
+        assertEquals("https://archivepool.example.workers.dev", ArchivePoolEndpoints.lastGood?.first)
+    }
+
+    @Test
+    fun aReportStopsOnATransportFailure() = kotlinx.coroutines.test.runTest {
+        val tried = mutableListOf<String>()
+        val answer =
+            ArchivePoolEndpoints.acrossEndpoints("https://archivepool.example.workers.dev", report = true) { endpoint ->
+                tried += endpoint
+                null
+            }
+        assertNull(answer)
+        assertEquals(listOf("https://archivepool.example.workers.dev"), tried)
+    }
+
+    @Test
+    fun aReportAdvancesOnlyOnAnExplicit402Or5xx() = kotlinx.coroutines.test.runTest {
+        val tried = mutableListOf<String>()
+        val answer =
+            ArchivePoolEndpoints.acrossEndpoints("https://archivepool.example.workers.dev", report = true) { endpoint ->
+                tried += endpoint
+                if (endpoint.endsWith("workers.dev")) Pair(402, "") else Pair(200, "ok")
+            }
+        assertEquals(Pair(200, "ok"), answer)
+        assertEquals(2, tried.size)
+
+        ArchivePoolEndpoints.lastGood = null
+        tried.clear()
+        val denied =
+            ArchivePoolEndpoints.acrossEndpoints("https://archivepool.example.workers.dev", report = true) { endpoint ->
+                tried += endpoint
+                Pair(401, "")
+            }
+        assertEquals(Pair(401, ""), denied)
+        assertEquals(listOf("https://archivepool.example.workers.dev"), tried)
     }
 
     @Test

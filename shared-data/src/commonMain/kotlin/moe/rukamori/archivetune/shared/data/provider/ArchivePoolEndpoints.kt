@@ -12,8 +12,9 @@ import kotlin.time.TimeSource
  *
  * A request moves to the next endpoint on a transport failure — connection refused, DNS failure,
  * timeout — or a host-level answer ([isFailoverStatus]: HTTP 402 or 5xx). API-level answers like
- * 400, 401, 403, 404 or 429 are definitive and stop the walk. POST /api/report additionally never
- * retries a definitive answer, so a report is never delivered twice.
+ * 400, 401, 403, 404 or 429 are definitive and stop the walk. POST /api/report is different again:
+ * a transport failure means the report may already have reached the server, so only an explicit
+ * 402 or 5xx answer advances it — a report is never delivered twice.
  */
 object ArchivePoolEndpoints {
 
@@ -59,17 +60,18 @@ object ArchivePoolEndpoints {
     /**
      * True when [status] means the deployment itself failed rather than the API: 402 (the host is
      * down for billing) or any 5xx. API-level answers — 400/401/403/404/429 among them — are
-     * definitive. [report] counts only 5xx as failover — a 2xx/4xx answer already means the report
-     * was seen, and re-sending would risk delivering it twice.
+     * definitive. For reports the same statuses are safe failover answers: an explicit 402 or 5xx
+     * proves the request was never processed, so re-sending it cannot deliver twice.
      */
-    fun isFailoverStatus(status: Int, report: Boolean = false): Boolean =
-        if (report) status >= 500 else status == 402 || status >= 500
+    fun isFailoverStatus(status: Int): Boolean = status == 402 || status >= 500
 
     /**
      * Runs [call] against each candidate endpoint until one answers definitively; the remembered
      * deployment leads the walk while fresh. [call] answers the (status, body) pair or null on a
-     * transport failure. The last answer is returned when every endpoint fails; the caller keeps
-     * distinguishing "unreachable" (null) from "the last host said no" (a status).
+     * transport failure. A failover status never reaches [remember]. The last answer is returned
+     * when every endpoint fails; the caller keeps distinguishing "unreachable" (null) from "the
+     * last host said no" (a status). For [report] a null stops the walk: the request may already
+     * have reached the server, and only an explicit 402 or 5xx proves it did not.
      */
     suspend fun acrossEndpoints(
         configured: String?,
@@ -79,11 +81,15 @@ object ArchivePoolEndpoints {
         var last: Pair<Int, String>? = null
         for (endpoint in candidates(configured)) {
             val result = call(endpoint)
-            if (result != null && !isFailoverStatus(result.first, report)) {
+            if (result == null) {
+                if (report) break
+                continue
+            }
+            if (!isFailoverStatus(result.first)) {
                 remember(endpoint)
                 return result
             }
-            if (result != null) last = result
+            last = result
         }
         return last
     }

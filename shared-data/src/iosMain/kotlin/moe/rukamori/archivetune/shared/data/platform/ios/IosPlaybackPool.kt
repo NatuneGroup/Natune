@@ -236,15 +236,21 @@ class IosPlaybackPool(
                     put("id", id)
                     put("report", type)
                 }.toString()
-                val response = withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
-                    ArchivePoolEndpoints.acrossEndpoints(baseUrl, report = true) { base ->
-                        val reply =
-                            http.post("$base/api/report") {
-                                poolHeaders()
-                                contentType(ContentType.Application.Json)
-                                setBody(body)
-                            }
-                        reply.status.value to if (reply.status.value in 200..299) reply.bodyAsText() else ""
+                val response = ArchivePoolEndpoints.acrossEndpoints(baseUrl, report = true) { base ->
+                    try {
+                        withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
+                            val reply =
+                                http.post("$base/api/report") {
+                                    poolHeaders()
+                                    contentType(ContentType.Application.Json)
+                                    setBody(body)
+                                }
+                            reply.status.value to if (reply.status.value in 200..299) reply.bodyAsText() else ""
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        null
                     }
                 } ?: return@launch
                 if (response.first !in 200..299) return@launch
@@ -457,18 +463,19 @@ class IosPlaybackPool(
         }
     }
 
-    private suspend fun fetch(path: String): Pair<Int, String>? = try {
-        withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
-            ArchivePoolEndpoints.acrossEndpoints(baseUrl) { base ->
-                val response = http.get("$base$path") { poolHeaders() }
-                response.status.value to if (response.status.value == 200) response.bodyAsText() else ""
+    private suspend fun fetch(path: String): Pair<Int, String>? =
+        ArchivePoolEndpoints.acrossEndpoints(baseUrl) { base ->
+            try {
+                withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
+                    val response = http.get("$base$path") { poolHeaders() }
+                    response.status.value to if (response.status.value == 200) response.bodyAsText() else ""
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
             }
         }
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        null
-    }
 
     private fun io.ktor.client.request.HttpRequestBuilder.poolHeaders() {
         header("User-Agent", "ArchiveTune-iOS")

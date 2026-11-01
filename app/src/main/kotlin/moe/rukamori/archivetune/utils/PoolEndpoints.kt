@@ -13,8 +13,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * the deployment that last produced a definitive API answer first while that memory is fresh
  * (~10 minutes). A call moves to the next endpoint on a transport failure (connection refused,
  * DNS failure, timeout) or a host-level status (402/5xx); API-level answers like 400/401/403/
- * 404/429 are definitive and stop the walk. Reports retry only a 5xx or an attempt that never
- * reached a server, so a report is never delivered twice. Nothing here logs a token.
+ * 404/429 are definitive and stop the walk. A report advances only on an explicit 402/5xx answer:
+ * a transport failure may mean the report already reached the server, so a transport failure
+ * stops its walk and a report is never delivered twice. Nothing here logs a token.
  */
 internal object PoolEndpoints {
 
@@ -39,9 +40,9 @@ internal object PoolEndpoints {
     ): Pair<Int, String>? = send(client, path, readKey, body = null)
 
     /**
-     * POSTs [body] to a report endpoint (/api/report) against each candidate deployment. Only a
-     * 5xx answer or an attempt that never reached a server moves the report to the next endpoint;
-     * a 2xx/4xx answer already means the report was seen.
+     * POSTs [body] to a report endpoint (/api/report) against each candidate deployment. Only an
+     * explicit 402/5xx answer moves the report to the next endpoint — that proves it was never
+     * processed; a transport failure or a 2xx/4xx answer stops the walk so it is never sent twice.
      */
     suspend fun postReport(
         client: OkHttpClient,
