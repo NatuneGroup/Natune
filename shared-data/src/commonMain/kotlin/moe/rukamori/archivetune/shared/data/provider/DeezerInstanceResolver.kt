@@ -87,7 +87,7 @@ class DeezerInstanceResolver(
      */
     fun hasInstances(): Boolean =
         userInstances.isNotEmpty() ||
-            (poolEnabled() && (discovered.isNotEmpty() || discoveredAt == 0L) && poolFeedUrl() != null)
+            (poolEnabled() && (discovered.isNotEmpty() || discoveredAt == 0L) && poolFeedUrls().isNotEmpty())
 
     suspend fun instances(): List<String> {
         val pool = if (poolEnabled()) discoverIfStale() else emptyList()
@@ -209,12 +209,8 @@ class DeezerInstanceResolver(
             ?.let { withScheme }
     }
 
-    private fun poolFeedUrl(): String? =
-        sourceProviderUrl()
-            .trim()
-            .trimEnd('/')
-            .takeIf { it.isNotEmpty() }
-            ?.let { "$it/api/instances/deezer" }
+    private fun poolFeedUrls(): List<String> =
+        ArchivePoolEndpoints.candidates(sourceProviderUrl()).map { "$it/api/instances/deezer" }
 
     /** Fetches the pool's instance list at most every [DISCOVERY_TTL_MS]. Never throws. */
     private suspend fun discoverIfStale(): List<String> {
@@ -223,16 +219,27 @@ class DeezerInstanceResolver(
         if (discoveredAt != 0L && now - discoveredAt < DISCOVERY_TTL_MS) return discovered
         val fetched =
             runCatching {
-                val url = poolFeedUrl() ?: return emptyList()
                 val headers =
                     sourceProviderKey()
                         .takeIf { it.isNotBlank() }
                         ?.let { mapOf("Authorization" to "Bearer $it") }
                         ?: emptyMap()
-                val reply = exchange(url, HEALTH_TIMEOUT_MS, emptyList(), headers)
-                if (!poolEnabled()) return@runCatching emptyList()
-                if (reply.status !in 200..299) return@runCatching emptyList()
-                parseDiscovered(reply.body)
+                for (url in poolFeedUrls()) {
+                    val reply =
+                        try {
+                            exchange(url, HEALTH_TIMEOUT_MS, emptyList(), headers)
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) {
+                            continue
+                        }
+                    if (!poolEnabled()) return@runCatching emptyList()
+                    if (ArchivePoolEndpoints.isFailoverStatus(reply.status)) continue
+                    ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
+                    if (reply.status !in 200..299) return@runCatching emptyList()
+                    return@runCatching parseDiscovered(reply.body)
+                }
+                emptyList()
             }.getOrElse {
                 if (it is CancellationException) throw it
                 emptyList()
@@ -298,7 +305,7 @@ class DeezerInstanceResolver(
                     contentRange = response.headers[HttpHeaders.ContentRange],
                 )
             }
-        } ?: throw CancellationException("Deezer instance request timed out")
+        } ?: throw ProviderRequestTimeout()
 
     private suspend fun headBytes(url: String): HeadBytes =
         withTimeoutOrNull(HEALTH_TIMEOUT_MS) {

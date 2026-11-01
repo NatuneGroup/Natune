@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.platform.ios
 
 import moe.rukamori.archivetune.shared.data.lyrics.LyprioEndpoint
+import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
 import moe.rukamori.archivetune.shared.data.provider.TidalClientCredentials
 import platform.Foundation.NSBundle
 
@@ -43,7 +44,9 @@ object IosProviderCredentials {
      */
     val poolBaseUrl: String?
         get() {
-            val configured = iosBuildSetting("ArchiveTuneSourceProviderUrl")
+            val configured =
+                iosBuildSetting("ArchiveTuneArchivePoolBaseUrl")
+                    .ifBlank { iosBuildSetting("ArchiveTuneSourceProviderUrl") }
             if (configured.equals("off", ignoreCase = true)) return null
             return configured.ifBlank { DEFAULT_POOL_BASE_URL }.trimEnd('/').takeIf { it.startsWith("https://") }
         }
@@ -75,5 +78,5 @@ object IosProviderCredentials {
 
     val lyprioEndpoint: LyprioEndpoint? get() = LyprioEndpoint.parse(lyprioBaseUrl, lyprioHmacKey)
 
-    private const val DEFAULT_POOL_BASE_URL = "https://archivepool.vercel.app"
+    private const val DEFAULT_POOL_BASE_URL = ArchivePoolEndpoints.FALLBACK_BASE_URL
 }

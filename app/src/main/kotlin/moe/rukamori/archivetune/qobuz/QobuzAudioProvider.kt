@@ -7,6 +7,7 @@
 
 package moe.rukamori.archivetune.qobuz
 
+import moe.rukamori.archivetune.shared.data.provider.ArchivePoolEndpoints
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlCache
 import moe.rukamori.archivetune.shared.domain.source.StreamUrlExpiry
 
@@ -19,6 +20,7 @@ import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolEndpoints
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -205,15 +207,10 @@ object QobuzAudioProvider {
         discoveryCacheExpiresAt = 0L
     }
 
-    // Community Source Pool discovery feed ({ streaming, api } shape) for Qobuz, derived from the
-    // build-time SOURCE_PROVIDER_URL. Empty when no provider is configured.
-    private val instanceDiscoverySources: List<String> =
-        BuildConfig.SOURCE_PROVIDER_URL
-            .trim()
-            .trimEnd('/')
-            .takeIf { it.isNotEmpty() }
-            ?.let { listOf("$it/api/discovery/qobuz") }
-            ?: emptyList()
+    // Community Source Pool discovery feed ({ streaming, api } shape) for Qobuz, resolved from the
+    // build-configured deployment (ARCHIVEPOOL_BASE_URL, else SOURCE_PROVIDER_URL) and its fallback.
+    private val instanceDiscoverySources: List<String>
+        get() = PoolEndpoints.bases().map { "$it/api/discovery/qobuz" }
 
     /**
      * Best-effort discovery of community Qobuz proxy instances from the Source Pool website. Returns
@@ -239,7 +236,7 @@ object QobuzAudioProvider {
         val discovered = LinkedHashSet<String>()
         for (source in instanceDiscoverySources) {
             if (!PoolAccountManager.isPoolEnabled()) break
-            runCatching {
+            val answered = runCatching {
                 val builder =
                     Request
                         .Builder()
@@ -251,7 +248,8 @@ object QobuzAudioProvider {
                 }
                 val request = builder.get().build()
                 healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                    if (!PoolAccountManager.isPoolEnabled()) return@use
+                    if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use false
+                    ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
                     if (!response.isSuccessful) {
                         // A rejected read and a healthy pool with nothing contributed both end up
                         // as zero instances here, so say which one happened — this is the whole
@@ -265,10 +263,10 @@ object QobuzAudioProvider {
                                     source,
                                 )
                         }
-                        return@use
+                        return@use true
                     }
                     val body = response.body?.string().orEmpty()
-                    if (body.isBlank()) return@use
+                    if (body.isBlank()) return@use true
                     val obj = JSONObject(body)
                     for (key in listOf("streaming", "instances", "api")) {
                         val arr = obj.optJSONArray(key) ?: continue
@@ -282,8 +280,10 @@ object QobuzAudioProvider {
                             }
                         }
                     }
+                    true
                 }
-            }.onFailure { it.rethrowIfAudioSourceCancelled() }
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrDefault(false)
+            if (answered) break
         }
         if (!PoolAccountManager.isPoolEnabled()) {
             clearPoolDiscovery()

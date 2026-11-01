@@ -63,4 +63,6 @@ ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN =
 // the scheme as https:/$()/host when setting it in an xcconfig file.
 ARCHIVETUNE_LYPRIO_BASE_URL =
 ARCHIVETUNE_LYPRIO_HMAC_KEY =
+// The dedicated ArchivePool deployment override; blank keeps the SOURCE_PROVIDER_URL value, then the public default.
+ARCHIVETUNE_ARCHIVEPOOL_BASE_URL =
 #include? "Credentials.xcconfig"
