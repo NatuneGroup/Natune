@@ -34,6 +34,7 @@ import moe.rukamori.archivetune.shared.domain.settings.AiApiValidationStatusKey
 import moe.rukamori.archivetune.shared.domain.settings.AiMixLastGeneratedAtKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.aiServiceSettings
+import moe.rukamori.archivetune.shared.domain.settings.comparableSongTitle
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
 import moe.rukamori.archivetune.shared.ui.screens.LibraryTopMixesUi
 
@@ -227,11 +228,4 @@ internal fun PreferenceSnapshot.mixGenerationAllowed(): Boolean {
         this[AiApiValidationStatusKey] != "FAILED"
 }
 
-internal fun comparableMixName(left: String, right: String): Boolean {
-    fun fold(value: String) = value.lowercase().map { if (it.isLetterOrDigit()) it else ' ' }
-        .joinToString("").trim().replace(Regex("\\s+"), " ")
-    val a = fold(left)
-    val b = fold(right)
-    return a.isNotBlank() && b.isNotBlank() &&
-        (a == b || (a.length > 3 && b.contains(a)) || (b.length > 3 && a.contains(b)))
-}
+internal fun comparableMixName(left: String, right: String): Boolean = comparableSongTitle(left, right)

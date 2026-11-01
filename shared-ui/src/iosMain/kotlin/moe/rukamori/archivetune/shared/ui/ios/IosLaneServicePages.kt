@@ -30,6 +30,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProxyTestResult
+import moe.rukamori.archivetune.shared.data.platform.ios.iosCanvasConnectivity
 import moe.rukamori.archivetune.shared.domain.settings.CanvasConnectivity
 import moe.rukamori.archivetune.shared.domain.settings.CanvasHealthProvider
 import moe.rukamori.archivetune.shared.domain.settings.CanvasProbeState
@@ -138,11 +139,10 @@ internal fun IosLaneServiceSettingsPage(
         }
         "settings/canvas" -> {
             val connectivity by produceState<CanvasConnectivity?>(null) {
-                value = CanvasConnectivity(
-                    online = iosLaneProbe(owners.graph.http, "https://music.youtube.com/generate_204"),
-                    wifi = true,
-                    metered = false,
-                )
+                value = iosCanvasConnectivity()
+            }
+            val canvasBytes by produceState<Long?>(null) {
+                value = owners.graph.canvasStore.usedBytes()
             }
             val probes = remember { MutableStateFlow(CanvasProviderProbes()) }
             val probeStates by probes.collectAsState()
@@ -151,10 +151,9 @@ internal fun IosLaneServiceSettingsPage(
                 connectivity = connectivity,
                 providerProbes = probeStates,
                 refreshHealth = { providers -> iosLaneRefreshCanvasHealth(owners.graph.http, probes, providers) },
-                // This host has no canvas cache store to measure or trim, so the rows throw into onFailure.
-                cacheBytes = null,
-                applyCacheLimit = { throw IllegalStateException("no canvas cache on this host") },
-                clearCache = { throw IllegalStateException("no canvas cache on this host") },
+                cacheBytes = canvasBytes,
+                applyCacheLimit = { owners.graph.canvasStore.applyLimitMb(it) },
+                clearCache = { owners.graph.canvasStore.clear() },
                 onFailure = onFailure,
             )
         }
