@@ -485,6 +485,6 @@ internal fun BackupSelectionCategory.toDataCategory(): BackupDataCategory = when
 
 internal fun BackupDataCategory.toSelection(): BackupSelectionCategory = when (this) {
     BackupDataCategory.LIBRARY -> BackupSelectionCategory.LIBRARY
-    BackupDataCategory.ACCOUNT -> BackupDataCategory.ACCOUNT
+    BackupDataCategory.ACCOUNT -> BackupSelectionCategory.ACCOUNT
     BackupDataCategory.SETTINGS -> BackupSelectionCategory.SETTINGS
 }

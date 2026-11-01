@@ -89,7 +89,7 @@ class RestoreResolutionDecisionTest {
         assertEquals(entry, decodeRestoreResolution(encodeRestoreResolution(entry)))
         assertEquals(
             RestoreResolutionStep.RESOLVE_PREVIOUS,
-            decideRestoreResolution(facts(recorded = entry)),
+            decideRestoreResolution(facts(recorded = entry, pinnedFilesPresent = true)),
         )
     }
 
