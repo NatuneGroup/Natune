@@ -54,6 +54,8 @@ class PortableDeflateIosTest {
         assertFailsWith<Throwable> { portableInflate(stream, 1) }
         assertFailsWith<Throwable> { portableInflate(stream, 1024) }
         assertFailsWith<Throwable> { portableInflate("00ff".hex(), 16) }
+        // Trailing bytes after the stream end are rejected, matching the java.util.zip host's strict check.
+        assertFailsWith<Throwable> { portableInflate(stream + byteArrayOf(0x00, 0x00), 7) }
     }
 
     private fun String.hex(): ByteArray =

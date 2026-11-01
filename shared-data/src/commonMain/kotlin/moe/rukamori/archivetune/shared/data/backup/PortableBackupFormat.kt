@@ -60,6 +60,8 @@ object PortableBackupFormat {
     const val MAX_ENTRIES = 16
     const val MAX_PREFERENCES = 10_000
 
+    // Older desktop builds accept only PLATFORM_DESKTOP here: an archive written on iOS needs a desktop build
+    // carrying this shared codec to restore, while desktop archives restore on any build with this code.
     private val PLATFORMS = setOf(PLATFORM_DESKTOP, PLATFORM_IOS)
 
     private val json = Json { ignoreUnknownKeys = true }

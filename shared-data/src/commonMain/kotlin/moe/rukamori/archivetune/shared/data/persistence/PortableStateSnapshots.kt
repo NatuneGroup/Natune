@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.data.persistence
 
+import androidx.room.usePrepared
 import androidx.room.useWriterConnection
 import androidx.sqlite.SQLiteConnection
 
@@ -16,7 +17,7 @@ internal val SQLITE_FILE_HEADER: ByteArray = "SQLite format 3\u0000".encodeToByt
 suspend fun PortableStateDatabase.snapshotTo(targetPath: String) {
     require(targetPath.isNotBlank()) { "Snapshot target must be an absolute path" }
     useWriterConnection { connection ->
-        connection.prepare("VACUUM INTO ?").use { statement ->
+        connection.usePrepared("VACUUM INTO ?") { statement ->
             statement.bindText(1, targetPath)
             statement.step()
         }
@@ -29,7 +30,7 @@ suspend fun PortableStateDatabase.snapshotTo(targetPath: String) {
  */
 suspend fun PortableStateDatabase.openNow() {
     useWriterConnection { connection ->
-        connection.prepare("SELECT count(*) FROM sqlite_master").use { statement -> statement.step() }
+        connection.usePrepared("SELECT count(*) FROM sqlite_master") { statement -> statement.step() }
     }
 }
 

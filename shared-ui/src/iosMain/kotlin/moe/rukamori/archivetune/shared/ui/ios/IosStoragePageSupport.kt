@@ -14,15 +14,15 @@ import platform.Foundation.NSURLCache
  * those kinds report no bytes and their clear reports itself unavailable rather than claiming a result.
  */
 internal fun iosLaneUsedCacheBytes(): Map<SettingsCacheKind, Long> {
-    val cache = NSURLCache.sharedURLCache()
-    val image = (cache.currentDiskUsage + cache.currentMemoryUsage).toLong()
+    val cache = NSURLCache.sharedURLCache
+    val image = cache.currentDiskUsage.toLong() + cache.currentMemoryUsage.toLong()
     return if (image > 0L) mapOf(SettingsCacheKind.IMAGE to image) else emptyMap()
 }
 
 internal suspend fun iosLaneClearCache(graph: IosSessionGraph, kind: SettingsCacheKind, unavailable: () -> Unit) {
     when (kind) {
         SettingsCacheKind.IMAGE -> {
-            NSURLCache.sharedURLCache().removeAllCachedResponses()
+            NSURLCache.sharedURLCache.removeAllCachedResponses()
             graph.artworkLoader.clear()
         }
         SettingsCacheKind.SONG, SettingsCacheKind.CANVAS, SettingsCacheKind.LYRICS -> unavailable()
@@ -36,7 +36,7 @@ internal suspend fun iosLaneClearCache(graph: IosSessionGraph, kind: SettingsCac
  */
 internal fun iosApplyImageCacheLimit(preferences: PreferenceSnapshot?) {
     val limitMb = preferences?.get(MaxImageCacheSizeKey) ?: 512
-    val cache = NSURLCache.sharedURLCache()
+    val cache = NSURLCache.sharedURLCache
     when {
         limitMb == 0 -> {
             cache.diskCapacity = 0uL

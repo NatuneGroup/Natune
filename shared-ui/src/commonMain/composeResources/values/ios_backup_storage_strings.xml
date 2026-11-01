@@ -4,6 +4,9 @@
     <string name="ios_backup_restart_message">The restore is staged and applies the next time the app starts. Quit now, or keep using this session and restart later.</string>
     <string name="ios_backup_restart_quit">Quit now</string>
     <string name="ios_backup_restart_later">Later</string>
+    <string name="ios_backup_restore_failed_title">Restore failed</string>
+    <string name="ios_backup_restore_failed_message">The staged backup could not be applied. Your previous library and settings were kept.</string>
+    <string name="ios_backup_restore_failed_dismiss">OK</string>
     <string name="ios_hidden_playlists_title">Hidden playlists</string>
     <string name="ios_hidden_playlists_empty">No hidden playlists</string>
     <string name="ios_hidden_playlists_unhide">Unhide</string>

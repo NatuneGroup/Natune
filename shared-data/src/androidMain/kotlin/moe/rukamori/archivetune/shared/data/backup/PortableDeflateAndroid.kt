@@ -42,7 +42,9 @@ internal actual fun portableInflate(data: ByteArray, size: Int): ByteArray {
             if (inflater.finished()) break
             throw DataFormatException("DEFLATE stream ended early")
         }
-        check(written == size && inflater.finished()) { "DEFLATE stream length mismatch" }
+        check(written == size && inflater.finished() && inflater.remaining == 0) {
+            "DEFLATE stream length mismatch"
+        }
         return output
     } finally {
         inflater.end()

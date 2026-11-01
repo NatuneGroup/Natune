@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package moe.rukamori.archivetune.shared.ui.ios
 
 import androidx.compose.foundation.clickable
@@ -56,6 +58,7 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSUUID
 import platform.Foundation.NSURL
 
 /**
@@ -85,11 +88,10 @@ internal fun IosExportSongsPage(
         scope.launch {
             exporting = true
             progress = 0
+            // A request-owned temp directory the sheet deletes however it ends; the finally below covers failure.
+            val directory = NSTemporaryDirectory() + "exported-songs-" + NSUUID().UUIDString
+            val manager = NSFileManager.defaultManager
             try {
-                val directory = NSTemporaryDirectory() + "exported-songs"
-                val manager = NSFileManager.defaultManager
-                // A folder the sheet shares whole: rebuilt each export so stale files never join the new set.
-                manager.removeItemAtPath(directory, null)
                 manager.createDirectoryAtPath(directory, true, null, null)
                 val urls = mutableListOf<NSURL>()
                 chosen.forEachIndexed { index, song ->
@@ -104,15 +106,17 @@ internal fun IosExportSongsPage(
                     urls += NSURL.fileURLWithPath(target)
                 }
                 // A dismissed sheet keeps the copies temporary and reports nothing; the page notices completion only.
-                if (urls.isNotEmpty() && iosShareFileUrls(host, urls) == true) {
+                if (urls.isNotEmpty() && iosShareFileUrls(host, urls, cleanup = directory) == true) {
                     onNotice(SettingsNotice.Message(Res.string.ios_export_songs_done, urls.size))
                 }
             } catch (cancelled: CancellationException) {
+                manager.removeItemAtPath(directory, null)
                 throw cancelled
             } catch (failure: Exception) {
                 graph.report("download export failed: ${failure::class.simpleName}")
                 onFailure()
             } finally {
+                manager.removeItemAtPath(directory, null)
                 exporting = false
             }
         }

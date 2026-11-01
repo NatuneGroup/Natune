@@ -276,11 +276,12 @@ internal class IosSessionGraph private constructor(
             val databasePath = iosPortableStateDatabasePath()
             val databaseDirectory = databasePath.substringBeforeLast('/')
             // A restore staged by an earlier launch applies before the owners open the files: the staged library is
-            // swapped in, the staged settings merge through the vault, and a file Room refuses rolls the library back.
+            // swapped in and validated before the staged settings merge. A section that fails rolls both back, keeps
+            // the pending set under restore-failed for diagnosis and surfaces on the backup page.
             val pending = withContext(Dispatchers.Default) {
-                iosStagedRestore(databaseDirectory, settings, report)
+                iosStagedRestore(databaseDirectory, report)
             }
-            val database = try {
+            var database = try {
                 withContext(Dispatchers.Default) {
                     openGraphDatabase(databasePath, databaseDirectory, pending, report)
                 }
@@ -288,15 +289,39 @@ internal class IosSessionGraph private constructor(
                 scope.cancel()
                 throw failure
             }
+            if (pending != null && !pending.failed) {
+                try {
+                    pending.applySettings(settings)
+                } catch (cancelled: CancellationException) {
+                    database.close()
+                    scope.cancel()
+                    throw cancelled
+                } catch (failure: Exception) {
+                    report("restored settings not applied: ${failure::class.simpleName}")
+                    withContext(NonCancellable) {
+                        pending.rollbackSettings(settings)
+                        pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
+                        runCatching { pending.markFailed() }
+                    }
+                    database.close()
+                    database = try {
+                        withContext(Dispatchers.Default) { openPortableStateDatabase(databasePath) }
+                    } catch (reopen: Throwable) {
+                        scope.cancel()
+                        throw reopen
+                    }
+                }
+            }
             // The Darwin engine reads its proxy when it creates the session, so the saved route is decided before
             // the client exists and stays pinned for this process.
             val network = IosNetworkOwner({ settings.snapshots.value }, report)
             val http = HttpClient(Darwin) { engine { network.configure(this) } }
             report(network.describe())
             return try {
-                assemble(host, scope, settings, accounts, database, databaseDirectory, http, network, report).also {
-                    // The staged files are in place now; the pending directory and the previous library go away.
-                    if (pending != null) {
+                assemble(host, scope, settings, accounts, database, databaseDirectory, http, network, report,
+                    pending?.failed == true).also {
+                    // A fully applied restore's staging goes away; a failed one already rests under restore-failed.
+                    if (pending != null && !pending.failed) {
                         try {
                             pending.finish()
                         } catch (failure: Exception) {
@@ -315,13 +340,12 @@ internal class IosSessionGraph private constructor(
         }
 
         /**
-         * The staged restore of an earlier backup session: it is read and its database swapped in, then its settings
-         * merge through the vault, matching the desktop host's order. Every failure is reported and leaves the live
-         * files as they were; the staged set is only finished once a graph assembles over it.
+         * The staged restore of an earlier backup session: it is read and its database swap completed, which also
+         * finishes an interrupted swap the journal still describes. A failed swap is rolled back and marked failed;
+         * the staged set is only finished once a graph assembles over it.
          */
         private suspend fun iosStagedRestore(
             instanceDirectory: String,
-            settings: VaultSettingsStore,
             report: (String) -> Unit,
         ): IosPendingRestore? {
             val pending = try {
@@ -343,13 +367,7 @@ internal class IosSessionGraph private constructor(
                 } catch (rollback: Exception) {
                     report("library rollback failed: ${rollback::class.simpleName}")
                 }
-            }
-            try {
-                pending.applySettings(settings)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                report("restored settings not applied: ${failure::class.simpleName}")
+                runCatching { pending.markFailed() }
             }
             return pending
         }
@@ -375,7 +393,10 @@ internal class IosSessionGraph private constructor(
             } catch (failure: Exception) {
                 report("restored library refused: ${failure::class.simpleName}")
                 database.close()
-                withContext(NonCancellable) { pending.rollbackDatabase(databaseDirectory, DATABASE_FILE) }
+                withContext(NonCancellable) {
+                    pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
+                    runCatching { pending.markFailed() }
+                }
                 return openPortableStateDatabase(databasePath)
             }
         }
@@ -390,6 +411,7 @@ internal class IosSessionGraph private constructor(
             http: HttpClient,
             network: IosNetworkOwner,
             report: (String) -> Unit,
+            restoreFailed: Boolean,
         ): IosSessionGraph {
             val accountLifecycle = ProviderAccountLifecycle(accounts, vault)
             // The device and PKCE clients come from the build's Info.plist keys; a build without them keeps
@@ -475,6 +497,7 @@ internal class IosSessionGraph private constructor(
                 settings = vault,
                 snapshotDatabase = { target -> database.snapshotTo(target) },
                 instanceDirectory = databaseDirectory,
+                initialRestoreFailed = restoreFailed,
             )
             val locators = IosQueueLocatorResolver(
                 audio = audioResolver,
