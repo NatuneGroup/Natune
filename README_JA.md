@@ -64,7 +64,7 @@ PR #198 は `643a35fd09888769a4a2d588324398d68f0d6fb5` でマージされ、Nigh
 - 通常のプレイリストは RD/Mix や明示的な radio と分離した有限の browse queue を使用します。ページングでは項目の出現順、選択位置、手動追加、既存のフィルター・repeat 方針を保持します。おすすめの追加には有限リストの完了確認が必要で、旧状態が不明な場合やページ取得失敗時に radio とみなしません。
 - プレイリスト全体の追加、次に再生、インポート、同期は、完全な一覧の読み込み後にのみ追加・置換します。失敗、停滞、上限到達は不完全であり、部分成功ではありません。通常の Shuffle は有限リスト全体を読み込み、クライアント側で並べ替えます。サーバー側と同じ shuffle 順序とは主張しません。
 - ログイン復旧は Music store intent で観測した埋め込み WebView の `net::ERR_UNKNOWN_URL_SCHEME` に対応します。renderer crash が確認されたという意味ではありません。限定された公式 install target から、同一 WebView 内で一度だけ HTTPS に戻す制御を行います。候補のアカウント情報は検証成功まで非公開のまま保持し、現在の試行だけが確定できます。古い callback は新しいセッションを上書きできず、logout は YouTube の範囲に限定されます。
-- 匿名 MetrolistGroup InnerTubeX `v0.9.2` のソース pin は `c19d4860b0bc8afa0b1b3cc717abeb8119bbb605` です。これはプレイリストやログイン変更とは別です。primary client の手動選択と `YTPlayerUtils → InnerTubeX → NewPipe → Echo` の順序を維持し、個人/Pool cookie bridge や新たな HLS/SABR/bounded-range transport は有効にしていません。
+- 匿名 MetrolistGroup InnerTubeX `v0.11.2` のソース pin は `c863ddf15be01a1abfa4630329bdc0a1e95f1531` です。これはプレイリストやログイン変更とは別です。primary client の手動選択と `YTPlayerUtils → InnerTubeX → NewPipe → Echo` の順序を維持し、個人/Pool cookie bridge や新たな HLS/SABR/bounded-range transport は有効にしていません。
 - 旧版 README には以前のチェックポイントとして新規テストメソッド 113 件が記録されていました。後続の review-fix 統合チェックポイントでは、134 件（元の121件と回帰13件）が作成・統合済みです。どちらも作成数であり、成功数ではなく、ローカル実行もされていません。確認済みのソースレビュー修正5件は、対象を絞った再確認と別々の exact-head remote BUILD/TESTS を待っています。Google ログイン、YouTube page envelope、描画済み WebView、音声再生の実動作確認はしていません。過去の成功結果は新しい変更の成功を示しません。
 
 ## 開発・検証コマンド
