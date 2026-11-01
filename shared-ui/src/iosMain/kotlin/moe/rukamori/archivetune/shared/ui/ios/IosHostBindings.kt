@@ -78,6 +78,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.player.PlayerSlots
+import moe.rukamori.archivetune.shared.ui.player.capabilities
 import moe.rukamori.archivetune.shared.ui.queue.PlaybackQueuePanel
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSettings
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSlots
@@ -117,6 +118,11 @@ internal fun iosHostBindings(
     recognition: IosRecognitionMount,
 ): ArchiveTuneHostBindings {
     val controls = IosPlayerControls(graph)
+    // The canvas owner resolves the current occurrence's loop behind the same gates the settings page shows;
+    // its controls report availability so a canvas-capable style knows a loop answered.
+    val canvas = createIosCanvas(graph)
+    val canvasFrames = IosCanvasFrames(graph, canvas, graph.canvasStore)
+    val canvasControls = IosCanvasControls(controls, canvas, graph.scope)
     val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser) { host.viewController }
     val itemMenu = IosItemMenuState()
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
@@ -157,8 +163,10 @@ internal fun iosHostBindings(
             IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute)
             IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
         },
-        playerSlots = { expanded, active, _ -> iosPlayerSlots(host, graph, expanded, active) },
-        playerControls = controls,
+        playerSlots = { expanded, active, _ ->
+            iosPlayerSlots(host, graph, canvas, canvasFrames, expanded, active)
+        },
+        playerControls = canvasControls,
         // The row menu offers the queue commands this host answers and the custom artwork editor; the rest of the
         // baseline menu needs owners this host does not connect yet.
         more = { occurrence -> itemMenu.open(occurrence) },
@@ -247,7 +255,14 @@ internal fun iosLaunchRoute(link: String): String? {
  * absent pack or an opted-out preference publishes the off presentation, as before.
  */
 @Composable
-private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Boolean, active: Boolean): PlayerSlots {
+private fun iosPlayerSlots(
+    host: IosHost,
+    graph: IosSessionGraph,
+    canvas: IosCanvasOwner,
+    canvasFrames: IosCanvasFrames,
+    expanded: Boolean,
+    active: Boolean,
+): PlayerSlots {
     val document by graph.lyrics.current.collectAsState()
     val saved by graph.settings.snapshots.collectAsState()
     val preferences = saved ?: PreferenceSnapshot.EMPTY
@@ -278,6 +293,10 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
     }
     val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
+    // The resolver runs only while a canvas-capable style shows the player surface.
+    LaunchedEffect(canvas, expanded, active, style) {
+        canvas.setVisible(expanded && active && style.capabilities.artworkCanvas)
+    }
     val reducedMotion = rememberIosReduceMotion()
     val lyricsSettings = preferences.playerLyricsSettings(
         // Both renderers apply the route delay from PlaybackSnapshot through LyricsClock, not a second sync offset.
@@ -316,10 +335,13 @@ private fun iosPlayerSlots(host: IosHost, graph: IosSessionGraph, expanded: Bool
         )
     }
     return PlayerSlots(
-        artwork = { occurrenceId, modifier -> IosQueueArtwork(occurrenceId, graph, modifier) },
-        // No canvas loop source is connected. The artwork slot keeps the cover, as it does for a song without a canvas.
-        canvas = { _, _, _ -> },
-        customBackground = { _, modifier -> IosArtworkPlaceholder(modifier) },
+        artwork = { occurrenceId, modifier ->
+            IosCanvasArtwork(occurrenceId, graph, canvas, expanded && active, modifier)
+        },
+        canvas = { occurrenceId, visible, modifier ->
+            IosCanvasSurface(occurrenceId, graph, canvas, canvasFrames, expanded && active && visible, modifier)
+        },
+        customBackground = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
         lyrics = fullLyrics,
         compactLyrics = lyrics.compact,
         queue = { modifier -> IosQueuePanel(graph, modifier) },

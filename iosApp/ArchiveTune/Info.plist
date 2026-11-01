@@ -24,6 +24,7 @@
     <key>ArchiveTuneLastFmApiSecret</key><string>$(ARCHIVETUNE_LASTFM_API_SECRET)</string>
     <key>ArchiveTuneAmazonTurnstileSitekey</key><string>$(ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY)</string>
     <key>ArchiveTuneAmazonTurnstileOrigin</key><string>$(ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN)</string>
+    <key>ArchiveTuneTidalCanvasEmbedToken</key><string>$(ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>
