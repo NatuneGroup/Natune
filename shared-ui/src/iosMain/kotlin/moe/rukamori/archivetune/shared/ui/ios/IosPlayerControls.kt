@@ -46,6 +46,7 @@ private const val STATE_STOP_TIMEOUT_MS = 5_000L
 internal class IosPlayerControls(
     private val graph: IosSessionGraph,
     private val sleepSheet: IosSleepTimerSheetState,
+    private val itemMenu: IosItemMenuState,
 ) : PlayerNativeControls {
     private val clock = TimeSource.Monotonic
     private var lastSeekAt: TimeSource.Monotonic.ValueTimeMark? = null
@@ -125,8 +126,20 @@ internal class IosPlayerControls(
             PlayerAction.COLLAPSE -> Unit
             PlayerAction.LIKE -> toggleLike(occurrenceId)
             PlayerAction.SLEEP -> sleepSheet.open = true
+            // The more button opens the same song menu a row's overflow shows, tempo and pitch included.
+            PlayerAction.MORE -> openItemMenu(occurrenceId)
             else -> graph.report("player action ${action.name} is not connected on the iOS host")
         }
+    }
+
+    /** Opens the one row menu on the playing occurrence, which a queue entry already is. */
+    private fun openItemMenu(occurrenceId: String?) {
+        val entry = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }
+        if (entry == null) {
+            graph.report("player action ${PlayerAction.MORE.name} has no queue entry on the iOS host")
+            return
+        }
+        itemMenu.open(entry)
     }
 
     private fun toggleLike(occurrenceId: String?) {
