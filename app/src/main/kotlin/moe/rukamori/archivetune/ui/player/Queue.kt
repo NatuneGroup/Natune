@@ -556,9 +556,9 @@ fun Queue(
                     )
                 }
 
-                // Looper draws its own transport but opens the shared queue sheet (its onQueueClick),
-                // so it keeps the modern collapsed peek rather than opting out of the sheet.
-                PlayerDesignStyle.V9, PlayerDesignStyle.V10, PlayerDesignStyle.LOOPER -> {
+                // Metrolist joins Looper here: both draw their own transport but keep the
+                // shared queue sheet's collapsed peek via onQueueClick.
+                PlayerDesignStyle.V9, PlayerDesignStyle.V10, PlayerDesignStyle.LOOPER, PlayerDesignStyle.METROLIST_KMP -> {
                     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
                     QueueCollapsedContentV9(
                         showCodecOnPlayer = showCodecOnPlayer,

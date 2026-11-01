@@ -62,17 +62,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedIconButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -81,7 +76,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -122,15 +116,12 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -152,7 +143,6 @@ import coil3.toBitmap
 import com.materialkolor.ktx.toColor
 import com.materialkolor.ktx.toHct
 import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -242,6 +232,7 @@ import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.player.looper.LooperPlayerContent
 import moe.rukamori.archivetune.ui.player.flamingo.FlamingoPlayerContent
+import moe.rukamori.archivetune.ui.player.metrolist.MetrolistPlayerDispatch
 import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private const val SeekbarSettleToleranceMs = 1_500L
@@ -800,69 +791,8 @@ fun BottomSheetPlayer(
         mutableStateOf(false)
     }
 
-    var sleepTimerValue by remember {
-        mutableFloatStateOf(30f)
-    }
     if (showSleepTimerDialog) {
-        AlertDialog(
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-            onDismissRequest = { showSleepTimerDialog = false },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.player_bedtime),
-                    contentDescription = null,
-                )
-            },
-            title = { Text(stringResource(R.string.sleep_timer)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSleepTimerDialog = false
-                        playerConnection.service.sleepTimer.start(sleepTimerValue.roundToInt())
-                    },
-                    shapes = ButtonDefaults.shapes(),
-                ) {
-                    Text(stringResource(android.R.string.ok))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showSleepTimerDialog = false },
-                    shapes = ButtonDefaults.shapes(),
-                ) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text =
-                            pluralStringResource(
-                                R.plurals.minute,
-                                sleepTimerValue.roundToInt(),
-                                sleepTimerValue.roundToInt(),
-                            ),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-
-                    Slider(
-                        value = sleepTimerValue,
-                        onValueChange = { sleepTimerValue = it },
-                        valueRange = 5f..120f,
-                        steps = (120 - 5) / 5 - 1,
-                    )
-
-                    OutlinedIconButton(
-                        onClick = {
-                            showSleepTimerDialog = false
-                            playerConnection.service.sleepTimer.start(-1)
-                        },
-                    ) {
-                        Text(stringResource(R.string.end_of_song))
-                    }
-                }
-            },
-        )
+        PlayerSleepTimerDialog(onDismiss = { showSleepTimerDialog = false })
     }
 
     var showChoosePlaylistDialog by rememberSaveable {
@@ -2173,6 +2103,30 @@ fun BottomSheetPlayer(
                                     .nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
+                } else if (playerDesignStyle == PlayerDesignStyle.METROLIST_KMP) {
+                    // Metrolist draws no backdrop, so the reader treats it like the numbered
+                    // styles and the shared queue peek stays underneath.
+                    MetrolistPlayerDispatch(
+                        mediaMetadata = enrichedMetadata,
+                        navController = navController,
+                        state = state,
+                        isPlaying = isPlaying && !isLyricsScreenVisible,
+                        isLoading = isLoading,
+                        sliderPosition = sliderPosition,
+                        positionProvider = positionProvider,
+                        duration = duration,
+                        textButtonColor = textButtonColor,
+                        iconButtonColor = iconButtonColor,
+                        textBackgroundColor = TextBackgroundColor,
+                        contentBottomPadding = queueSheetState.collapsedBound + 20.dp,
+                        onSleepTimerClick = { if (playerConnection.service.sleepTimer.isActive) playerConnection.service.sleepTimer.clear() else showSleepTimerDialog = true },
+                        onQueueClick = openQueue,
+                        onLyricsClick = { isLyricsScreenVisible = true },
+                        onSliderValueChange = onSliderValueChange,
+                        onSliderValueChangeFinished = onSliderValueChangeFinished,
+                        landscape = true,
+                        modifier = Modifier.fillMaxSize().nestedScroll(state.preUpPostDownNestedScrollConnection),
+                    )
             } else {
                     Row(
                         modifier =
@@ -2784,6 +2738,29 @@ fun BottomSheetPlayer(
                                     .nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
+                } else if (playerDesignStyle == PlayerDesignStyle.METROLIST_KMP) {
+                    // Metrolist draws no backdrop, so the reader treats it like the numbered
+                    // styles and the shared queue peek stays underneath.
+                    MetrolistPlayerDispatch(
+                        mediaMetadata = enrichedMetadata,
+                        navController = navController,
+                        state = state,
+                        isPlaying = isPlaying && !isLyricsScreenVisible,
+                        isLoading = isLoading,
+                        sliderPosition = sliderPosition,
+                        positionProvider = positionProvider,
+                        duration = duration,
+                        textButtonColor = textButtonColor,
+                        iconButtonColor = iconButtonColor,
+                        textBackgroundColor = TextBackgroundColor,
+                        contentBottomPadding = queueSheetState.collapsedBound + 20.dp,
+                        onSleepTimerClick = { if (playerConnection.service.sleepTimer.isActive) playerConnection.service.sleepTimer.clear() else showSleepTimerDialog = true },
+                        onQueueClick = openQueue,
+                        onLyricsClick = { isLyricsScreenVisible = true },
+                        onSliderValueChange = onSliderValueChange,
+                        onSliderValueChangeFinished = onSliderValueChangeFinished,
+                        modifier = Modifier.fillMaxSize().nestedScroll(state.preUpPostDownNestedScrollConnection),
+                    )
             } else {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
