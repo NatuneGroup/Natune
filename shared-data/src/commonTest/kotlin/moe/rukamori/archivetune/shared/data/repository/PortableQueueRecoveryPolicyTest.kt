@@ -114,8 +114,9 @@ class PortableQueueRecoveryPolicyTest {
     @Test
     fun anExpiredRemoteLocatorIsRefreshedInsteadOfRebuilt() = runTest(UnconfinedTestDispatcher()) {
         val h = Harness(backgroundScope,
-            initial = remote(AudioSourceType.TIDAL, "stale", expiresAtEpochMs = 5_000L))
-        h.now = 10_000L
+            initial = remote(AudioSourceType.TIDAL, "stale", expiresAtEpochMs = 1_700_000_000_000L))
+        // Real epoch expiries dwarf the small monotonic ticks; the epoch clock is the one that decides.
+        h.epochNow = 1_800_000_000_000L
         h.start(2)
         runCurrent()
         // Decode-stage evidence alone would rebuild around the locator, but its window already closed.
@@ -126,6 +127,25 @@ class PortableQueueRecoveryPolicyTest {
         runCurrent()
         assertEquals(AudioSourceType.TIDAL, h.locators.recoveries.single().refreshSource)
         assertEquals("https://cdn.invalid/fresh", (h.loads.last().request.locator as PlaybackLocator.Remote).url)
+        assertTrue(h.finalFailures.isEmpty())
+    }
+
+    @Test
+    fun aLocatorInsideItsWindowIsReusedWhateverTheMonotonicClockReads() = runTest(UnconfinedTestDispatcher()) {
+        val h = Harness(backgroundScope,
+            initial = remote(AudioSourceType.TIDAL, "windowed", expiresAtEpochMs = 1_900_000_000_000L))
+        // The monotonic value overtaking an epoch timestamp must not read as an expired lease.
+        h.epochNow = 1_800_000_000_000L
+        h.now = 2_000_000_000_000L
+        h.start(2)
+        runCurrent()
+        h.port.failures.emit(h.failure(
+            reason = PlaybackFailureReason.DECODE_FAILED, status = null,
+            causes = listOf("MediaCodecDecoderException: codec failed"),
+        ))
+        runCurrent()
+        assertTrue(h.locators.recoveries.isEmpty())
+        assertSame(h.locators.initial, h.loads.last().request.locator)
         assertTrue(h.finalFailures.isEmpty())
     }
 
@@ -349,6 +369,7 @@ class PortableQueueRecoveryPolicyTest {
         var preventDuplicates = false
         var locked = false
         var now = 0L
+        var epochNow = 0L
         val owner = PortableQueueOwner(
             player, scope, ContentRepositoryRouter(emptyList()), locators,
             autoSkipNextOnError = { autoSkip },
@@ -356,6 +377,7 @@ class PortableQueueRecoveryPolicyTest {
             preventDuplicateTracksInQueue = { preventDuplicates },
             queueLocked = { locked },
             monotonicTimeMs = { now },
+            epochNowMs = { epochNow },
         )
         val finalFailures = mutableListOf<PlaybackFailure>()
         val advanceFailures = mutableListOf<Throwable>()
