@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.lyrics
 
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsActivation
 
 /**
  * When the lyric feed can change what a frame shows. While the feed sits between two of these
@@ -53,7 +54,25 @@ class LyricsDeadlineSchedule(
             val starts = ArrayList<Long>()
             val ends = ArrayList<Long>()
             val changes = ArrayList<Long>()
+            // The furthest sung point so far: a line's activation lead follows the silence before it,
+            // measured the same way the interlude dots measure their break.
+            var reachedMs = 0L
+            // Rows sharing a timed start light together: a duet voice reuses the lead of the row before it.
+            var lastScanStartMs = Long.MIN_VALUE
+            var lastLeadMs = 0L
             for (entry in entries) {
+                val scanStart = scanStartMs(entry)
+                val lead =
+                    if (scanStart == lastScanStartMs) {
+                        lastLeadMs
+                    } else {
+                        LyricsActivation.leadMs(if (reachedMs > 0L) scanStart - reachedMs else null).also {
+                            lastScanStartMs = scanStart
+                            lastLeadMs = it
+                        }
+                    }
+                reachedMs = maxOf(reachedMs, scanEndMs(entry))
+                changes.add(scanStart - lead)
                 changes.add(entry.time)
                 for (word in entry.words.orEmpty()) {
                     val start = (word.startTime * 1000.0).roundToLong()
@@ -69,6 +88,19 @@ class LyricsDeadlineSchedule(
                 liveEnds = ends.sorted().toLongArray(),
                 edges = changes.distinct().sorted().toLongArray(),
             )
+        }
+
+        /** The line's sung start: its first non-background word, or its line time when it has no words. */
+        private fun scanStartMs(entry: LyricsEntry): Long {
+            val main = entry.words?.filter { !it.isBackground }?.takeIf { it.isNotEmpty() } ?: entry.words
+            return main?.firstOrNull()?.startTime?.let { (it * 1000.0).roundToLong() } ?: entry.time
+        }
+
+        /** The furthest the line reaches: its last word end, its declared duration, or its line time. */
+        private fun scanEndMs(entry: LyricsEntry): Long {
+            val main = entry.words?.filter { !it.isBackground }?.takeIf { it.isNotEmpty() } ?: entry.words
+            val wordEnd = main?.lastOrNull()?.endTime?.let { (it * 1000.0).roundToLong() }
+            return maxOf(entry.time, entry.time + entry.durationMs, wordEnd ?: 0L)
         }
     }
 }

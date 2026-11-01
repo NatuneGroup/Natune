@@ -36,13 +36,15 @@ data class LyricsModeProfile(
      * change, and rows left unblurred while the list is held. The other looks keep their own motion.
      */
     val refinedMotion: Boolean = false,
+    /** The quick scale the sung line pops to, or 1 for a look that keeps the line's size. */
+    val activeScale: Float = 1f,
 ) {
     companion object {
         /**
          * How long a manual scroll holds off auto-follow for ENHANCED, V2 and SPOTIFY. Each scroll restarts the hold,
          * so it runs from the last one.
          */
-        const val MANUAL_SCROLL_HOLD_MS = 3_000L
+        const val MANUAL_SCROLL_HOLD_MS = 4_500L
 
         /**
          * SimpMusic's hold. A drag suspends follow until the finger lifts, then the hold runs for four seconds,
@@ -80,6 +82,7 @@ data class LyricsModeProfile(
                     manualScrollHoldMs = MANUAL_SCROLL_HOLD_MS,
                     holdsWhileDragged = false,
                     refinedMotion = true,
+                    activeScale = 1.05f,
                 )
                 LyricsMode.SPOTIFY -> LyricsModeProfile(
                     mainSizeSp = 26f,

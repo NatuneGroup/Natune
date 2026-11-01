@@ -48,6 +48,54 @@ internal object TtmlParser {
             emptyList()
         }
 
+    /** The document-level credits: declared writers and whether translations/transliterations are machine-made. */
+    fun parseCredits(ttml: String): LyricsCredits =
+        try {
+            readCredits(XmlTreeParser.parse(ttml))
+        } catch (_: Exception) {
+            LyricsCredits()
+        }
+
+    private fun readCredits(doc: XmlDocument): LyricsCredits {
+        val writers = LinkedHashSet<String>()
+        var translationAutoCreated = false
+        var transliterationAutoCreated = false
+        for (element in doc.allElements()) {
+            when {
+                element.tagName.endsWith("songwriter", ignoreCase = true) -> {
+                    val name =
+                        element.textContent().trim().takeIf { it.isNotEmpty() }
+                            ?: readAttributeBySuffix(element, "name")
+                    if (!name.isNullOrEmpty()) writers.add(name)
+                }
+                element.tagName.endsWith("transliteration", ignoreCase = true) ->
+                    transliterationAutoCreated = transliterationAutoCreated || isAutoCreated(element)
+                element.tagName.endsWith("translation", ignoreCase = true) ->
+                    translationAutoCreated = translationAutoCreated || isAutoCreated(element)
+            }
+        }
+        return LyricsCredits(
+            songwriters = writers.toList(),
+            translationAutoCreated = translationAutoCreated,
+            transliterationAutoCreated = transliterationAutoCreated,
+        )
+    }
+
+    /** The element or one of its `text` children carries a truthy `automaticallyCreated` attribute. */
+    private fun isAutoCreated(element: XmlElement): Boolean {
+        if (hasAutoCreatedFlag(element)) return true
+        return element.descendantElements().any { child ->
+            child.tagName.endsWith("text", ignoreCase = true) && hasAutoCreatedFlag(child)
+        }
+    }
+
+    private fun hasAutoCreatedFlag(element: XmlElement): Boolean =
+        element.attributes.any { attribute ->
+            val local = attribute.name.substringAfterLast(':').replace("-", "")
+            local.equals("automaticallyCreated", ignoreCase = true) &&
+                attribute.value.trim().let { it.equals("true", true) || it == "1" || it.equals("yes", true) }
+        }
+
     private fun parseDocument(doc: XmlDocument): List<ParsedLine> {
         val root = doc.documentElement
         val timingContext = readTimingContext(root)

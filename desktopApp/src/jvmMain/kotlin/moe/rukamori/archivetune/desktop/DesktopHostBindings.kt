@@ -309,6 +309,7 @@ private fun desktopPlayerSlots(
         ),
         actions = actions,
         compactStyle = if (style == PlayerDesignStyle.BITCHORD) LyricsCompactStyle.BITCHORD else LyricsCompactStyle.SIMPMUSIC,
+        credits = if (matching) document?.credits else null,
         fullVisible = expanded && active,
         compactVisible = expanded && active,
         resumed = active,
