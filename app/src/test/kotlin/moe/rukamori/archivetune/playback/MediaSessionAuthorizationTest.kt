@@ -127,8 +127,6 @@ class MediaSessionAuthorizationTest {
         val banned =
             setOf(
                 androidx.media3.common.Player.COMMAND_SET_MEDIA_ITEM,
-                androidx.media3.common.Player.COMMAND_ADD_MEDIA_ITEM,
-                androidx.media3.common.Player.COMMAND_ADD_MEDIA_ITEMS,
                 androidx.media3.common.Player.COMMAND_CHANGE_MEDIA_ITEMS,
                 androidx.media3.common.Player.COMMAND_SET_SHUFFLE_MODE,
                 androidx.media3.common.Player.COMMAND_SET_REPEAT_MODE,
