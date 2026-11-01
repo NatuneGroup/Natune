@@ -40,6 +40,13 @@ data class LyricsRenderRow(
     val isRtl: Boolean,
     val background: String? = null,
     val backgroundWords: List<LyricsWordTiming>? = null,
+    /**
+     * How much earlier than [scanStartMs] the row lights up, from [LyricsActivation]. The word sweep
+     * still follows the real word times; only activation moves.
+     */
+    val activationLeadMs: Long = 0L,
+    /** The line's reading came from the document itself, not a host-side or AI romanizer. */
+    val providerRomanized: Boolean = false,
 )
 
 /** Builds render rows from canonical lines and the phonetics a presentation supplies for them. */
@@ -65,6 +72,12 @@ object LyricsRenderRows {
     ): List<LyricsRenderRow> {
         val synced = lines.any { it.time > 0L || it.words != null }
         val nextStarts = nextDistinctStarts(lines)
+        // The furthest sung point so far: a line's activation lead follows the silence before it, so
+        // overlapping duet rows measure their gap against the furthest earlier end, like interludes do.
+        var reachedMs = 0L
+        // Rows sharing a timed start light together: a duet voice reuses the lead of the row before it.
+        var lastScanStartMs = Long.MIN_VALUE
+        var lastLeadMs = 0L
         return lines.mapIndexed { index, line ->
             val sung = line.words?.filter { !it.isBackground }.orEmpty()
             // The sweep follows the source text, so word ranges are located in it rather than in a reading.
@@ -79,6 +92,21 @@ object LyricsRenderRows {
             } else {
                 0L to 0L
             }
+            val activationLeadMs =
+                if (synced) {
+                    if (scanStart == lastScanStartMs) {
+                        reachedMs = maxOf(reachedMs, scanEnd)
+                        lastLeadMs
+                    } else {
+                        val lead = LyricsActivation.leadMs(if (reachedMs > 0L) scanStart - reachedMs else null)
+                        reachedMs = maxOf(reachedMs, scanEnd)
+                        lastScanStartMs = scanStart
+                        lastLeadMs = lead
+                        lead
+                    }
+                } else {
+                    0L
+                }
             LyricsRenderRow(
                 index = index,
                 timeMs = line.time,
@@ -95,6 +123,9 @@ object LyricsRenderRows {
                 isRtl = UnicodeBidi.isRtlText(line.text),
                 background = split?.background,
                 backgroundWords = split?.words,
+                activationLeadMs = activationLeadMs,
+                providerRomanized =
+                    line.providerRomanizedText != null || !line.providerRomanizedWords.isNullOrEmpty(),
             )
         }
     }
@@ -127,10 +158,14 @@ object LyricsRenderRows {
         return BackgroundSplit(lead, background, wordTimings(backing, ranges))
     }
 
-    /** One active-span scanner for a row list. Rows that are not synced have empty spans and never match. */
+    /**
+     * One active-span scanner for a row list. Rows that are not synced have empty spans and never
+     * match. Each row's span opens [LyricsRenderRow.activationLeadMs] early, so it lights before the
+     * singing starts; the word sweep still follows [scanStartMs].
+     */
     fun scanner(rows: List<LyricsRenderRow>): ActiveLineScanner =
         ActiveLineScanner(
-            starts = LongArray(rows.size) { rows[it].scanStartMs },
+            starts = LongArray(rows.size) { rows[it].scanStartMs - rows[it].activationLeadMs },
             ends = LongArray(rows.size) { rows[it].scanEndMs },
         )
 

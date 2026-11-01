@@ -51,11 +51,23 @@ class LyricsDeadlineScheduleTest {
 
     @Test
     fun interludesBecomeLiveSpansWhenRequested() {
-        // A >=4s silence between rows owns a breathing interlude.
-        val gapped = listOf(row(0, 0, 1_000), row(1, 8_000, 9_000))
+        // A >=9s silence between rows owns a breathing interlude.
+        val gapped = listOf(row(0, 0, 1_000), row(1, 12_000, 13_000))
         val withInterludes = LyricsDeadlineSchedule.of(gapped, minSweepMs = 150, includeInterludes = true)
         val without = LyricsDeadlineSchedule.of(gapped, minSweepMs = 150, includeInterludes = false)
         assertTrue(withInterludes.isLive(5_000))
         assertFalse(without.isLive(5_000))
+    }
+
+    @Test
+    fun anActivationLeadMovesTheRowEdgeEarly() {
+        val led = listOf(
+            row(0, 0, 1_000),
+            row(1, 5_000, 6_000).copy(activationLeadMs = 500L),
+        )
+        val schedule = LyricsDeadlineSchedule.of(led, minSweepMs = 150, includeInterludes = false)
+        assertEquals(4_500L, schedule.nextChangeAfter(1_000)) // the activation edge lands before the timed start
+        assertEquals(4_500L, schedule.nextChangeAfter(4_400))
+        assertEquals(6_000L, schedule.nextChangeAfter(4_500))
     }
 }
