@@ -37,6 +37,8 @@ data class DiscoveryUi(
     val tab: DiscoveryTab = DiscoveryTab.EXPLORE,
     val loading: Boolean = false,
     val failed: Boolean = false,
+    /** The suggestion feed's shelves, shown only while [tab] is SUGGESTIONS; the owner's suggestion source fills it. */
+    val suggestions: List<BrowseShelfUi> = emptyList(),
 )
 class DiscoveryActions(
     val back: () -> Unit,
@@ -79,12 +81,21 @@ fun DiscoveryScreen(
                 item { TextButton(actions.moods) { Text(stringResource(Res.string.m4_moods_genres)) } }
                 item { TextButton(actions.refresh, enabled = !state.loading) { Text(stringResource(Res.string.m4_refresh)) } }
             }
-            LoadFeedback(state.loading, state.failed, state.shelves.isEmpty() && state.moods.isEmpty(), actions.retry)
+            val visibleEmpty =
+                when (state.tab) {
+                    DiscoveryTab.MOODS -> state.moods.isEmpty()
+                    DiscoveryTab.SUGGESTIONS -> state.suggestions.isEmpty()
+                    else -> state.shelves.isEmpty() && state.moods.isEmpty()
+                }
+            LoadFeedback(state.loading, state.failed, visibleEmpty, actions.retry)
         }
-        if (state.tab == DiscoveryTab.MOODS) {
-            items(state.moods, key = { "mood-${it.key}" }) { MoodTile(it, actions.section) }
-        } else {
-            items(state.shelves, key = { "shelf-${it.key}" }) { Shelf(it, actions.section, actions.open, actions.more, artwork) }
+        when (state.tab) {
+            DiscoveryTab.MOODS -> items(state.moods, key = { "mood-${it.key}" }) { MoodTile(it, actions.section) }
+            DiscoveryTab.SUGGESTIONS ->
+                items(state.suggestions, key = { "suggestion-${it.key}" }) {
+                    Shelf(it, actions.section, actions.open, actions.more, artwork)
+                }
+            else -> items(state.shelves, key = { "shelf-${it.key}" }) { Shelf(it, actions.section, actions.open, actions.more, artwork) }
         }
     }
 }
@@ -95,6 +106,7 @@ class ChartsActions(
     val open: (ContentOccurrence, ContentRequest) -> Unit,
     val more: ((ContentOccurrence) -> Unit)?,
     val retry: () -> Unit,
+    val loadMore: () -> Unit,
 )
 
 @Composable
@@ -102,17 +114,38 @@ fun ChartsScreen(
     sections: List<BrowseShelfUi>,
     loading: Boolean,
     failed: Boolean,
+    continuation: String?,
     actions: ChartsActions,
     artwork: ContentArtwork,
     modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = LocalShellContentPadding.current,
 ) {
-    LazyColumn(modifier.fillMaxSize().testTag("charts-list"), contentPadding = contentPadding) {
+    // Reaching the last shelf with a token still open asks for the next batch; the button is the same request manual.
+    val loadMore by rememberUpdatedState(actions.loadMore)
+    LaunchedEffect(listState, continuation, loading, failed) {
+        if (continuation == null || loading || failed) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.let {
+                it.totalItemsCount > 0 && (it.visibleItemsInfo.lastOrNull()?.index ?: -1) >= it.totalItemsCount - 2
+            }
+        }.distinctUntilChanged().collect { if (it) loadMore() }
+    }
+    LazyColumn(modifier.fillMaxSize().testTag("charts-list"), state = listState, contentPadding = contentPadding) {
         item("header") {
             ManagementHeader(stringResource(Res.string.m4_charts), actions.back)
             LoadFeedback(loading, failed, sections.isEmpty(), actions.retry)
         }
         items(sections, key = { "chart-${it.key}" }) { Shelf(it, actions.section, actions.open, actions.more, artwork) }
+        if (continuation != null) {
+            item("charts-more") {
+                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.Center) {
+                    Button(onClick = actions.loadMore, enabled = !loading, modifier = Modifier.testTag("charts-load-more")) {
+                        Text(stringResource(Res.string.m4_load_more))
+                    }
+                }
+            }
+        }
     }
 }
 
