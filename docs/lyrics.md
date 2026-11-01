@@ -70,8 +70,12 @@ lyric clock through `NativeLyricsDocument` and `NativeLyricsTimeline`, so seekin
 and the tap policy match the Compose renderer. The document carries the Enhanced refinements the
 same way: emphasis letters for held words, the interlude break each row owns, the saved text size,
 the active-line pop, the uniform blur veil with its stagger, duet end-alignment by
-`LyricsAlignmentPolicy`, and the credits footer with the machine-made badges. What stays
-Compose-only there is the line-change settle glide and selection/share-card UI. Both use
+`LyricsAlignmentPolicy`, and the credits footer with the machine-made badges. The sweep share and
+the emphasis wave are the shared `LyricsSweepGeometry.progressAt` and `LyricsEmphasis.bumpAt` math
+rather than a port, so reduced motion and word completion behave identically, and readings slide in
+when their text publishes to a row, not when the row starts singing. The saved size also rides
+Dynamic Type through `UIFontMetrics`. What stays Compose-only there is the line-change settle glide
+and selection/share-card UI. Both use
 `LyricsClock`, which subtracts the snapshot's output-latency estimate once at the playback speed,
 separately from the user offset; the iOS host does not add a second route-latency offset.
 

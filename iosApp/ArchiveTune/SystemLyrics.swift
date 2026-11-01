@@ -83,7 +83,6 @@ private enum SystemLyricsMetrics {
     static let glowCorner: CGFloat = 8
     static let emphasisLift: CGFloat = 2
     static let emphasisScale: CGFloat = 0.10
-    static let emphasisStagger: Double = 2.5
     static let interludeDotDiameter: CGFloat = 10
     static let interludeDotGap: CGFloat = 6
     static let interludeEnterMs: Int64 = 400
@@ -116,7 +115,8 @@ private struct SystemLyricsList: View {
         let color = Color(argb: document.colorArgb)
         let glow = Color(argb: document.glowArgb)
         let idleAlpha = document.synced ? Double(document.idleAlpha) : 1
-        let mainSize = CGFloat(document.mainSizeSp)
+        // The saved size is a reading size: it rides Dynamic Type like the retired @ScaledMetric did.
+        let mainSize = UIFontMetrics(forTextStyle: .largeTitle).scaledValue(for: CGFloat(document.mainSizeSp))
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(spacing: SystemLyricsMetrics.rowSpacing) {
@@ -258,9 +258,6 @@ private struct SystemLyricsRow: View, Equatable {
     let autoCreatedLabel: String?
     let reduceMotion: Bool
 
-    /// The reading and translation slide in the first time their row is sung; a republished text appears in place.
-    @State private var revealed = false
-
     static func == (lhs: SystemLyricsRow, rhs: SystemLyricsRow) -> Bool {
         lhs.line === rhs.line && lhs.active == rhs.active && lhs.positionMs == rhs.positionMs &&
             lhs.scale == rhs.scale && lhs.blur == rhs.blur && lhs.alpha == rhs.alpha && lhs.stagger == rhs.stagger &&
@@ -304,33 +301,30 @@ private struct SystemLyricsRow: View, Equatable {
                     .font(.system(size: mainSize * SystemLyricsMetrics.backgroundRatio, weight: .semibold))
                     .foregroundStyle(color.opacity(active ? SystemLyricsMetrics.backgroundAlpha : idleAlpha))
             }
-            if revealed {
-                if let reading = line.phonetic {
-                    LyricSubline(
-                        text: reading,
-                        autoCreated: line.phoneticAutoCreated,
-                        autoCreatedLabel: autoCreatedLabel,
-                        font: sublineFont,
-                        color: color.opacity(active ? 0.8 : idleAlpha * 0.8)
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                if let translation = line.translation {
-                    LyricSubline(
-                        text: translation,
-                        autoCreated: line.translationAutoCreated,
-                        autoCreatedLabel: autoCreatedLabel,
-                        font: sublineFont,
-                        color: color.opacity(active ? 0.75 : idleAlpha * 0.75)
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
+            if let reading = line.phonetic {
+                LyricSubline(
+                    text: reading,
+                    autoCreated: line.phoneticAutoCreated,
+                    autoCreatedLabel: autoCreatedLabel,
+                    font: sublineFont,
+                    color: color.opacity(active ? 0.8 : idleAlpha * 0.8),
+                    reduceMotion: reduceMotion
+                )
+            }
+            if let translation = line.translation {
+                LyricSubline(
+                    text: translation,
+                    autoCreated: line.translationAutoCreated,
+                    autoCreatedLabel: autoCreatedLabel,
+                    font: sublineFont,
+                    color: color.opacity(active ? 0.75 : idleAlpha * 0.75),
+                    reduceMotion: reduceMotion
+                )
             }
         }
         .multilineTextAlignment(trailing ? .trailing : .leading)
         .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
         .shadow(color: .black.opacity(0.45), radius: 3, y: 1.5)
-        .animation(reduceMotion ? nil : .easeInOut(duration: SystemLyricsMetrics.revealSeconds), value: revealed)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: active)
         .scaleEffect(active ? popScale : 1, anchor: edgeAnchor)
         .animation(reduceMotion ? nil : .easeOut(duration: SystemLyricsMetrics.activeScaleSeconds), value: active)
@@ -343,29 +337,12 @@ private struct SystemLyricsRow: View, Equatable {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(line.seekable ? .isButton : [])
-        .onAppear {
-            // A row that first composes while already sung shows its sublines at once, like the shared row.
-            if active && !revealed {
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { revealed = true }
-            }
-        }
-        .onChange(of: active) { _, now in
-            if now && !revealed {
-                if reduceMotion {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) { revealed = true }
-                } else {
-                    revealed = true
-                }
-            }
-        }
     }
 }
 
 /// One reading or translation under the sung line, with the machine-made mark when the document badges it.
+/// It slides in when its text publishes to the row — the row may not be the sung one, as a listener reading
+/// ahead still sees every reading — and a republished text enters again from hidden.
 @available(iOS 18.0, *)
 private struct LyricSubline: View {
     let text: String
@@ -373,17 +350,34 @@ private struct LyricSubline: View {
     let autoCreatedLabel: String?
     let font: Font
     let color: Color
+    let reduceMotion: Bool
+
+    @State private var shown = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            if autoCreated {
-                Text(SystemLyricsMetrics.autoCreatedMark)
-                    .accessibilityLabel(autoCreatedLabel ?? "")
+        Group {
+            if shown || reduceMotion {
+                HStack(spacing: 0) {
+                    if autoCreated {
+                        Text(SystemLyricsMetrics.autoCreatedMark)
+                            .accessibilityLabel(autoCreatedLabel ?? "")
+                    }
+                    Text(text)
+                }
+                .font(font)
+                .foregroundStyle(color)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            Text(text)
         }
-        .font(font)
-        .foregroundStyle(color)
+        .animation(reduceMotion ? nil : .easeInOut(duration: SystemLyricsMetrics.revealSeconds), value: shown)
+        .task(id: text) {
+            // A fresh text enters from hidden; a republished one leaves in place, like the shared reveal.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { shown = false }
+            await Task.yield()
+            shown = true
+        }
     }
 }
 
@@ -572,11 +566,11 @@ private struct LyricSweepRenderer: TextRenderer {
                    let union = unions[span.index],
                    !wrapped.contains(span.index) {
                     drawEmphasizedLetter(
-                        run: run, word: word, group: group, union: union, context: &context
+                        run: run, word: word, group: group, union: union, in: &context
                     )
                 } else {
                     let bounds = span.letter >= 0 ? unions[span.index] : nil
-                    drawPlainRun(run: run, word: word, bounds: bounds, context: &context)
+                    drawPlainRun(run: run, word: word, bounds: bounds, in: &context)
                 }
             }
         }
@@ -590,6 +584,11 @@ private struct LyricSweepRenderer: TextRenderer {
         dim.opacity = idleAlpha
         dim.draw(run)
         guard progress > 0 else { return }
+        if LyricsSweepGeometry.shared.sweepComplete(progress: Float(progress)) {
+            // A finished word stays lit to its own bounds; the feathered edge would leave its tail dim.
+            context.draw(run)
+            return
+        }
         let box = (bounds ?? run.typographicBounds.rect).insetBy(dx: 0, dy: -2)
         let feather = SystemLyricsMetrics.feather(of: box.width)
         let edge = rightToLeft ? box.maxX - box.width * progress : box.minX + box.width * progress
@@ -657,6 +656,11 @@ private struct LyricSweepRenderer: TextRenderer {
         dim.opacity = idleAlpha
         dim.draw(run)
         guard progress > 0 else { return }
+        if LyricsSweepGeometry.shared.sweepComplete(progress: Float(progress)) {
+            var lit = moved
+            lit.draw(run)
+            return
+        }
         // The line's edge mapped into the letter's scaled frame: a canvas x lands at cx + (x - cx) / scale.
         let edgeLocal = centreX + (edge - centreX) / scale
         let featherLocal = feather / scale
@@ -674,24 +678,29 @@ private struct LyricSweepRenderer: TextRenderer {
         lit.draw(run)
     }
 
-    /// The share of [word] that is sung, from 0 to 1. Reduced motion jumps between the two. A very short
-    /// word still travels across its glyphs, so its sweep runs at least the shared minimum sweep.
+    /// The share of [word] that is sung, from 0 to 1 — the shared sweep share, so reduced motion jumps
+    /// between the two and a very short word still sweeps over the shared minimum.
     private func fraction(of word: NativeLyricsSpan) -> CGFloat {
-        if reduceMotion { return positionMs >= word.startMs ? 1 : 0 }
-        if positionMs <= word.startMs { return 0 }
-        let duration = Double(max(word.endMs - word.startMs, minSweepMs))
-        return CGFloat(min(max(Double(positionMs - word.startMs) / duration, 0), 1))
+        CGFloat(LyricsSweepGeometry.shared.progressAt(
+            startMs: word.startMs,
+            endMs: word.endMs,
+            positionMs: positionMs,
+            reduceMotion: reduceMotion,
+            minSweepMs: minSweepMs
+        ))
     }
 
-    /// How much letter [index] of an emphasized word is bumping at the position, a staggered sine bump that
-    /// travels through the word — the same wave the shared sweep reads, so a seek lands on the same frame.
+    /// How much letter [index] of an emphasized word is bumping at the position — the shared wave, stilled
+    /// by reduced motion, so a seek lands on the same frame and a still preference rides no letter.
     private func ripple(startMs: Int64, durationMs: Int64, count: Int, index: Int) -> CGFloat {
-        guard count > 0, index >= 0, index < count else { return 0 }
-        let duration = Double(max(1, durationMs))
-        let stagger = duration / SystemLyricsMetrics.emphasisStagger / Double(count)
-        let local = Double(positionMs - startMs) - stagger * Double(index)
-        guard local > 0, local < duration else { return 0 }
-        return CGFloat(sin(.pi * local / duration))
+        CGFloat(LyricsEmphasis.shared.bumpAt(
+            wordStartMs: startMs,
+            durationMs: durationMs,
+            clusterCount: Int32(count),
+            index: Int32(index),
+            positionMs: positionMs,
+            reduceMotion: reduceMotion
+        ))
     }
 }
 
