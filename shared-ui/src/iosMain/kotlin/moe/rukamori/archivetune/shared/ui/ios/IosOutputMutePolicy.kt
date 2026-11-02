@@ -26,12 +26,7 @@ import moe.rukamori.archivetune.shared.domain.settings.DeviceMutePlaybackRecover
 import moe.rukamori.archivetune.shared.domain.settings.PauseOnDeviceMuteKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
-import kotlinx.cinterop.FloatVar
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.memScoped
 import platform.AVFAudio.AVAudioSession
-import platform.Foundation.NSInvocation
-import platform.Foundation.NSSelectorFromString
 
 /** How often the watched session samples the system output level. */
 private const val VOLUME_POLL_MS = 1_000L
@@ -225,23 +220,9 @@ internal class IosOutputMutePolicy(
     private fun mutedNow(): Boolean = enabled && (systemVolume.value <= 0f || appVolume <= 0f)
 
     /**
-     * The system output level, read through NSInvocation dispatch: the iOS 26 SDK headers no longer
-     * bind `AVAudioSession.outputVolume`, so a property reference cannot compile, while the
-     * getter still answers the Objective-C runtime on device. A session that cannot answer reads
-     * as full volume — a missing probe must not fabricate a mute.
+     * The system output level, read straight from the session's bound `outputVolume` property:
+     * the platform.AVFAudio binding compiles the read directly, and a synchronous sample is what
+     * both the poll and the play-edge mute decision need.
      */
-    private fun systemOutputVolume(): Float {
-        val session = AVAudioSession.sharedInstance()
-        val selector = NSSelectorFromString("outputVolume")
-        if (!session.respondsToSelector(selector)) return 1f
-        val signature = session.methodSignatureForSelector(selector) ?: return 1f
-        val invocation = NSInvocation.invocationWithMethodSignature(signature)
-        invocation.selector = selector
-        invocation.invokeWithTarget(session)
-        return memScoped {
-            val result = alloc<FloatVar>()
-            invocation.getReturnValue(result.ptr)
-            result.value
-        }
-    }
+    private fun systemOutputVolume(): Float = AVAudioSession.sharedInstance().outputVolume
 }
