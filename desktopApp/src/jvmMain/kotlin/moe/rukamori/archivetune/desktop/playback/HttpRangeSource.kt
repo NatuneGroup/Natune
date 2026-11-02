@@ -16,6 +16,7 @@ import moe.rukamori.archivetune.shared.data.bytesource.RandomAccessByteSource
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookie
 import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
+import moe.rukamori.archivetune.shared.domain.playback.SegmentFetchPolicy
 
 /**
  * The HTTP(S) bytes of one lease, read through ranged requests. The engine reaches it only through
@@ -47,6 +48,13 @@ internal class HttpRangeSource(
     private var sizeBytes = -1L
     private var seekable = false
 
+    /** Bytes the open response promised to deliver, and how many it delivered so far. */
+    private var streamExpectedBytes = SegmentFetchPolicy.UNKNOWN_LENGTH
+    private var streamDeliveredBytes = 0L
+
+    /** Consecutive responses that ended before their declared length without any byte progress. */
+    private var consecutiveTruncations = 0
+
     /** The total length (-1 when the server did not report one) and whether ranged reads are honoured. */
     class Probe(val sizeBytes: Long, val seekable: Boolean)
 
@@ -56,7 +64,7 @@ internal class HttpRangeSource(
         try {
             checkNotExpired()
             dropStaleStream()
-            val opened = openAt(0L, ticket, probing = true)
+            val opened = openWithTransportRetry(0L, ticket, probing = true)
             if (opened == null) {
                 sizeBytes = 0L
                 seekable = false
@@ -65,6 +73,8 @@ internal class HttpRangeSource(
                 seekable = opened.partial
                 stream = opened.input
                 streamPosition = 0L
+                streamExpectedBytes = opened.expectedBytes
+                streamDeliveredBytes = 0L
             }
             ticket.throwIfCancelled()
             return Probe(sizeBytes, seekable)
@@ -86,23 +96,43 @@ internal class HttpRangeSource(
             if (stream == null || streamPosition != position) {
                 if (position > 0 && !seekable) throw ByteSourceException("the source cannot seek")
                 dropConnection()
-                val opened = openAt(position, ticket, probing = false)
+                val opened = openWithTransportRetry(position, ticket, probing = false)
                 if (opened == null) return RandomAccessByteSource.END_OF_STREAM
                 stream = opened.input
                 streamPosition = position
+                streamExpectedBytes = opened.expectedBytes
+                streamDeliveredBytes = 0L
                 if (sizeBytes < 0) sizeBytes = opened.totalBytes
             }
             val input = checkNotNull(stream)
             val read = input.read(buffer, offset, length)
             ticket.throwIfCancelled()
             if (read < 0) {
+                val delivered = streamDeliveredBytes
+                val expected = streamExpectedBytes
                 dropConnection()
-                if (sizeBytes >= 0 && position < sizeBytes) {
+                // A SUCCESS body that stops before its declared length is silent corruption:
+                // retry it like a transport drop while attempts remain (the response the byte
+                // count came from may simply repeat), then fail the lease.
+                val truncated =
+                    (expected >= 0L && delivered < expected) ||
+                        (expected < 0L && sizeBytes >= 0 && position < sizeBytes)
+                if (truncated) {
+                    consecutiveTruncations++
+                    if (SegmentFetchPolicy.allowsAnotherAttempt(
+                            SegmentFetchPolicy.FailureClass.TRUNCATED_BODY,
+                            consecutiveTruncations,
+                        )
+                    ) {
+                        return 0
+                    }
                     throw ByteSourceException("the source ended before its declared length")
                 }
                 return RandomAccessByteSource.END_OF_STREAM
             }
             streamPosition += read
+            streamDeliveredBytes += read
+            consecutiveTruncations = 0
             return read
         } catch (io: IOException) {
             // Closing a socket is how an interrupt wakes a read, so a stale generation reports a cancellation.
@@ -131,7 +161,39 @@ internal class HttpRangeSource(
         dropConnection()
     }
 
-    private class Opened(val input: InputStream, val totalBytes: Long, val partial: Boolean)
+    private class Opened(
+        val input: InputStream,
+        val totalBytes: Long,
+        val partial: Boolean,
+        /** Bytes this response declared it would deliver ([SegmentFetchPolicy.UNKNOWN_LENGTH] when undeclared). */
+        val expectedBytes: Long,
+    )
+
+    /**
+     * Wraps [openAt] with the status-0 retry class: a failure that never reached an HTTP status
+     * (connect or response timeout, reset, offline) earns one more attempt before the caller
+     * sees it. An answered status or a lease violation returns at once.
+     */
+    private fun openWithTransportRetry(position: Long, ticket: LeaseTicket, probing: Boolean): Opened? {
+        var transportFailures = 0
+        while (true) {
+            try {
+                return openAt(position, ticket, probing)
+            } catch (io: IOException) {
+                ticket.throwIfCancelled()
+                transportFailures++
+                if (
+                    !SegmentFetchPolicy.allowsAnotherAttempt(
+                        SegmentFetchPolicy.FailureClass.NO_RESPONSE,
+                        transportFailures,
+                    )
+                ) {
+                    throw io
+                }
+                dropConnection()
+            }
+        }
+    }
 
     /**
      * Requests [position] onward and follows permitted redirects. Returns null when the position lies past the end
@@ -191,12 +253,32 @@ internal class HttpRangeSource(
             resolvedUrl = current
             if (code == HttpURLConnection.HTTP_PARTIAL) {
                 val total = parseContentRangeTotal(http.getHeaderField("Content-Range"), position)
-                return Opened(http.inputStream, total, partial = true)
+                return Opened(
+                    http.inputStream,
+                    total,
+                    partial = true,
+                    expectedBytes =
+                        SegmentFetchPolicy.expectedSegmentBytes(
+                            http.contentLengthLong,
+                            total,
+                            position,
+                        ),
+                )
             }
             // A full answer to a request for later bytes means the server ignored the range, so the source
             // cannot be read from there. Reporting it as a failure is better than silently decoding from byte zero.
             if (position != 0L) throw ByteSourceException("the source ignored the requested byte range")
-            return Opened(http.inputStream, http.contentLengthLong, partial = false)
+            return Opened(
+                http.inputStream,
+                http.contentLengthLong,
+                partial = false,
+                expectedBytes =
+                    SegmentFetchPolicy.expectedSegmentBytes(
+                        http.contentLengthLong,
+                        SegmentFetchPolicy.UNKNOWN_LENGTH,
+                        0L,
+                    ),
+            )
         }
     }
 
@@ -229,6 +311,8 @@ internal class HttpRangeSource(
     private fun dropConnection() {
         val input = stream
         stream = null
+        streamExpectedBytes = SegmentFetchPolicy.UNKNOWN_LENGTH
+        streamDeliveredBytes = 0L
         if (input != null) runCatching { input.close() }
         connection?.disconnect()
         connection = null

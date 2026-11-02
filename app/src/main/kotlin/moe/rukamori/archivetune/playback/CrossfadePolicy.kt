@@ -12,6 +12,8 @@ package moe.rukamori.archivetune.playback
 
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.sin
 
 /**
@@ -19,6 +21,88 @@ import kotlin.math.sin
  * [MusicService]; every deterministic rule lives here so it can be unit tested.
  */
 object CrossfadePolicy {
+    /**
+     * The gain shape a blend rides. [EQUAL_POWER] holds outgoing² + incoming² at 1 for a level
+     * loudness contour — the automix blends were tuned against it. [EXPONENTIAL_OUT_LOGARITHMIC_IN]
+     * is the manual-fade pairing Apple Music applies: the outgoing track decays exponentially
+     * while the incoming one climbs logarithmically, so the hand-over is front-loaded onto the
+     * new track.
+     */
+    enum class FadeCurve { EQUAL_POWER, EXPONENTIAL_OUT_LOGARITHMIC_IN }
+
+    /**
+     * How deep the exponential tail drops: 6 nepers ≈ a -52 dB floor at the fade's end — deep
+     * enough that the last applied step is already inaudible.
+     */
+    private const val EXP_LOG_STEEPNESS = 6.0
+
+    /** Apple paces renderer volume messages at about 20 per fade, clamped 200–500 ms apart. */
+    const val FADE_VOLUME_STEP_TARGET = 20
+    const val FADE_VOLUME_STEP_MIN_MS = 200L
+    const val FADE_VOLUME_STEP_MAX_MS = 500L
+
+    /** The pause between two volume applications for a fade of [durationMs]. */
+    fun fadeStepIntervalMs(durationMs: Long): Long =
+        if (durationMs <= 0L) {
+            FADE_VOLUME_STEP_MIN_MS
+        } else {
+            (durationMs / FADE_VOLUME_STEP_TARGET)
+                .coerceIn(FADE_VOLUME_STEP_MIN_MS, FADE_VOLUME_STEP_MAX_MS)
+        }
+
+    /**
+     * Normalized exponential fade-out: 1 at the start, 0 at the end, with the tail pushed deep
+     * so the end of the overlap has nothing left to click against.
+     */
+    fun exponentialFadeOutGain(progress: Float): Float {
+        val t = progress.coerceIn(0f, 1f).toDouble()
+        return ((exp(-EXP_LOG_STEEPNESS * t) - exp(-EXP_LOG_STEEPNESS)) /
+            (1.0 - exp(-EXP_LOG_STEEPNESS))).toFloat()
+    }
+
+    /**
+     * Normalized logarithmic fade-in: 0 at the start, 1 at the end. It mirrors the exponential
+     * out-gain — the incoming track reaches most of its loudness early, then flattens.
+     */
+    fun logarithmicFadeInGain(progress: Float): Float {
+        val t = progress.coerceIn(0f, 1f).toDouble()
+        return (ln(1.0 + (exp(EXP_LOG_STEEPNESS) - 1.0) * t) / EXP_LOG_STEEPNESS).toFloat()
+    }
+
+    fun outgoingGain(curve: FadeCurve, progress: Float): Float =
+        when (curve) {
+            FadeCurve.EQUAL_POWER -> outgoingGain(progress)
+            FadeCurve.EXPONENTIAL_OUT_LOGARITHMIC_IN -> exponentialFadeOutGain(progress)
+        }
+
+    fun incomingGain(curve: FadeCurve, progress: Float): Float =
+        when (curve) {
+            FadeCurve.EQUAL_POWER -> incomingGain(progress)
+            FadeCurve.EXPONENTIAL_OUT_LOGARITHMIC_IN -> logarithmicFadeInGain(progress)
+        }
+
+    fun outgoingVolume(
+        curve: FadeCurve,
+        progress: Float,
+        baseVolume: Float,
+        maxGain: Float,
+    ): Float = (baseVolume * outgoingGain(curve, progress)).coerceIn(0f, maxGain)
+
+    fun incomingVolume(
+        curve: FadeCurve,
+        progress: Float,
+        baseVolume: Float,
+        maxGain: Float,
+    ): Float = (baseVolume * incomingGain(curve, progress)).coerceIn(0f, maxGain)
+
+    /**
+     * Whether a blend may start at all. Spotify suppresses fades both while paused and in the
+     * wake of a context change (a manual skip or a queue swap): a blend that begins then reads
+     * as an artefact of the switch, not a transition.
+     */
+    fun mayStartBlend(playbackRequested: Boolean, contextChanged: Boolean): Boolean =
+        playbackRequested && !contextChanged
+
     fun outgoingElapsedMs(
         startPositionMs: Long,
         currentPositionMs: Long,
