@@ -100,7 +100,7 @@ import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
-import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
+import moe.rukamori.archivetune.shared.ui.host.SponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
@@ -768,12 +768,13 @@ internal class IosSessionGraph private constructor(
                 nowMs = ::iosNowMillis,
             )
             // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
-            PodcastSponsorBlockDriver(
+            SponsorBlockDriver(
                 scope = scope,
                 player = player,
                 queue = queue.state,
                 preferences = vault.snapshots,
                 repository = KtorSponsorBlockRepository(http),
+                report = report,
             )
             // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
             val lyrics = HostLyrics(
