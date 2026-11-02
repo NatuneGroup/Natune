@@ -29,10 +29,10 @@ data class LyricsEntity(
             source == Source.EMBEDDED.value
 
     /**
-     * The persisted [providerName] as a user-facing source label for the "Lyrics from …"
-     * attribution. The stored value is a provider key, not a display name — "lrc.red" is the
-     * known offender — so keys that read like hostnames map to proper names, and an unknown
-     * value falls back to the key itself, or its host portion when a URL was stored.
+     * The persisted [providerName] as the attribution label for "Lyrics from …". Provider keys
+     * are already the canonical brand labels the settings rows use — "lrc.red", "LrcLib" — so the
+     * key is shown as stored; only a stored URL collapses to its host so the chip never shows a
+     * link.
      */
     val displayProviderName: String
         get() = providerDisplayName(providerName)
@@ -42,14 +42,8 @@ data class LyricsEntity(
 
         fun providerDisplayName(providerName: String): String {
             val raw = providerName.trim()
-            val key = raw.substringAfter("://", raw).substringBefore('/').removePrefix("www.")
-            return PROVIDER_DISPLAY_NAMES[key.lowercase()] ?: key.ifBlank { raw }
+            return raw.substringAfter("://", raw).substringBefore('/').removePrefix("www.").ifBlank { raw }
         }
-
-        private val PROVIDER_DISPLAY_NAMES =
-            mapOf(
-                "lrc.red" to "LrcRed",
-            )
     }
 
     enum class Source(
