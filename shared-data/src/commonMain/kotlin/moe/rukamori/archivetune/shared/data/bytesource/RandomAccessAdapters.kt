@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.bytesource
 
 import kotlin.math.min
+import kotlinx.coroutines.delay
 
 /** In-memory source over [content]; also the reference implementation used by tests. */
 class ByteArrayByteSource(
@@ -76,3 +77,37 @@ internal suspend fun RandomAccessByteSource.readUpTo(
     }
     return ReadResult(if (got == length) out else out.copyOf(got), ended)
 }
+
+/**
+ * Reads a small resource whole, sequentially from position zero. Returns the bytes, or null when the resource is
+ * larger than [maxBytes]. A zero-count read is not yet an answer: it is polled for a bounded time, the same bounded
+ * idle poll as the TIDAL index uses, and a source that stays silent is a transport failure rather than an empty file.
+ */
+internal suspend fun RandomAccessByteSource.readWholeBounded(maxBytes: Int): ByteArray? {
+    require(maxBytes > 0) { "the whole-read bound must be positive" }
+    var buffer = ByteArray(minOf(maxBytes, 16 * 1024))
+    var size = 0
+    var idlePolls = 0
+    while (true) {
+        if (size == buffer.size) {
+            if (size >= maxBytes) return null
+            buffer = buffer.copyOf(minOf(maxBytes, size * 2))
+        }
+        val read = readAt(size.toLong(), buffer, size, buffer.size - size)
+        when {
+            read == RandomAccessByteSource.END_OF_STREAM -> return buffer.copyOf(size)
+            read > 0 -> {
+                size += read
+                idlePolls = 0
+            }
+            else -> {
+                idlePolls++
+                if (idlePolls > MAX_IDLE_POLLS) throw ByteSourceException("the resource stalled during a whole read")
+                delay(IDLE_POLL_MILLIS)
+            }
+        }
+    }
+}
+
+private const val MAX_IDLE_POLLS = 400
+private const val IDLE_POLL_MILLIS = 25L
