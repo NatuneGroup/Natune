@@ -99,6 +99,20 @@ sealed interface NativeAudioRecipe {
     data class QqEncrypted(val url: String, val eKey: AudioSecret?, override val accountScope: String) : NativeAudioRecipe {
         override val source get() = AudioSourceType.QQ
     }
+    /**
+     * A non-DRM HLS media playlist, such as a QQ Music manifest answer. [playlistText] carries the document when the
+     * resolver already fetched it, and null means the preparation fetches it under the lease. Clear segments and
+     * AES-128 identity-keyed segments are honoured; SAMPLE-AES, non-identity key formats, variant playlists and
+     * playlists without an end marker stay refused, because they are DRM or unbounded forms this host cannot serve.
+     */
+    data class SegmentedHls(
+        val playlistUrl: String,
+        val playlistText: String?,
+        val audioSource: AudioSourceType,
+        override val accountScope: String,
+    ) : NativeAudioRecipe {
+        override val source get() = audioSource
+    }
 }
 interface AudioProviderRepository {
     val source: AudioSourceType

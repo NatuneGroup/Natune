@@ -87,7 +87,7 @@ object HlsAes128 {
      * Splits a comma-separated attribute list. Commas inside a quoted value do not split, and
      * quotes are stripped from the value.
      */
-    private fun parseAttributes(text: String): Map<String, String> {
+    internal fun parseAttributes(text: String): Map<String, String> {
         val result = LinkedHashMap<String, String>()
         var index = 0
         while (index < text.length) {
@@ -202,7 +202,7 @@ class HlsAes128SegmentSource(
     }
 
     /** Learns the plaintext length from the padded last block; null when that block is not yet readable. */
-    private suspend fun plaintextLength(): Long? {
+    internal suspend fun plaintextLength(): Long? {
         plaintextLengthCache?.let { return it }
         val lastIndex = cipherLength / BLOCK_SIZE - 1
         val prefixStart = max(lastIndex - 1, 0L)

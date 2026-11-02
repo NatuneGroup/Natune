@@ -9,6 +9,7 @@ import moe.rukamori.archivetune.shared.data.bytesource.GuardedByteSource
 import moe.rukamori.archivetune.shared.data.bytesource.LeaseCancellation
 import moe.rukamori.archivetune.shared.data.bytesource.RandomAccessByteSource
 import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
+import moe.rukamori.archivetune.shared.data.bytesource.readWholeBounded
 import moe.rukamori.archivetune.shared.data.stream.NativeCiphertextOpener
 import moe.rukamori.archivetune.shared.data.stream.NativePlaintext
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
@@ -43,6 +44,17 @@ internal class IosCiphertextOpener(
     // Builds the recheck for one lease. Null only for genuine anonymous access, which sends no cookie. A personal transport
     // binds every recheck to its captured admission, so no request is sent for an entry that is no longer accepted.
     private val recheckFor: ((ByteSourceLease) -> LeaseCookieRecheck)?,
+    /**
+     * Request headers every source of this transport carries. They travel only on the credential anchor's origin, as the
+     * lease policy applies them: a segment host that is not the anchor never sees them. Default is none.
+     */
+    private val headers: PlaybackHeaders = PlaybackHeaders.NONE,
+    /**
+     * The origin that request headers and cookies belong to, such as the playlist origin of a segmented stream whose
+     * segments live on other hosts. Null keeps the per-resource policy: each source's own origin is its credential
+     * anchor, which is what the native recipes want, because their cookies are scoped per resource origin.
+     */
+    private val credentialAnchor: StreamOrigin? = null,
 ) : NativeCiphertextOpener {
     private val stateLock = NSLock()
     private val cancellation = LeaseCancellation()
@@ -55,19 +67,10 @@ internal class IosCiphertextOpener(
     ): RandomAccessByteSource? {
         if (accountScope != boundScope) return null
         val origin = StreamOrigin.parse(url) ?: return null
-        val lease =
-            ByteSourceLease(
-                account = account,
-                primaryOrigin = origin,
-                permittedOrigins = setOf(origin),
-                // The query string carries a per-request signature, so it never becomes part of the cache key.
-                cacheKey = url.substringBefore('?'),
-                expiresAtEpochMs = StreamUrlExpiry.fromUrl(url),
-                lengthBytes = null,
-            )
+        val lease = leaseFor(url, origin)
         // No cookie is read here. The recheck reads the admitted account before the probe and before every later request,
         // so a cookie taken at open could only be stale by the time a request used it.
-        val http = IosHttpRangeSource(lease, url, PlaybackHeaders.NONE, recheck = recheckFor?.invoke(lease))
+        val http = IosHttpRangeSource(lease, url, headers, recheck = recheckFor?.invoke(lease))
         if (!register(http)) {
             // The opener is closed, so this source is refused and released rather than left unowned.
             http.close()
@@ -95,6 +98,60 @@ internal class IosCiphertextOpener(
         // before any is read, and a kept response would hold one paused connection per segment until the stream ends.
         http.releaseProbedResponse()
         return ProbedCiphertext(http, lease.copy(lengthBytes = probed.sizeBytes.takeIf { it >= 0L }))
+    }
+
+    /**
+     * Reads a small resource whole — a manifest document or a segment key — under the same scope, headers and lease
+     * policy as [open]. Unlike [open] it does not require range support: the resource is read sequentially from its
+     * first response, which a manifest or key host can always serve. Returns null when the resource is unavailable or
+     * larger than [maxBytes]; a transport failure propagates rather than becoming a refusal.
+     */
+    override suspend fun openWhole(
+        url: String,
+        accountScope: String,
+        maxBytes: Int,
+    ): ByteArray? {
+        if (accountScope != boundScope) return null
+        val origin = StreamOrigin.parse(url) ?: return null
+        val lease = leaseFor(url, origin)
+        val http = IosHttpRangeSource(lease, url, headers, recheck = recheckFor?.invoke(lease))
+        if (!register(http)) {
+            http.close()
+            return null
+        }
+        try {
+            // The probe keeps its response at position zero, so the sequential read below reuses that one request.
+            http.probe()
+            val bytes = guard(http).readWholeBounded(maxBytes)
+            forget(http)
+            http.close()
+            return bytes
+        } catch (failure: Throwable) {
+            forget(http)
+            http.close()
+            throw failure
+        }
+    }
+
+    /**
+     * The lease for one resource of this transport. Without a credential anchor each resource's own origin is the
+     * credential origin, as the native recipes use it. With one, credentials attach only to that origin, which is the
+     * policy a header-bearing segmented stream needs: the playlist's headers and cookies never reach a segment host.
+     */
+    private fun leaseFor(
+        url: String,
+        origin: StreamOrigin,
+    ): ByteSourceLease {
+        val anchor = credentialAnchor ?: origin
+        return ByteSourceLease(
+            account = account,
+            primaryOrigin = anchor,
+            permittedOrigins = setOf(anchor, origin),
+            // The query string carries a per-request signature, so it never becomes part of the cache key.
+            cacheKey = url.substringBefore('?'),
+            expiresAtEpochMs = StreamUrlExpiry.fromUrl(url),
+            lengthBytes = null,
+        )
     }
 
     /** Guards [source] so a read in flight during [interrupt] or [close] is discarded, not handed to the decoder. */

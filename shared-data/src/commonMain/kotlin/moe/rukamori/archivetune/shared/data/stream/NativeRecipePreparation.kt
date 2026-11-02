@@ -1,9 +1,12 @@
 package moe.rukamori.archivetune.shared.data.stream
 
 import moe.rukamori.archivetune.shared.data.bytesource.RandomAccessByteSource
+import moe.rukamori.archivetune.shared.data.bytesource.readWholeBounded
 import moe.rukamori.archivetune.shared.data.stream.cenc.CencMp4
+import moe.rukamori.archivetune.shared.data.stream.hls.HlsSegmentedPreparation
 import moe.rukamori.archivetune.shared.data.stream.qmc.QmcDecryptor
 import moe.rukamori.archivetune.shared.data.stream.spotify.SpotifyPlayPlaySource
+import moe.rukamori.archivetune.shared.domain.platform.AccountAdmission
 import moe.rukamori.archivetune.shared.domain.repository.NativeAudioRecipe
 
 /**
@@ -16,6 +19,18 @@ interface NativeCiphertextOpener {
         url: String,
         accountScope: String,
     ): RandomAccessByteSource?
+
+    /**
+     * Reads a small resource whole — a manifest document or a segment key — under the same scope and lease policy as
+     * [open]. The default opens it through [open] and reads sequentially, so a host whose ranged open requires
+     * features a small resource may lack must override it. Returns null when the host cannot open the resource or the
+     * resource is larger than [maxBytes]. A transport failure throws rather than returning null.
+     */
+    suspend fun openWhole(
+        url: String,
+        accountScope: String,
+        maxBytes: Int,
+    ): ByteArray? = open(url, accountScope)?.readWholeBounded(maxBytes)
 }
 
 /**
@@ -57,15 +72,17 @@ object NativeRecipePreparation {
     suspend fun prepare(
         recipe: NativeAudioRecipe,
         opener: NativeCiphertextOpener,
+        admission: AccountAdmission? = null,
     ): NativePreparation =
         when (recipe) {
             is NativeAudioRecipe.AmazonCenc -> prepareAmazon(recipe, opener)
             is NativeAudioRecipe.QqEncrypted -> prepareQq(recipe, opener)
             is NativeAudioRecipe.SpotifyPlayPlay -> prepareSpotify(recipe, opener)
-            // Apple's HLS keys are released to a platform content-decryption module. That module is not portable and
-            // is a pending owner decision, so this refuses instead of pretending to decrypt.
-            is NativeAudioRecipe.AppleHls ->
-                NativePreparation.Refused("Apple HLS needs a platform content-decryption module")
+            // A non-DRM HLS media playlist is served by the segmented view: clear and AES-128 identity-keyed
+            // segments play, while SAMPLE-AES and non-identity key formats (Apple FairPlay, PlayReady,
+            // Widevine-class) stay refused — they need a platform content-decryption module this host lacks.
+            is NativeAudioRecipe.AppleHls -> HlsSegmentedPreparation.prepareApple(recipe, opener, admission)
+            is NativeAudioRecipe.SegmentedHls -> HlsSegmentedPreparation.prepare(recipe, opener, admission)
         }
 
     private suspend fun prepareAmazon(
