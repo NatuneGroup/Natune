@@ -25,10 +25,15 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.HistoryOrigin
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.serializeBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.serializeSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.toggleBlockedSongRef
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
@@ -149,7 +154,22 @@ private class IosSongMenuHost(
     override fun openSleepTimer() {
         sleepSheet.open = true
     }
-    override suspend fun setRecommendationBlocked(song: ContentRef, blocked: Boolean) = state.unavailable()
+    /**
+     * The block list the baseline kept as a timestamp on the stored song row is a preference here, so it
+     * survives without a library row and exports with SETTINGS. Recommendations come from YouTube feeds,
+     * so only a provider song the feeds can return takes a block.
+     */
+    override suspend fun setRecommendationBlocked(song: ContentRef, blocked: Boolean) {
+        if (!song.iosYouTubeSong()) state.unavailable()
+        graph.settings.edit {
+            val next = toggleBlockedSongRef(
+                parseBlockedSongRefs(get(BlockedSongIdsKey).orEmpty()),
+                BlockedSongRef(song.provider, song.id),
+                blocked,
+            ) ?: state.unavailable()
+            set(BlockedSongIdsKey, serializeBlockedSongRefs(next))
+        }
+    }
 
     /**
      * The decoded cover is written as PNG and exported through the same document picker as a download,
@@ -187,8 +207,8 @@ private class IosSongMenuHost(
  * The shared song menu over the owners this host connects: queue, like and add-to-playlist, the system share sheet,
  * library add and remove, speed-dial pins, downloads and their export, cover save, the watch-next metadata refetch,
  * history and playlist-row removal, album and artist pages, YouTube radio, track and media info, the sleep timer,
- * tempo and pitch, and the custom artwork editor. Rows whose owner is not connected here (cache, external downloader,
- * recommendation blocks) are filtered off rather than appearing as dead items.
+ * tempo and pitch, recommendation blocks, and the custom artwork editor. Rows whose owner is not connected here
+ * (cache, external downloader) are filtered off rather than appearing as dead items.
  */
 @Composable
 internal fun IosSongMenu(
@@ -271,7 +291,9 @@ internal fun IosSongMenu(
         fromCache = false,
         albumId = occurrence.item.albumId,
         artworkUrl = occurrence.item.artworkUri,
-        recommendationBlocked = false,
+        recommendationBlocked = ref.iosYouTubeSong() &&
+            parseBlockedSongRefs(preferences?.get(BlockedSongIdsKey).orEmpty())
+                .any { it.provider == ref.provider && it.id == ref.id },
         externalDownloaderEnabled = false,
         externalDownloaderConfigured = false,
     )
@@ -380,6 +402,8 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         if (ref.provider == ContentProvider.YOUTUBE.id && ref.kind == ContentKind.SONG && !facts.isTelegram) {
             add("start_radio")
         }
+        // The block row commits through the same YouTube-song gate as pins and refetches.
+        if (ref.iosYouTubeSong()) add("recommendation_block")
         add("remove_playlist")
     }
 

@@ -64,8 +64,12 @@ class TelegramBotsOwnerBinding(
 
     /** The owner state as the bots screen model. The notice is the owner's last add outcome until dismissed. */
     val state: StateFlow<TelegramBotsUi> =
-        combine(owner.state, loadFailedFlow) { snapshot, failed -> snapshot.toUi(failed) }
-            .stateIn(work, SharingStarted.Eagerly, owner.state.value.toUi(loadFailedFlow.value))
+        combine(owner.state, loadFailedFlow, loadedFlow) { snapshot, failed, loaded -> snapshot.toUi(failed, loaded) }
+            .stateIn(
+                work,
+                SharingStarted.Eagerly,
+                owner.state.value.toUi(loadFailedFlow.value, loadedFlow.value),
+            )
 
     /**
      * The existing screen actions. Pasted text goes to the owner unchanged, and the owner parses it. Opening a bot
@@ -209,7 +213,7 @@ class TelegramBrowseOwnerBinding(
     }
 }
 
-private fun TelegramBotsState.toUi(loadFailed: Boolean): TelegramBotsUi =
+private fun TelegramBotsState.toUi(loadFailed: Boolean, loaded: Boolean): TelegramBotsUi =
     TelegramBotsUi(
         ready = ready,
         input = input,
@@ -222,6 +226,7 @@ private fun TelegramBotsState.toUi(loadFailed: Boolean): TelegramBotsUi =
         forwardToChannel = forwardToChannel,
         notice = issue?.toNotice(),
         loadFailed = loadFailed,
+        loaded = loaded,
     )
 
 private fun TelegramBotAddIssue.toNotice(): TelegramBotNotice =
