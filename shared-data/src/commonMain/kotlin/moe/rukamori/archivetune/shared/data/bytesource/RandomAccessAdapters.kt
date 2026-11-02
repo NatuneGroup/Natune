@@ -86,17 +86,25 @@ internal suspend fun RandomAccessByteSource.readUpTo(
 internal suspend fun RandomAccessByteSource.readWholeBounded(maxBytes: Int): ByteArray? {
     require(maxBytes > 0) { "the whole-read bound must be positive" }
     var buffer = ByteArray(minOf(maxBytes, 16 * 1024))
+    // Once the bound is reached only one more byte matters: it separates an exactly-bounded resource, which the
+    // bound must accept, from a larger one, which it must refuse.
+    val beyond = ByteArray(1)
     var size = 0
     var idlePolls = 0
     while (true) {
-        if (size == buffer.size) {
-            if (size >= maxBytes) return null
+        if (size == buffer.size && size < maxBytes) {
             buffer = buffer.copyOf(minOf(maxBytes, size * 2))
         }
-        val read = readAt(size.toLong(), buffer, size, buffer.size - size)
+        val read =
+            if (size >= maxBytes) {
+                readAt(size.toLong(), beyond, 0, 1)
+            } else {
+                readAt(size.toLong(), buffer, size, buffer.size - size)
+            }
         when {
             read == RandomAccessByteSource.END_OF_STREAM -> return buffer.copyOf(size)
             read > 0 -> {
+                if (size >= maxBytes) return null
                 size += read
                 idlePolls = 0
             }

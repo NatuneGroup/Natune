@@ -45,15 +45,23 @@ object HlsAes128 {
         return HlsKeyTag(uri, iv)
     }
 
-    /** Parses `0x` followed by 32 hex digits (case-insensitive) into 16 big-endian bytes. */
+    /**
+     * Parses `0x` followed by 1 to 32 hex digits (case-insensitive) into 16 big-endian bytes. A short literal is the
+     * low bytes of the IV and left-pads with zeros, as the specification's 128-bit big-endian form does.
+     */
     fun parseHexIv(text: String): ByteArray {
-        if (text.length != 2 + HEX_IV_DIGITS || !text.startsWith("0x", ignoreCase = true)) {
-            throw ByteSourceException("HLS IV must be 0x followed by 32 hex digits")
+        if (!text.startsWith("0x", ignoreCase = true)) {
+            throw ByteSourceException("HLS IV must be 0x followed by hex digits")
         }
+        val digits = text.substring(2)
+        if (digits.isEmpty() || digits.length > HEX_IV_DIGITS) {
+            throw ByteSourceException("HLS IV must be 1 to 32 hex digits")
+        }
+        val padded = digits.padStart(HEX_IV_DIGITS, '0')
         val out = ByteArray(IV_BYTES)
         for (i in 0 until IV_BYTES) {
-            val high = hexValue(text[2 + 2 * i])
-            val low = hexValue(text[3 + 2 * i])
+            val high = hexValue(padded[2 * i])
+            val low = hexValue(padded[2 * i + 1])
             out[i] = ((high shl 4) or low).toByte()
         }
         return out

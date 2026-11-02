@@ -12,20 +12,20 @@ import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.bytesource.cookiesForLease
 import moe.rukamori.archivetune.shared.data.bytesource.toByteSourceAccount
-import moe.rukamori.archivetune.shared.data.stream.NativePlaintext
+import moe.rukamori.archivetune.shared.data.stream.AdmittedCiphertextOpener
 import moe.rukamori.archivetune.shared.data.stream.NativePlaintextHandle
 import moe.rukamori.archivetune.shared.data.stream.NativePlaybackRoute
+import moe.rukamori.archivetune.shared.data.stream.NativePreparation
+import moe.rukamori.archivetune.shared.data.stream.NativeRecipePreparation
 import moe.rukamori.archivetune.shared.data.stream.NativeRouteOutcome
 import moe.rukamori.archivetune.shared.data.stream.accountProviderId
-import moe.rukamori.archivetune.shared.data.stream.hls.HlsPlaylistException
-import moe.rukamori.archivetune.shared.data.stream.hls.HlsSegmentException
-import moe.rukamori.archivetune.shared.data.stream.hls.HlsSegmentedSource
 import moe.rukamori.archivetune.shared.data.stream.hls.isHlsPlaylistUrl
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.AccountAdmission
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccount
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.playback.PreparedPlaintextHandle
+import moe.rukamori.archivetune.shared.domain.repository.NativeAudioRecipe
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
@@ -43,9 +43,6 @@ private const val ACCOUNT_NO_LONGER_ADMITTED =
 
 /** The lease account of an anonymous segmented stream, matching the anonymous progressive lease. */
 private const val PLAYBACK_PROVIDER = "playback"
-
-/** The MIME a segmented view reports before its first payload bytes are classified. */
-private const val SEGMENTED_UNKNOWN_MIME = "application/octet-stream"
 
 /**
  * The iOS side of the common native route. [NativePlaybackRoute] makes every decision about scope, admission and
@@ -245,51 +242,37 @@ internal class IosNativeAudioRoute(
                 headers = stream.headers,
                 credentialAnchor = origin,
             )
-        val view =
-            HlsSegmentedSource(
-                lease =
-                    ByteSourceLease(
-                        account = account,
-                        primaryOrigin = origin,
-                        permittedOrigins = setOf(origin),
-                        // The query string carries a per-request signature, so it never becomes part of the cache key.
-                        cacheKey = stream.uri.substringBefore('?'),
-                        expiresAtEpochMs = stream.expiresAtEpochMs,
-                        lengthBytes = null,
+        // The one validated preparation path parses the playlist here, bounds the origins it names, indexes the
+        // first segment and sniffs the container, so every segmented form shares the same checks as the recipes.
+        val host =
+            if (admission == null) transport else AdmittedCiphertextOpener(admission, accounts, transport)
+        val preparation =
+            try {
+                NativeRecipePreparation.prepare(
+                    NativeAudioRecipe.SegmentedHls(
+                        playlistUrl = stream.uri,
+                        playlistText = null,
+                        audioSource = stream.source,
+                        accountScope = scope,
                     ),
-                playlistUrl = stream.uri,
-                playlistText = null,
-                accountScope = scope,
-                opener = transport,
-            )
-        try {
-            view.indexOpeningSegments()
-        } catch (refusal: HlsPlaylistException) {
-            transport.close()
-            return Outcome.Refused(refusal.message ?: "the HLS playlist was rejected")
-        } catch (refusal: HlsSegmentException) {
-            transport.close()
-            return Outcome.Refused(refusal.message ?: "the HLS stream was rejected")
-        } catch (cancelled: CancellationException) {
-            transport.close()
-            throw cancelled
-        } catch (_: Throwable) {
-            transport.close()
-            return Outcome.Failed(PREPARATION_FAILED)
+                    host,
+                    admission,
+                )
+            } catch (cancelled: CancellationException) {
+                transport.close()
+                throw cancelled
+            } catch (_: Throwable) {
+                transport.close()
+                return Outcome.Failed(PREPARATION_FAILED)
+            }
+        return when (preparation) {
+            is NativePreparation.Ready ->
+                Outcome.Ready(NativePlaintextHandle(preparation.plaintext), transport)
+            is NativePreparation.Refused -> {
+                transport.close()
+                Outcome.Refused(preparation.reason)
+            }
         }
-        return Outcome.Ready(
-            NativePlaintextHandle(
-                NativePlaintext(
-                    source = view,
-                    mimeType = view.sniffedMimeType ?: SEGMENTED_UNKNOWN_MIME,
-                    codec = "",
-                    // The total is unknown until every segment is indexed, so the engine must not assume a length.
-                    length = null,
-                    expiresAtEpochMs = stream.expiresAtEpochMs,
-                ),
-            ),
-            transport,
-        )
     }
 }
 

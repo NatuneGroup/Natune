@@ -470,7 +470,9 @@ internal class IosHttpRangeSource(
                             ?: throw ByteSourceException("the redirect target is not an HTTP(S) URL")
                         val decision = LeaseCookiePolicy.redirect(lease, origin, nextOrigin)
                         if (!decision.allowed) throw ByteSourceException("the lease refuses this redirect")
-                        credentialed = decision.carriesCredentials
+                        // Once credentials are stripped they never return: a redirect on an uncredentialed
+                        // origin stays uncredentialed even while the policy lets the hop itself proceed.
+                        credentialed = credentialed && decision.carriesCredentials
                         current = next
                         origin = nextOrigin
                     }
@@ -524,8 +526,12 @@ internal class IosHttpRangeSource(
         request.HTTPMethod = "GET"
         request.setTimeoutInterval((if (probing) PROBE_TIMEOUT_MS else BODY_TIMEOUT_MS).toDouble() / 1000.0)
         request.HTTPShouldHandleCookies = false
-        if (credentialed) {
+        // The transport's headers belong to the credential anchor alone: a credentialed hop on another
+        // origin still sends no headers, so a redirect chain can never carry them off their origin.
+        if (credentialed && origin == lease.primaryOrigin) {
             headers.reveal().forEach { (name, value) -> request.setValue(value, forHTTPHeaderField = name) }
+        }
+        if (credentialed) {
             val cookie = LeaseCookiePolicy.cookiesFor(lease, origin, stored)
                 .joinToString("; ") { "${it.name}=${it.value}" }
             if (cookie.isNotEmpty()) request.setValue(cookie, forHTTPHeaderField = "Cookie")
