@@ -210,6 +210,9 @@ private fun DrawScope.drawEmphasizedWord(
     val duration = (box.endMs - box.startMs).coerceAtLeast(1L)
     val liftMax = LyricsEmphasis.LIFT_DP.dp.toPx()
     val feather = sweepFeather(box)
+    // The vertical reach of a letter's repaint window: just past its own overhang and swell, never
+    // into the ink of the lines above or below.
+    val vPad = shaped.bands.overshootPx + hole.height * LyricsEmphasis.SCALE_BOOST * 0.5f
     for (index in 0 until count) {
         val left = letters[index * 2]
         val right = letters[index * 2 + 1]
@@ -228,7 +231,7 @@ private fun DrawScope.drawEmphasizedWord(
                 cornerRadius = CornerRadius(GLOW_CORNER_DP.dp.toPx()),
             )
         }
-        val window = Rect(left - pad, hole.top - lift - pad, right + pad, hole.bottom + pad)
+        val window = Rect(left - pad, hole.top - lift - vPad, right + pad, hole.bottom + vPad)
         clipPath(Path().apply { addRect(window) }) {
             withTransform({
                 translate(top = -lift)
@@ -360,6 +363,12 @@ private fun shapeEnhancedSyllables(
         widthPx = layout.size.width.toFloat(),
         tops = FloatArray(lineCount) { layout.getLineTop(it) },
         bottoms = FloatArray(lineCount) { layout.getLineBottom(it) },
+        overshootPx =
+            if (style.fontSize.isUnspecified) {
+                0f
+            } else {
+                with(measurer) { style.fontSize.toPx() * LyricsLineBands.OVERSHOOT_EM }
+            },
     )
     val clusters = GraphemeClusterSegmenter.clusterStarts(joined.text)
     val boxes = syllables.mapIndexedNotNull { index, syllable ->

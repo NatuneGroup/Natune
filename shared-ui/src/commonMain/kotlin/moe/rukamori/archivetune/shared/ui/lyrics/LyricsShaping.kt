@@ -63,6 +63,12 @@ internal fun shapeLyricRow(
         widthPx = layout.size.width.toFloat(),
         tops = FloatArray(lineCount) { layout.getLineTop(it) },
         bottoms = FloatArray(lineCount) { layout.getLineBottom(it) },
+        overshootPx =
+            if (key.style.fontSize.isUnspecified) {
+                0f
+            } else {
+                with(measurer) { key.style.fontSize.toPx() * LyricsLineBands.OVERSHOOT_EM }
+            },
     )
     val boxes = row.words.orEmpty()
         .mapNotNull { timing -> timing.range?.let { wordBox(row.text, it, timing, layout) } }
