@@ -127,7 +127,8 @@ private fun DrawScope.drawRefinedLine(
     palette: LyricsPalette,
 ) {
     val layout = shaped.layout
-    val box = boxes.getOrNull(LyricsSweepGeometry.activeIndex(boxes, position))
+    val index = LyricsSweepGeometry.activeIndex(boxes, position)
+    val box = boxes.getOrNull(index)
     val hole = if (box != null && box.letters != null) {
         Rect(box.leftPx, shaped.bands.tops[box.line], box.rightPx, shaped.bands.bottoms[box.line])
     } else {
@@ -142,7 +143,7 @@ private fun DrawScope.drawRefinedLine(
     if (box != null && hole != null) {
         drawEmphasizedWord(
             layout, box, hole, sweepEdge(box, position, rtl, minSweepMs), rtl, position, palette,
-            shaped.bands.overshootPx,
+            shaped.bands.overshootPx, shaped.letterRuns.getOrNull(index),
         )
     }
 }
@@ -211,6 +212,12 @@ private fun DrawScope.drawFeatheredSweep(
  * wave — a small rise and swell that travels through the word — while the sweep's feathered edge fills
  * it. The letters that are not bumping yet still draw inside their own clip, so the word sits where the
  * plain text left it.
+ *
+ * Every slice draws the grapheme's own [TextLayoutResult] — shaped once beside the line in
+ * [LyricsShapedRow.letterRuns] — inside a window that only reaches the grapheme's own overhang and
+ * swell. Isolated ink is what keeps a held word's overlapping windows from repainting neighbouring
+ * glyphs at a different transform: foreign ink simply is not in the run. Slices without runs take the
+ * plain feathered fill inside the hole instead.
  */
 private fun DrawScope.drawEmphasizedWord(
     layout: TextLayoutResult,
@@ -221,45 +228,64 @@ private fun DrawScope.drawEmphasizedWord(
     positionMs: Long,
     palette: LyricsPalette,
     overshootPx: Float,
+    letterRun: List<TextLayoutResult>?,
 ) {
     val letters = box.letters ?: return
     val count = letters.size / 2
     val duration = (box.endMs - box.startMs).coerceAtLeast(1L)
     val liftMax = LyricsEmphasis.LIFT_DP.dp.toPx()
     val feather = sweepFeather(box)
-    // The vertical reach of a letter's repaint window: just past its own overhang and swell, never
-    // into the ink of the lines above or below.
+    // The reach of a letter's repaint window: just past its own overhang and swell, never into the
+    // ink of the lines above or below.
     val vPad = overshootPx + hole.height * LyricsEmphasis.SCALE_BOOST * 0.5f
     val fade = if (rtl) {
         listOf(Color.Transparent, Color.Black)
     } else {
         listOf(Color.Black, Color.Transparent)
     }
+    if (letterRun == null || letterRun.size != count) {
+        clipPath(Path().apply { addRect(hole) }) { drawText(layout, color = palette.dim) }
+        drawIntoCanvas { canvas ->
+            canvas.saveLayer(hole, Paint())
+            clipPath(Path().apply { addRect(hole) }) { drawText(layout, color = palette.bright) }
+            val mask = Brush.horizontalGradient(fade, startX = edge - feather, endX = edge + feather)
+            drawRect(
+                brush = mask,
+                topLeft = Offset(hole.left, hole.top),
+                size = Size(hole.width, hole.height),
+                blendMode = BlendMode.DstIn,
+            )
+            canvas.restore()
+        }
+        return
+    }
     for (index in 0 until count) {
         val left = letters[index * 2]
         val right = letters[index * 2 + 1]
         if (right - left < 0.01f) continue
+        val letter = letterRun[index]
         val bump = LyricsEmphasis.rippleAt(box.startMs, duration, count, index, positionMs)
         val lift = liftMax * bump
         val scale = 1f + LyricsEmphasis.SCALE_BOOST * bump
         val centreX = (left + right) / 2f
         val centreY = (hole.top + hole.bottom) / 2f
-        val pad = (right - left) * 0.5f + liftMax + 4f
         if (bump > 0f) {
             drawRoundRect(
                 color = palette.glow.copy(alpha = palette.glow.alpha * GLOW_ALPHA * bump),
-                topLeft = Offset(left - pad * 0.3f, hole.top - lift - 2f),
-                size = Size(right - left + pad * 0.6f, hole.height + 4f),
+                topLeft = Offset(left - vPad * 0.3f, hole.top - lift - 2f),
+                size = Size(right - left + vPad * 0.6f, hole.height + 4f),
                 cornerRadius = CornerRadius(GLOW_CORNER_DP.dp.toPx()),
             )
         }
-        val window = Rect(left - pad, hole.top - lift - vPad, right + pad, hole.bottom + vPad)
+        val window = Rect(left - vPad, hole.top - lift - vPad, right + vPad, hole.bottom + vPad)
         clipPath(Path().apply { addRect(window) }) {
             withTransform({
                 translate(top = -lift)
                 scale(scale, scale, Offset(centreX, centreY))
             }) {
-                drawText(layout, color = palette.dim)
+                // The letter's own layout sits on its slice's advance position; only its ink exists
+                // inside the window, so nothing neighbouring can be torn along.
+                drawText(letter, color = palette.dim, topLeft = Offset(left, hole.top))
                 // The line's feathered edge mapped into the letter's scaled frame: a canvas x lands
                 // at centreX + (x - centreX) / scale, so the mask tracks the same edge.
                 val edgeLocal = centreX + (edge - centreX) / scale
@@ -272,7 +298,7 @@ private fun DrawScope.drawEmphasizedWord(
                     )
                 drawIntoCanvas { canvas ->
                     canvas.saveLayer(window, Paint())
-                    drawText(layout, color = palette.bright)
+                    drawText(letter, color = palette.bright, topLeft = Offset(left, hole.top))
                     drawRect(
                         brush = mask,
                         topLeft = Offset(window.left, window.top),
