@@ -15,14 +15,25 @@ data class LyricsWordBox(
     val letters: FloatArray? = null,
 )
 
-/** Vertical bands of the laid-out lines plus the layout width, all in pixels. */
+/**
+ * Vertical bands of the laid-out lines plus the layout width, all in pixels. [overshootPx] is how far
+ * glyphs may paint past a band's top or bottom — ascenders, descenders and accents spill over when the
+ * line height falls short of the font's natural metrics — so bright clip regions extend that far past
+ * each band instead of slicing the glyphs that cross it.
+ */
 class LyricsLineBands(
     val widthPx: Float,
     val tops: FloatArray,
     val bottoms: FloatArray,
+    val overshootPx: Float = 0f,
 ) {
     val lineCount: Int
         get() = tops.size
+
+    companion object {
+        /** Clip regions extend this share of the font size past a band, covering glyph overhang. */
+        const val OVERSHOOT_EM = 0.10f
+    }
 }
 
 /** A rectangle of laid-out text that is painted in the bright state. */
@@ -108,12 +119,13 @@ object LyricsSweepGeometry {
         val progress = progressAt(box, positionMs, reduceMotion, minSweepMs)
         val span = box.rightPx - box.leftPx
         val edge = if (rtl) box.rightPx - progress * span else box.leftPx + progress * span
+        val overshoot = bands.overshootPx
         val rects = ArrayList<LyricsClipRect>(box.line + 1)
         for (line in 0 until box.line) {
-            rects += LyricsClipRect(0f, bands.tops[line], bands.widthPx, bands.bottoms[line])
+            rects += LyricsClipRect(0f, bands.tops[line] - overshoot, bands.widthPx, bands.bottoms[line] + overshoot)
         }
-        val top = bands.tops[box.line]
-        val bottom = bands.bottoms[box.line]
+        val top = bands.tops[box.line] - overshoot
+        val bottom = bands.bottoms[box.line] + overshoot
         rects += if (rtl) {
             LyricsClipRect(edge, top, bands.widthPx, bottom)
         } else {

@@ -142,6 +142,7 @@ private fun DrawScope.drawRefinedLine(
     if (box != null && hole != null) {
         drawEmphasizedWord(
             layout, box, hole, sweepEdge(box, position, rtl, minSweepMs), rtl, position, palette,
+            shaped.bands.overshootPx,
         )
     }
 }
@@ -219,12 +220,16 @@ private fun DrawScope.drawEmphasizedWord(
     rtl: Boolean,
     positionMs: Long,
     palette: LyricsPalette,
+    overshootPx: Float,
 ) {
     val letters = box.letters ?: return
     val count = letters.size / 2
     val duration = (box.endMs - box.startMs).coerceAtLeast(1L)
     val liftMax = LyricsEmphasis.LIFT_DP.dp.toPx()
     val feather = sweepFeather(box)
+    // The vertical reach of a letter's repaint window: just past its own overhang and swell, never
+    // into the ink of the lines above or below.
+    val vPad = overshootPx + hole.height * LyricsEmphasis.SCALE_BOOST * 0.5f
     val fade = if (rtl) {
         listOf(Color.Transparent, Color.Black)
     } else {
@@ -248,7 +253,7 @@ private fun DrawScope.drawEmphasizedWord(
                 cornerRadius = CornerRadius(GLOW_CORNER_DP.dp.toPx()),
             )
         }
-        val window = Rect(left - pad, hole.top - lift - pad, right + pad, hole.bottom + pad)
+        val window = Rect(left - pad, hole.top - lift - vPad, right + pad, hole.bottom + vPad)
         clipPath(Path().apply { addRect(window) }) {
             withTransform({
                 translate(top = -lift)
