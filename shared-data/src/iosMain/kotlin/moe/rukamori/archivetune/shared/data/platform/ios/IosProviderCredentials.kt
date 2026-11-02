@@ -67,6 +67,14 @@ object IosProviderCredentials {
     val jioSaavnDesKey: ByteArray?
         get() = iosBuildSetting("ArchiveTuneJioSaavnDesKey").encodeToByteArray().takeIf { it.size == 8 }
 
+    /**
+     * The YouTube device-code sign-in client pair; both values must be present for the code sign-in page to run.
+     * Blank means the page reports itself not configured. The values are never logged or written to settings.
+     */
+    val youTubeOauthClientId: String get() = iosBuildSetting("ArchiveTuneYouTubeOauthClientId")
+
+    val youTubeOauthClientSecret: String get() = iosBuildSetting("ArchiveTuneYouTubeOauthClientSecret")
+
     /** The Cloudflare Turnstile sitekey of the Amazon authorization challenge. Blank means not configured. */
     val amazonTurnstileSitekey: String get() = iosBuildSetting("ArchiveTuneAmazonTurnstileSitekey")
 

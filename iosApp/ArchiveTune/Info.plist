@@ -31,6 +31,8 @@
     <key>ArchiveTuneLyprioHmacKey</key><string>$(ARCHIVETUNE_LYPRIO_HMAC_KEY)</string>
     <key>ArchiveTuneArchivePoolBaseUrl</key><string>$(ARCHIVETUNE_ARCHIVEPOOL_BASE_URL)</string>
     <key>ArchiveTuneSpotifyOauthClientId</key><string>$(ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID)</string>
+    <key>ArchiveTuneYouTubeOauthClientId</key><string>$(ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID)</string>
+    <key>ArchiveTuneYouTubeOauthClientSecret</key><string>$(ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>
