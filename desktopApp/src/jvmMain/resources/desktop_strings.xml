@@ -25,6 +25,10 @@
     <string name="spotify_not_connected">Spotify is not connected</string>
     <string name="spotify_streaming_desktop_note">Desktop streaming requires a separate account, Echo, and a build configured for PlayPlay. The web-player method needs a licensed content-decryption module and is unavailable here. A refused source continues through your normal source order.</string>
     <string name="spotify_track_unavailable">No playable match was found for this Spotify track.</string>
+    <string name="spotify_librespot_browser_hint">Sign in to Spotify in the browser that opened, then return here.</string>
+    <string name="spotify_librespot_listener_busy">The Spotify sign-in listener could not start because port 43821 is in use. Close the other sign-in and try again.</string>
+    <string name="spotify_librespot_auth_done">Spotify sign-in finished. You can close this tab and return to the app.</string>
+    <string name="spotify_librespot_auth_failed">Spotify sign-in was not completed. You can close this tab and return to the app.</string>
     <string name="spotify_item_unavailable">No matching item was found for this Spotify tile.</string>
     <string name="spotify_dj_unsupported">Spotify DJ playlists can only be played in the Spotify app.</string>
     <string name="library_source_ytm">YouTube Music</string>

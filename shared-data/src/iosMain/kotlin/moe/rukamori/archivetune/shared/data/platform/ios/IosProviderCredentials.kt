@@ -38,6 +38,12 @@ object IosProviderCredentials {
         get() = iosTidalClient("ArchiveTuneTidalPkceClientId", "ArchiveTuneTidalPkceClientSecret")
 
     /**
+     * The registered public OAuth client id of the Librespot Spotify streaming sign-in — a PKCE
+     * public client, never a secret. Blank means the flow reports itself not configured.
+     */
+    val spotifyOauthClientId: String get() = iosBuildSetting("ArchiveTuneSpotifyOauthClientId")
+
+    /**
      * The ArchivePool deployment of the Playback Pool, without a trailing slash, or null when the
      * feed is turned off. A blank value takes the same public default the other hosts use;
      * "off" turns the feed off for this launch.

@@ -1,8 +1,11 @@
 package moe.rukamori.archivetune.shared.ui.playerstyles
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -59,6 +62,9 @@ import moe.rukamori.archivetune.shared.ui.resources.m5_queue
 import org.jetbrains.compose.resources.stringResource
 
 private val amText = Color.White
+
+/** The sleeve's resting scale while paused — a subtle settle rather than Apple's full 0.85 shrink. */
+private const val AM_PAUSED_COVER_SCALE = 0.92f
 
 private enum class AmSurface { COVER, QUEUE, LYRICS }
 
@@ -145,7 +151,26 @@ private fun AmPaneHeader(c: PlayerRenderContext, white: Color, onClose: () -> Un
 @Composable
 private fun AmCoverArt(c: PlayerRenderContext, modifier: Modifier) {
     val id = c.state.playback?.occurrenceId
-    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(8.dp)).playerSeekDoubleTap(c)) {
+    // The signature pause cue: the sleeve settles a little smaller while nothing plays and springs
+    // back on resume. Reduced motion lands on the same scale instantly, and the state only
+    // re-animates when the play state actually changes.
+    val playing = c.state.playback?.let { it.playWhenReady && !it.isEnded } == true
+    val coverScale by animateFloatAsState(
+        targetValue = if (playing) 1f else AM_PAUSED_COVER_SCALE,
+        animationSpec = if (c.motionActive) {
+            spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)
+        } else {
+            snap()
+        },
+        label = "amCoverPauseScale",
+    )
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .graphicsLayer { scaleX = coverScale; scaleY = coverScale }
+            .clip(RoundedCornerShape(8.dp))
+            .playerSeekDoubleTap(c),
+    ) {
         c.slots.artwork(id, Modifier.fillMaxSize())
     }
 }

@@ -22,12 +22,13 @@ fun PlaybackSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    deviceMuteSupported: Boolean = true,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
     SettingsPage(playbackSettingsRows(preferences, bitPerfectSupported, bitPerfectSinkActive,
-        usbExclusiveSupported, navigate, arrangeArtworkProviders, managePlaylistTags),
+        usbExclusiveSupported, navigate, arrangeArtworkProviders, managePlaylistTags, deviceMuteSupported),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { if (bitPerfectSinkActive && it.needsBitPerfectSinkRelease()) releaseBitPerfectSink() })
 }
@@ -40,6 +41,8 @@ fun playbackSettingsRows(
     navigate: (String) -> Unit,
     arrangeArtworkProviders: () -> Unit,
     managePlaylistTags: () -> Unit,
+    // Hosts without a pause-on-mute watch hide both rows; a dead toggle would only write the key.
+    deviceMuteSupported: Boolean = true,
 ): List<SettingsRow> = buildList {
     val crossfade = preferences[CrossfadeEnabledKey, false]
     val offload = preferences[AudioOffload, false]
@@ -117,9 +120,11 @@ fun playbackSettingsRows(
     add(SettingsRow.Toggle("float_dsp", Res.string.m6_float_dsp, FloatDspEnabledKey, false,
         enabled = !blocked, description = bypassReason, write = { setAudioProcessingPreference(FloatDspEnabledKey, it) }))
     add(SettingsRow.Toggle("seek_seconds_addup", Res.string.m6_seek_extra, SeekExtraSeconds, false))
-    add(SettingsRow.Toggle("pause_mute", Res.string.m6_pause_mute, PauseOnDeviceMuteKey, false))
-    if (preferences[PauseOnDeviceMuteKey, false])
-        add(SettingsRow.Number("device_mute_recovery_volume", Res.string.m6_mute_recovery, DeviceMutePlaybackRecoveryVolumeKey, 0, 0..100))
+    if (deviceMuteSupported) {
+        add(SettingsRow.Toggle("pause_mute", Res.string.m6_pause_mute, PauseOnDeviceMuteKey, false))
+        if (preferences[PauseOnDeviceMuteKey, false])
+            add(SettingsRow.Number("device_mute_recovery_volume", Res.string.m6_mute_recovery, DeviceMutePlaybackRecoveryVolumeKey, 0, 0..100))
+    }
     add(SettingsRow.Toggle("bluetooth_auto_start", Res.string.m6_bluetooth_start, AutoStartOnBluetoothKey, false))
     add(SettingsRow.Action("archive_tune_canvas", Res.string.m6_canvas_settings, { navigate("settings/canvas") }))
     add(SettingsRow.Toggle("spotify_canvas", Res.string.m6_spotify_canvas, SpotifyCanvasKey, false))

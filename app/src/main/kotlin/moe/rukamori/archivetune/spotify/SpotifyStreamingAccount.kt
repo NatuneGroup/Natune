@@ -16,6 +16,7 @@
 package moe.rukamori.archivetune.spotify
 
 import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.Dispatchers
@@ -38,9 +39,15 @@ import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethodKey
 import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.constants.SpotifyStreamUserIdKey
+import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
+import moe.rukamori.archivetune.shared.domain.source.SpotifyProduct
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamAccountBinding
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
+import moe.rukamori.archivetune.shared.domain.source.streamAccountBinding
 import moe.rukamori.archivetune.spotify.echo.SpotifyDesktopAuth
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
 import moe.rukamori.archivetune.utils.dataStore
+import moe.rukamori.archivetune.utils.get
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -82,6 +89,27 @@ object SpotifyStreamingAccount {
 
     @Volatile
     private var catalogIsStreamingAccount = false
+
+    /**
+     * Whether a streaming session exists for the effective engine — the stored choice degraded for
+     * a non-Premium observation, so a Librespot selection on a free account still finds the
+     * dedicated sp_dc while a premium one only counts the Librespot grant. The source never counts
+     * a session the effective engine cannot use, and an effective Librespot without bindings
+     * resolves as signed-in-but-unavailable: `accessToken` refuses the dedicated token and playback
+     * falls through to the next source. Synchronous like every dataStore.get at the call site.
+     */
+    fun streamingSessionPresent(dataStore: DataStore<Preferences>): Boolean {
+        val stored = SpotifyStreamEngine.fromPreference(dataStore[SpotifyStreamEngineKey])
+        val boundProduct =
+            when (stored.streamAccountBinding()) {
+                SpotifyStreamAccountBinding.DEDICATED -> SpotifyProduct.of(dataStore[SpotifyStreamProductKey])
+                SpotifyStreamAccountBinding.LIBRARY -> SpotifyProduct.of(dataStore[SpotifyProductKey])
+            }
+        return when (SpotifyPremiumPolicy.effectiveEngine(stored, boundProduct)) {
+            SpotifyStreamEngine.UNOFFICIAL -> !dataStore[SpotifyStreamSpDcKey].isNullOrBlank()
+            SpotifyStreamEngine.LIBRESPOT -> !dataStore[SpotifyLibrespotRefreshTokenKey].isNullOrBlank()
+        }
+    }
 
     data class Profile(
         val userId: String,
@@ -143,6 +171,15 @@ object SpotifyStreamingAccount {
     private suspend fun lockedAccessToken(context: Context): String? =
         tokenMutex.withLock {
             val prefs = context.dataStore.data.first()
+            // While the effective engine is Librespot (stored choice plus observed Premium) the
+            // unofficial pipelines get no token at all: they stand down and playback falls through
+            // to the next source until the native librespot session lands.
+            if (
+                SpotifyStreamEngine.fromPreference(prefs[SpotifyStreamEngineKey]) == SpotifyStreamEngine.LIBRESPOT &&
+                SpotifyPremiumPolicy.librespotAllowed(SpotifyProduct.of(prefs[SpotifyProductKey]))
+            ) {
+                return@withLock null
+            }
             val spDc = prefs[SpotifyStreamSpDcKey].orEmpty()
             if (spDc.isBlank()) return@withLock null
             if (collidesWithCatalog(context, spDc)) return@withLock null
@@ -163,6 +200,7 @@ object SpotifyStreamingAccount {
                 it[SpotifyStreamAccessTokenKey] = fresh.accessToken
                 it[SpotifyStreamAccessTokenExpiresAtKey] = fresh.accessTokenExpirationTimestampMs
             }
+            refreshProductIfDue(context, fresh.accessToken)
             currentCoroutineContext().ensureActive()
             fresh.accessToken
         }
@@ -228,6 +266,7 @@ object SpotifyStreamingAccount {
                         if (catalogProfile.userId == profile.userId) throw SignInError.SameAsCatalog()
                     }
 
+                    val product = fetchProduct(token.accessToken)
                     currentCoroutineContext().ensureActive()
                     resetSessions()
                     comparedCatalogSpDc = catalogSpDc.ifBlank { null }
@@ -239,6 +278,10 @@ object SpotifyStreamingAccount {
                         it[SpotifyStreamAccessTokenExpiresAtKey] = token.accessTokenExpirationTimestampMs
                         it[SpotifyStreamUserIdKey] = profile.userId
                         it[SpotifyStreamAccountNameKey] = profile.displayName.orEmpty()
+                        product
+                            ?.let { value -> it[SpotifyStreamProductKey] = value }
+                            ?: it.remove(SpotifyStreamProductKey)
+                        it[SpotifyStreamProductCheckedAtKey] = System.currentTimeMillis()
                     }
                     profile
                 }.onFailure { if (it is CancellationException) throw it }
@@ -246,11 +289,12 @@ object SpotifyStreamingAccount {
         }
 
     /**
-     * The catalog account's token, for the one-off identity comparison at sign-in. A stored token
-     * that is still valid is used as is; otherwise one is minted from the catalog cookie and
-     * thrown away, so the catalog's own session state is never touched from here.
+     * The catalog account's token, for the one-off identity comparisons at sign-in: the dedicated
+     * account's same-account refusal and the Librespot grant's must-be-the-catalog-account rule.
+     * A stored token that is still valid is used as is; otherwise one is minted from the catalog
+     * cookie and thrown away, so the catalog's own session state is never touched from here.
      */
-    private suspend fun catalogToken(context: Context): String? {
+    internal suspend fun catalogToken(context: Context): String? {
         val prefs = context.dataStore.data.first()
         val stored = prefs[SpotifyAccessTokenKey].orEmpty()
         if (stored.isNotBlank() && (prefs[SpotifyAccessTokenExpiresAtKey] ?: 0L) - TOKEN_REFRESH_MARGIN_MS > System.currentTimeMillis()) {
@@ -272,6 +316,8 @@ object SpotifyStreamingAccount {
             it.remove(SpotifyStreamAccessTokenExpiresAtKey)
             it.remove(SpotifyStreamUserIdKey)
             it.remove(SpotifyStreamAccountNameKey)
+            it.remove(SpotifyStreamProductKey)
+            it.remove(SpotifyStreamProductCheckedAtKey)
             it[SpotifyStreamEnabledKey] = false
         }
         Unit
@@ -283,6 +329,53 @@ object SpotifyStreamingAccount {
         SpotifyDesktopAuth.reset()
         SpotifyEchoResolver.clearCache()
     }
+
+    /**
+     * Re-reads the streaming account's plan on the refresh path only: a fresh token just minted is the
+     * moment the product is checked again, and only once the stored observation is stale per
+     * [SpotifyPremiumPolicy.recheckDue]. A failed read keeps the stored product, so an outage cannot
+     * masquerade as a lost subscription.
+     */
+    private suspend fun refreshProductIfDue(
+        context: Context,
+        accessToken: String,
+    ) {
+        val prefs = context.dataStore.data.first()
+        val now = System.currentTimeMillis()
+        if (
+            !SpotifyPremiumPolicy.recheckDue(
+                SpotifyProduct.of(prefs[SpotifyStreamProductKey]),
+                prefs[SpotifyStreamProductCheckedAtKey] ?: 0L,
+                now,
+                tokenJustMinted = true,
+            )
+        ) {
+            return
+        }
+        val product = fetchProduct(accessToken) ?: return
+        context.dataStore.edit {
+            it[SpotifyStreamProductKey] = product
+            it[SpotifyStreamProductCheckedAtKey] = now
+        }
+    }
+
+    /** The account's subscription product as the public REST profile reports it, or null. */
+    private fun fetchProduct(token: String): String? =
+        runCatching {
+            val request =
+                Request
+                    .Builder()
+                    .url(REST_ME_URL)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json")
+                    .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                JSONObject(response.body?.string().orEmpty())
+                    .optString("product")
+                    .takeIf { it.isNotBlank() }
+            }
+        }.getOrNull()
 
     fun fetchProfile(token: String): Profile? = fetchProfileGraphQl(token) ?: fetchProfileRest(token)
 

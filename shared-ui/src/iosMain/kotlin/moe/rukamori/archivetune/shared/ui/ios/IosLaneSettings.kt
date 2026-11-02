@@ -36,7 +36,8 @@ import moe.rukamori.archivetune.shared.domain.settings.JioSaavnEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SaavnAudioQualityKey
 import moe.rukamori.archivetune.shared.domain.settings.amazonInstanceList
-import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamingSignedIn
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamEngineEffective
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamSessionPresent
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.ui.IosHost
@@ -65,6 +66,7 @@ import moe.rukamori.archivetune.shared.ui.settings.SettingsRow
 import moe.rukamori.archivetune.shared.ui.settings.SourcePoolRefreshOutcome
 import moe.rukamori.archivetune.shared.ui.settings.SourceSettings
 import moe.rukamori.archivetune.shared.ui.settings.TelegramLoginRoute
+import moe.rukamori.archivetune.shared.ui.settings.YouTubeHiddenPlaylistsRoute
 import moe.rukamori.archivetune.shared.ui.settings.aodSettingsRows
 import org.jetbrains.compose.resources.stringResource
 import platform.Foundation.ISOCountryCodes
@@ -76,8 +78,8 @@ import platform.Foundation.localizedStringForLanguageCode
 
 /**
  * The settings routes this lane mounts on top of [IOS_GENERAL_SETTINGS_ROUTES]. Pages whose owner does not exist on
- * this host (backup, hidden playlists, song export, the palette picker and the icon picker,
- * Android Auto) mount an honest unavailable page instead of the unbound boundary.
+ * this host (the palette picker, the icon picker and Android Auto) mount an honest unavailable page instead of the
+ * unbound boundary.
  */
 internal val IOS_LANE_SETTINGS_ROUTES = setOf(
     "settings/hidden_playlists", "settings/po_token",
@@ -92,9 +94,7 @@ internal val IOS_LANE_SETTINGS_ROUTES = setOf(
 
 /** Routes that mount the unavailable page: their owners do not exist on this host. */
 private val IOS_LANE_UNAVAILABLE_ROUTES = setOf(
-    "settings/hidden_playlists", "settings/backup_restore",
-    "settings/storage/export_songs", "settings/appearance/palette_picker", "settings/appearance/icon",
-    "settings/android_auto",
+    "settings/appearance/palette_picker", "settings/appearance/icon", "settings/android_auto",
 )
 
 /** One mounted lane page; the host, notices and the unavailable snackbar come from [IosSettingsScreen]. */
@@ -113,6 +113,10 @@ internal fun IosLaneSettingsPage(
 ) {
     when (path) {
         in IOS_LANE_UNAVAILABLE_ROUTES -> IosLaneUnavailablePage()
+        "settings/hidden_playlists" -> IosHiddenPlaylistsPage(owners.graph, onNotice, onFailure)
+        "settings/backup_restore" ->
+            IosBackupRestorePage(host, owners.graph, owners.controller, onNotice, onFailure, scrollTo)
+        "settings/storage/export_songs" -> IosExportSongsPage(host, owners.graph, onNotice, onFailure)
         "settings/appearance/navigation_bar" ->
             NavigationBarSettingsPage(
                 owners.controller, IosOpticalCapabilities.blur, IosOpticalCapabilities.refraction, onFailure, scrollTo,
@@ -151,6 +155,7 @@ internal fun IosLaneSettingsPage(
         "customize_background", "settings/customize_background" ->
             IosCustomBackgroundPage(host, owners.graph, owners.controller, onFailure)
         IosLastFmDashboardRoute -> IosLastFmDashboardPage(owners.graph, navigation, unavailable)
+        YouTubeHiddenPlaylistsRoute -> IosHiddenPlaylistsPage(owners.graph, onNotice, onFailure)
         else -> IosLaneServiceSettingsPage(path, host, owners, channel, navigate, onNotice, onFailure, unavailable, scrollTo)
     }
 }
@@ -321,7 +326,8 @@ private fun IosLaneSourceSettingsPage(
     }
     SourceSettings(
         controller = owners.controller,
-        spotifyStreamingReady = preferences.spotifyStreamingSignedIn(),
+        spotifyStreamingReady =
+            preferences.spotifyStreamSessionPresent(preferences.spotifyStreamEngineEffective()),
         // This host has no Spotify streaming transport, so the row reads as not available here.
         spotifyStreamingPlatformSupported = false,
         poolConfigured = owners.poolConfigured,

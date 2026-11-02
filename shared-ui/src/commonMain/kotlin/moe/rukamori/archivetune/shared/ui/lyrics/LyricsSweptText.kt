@@ -34,7 +34,18 @@ internal data class LyricsPalette(
     val dim: Color,
     val bright: Color,
     val glow: Color,
-)
+) {
+    /**
+     * A line already sung reads between dim and bright — the active colour at [PASSED_ALPHA] — so
+     * it stays distinct from the lines still ahead instead of falling back to the idle colour.
+     */
+    val passed: Color
+        get() = bright.copy(alpha = PASSED_ALPHA)
+
+    companion object {
+        const val PASSED_ALPHA = 0.7f
+    }
+}
 
 /**
  * One row drawn with a word sweep. The text is shaped once per width and style through [shapes]. The frame loop
@@ -52,6 +63,8 @@ internal fun SweptLyricLine(
     minSweepMs: Long,
     reduceMotion: Boolean,
     refined: Boolean = false,
+    /** A synced row the playhead already left draws in [LyricsPalette.passed], not the idle dim. */
+    passed: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier) {
@@ -66,7 +79,7 @@ internal fun SweptLyricLine(
                 // The sweep is drawn on canvas, so the source text is exposed to semantics here.
                 .semantics { text = AnnotatedString(row.text) }
                 .drawBehind {
-                    drawSweptLine(shaped, row, active, clock, palette, minSweepMs, reduceMotion, refined)
+                    drawSweptLine(shaped, row, active, clock, palette, minSweepMs, reduceMotion, refined, passed)
                 },
         )
     }
@@ -86,10 +99,11 @@ private fun DrawScope.drawSweptLine(
     minSweepMs: Long,
     reduceMotion: Boolean,
     refined: Boolean,
+    passed: Boolean = false,
 ) {
     val layout = shaped.layout
     if (!active) {
-        drawText(layout, color = palette.dim)
+        drawText(layout, color = if (passed) palette.passed else palette.dim)
         return
     }
     val boxes = shaped.boxes

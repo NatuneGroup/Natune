@@ -23,8 +23,10 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamResolveMetho
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamUserIdKey
 import moe.rukamori.archivetune.shared.domain.settings.StringPreferenceKey
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamEngineEffective
 import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamResolveMethod
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
 
 private val CatalogAcceptedId = StringPreferenceKey("account.spotify.SPOTIFY_CATALOG.id")
@@ -32,6 +34,9 @@ private val CatalogAcceptedId = StringPreferenceKey("account.spotify.SPOTIFY_CAT
 /** This is an account gate, not a promise that the selected desktop DRM method is available. */
 internal fun desktopSpotifyStreamingReady(preferences: PreferenceSnapshot?): Boolean {
     val prefs = preferences ?: return false
+    // While the effective engine is Librespot the unofficial pipelines get no credentials at all:
+    // the source reports unavailable and playback falls through until the native bindings land.
+    if (prefs.spotifyStreamEngineEffective() != SpotifyStreamEngine.UNOFFICIAL) return false
     val cookie = prefs[SpotifyStreamSpDcKey].orEmpty()
     val user = prefs[SpotifyStreamUserIdKey].orEmpty()
     if (cookie.isBlank() || user.isBlank()) return false

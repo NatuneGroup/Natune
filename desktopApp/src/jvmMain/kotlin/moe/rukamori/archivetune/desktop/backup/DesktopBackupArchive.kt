@@ -18,24 +18,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.shared.data.backup.AndroidBackupArchive
 import moe.rukamori.archivetune.shared.data.backup.JvmBackupArchiveCodec
+import moe.rukamori.archivetune.shared.data.backup.PortableBackupFormat
+import moe.rukamori.archivetune.shared.data.backup.backupCategoriesOf
+import moe.rukamori.archivetune.shared.data.backup.mergedRestoredSettings
+import moe.rukamori.archivetune.shared.data.backup.settingsSubset
 import moe.rukamori.archivetune.shared.data.persistence.AndroidSongDbExport
 import moe.rukamori.archivetune.shared.data.persistence.BackupCategory
 import moe.rukamori.archivetune.shared.data.persistence.BackupPreferencePolicy
-import moe.rukamori.archivetune.shared.data.persistence.PORTABLE_STATE_SCHEMA_VERSION
 import moe.rukamori.archivetune.shared.data.persistence.inspectPortableStateFile
 import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveException
 import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveGateway
@@ -44,22 +35,13 @@ import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveProblem
 import moe.rukamori.archivetune.shared.domain.backup.BackupDataCategory
 import moe.rukamori.archivetune.shared.domain.backup.BackupRestoreOutcome
 import moe.rukamori.archivetune.shared.domain.backup.DriveAppDataLimits
-import moe.rukamori.archivetune.shared.domain.settings.BooleanPreferenceKey
-import moe.rukamori.archivetune.shared.domain.settings.DoublePreferenceKey
-import moe.rukamori.archivetune.shared.domain.settings.FloatPreferenceKey
-import moe.rukamori.archivetune.shared.domain.settings.IntPreferenceKey
-import moe.rukamori.archivetune.shared.domain.settings.LongPreferenceKey
-import moe.rukamori.archivetune.shared.domain.settings.PreferenceKey
-import moe.rukamori.archivetune.shared.domain.settings.PreferenceKind
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
-import moe.rukamori.archivetune.shared.domain.settings.StringPreferenceKey
-import moe.rukamori.archivetune.shared.domain.settings.StringSetPreferenceKey
-import moe.rukamori.archivetune.shared.domain.settings.normalizeRestoredSettings
 import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 
 /**
- * The desktop backup archive. Android archives carry the schema-36 `song.db`; the desktop keeps its library in the
- * portable state database, so it writes its own ZIP:
+ * The desktop backup archive is the shared [PortableBackupFormat] the portable hosts exchange. Android archives
+ * carry the schema-36 `song.db`; the portable hosts keep their library in the portable state database, so they write
+ * their own ZIP:
  *
  * - `backup.json`: the manifest (format name and version, platform, portable schema version, creation time).
  * - `portable-state.db`: a VACUUM INTO copy of the library, queue and history, present with LIBRARY.
@@ -69,143 +51,11 @@ import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
  * restore. Vault references never enter the archive: account values are exported by their logical names and go back
  * through the vault on restore.
  */
-internal object DesktopBackupFormat {
-    const val FORMAT = "natune.desktop.backup"
-    const val FORMAT_VERSION = 1
-    const val PLATFORM = "DESKTOP"
-    const val MANIFEST = "backup.json"
-    const val DATABASE = "portable-state.db"
-    const val SETTINGS = "settings.json"
-
-    const val MAX_MANIFEST_BYTES = 64L * 1024
-    const val MAX_SETTINGS_BYTES = 10L * 1024 * 1024
-    const val MAX_DATABASE_BYTES = 512L * 1024 * 1024
-    const val MAX_TOTAL_BYTES = 600L * 1024 * 1024
-    const val MAX_ENTRIES = 16
-    const val MAX_PREFERENCES = 10_000
-
-    private val json = Json { ignoreUnknownKeys = true }
-
-    fun manifest(createdAtMillis: Long): ByteArray = buildJsonObject {
-        put("format", FORMAT)
-        put("formatVersion", FORMAT_VERSION)
-        put("platform", PLATFORM)
-        put("databaseVersion", PORTABLE_STATE_SCHEMA_VERSION)
-        put("createdAtMillis", createdAtMillis)
-    }.toString().encodeToByteArray()
-
-    /** Checks the manifest. A file from another app or platform is not a backup; a damaged or newer one is corrupted. */
-    fun checkManifest(bytes: ByteArray) {
-        val manifest = try {
-            json.parseToJsonElement(bytes.decodeToString(throwOnInvalidSequence = true)) as? JsonObject
-        } catch (_: Exception) {
-            null
-        } ?: throw BackupArchiveException(BackupArchiveProblem.CORRUPTED)
-        if (manifest.string("format") != FORMAT || manifest.string("platform") != PLATFORM) {
-            throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP)
-        }
-        val version = (manifest["formatVersion"] as? JsonPrimitive)?.intOrNull
-        val database = (manifest["databaseVersion"] as? JsonPrimitive)?.intOrNull
-        if (version == null || version !in 1..FORMAT_VERSION || database == null || database !in 1..PORTABLE_STATE_SCHEMA_VERSION) {
-            throw BackupArchiveException(BackupArchiveProblem.CORRUPTED)
-        }
-    }
-
-    fun encodeSettings(snapshot: PreferenceSnapshot): ByteArray = buildJsonObject {
-        put("formatVersion", FORMAT_VERSION)
-        put("entries", buildJsonArray {
-            snapshot.keys.sortedWith(compareBy({ it.name }, { it.kind.name })).forEach { key ->
-                add(buildJsonObject {
-                    put("name", key.name)
-                    put("kind", key.kind.name)
-                    put("value", valueOf(snapshot, key))
-                })
-            }
-        })
-    }.toString().encodeToByteArray()
-
-    /** Decodes typed preferences. Any unknown kind, mismatched value or duplicate key makes the whole file corrupted. */
-    fun decodeSettings(bytes: ByteArray): PreferenceSnapshot {
-        try {
-            val root = json.parseToJsonElement(bytes.decodeToString(throwOnInvalidSequence = true)) as JsonObject
-            val entries = root["entries"] as JsonArray
-            require(entries.size <= MAX_PREFERENCES)
-            val editor = PreferenceSnapshot.EMPTY.toEditor()
-            val seen = HashSet<PreferenceKey<*>>()
-            entries.forEach { element ->
-                val entry = element as JsonObject
-                val name = requireNotNull(entry.string("name")).also { require(it.isNotEmpty() && it.length <= 1024) }
-                val kind = PreferenceKind.valueOf(requireNotNull(entry.string("kind")))
-                val value = requireNotNull(entry["value"])
-                val key: PreferenceKey<*> = when (kind) {
-                    PreferenceKind.BOOLEAN -> BooleanPreferenceKey(name)
-                    PreferenceKind.STRING -> StringPreferenceKey(name)
-                    PreferenceKind.FLOAT -> FloatPreferenceKey(name)
-                    PreferenceKind.INT -> IntPreferenceKey(name)
-                    PreferenceKind.LONG -> LongPreferenceKey(name)
-                    PreferenceKind.DOUBLE -> DoublePreferenceKey(name)
-                    PreferenceKind.STRING_SET -> StringSetPreferenceKey(name)
-                }
-                require(seen.add(key)) { "Duplicate preference" }
-                @Suppress("UNCHECKED_CAST")
-                editor[key as PreferenceKey<Any>] = parseValue(kind, value)
-            }
-            return editor.snapshot()
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            throw BackupArchiveException(BackupArchiveProblem.CORRUPTED)
-        }
-    }
-
-    private fun valueOf(snapshot: PreferenceSnapshot, key: PreferenceKey<*>): JsonElement = when (key) {
-        is BooleanPreferenceKey -> JsonPrimitive(snapshot[key])
-        is StringPreferenceKey -> JsonPrimitive(snapshot[key])
-        is IntPreferenceKey -> JsonPrimitive(snapshot[key])
-        is LongPreferenceKey -> JsonPrimitive(snapshot[key])
-        // Raw bits keep NaN, infinities and the exact value, which a decimal text would not.
-        is FloatPreferenceKey -> JsonPrimitive(snapshot[key]!!.toRawBits())
-        is DoublePreferenceKey -> JsonPrimitive(snapshot[key]!!.toRawBits())
-        is StringSetPreferenceKey -> JsonArray(snapshot[key].orEmpty().sorted().map { JsonPrimitive(it) })
-    }
-
-    private fun parseValue(kind: PreferenceKind, value: JsonElement): Any {
-        if (kind == PreferenceKind.STRING_SET) {
-            val items = (value as JsonArray).map { item ->
-                val primitive = item as JsonPrimitive
-                require(primitive.isString)
-                primitive.content
-            }
-            require(items.size <= MAX_PREFERENCES)
-            return items.toSet()
-        }
-        val primitive = value as JsonPrimitive
-        return when (kind) {
-            PreferenceKind.BOOLEAN -> requireNotNull(primitive.booleanOrNull).also { require(!primitive.isString) }
-            PreferenceKind.STRING -> primitive.content.also { require(primitive.isString) }
-            PreferenceKind.INT -> requireNotNull(primitive.intOrNull).also { require(!primitive.isString) }
-            PreferenceKind.LONG -> requireNotNull(primitive.longOrNull).also { require(!primitive.isString) }
-            PreferenceKind.FLOAT -> Float.fromBits(requireNotNull(primitive.intOrNull).also { require(!primitive.isString) })
-            PreferenceKind.DOUBLE -> Double.fromBits(requireNotNull(primitive.longOrNull).also { require(!primitive.isString) })
-            PreferenceKind.STRING_SET -> error("handled above")
-        }
-    }
-
-    private fun JsonObject.string(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
-}
 
 /** What one archive holds after its entries were checked. The database, when present, sits at [database]. */
 internal class ParsedDesktopArchive(val database: Path?, val settings: PreferenceSnapshot?) {
     /** The sections this archive can restore: LIBRARY with a database, ACCOUNT and SETTINGS by their preference names. */
-    val categories: Set<BackupDataCategory> = buildSet {
-        if (database != null) add(BackupDataCategory.LIBRARY)
-        settings?.keys?.forEach { key ->
-            when {
-                BackupPreferencePolicy.includes(key.name, setOf(BackupCategory.ACCOUNT)) -> add(BackupDataCategory.ACCOUNT)
-                BackupPreferencePolicy.includes(key.name, setOf(BackupCategory.SETTINGS)) -> add(BackupDataCategory.SETTINGS)
-            }
-        }
-    }
+    val categories: Set<BackupDataCategory> = backupCategoriesOf(database != null, settings)
 }
 
 /**
@@ -224,21 +74,21 @@ internal class DesktopBackupArchiveGateway(
         require(selected.isNotEmpty())
         return withScratch { scratch ->
             val database = if (BackupDataCategory.LIBRARY in selected) {
-                scratch.resolve(DesktopBackupFormat.DATABASE).also { snapshotDatabase(it) }
+                scratch.resolve(PortableBackupFormat.DATABASE).also { snapshotDatabase(it) }
             } else {
                 null
             }
             val preferences = settingsSubset(settings.snapshot(), selected)
             withContext(Dispatchers.IO) {
-                if (database != null && Files.size(database) > DesktopBackupFormat.MAX_DATABASE_BYTES) throw tooLarge()
+                if (database != null && Files.size(database) > PortableBackupFormat.MAX_DATABASE_BYTES) throw tooLarge()
                 val output = BoundedByteOutput(DriveAppDataLimits.MAX_ARCHIVE_BYTES.toLong())
                 ZipOutputStream(output).use { zip ->
-                    zip.entry(DesktopBackupFormat.MANIFEST) { it.write(DesktopBackupFormat.manifest(nowMillis())) }
-                    if (database != null) zip.entry(DesktopBackupFormat.DATABASE) { Files.copy(database, it) }
+                    zip.entry(PortableBackupFormat.MANIFEST) { it.write(PortableBackupFormat.manifest(PortableBackupFormat.PLATFORM_DESKTOP, nowMillis())) }
+                    if (database != null) zip.entry(PortableBackupFormat.DATABASE) { Files.copy(database, it) }
                     if (preferences != null) {
-                        val bytes = DesktopBackupFormat.encodeSettings(preferences)
-                        if (bytes.size > DesktopBackupFormat.MAX_SETTINGS_BYTES) throw tooLarge()
-                        zip.entry(DesktopBackupFormat.SETTINGS) { it.write(bytes) }
+                        val bytes = PortableBackupFormat.encodeSettings(preferences)
+                        if (bytes.size > PortableBackupFormat.MAX_SETTINGS_BYTES) throw tooLarge()
+                        zip.entry(PortableBackupFormat.SETTINGS) { it.write(bytes) }
                     }
                 }
                 output.toByteArray()
@@ -254,7 +104,7 @@ internal class DesktopBackupArchiveGateway(
         require(selected.isNotEmpty())
         return withScratch { scratch ->
             val libraryFiles = if (BackupDataCategory.LIBRARY in selected) {
-                val snapshot = scratch.resolve(DesktopBackupFormat.DATABASE).also { snapshotDatabase(it) }
+                val snapshot = scratch.resolve(PortableBackupFormat.DATABASE).also { snapshotDatabase(it) }
                 val songDb = scratch.resolve(ANDROID_SONG_DB)
                 AndroidSongDbExport.export(snapshot, songDb, nowMillis())
                 mapOf(ANDROID_SONG_DB to withContext(Dispatchers.IO) { Files.readAllBytes(songDb) })
@@ -308,7 +158,7 @@ internal class DesktopBackupArchiveGateway(
         } catch (_: ZipException) {
             throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP)
         }
-        if (DesktopBackupFormat.MANIFEST !in names) {
+        if (PortableBackupFormat.MANIFEST !in names) {
             // An Android archive carries song.db and settings.xml instead of the desktop manifest; it restores
             // through the retained codec and the schema-36 importer.
             return@withContext parseAndroid(archive, names, scratch)
@@ -323,29 +173,29 @@ internal class DesktopBackupArchiveGateway(
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     entries += 1
-                    if (entries > DesktopBackupFormat.MAX_ENTRIES || entry.isDirectory) throw corrupted()
+                    if (entries > PortableBackupFormat.MAX_ENTRIES || entry.isDirectory) throw corrupted()
                     val limit = when (entry.name) {
-                        DesktopBackupFormat.MANIFEST -> DesktopBackupFormat.MAX_MANIFEST_BYTES
-                        DesktopBackupFormat.SETTINGS -> DesktopBackupFormat.MAX_SETTINGS_BYTES
-                        DesktopBackupFormat.DATABASE -> DesktopBackupFormat.MAX_DATABASE_BYTES
+                        PortableBackupFormat.MANIFEST -> PortableBackupFormat.MAX_MANIFEST_BYTES
+                        PortableBackupFormat.SETTINGS -> PortableBackupFormat.MAX_SETTINGS_BYTES
+                        PortableBackupFormat.DATABASE -> PortableBackupFormat.MAX_DATABASE_BYTES
                         // An Android archive (song.db, settings.xml) or any other name is not a desktop backup.
                         else -> throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP)
                     }
-                    val remaining = DesktopBackupFormat.MAX_TOTAL_BYTES - total
+                    val remaining = PortableBackupFormat.MAX_TOTAL_BYTES - total
                     when (entry.name) {
-                        DesktopBackupFormat.MANIFEST -> {
+                        PortableBackupFormat.MANIFEST -> {
                             if (manifest != null) throw corrupted()
                             manifest = zip.readBounded(minOf(limit, remaining))
                             total += manifest!!.size
                         }
-                        DesktopBackupFormat.SETTINGS -> {
+                        PortableBackupFormat.SETTINGS -> {
                             if (settings != null) throw corrupted()
                             settings = zip.readBounded(minOf(limit, remaining))
                             total += settings!!.size
                         }
-                        DesktopBackupFormat.DATABASE -> {
+                        PortableBackupFormat.DATABASE -> {
                             if (database != null) throw corrupted()
-                            val target = scratch.resolve(DesktopBackupFormat.DATABASE)
+                            val target = scratch.resolve(PortableBackupFormat.DATABASE)
                             total += Files.newOutputStream(target).use { zip.copyBounded(it, minOf(limit, remaining)) }
                             database = target
                         }
@@ -357,7 +207,7 @@ internal class DesktopBackupArchiveGateway(
         } catch (_: ZipException) {
             throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP)
         }
-        DesktopBackupFormat.checkManifest(manifest ?: throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP))
+        PortableBackupFormat.checkManifest(manifest ?: throw BackupArchiveException(BackupArchiveProblem.NOT_A_BACKUP))
         database?.let { file ->
             try {
                 inspectPortableStateFile(file)
@@ -365,7 +215,7 @@ internal class DesktopBackupArchiveGateway(
                 throw corrupted()
             }
         }
-        val preferences = settings?.let(DesktopBackupFormat::decodeSettings)?.let { decoded ->
+        val preferences = settings?.let(PortableBackupFormat::decodeSettings)?.let { decoded ->
             // A key the policy never exports is refused at import too, so a crafted file cannot set vault metadata.
             if (decoded.keys.any { !BackupPreferencePolicy.includes(it.name, BackupCategory.entries.toSet()) }) throw corrupted()
             decoded
@@ -458,23 +308,6 @@ internal class DesktopBackupArchiveGateway(
     }
 }
 
-/** The preferences of [snapshot] that the ACCOUNT and SETTINGS choices in [selected] export, or null for neither. */
-internal fun settingsSubset(snapshot: PreferenceSnapshot, selected: Set<BackupDataCategory>): PreferenceSnapshot? {
-    val categories = selected.mapNotNull { category ->
-        when (category) {
-            BackupDataCategory.ACCOUNT -> BackupCategory.ACCOUNT
-            BackupDataCategory.SETTINGS -> BackupCategory.SETTINGS
-            BackupDataCategory.LIBRARY -> null
-        }
-    }.toSet()
-    if (categories.isEmpty()) return null
-    val editor = snapshot.toEditor()
-    snapshot.keys.filterNot { BackupPreferencePolicy.includes(it.name, categories) }.forEach { key ->
-        @Suppress("UNCHECKED_CAST")
-        editor[key as PreferenceKey<Any>] = null
-    }
-    return editor.snapshot()
-}
 
 /**
  * A restore staged by [DesktopBackupArchiveGateway.restore], applied by the next process before its owners open the
@@ -497,7 +330,7 @@ internal class DesktopPendingRestore private constructor(
      * is opened. A failure part-way leaves what was moved aside for [rollbackDatabase].
      */
     fun swapDatabase(instanceDirectory: Path, databaseFile: String) {
-        val staged = directory.resolve(DesktopBackupFormat.DATABASE)
+        val staged = directory.resolve(PortableBackupFormat.DATABASE)
         if (BackupDataCategory.LIBRARY !in categories || !Files.exists(staged, LinkOption.NOFOLLOW_LINKS)) return
         val previous = Files.createDirectories(directory.resolve(PREVIOUS_DIRECTORY))
         DATABASE_SUFFIXES.forEach { suffix ->
@@ -533,9 +366,9 @@ internal class DesktopPendingRestore private constructor(
      * does not own (device-only keys, vault metadata and the sections that were not chosen).
      */
     suspend fun applySettings(settings: VaultSettingsStore) {
-        val file = directory.resolve(DesktopBackupFormat.SETTINGS)
+        val file = directory.resolve(PortableBackupFormat.SETTINGS)
         if (!withContext(Dispatchers.IO) { Files.exists(file, LinkOption.NOFOLLOW_LINKS) }) return
-        val restored = DesktopBackupFormat.decodeSettings(withContext(Dispatchers.IO) { Files.readAllBytes(file) })
+        val restored = PortableBackupFormat.decodeSettings(withContext(Dispatchers.IO) { Files.readAllBytes(file) })
         val owned = categories.mapNotNull { category ->
             when (category) {
                 BackupDataCategory.ACCOUNT -> BackupCategory.ACCOUNT
@@ -544,18 +377,7 @@ internal class DesktopPendingRestore private constructor(
             }
         }.toSet()
         if (owned.isEmpty()) return
-        val current = settings.snapshot()
-        val editor = current.toEditor()
-        current.keys.filter { BackupPreferencePolicy.includes(it.name, owned) }.forEach { key ->
-            @Suppress("UNCHECKED_CAST")
-            editor[key as PreferenceKey<Any>] = null
-        }
-        restored.keys.filter { BackupPreferencePolicy.includes(it.name, owned) }.forEach { key ->
-            @Suppress("UNCHECKED_CAST")
-            editor[key as PreferenceKey<Any>] = restored[key as PreferenceKey<Any>]
-        }
-        editor.normalizeRestoredSettings(restored.keys.filter { BackupPreferencePolicy.includes(it.name, owned) }.map { it.name }.toSet())
-        settings.replaceAll(editor.snapshot())
+        settings.replaceAll(mergedRestoredSettings(settings.snapshot(), restored, owned))
     }
 
     /** Removes the staged restore and the database it replaced. */
@@ -580,9 +402,11 @@ internal class DesktopPendingRestore private constructor(
             val marker = directory.resolve(MARKER)
             if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) return null
             val categories = try {
-                val root = Json.parseToJsonElement(Files.readString(marker)) as JsonObject
-                (root["categories"] as JsonArray).map { BackupDataCategory.valueOf((it as JsonPrimitive).content) }.toSet()
+                PortableBackupFormat.decodePendingMarker(Files.readAllBytes(marker))
             } catch (_: Exception) {
+                null
+            }
+            if (categories == null) {
                 deleteTree(directory)
                 return null
             }
@@ -599,12 +423,9 @@ internal class DesktopPendingRestore private constructor(
             val staging = instanceDirectory.resolve("$PENDING_DIRECTORY.${UUID.randomUUID()}")
             try {
                 Files.createDirectory(staging)
-                database?.let { Files.move(it, staging.resolve(DesktopBackupFormat.DATABASE)) }
-                settings?.let { Files.write(staging.resolve(DesktopBackupFormat.SETTINGS), DesktopBackupFormat.encodeSettings(it)) }
-                val marker = buildJsonObject {
-                    put("categories", JsonArray(categories.map { JsonPrimitive(it.name) }))
-                }
-                Files.writeString(staging.resolve(MARKER), marker.toString())
+                database?.let { Files.move(it, staging.resolve(PortableBackupFormat.DATABASE)) }
+                settings?.let { Files.write(staging.resolve(PortableBackupFormat.SETTINGS), PortableBackupFormat.encodeSettings(it)) }
+                Files.write(staging.resolve(MARKER), PortableBackupFormat.encodePendingMarker(categories))
                 deleteTree(target)
                 Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE)
             } catch (failure: IOException) {

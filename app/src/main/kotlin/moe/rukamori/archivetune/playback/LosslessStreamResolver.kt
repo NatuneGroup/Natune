@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.tidal.TidalAccountManager
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolAccountRecovery
 import moe.rukamori.archivetune.utils.dataStore
 import timber.log.Timber
 import java.io.File
@@ -204,25 +205,17 @@ object LosslessStreamResolver {
                                 async(Dispatchers.IO) {
                                     val poolCountry =
                                         poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
-                                    runCatching {
+                                    PoolAccountRecovery.resolvePooledTidal(context, poolAccount, poolCountry) { token, country ->
                                         TidalAccountManager.resolveDirectStream(
-                                            accessToken = poolAccount.token,
+                                            accessToken = token,
                                             title = title,
                                             artists = artists,
                                             durationMs = durationMs,
                                             audioQuality = apiQuality,
                                             cacheDir = cacheDir,
-                                            countryCode = poolCountry,
+                                            countryCode = country,
                                         )
-                                    }.onFailure {
-                                        if (TidalAccountManager.isUnauthorized(it)) {
-                                            PoolAccountManager.report("tidal", "account", poolAccount.id, "dead")
-                                        } else {
-                                            Timber.tag("LosslessResolver").w(
-                                                it, "Tidal pool account resolve failed for %s", mediaId,
-                                            )
-                                        }
-                                    }.getOrNull()
+                                    }
                                 }
                             }
                             // First non-null wins; cancel the rest.

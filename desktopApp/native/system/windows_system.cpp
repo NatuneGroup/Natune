@@ -407,7 +407,7 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
             s->controls.IsEnabled(true); s->controls.IsPlayEnabled(true); s->controls.IsPauseEnabled(true);
             s->controls.IsStopEnabled(true);
             auto state = s->state;
-            s->buttons = s->controls.ButtonPressed([state](auto const&, auto const& event) {
+            s->buttons = s->controls.ButtonPressed([state](SystemMediaTransportControls const&, SystemMediaTransportControlsButtonPressedEventArgs const& event) {
                 if (state->closing) return;
                 switch (event.Button()) {
                     case SystemMediaTransportControlsButton::Play: state->callbacks.emit("play"); break;
@@ -418,18 +418,18 @@ Java_moe_rukamori_archivetune_desktop_integration_NativeDesktopBridge_create(
                     default: break;
                 }
             });
-            s->seek = s->controls.PlaybackPositionChangeRequested([state](auto const&, auto const& event) {
+            s->seek = s->controls.PlaybackPositionChangeRequested([state](SystemMediaTransportControls const&, PlaybackPositionChangeRequestedEventArgs const& event) {
                 if (state->closing) return;
                 MediaUpdate value; { std::lock_guard<std::mutex> guard(state->mutex); value = state->update; }
                 if (value.seek) state->callbacks.emit("seek", value.track, event.RequestedPlaybackPosition().count() / 10);
             });
-            s->rate = s->controls.PlaybackRateChangeRequested([state](auto const&, auto const& event) {
+            s->rate = s->controls.PlaybackRateChangeRequested([state](SystemMediaTransportControls const&, PlaybackRateChangeRequestedEventArgs const& event) {
                 if (!state->closing) state->callbacks.emit("speed", "", 0, event.RequestedPlaybackRate());
             });
-            s->shuffle = s->controls.ShuffleEnabledChangeRequested([state](auto const&, auto const& event) {
-                if (!state->closing) state->callbacks.emit("shuffle", "", event.RequestedShuffle() ? 1 : 0);
+            s->shuffle = s->controls.ShuffleEnabledChangeRequested([state](SystemMediaTransportControls const&, ShuffleEnabledChangeRequestedEventArgs const& event) {
+                if (!state->closing) state->callbacks.emit("shuffle", "", event.RequestedShuffleEnabled() ? 1 : 0);
             });
-            s->repeat = s->controls.AutoRepeatModeChangeRequested([state](auto const&, auto const& event) {
+            s->repeat = s->controls.AutoRepeatModeChangeRequested([state](SystemMediaTransportControls const&, AutoRepeatModeChangeRequestedEventArgs const& event) {
                 if (!state->closing) state->callbacks.emit("repeat", "", static_cast<jlong>(event.RequestedAutoRepeatMode()));
             });
             // The thumbnail toolbar needs the owner's taskbar item; clicks return as WM_COMMAND on the owner.

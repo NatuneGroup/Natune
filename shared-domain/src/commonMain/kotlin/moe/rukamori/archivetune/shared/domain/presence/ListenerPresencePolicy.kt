@@ -10,7 +10,10 @@ import kotlin.random.Random
 object ListenerPresencePolicy {
     const val CONSENT_VERSION: Int = 1
     const val SCHEMA_VERSION: Int = 1
-    const val HEARTBEAT_INTERVAL_MS: Long = 60_000L
+    const val HEARTBEAT_INTERVAL_MS: Long = 900_000L
+
+    /** Uniform jitter added to every beat so recovered fleets do not hit the endpoint in lockstep. */
+    const val HEARTBEAT_JITTER_MS: Long = 120_000L
     const val MAX_PAYLOAD_BYTES: Int = 1024
     const val STATE_PLAYING: String = "playing"
     const val STATE_STOPPED: String = "stopped"

@@ -81,6 +81,7 @@ object TidalAudioProvider {
     // How long a failing instance is skipped before it is retried again.
     private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L // transient errors (HTTP 5xx, timeouts)
     private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L // unreachable host / DNS failure
+    private const val DISCOVERY_TTL_MS = 30 * 60 * 1000L // pool discovery re-ask interval, misses included
     private const val STRONG_MATCH_SCORE = 150
     private const val REJECT_SCORE = -1_000_000
 
@@ -146,6 +147,9 @@ object TidalAudioProvider {
     @Volatile
     private var poolDiscoveredInstanceUrls: Set<String> = emptySet()
 
+    @Volatile
+    private var discoveryFetchedAtMs = 0L
+
     private val activeEndpoints: List<TidalDownloadEndpoint>
         get() = customEndpoints
 
@@ -180,6 +184,7 @@ object TidalAudioProvider {
             customEndpoints = customEndpoints.filterNot { it.baseUrl in discovered }
             poolDiscoveredInstanceUrls = emptySet()
         }
+        discoveryFetchedAtMs = 0L
     }
 
     /** Normalizes an instance URL to `scheme://host[:port]` form, or null if it is not valid. */
@@ -192,8 +197,7 @@ object TidalAudioProvider {
         return withScheme
     }
 
-    private fun instanceLabel(baseUrl: String): String =
-        baseUrl.toHttpUrlOrNull()?.host ?: baseUrl
+    private fun instanceLabel(baseUrl: String): String = baseUrl.toHttpUrlOrNull()?.host ?: baseUrl
 
     /**
      * Lightweight reachability probe for a single instance. Returns the round-trip latency in
@@ -399,10 +403,9 @@ object TidalAudioProvider {
             clearPoolDiscovery()
             return emptyList()
         }
-        val discovered =
-            AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
-                discoverInstancesWithinAttempt()
-            }
+        if (discoveryFetchedAtMs != 0L && System.currentTimeMillis() - discoveryFetchedAtMs < DISCOVERY_TTL_MS) return emptyList()
+        discoveryFetchedAtMs = System.currentTimeMillis()
+        val discovered = AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) { discoverInstancesWithinAttempt() }
         if (!PoolAccountManager.isPoolEnabled()) {
             clearPoolDiscovery()
             return emptyList()
@@ -416,17 +419,12 @@ object TidalAudioProvider {
         for (source in INSTANCE_DISCOVERY_SOURCES) {
             if (!PoolAccountManager.isPoolEnabled()) break
             val answered = runCatching {
-                val builder =
-                    Request
-                        .Builder()
-                        .url(source)
-                        .header("User-Agent", DOWNLOAD_USER_AGENT)
+                val builder = Request.Builder().url(source).header("User-Agent", DOWNLOAD_USER_AGENT)
                 // Present the per-app read key when the pool has gating enabled.
                 if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
                     builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
                 }
-                val request = builder.get().build()
-                healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
+                healthClient.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use false
                     ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
                     if (!response.isSuccessful) {

@@ -20,6 +20,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosCookieOnlyBrowserAut
 import moe.rukamori.archivetune.shared.data.provider.KtorSpotifyAuth
 import moe.rukamori.archivetune.shared.data.provider.KtorSpotifyStreamingAccount
 import moe.rukamori.archivetune.shared.domain.platform.AuthorizedHttpsOrigin
+import moe.rukamori.archivetune.shared.domain.platform.BrowserAuthPort
 import moe.rukamori.archivetune.shared.domain.platform.CookieOnlyLoginOutcome
 import moe.rukamori.archivetune.shared.domain.platform.CookieOnlyLoginRequest
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
@@ -31,12 +32,20 @@ import moe.rukamori.archivetune.shared.domain.settings.SpotifySpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccessTokenExpiresAtKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccessTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamAccountNameKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductCheckedAtKey
+import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamProductKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamSpKeyKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifyStreamUserIdKey
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamEngine
+import moe.rukamori.archivetune.shared.domain.settings.spotifyStreamProduct
+import moe.rukamori.archivetune.shared.domain.source.SpotifyPremiumPolicy
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInDecision
 import moe.rukamori.archivetune.shared.domain.source.SpotifySignInRefusal
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamAccountBinding
+import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamEngine
 import moe.rukamori.archivetune.shared.domain.source.SpotifyStreamingPolicy
+import moe.rukamori.archivetune.shared.domain.source.streamAccountBinding
 import moe.rukamori.archivetune.shared.ui.settings.preferredCookieValue
 
 private const val SPOTIFY_PROVIDER = "spotify"
@@ -56,7 +65,7 @@ private val SPOTIFY_LOGIN_ORIGINS: Set<AuthorizedHttpsOrigin> = listOf(
 ).map { AuthorizedHttpsOrigin(it) }.toSet()
 
 /** A streaming account as Spotify's own REST profile reports it. */
-private class IosSpotifyStreamingProfile(val userId: String, val displayName: String?)
+private class IosSpotifyStreamingProfile(val userId: String, val displayName: String?, val product: String?)
 
 /**
  * The iOS Spotify streaming account, kept apart from the catalog account exactly as on Android and the desktop
@@ -68,6 +77,7 @@ private class IosSpotifyStreamingProfile(val userId: String, val displayName: St
 internal class IosSpotifyStreamingAccount(
     private val graph: IosSessionGraph,
     private val browser: IosCookieOnlyBrowserAuth,
+    browserAuth: BrowserAuthPort,
 ) {
     private val auth = KtorSpotifyAuth(graph.http)
     private val json = Json { ignoreUnknownKeys = true }
@@ -94,9 +104,22 @@ internal class IosSpotifyStreamingAccount(
                 this[SpotifyStreamAccessTokenKey] = accessToken
                 this[SpotifyStreamAccessTokenExpiresAtKey] = expiresAtMs
             }
+            refreshStreamProductIfDue(accessToken)
         },
         collidesWithCatalog = { spDc -> collidesWithCatalog(spDc) },
     )
+
+    // The Librespot engine's catalog-bound OAuth grant. Its own lock serializes sheet
+    // authorizations and token refreshes; it only ever reads the catalog session for the
+    // binding checks, never writes it.
+    private val librespot =
+        IosSpotifyLibrespot(
+            graph = graph,
+            browserAuth = browserAuth,
+            catalogUserId = { prefs ->
+                catalogTokenForComparison(prefs)?.let { fetchStreamingProfile(it) }?.userId
+            },
+        )
 
     private val busyFlow = MutableStateFlow(false)
     val signInInProgress: StateFlow<Boolean> = busyFlow.asStateFlow()
@@ -108,19 +131,32 @@ internal class IosSpotifyStreamingAccount(
     /** A fresh bearer token for the stored streaming session, or null while it stands down or is signed out. */
     suspend fun accessToken(): String? = streamingSession.accessToken()
 
+    /** Whether this build carries the registered PKCE client id the Librespot sheet flow needs. */
+    val librespotConfigured: Boolean
+        get() = librespot.isConfigured
+
+    /** A bearer for the Librespot engine's grant, or null while it has no usable session. */
+    suspend fun librespotAccessToken(): String? = librespot.accessToken()
+
     fun dismissRefusal() {
         refusalFlow.value = null
     }
 
-    /** Opens the streaming sign-in sheet. The sign-in row is disabled while this runs. */
+    /**
+     * Opens the streaming sign-in: the system authentication sheet for the Librespot engine's
+     * catalog-bound OAuth grant, the cookie sheet for the dedicated account. The sign-in row is
+     * disabled while this runs.
+     */
     fun signIn() {
         if (busyFlow.value) return
         refusalFlow.value = null
         busyFlow.value = true
+        val librespotEngine = snapshot().spotifyStreamEngine() == SpotifyStreamEngine.LIBRESPOT
         val attemptGeneration = ++generation
         attempt = graph.scope.launch {
             try {
-                val refusal = signInAttempt(attemptGeneration)
+                val refusal =
+                    if (librespotEngine) librespotAttempt() else signInAttempt(attemptGeneration)
                 if (attemptGeneration == generation) refusalFlow.value = refusal
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -133,6 +169,28 @@ internal class IosSpotifyStreamingAccount(
         }
     }
 
+    /**
+     * The refresh-time product re-check: a fresh token just minted is the only moment the plan is re-read,
+     * and only once the stored observation is stale per [SpotifyPremiumPolicy.recheckDue]. A failed read
+     * keeps the stored product, so an outage cannot masquerade as a lost subscription.
+     */
+    private suspend fun refreshStreamProductIfDue(accessToken: String) {
+        val prefs = snapshot()
+        val now = Clock.System.now().toEpochMilliseconds()
+        val due = SpotifyPremiumPolicy.recheckDue(
+            product = prefs.spotifyStreamProduct(),
+            checkedAtMs = prefs[SpotifyStreamProductCheckedAtKey] ?: 0L,
+            nowMs = now,
+            tokenJustMinted = true,
+        )
+        if (!due) return
+        val product = auth.fetchProduct(accessToken) ?: return
+        graph.settings.edit {
+            this[SpotifyStreamProductKey] = product
+            this[SpotifyStreamProductCheckedAtKey] = now
+        }
+    }
+
     /** Drops an in-progress sign-in; any result that still lands belongs to a cancelled attempt. */
     fun cancelSignIn() {
         generation += 1
@@ -140,12 +198,33 @@ internal class IosSpotifyStreamingAccount(
         busyFlow.value = false
     }
 
-    /** The page commits the stored streaming session away after this; only an open sheet is left to close. */
+    /** The page commits the stored streaming session away after this; host cleanup matches the binding it signed out. */
     suspend fun signOut() {
         generation += 1
         attempt?.cancel()
-        browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_STREAMING)
+        when (snapshot().spotifyStreamEngine().streamAccountBinding()) {
+            SpotifyStreamAccountBinding.LIBRARY -> librespot.signOut()
+            SpotifyStreamAccountBinding.DEDICATED ->
+                browser.clearProfile(SPOTIFY_PROVIDER, CredentialScope.SPOTIFY_STREAMING)
+        }
     }
+
+    /**
+     * Runs the Librespot engine's authorization: the system authentication sheet with the shared
+     * PKCE flow, decided the same way the other platforms decide it. Null means the grant was
+     * accepted and stored, or the user left the sheet.
+     */
+    private suspend fun librespotAttempt(): SpotifySignInRefusal? =
+        when (val outcome = librespot.authorize()) {
+            is IosLibrespotSignInOutcome.Refused -> outcome.refusal
+            IosLibrespotSignInOutcome.BrowserUnavailable -> {
+                graph.report("spotify librespot sign-in: the system authentication sheet was unavailable")
+                SpotifySignInRefusal.INVALID_SESSION
+            }
+            IosLibrespotSignInOutcome.Cancelled,
+            IosLibrespotSignInOutcome.SignedIn,
+            -> null
+        }
 
     /**
      * Runs the cookie sheet under the streaming scope and applies the sign-in policy. Null means the session was
@@ -216,6 +295,8 @@ internal class IosSpotifyStreamingAccount(
                     this[SpotifyStreamAccessTokenExpiresAtKey] = accepted.accessTokenExpirationTimestampMs
                     this[SpotifyStreamUserIdKey] = account.userId
                     this[SpotifyStreamAccountNameKey] = account.displayName.orEmpty()
+                    this[SpotifyStreamProductKey] = account.product
+                    this[SpotifyStreamProductCheckedAtKey] = Clock.System.now().toEpochMilliseconds()
                 }
                 null
             }
@@ -283,7 +364,11 @@ internal class IosSpotifyStreamingAccount(
             null
         } ?: return null
         val userId = profile.text("id")?.takeIf { it.isNotBlank() } ?: return null
-        return IosSpotifyStreamingProfile(userId, profile.text("display_name")?.takeIf { it.isNotBlank() })
+        return IosSpotifyStreamingProfile(
+            userId,
+            profile.text("display_name")?.takeIf { it.isNotBlank() },
+            profile.text("product")?.takeIf { it.isNotBlank() },
+        )
     }
 }
 

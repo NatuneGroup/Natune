@@ -13,6 +13,7 @@ import moe.rukamori.archivetune.nativeaudio.*
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
+import moe.rukamori.archivetune.shared.data.playback.PlaybackProgressWatchdog
 import moe.rukamori.archivetune.shared.data.playback.outputLatencyMillis
 import moe.rukamori.archivetune.shared.data.stream.nativePlaintext
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
@@ -46,8 +47,18 @@ class IosPlaybackPort : PlaybackPort {
     private var reopenOutput = false
     private var closed = false
 
+    // Main-queue only. A source that should be rendering but has not moved is a stall: the watchdog
+    // fires once per episode and [onStall] answers it with at most one re-prepare per load session.
+    private val stallWatchdog = PlaybackProgressWatchdog()
+    private var requestRepreparable = false
+    private var stallRecoveryUsed = false
+
     // Main-queue only. The app-level output level applied to every output, including one recreated after a fault.
     private var volume = 1f
+
+    // Main-queue only. The tempo every output loads with: a SetSpeed that finds no live output is held
+    // here instead of being dropped, and outputForLoad applies it to whatever it creates or recreates.
+    private var desiredSpeed = 1f
 
     // Main-queue state for host-prepared audio. Every Load, Stop and preparation advances [ticket]. A preparation whose
     // ticket no longer matches when it returns is discarded with its transport, so a superseded occurrence never plays.
@@ -68,11 +79,44 @@ class IosPlaybackPort : PlaybackPort {
     override val snapshots: StateFlow<PlaybackSnapshot?> = state.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = errors.asSharedFlow()
 
+    /**
+     * Every command the loop accepted, with its origin and a monotonic id, in submit order. The
+     * handoff is an unbounded channel: accepting a command can never block on a slow consumer, and
+     * no listener intent is ever dropped. There is one consumer, the output-mute policy.
+     */
+    private val commandEventChannel = Channel<PlaybackCommandEvent>(Channel.UNLIMITED)
+    val commandEvents: Flow<PlaybackCommandEvent> = commandEventChannel.receiveAsFlow()
+    private var commandSequence = 0L
+
+    /**
+     * How many USER Pause/Stop/Play/Load commands the loop has dispatched. A policy submit tags the
+     * count it observed, and the loop drops it when the count has moved — so a policy command can
+     * never apply over a user command that was queued first.
+     */
+    val userIntentGeneration: Long get() = intentGeneration
+    private var intentGeneration = 0L
+
     init {
         scope.launch {
             for (item in inbox) {
                 when (item) {
-                    is Inbound.Command -> apply(item.command)
+                    is Inbound.Command -> {
+                        // A policy command whose tagged intent generation is stale: the listener
+                        // queued a Pause, Stop, Play or Load ahead of it, so it must not apply.
+                        val stalePolicy = item.origin == PlaybackCommandOrigin.POLICY &&
+                            outputMuteIntentIsStale(item.intentGeneration, intentGeneration)
+                        if (!stalePolicy) {
+                            if (item.origin == PlaybackCommandOrigin.USER && tracksUserIntent(item.command)) {
+                                intentGeneration++
+                            }
+                            // The notice carries the generation as it stands after this dispatch:
+                            // a policy tags its commands with the newest USER generation it has seen.
+                            commandEventChannel.trySend(
+                                PlaybackCommandEvent(item.command, item.origin, ++commandSequence, intentGeneration),
+                            )
+                            apply(item.command)
+                        }
+                    }
                     is Inbound.Prepare -> beginPreparation(item)
                     is Inbound.Prepared -> applyPrepared(item)
                     is Inbound.TelegramResolved -> applyTelegram(item)
@@ -91,10 +135,30 @@ class IosPlaybackPort : PlaybackPort {
         }
     }
 
-    override fun submit(command: PlaybackCommand) {
+    override fun submit(command: PlaybackCommand) =
+        submit(command, PlaybackCommandOrigin.USER, intentGeneration)
+
+    /**
+     * A session policy's tagged submit: [observedIntentGeneration] is the USER intent count the
+     * policy reduced against, and the loop drops the command when the count has moved — so the
+     * policy's own pause and play never read as manual intent on [commandEvents] and never apply
+     * over a user command that was queued first.
+     */
+    fun submitPolicy(command: PlaybackCommand, observedIntentGeneration: Long) =
+        submit(command, PlaybackCommandOrigin.POLICY, observedIntentGeneration)
+
+    private fun submit(command: PlaybackCommand, origin: PlaybackCommandOrigin, intentGeneration: Long) {
         val occurrence = (command as? PlaybackCommand.Load)?.request?.occurrenceId ?: state.value?.occurrenceId
         val attempt = if (command is PlaybackCommand.Load) command.request.attemptId else request?.attemptId
-        enqueue(Inbound.Command(command), occurrence, attempt)
+        enqueue(Inbound.Command(command, origin, intentGeneration), occurrence, attempt)
+    }
+
+    /** Commands that change what the listener asked the engine to do: pause, stop, play, load. */
+    private fun tracksUserIntent(command: PlaybackCommand): Boolean = when (command) {
+        is PlaybackCommand.Load,
+        PlaybackCommand.Play, PlaybackCommand.Pause, PlaybackCommand.Stop,
+        -> true
+        is PlaybackCommand.SeekTo, is PlaybackCommand.SetSpeed, is PlaybackCommand.SetPitch -> false
     }
 
     /**
@@ -330,6 +394,7 @@ class IosPlaybackPort : PlaybackPort {
             }
             is PlaybackCommand.SetSpeed -> {
                 handoffEpoch++
+                desiredSpeed = command.speed
                 blend?.setSpeed(command.speed) ?: output?.let { at_audio_speed(it, command.speed) }
             }
             // ae_engine only exposes an atempo stage (tempo without pitch shift), so a pitch
@@ -489,6 +554,8 @@ class IosPlaybackPort : PlaybackPort {
         }
         stop()
         request = command.request
+        // Only this plain path can re-issue a locator on a stall, so only it marks the request repreparable.
+        requestRepreparable = true
         if (source == null) {
             fail(PlaybackFailureReason.UNSUPPORTED_LOCATOR)
             return
@@ -540,6 +607,8 @@ class IosPlaybackPort : PlaybackPort {
     private fun beginTelegram(command: PlaybackCommand.Load, locator: PlaybackLocator.TelegramFile) {
         stop()
         request = command.request
+        // A Telegram load re-runs this whole path on recovery: the resolver admits a fresh lease below.
+        requestRepreparable = true
         val session = telegram
         val reader = accounts
         if (session == null || reader == null) {
@@ -610,6 +679,7 @@ class IosPlaybackPort : PlaybackPort {
         }?.also {
             output = it
             at_audio_volume(it, volume)
+            at_audio_speed(it, desiredSpeed)
         }
     }
 
@@ -628,12 +698,18 @@ class IosPlaybackPort : PlaybackPort {
                 output = incoming.output
                 request = incoming.request
                 liveTransport = incoming.transport
+                requestRepreparable = incoming.repreparable
+                // A promoted occurrence is a new load session: its own recovery budget and baseline.
+                stallRecoveryUsed = false
+                stallWatchdog.reset()
                 at_audio_volume(incoming.output, volume)
+                at_audio_speed(incoming.output, desiredSpeed)
                 mapper.beginRequest(incoming.request, incoming.generation)
             }
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
             mapper.observe(read.state, now, outputLatencyMillis(engine.outputLatencySeconds()))?.let { state.value = it }
             mapper.failure(read.state) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
+            watchStall(read.state, now)
             return read.state.hasSource &&
                 (read.state.isBuffering || (read.state.playWhenReady && !read.state.isEnded))
         }
@@ -644,15 +720,59 @@ class IosPlaybackPort : PlaybackPort {
                 s.load_generation.toLong(), s.seek_generation.toLong(), s.error_sequence.toLong(),
                 s.position_us, s.duration_us, s.buffered_us, s.playback_speed)
             if (observation.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
+            val now = SystemMonotonicClock.nowNanos()
             mapper.observe(
                 observation,
-                SystemMonotonicClock.nowNanos(),
+                now,
                 outputLatencyMs = outputLatencyMillis(at_audio_output_latency(native)),
             )?.let { state.value = it }
             mapper.failure(observation) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
+            watchStall(observation, now)
             observation.hasSource &&
                 (observation.isBuffering || (observation.playWhenReady && !observation.isEnded))
         }
+    }
+
+    /**
+     * Feeds the audible read to the stall watchdog: a source that should be rendering but has not
+     * moved for the window is a stall, which [onStall] answers once. A promoted blend read arrives
+     * through the same [request] slot the direct path fills, so it needs no feed of its own.
+     */
+    private fun watchStall(read: EnginePlaybackState, nowNanos: Long) {
+        val playing = request
+        if (playing == null) {
+            stallWatchdog.reset()
+            return
+        }
+        val expectProgress = read.hasSource && read.playWhenReady && !read.isEnded &&
+            read.errorCode == EnginePlaybackState.ERROR_NONE
+        if (stallWatchdog.observe(read, expectProgress, nowNanos)) onStall(playing, read)
+    }
+
+    /**
+     * The audible source made no progress for the whole stall window. A request the plain load path
+     * can re-issue — a local file, a remote URL, a Deezer ciphertext or a Telegram track, which the
+     * resolver admits afresh — gets one bounded recovery: the output is recreated the way an
+     * ERROR_OUTPUT read recreates it and the same occurrence is re-prepared at the frozen position.
+     * A request whose lease was consumed — prepared plaintext or an admitted stream — surfaces as a
+     * decode failure for the queue's own recovery, as does a second stall after a recovery ran.
+     */
+    private fun onStall(playing: PlaybackRequest, read: EnginePlaybackState) {
+        if (stallRecoveryUsed || !requestRepreparable) {
+            errors.tryEmit(
+                PlaybackFailure(
+                    playing.occurrenceId,
+                    PlaybackFailureReason.DECODE_FAILED,
+                    "iOS playback made no progress within the stall window",
+                    attemptId = playing.attemptId,
+                ),
+            )
+            return
+        }
+        reopenOutput = true
+        load(PlaybackCommand.Load(playing, read.positionUs.coerceAtLeast(0L) / 1_000L, read.playWhenReady))
+        // The stop() inside load() cleared this flag; it latches only after the reload was issued.
+        stallRecoveryUsed = true
     }
 
     private fun stop() {
@@ -661,6 +781,9 @@ class IosPlaybackPort : PlaybackPort {
         blend = null
         mapper.stopped(SystemMonotonicClock.nowNanos())?.let { state.value = it }
         request = null
+        requestRepreparable = false
+        stallRecoveryUsed = false
+        stallWatchdog.reset()
         // The engine keeps its lease until the next load, so the transport is released here, after the engine has stopped.
         liveTransport?.close()
         liveTransport = null
@@ -705,7 +828,11 @@ class IosPlaybackPort : PlaybackPort {
 
     /** Work for the one command loop, which runs it in arrival order: a command, a preparation to start, or its result. */
     private sealed interface Inbound {
-        class Command(val command: PlaybackCommand) : Inbound
+        class Command(
+            val command: PlaybackCommand,
+            val origin: PlaybackCommandOrigin,
+            val intentGeneration: Long,
+        ) : Inbound
 
         class Prepare(
             val occurrenceId: String,

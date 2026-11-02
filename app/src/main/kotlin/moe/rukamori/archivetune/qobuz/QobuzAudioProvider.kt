@@ -223,7 +223,7 @@ object QobuzAudioProvider {
     @Volatile
     private var discoveryCacheExpiresAt: Long = 0L
 
-    private const val DISCOVERY_CACHE_MS = 10 * 60 * 1000L
+    private const val DISCOVERY_CACHE_MS = 30 * 60 * 1000L
 
     fun discoverInstances(): List<String> {
         if (!PoolAccountManager.isPoolEnabled()) {
@@ -232,7 +232,7 @@ object QobuzAudioProvider {
         }
         if (instanceDiscoverySources.isEmpty()) return emptyList()
         val now = System.currentTimeMillis()
-        if (now < discoveryCacheExpiresAt && discoveryCache.isNotEmpty()) return discoveryCache
+        if (now < discoveryCacheExpiresAt) return discoveryCache
         val discovered = LinkedHashSet<String>()
         for (source in instanceDiscoverySources) {
             if (!PoolAccountManager.isPoolEnabled()) break
@@ -293,8 +293,8 @@ object QobuzAudioProvider {
         if (result.isNotEmpty()) {
             discoveryCache = result
             poolDiscoveredUrls = result
-            discoveryCacheExpiresAt = System.currentTimeMillis() + DISCOVERY_CACHE_MS
         }
+        discoveryCacheExpiresAt = System.currentTimeMillis() + DISCOVERY_CACHE_MS
         return result
     }
 
@@ -851,7 +851,7 @@ object QobuzAudioProvider {
 
     private fun searchItemsDirect(
         token: QobuzToken,
-        searchQuery: String,
+        searchQuery: String, attempt: Int = 0,
     ): JSONArray? {
         val url =
             "$QOBUZ_API_BASE/track/search"
@@ -863,7 +863,7 @@ object QobuzAudioProvider {
                 .build()
         client.newCall(directRequest(url.toString(), token)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
-                token.poolId?.let { moe.rukamori.archivetune.utils.PoolAccountManager.report("qobuz", "account", it, "dead") }
+                token.poolId?.let { if (attempt > 0) throw moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure(response.code); return moe.rukamori.archivetune.utils.PoolAccountRecovery.retryOrReportQobuz(it, token) { fresh -> searchItemsDirect(fresh, searchQuery, attempt = 1) } }
             }
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
@@ -881,11 +881,11 @@ object QobuzAudioProvider {
     private fun fetchDownloadDirect(
         token: QobuzToken,
         trackId: String,
-        formatId: Int,
+        formatId: Int, attempt: Int = 0,
     ): DownloadResult? {
         client.newCall(directDownloadRequest(token, trackId, formatId)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
-                token.poolId?.let { moe.rukamori.archivetune.utils.PoolAccountManager.report("qobuz", "account", it, "dead") }
+                token.poolId?.let { if (attempt > 0) throw moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure(response.code); return moe.rukamori.archivetune.utils.PoolAccountRecovery.retryOrReportQobuz(it, token) { fresh -> fetchDownloadDirect(fresh, trackId, formatId, attempt = 1) } }
             }
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()

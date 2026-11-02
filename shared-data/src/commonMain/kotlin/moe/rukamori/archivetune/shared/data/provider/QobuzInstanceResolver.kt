@@ -328,7 +328,7 @@ class QobuzInstanceResolver(
     suspend fun discoverInstances(): List<String> {
         if (!poolEnabled()) return emptyList()
         val now = nowMs()
-        if (now < discoveryCacheExpiresAt && discoveryCache.isNotEmpty()) return discoveryCache
+        if (now < discoveryCacheExpiresAt) return discoveryCache
         val discovered = LinkedHashSet<String>()
         val result =
             try {
@@ -383,8 +383,9 @@ class QobuzInstanceResolver(
             discoveryCache = result
             poolInstances = result.map { normalized -> Instance(instanceLabel(normalized), normalized) }
             rebuildInstances()
-            discoveryCacheExpiresAt = nowMs() + DISCOVERY_CACHE_MS
         }
+        // The quiet period covers empty and failed answers too, as the Deezer resolver's does.
+        discoveryCacheExpiresAt = nowMs() + DISCOVERY_CACHE_MS
         return result
     }
     // endregion
@@ -653,7 +654,7 @@ class QobuzInstanceResolver(
         private const val FAILURE_CACHE_MS = 10 * 60 * 1000L
         private const val INSTANCE_SOFT_COOLDOWN_MS = 60_000L
         private const val INSTANCE_HARD_COOLDOWN_MS = 600_000L
-        private const val DISCOVERY_CACHE_MS = 10 * 60 * 1000L
+        private const val DISCOVERY_CACHE_MS = 30 * 60 * 1000L
         private const val AUDIO_FLAC_MIME_TYPE = "audio/flac"
         private const val HEALTH_PROBE_TRACK_ID = "5966783"
         private const val HEALTH_PROBE_FORMAT_ID = 5

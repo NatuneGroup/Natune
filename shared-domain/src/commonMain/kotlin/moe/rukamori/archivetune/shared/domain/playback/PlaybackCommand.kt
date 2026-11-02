@@ -46,3 +46,23 @@ sealed interface PlaybackCommand {
     /** Ends the current occurrence and releases its decoder. The port stays usable for a new load. */
     data object Stop : PlaybackCommand
 }
+/** Who submitted a [PlaybackCommand]: the listener through any surface, or a session policy acting for them. */
+enum class PlaybackCommandOrigin {
+    USER,
+    POLICY,
+}
+
+/**
+ * One submitted command with its origin and a monotonically increasing per-port id, emitted by a
+ * [PlaybackPort] when the command reaches the command loop. Consumers that act on the listener's
+ * intent — like the output-mute watch — reduce only USER commands, and two identical commands
+ * arriving together stay distinct through [id].
+ */
+data class PlaybackCommandEvent(
+    val command: PlaybackCommand,
+    val origin: PlaybackCommandOrigin,
+    val id: Long,
+    /** The user-intent generation as it stood after this command dispatched; consumers tag their
+     * own POLICY submits with the newest value they have processed. */
+    val intentGeneration: Long,
+)

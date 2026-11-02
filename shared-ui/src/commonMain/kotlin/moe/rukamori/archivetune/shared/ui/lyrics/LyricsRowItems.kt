@@ -78,6 +78,8 @@ internal fun LyricsRowItem(
     row: LyricsRenderRow,
     alignment: LyricsLineAlignment,
     active: Boolean,
+    /** A synced row behind the playhead keeps a faded active colour instead of the idle dim. */
+    passed: Boolean = false,
     selected: Boolean,
     mainStyle: TextStyle,
     phoneticStyle: TextStyle,
@@ -130,6 +132,7 @@ internal fun LyricsRowItem(
             style = mainStyle,
             palette = linePalette,
             active = active,
+            passed = passed,
             clock = clock,
             shapes = shapes,
             minSweepMs = minSweepMs,

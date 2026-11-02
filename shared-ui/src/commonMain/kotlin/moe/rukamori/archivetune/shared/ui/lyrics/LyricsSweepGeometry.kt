@@ -71,12 +71,27 @@ object LyricsSweepGeometry {
         positionMs: Long,
         reduceMotion: Boolean,
         minSweepMs: Long = MIN_SWEEP_MS,
+    ): Float = progressAt(box.startMs, box.endMs, positionMs, reduceMotion, minSweepMs)
+
+    /**
+     * The same sweep share for a word that runs [startMs] to [endMs], for callers that do not lay text
+     * out into [LyricsWordBox]es — the platform lyric renderer is one.
+     */
+    fun progressAt(
+        startMs: Long,
+        endMs: Long,
+        positionMs: Long,
+        reduceMotion: Boolean,
+        minSweepMs: Long = MIN_SWEEP_MS,
     ): Float {
-        if (reduceMotion) return if (positionMs >= box.startMs) 1f else 0f
-        if (positionMs <= box.startMs) return 0f
-        val duration = maxOf(box.endMs - box.startMs, minSweepMs).toFloat()
-        return ((positionMs - box.startMs) / duration).coerceIn(0f, 1f)
+        if (reduceMotion) return if (positionMs >= startMs) 1f else 0f
+        if (positionMs <= startMs) return 0f
+        val duration = maxOf(endMs - startMs, minSweepMs).toFloat()
+        return ((positionMs - startMs) / duration).coerceIn(0f, 1f)
     }
+
+    /** A word swept to [progress] is finished: it draws lit to its own bounds, without the feathered edge. */
+    fun sweepComplete(progress: Float): Boolean = progress >= 1f
 
     /** Index of the last box that has started by [positionMs], or -1 before the first word. Boxes are time ordered. */
     fun activeIndex(boxes: List<LyricsWordBox>, positionMs: Long): Int {

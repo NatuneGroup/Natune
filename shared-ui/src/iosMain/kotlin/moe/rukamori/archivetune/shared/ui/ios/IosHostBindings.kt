@@ -119,13 +119,15 @@ internal fun iosHostBindings(
 ): ArchiveTuneHostBindings {
     val itemMenu = IosItemMenuState()
     val sleepSheet = IosSleepTimerSheetState()
-    val controls = IosPlayerControls(graph, sleepSheet)
+    val tempoSheet = IosTempoPitchSheetState()
+    val tempoPitchActions = IosTempoPitchActions(graph)
+    val controls = IosPlayerControls(graph, sleepSheet, itemMenu)
     // The canvas owner resolves the current occurrence's loop behind the same gates the settings page shows;
     // its controls report availability so a canvas-capable style knows a loop answered.
     val canvas = createIosCanvas(graph)
     val canvasFrames = IosCanvasFrames(graph, canvas, graph.canvasStore)
     val canvasControls = IosCanvasControls(controls, canvas, graph.scope)
-    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser, host.appleMusicSheet) { host.viewController }
+    val settingsOwners = IosSettingsOwners(graph, host.cookieBrowser, host.browser, host.appleMusicSheet) { host.viewController }
     // Routes this host opens itself, such as a Library shortcut card. The root collects them as it collects links.
     val ownRoutes = Channel<String>(capacity = OWN_ROUTE_CAPACITY)
     // Back requests a page answers itself, such as a chat's back port. The root pops the stack for them, as the gesture does.
@@ -171,9 +173,10 @@ internal fun iosHostBindings(
             }
         },
         overlays = { route ->
-            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, playlistMenus, sleepSheet)
+            IosItemMenuDialog(itemMenu, graph, host, route.value, openOwnRoute, playlistMenus, sleepSheet, tempoSheet)
             IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
             IosSleepTimerOverlay(sleepSheet, graph.sleepTimer)
+            IosTempoPitchOverlay(tempoSheet, graph, tempoPitchActions)
         },
         playerSlots = { expanded, active, _ ->
             iosPlayerSlots(host, graph, canvas, canvasFrames, expanded, active)
@@ -277,7 +280,24 @@ private fun iosPlayerSlots(
         }
         romanization.publish(LyricsRomanizationPresentation(sessionKey, LyricsRomanizationSource.BUILT_IN, phonetics))
     }
-    val actions = remember(graph) { LyricsSurfaceActions(onSeek = { graph.player.seekTo(it) }, onShareCard = { }) }
+    val actions = remember(graph, document?.occurrenceId) {
+        val occurrenceId = document?.occurrenceId
+        LyricsSurfaceActions(
+            // Seek and resume share the desktop's acceptance gate: a tap on stale lyrics, or an
+            // unseekable item, performs neither.
+            onSeek = { position ->
+                val accepted = graph.player.snapshot.value
+                if (accepted?.occurrenceId == occurrenceId && accepted?.isSeekable == true) {
+                    graph.player.seekTo(position)
+                }
+            },
+            onShareCard = { },
+            onResume = {
+                val accepted = graph.player.snapshot.value
+                if (accepted?.occurrenceId == occurrenceId && accepted?.isSeekable == true) graph.player.play()
+            },
+        )
+    }
     val style = preferences[PlayerDesignStyleKey].toEnum(PlayerDesignStyle.Default)
     // The resolver runs only while a canvas-capable style shows the player surface.
     LaunchedEffect(canvas, expanded, active, style) {
@@ -324,9 +344,14 @@ private fun iosPlayerSlots(
             playback = graph.player.snapshot,
             romanization = romanization,
             settings = lyricsSettings,
-            onSeek = actions.onSeek,
+            onSeek = { position ->
+                actions.onSeek(position)
+                // The native surface owns no renderer to add this: a tapped line resumes a paused song.
+                if (graph.player.snapshot.value?.playWhenReady == false) actions.onResume()
+            },
             visible = expanded && active,
             modifier = modifier,
+            credits = document?.credits,
         )
     }
     return PlayerSlots(
