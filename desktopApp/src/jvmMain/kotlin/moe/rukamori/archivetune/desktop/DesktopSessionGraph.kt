@@ -117,7 +117,7 @@ class DesktopSessionGraph internal constructor(
     /** The one BotGuard poToken owner; settings generation and the resolver tiers share it. */
     internal val poTokens: DesktopPoTokenOwner,
     private val owner: PortableQueueOwner,
-    /** The engine behind [player], reached directly only for the output volume, which is not a queue command. */
+    /** The engine behind [player], reached directly for output volume and the paused-output park, not queue commands. */
     private val playback: DesktopPlaybackPort,
     private val ordinarySettings: DesktopSettingsStore,
     private val database: PortableStateDatabase,
