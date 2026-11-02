@@ -59,6 +59,8 @@ class HlsMediaPlaylistTest {
         )
         assertEquals(1, playlist.initMaps.size)
         assertEquals("https://media.example/hls/track/init.mp4", playlist.initMaps[0].uri)
+        // The map is declared before the first key tag, so it is a clear section.
+        assertEquals(-1, playlist.initMaps[0].keyIndex)
         assertEquals(2, playlist.keys.size)
         assertEquals("https://keys.example/k1", playlist.keys[0].keyUri)
         assertEquals(9, playlist.keys[0].iv?.last()?.toInt())
@@ -97,6 +99,11 @@ class HlsMediaPlaylistTest {
         assertEquals("https://a.example/y.ts", resolveHlsUri("https://a.example/x/list.m3u8", "/y.ts"))
         assertEquals("https://b.example/y.ts", resolveHlsUri("https://a.example/x/list.m3u8", "//b.example/y.ts"))
         assertEquals("https://a.example/y.ts", resolveHlsUri("https://a.example/x/list.m3u8?sig=1", "../y.ts"))
+        // Dot segments collapse only inside the path; the query and fragment pass through byte-identical.
+        assertEquals(
+            "https://a.example/x/seg.ts?tok=a..b&n=./c#f",
+            resolveHlsUri("https://a.example/x/list.m3u8", "q/../seg.ts?tok=a..b&n=./c#f"),
+        )
         assertNull(resolveHlsUri("https://a.example/x/list.m3u8", "skd://fairplay"))
         assertNull(resolveHlsUri("https://a.example/x/list.m3u8", "data:,AAAA"))
         assertNull(resolveHlsUri("notaurl", "seg.ts"))
@@ -138,9 +145,29 @@ class HlsMediaPlaylistTest {
         assertFailsWith<HlsPlaylistException> {
             HlsMediaPlaylistParser.parse(base, "#EXTM3U\n#EXT-X-ENDLIST\n")
         }
+        // An IV with no digits is still malformed, as is one longer than 16 bytes.
         assertFailsWith<HlsPlaylistException> {
-            HlsMediaPlaylistParser.parse(base, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0x1234\n#EXTINF:1,\nx.ts\n#EXT-X-ENDLIST\n")
+            HlsMediaPlaylistParser.parse(base, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0x\n#EXTINF:1,\nx.ts\n#EXT-X-ENDLIST\n")
         }
+        assertFailsWith<HlsPlaylistException> {
+            HlsMediaPlaylistParser.parse(base, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0x000000000000000000000000000000001\n#EXTINF:1,\nx.ts\n#EXT-X-ENDLIST\n")
+        }
+        // An encrypted init section has no media sequence, so a key without an explicit IV is refused.
+        assertFailsWith<HlsPlaylistException> {
+            HlsMediaPlaylistParser.parse(base, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\"\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:1,\nx.ts\n#EXT-X-ENDLIST\n")
+        }
+    }
+
+    @Test
+    fun shortHexIvLeftPads() {
+        val playlist = HlsMediaPlaylistParser.parse(
+            base,
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0x9\n#EXTINF:1,\nx.ts\n#EXT-X-ENDLIST\n",
+        )
+        val iv = playlist.keys[0].iv!!
+        assertEquals(16, iv.size)
+        assertEquals(9, iv[15].toInt())
+        assertEquals(0, iv[0].toInt())
     }
 
     @Test

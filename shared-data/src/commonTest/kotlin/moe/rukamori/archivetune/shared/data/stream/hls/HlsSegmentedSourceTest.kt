@@ -7,6 +7,7 @@ import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceLease
 import moe.rukamori.archivetune.shared.data.bytesource.RandomAccessByteSource
 import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
+import moe.rukamori.archivetune.shared.data.bytesource.readUpTo
 import moe.rukamori.archivetune.shared.data.stream.NativeCiphertextOpener
 import moe.rukamori.archivetune.shared.data.stream.NativePreparation
 import moe.rukamori.archivetune.shared.data.stream.NativeRecipePreparation
@@ -31,7 +32,7 @@ class HlsSegmentedSourceTest {
         private val files = files.toMap()
 
         override suspend fun open(url: String, accountScope: String): RandomAccessByteSource? =
-            files[url]?.let { ByteArrayByteSource(lease(url, it.size.toLong()), it) }
+            files[url]?.let { ByteArrayByteSource(testLease(url, it.size.toLong()), it) }
 
         override suspend fun openWhole(url: String, accountScope: String, maxBytes: Int): ByteArray? =
             files[url]?.takeIf { it.size <= maxBytes }
@@ -47,17 +48,15 @@ class HlsSegmentedSourceTest {
             "https://media.example/hls/b.ts" to b,
         )
         source.indexOpeningSegments()
-        val all = ByteArray(500)
-        assertEquals(500, source.readAt(0, all, 0, 500))
-        assertContentEquals(a + b, all)
+        // A read ends at its piece boundary, so reads that span segments accumulate through readUpTo.
+        assertContentEquals(a + b, source.readUpTo(0, 500).bytes)
         // A backward seek re-reads an already indexed piece.
-        val head = ByteArray(40)
-        assertEquals(40, source.readAt(10, head, 0, 40))
-        assertContentEquals(a.copyOfRange(10, 50), head)
-        val boundary = ByteArray(10)
-        assertEquals(10, source.readAt(295, boundary, 0, 10))
-        assertContentEquals((a + b).copyOfRange(295, 305), boundary)
-        assertEquals(RandomAccessByteSource.END_OF_STREAM, source.readAt(500, boundary, 0, 10))
+        assertContentEquals(a.copyOfRange(10, 50), source.readUpTo(10, 40).bytes)
+        assertContentEquals((a + b).copyOfRange(295, 305), source.readUpTo(295, 10).bytes)
+        assertEquals(
+            RandomAccessByteSource.END_OF_STREAM,
+            source.readAt(500, ByteArray(10), 0, 10),
+        )
     }
 
     @Test
@@ -86,9 +85,7 @@ class HlsSegmentedSourceTest {
             "https://media.example/hls/b.ts" to cipherB,
         )
         source.indexOpeningSegments()
-        val all = ByteArray(170)
-        assertEquals(170, source.readAt(0, all, 0, 170))
-        assertContentEquals(plainA + plainB, all)
+        assertContentEquals(plainA + plainB, source.readUpTo(0, 170).bytes)
     }
 
     @Test
@@ -107,11 +104,38 @@ class HlsSegmentedSourceTest {
         )
         source.indexOpeningSegments()
         assertEquals("audio/mp4", source.sniffedMimeType)
-        val all = ByteArray(init.size + 140)
-        assertEquals(all.size, source.readAt(0, all, 0, all.size))
+        val all = source.readUpTo(0, init.size + 140).bytes
+        assertEquals(init.size + 140, all.size)
         assertContentEquals(init, all.copyOfRange(0, init.size))
         assertContentEquals(resource.copyOfRange(0, 100), all.copyOfRange(init.size, init.size + 100))
         assertContentEquals(resource.copyOfRange(100, 140), all.copyOfRange(init.size + 100, all.size))
+    }
+
+    @Test
+    fun decryptsEncryptedInitMapWithItsExplicitIv() = runTest {
+        val key = ByteArray(16) { (it + 2).toByte() }
+        val aes = Aes128(key)
+        val iv = ByteArray(16).also { it[15] = 4 }
+        val initPlain = byteArrayOf(0, 0, 0, 24) + "ftypM4A ".encodeToByteArray() + ByteArray(20)
+        val initCipher = AesCbc.encryptNoPadding(aes, iv, pkcs7(initPlain), pkcs7(initPlain).size)
+        val segPlain = ByteArray(64) { (it * 3).toByte() }
+        val segIv = ByteArray(16).also { it[15] = 9 }
+        val segCipher = AesCbc.encryptNoPadding(aes, segIv, pkcs7(segPlain), pkcs7(segPlain).size)
+        val source = segmentedSource(
+            playlist(
+                "#EXTM3U\n" +
+                    "#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0x00000000000000000000000000000004\n" +
+                    "#EXT-X-MAP:URI=\"init.mp4\"\n" +
+                    "#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0x00000000000000000000000000000009\n" +
+                    "#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST\n",
+            ),
+            "https://media.example/hls/k" to key,
+            "https://media.example/hls/init.mp4" to initCipher,
+            "https://media.example/hls/seg.ts" to segCipher,
+        )
+        source.indexOpeningSegments()
+        assertEquals("audio/mp4", source.sniffedMimeType)
+        assertContentEquals(initPlain + segPlain, source.readUpTo(0, initPlain.size + segPlain.size).bytes)
     }
 
     @Test
@@ -153,9 +177,7 @@ class HlsSegmentedSourceTest {
             opener,
         )
         assertIs<NativePreparation.Ready>(ready)
-        val out = ByteArray(48)
-        assertEquals(48, ready.plaintext.source.readAt(0, out, 0, 48))
-        assertContentEquals(plain, out)
+        assertContentEquals(plain, ready.plaintext.source.readUpTo(0, 48).bytes)
         assertNull(ready.plaintext.length)
 
         val fairPlay = NativeRecipePreparation.prepare(
@@ -190,9 +212,7 @@ class HlsSegmentedSourceTest {
             opener,
         )
         assertIs<NativePreparation.Ready>(ready)
-        val out = ByteArray(120)
-        assertEquals(120, ready.plaintext.source.readAt(0, out, 0, 120))
-        assertContentEquals(payload, out)
+        assertContentEquals(payload, ready.plaintext.source.readUpTo(0, 120).bytes)
     }
 
     private fun segmentedSource(
@@ -200,7 +220,7 @@ class HlsSegmentedSourceTest {
         vararg files: Pair<String, ByteArray>,
     ): HlsSegmentedSource =
         HlsSegmentedSource(
-            lease = lease(base, null),
+            lease = testLease(base, null),
             playlistUrl = base,
             playlistText = playlistText,
             accountScope = scope,
@@ -209,21 +229,24 @@ class HlsSegmentedSourceTest {
 
     private fun playlist(text: String): String = text
 
-    private fun lease(url: String, length: Long?): ByteSourceLease =
-        ByteSourceLease(
-            account = ByteSourceAccount(provider = "test", accountId = null),
-            primaryOrigin = StreamOrigin.parse(url) ?: StreamOrigin.parse("https://media.example")!!,
-            permittedOrigins = setOf(
-                StreamOrigin.parse(url) ?: StreamOrigin.parse("https://media.example")!!,
-            ),
-            cacheKey = url,
-            expiresAtEpochMs = null,
-            lengthBytes = length,
-        )
-
     /** PKCS#7-pads to the next 16-byte boundary, as an AES-128 segment is stored. */
     private fun pkcs7(plain: ByteArray): ByteArray {
         val pad = 16 - (plain.size % 16)
         return plain + ByteArray(pad) { pad.toByte() }
     }
+}
+
+private fun testLease(
+    url: String,
+    length: Long?,
+): ByteSourceLease {
+    val origin = StreamOrigin.parse(url) ?: StreamOrigin.parse("https://media.example")!!
+    return ByteSourceLease(
+        account = ByteSourceAccount(provider = "test", accountId = null),
+        primaryOrigin = origin,
+        permittedOrigins = setOf(origin),
+        cacheKey = url,
+        expiresAtEpochMs = null,
+        lengthBytes = length,
+    )
 }

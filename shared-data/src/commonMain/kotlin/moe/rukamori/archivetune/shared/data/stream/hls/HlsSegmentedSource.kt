@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.withLock
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceLease
 import moe.rukamori.archivetune.shared.data.bytesource.RandomAccessByteSource
+import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.bytesource.readUpTo
 import moe.rukamori.archivetune.shared.data.stream.NativeCiphertextOpener
 import moe.rukamori.archivetune.shared.data.stream.aes.Aes128
@@ -51,6 +52,10 @@ internal class HlsSegmentedSource(
     private var emittedInitIndex = -1
     private val keys = HashMap<Int, Aes128>()
     private val rangeContinuations = HashMap<String, Long>()
+    // The origins the parsed playlist approves, set once it parses; an open outside this set is refused.
+    private var resourceOrigins: Set<StreamOrigin>? = null
+    // One opened source per resource URI, shared by every byte range of that resource.
+    private val resourceSources = HashMap<String, RandomAccessByteSource>()
 
     /** The container the first indexed payload bytes advertise, or null until the first segment is indexed. */
     var sniffedMimeType: String? = null
@@ -115,7 +120,10 @@ internal class HlsSegmentedSource(
                         ?: throw HlsSegmentException("the HLS playlist is unavailable")
                 bytes.decodeToString()
             }
-        playlist = HlsMediaPlaylistParser.parse(playlistUrl, text)
+        val parsed = HlsMediaPlaylistParser.parse(playlistUrl, text)
+        // The one approved origin set, bounded like the preparation path, gates every resource open below.
+        resourceOrigins = hlsPlaylistOrigins(playlistUrl, parsed)
+        playlist = parsed
     }
 
     /** Appends the next segment's extents in one step: a failure leaves the index as it was before the segment. */
@@ -123,11 +131,15 @@ internal class HlsSegmentedSource(
         val index = nextSegment
         val segment = playlist!!.segments[index]
         val extents = ArrayList<Extent>(2)
-        if (segment.initIndex != emittedInitIndex) {
-            emittedInitIndex = segment.initIndex
-            if (segment.initIndex >= 0) extents.add(initExtent(segment.initIndex))
+        // The init-map state and the byte-range continuation commit only after the whole entry indexes, so a
+        // failed or cancelled open leaves the index exactly as it was and a retried read reopens this segment.
+        var pendingInitIndex = emittedInitIndex
+        val pendingContinuations = HashMap(rangeContinuations)
+        if (segment.initIndex != pendingInitIndex) {
+            pendingInitIndex = segment.initIndex
+            if (segment.initIndex >= 0) extents.add(initExtent(segment.initIndex, pendingContinuations))
         }
-        extents.add(segmentExtent(index, segment))
+        extents.add(segmentExtent(index, segment, pendingContinuations))
         var end = indexedEnd
         for (extent in extents) {
             if (extent.length == 0L) continue
@@ -135,31 +147,61 @@ internal class HlsSegmentedSource(
             end += extent.length
         }
         indexedEnd = end
+        emittedInitIndex = pendingInitIndex
+        rangeContinuations.clear()
+        rangeContinuations.putAll(pendingContinuations)
         nextSegment = index + 1
     }
 
-    /** The init section of an `#EXT-X-MAP`, as a whole resource or a declared sub-range of it. */
-    private suspend fun initExtent(initIndex: Int): Extent {
+    /** The init section of an `#EXT-X-MAP`, as a whole resource, a declared sub-range, or its AES-128 plaintext. */
+    private suspend fun initExtent(
+        initIndex: Int,
+        continuations: MutableMap<String, Long>,
+    ): Extent {
         val map = playlist!!.initMaps[initIndex]
-        val source =
-            opener.open(map.uri, accountScope)
-                ?: throw HlsSegmentException("the HLS init section is unavailable")
-        return rangedExtent(source, map.byteRange, map.uri, "the HLS init section did not state its length")
+        val source = openResource(map.uri)
+        if (map.keyIndex < 0) {
+            return rangedExtent(
+                source,
+                map.byteRange,
+                map.uri,
+                continuations,
+                "the HLS init section did not state its length",
+            )
+        }
+        val tag =
+            playlist!!.keys.getOrNull(map.keyIndex)
+                ?: throw HlsSegmentException("the HLS init section names a key tag that does not exist")
+        // The parser already required the explicit IV, because an init section has no media sequence to derive one.
+        val iv = tag.iv ?: throw HlsSegmentException("an encrypted HLS init section needs an explicit IV")
+        val cipher = rangedSource(source, map.byteRange, map.uri, continuations)
+        val cipherLength =
+            map.byteRange?.length
+                ?: cipher.lease.lengthBytes
+                ?: throw HlsSegmentException("the HLS init section did not state its length")
+        if (cipherLength <= 0L || cipherLength % AES_BLOCK_BYTES != 0L) {
+            throw HlsSegmentException("the HLS init section is not block-aligned for AES-128")
+        }
+        val plaintext = HlsAes128SegmentSource(cipher, keyFor(map.keyIndex, tag), iv.copyOf())
+        val length =
+            plaintext.plaintextLength()
+                ?: throw HlsSegmentException("the HLS init section did not reveal its plaintext length")
+        return Extent(length = length, source = plaintext, sourceOffset = 0L)
     }
 
     /** The plaintext extent of one media segment: a clear range or the AES-128-decrypted view of its cipher range. */
     private suspend fun segmentExtent(
         index: Int,
         segment: HlsSegment,
+        continuations: MutableMap<String, Long>,
     ): Extent {
-        val source =
-            opener.open(segment.uri, accountScope)
-                ?: throw HlsSegmentException("HLS segment ${index + 1} is unavailable")
+        val source = openResource(segment.uri)
         if (segment.keyIndex < 0) {
             return rangedExtent(
                 source,
                 segment.byteRange,
                 segment.uri,
+                continuations,
                 "HLS segment ${index + 1} did not state its length",
             )
         }
@@ -172,7 +214,7 @@ internal class HlsSegmentedSource(
         }
         val tag = playlist!!.keys.getOrNull(segment.keyIndex)
             ?: throw HlsSegmentException("HLS segment ${index + 1} names a key tag that does not exist")
-        val cipher = rangedSource(source, segment.byteRange, segment.uri)
+        val cipher = rangedSource(source, segment.byteRange, segment.uri, continuations)
         val plaintext =
             HlsAes128SegmentSource(cipher, keyFor(segment.keyIndex, tag), ivFor(tag, segment))
         // The plaintext ends one padding block short of the ciphertext; the index commits only once that is known.
@@ -182,16 +224,36 @@ internal class HlsSegmentedSource(
         return Extent(length = length, source = plaintext, sourceOffset = 0L)
     }
 
+    /**
+     * The source of one resource URI, opened once and shared by every byte range that names it, so consecutive
+     * `EXT-X-BYTERANGE` segments of one file reuse a single lease rather than holding a connection each. A URI
+     * outside the parsed playlist's approved origin set is refused before any request leaves.
+     */
+    private suspend fun openResource(uri: String): RandomAccessByteSource {
+        resourceSources[uri]?.let { return it }
+        val origin =
+            StreamOrigin.parse(uri) ?: throw HlsSegmentException("an HLS resource is not an HTTP(S) URL")
+        val approved = resourceOrigins
+        if (approved != null && origin !in approved) {
+            throw HlsSegmentException("an HLS resource origin is outside the playlist's approved set")
+        }
+        val source =
+            opener.open(uri, accountScope) ?: throw HlsSegmentException("an HLS resource is unavailable")
+        resourceSources[uri] = source
+        return source
+    }
+
     /** Wraps [source] in the declared byte range, or returns it unchanged when the segment uses the whole resource. */
     private fun rangedSource(
         source: RandomAccessByteSource,
         range: HlsByteRange?,
         uri: String,
+        continuations: MutableMap<String, Long>,
     ): RandomAccessByteSource {
         range ?: return source
         // A range without an offset continues the previous byte range of the same resource, per RFC 8216.
-        val offset = range.offset ?: (rangeContinuations[uri] ?: 0L)
-        rangeContinuations[uri] = offset + range.length
+        val offset = range.offset ?: (continuations[uri] ?: 0L)
+        continuations[uri] = offset + range.length
         return SubRangeSource(source, offset, range.length)
     }
 
@@ -200,9 +262,10 @@ internal class HlsSegmentedSource(
         source: RandomAccessByteSource,
         range: HlsByteRange?,
         uri: String,
+        continuations: MutableMap<String, Long>,
         noLengthMessage: String,
     ): Extent {
-        val ranged = rangedSource(source, range, uri)
+        val ranged = rangedSource(source, range, uri, continuations)
         val length = range?.length ?: ranged.lease.lengthBytes ?: throw HlsSegmentException(noLengthMessage)
         return Extent(length = length, source = ranged, sourceOffset = 0L)
     }
@@ -213,11 +276,17 @@ internal class HlsSegmentedSource(
         tag: HlsKeyTag,
     ): Aes128 =
         keys[keyIndex] ?: run {
-            val keyUrl =
-                resolveHlsUri(playlistUrl, tag.keyUri)
+            // The parser resolved every key URI, so the tag already names an absolute HTTP(S) resource; the
+            // approved-set check applies to keys exactly as it does to segments and init sections.
+            val origin =
+                StreamOrigin.parse(tag.keyUri)
                     ?: throw HlsSegmentException("an HLS key is not an HTTP(S) resource")
+            val approved = resourceOrigins
+            if (approved != null && origin !in approved) {
+                throw HlsSegmentException("an HLS key origin is outside the playlist's approved set")
+            }
             val bytes =
-                opener.openWhole(keyUrl, accountScope, MAX_KEY_BYTES)
+                opener.openWhole(tag.keyUri, accountScope, MAX_KEY_BYTES)
                     ?: throw HlsSegmentException("an HLS key is unavailable")
             if (bytes.size != AES_KEY_BYTES) {
                 throw HlsSegmentException("an HLS AES-128 key is not 16 bytes")

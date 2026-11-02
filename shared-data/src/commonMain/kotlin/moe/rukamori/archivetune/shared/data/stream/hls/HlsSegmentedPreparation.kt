@@ -93,18 +93,16 @@ internal object HlsSegmentedPreparation {
                 return NativePreparation.Refused(malformed.message ?: "the HLS playlist was rejected")
             }
         // The view's lease covers the playlist origin and every resource origin it names: segments, init sections
-        // and key documents. A key URI that does not resolve to HTTP(S) can never be fetched, so it refuses now.
-        val keyUrls =
-            playlist.keys.map { tag ->
-                resolveHlsUri(playlistUrl, tag.keyUri)
-                    ?: return NativePreparation.Refused("an HLS key is not an HTTP(S) resource")
+        // and key documents. The parser resolved every URI, so the approved set is collected and bounded here.
+        val origins =
+            try {
+                hlsPlaylistOrigins(playlistUrl, playlist)
+            } catch (refusal: HlsPlaylistException) {
+                return NativePreparation.Refused(refusal.message ?: "the HLS playlist was rejected")
             }
         val resourceUrls =
-            playlist.segments.map { it.uri } + playlist.initMaps.map { it.uri } + keyUrls + playlistUrl
-        val origins = resourceUrls.mapTo(LinkedHashSet()) { StreamOrigin.parse(it) ?: return NativePreparation.Refused("an HLS resource is not HTTP(S)") }
-        if (origins.size > MAX_PERMITTED_ORIGINS) {
-            return NativePreparation.Refused("the HLS playlist spans more origins than the lease bound")
-        }
+            playlist.segments.map { it.uri } + playlist.initMaps.map { it.uri } +
+                playlist.keys.map { it.keyUri } + playlistUrl
         // Every resource's own authorization window applies; the view adopts the earliest stated expiry.
         var expiresAtEpochMs: Long? = null
         for (url in resourceUrls) {
@@ -145,7 +143,6 @@ internal object HlsSegmentedPreparation {
     }
 
     private const val MAX_PLAYLIST_DOCUMENT_BYTES = 1 shl 20
-    private const val MAX_PERMITTED_ORIGINS = 256
     private const val PLAYBACK_PROVIDER = "playback"
     private const val UNKNOWN_MIME = "application/octet-stream"
     private const val UNKNOWN_CODEC = ""
