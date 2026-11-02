@@ -30,6 +30,8 @@ import kotlinx.cinterop.FloatVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.cstr
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import platform.AVFAudio.AVAudioSession
 import platform.Foundation.NSInvocation
 import platform.Foundation.NSMethodSignature
