@@ -137,6 +137,9 @@ haze = "1.7.2"
 # androidx.car.app — CarConnection, which the Android Auto settings screen uses to tell whether
 # the app is projected through Android Auto or running natively on Android Automotive.
 carApp = "1.7.0"
+# dbus-java — pure-Java D-Bus client (MIT) the desktop's Linux MPRIS and StatusNotifierItem exports
+# run on. The native-unixsocket transport talks to the session bus without JNI.
+dbusJava = "5.1.1"
 
 
 [libraries]
@@ -254,6 +257,8 @@ timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 metrolist-extractor = { module = "com.github.MetrolistGroup:MetrolistExtractor", version.ref = "metrolistExtractor" }
 newpipe-extractor = { module = "com.github.TeamNewPipe:NewPipeExtractor", version.ref = "extractor" }
 quickjs-kt = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjsKt" }
+dbus-java-core = { module = "com.github.hypfvieh:dbus-java-core", version.ref = "dbusJava" }
+dbus-java-transport-native-unixsocket = { module = "com.github.hypfvieh:dbus-java-transport-native-unixsocket", version.ref = "dbusJava" }
 innertubex = { module = "com.github.MetrolistGroup.innertubex:innertubex", version.ref = "innertubexVersion" }
 innertubex-desktop = { module = "com.github.MetrolistGroup.innertubex:innertubex-desktop", version.ref = "innertubexDesktopVersion" }
 innertubex-iosarm64 = { module = "com.github.MetrolistGroup.innertubex:innertubex-iosarm64", version.ref = "innertubexDesktopVersion" }
