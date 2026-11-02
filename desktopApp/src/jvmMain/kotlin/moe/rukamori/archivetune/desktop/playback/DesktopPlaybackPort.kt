@@ -104,7 +104,7 @@ class DesktopPlaybackPort(
     /** Confined to [executor]. The shared handoff rules, kept in step with the mixer's committed state. */
     private val scheduler = TwoDeckTransitionScheduler(TransitionDeck.FIRST)
 
-    /** Confined to [executor]. Null until the first load opens the output device. */
+    /** Confined to [executor]. Null until the first load opens the device, and while a pause parks it. */
     private var mixer: NativeTwoDeckMixer? = null
 
     /** Confined to [executor]. The last mixer commit this port has adopted. */
