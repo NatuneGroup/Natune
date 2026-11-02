@@ -95,6 +95,12 @@ class MediaLibrarySessionCallback
         var toggleLibrary: () -> Unit = {}
         var isListenTogetherGuestActive: () -> Boolean = { false }
         var onStopCommand: () -> Unit = {}
+
+        /**
+         * Runs a pause/play command through the service's output fades when it returns true;
+         * the controller then sees the request as cancelled while the faded command lands.
+         */
+        var onOutputFadeCommand: (OutputFadePolicy.Intercepted) -> Boolean = { false }
         private val controllerClassifier = MediaSessionControllerClassifier(context)
 
         internal data class AutoPlaylistSortOption(
@@ -248,6 +254,14 @@ class MediaLibrarySessionCallback
         override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
             val result = super.onPlayerCommandRequest(session, controller, playerCommand)
             if (playerCommand == Player.COMMAND_STOP && result == SessionResult.RESULT_SUCCESS) onStopCommand() // a stop() emits no listener-visible change
+            if (result == SessionResult.RESULT_SUCCESS) {
+                // The faded equivalent runs instead, so the request reports cancelled rather than
+                // executing the un-faded edge itself (click-free pause/resume).
+                OutputFadePolicy
+                    .interceptedCommand(playerCommand, session.player.playWhenReady)
+                    ?.takeIf { onOutputFadeCommand(it) }
+                    ?.let { return SessionError.INFO_CANCELLED }
+            }
             return result
         }
 
