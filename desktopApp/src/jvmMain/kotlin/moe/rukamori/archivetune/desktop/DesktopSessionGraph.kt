@@ -284,6 +284,16 @@ class DesktopSessionGraph internal constructor(
         playback.setAudioOutputEnabled(enabled)
     }
 
+    /**
+     * Parks the output device while playback is paused — the desktop's STOPPED_ON_BACKGROUND: the
+     * paused occurrence keeps its place and the next play or seek reopens the device at it. The
+     * window lifecycle calls this once a pause outlives its grace, or sooner while the window is
+     * off-screen; it is a no-op while audio is playing or nothing is loaded.
+     */
+    fun releaseAudioOutput() {
+        playback.releaseOutput()
+    }
+
     /** Writes one sanitized diagnostic line to the local log. Host diagnostics are not telemetry. */
     fun report(message: String) = desktopDiagnostic(message)
 

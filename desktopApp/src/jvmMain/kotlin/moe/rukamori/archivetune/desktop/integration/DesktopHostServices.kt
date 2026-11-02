@@ -35,6 +35,8 @@ class DesktopHostServices(
     quit: () -> Unit,
     /** True while the user is a Listen Together guest: transport keeps play/pause but refuses queue and position. */
     private val guestLocked: () -> Boolean = { false },
+    /** Parks the output device once a pause outlives its grace; the next play reopens it at the same position. */
+    releaseAudioOutput: () -> Unit = {},
     private val reportUnavailable: (String) -> Unit,
 ) : AutoCloseable {
     val windowActivity = DesktopWindowActivityObserver(window)
@@ -53,6 +55,7 @@ class DesktopHostServices(
     private val workspace: AutoCloseable?
     private val appearance: AutoCloseable?
     private val collector: Job
+    private val outputLifecycle: DesktopOutputLifecycle
     init {
         require(EventQueue.isDispatchThread()) { "Attach desktop host services on the AWT event thread" }
         val linux = System.getProperty("os.name").startsWith("Linux")
@@ -110,6 +113,12 @@ class DesktopHostServices(
         } catch (error: LinkageError) {
             reportUnavailable("Desktop appearance: ${error.javaClass.simpleName}"); null
         } else null
+        outputLifecycle = DesktopOutputLifecycle(
+            snapshots = controller.snapshot,
+            activity = windowActivity.activity,
+            scope = scope,
+            release = releaseAudioOutput,
+        )
         collector = scope.launch {
             combine(controller.snapshot, metadata, transport, ::Triple).collect { (snapshot, display, state) ->
                 try { integration?.update(snapshot, display, state) }
@@ -125,6 +134,7 @@ class DesktopHostServices(
         return true
     }
     override fun close() {
+        outputLifecycle.close()
         collector.cancel()
         visibility?.close()
         workspace?.close()
