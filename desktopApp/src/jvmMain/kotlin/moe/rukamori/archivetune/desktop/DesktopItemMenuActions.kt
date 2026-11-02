@@ -7,11 +7,16 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.HistoryOrigin
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPin
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.serializeBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.serializeSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.toggleBlockedSongRef
 import moe.rukamori.archivetune.shared.ui.menu.SongMenuHost
 import moe.rukamori.archivetune.shared.ui.menu.songExportFileName
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
@@ -85,8 +90,22 @@ internal class DesktopSongMenuHost(
 
     override fun openSleepTimer() { sleepSheet.open = true }
 
-    override suspend fun setRecommendationBlocked(song: ContentRef, blocked: Boolean) =
-        state.unavailable("content_menu_recommendation_unsupported")
+    /**
+     * The block list the baseline kept as a timestamp on the stored song row is a preference here, so it
+     * survives without a library row and exports with SETTINGS. Recommendations come from YouTube feeds,
+     * so the same gate as pins and refetches applies.
+     */
+    override suspend fun setRecommendationBlocked(song: ContentRef, blocked: Boolean) {
+        if (!song.supportsDesktopSongPin()) state.unavailable("content_menu_recommendation_unsupported")
+        graph.settings.edit {
+            val next = toggleBlockedSongRef(
+                parseBlockedSongRefs(get(BlockedSongIdsKey).orEmpty()),
+                BlockedSongRef(song.provider, song.id),
+                blocked,
+            ) ?: state.unavailable("content_menu_recommendation_unsupported")
+            set(BlockedSongIdsKey, serializeBlockedSongRefs(next))
+        }
+    }
 
     override suspend fun saveCoverArtwork(song: ContentRef, artworkUrl: String): Boolean {
         val image = graph.artworkLoader.load(artworkUrl) ?: return false

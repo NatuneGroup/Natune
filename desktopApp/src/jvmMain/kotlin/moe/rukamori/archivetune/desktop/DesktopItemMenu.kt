@@ -24,9 +24,11 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
 import moe.rukamori.archivetune.shared.domain.settings.ExternalDownloaderEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
 import moe.rukamori.archivetune.shared.ui.host.queuedEntry
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
@@ -47,7 +49,8 @@ import org.jetbrains.compose.resources.stringResource
  * The one row menu of the desktop host. A row's overflow opens it on that row's occurrence. It mounts the shared song
  * menu with the owners this host actually has: queue, library like and add-to-playlist, share, history
  * removal, playlist-row removal, album navigation, the sleep timer sheet, cover-art save, track info, the download
- * owner's start, removal and export, radio, speed dial and the media-info route. A row keeps its real actions; missing
+ * owner's start, removal and export, radio, speed dial, recommendation blocks and the media-info route. A row keeps
+ * its real actions; missing
  * platform owners give a resource-backed reason rather than disappearing.
  */
 internal class DesktopItemMenuState {
@@ -254,7 +257,9 @@ private fun DesktopSongMenu(
         fromCache = occurrence.occurrenceId.startsWith("cache:"),
         albumId = occurrence.item.albumId.takeUnless { ref.kind == ContentKind.EPISODE },
         artworkUrl = occurrence.item.artworkUri,
-        recommendationBlocked = false,
+        recommendationBlocked = ref.supportsDesktopSongPin() &&
+            parseBlockedSongRefs(preferences?.get(BlockedSongIdsKey).orEmpty())
+                .any { it.provider == ref.provider && it.id == ref.id },
         externalDownloaderEnabled = preferences?.get(ExternalDownloaderEnabledKey) == true,
         // Android package configuration cannot launch a desktop app; the row explains this when selected.
         externalDownloaderConfigured = true,
