@@ -31,6 +31,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import moe.rukamori.archivetune.lyrics.LyricsUtils
@@ -364,10 +365,10 @@ private fun shapeEnhancedSyllables(
         tops = FloatArray(lineCount) { layout.getLineTop(it) },
         bottoms = FloatArray(lineCount) { layout.getLineBottom(it) },
         overshootPx =
-            if (style.fontSize.isUnspecified) {
+            if (style.fontSize == TextUnit.Unspecified) {
                 0f
             } else {
-                with(measurer) { style.fontSize.toPx() * LyricsLineBands.OVERSHOOT_EM }
+                with(layout.layoutInput.density) { style.fontSize.toPx() * LyricsLineBands.OVERSHOOT_EM }
             },
     )
     val clusters = GraphemeClusterSegmenter.clusterStarts(joined.text)

@@ -5,6 +5,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.TextUnit
 import moe.rukamori.archivetune.shared.domain.lyrics.unicode.GraphemeClusterSegmenter
 
 /** Identity of one shaped row: which row, at which width, in which style. */
@@ -64,10 +65,10 @@ internal fun shapeLyricRow(
         tops = FloatArray(lineCount) { layout.getLineTop(it) },
         bottoms = FloatArray(lineCount) { layout.getLineBottom(it) },
         overshootPx =
-            if (key.style.fontSize.isUnspecified) {
+            if (key.style.fontSize == TextUnit.Unspecified) {
                 0f
             } else {
-                with(measurer) { key.style.fontSize.toPx() * LyricsLineBands.OVERSHOOT_EM }
+                with(layout.layoutInput.density) { key.style.fontSize.toPx() * LyricsLineBands.OVERSHOOT_EM }
             },
     )
     val boxes = row.words.orEmpty()
