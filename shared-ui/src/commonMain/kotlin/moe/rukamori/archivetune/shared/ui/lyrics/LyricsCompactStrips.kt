@@ -76,7 +76,11 @@ fun LyricsCompactStrip(
     val onTap: () -> Unit = {
         if (current != null) {
             val action = LyricsTapPolicy.onTap(current, selectionActive = false, tapToSeek = tapToSeek)
-            if (action is LyricsTapAction.Seek) actions.onSeek(action.positionMs)
+            if (action is LyricsTapAction.Seek) {
+                actions.onSeek(action.positionMs)
+                // The line is a play control: a seek landed while paused resumes playback.
+                if (snapshot?.playWhenReady == false) actions.onResume()
+            }
         }
     }
 

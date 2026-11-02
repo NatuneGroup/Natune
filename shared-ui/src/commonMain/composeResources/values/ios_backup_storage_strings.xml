@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ios_backup_restart_title">Restart required</string>
+    <string name="ios_backup_restart_message">The restore is staged and applies the next time the app starts. Quit now, or keep using this session and restart later.</string>
+    <string name="ios_backup_restart_quit">Quit now</string>
+    <string name="ios_backup_restart_later">Later</string>
+    <string name="ios_backup_restore_failed_title">Restore failed</string>
+    <string name="ios_backup_restore_failed_message">The staged backup could not be applied. Your previous library and settings were kept.</string>
+    <string name="ios_backup_restore_failed_dismiss">OK</string>
+    <string name="ios_restore_blocked_title">Library unavailable</string>
+    <string name="ios_restore_blocked_message">A restore left the library in an inconsistent state, so this session is running without it. Choose how to continue; displaced files are moved aside for diagnosis, never deleted.</string>
+    <string name="ios_restore_blocked_previous">Restore previous library</string>
+    <string name="ios_restore_blocked_empty">Start with an empty library</string>
+    <string name="ios_export_songs_title">Export downloaded songs</string>
+    <string name="ios_export_songs_search">Search downloads</string>
+    <string name="ios_export_songs_selected">%1$d selected</string>
+    <string name="ios_export_songs_select_all">Select all</string>
+    <string name="ios_export_songs_clear_selection">Clear selection</string>
+    <string name="ios_export_songs_delete">Delete</string>
+    <string name="ios_export_songs_delete_confirm">Delete %1$d selected downloads?</string>
+    <string name="ios_export_songs_export">Export</string>
+    <string name="ios_export_songs_progress">Exporting %1$d of %2$d</string>
+    <string name="ios_export_songs_done">Exported %1$d songs</string>
+    <string name="ios_export_songs_deleted">Deleted %1$d downloads</string>
+    <string name="ios_export_songs_empty">No downloads to export</string>
+</resources>

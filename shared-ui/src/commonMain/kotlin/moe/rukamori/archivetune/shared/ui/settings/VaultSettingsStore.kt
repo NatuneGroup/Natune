@@ -186,7 +186,11 @@ fun settingsCredentialRoutes(): Map<StringPreferenceKey, CredentialKey> = buildM
     bind("youtube", names = arrayOf("innerTubeCookie", "innerTubeOAuthToken", "innerTubeOAuthRefreshToken",
         "visitorData", "dataSyncId", "poToken", "poTokenGvs", "poTokenPlayer", "savedAccounts"))
     bind("spotify", CredentialScope.SPOTIFY_CATALOG, "spotify_sp_dc", "spotify_sp_key", "spotify_access_token")
-    bind("spotify", CredentialScope.SPOTIFY_STREAMING, "spotifyStreamSpDc", "spotifyStreamSpKey", "spotifyStreamAccessToken")
+    bind("spotify", CredentialScope.SPOTIFY_STREAMING, "spotifyStreamSpDc", "spotifyStreamSpKey", "spotifyStreamAccessToken",
+        // The Librespot engine's catalog-bound grant and its cached bearer live in the streaming scope's vault,
+        // with the catalog-cookie fingerprint that binds them; plaintext copies migrate on the next open like every
+        // other routed credential.
+        "spotify_librespot_refresh_token", "spotify_librespot_access_token", "spotify_librespot_catalog_sp_dc")
     bind("tidal", names = arrayOf("tidalAccessToken", "tidalRefreshToken", "tidalCookie"))
     bind("qobuz", names = arrayOf("qobuzTokens"))
     bind("deezer", names = arrayOf("deezerArl"))

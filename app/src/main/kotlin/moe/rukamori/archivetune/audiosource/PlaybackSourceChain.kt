@@ -78,9 +78,32 @@ object PlaybackSourceChain {
     fun cacheKeyOrder(
         snapshot: PlaybackSourceSnapshot,
         mediaId: String,
+        youtubeItag: Int? = null,
     ): List<String> =
         baseChain(snapshot).mapNotNull { source -> cacheProbeKey(source, mediaId) } +
-            listOfNotNull(mediaId.takeIf { AudioSourceType.YOUTUBE in snapshot.enabled })
+            if (AudioSourceType.YOUTUBE in snapshot.enabled) {
+                // The rendition slot probes before the legacy bare key, which only ever serves
+                // complete copies; neither appears while YouTube is switched off.
+                listOfNotNull(itagCacheKey(mediaId, youtubeItag), mediaId)
+            } else {
+                emptyList()
+            }
+
+    /**
+     * The itag-scoped player-cache key a resolved YouTube rendition writes under
+     * ("<mediaId>#i<itag>"). The persisted format row names it before a resolve can run; an
+     * unset or external-source itag (0) names nothing.
+     */
+    fun itagCacheKey(mediaId: String, itag: Int?): String? =
+        itag?.takeIf { it > 0 }?.let { "$mediaId#i$it" }
+
+    /**
+     * The length an itag-scoped slot must cover to count as fully cached: the key's own
+     * recorded content length first, the persisted format row's otherwise — the bare-key
+     * slot's length says nothing about this rendition's bytes.
+     */
+    fun itagCoverageLength(recordedContentLength: Long?, formatContentLength: Long?): Long? =
+        (recordedContentLength ?: formatContentLength)?.takeIf { it > 0L }
 
     /**
      * The cache key [source]'s bytes are probed under, or null when the source has none. The

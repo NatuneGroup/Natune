@@ -94,7 +94,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import dagger.hilt.android.AndroidEntryPoint
@@ -185,10 +184,6 @@ import moe.rukamori.archivetune.constants.LastFMUseNowPlaying
 import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
 import moe.rukamori.archivetune.constants.ListenBrainzTokenKey
 import moe.rukamori.archivetune.constants.MaxSongCacheSizeKey
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleLike
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleRepeatMode
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleShuffle
-import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleStartRadio
 import moe.rukamori.archivetune.constants.PauseListenHistoryKey
 import moe.rukamori.archivetune.constants.SyncPlaybackToYouTubeHistoryKey
 import moe.rukamori.archivetune.constants.PauseOnDeviceMuteKey
@@ -241,7 +236,6 @@ import moe.rukamori.archivetune.constants.AmazonTurnstileJwtKey
 import moe.rukamori.archivetune.constants.QqMusicEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethod
-import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.QqAudioQuality
 import moe.rukamori.archivetune.constants.QqMusicAudioQualityKey
 import moe.rukamori.archivetune.constants.YouTubeSourceEnabledKey
@@ -294,6 +288,7 @@ import moe.rukamori.archivetune.constants.ArtworkProviderOrderKey
 import moe.rukamori.archivetune.constants.DefaultArtworkProviderOrder
 import moe.rukamori.archivetune.constants.deserializeArtworkProviderOrder
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolAccountRecovery
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.constants.PlayerVolumeKey
@@ -323,7 +318,6 @@ import moe.rukamori.archivetune.extensions.SilentHandler
 import moe.rukamori.archivetune.extensions.collect
 import moe.rukamori.archivetune.extensions.collectLatest
 import moe.rukamori.archivetune.extensions.currentMetadata
-import moe.rukamori.archivetune.extensions.directorySizeBytes
 import moe.rukamori.archivetune.extensions.findNextMediaItemById
 import moe.rukamori.archivetune.extensions.getQueueWindows
 import moe.rukamori.archivetune.extensions.mediaItems
@@ -407,8 +401,6 @@ import moe.rukamori.archivetune.playback.preload.NextTrackPrefetchPolicy
 import moe.rukamori.archivetune.playback.stream.codecsFromMimeType
 import moe.rukamori.archivetune.shared.domain.persistence.PositionRestorePolicy
 import moe.rukamori.archivetune.scrobbling.LastFmServiceConfig
-import moe.rukamori.archivetune.storage.StorageFolderKind
-import moe.rukamori.archivetune.storage.StorageLocationRepository
 import moe.rukamori.archivetune.ui.screens.settings.DiscordPresenceManager
 import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.ui.screens.settings.ListenBrainzManager
@@ -527,6 +519,7 @@ class MusicService :
     private var autoStartOnBluetoothEnabled = false
     private var bluetoothReceiverRegistered = false
     private var wakeLock: PowerManager.WakeLock? = null
+    private var lowLatencyWifiLock: LowLatencyWifiLock? = null
     private var wakelockEnabled = false
     private var audioDeviceCallbackRegistered = false
     private var audioRouteRecoveryJob: Job? = null
@@ -746,7 +739,8 @@ class MusicService :
 
     @Volatile
     private var lastLoginRecoveryPrompt: Pair<String, Long>? = null
-    private val playbackStreamRecoveryTracker = PlaybackStreamRecoveryTracker()
+    private val playbackStreamRecoveryTracker =
+        PlaybackStreamRecoveryTracker(maxAttemptsPerMediaItem = PlaybackRetryBackoff.DEFAULT_MAX_ATTEMPTS)
 
     /**
      * The shared recovery-policy driver consulted once every specialised in-place recovery has
@@ -754,6 +748,9 @@ class MusicService :
      * item, bounded at the budget's two resolve requests per failure stretch.
      */
     private val playbackErrorRecovery = PlaybackErrorRecovery()
+    private val rebufferMonitor = RebufferMonitor()
+    private val recoveryRetry =
+        PlaybackRecoveryRetry({ scope }, { player }, playbackStreamRecoveryTracker, rebufferMonitor)
 
     // Initial-buffer-stall recovery (ported from Metrolist).
     // A stream can stall in STATE_BUFFERING forever without surfacing an HTTP error the
@@ -773,6 +770,7 @@ class MusicService :
     private var codecRecoveryMediaId: String? = null
     @Volatile
     private var codecRecoveryAttemptCount: Int = 0
+    private var codecRecoveryReadyAtMs: Long = Long.MIN_VALUE
     private val codecRecoveryMaxAttempts = 4
     private var nextHistorySessionToken = 0L
     private var currentHistorySessionToken = 0L
@@ -1240,13 +1238,9 @@ class MusicService :
         idleStopJob = null
     }
 
-    private fun hasResumablePlaybackNotification(): Boolean {
-        val state = player.playbackState
-        return player.mediaItemCount > 0 &&
-            player.currentMediaItem != null &&
-            state != Player.STATE_IDLE &&
-            state != Player.STATE_ENDED
-    }
+    // Duration and seekability resolve after the first notification layout, so the long-content
+    // seek pair is re-set only when one of those inputs flips.
+    private val notificationLayoutGate = NotificationCustomLayoutGate()
 
     // Route string of the last session-activity PendingIntent ("album/<id>" or null), so the
     // PendingIntent is only rebuilt when the target actually changes.
@@ -1294,7 +1288,7 @@ class MusicService :
 
     private fun scheduleStopIfIdle() {
         if (hasBoundClients) return
-        if (hasResumablePlaybackNotification()) {
+        if (hasResumablePlaybackNotification(player)) {
             cancelIdleStop()
             promoteToStartedService()
             ensureStartedAsForeground()
@@ -1324,7 +1318,7 @@ class MusicService :
             scope.launch {
                 delay(delayMs)
                 if (hasBoundClients) return@launch
-                if (hasResumablePlaybackNotification()) return@launch
+                if (hasResumablePlaybackNotification(player)) return@launch
                 stopForegroundAndSelf()
             }
     }
@@ -1491,6 +1485,7 @@ class MusicService :
             (getSystemService(Context.POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ArchiveTune:Playback")
                 .also { it.setReferenceCounted(false) }
+        lowLatencyWifiLock = LowLatencyWifiLock(this)
         setupAudioFocusRequest()
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, android.os.Handler(mainLooper))
         audioDeviceCallbackRegistered = true
@@ -1501,9 +1496,8 @@ class MusicService :
             toggleLike = ::toggleLike
             toggleStartRadio = ::toggleStartRadio
             toggleLibrary = ::toggleLibrary
-            isListenTogetherGuestActive = {
-                listenTogetherManager.isInRoom && !listenTogetherManager.isHost
-            }
+            isListenTogetherGuestActive = { listenTogetherManager.isInRoom && !listenTogetherManager.isHost }
+            onStopCommand = { recoveryRetry.cancelPending() }
         }
         mediaSession =
             MediaLibrarySession
@@ -1876,7 +1870,7 @@ class MusicService :
                 val bytesPerMb = 1024L * 1024L
                 val safeSizeMb = maxSongCacheSizeMb.toLong().coerceAtMost(Long.MAX_VALUE / bytesPerMb)
                 val limitBytes = safeSizeMb * bytesPerMb
-                trimPlayerCacheToBytes(limitBytes)
+                trimPlayerCacheToBytes(this@MusicService, playerCache, limitBytes)
             }
 
         dataStore.data
@@ -4329,6 +4323,7 @@ class MusicService :
             mediaSession.player = player
             _playerFlow.value = player
             pausedPlaybackGate.sync(player)
+            recoveryRetry.cancelPending()
 
             // The rebuilt wrapper starts with playWhenReady=false regardless of what the promoted
             // ExoPlayer was doing, so the intent captured before the rebuild is re-applied here —
@@ -5233,6 +5228,7 @@ class MusicService :
                 invalidateExternalStream(mediaId, requireNotNull(externalSource))
             }
         ) {
+            if (!recoveryRetry.allow(mediaId)) return false // decided now, not in the async tail, so denial reaches the terminal path
             val recoveryEpoch = ++externalStreamRecoveryEpoch
             val recoveryPlayer = player
             val mediaItemIndex = player.currentMediaItemIndex
@@ -5244,8 +5240,7 @@ class MusicService :
                     if (externalStreamRecoveryEpoch != recoveryEpoch || player !== recoveryPlayer ||
                         player.currentMediaItemIndex != mediaItemIndex || player.currentMediaItem?.mediaId != mediaId
                     ) return@withContext
-                    player.seekTo(mediaItemIndex, positionMs)
-                    player.prepare()
+                    recoveryRetry.prepare(mediaId, resumePlaying = false, seekIndex = mediaItemIndex, seekPositionMs = positionMs)
                 }
             }
             return true
@@ -5273,9 +5268,7 @@ class MusicService :
             YTPlayerUtils.markStreamClientFailed(mediaId, requestProfile.clientKey, responseException.responseCode)
         }
 
-        if (!playbackStreamRecoveryTracker.registerRetryAttempt(mediaId)) {
-            return false
-        }
+        if (!recoveryRetry.allow(mediaId)) return false
 
         Timber.tag("MusicService").i(
             "Retrying playback for %s after stream HTTP %d from %s failed",
@@ -5283,9 +5276,7 @@ class MusicService :
             responseException.responseCode,
             requestProfile.variantLabel,
         )
-        val shouldResume = player.playWhenReady
-        player.prepare()
-        if (shouldResume) player.play()
+        recoveryRetry.prepare(mediaId, player.playWhenReady)
         return true
     }
 
@@ -5332,10 +5323,7 @@ class MusicService :
                 )
                 playbackUrlCache.remove(mediaId)
                 YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
-                if (playbackStreamRecoveryTracker.registerRetryAttempt(mediaId)) {
-                    player.prepare()
-                    if (player.playWhenReady) player.play()
-                }
+                if (recoveryRetry.allow(mediaId)) recoveryRetry.prepare(mediaId, player.playWhenReady)
             }
     }
 
@@ -5343,58 +5331,15 @@ class MusicService :
 
     private fun updateNotification() {
         try {
-            val customLayout =
-                listOf(
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(
-                                if (currentSong.value?.song?.liked == true) {
-                                    R.string.action_remove_like
-                                } else {
-                                    R.string.action_like
-                                },
-                            ),
-                        ).setIconResId(if (currentSong.value?.song?.liked == true) R.drawable.favorite else R.drawable.favorite_border)
-                        .setSessionCommand(CommandToggleLike)
-                        .setEnabled(currentSong.value != null)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(
-                                when (player.repeatMode) {
-                                    REPEAT_MODE_OFF -> R.string.repeat_mode_off
-                                    REPEAT_MODE_ONE -> R.string.repeat_mode_one
-                                    REPEAT_MODE_ALL -> R.string.repeat_mode_all
-                                    else -> R.string.repeat_mode_off
-                                },
-                            ),
-                        ).setIconResId(
-                            when (player.repeatMode) {
-                                REPEAT_MODE_OFF -> R.drawable.repeat
-                                REPEAT_MODE_ONE -> R.drawable.repeat_one_on
-                                REPEAT_MODE_ALL -> R.drawable.repeat_on
-                                else -> R.drawable.repeat
-                            },
-                        ).setSessionCommand(CommandToggleRepeatMode)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(
-                            getString(if (player.shuffleModeEnabled) R.string.action_shuffle_off else R.string.action_shuffle_on),
-                        ).setIconResId(if (player.shuffleModeEnabled) R.drawable.shuffle_on else R.drawable.shuffle)
-                        .setSessionCommand(CommandToggleShuffle)
-                        .build(),
-                    CommandButton
-                        .Builder()
-                        .setDisplayName(getString(R.string.start_radio))
-                        .setIconResId(R.drawable.radio)
-                        .setSessionCommand(CommandToggleStartRadio)
-                        .setEnabled(currentSong.value != null)
-                        .build(),
-                )
-            mediaSession.setCustomLayout(customLayout)
+            mediaSession.setCustomLayout(
+                buildNotificationCustomLayout(
+                    context = this,
+                    player = player,
+                    liked = currentSong.value?.song?.liked == true,
+                    hasSong = currentSong.value != null,
+                ),
+            )
+            notificationLayoutGate.markBuilt(player)
         } catch (e: Exception) {
             reportException(e)
         }
@@ -5402,7 +5347,7 @@ class MusicService :
 
     fun refreshPlaybackNotification() {
         updateNotification()
-        onUpdateNotification(mediaSession, hasResumablePlaybackNotification())
+        onUpdateNotification(mediaSession, hasResumablePlaybackNotification(player))
     }
 
     private suspend fun enrichFromAppleMusic(metadata: MediaMetadata): MediaMetadata {
@@ -6151,6 +6096,7 @@ class MusicService :
         closeAudioEffectSession()
         consecutivePlaybackErr = 0
         playbackErrorRecovery.reset()
+        recoveryRetry.cancelPending()
         // Per-media-id resolution caches grow one entry per unique track played and were never
         // pruned, so a long listening session leaked them indefinitely. A full stop clears the
         // queue and leaves no active track, so every entry is now stale — drop them here. They
@@ -7244,6 +7190,7 @@ class MusicService :
         initialBufferRecoveryJob = null
         initialBufferRecoveryAttemptedMediaId = null
         updateInitialBufferRecovery(player.playbackState)
+        recoveryRetry.onMediaItemTransition(mediaItem?.mediaId, player.playbackState == Player.STATE_READY, player.playbackState == Player.STATE_BUFFERING)
 
         // Catch-all for user-initiated skips that bypass PlayerConnection (notification, lock
         // screen, Bluetooth, Android Auto): a SEEK transition while a crossfade fade loop is still
@@ -7498,11 +7445,12 @@ class MusicService :
                     // playback path will not use a YouTube URL for this track.
                     if (!isSourceEnabled(AudioSourceType.YOUTUBE)) return@runCatching
 
+                    val prefetchQuality = recoveryRetry.audioQuality(mediaId, lowData, audioQuality)
                     val result =
                         retryWithoutPlaybackLoginContext {
                             YTPlayerUtils.playerResponseForPlayback(
                                 mediaId,
-                                audioQuality = if (lowData) AudioQuality.LOW else audioQuality,
+                                audioQuality = prefetchQuality,
                                 connectivityManager = connectivityManager,
                                 preferredStreamClient = preferredStreamClient,
                                 networkMetered = lowData,
@@ -7515,6 +7463,8 @@ class MusicService :
                             url = playbackData.streamUrl,
                             expiresAtMs = expiresAtMs,
                             authFingerprint = playbackData.authFingerprint,
+                            low = prefetchQuality == AudioQuality.LOW,
+                            itag = playbackData.format.itag,
                         )
                         Timber.tag(TAG).d(
                             "Prefetch: YouTube stream URL cached for %s (expires in %ds)",
@@ -7562,7 +7512,9 @@ class MusicService :
         )
 
         updateHistoryTrackingPlaybackState()
-        updateInitialBufferRecovery(playbackState)
+        updateInitialBufferRecovery(playbackState); if (playbackState != Player.STATE_READY) codecRecoveryReadyAtMs = Long.MIN_VALUE
+        rebufferMonitor.onPlaybackStateChanged(
+            player.currentMediaItem?.mediaId, playbackState == Player.STATE_BUFFERING, playbackState == Player.STATE_READY, player.playWhenReady)
         if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
             enqueueCurrentHistorySessionForFinalization()
             // IDLE also follows a playback error that the source chain retries in place; resetting
@@ -7697,6 +7649,7 @@ class MusicService :
         reason: Int,
     ) {
         super.onPlayWhenReadyChanged(playWhenReady, reason)
+        recoveryRetry.onPlayWhenReadyChanged(playWhenReady)
         val isEndOfOutgoingItemPause =
             !playWhenReady &&
                 reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
@@ -7800,6 +7753,7 @@ class MusicService :
             if (currentMediaId != codecRecoveryMediaId) {
                 codecRecoveryMediaId = currentMediaId
                 codecRecoveryAttemptCount = 0
+                codecRecoveryReadyAtMs = Long.MIN_VALUE
             }
         }
         if (
@@ -7808,17 +7762,8 @@ class MusicService :
         ) {
             playbackStreamRecoveryTracker.onPlaybackRecovered(currentMediaId)
             playbackErrorRecovery.onPlaybackRecovered()
-            // Codec successfully reached READY / isPlaying after a recovery re-prepare —
-            // the current codec instance is healthy, so reset the per-media counter so the
-            // NEXT background+pause cycle gets a fresh budget.
-            if (codecRecoveryAttemptCount > 0) {
-                Timber.tag("MusicService").i(
-                    "Codec recovery succeeded for %s after %d attempt(s); resetting codec-recovery budget",
-                    currentMediaId,
-                    codecRecoveryAttemptCount,
-                )
-                codecRecoveryAttemptCount = 0
-            }
+            // Stamp only a real READY entry; isPlaying must not restart the stability window.
+            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_READY) codecRecoveryReadyAtMs = android.os.SystemClock.elapsedRealtime()
             currentMediaId
                 ?.let(playbackUrlCache::get)
                 ?.url
@@ -7872,7 +7817,7 @@ class MusicService :
                 ensureAudioFocusForActivePlayback()
             }
             updateWakeLock()
-            if (hasResumablePlaybackNotification()) {
+            if (hasResumablePlaybackNotification(player)) {
                 cancelIdleStop()
                 promoteToStartedService()
                 ensureStartedAsForeground()
@@ -7937,6 +7882,7 @@ class MusicService :
         if (events.contains(EVENT_TIMELINE_CHANGED) && !isCrossfading) {
             scheduleCrossfade()
         }
+        notificationLayoutGate.onEvents(player, events) { updateNotification() }
 
         // Also handle immediate update for play state and media item transition events explicitly
         if (events.containsAny(
@@ -8025,6 +7971,7 @@ class MusicService :
         val isSeekDiscontinuity =
             reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
         if (isSeekDiscontinuity) {
+            recoveryRetry.onSeek()
             Timber.tag("PlaybackDiagnostics").d(
                 "Seek reason=%d fromMs=%d toMs=%d state=%d playWhenReady=%s isPlaying=%s gain=%.3f expectedGain=%.3f focusHeld=%s crossfadeProgress=%.3f",
                 reason,
@@ -8187,8 +8134,8 @@ class MusicService :
             // Invalidate any stale stream URL cache so the resolver is forced
             // to consult the cache first on the next prepare.
             playbackUrlCache.remove(currentMediaId)
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
-                player.prepare()
+            if (recoveryRetry.allow(currentMediaId)) {
+                recoveryRetry.prepare(currentMediaId, resumePlaying = false)
                 return
             }
         }
@@ -8262,9 +8209,8 @@ class MusicService :
                 // Re-prepare ONLY after the purge completes, back on the Main thread, so the
                 // fresh prepare cannot re-read the spans we just deleted.
                 withContext(Dispatchers.Main) {
-                    if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
-                        player.seekTo(mediaItemIndex, resumePosition)
-                        player.prepare()
+                    if (recoveryRetry.allow(currentMediaId)) {
+                        recoveryRetry.prepare(currentMediaId, resumePlaying = false, seekIndex = mediaItemIndex, seekPositionMs = resumePosition)
                     } else {
                         // Retry budget for this item is spent; the recovery policy decides next.
                         stopOrAdvanceAfterError(error, currentMediaId)
@@ -8278,9 +8224,9 @@ class MusicService :
             playbackUrlCache.remove(currentMediaId)
             YTPlayerUtils.invalidateCachedStreamUrls(currentMediaId)
             YTPlayerUtils.clearPlaybackAuthCaches()
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
+            if (recoveryRetry.allow(currentMediaId)) {
                 Timber.tag("MusicService").i("Retrying playback for %s after bot-detection source error", currentMediaId)
-                player.prepare()
+                recoveryRetry.prepare(currentMediaId, resumePlaying = false)
                 return
             }
         }
@@ -8288,7 +8234,7 @@ class MusicService :
         if (!isLocalMedia && !isFullyDownloadedMedia && YTPlayerUtils.isBadStreamPlayerResponseException(error)) {
             playbackUrlCache.remove(currentMediaId)
             YTPlayerUtils.invalidateCachedStreamUrls(currentMediaId)
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
+            if (recoveryRetry.allow(currentMediaId)) {
                 scope.launch(Dispatchers.IO) {
                     runCatching {
                         YTPlayerUtils.recoverFromBadStreamPlayerResponse(currentMediaId)
@@ -8301,13 +8247,11 @@ class MusicService :
                         reportException(it)
                     }
                     withContext(Dispatchers.Main) {
-                        if (player.currentMediaItem?.mediaId == currentMediaId) {
-                            Timber.tag("MusicService").i(
-                                "Retrying playback for %s after refreshing stream session",
-                                currentMediaId,
-                            )
-                            player.prepare()
-                        }
+                        Timber.tag("MusicService").i(
+                            "Retrying playback for %s after refreshing stream session",
+                            currentMediaId,
+                        )
+                        recoveryRetry.prepare(currentMediaId, resumePlaying = false)
                     }
                 }
                 return
@@ -8331,13 +8275,13 @@ class MusicService :
                         httpStatusCode = null,
                     )
                 }
-            if (playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)) {
+            if (recoveryRetry.allow(currentMediaId)) {
                 Timber.tag("MusicService").i(
                     "Retrying playback for %s after parser source error %d",
                     currentMediaId,
                     error.errorCode,
                 )
-                player.prepare()
+                recoveryRetry.prepare(currentMediaId, resumePlaying = false)
                 return
             }
         }
@@ -8347,11 +8291,13 @@ class MusicService :
             val resumePosition = player.currentPosition.coerceAtLeast(0L)
             val mediaItemIndex = player.currentMediaItemIndex
 
-            // Reset budget if we've moved to a different media item since the last attempt.
-            if (currentMediaId != codecRecoveryMediaId) {
+            // New item, or READY held for 10 s: refill; a brief READY between failures must not.
+            val stableReadyMs = if (codecRecoveryReadyAtMs == Long.MIN_VALUE) 0L else android.os.SystemClock.elapsedRealtime() - codecRecoveryReadyAtMs
+            if (currentMediaId != codecRecoveryMediaId || stableReadyMs >= 10_000L) {
                 codecRecoveryMediaId = currentMediaId
                 codecRecoveryAttemptCount = 0
             }
+            codecRecoveryReadyAtMs = Long.MIN_VALUE
             val attemptNumber = codecRecoveryAttemptCount + 1
             val withinBudget = attemptNumber <= codecRecoveryMaxAttempts
 
@@ -8364,26 +8310,21 @@ class MusicService :
                 codecRecoveryMaxAttempts,
             )
 
-            if (withinBudget) {
+            // The rebuffer freeze applies here too: a track whose stalls already froze its
+            // in-place retries does not get codec rebuilds either.
+            if (withinBudget && !rebufferMonitor.shouldSuppressRetries(currentMediaId)) {
                 codecRecoveryAttemptCount = attemptNumber
-                scope.launch(Dispatchers.Main) {
-                    try {
-                        // Give the OS a moment to finish releasing the dead codec instance
-                        // before we ask ExoPlayer to instantiate a fresh one. Without this,
-                        // the new codec can race the old one's teardown and fail with the
-                        // same 0x80000000 / Released-state signature on the very first
-                        // queueInputBuffer() call.
-                        if (attemptNumber > 1) {
-                            kotlinx.coroutines.delay(400L)
-                        }
-                        player.seekTo(mediaItemIndex, resumePosition)
-                        player.prepare()
-                        // Honor the user's prior play/pause intent — if they had paused,
-                        // keep it paused after recovery so we don't surprise-start playback.
-                        if (!player.playWhenReady) {
-                            player.pause()
-                        }
-                    } catch (recoveryThrowable: Throwable) {
+                // The 400 ms floor on repeats stays: a fresh codec must not race the dead
+                // instance's teardown (the 0x80000000 / Released-state signature). A paused user
+                // stays paused — the gate only calls play() when asked, and playWhenReady alone
+                // would resume a playing track the same way the old pause-guard did.
+                recoveryRetry.prepare(
+                    currentMediaId,
+                    resumePlaying = false,
+                    seekIndex = mediaItemIndex,
+                    seekPositionMs = resumePosition,
+                    minDelayMs = if (attemptNumber > 1) 400L else 0L,
+                    onFailure = { recoveryThrowable ->
                         Timber.tag("MusicService").e(
                             recoveryThrowable,
                             "Recovery re-prepare failed for %s (attempt %d); falling back to stop-on-error",
@@ -8391,8 +8332,8 @@ class MusicService :
                             attemptNumber,
                         )
                         stopOnError()
-                    }
-                }
+                    },
+                )
                 return
             } else {
                 Timber.tag("MusicService").w(
@@ -8409,7 +8350,7 @@ class MusicService :
         if (
             !isLocalMedia &&
                 !isFullyDownloadedMedia &&
-                playbackStreamRecoveryTracker.registerRetryAttempt(currentMediaId)
+                recoveryRetry.allow(currentMediaId)
         ) {
             val shouldResume = player.playWhenReady
             playbackUrlCache.remove(currentMediaId)
@@ -8422,8 +8363,7 @@ class MusicService :
                 error.errorCodeName,
                 describeCauseChain(error),
             )
-            player.prepare()
-            if (shouldResume) player.play()
+            recoveryRetry.prepare(currentMediaId, shouldResume)
             return
         }
 
@@ -8471,44 +8411,6 @@ class MusicService :
 
     private fun isMediaCodecStateError(error: PlaybackException): Boolean =
         isRecoverableMediaCodecStateError(error)
-
-    private suspend fun trimPlayerCacheToBytes(limitBytes: Long) {
-        if (limitBytes <= 0L) return
-
-        withContext(Dispatchers.IO) {
-            val cacheDir = StorageLocationRepository.cacheDirectory(this@MusicService, StorageFolderKind.SONG_CACHE)
-            val currentSpace = runCatching { playerCache.cacheSpace }.getOrNull() ?: 0L
-            var totalBytes = if (currentSpace > 0L) currentSpace else cacheDir.directorySizeBytes()
-            if (totalBytes <= limitBytes) return@withContext
-
-            data class Candidate(
-                val key: String,
-                val lastTouchTimestamp: Long,
-                val sizeBytes: Long,
-            )
-
-            val candidates =
-                runCatching {
-                    playerCache.keys
-                        .mapNotNull { key ->
-                            runCatching {
-                                val spans = playerCache.getCachedSpans(key)
-                                if (spans.isEmpty()) return@runCatching null
-                                val oldestTouch = spans.minOf { it.lastTouchTimestamp }
-                                val sizeBytes = spans.sumOf { it.length }
-                                Candidate(key = key, lastTouchTimestamp = oldestTouch, sizeBytes = sizeBytes)
-                            }.getOrNull()
-                        }.sortedBy { it.lastTouchTimestamp }
-                }.getOrNull().orEmpty()
-
-            for (candidate in candidates) {
-                if (totalBytes <= limitBytes) break
-                val removedSize = candidate.sizeBytes.coerceAtLeast(0L)
-                runCatching { playerCache.removeResource(candidate.key) }
-                totalBytes -= removedSize
-            }
-        }
-    }
 
     private fun createPlayerCacheDataSourceFactory(cacheWriteEnabled: Boolean): CacheDataSource.Factory =
         CacheDataSource
@@ -8745,7 +8647,7 @@ class MusicService :
                             AudioSourceType.YOUTUBE to
                                 dataStore.get(YouTubeSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE)),
                         ),
-                    spotifySignedIn = dataStore.get(SpotifyStreamSpDcKey, "").isNotBlank(),
+                    spotifySignedIn = SpotifyStreamingAccount.streamingSessionPresent(dataStore),
                 ),
         )
 
@@ -10059,7 +9961,7 @@ class MusicService :
 
     /** True when the experimental Spotify streaming source is switched on and has an account. */
     private fun isSpotifyStreamingConfigured(): Boolean =
-        dataStore.get(SpotifyStreamEnabledKey, false) && dataStore.get(SpotifyStreamSpDcKey, "").isNotBlank()
+        dataStore.get(SpotifyStreamEnabledKey, false) && SpotifyStreamingAccount.streamingSessionPresent(dataStore)
 
     /** Which Spotify track a media id resolved to, and through which method, for play reporting. */
     private class SpotifyStreamTrack(
@@ -10359,19 +10261,18 @@ class MusicService :
 
             // 2) Shared premium Tidal accounts contributed to the community Source Pool (premium
             //    first). These are genuine subscriber tokens, so they stream full-quality FLAC via
-            //    the official API without anyone hosting a restream instance.
+            //    the official API without anyone hosting a restream instance. Pooled access tokens
+            //    live ~an hour while the cache lives a day, so re-lease once up front instead of
+            //    paying for a sure 401 that would then report a healthy account dead.
+            if (PoolAccountManager.tidalAccounts().any { TidalAccountManager.isAccessTokenExpired(it.token) }) {
+                runCatching { runBlocking(Dispatchers.IO) { PoolAccountManager.reLeaseExpired(applicationContext, "tidal") } }
+            }
             for (poolAccount in PoolAccountManager.tidalAccounts()) {
                 val poolCountry = poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
                 val poolStream =
-                    runCatching { attempt(poolAccount.token, poolCountry) }
-                        .onFailure {
-                            if (TidalAccountManager.isUnauthorized(it)) {
-                                PoolAccountManager.report("tidal", "account", poolAccount.id, "dead")
-                            } else {
-                                Timber.tag("MusicService").w(it, "Tidal pool account resolve failed for %s", query.mediaId)
-                            }
-                        }
-                        .getOrNull()
+                    runBlocking(Dispatchers.IO) {
+                        PoolAccountRecovery.resolvePooledTidal(applicationContext, poolAccount, poolCountry) { token, country -> attempt(token, country) }
+                    }
                 if (poolStream != null) {
                     Timber.tag("MusicService").d("Tidal resolved via pool account (premium=%s)", poolAccount.premium)
                     PoolAccountManager.noteAccountSuccess("tidal", poolAccount.id)
@@ -10890,7 +10791,7 @@ class MusicService :
     }
 
     private fun sourceForCacheKey(key: String, mediaId: String): AudioSourceType? {
-        if (key == mediaId) return AudioSourceType.YOUTUBE
+        if (key == mediaId || key.startsWith("$mediaId#i")) return AudioSourceType.YOUTUBE
         return AudioSourceType.values().firstOrNull { sourceCacheKey(it, mediaId) == key }
     }
 
@@ -10922,9 +10823,9 @@ class MusicService :
         }
         val mediaId = dataSpec.key ?: return dataSpec
         val lowDataModeActive = isLowDataModeActive()
-        // One settings snapshot for this whole resolution: the cache gates, the multi-source
-        // chain, the pins and the terminal YouTube gate below all read the same order and
-        // toggles, so they cannot disagree with each other or with the settings UI.
+        val youtubeAudioQuality = recoveryRetry.audioQuality(mediaId, lowDataModeActive, audioQuality)
+        val wantLow = youtubeAudioQuality == AudioQuality.LOW
+        // One settings snapshot for this whole resolution: every gate below reads the same order and toggles.
         val prefs = sourcePrefsSnapshot()
         val authenticityRejectedSources = rejectedPlaybackSources(mediaId)
         val storedFormat =
@@ -10960,6 +10861,8 @@ class MusicService :
                 mediaId = mediaId,
                 includePlayerCache = allowPlayerCacheShortCircuit,
                 youtubeSampleRateHz = storedFormat?.sampleRate,
+                youtubeItag = storedFormat?.itag,
+                formatContentLength = storedFormat?.contentLength,
                 prefs = prefs,
             )?.let { cachedDataSpec ->
                 Timber.tag("PlaybackDiagnostics").d(
@@ -10999,16 +10902,13 @@ class MusicService :
             }
         }
 
-        // Multi-source: attempt to resolve a lossless stream (Tidal) before YouTube.
         resolveMultiSourceDataSpec(dataSpec, mediaId, lowDataModeActive, prefs = prefs)?.let { sourceDataSpec ->
             scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
             return sourceDataSpec
         }
 
-        // No lossless source matched. YouTube is the terminal fallback — and it is a toggleable
-        // source like the others, so a user who turned it off gets the standard no-stream failure
-        // here rather than a YouTube stream they explicitly declined. Everything below this gate
-        // is YouTube resolution (cached URL short-circuit or a fresh player response).
+        // No lossless source matched. YouTube is the terminal fallback — toggleable like the
+        // rest, so an off switch gets the standard no-stream failure here.
         if (AudioSourceType.YOUTUBE !in prefs.enabled || AudioSourceType.YOUTUBE in authenticityRejectedSources) {
             Timber.tag("PlaybackDiagnostics").w(
                 "Terminal source unavailable provider=youtube enabled=%s previouslyRejected=%s",
@@ -11032,14 +10932,11 @@ class MusicService :
         val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
         playbackUrlCache[mediaId]
             ?.takeUnless { lowDataModeActive }
-            ?.takeIf {
-                it.isValidFor(
-                    authFingerprint = authFingerprint,
-                    minimumRemainingMs = YTPlayerUtils.STREAM_URL_EXPIRY_SAFETY_MS,
-                )
-            }?.let {
+            ?.takeIf { it.matchesRendition(wantLow) && it.isValidFor(authFingerprint, minimumRemainingMs = YTPlayerUtils.STREAM_URL_EXPIRY_SAFETY_MS) }
+            ?.let {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
                 val resolvedDataSpec = dataSpec.withUri(it.url.toUri())
+                    .buildUpon().setKey(it.playbackCacheKey(mediaId)).build()
                 val length =
                     resolveStreamChunkLength(
                         requestedLength = dataSpec.length,
@@ -11059,7 +10956,7 @@ class MusicService :
                 retryWithoutPlaybackLoginContext {
                     YTPlayerUtils.playerResponseForPlayback(
                         mediaId,
-                        audioQuality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
+                        audioQuality = youtubeAudioQuality,
                         connectivityManager = connectivityManager,
                         preferredStreamClient = preferredStreamClient,
                         networkMetered = lowDataModeActive,
@@ -11085,7 +10982,7 @@ class MusicService :
                         mediaId = mediaId,
                         primaryFailure = primaryFailure,
                         shippedStartedAtMs = youtubeResolveStartedAt,
-                        audioQuality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
+                        audioQuality = youtubeAudioQuality,
                         networkMetered = lowDataModeActive,
                         purpose = moe.rukamori.archivetune.playback.stream.StreamPurpose.PLAYBACK,
                         connectivityManager = connectivityManager,
@@ -11245,9 +11142,12 @@ class MusicService :
                     url = streamUrl,
                     expiresAtMs = trackingExpiryMs,
                     authFingerprint = nonNullPlayback.authFingerprint,
+                    low = wantLow,
+                    itag = format.itag,
                 )
         }
         val resolvedDataSpec = dataSpec.withUri(streamUrl.toUri())
+            .buildUpon().setKey("$mediaId#i${format.itag}").build()
         val length =
             resolveStreamChunkLength(
                 requestedLength = dataSpec.length,
@@ -11268,22 +11168,19 @@ class MusicService :
         mediaId: String,
         includePlayerCache: Boolean = true,
         youtubeSampleRateHz: Int? = null,
+        youtubeItag: Int? = null,
+        formatContentLength: Long? = null,
         prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
     ): DataSpec? {
-        // Find the first key (enabled sources in the user's own preference order, YouTube's bare
-        // key last and only while YouTube is enabled — PlaybackSourceChain.cacheKeyOrder) that
-        // has the requested byte range fully cached. Returning the DataSpec with the matching
-        // key is critical — without it the CacheDataSource would look up the bytes under the
-        // bare mediaId and miss the lossless FLAC bytes cached under "qobuz:$mediaId" /
-        // "tidal:$mediaId", then fall through to the YouTube resolver and serve a lossy MP3
-        // stream — producing Code 3003 when the Media3 extractors then tried to read MP3 bytes
-        // under a FLAC FormatEntity.
-        //
+        // Find the first key (enabled sources in the user's own preference order, then the
+        // itag-scoped and legacy YouTube slots while it is enabled — cacheKeyOrder) that has the
+        // requested byte range fully cached. Returning the DataSpec with the matching key is
+        // critical — without it the CacheDataSource would look up the bytes under the bare
+        // mediaId and miss the lossless FLAC bytes cached under "qobuz:$mediaId" / "tidal:$mediaId".
         // A disabled source's key is left out entirely: neither its player cache nor its
-        // persistent downloads are served while the source is switched off, matching the
-        // download chain, which skips disabled playback sources too. Re-enabling the source
-        // plays those bytes again.
-        val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId)
+        // persistent downloads are served while the source is switched off.
+        val itagKey = PlaybackSourceChain.itagCacheKey(mediaId, youtubeItag)
+        val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId, youtubeItag)
         val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         val transportRejectedSources = externalStreamRecovery.rejectedSources(mediaId) +
             listOfNotNull(externalStreamRecovery.refreshSource(mediaId))
@@ -11308,7 +11205,10 @@ class MusicService :
                     resolveCachedReadWindow(
                         position = dataSpec.position,
                         requestedLength = dataSpec.length,
-                        knownContentLength = if (dataSpec.length >= 0L) null else recordedLength,
+                        knownContentLength =
+                            if (dataSpec.length >= 0L) null
+                            else if (key == itagKey) PlaybackSourceChain.itagCoverageLength(recordedLength, formatContentLength)
+                            else recordedLength,
                     ) ?: return@firstNotNullOfOrNull null
                 val cachedLength =
                     getContinuousCachedLengthForKey(
@@ -11713,8 +11613,10 @@ class MusicService :
     }
 
     private fun updateWakeLock() {
-        val wl = wakeLock ?: return
         val shouldHold = wakelockEnabled && player.isPlaying
+        // The streaming radio companion follows the same hold: low-latency while audio plays.
+        if (shouldHold) lowLatencyWifiLock?.acquire() else lowLatencyWifiLock?.release()
+        val wl = wakeLock ?: return
         if (shouldHold && !wl.isHeld) {
             Timber.tag("PlaybackDiagnostics").d(
                 "Playback wake lock acquired state=%d playWhenReady=%s isPlaying=%s focusHeld=%s gain=%.3f",
@@ -12774,6 +12676,7 @@ class MusicService :
         }
         try {
             if (wakeLock?.isHeld == true) wakeLock?.release()
+            lowLatencyWifiLock?.release()
         } catch (_: Exception) {
         }
         try {
@@ -12931,7 +12834,7 @@ class MusicService :
         val shouldShowNotification =
             shouldShowPlaybackNotification(
                 startInForegroundRequired = startInForegroundRequired,
-                hasResumablePlayback = hasResumablePlaybackNotification(),
+                hasResumablePlayback = hasResumablePlaybackNotification(player),
             )
         if (!shouldShowNotification) return
 

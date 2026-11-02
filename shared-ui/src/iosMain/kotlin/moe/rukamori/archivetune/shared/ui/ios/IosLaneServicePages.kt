@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,6 +63,7 @@ import moe.rukamori.archivetune.shared.ui.settings.ProxyConnectionResult
 import moe.rukamori.archivetune.shared.ui.settings.QqLoginFailure
 import moe.rukamori.archivetune.shared.ui.settings.QqLoginUiState
 import moe.rukamori.archivetune.shared.ui.settings.QqMusicSettings
+import moe.rukamori.archivetune.shared.ui.settings.SettingsCacheKind
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
 import moe.rukamori.archivetune.shared.ui.settings.SpotifyStreamingSettings
 import moe.rukamori.archivetune.shared.ui.settings.StorageSettings
@@ -193,8 +195,8 @@ internal fun IosLaneServiceSettingsPage(
         "settings/downloads" -> DownloadsSettings(
             controller = owners.controller,
             poolConfigured = owners.poolConfigured,
-            // The download store belongs to the Android player; this host has nothing to clear.
-            clearDownloads = { unavailable() },
+            // The stored downloads live under the app container; clearing drops files, rows and staged bytes.
+            clearDownloads = { owners.graph.downloads.clearAll() },
             navigate = navigate,
             onFailure = onFailure,
             scrollTo = scrollTo,
@@ -272,6 +274,7 @@ internal fun IosLaneServiceSettingsPage(
                 signInInProgress = streamingBusy,
                 signInRefusal = streamingRefusal,
                 onSignIn = owners.spotifyStreaming::signIn,
+                librespotSignInAvailable = owners.spotifyStreaming.librespotConfigured,
                 onDismissSignInRefusal = owners.spotifyStreaming::dismissRefusal,
                 onSignOut = owners.spotifyStreaming::signOut,
                 onFailure = onFailure,
@@ -280,20 +283,39 @@ internal fun IosLaneServiceSettingsPage(
                 hostNote = stringResource(Res.string.ios_lane_spotify_streaming_note),
             )
         }
-        "settings/storage" -> StorageSettings(
-            controller = owners.controller,
-            usedBytes = emptyMap(),
-            currentStorageLabel = stringResource(Res.string.ios_lane_storage_note),
-            storageBusy = false,
-            pickAndCommitStorage = {
-                unavailable()
-                null
-            },
-            clearCache = { unavailable() },
-            applyCacheLimits = { },
-            onFailure = onFailure,
-            scrollTo = scrollTo,
-        )
+        "settings/storage" -> {
+            var storageBusy by remember { mutableStateOf(false) }
+            var cacheTick by remember { mutableIntStateOf(0) }
+            // The image cache is the one store this host keeps: the shared URL cache plus the decoded-image holder.
+            val usedBytes by produceState<Map<SettingsCacheKind, Long>>(emptyMap(), cacheTick) {
+                value = iosLaneUsedCacheBytes()
+            }
+            StorageSettings(
+                controller = owners.controller,
+                usedBytes = usedBytes,
+                currentStorageLabel = stringResource(Res.string.ios_lane_storage_note),
+                storageBusy = storageBusy,
+                pickAndCommitStorage = {
+                    unavailable()
+                    null
+                },
+                clearCache = { kind ->
+                    storageBusy = true
+                    try {
+                        iosLaneClearCache(owners.graph, kind, unavailable)
+                    } finally {
+                        storageBusy = false
+                    }
+                    cacheTick += 1
+                },
+                applyCacheLimits = { preferences ->
+                    iosApplyImageCacheLimit(preferences)
+                    cacheTick += 1
+                },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+        }
         else -> IosLaneUnavailablePage()
     }
 }

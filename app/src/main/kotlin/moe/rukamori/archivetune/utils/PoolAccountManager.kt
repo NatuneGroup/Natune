@@ -25,6 +25,9 @@ import moe.rukamori.archivetune.audiosource.AmazonInstance
 import moe.rukamori.archivetune.audiosource.AmazonInstances
 import moe.rukamori.archivetune.canvas.AppleMusicProvider
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
+import moe.rukamori.archivetune.shared.data.provider.PoolAuthBackoff
+import moe.rukamori.archivetune.shared.data.provider.PoolDeadReportPolicy
+import moe.rukamori.archivetune.shared.data.provider.PoolReportGate
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -123,6 +126,9 @@ object PoolAccountManager {
     private val CACHE_APPLE_KEY = stringPreferencesKey("poolAppleMusicAccounts")
     private val CACHE_AMAZON_KEY = stringPreferencesKey("poolAmazonAccounts")
     private val CACHE_LAST_REFRESH_KEY = longPreferencesKey("poolAccountsLastRefreshAtMillis")
+    private val CACHE_AUTH_FAIL_KEY = longPreferencesKey("poolAuthFailAtMs")
+    private val CACHE_AUTH_BACKOFF_KEY = longPreferencesKey("poolAuthBackoffMs")
+    private val CACHE_AUTH_KEY_HASH_KEY = longPreferencesKey("poolAuthKeyHash")
 
     /** Last resolved read key, so fire-and-forget /api/report calls use the same identity. */
     @Volatile
@@ -137,9 +143,16 @@ object PoolAccountManager {
     var lastFeedError: String? = null
         private set
 
-    /** Report deduplication: "$service:$id:$type" → timestamp. Suppresses duplicate reports within ~10 minutes. */
+    /** Report deduplication: "$service:$id:$type" → timestamp. Suppresses duplicate reports within ~30 minutes. */
     private val reportDedupe = ConcurrentHashMap<String, Long>()
-    private const val REPORT_DEDUPE_WINDOW_MS = 10 * 60 * 1000L
+
+    /** Atomic expired-lease admission; a merge-then-compare map let same-ms callers both in. */
+    private val expiredReLeaseGate =
+        PoolReportGate(nowMs = { System.currentTimeMillis() }, windowMs = PoolDeadReportPolicy.RECOVERY_DEDUPE_MS)
+
+    /** The persisted backoff a refused read key earns, shared across every refresh caller. */
+    private val authBackoff = PoolAuthBackoff()
+    private const val REPORT_DEDUPE_WINDOW_MS = 30L * 60 * 1000L
 
     /** A shared Tidal subscriber token contributed to the pool. */
     data class TidalPoolAccount(
@@ -402,6 +415,11 @@ object PoolAccountManager {
                     lastRefreshAtMillis,
                     context.dataStore.getAsync(CACHE_LAST_REFRESH_KEY) ?: 0L,
                 )
+                authBackoff.restore(
+                    context.dataStore.getAsync(CACHE_AUTH_FAIL_KEY) ?: 0L,
+                    context.dataStore.getAsync(CACHE_AUTH_BACKOFF_KEY) ?: 0L,
+                    (context.dataStore.getAsync(CACHE_AUTH_KEY_HASH_KEY) ?: 0L).toInt(),
+                )
                 // The persisted cache stores DECRYPTED plaintext JSON (PoolCacheCrypto handles the
                 // at-rest layer), so the parse-time decryptor is a pure pass-through.
                 val passthrough: (String) -> String? = { raw -> raw }
@@ -455,6 +473,10 @@ object PoolAccountManager {
 
             refreshMutex.withLock {
                 if (!isPoolEnabled()) return@withLock false
+                // A refused read key earns a persisted backoff even forced calls respect.
+                val authKeyHash = BuildConfig.SOURCE_PROVIDER_KEY.hashCode()
+                if (authBackoff.clearsFor(authKeyHash)) authBackoff.reset()
+                if (authBackoff.blocked(System.currentTimeMillis())) return@withLock hasAccounts()
                 // Re-check the throttle inside the lock in case another caller just refreshed.
                 if (!PoolRefreshPolicy.shouldRefresh(
                         System.currentTimeMillis(),
@@ -509,11 +531,22 @@ object PoolAccountManager {
                             result.code == 0 -> "Could not reach $poolBaseUrl — network error."
                             else -> "Pool feed returned HTTP ${result.code}."
                         }
+                    if (result.succeeded) authBackoff.reset()
+                    else if (result.code == 401) authBackoff.onAuthRejected(attemptAt, authKeyHash)
+                    context.dataStore.edit { prefs ->
+                        prefs[CACHE_AUTH_FAIL_KEY] = authBackoff.failedAtMs
+                        prefs[CACHE_AUTH_BACKOFF_KEY] = authBackoff.windowMs
+                        prefs[CACHE_AUTH_KEY_HASH_KEY] = authBackoff.failedKeyHash.toLong()
+                    }
                 } // else (pool URL configured)
 
                 hasAccounts()
             }
         }
+
+    /** One forced re-lease per service inside [PoolDeadReportPolicy.RECOVERY_DEDUPE_MS]. Answers [hasAccounts]. */
+    suspend fun reLeaseExpired(context: Context, service: String): Boolean =
+        if (expiredReLeaseGate.allowService(service, "expired")) refresh(context, force = true) else hasAccounts()
 
     /** Outcome of one feed fetch: the parsed JSON on success, plus the HTTP code (0 = network error). */
     private class FeedFetch(
@@ -699,7 +732,7 @@ object PoolAccountManager {
     ) {
         if (id == null || !isPoolEnabled()) return
 
-        // Deduplicate reports within ~10 minutes to avoid spamming the server when one dead
+        // Deduplicate reports within ~30 minutes to avoid spamming the server when one dead
         // token is hit by multiple resolvers (e.g., LosslessStreamResolver racing all pool accounts).
         val dedupeKey = "$service:$id:$reportType"
         val now = System.currentTimeMillis()
@@ -709,7 +742,7 @@ object PoolAccountManager {
         }
         reportDedupe[dedupeKey] = now
 
-        // Prune old entries to prevent unbounded map growth (~10min window).
+        // Prune old entries to prevent unbounded map growth (~30min window).
         reportDedupe.entries.removeIf { (_, ts) -> now - ts > REPORT_DEDUPE_WINDOW_MS }
 
         reportScope.launch {

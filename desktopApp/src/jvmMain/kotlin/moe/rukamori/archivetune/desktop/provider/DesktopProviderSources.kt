@@ -11,10 +11,14 @@ import moe.rukamori.archivetune.shared.data.provider.KtorDeezerRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorJioSaavnRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorQqMusicRepository
 import moe.rukamori.archivetune.shared.data.provider.KtorTidalRepository
-import moe.rukamori.archivetune.shared.data.provider.ProviderHttpFailure
+import moe.rukamori.archivetune.shared.data.provider.PoolFailureKind
+import moe.rukamori.archivetune.shared.data.provider.PoolRecoverySettledException
+import moe.rukamori.archivetune.shared.data.provider.PoolRetryOutcome
 import moe.rukamori.archivetune.shared.data.provider.QqMusicAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalAccess
 import moe.rukamori.archivetune.shared.data.provider.TidalInstanceResolver
+import moe.rukamori.archivetune.shared.data.provider.classifyPoolFailure
+import moe.rukamori.archivetune.shared.data.provider.racePoolAttempts
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.AudioProviderRepository
@@ -39,11 +43,13 @@ import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
 /**
  * TIDAL over the personal account lease, the Playback Pool accounts and the HiFi instances (the user's own, then the
  * pool's discovered ones), in the shipped order: the accounts first while "account first" is on (the default), otherwise
- * the instances first. Attempts run in that order; the Android resolver races pool accounts, which this host does not do
- * yet. A failed attempt moves to the next one. A terminal authentication failure of the personal account stops the
- * source; a pooled account that is refused is reported dead and the next one is tried. The app ships no TIDAL catalog
- * token: instances search anonymously, and a direct TIDAL id needs an account. With no account, no pool and no instance
- * the source answers no match, and the TIDAL settings page asks the user to sign in.
+ * the instances first. The personal account and the anonymous instances still run in that order; the pooled accounts
+ * race through the shared [racePoolAttempts] helper the way the Android resolver does — bounded lanes, the first
+ * answer wins and the losers are cancelled. A failed attempt moves to the next one. A terminal authentication failure
+ * of the personal account stops the source; a pooled account that is refused is reported dead and the next one is
+ * tried. The app ships no TIDAL
+ * catalog token: instances search anonymously, and a direct TIDAL id needs an account. With no account, no pool and
+ * no instance the source answers no match, and the TIDAL settings page asks the user to sign in.
  */
 internal class DesktopTidalSource(
     private val http: HttpClient,
@@ -54,7 +60,55 @@ internal class DesktopTidalSource(
 ) : AudioProviderRepository {
     override val source = AudioSourceType.TIDAL
 
-    private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false)
+    private class Attempt(val repository: KtorTidalRepository, val poolId: Long? = null, val pooled: Boolean = false,
+        val credential: String = "")
+
+    /** One pooled-account repository; also how a re-leased credential is retried after recovery. */
+    private fun tidalRepository(account: TidalPoolAccount): KtorTidalRepository =
+        KtorTidalRepository(
+            http,
+            TidalAccess(
+                scope = "PLAYBACK_POOL:tidal:${account.id ?: 0L}",
+                bearer = account.token,
+                credentialScope = CredentialScope.PLAYBACK_POOL,
+                isActive = { pool?.enabled() == true },
+            ),
+            countryCode = account.countryCode?.trim()?.takeIf { it.length == 2 } ?: "US",
+        )
+
+    /**
+     * Recovers a pooled TIDAL account that just failed: one re-lease (single-flight per account)
+     * and one retry with the credential the server now serves; the account is reported dead only
+     * when it still fails for real. Answers the retry's stream, or null.
+     */
+    private suspend fun recoverPooled(
+        attempt: Attempt,
+        kind: PoolFailureKind,
+        request: AudioResolveRequest,
+    ): PreparedAudio? {
+        val owner = pool ?: return null
+        val poolId = attempt.poolId ?: return null
+        return owner.deadReports.recoverAndReport(
+            DesktopPlaybackPool.TIDAL, poolId, kind,
+            stale = attempt.credential,
+            current = { owner.tidalSnapshot().firstOrNull { it.id == poolId }?.token },
+            recover = { owner.refresh(force = true) },
+            retry = {
+                val account = owner.tidalSnapshot().firstOrNull { it.id == poolId }
+                    ?: return@recoverAndReport PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                try {
+                    tidalRepository(account).resolve(request)
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
+                }
+            },
+            report = { type -> owner.report(DesktopPlaybackPool.TIDAL, poolId, type) },
+        )
+    }
 
     /** The session's one anonymous racing route. It is rebuilt only when its merged list, country or Pool switch changes. */
     private class AnonymousRoute(val instances: List<String>, val country: String, val poolOn: Boolean,
@@ -70,20 +124,7 @@ internal class DesktopTidalSource(
         val country = snapshot?.tidalCountryCode()?.takeIf { it.length == 2 } ?: "US"
         val personal = personalRepository(country)?.let { Attempt(it) }
         val pooled = pool?.tidalAccounts().orEmpty().map { account ->
-            Attempt(
-                KtorTidalRepository(
-                    http,
-                    TidalAccess(
-                        scope = "PLAYBACK_POOL:tidal:${account.id ?: 0L}",
-                        bearer = account.token,
-                        credentialScope = CredentialScope.PLAYBACK_POOL,
-                        isActive = { pool?.enabled() == true },
-                    ),
-                    countryCode = account.countryCode?.trim()?.takeIf { it.length == 2 } ?: "US",
-                ),
-                poolId = account.id,
-                pooled = true,
-            )
+            Attempt(tidalRepository(account), poolId = account.id, pooled = true, credential = account.token)
         }
         val bases = LinkedHashSet<String>().apply {
             addAll(snapshot?.tidalInstanceList().orEmpty())
@@ -121,26 +162,52 @@ internal class DesktopTidalSource(
 
     override suspend fun resolve(request: AudioResolveRequest): PreparedAudio? {
         var failure: Exception? = null
-        for (attempt in attempts(preferences(), search = false)) {
-            try {
-                attempt.repository.resolve(request)?.let { resolved ->
-                    if (attempt.pooled) pool?.noteSuccess(DesktopPlaybackPool.TIDAL, attempt.poolId)
-                    return resolved
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (auth: TerminalPlaybackAuthentication) {
-                if (!attempt.pooled) throw auth
-                pool?.report(DesktopPlaybackPool.TIDAL, attempt.poolId, "dead")
-                pool?.noteFailure(DesktopPlaybackPool.TIDAL, attempt.poolId)
-            } catch (error: Exception) {
-                if (attempt.pooled) {
-                    if ((error as? ProviderHttpFailure)?.status == 401) pool?.report(DesktopPlaybackPool.TIDAL, attempt.poolId, "dead")
-                    pool?.noteFailure(DesktopPlaybackPool.TIDAL, attempt.poolId)
-                }
-                failure = error
-            }
+        // Only un-pooled attempts reach this walker, so a terminal refusal still ends the source.
+        suspend fun sequential(attempt: Attempt): PreparedAudio? = try {
+            attempt.repository.resolve(request)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (auth: TerminalPlaybackAuthentication) {
+            throw auth
+        } catch (error: Exception) {
+            failure = error
+            null
         }
+        val ordered = attempts(preferences(), search = false)
+        val firstPooled = ordered.indexOfFirst { it.pooled }.let { if (it < 0) ordered.size else it }
+        val pooled = ordered.drop(firstPooled).takeWhile { it.pooled }
+        for (attempt in ordered.take(firstPooled)) sequential(attempt)?.let { return it }
+        if (pooled.isNotEmpty()) {
+            val outcome = racePoolAttempts(
+                attempts = pooled,
+                resolve = { attempt ->
+                    // A raced lane earns the same re-lease and one retry the sequential walk gave a pooled account.
+                    try {
+                        attempt.repository.resolve(request)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (auth: TerminalPlaybackAuthentication) {
+                        recoverPooled(attempt, PoolFailureKind.AUTH_REJECTED, request)
+                            ?: throw PoolRecoverySettledException(auth)
+                    } catch (error: Exception) {
+                        recoverPooled(attempt, classifyPoolFailure(error), request)
+                            ?: throw PoolRecoverySettledException(error)
+                    }
+                },
+                report = { attempt, type ->
+                    pool?.let { owner ->
+                        owner.deadReports.report(DesktopPlaybackPool.TIDAL, attempt.poolId, type) {
+                            owner.report(DesktopPlaybackPool.TIDAL, attempt.poolId, type)
+                        }
+                    }
+                },
+                noteSuccess = { pool?.noteSuccess(DesktopPlaybackPool.TIDAL, it.poolId) },
+                noteFailure = { pool?.noteFailure(DesktopPlaybackPool.TIDAL, it.poolId) },
+            )
+            outcome.winner?.let { return it }
+            outcome.failure?.let { failure = it }
+        }
+        for (attempt in ordered.drop(firstPooled + pooled.size)) sequential(attempt)?.let { return it }
         failure?.let { throw it }
         return null
     }
@@ -249,24 +316,62 @@ internal class DesktopDeezerSource(
         return null
     }
 
+    /** One repository per pooled ARL, so its gateway session is reused until the credential changes. */
+    private fun pooledRepository(owner: DesktopPlaybackPool, account: DeezerPoolAccount): KtorDeezerRepository =
+        synchronized(this) {
+            pooledRepositories.getOrPut(account.arl) {
+                KtorDeezerRepository(
+                    http,
+                    nowMs = System::currentTimeMillis,
+                    access = DeezerAccess(
+                        "PLAYBACK_POOL:deezer:${account.id ?: 0L}",
+                        account.arl,
+                        CredentialScope.PLAYBACK_POOL,
+                        isActive = { owner.enabled() },
+                    ),
+                )
+            }
+        }
+
+    /**
+     * Recovers a pooled Deezer account that just failed: one re-lease (the pool rotates ARLs
+     * server-side) and one retry with the credential it now serves; the account is reported dead
+     * only when it still fails for real. Answers the retry's stream, or null.
+     */
+    private suspend fun recoverPooled(
+        owner: DesktopPlaybackPool,
+        account: DeezerPoolAccount,
+        kind: PoolFailureKind,
+        request: AudioResolveRequest,
+    ): PreparedAudio? {
+        val poolId = account.id ?: return null
+        return owner.deadReports.recoverAndReport(
+            DesktopPlaybackPool.DEEZER, poolId, kind,
+            stale = account.arl,
+            current = { owner.deezerAccounts().firstOrNull { it.id == poolId }?.arl },
+            recover = { owner.refresh(force = true) },
+            retry = {
+                val fresh = owner.deezerSnapshot().firstOrNull { it.id == poolId }
+                    ?: return@recoverAndReport PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                try {
+                    pooledRepository(owner, fresh).resolve(request)
+                        ?.let { PoolRetryOutcome.Success(it) }
+                        ?: PoolRetryOutcome.Failure(PoolFailureKind.TRANSIENT)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    PoolRetryOutcome.Failure(classifyPoolFailure(e))
+                }
+            },
+            report = { type -> owner.report(DesktopPlaybackPool.DEEZER, poolId, type) },
+        )
+    }
+
     private suspend fun resolvePooled(request: AudioResolveRequest): PreparedAudio? {
         val owner = pool ?: return null
         var failure: Exception? = null
         for (account in owner.deezerAccounts()) {
-            val repository = synchronized(this) {
-                pooledRepositories.getOrPut(account.arl) {
-                    KtorDeezerRepository(
-                        http,
-                        nowMs = System::currentTimeMillis,
-                        access = DeezerAccess(
-                            "PLAYBACK_POOL:deezer:${account.id ?: 0L}",
-                            account.arl,
-                            CredentialScope.PLAYBACK_POOL,
-                            isActive = { owner.enabled() },
-                        ),
-                    )
-                }
-            }
+            val repository = pooledRepository(owner, account)
             try {
                 repository.resolve(request)?.let { resolved ->
                     owner.noteSuccess(DesktopPlaybackPool.DEEZER, account.id)
@@ -275,9 +380,10 @@ internal class DesktopDeezerSource(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (auth: TerminalPlaybackAuthentication) {
-                owner.report(DesktopPlaybackPool.DEEZER, account.id, "dead")
+                recoverPooled(owner, account, PoolFailureKind.AUTH_REJECTED, request)?.let { return it }
                 owner.noteFailure(DesktopPlaybackPool.DEEZER, account.id)
             } catch (error: Exception) {
+                recoverPooled(owner, account, classifyPoolFailure(error), request)?.let { return it }
                 owner.noteFailure(DesktopPlaybackPool.DEEZER, account.id)
                 failure = error
             }

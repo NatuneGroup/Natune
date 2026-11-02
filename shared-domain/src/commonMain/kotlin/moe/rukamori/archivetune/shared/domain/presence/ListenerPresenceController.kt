@@ -11,11 +11,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.random.Random
 
 /**
  * Sends heartbeats from playback. While the opt-in is active and [playing] is true, one payload goes out immediately
- * and then once per [intervalMs]. A pause, a stop, an opt-out or an identifier change cancels the loop and sends one
- * best-effort stopped payload. Nothing retries, and no loop runs while idle.
+ * and then once per [intervalMs] plus a uniform jitter of up to [ListenerPresencePolicy.HEARTBEAT_JITTER_MS]. A pause,
+ * a stop, an opt-out or an identifier change cancels the loop and sends one best-effort stopped payload. Nothing
+ * retries, and no loop runs while idle.
  *
  * Call [start] once from the host's main thread. Without an HTTPS endpoint the transport is unavailable and nothing
  * starts.
@@ -48,7 +50,7 @@ class ListenerPresenceController(
         try {
             while (true) {
                 sendQuietly(ListenerPresencePolicy.payloadJson(id, platform, appVersion, ListenerPresencePolicy.STATE_PLAYING))
-                delay(intervalMs)
+                delay(intervalMs + Random.nextLong(0, ListenerPresencePolicy.HEARTBEAT_JITTER_MS))
             }
         } finally {
             withContext(NonCancellable) {

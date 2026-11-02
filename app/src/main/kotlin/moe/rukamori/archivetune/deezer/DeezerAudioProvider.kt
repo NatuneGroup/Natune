@@ -19,6 +19,8 @@ import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.audiosource.TrackMatching
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.shared.data.provider.PoolRecovery
+import moe.rukamori.archivetune.utils.PoolAccountRecovery
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -506,14 +508,34 @@ object DeezerAudioProvider {
         val now = System.currentTimeMillis()
         sessions[account.arl]?.let { if (now - it.establishedAt < SESSION_TTL_MS) return it }
 
-        val json = gateway(account.arl, apiToken = "", method = "deezer.getUserData", payload = null)
-        val results = json.optJSONObject("results")
-        val user = requireNotNull(results?.optJSONObject("USER")) { "no USER in session payload" }
+        var arl = account.arl
+        var masterSecret = account.masterSecret
+        var json = gateway(arl, apiToken = "", method = "deezer.getUserData", payload = null)
+        var results = json.optJSONObject("results")
+        var user = requireNotNull(results?.optJSONObject("USER")) { "no USER in session payload" }
         // An invalid or expired ARL still returns HTTP 200 with USER_ID 0, so this is the real check.
+        var recovered = false
         if (user.optLong("USER_ID", 0L) == 0L) {
-            // Playback just learned the pooled credential is dead; tell the pool so it stops being
-            // leased to other users before the next server-side sweep. Fire-and-forget.
-            PoolAccountManager.report("deezer", "account", account.id, "dead")
+            // The pool rotates ARLs server-side, so the feed may already serve a live replacement:
+            // re-lease once and retry the same check before believing the account is dead.
+            val recovery =
+                PoolAccountRecovery.reLeaseBlocking(null, "deezer", account.id, arl) {
+                    PoolAccountManager.deezerAccounts().firstOrNull { it.id == account.id }?.arl
+                }
+            if (recovery is PoolRecovery.Recovered) {
+                val fresh = PoolAccountManager.deezerAccounts().firstOrNull { it.id == account.id && it.arl == recovery.credential }
+                arl = recovery.credential
+                masterSecret = fresh?.masterSecret ?: masterSecret
+                json = gateway(arl, apiToken = "", method = "deezer.getUserData", payload = null)
+                results = json.optJSONObject("results")
+                user = requireNotNull(results?.optJSONObject("USER")) { "no USER in session payload" }
+                recovered = true
+            }
+        }
+        if (user.optLong("USER_ID", 0L) == 0L) {
+            // A dead report requires the recovered credential to fail again for real: an unmoved
+            // or unavailable lease proves nothing, and only it would be a false report.
+            if (recovered) PoolAccountRecovery.reportDead("deezer", account.id)
             throw IllegalStateException("ARL rejected by gateway")
         }
 
@@ -536,18 +558,18 @@ object DeezerAudioProvider {
 
         val session =
             Session(
-                arl = account.arl,
+                arl = arl,
                 apiToken = apiToken,
                 licenseToken = licenseToken,
                 // Entitlement lives in flat OPTIONS booleans. Check both the web and mobile flags: a
                 // plan can carry lossless on one surface only, and either is enough for us to ask for
                 // FLAC. The pool's own `premium` hint only orders attempts; this is the real gate.
                 lossless = lossless,
-                masterSecret = account.masterSecret,
+                masterSecret = masterSecret,
                 establishedAt = now,
             )
         if (account.arl != manualAccount?.arl && !PoolAccountManager.isPoolEnabled()) return null
-        sessions[account.arl] = session
+        sessions[arl] = session
         return session
     }
 

@@ -75,6 +75,13 @@ fun playerLyricsSlotFactory(
                 onShareCard = { card ->
                     if (playback.value?.occurrenceId == occurrenceId) currentActions.onShareCard(card)
                 },
+                // Same gate as onSeek: a resume for a rejected seek must not fire either.
+                onResume = {
+                    val current = playback.value
+                    if (current != null && current.occurrenceId == occurrenceId && current.isSeekable) {
+                        currentActions.onResume()
+                    }
+                },
             )
         }
         val lyrics = playerLyricsSlots(
