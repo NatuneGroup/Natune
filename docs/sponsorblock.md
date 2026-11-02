@@ -29,8 +29,8 @@ and a SponsorBlock lookup for them would be both meaningless and a leak.
 - `SponsorBlockPlaybackController.kt` — polls 200ms only while playing over known
   segments. Paused, idle and segment-free states sleep until the play state or the
   segments change, and it seeks out of a segment it is inside.
-- `PodcastSponsorBlockDriver.kt` (`shared-ui`) — the desktop and iOS path, podcast
-  episodes only.
+- `SponsorBlockDriver.kt` (`shared-ui`) — the desktop and iOS path for both
+  songs and podcast episodes.
 
 ## Behaviour worth keeping
 
@@ -48,8 +48,8 @@ Episodes are skipped only when **Skip podcast segments** (`sponsor_block_podcast
 is also on. It is off by default and has no effect while SponsorBlock itself is off. Only
 episodes that play from YouTube are looked up, through the same lookup songs use; other
 providers are never looked up. Android handles them in `SponsorBlockPlaybackController`.
-The shared desktop and iOS sessions handle them in `PodcastSponsorBlockDriver`, which skips
-podcast segments only, because songs are not skipped there yet.
+The shared desktop and iOS sessions handle them in `SponsorBlockDriver`, which applies the
+same gates: songs need only the main opt-in, episodes additionally need the podcast opt-in.
 
 Both controllers observe settings during the current episode, including while paused.
 Turning either opt-in off cancels an in-flight lookup and clears loaded segments; changing

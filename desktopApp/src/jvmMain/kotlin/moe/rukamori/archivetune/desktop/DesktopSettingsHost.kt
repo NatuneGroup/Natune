@@ -506,7 +506,7 @@ internal fun DesktopSettingsScreen(
             "settings/about" -> DesktopAboutPage(graph, owners.controller, navigation)
             DesktopListenTogetherSettingsRoute ->
                 DesktopListenTogetherSettingsPage(graph, owners.controller, onNotice, onFailure, unavailable, scrollTo)
-            "settings/misc" -> DesktopDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
+            "settings/misc" -> DesktopDeveloperSettingsPage(graph, owners.discord, owners.controller, navigate, onFailure, scrollTo)
             "settings/logcat" -> DesktopDiagnosticLogPage(graph.settings, navigation, ::show)
             "settings/backup_restore" -> DesktopBackupRestorePage(graph, owners.controller, onNotice, onFailure, scrollTo, ::show)
             "settings/lyrics/providers" -> LyricsProviderSettings(
