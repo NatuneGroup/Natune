@@ -260,11 +260,6 @@ fun LyricsMenu(
     // coordinator joins an in-flight call and serves a cached one — so a second tap is free.
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
     val isAiRomanizing by AiLyricsRomanization.running.collectAsStateWithLifecycle()
-    val isAiRomanizationEnabled =
-        aiRomanizationSettings.active &&
-            currentLyrics.isNotBlank() &&
-            currentLyrics != LyricsEntity.LYRICS_NOT_FOUND &&
-            !isAiRomanizing
 
     LaunchedEffect(Unit) {
         viewModel.aiTranslationEvents.collect { message ->
@@ -366,7 +361,7 @@ fun LyricsMenu(
                 showLyricsSyncOffsetDialog = false
             },
             icon = {
-                Icon(painter = painterResource(R.drawable.speed), contentDescription = null)
+                Icon(painter = painterResource(R.drawable.timer), contentDescription = null)
             },
             title = { Text(stringResource(R.string.lyrics_sync_offset)) },
             buttons = {
@@ -742,7 +737,7 @@ fun LyricsMenu(
     }
 
     val menuActions: List<AppleMusicLyricsMenuItem> =
-        listOf(
+        listOfNotNull(
             AppleMusicLyricsMenuItem(
                 label = stringResource(R.string.edit),
                 iconRes = R.drawable.edit,
@@ -764,7 +759,7 @@ fun LyricsMenu(
             AppleMusicLyricsMenuItem(
                 label = stringResource(R.string.ai_romanize_now),
                 iconRes = R.drawable.language,
-                enabled = isAiRomanizationEnabled,
+                enabled = !isAiRomanizing,
                 onClick = {
                     val lyricsText = lyricsProvider()?.lyrics.orEmpty()
                     val sourceLanguageHints = LyricsUtils.sourceLanguageHints(lyricsText)
@@ -783,18 +778,18 @@ fun LyricsMenu(
                         .makeText(context, context.getString(R.string.ai_romanize_started), Toast.LENGTH_SHORT)
                         .show()
                 },
-            ),
+            ).takeIf { aiRomanizationSettings.active && isTranslateEnabled },
             AppleMusicLyricsMenuItem(
                 label = stringResource(R.string.undo_translation),
                 iconRes = R.drawable.restore,
-                // Apple Music marks the action that throws work away in red.
+                // Apple Music marks the action that throws work away in red; the row exists only
+                // while a translation on this track is there to undo.
                 isDestructive = true,
-                enabled = canUndoTranslation,
                 onClick = { viewModel.undoTranslation(mediaMetadataProvider().id) },
-            ),
+            ).takeIf { canUndoTranslation },
             AppleMusicLyricsMenuItem(
                 label = stringResource(R.string.lyrics_sync_offset),
-                iconRes = R.drawable.speed,
+                iconRes = R.drawable.timer,
                 onClick = { showLyricsSyncOffsetDialog = true },
             ),
             AppleMusicLyricsMenuItem(
@@ -1213,7 +1208,7 @@ private fun LyricsSearchResultItem(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = result.providerName,
+                        text = LyricsEntity.providerDisplayName(result.providerName),
                         style = MaterialTheme.typography.labelLarge,
                         color = contentColor,
                         maxLines = 1,
