@@ -8,9 +8,11 @@
 
 package moe.rukamori.archivetune.utils
 
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
+import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.logcat.DiagnosticRedaction
 import java.text.SimpleDateFormat
 import java.util.*
@@ -60,6 +62,11 @@ object GlobalLog {
         tag: String?,
         message: String,
     ) {
+        // In release builds verbose/debug entries are dropped at the door: R8 strips
+        // Timber.v/d and Log.v/d calls, so the only DEBUG lines arriving here come from
+        // provider logger bridges (Spotify, Paxsenix). Skipping them avoids paying the
+        // redaction regexes and buffer churn nobody can see anyway.
+        if (!BuildConfig.DEBUG && level < Log.INFO) return
         val entry = LogEntry(System.currentTimeMillis(), level, tag, DiagnosticRedaction.redact(message))
         if (buffer.size >= MAX_ENTRIES) {
             buffer.removeFirst()
@@ -137,8 +144,20 @@ object GlobalLog {
     }
 }
 
-/** Timber Tree that forwards logs to GlobalLog */
-class GlobalLogTree : Timber.DebugTree() {
+/**
+ * Timber Tree that forwards logs to GlobalLog. In debug builds a real
+ * [Timber.DebugTree] is also planted and owns logcat; this tree only feeds the
+ * in-memory viewer. In release builds this is the only planted tree: isLoggable
+ * drops verbose/debug lines before Timber formats the message (and R8 removes
+ * untagged Timber.v/d calls entirely), while info-and-up lines are forwarded to
+ * logcat so the persistent capture still records warnings for crash reports.
+ */
+class GlobalLogTree : Timber.Tree() {
+    override fun isLoggable(
+        tag: String?,
+        priority: Int,
+    ): Boolean = BuildConfig.DEBUG || priority >= Log.INFO
+
     override fun log(
         priority: Int,
         tag: String?,
@@ -148,6 +167,9 @@ class GlobalLogTree : Timber.DebugTree() {
         try {
             val final = if (t != null) "$message\n$t" else message
             GlobalLog.append(priority, tag, final)
+            if (!BuildConfig.DEBUG) {
+                Log.println(priority, tag ?: "ArchiveTune", final)
+            }
         } catch (_: Exception) {
             // swallow
         }

@@ -119,6 +119,20 @@
     #public static int e(...);
 }
 
+# Timber is the app's logging facade: strip debug/verbose calls in release,
+# matching the android.util.Log rules above. This covers Timber.d()/v() entry
+# points and the Tree implementations they dispatch to; tagged calls
+# (Timber.tag("X").d(...)) are removed too, keeping only the harmless tag() call.
+# Info/warn/error stay so PlaybackDiagnostics and crash reporting keep working.
+-assumenosideeffects class timber.log.Timber {
+    *** v(...);
+    *** d(...);
+}
+-assumenosideeffects class timber.log.Timber$* {
+    *** v(...);
+    *** d(...);
+}
+
 # Generated automatically by the Android Gradle plugin.
 -dontwarn java.beans.BeanDescriptor
 -dontwarn java.beans.BeanInfo
