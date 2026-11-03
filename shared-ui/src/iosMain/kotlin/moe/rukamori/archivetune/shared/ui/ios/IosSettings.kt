@@ -154,6 +154,9 @@ internal class IosSettingsOwners(
     )
     val accounts = graph.accountLifecycle
 
+    /** The QQ Music QR sign-in owner; the settings card's attempts share the graph's engine and lifecycle. */
+    val qqMusic = IosQqMusicLoginOwner(graph.scope, accounts, graph.http, graph::report)
+
     /** The graph's Discord owner: the settings page starts its presence driver and drives its OAuth sheet. */
     val discord: IosDiscordPresence get() = graph.discord
 
@@ -672,6 +675,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 scrollTo = scrollTo,
             )
             in IOS_GENERAL_SETTINGS_ROUTES -> IosGeneralSettingsPage(
+                host = host,
                 path = route.value.substringBefore('?'),
                 graph = owners.graph,
                 controller = owners.controller,

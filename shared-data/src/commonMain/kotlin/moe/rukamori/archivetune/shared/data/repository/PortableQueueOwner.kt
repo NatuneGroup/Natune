@@ -101,6 +101,7 @@ class PortableQueueOwner(
     private val hideVideo: () -> Boolean = { false },
     /** The provider artist ids the user blocked; entries carrying one never reach the queue. */
     private val blockedArtistIds: () -> Set<String> = { emptySet() },
+    private val blockedSongRefs: () -> Set<moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef> = { emptySet() },
     /** Records the complete track list of an album whose whole walk was loaded. Absent, nothing is recorded. */
     albumCompletion: AlbumCompletionIndex? = null,
     /** Blends songs into each other. Absent, every song ends before its successor loads, as before. */
@@ -160,7 +161,7 @@ class PortableQueueOwner(
         state = state,
         commit = { currentState = it; revalidateHandoff() },
         content = content,
-        filter = { it.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds()) },
+        filter = { it.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds(), blockedSongRefs()) },
         enabled = autoLoadMoreEnabled,
         repeatOff = { repeatMode() == QueueRepeatMode.OFF },
         nowMs = monotonicTimeMs,
@@ -270,7 +271,7 @@ class PortableQueueOwner(
             tail = QueueTail(collection = collection, continuation = first.continuation, kind = QueueCollectionKind.RADIO)
         }
         // The hidden-content rules of `Queue.Status.filterPlaybackContent` apply to every queue load.
-        loaded = loaded.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds())
+        loaded = loaded.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds(), blockedSongRefs())
         if (loaded.isEmpty()) throw IncompleteFinitePlaylistException("Collection returned no songs")
         QueueEditPolicy.requireUnique(loaded)
 
@@ -544,7 +545,7 @@ class PortableQueueOwner(
         val kept = queue.entries.subList(0, currentIndex + 1)
         val knownOccurrences = kept.mapTo(HashSet()) { it.occurrenceId }
         val radioItems = moe.rukamori.archivetune.shared.domain.queue.InfiniteQueuePolicy.fresh(
-            page.items.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds()),
+            page.items.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds(), blockedSongRefs()),
             kept.map { it.item.ref },
         ) { it.item.ref }.filter { knownOccurrences.add(it.occurrenceId) }
         val tail = QueueTail(collection = collection, continuation = page.continuation, kind = QueueCollectionKind.RADIO)
@@ -937,7 +938,7 @@ class PortableQueueOwner(
         FinitePlaylistCompletion.validateNext(page.continuation, consumed, page.items.size)
         val known = queue.entries.mapTo(HashSet()) { it.occurrenceId }
         val fresh = mutableListOf<ContentOccurrence>()
-        for (item in page.items.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds())) {
+        for (item in page.items.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds(), blockedSongRefs())) {
             if (known.add(item.occurrenceId)) fresh += item
         }
         currentState = queue.copy(
@@ -972,7 +973,6 @@ class PortableQueueOwner(
             }
         }
     }
-
 
     private companion object {
         /** Resolve and preload this far ahead of the blend, as Android prepares its second player. */

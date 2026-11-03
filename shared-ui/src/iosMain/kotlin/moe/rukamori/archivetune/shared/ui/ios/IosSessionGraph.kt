@@ -83,6 +83,8 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
 import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsDefaults
@@ -684,8 +686,9 @@ internal class IosSessionGraph private constructor(
                 nowMs = ::iosNowMillis,
                 report = report,
             )
-            // The one image cache this host keeps: the saved limit applies to the shared URL cache at open.
-            iosApplyImageCacheLimit(vault.snapshots.value)
+            // The canvas store and the image cache are the two this host keeps; the saved limits apply at open.
+            val canvasStore = IosCanvasCacheStore().also { it.ensure() }
+            iosApplyCacheLimits(vault.snapshots.value, canvasStore)
             // Backup archives hold a VACUUM INTO snapshot of this same database, staged beside it on restore.
             val backup = IosBackupOwner(
                 settings = vault,
@@ -721,6 +724,9 @@ internal class IosSessionGraph private constructor(
                 hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
                 hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
                 blockedArtistIds = { queueArtistBlocks.value },
+                blockedSongRefs = {
+                    parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
+                },
                 handoffEngine = handoff,
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
@@ -903,7 +909,7 @@ internal class IosSessionGraph private constructor(
                 customArtwork = customArtwork,
                 playbackPool = playbackPool,
                 artworkLoader = IosArtworkLoader(http, customArtwork, customArtworkFiles),
-                canvasStore = IosCanvasCacheStore().also { it.ensure() },
+                canvasStore = canvasStore,
                 listenTogether = listenTogether,
                 uploads = uploads,
                 downloads = downloads,
