@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
+import moe.rukamori.archivetune.shared.domain.playback.STREAM_BLOCKED_MESSAGE
 import moe.rukamori.archivetune.shared.domain.settings.IpRotationEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.PROXY_LOCAL_HOST_EXCEPTIONS
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -169,7 +170,7 @@ internal object IosStreamProxyRouting {
      */
     fun applyTo(configuration: NSURLSessionConfiguration): ProxyRoute? {
         if (streamBlocked()) {
-            throw ByteSourceException("ip rotation is on but has no live proxy member")
+            throw ByteSourceException(STREAM_BLOCKED_MESSAGE)
         }
         val route = routeForStream() ?: return null
         configuration.connectionProxyDictionary = iosProxySessionDictionary(route)
@@ -190,15 +191,19 @@ internal object IosStreamProxyRouting {
  * switch live, and an enabled rotation serves the next validated pool member to each new stream connection. The
  * rotating pool can never take the catalogue with it, so rotation on this host moves stream traffic only.
  */
-class IosNetworkOwner(
+class IosNetworkOwner internal constructor(
     private val preferences: () -> PreferenceSnapshot?,
     private val report: (String) -> Unit,
+    /** The pool behind the stream routing — tests inject one whose fetch a deferred controls. */
+    private val rotation: IosProxyRotation,
 ) {
+    constructor(preferences: () -> PreferenceSnapshot?, report: (String) -> Unit) :
+        this(preferences, report, IosProxyRotation())
+
     /** The route the running Darwin engine was built with, read once when the session opened. */
     val runningRoute: ProxyRoute? = preferences()?.proxyRoute()
 
     private val rotationLock = Mutex()
-    private val rotation = IosProxyRotation()
 
     @Volatile
     private var rotating = false
@@ -247,6 +252,12 @@ class IosNetworkOwner(
     fun activeRotationCount(): Int = if (rotating) rotation.activeCount() else 0
 
     /**
+     * True while rotation is installed but has no member and no saved route to answer with: every stream
+     * open fails closed then, so surfaces can name the rotation state instead of a generic failure.
+     */
+    fun rotationBlocked(): Boolean = IosStreamProxyRouting.streamBlocked()
+
+    /**
      * Re-installs a rotation the user left enabled, the way the desktop owner's start does: the fetch and the
      * validations are network-bound, so they run off the launch path. The pool was already installed empty at
      * init, so until the fetch populates it every stream open fails closed instead of leaking direct.
@@ -280,20 +291,13 @@ class IosNetworkOwner(
             disableRotation()
             return@withLock 0
         }
-        try {
-            rotation.fetchAndLoad { preferences()?.proxyRoute() }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Throwable) {
-            // Rotation stays installed while the saved toggle is on — a failed fetch keeps whatever
-            // members the pool already held, cooled ones included, instead of opening a direct gap
-            // while the caller unwinds.
-            rotating = true
-            IosStreamProxyRouting.updateRotation(rotation)
-            throw failure
-        }
+        // Install before the fetch starts: the setting is already committed, so every stream opened
+        // while the fetch runs must hit the pool — a starved one blocks the open rather than letting
+        // it out direct. A cancelled or failed fetch leaves the install in place, and only the
+        // disable branch above ever clears it.
         rotating = true
         IosStreamProxyRouting.updateRotation(rotation)
+        rotation.fetchAndLoad { preferences()?.proxyRoute() }
         rotation.activeCount()
     }
 

@@ -1,5 +1,7 @@
 package moe.rukamori.archivetune.shared.data.platform.ios
 
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -7,7 +9,19 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackErrorKind
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureReason
+import moe.rukamori.archivetune.shared.domain.playback.STREAM_BLOCKED_MESSAGE
+import moe.rukamori.archivetune.shared.domain.playback.toPlaybackErrorInfo
+import moe.rukamori.archivetune.shared.domain.settings.IpRotationEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.PROXY_LOCAL_HOST_EXCEPTIONS
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -33,6 +47,19 @@ class IosNetworkRoutingTest {
 
     private fun enabled(host: String = "proxy.example", port: Int = 3128) =
         snapshot(ProxyEnabledKey to true, ProxyHostKey to host, ProxyPortKey to port)
+
+    /** Stream routing is process state, so every test starts and ends with it empty. */
+    @BeforeTest
+    fun resetStreamRouting() {
+        IosStreamProxyRouting.updateRotation(null)
+        IosStreamProxyRouting.updateStreamRoute(null, bypass = false)
+    }
+
+    @AfterTest
+    fun clearStreamRouting() {
+        IosStreamProxyRouting.updateRotation(null)
+        IosStreamProxyRouting.updateStreamRoute(null, bypass = false)
+    }
 
     @Test
     fun anHttpRouteNamesTheProxyForBothSchemesAndNoSocksKey() {
@@ -248,5 +275,122 @@ class IosNetworkRoutingTest {
         } finally {
             IosStreamProxyRouting.updateRotation(null)
         }
+    }
+
+    @Test
+    fun anOwnerBuiltWithRotationSavedOnBlocksStreamsBeforeThePoolFills() {
+        val owner = IosNetworkOwner({ snapshot(IpRotationEnabledKey to true) }) {}
+        assertTrue(IosStreamProxyRouting.streamBlocked())
+        assertTrue(IosStreamProxyRouting.mustProxy())
+        assertTrue(owner.rotationBlocked())
+        assertFailsWith<ByteSourceException> {
+            IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)
+        }
+    }
+
+    @Test
+    fun anEnableBlocksStreamsForTheWholeFetch() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<List<ProxyRoute>>()
+        val rotation = IosProxyRotation { _ -> started.complete(Unit); release.await() }
+        val owner = IosNetworkOwner({ snapshot() }, {}, rotation)
+        val pending = async { owner.applyIpRotation(enabled = true, refresh = false) }
+        started.await()
+        // The toggle is already committed: while the fetch runs, the installed empty pool must refuse opens.
+        assertTrue(IosStreamProxyRouting.streamBlocked())
+        assertFailsWith<ByteSourceException> {
+            IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)
+        }
+        release.complete(listOf(httpRoute(host = "pool.example", port = 8080)))
+        assertEquals(1, pending.await())
+        assertFalse(IosStreamProxyRouting.streamBlocked())
+        assertEquals(
+            "http://pool.example:8080",
+            IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)?.endpointKey,
+        )
+    }
+
+    @Test
+    fun aCancelledEnableLeavesTheInstalledRotationBlocking() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val rotation = IosProxyRotation { _ -> started.complete(Unit); awaitCancellation() }
+        val owner = IosNetworkOwner({ snapshot() }, {}, rotation)
+        val job = launch { runCatching { owner.applyIpRotation(enabled = true, refresh = false) } }
+        started.await()
+        job.cancel()
+        job.join()
+        assertTrue(IosStreamProxyRouting.streamBlocked())
+        assertTrue(IosStreamProxyRouting.mustProxy())
+        assertFailsWith<ByteSourceException> {
+            IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)
+        }
+    }
+
+    @Test
+    fun aFailedOrEmptyRefreshKeepsCooledMembersInstalledAndAnswering() = runBlocking {
+        val first = httpRoute(host = "one.example", port = 1001)
+        val second = httpRoute(host = "two.example", port = 1002)
+        var fetches = 0
+        val rotation = IosProxyRotation { _ ->
+            fetches++
+            if (fetches == 1) emptyList() else throw IllegalStateException("list fetch failed")
+        }
+        rotation.loadRoutes(listOf(first, second))
+        rotation.markFailed(first)
+        rotation.markFailed(second)
+        val owner = IosNetworkOwner({ snapshot(IpRotationEnabledKey to true) }, {}, rotation)
+        // An empty refresh keeps the cooled pool installed — opens still route through a cooled member.
+        assertEquals(0, owner.applyIpRotation(enabled = true, refresh = true))
+        assertTrue(rotation.hasMembers())
+        assertTrue(IosStreamProxyRouting.mustProxy())
+        assertFalse(IosStreamProxyRouting.streamBlocked())
+        val routed =
+            assertNotNull(
+                IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration),
+            )
+        assertTrue(routed.endpointKey in setOf(first.endpointKey, second.endpointKey))
+        // A fetch that throws leaves the same install in place: the members it already held still answer.
+        try {
+            owner.applyIpRotation(enabled = true, refresh = true)
+            fail("a failed fetch should propagate")
+        } catch (expected: IllegalStateException) {
+        }
+        assertTrue(IosStreamProxyRouting.mustProxy())
+        assertNotNull(IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration))
+    }
+
+    @Test
+    fun anExplicitDisableIsTheOnlyWayBackToDirect() = runBlocking {
+        val rotation = IosProxyRotation { _ -> emptyList() }
+        val owner = IosNetworkOwner({ snapshot(IpRotationEnabledKey to true) }, {}, rotation)
+        assertTrue(IosStreamProxyRouting.streamBlocked())
+        assertEquals(0, owner.applyIpRotation(enabled = true, refresh = false))
+        // The empty answer still leaves the rotation installed — only an explicit disable takes it out.
+        assertTrue(IosStreamProxyRouting.streamBlocked())
+        assertEquals(0, owner.applyIpRotation(enabled = false, refresh = false))
+        assertFalse(IosStreamProxyRouting.mustProxy())
+        assertFalse(owner.rotationBlocked())
+        assertNull(IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration))
+        // A saved static route still claims streams after rotation leaves — disable never touches it.
+        IosStreamProxyRouting.updateStreamRoute(httpRoute(), bypass = false)
+        assertEquals(
+            "http://proxy.example:3128",
+            IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)?.endpointKey,
+        )
+    }
+
+    @Test
+    fun aBlockedOpenReportsTheSanitizedRotationStatus() {
+        IosNetworkOwner({ snapshot(IpRotationEnabledKey to true) }) {}
+        val failure = assertFailsWith<ByteSourceException> {
+            IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)
+        }
+        // The status is a fixed token — no proxy host, port or credential reaches the error dialog.
+        assertEquals(STREAM_BLOCKED_MESSAGE, failure.message)
+        assertEquals(
+            PlaybackErrorKind.STREAM_BLOCKED,
+            PlaybackFailure("occ-1", PlaybackFailureReason.OPEN_FAILED, STREAM_BLOCKED_MESSAGE)
+                .toPlaybackErrorInfo().kind,
+        )
     }
 }
