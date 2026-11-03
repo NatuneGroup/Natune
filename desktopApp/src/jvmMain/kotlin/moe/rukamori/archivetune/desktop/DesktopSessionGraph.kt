@@ -15,6 +15,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -47,7 +48,10 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
+import moe.rukamori.archivetune.desktop.playback.acousticWindow
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
@@ -120,7 +124,7 @@ class DesktopSessionGraph internal constructor(
     /** The one BotGuard poToken owner; settings generation and the resolver tiers share it. */
     internal val poTokens: DesktopPoTokenOwner,
     private val owner: PortableQueueOwner,
-    /** The engine behind [player], reached directly only for the output volume, which is not a queue command. */
+    /** The engine behind [player], reached directly for output volume and the paused-output park, not queue commands. */
     private val playback: DesktopPlaybackPort,
     private val ordinarySettings: DesktopSettingsStore,
     private val database: PortableStateDatabase,
@@ -248,11 +252,51 @@ class DesktopSessionGraph internal constructor(
     internal val equalizer = DesktopEqualizer(scope = scope, settings = settings, playback = playback)
 
     /**
-     * Opt-in bounded spectral evidence for one stored source, read by the developer acoustic panel only.
+ * Opt-in bounded spectral evidence for one stored source, read by the developer acoustic panel only.
      * The probe never touches the playback decks; see [DesktopPlaybackPort.assessSpectrum] for the contract.
      */
     internal suspend fun assessSpectrum(locator: PlaybackLocator): DesktopSpectralEvidence =
         playback.assessSpectrum(locator)
+
+    /**
+     * The one acoustic audit owner of this process. Its decode runs through [playback], so the audit
+     * reads the same current source the player does, and [DesktopPlayerMenuDialog] plus the developer
+     * page both show its one state.
+     */
+    internal val acoustic = AcousticAuditOwner(scope) { target, checkActive ->
+        playback.acousticWindow(target, checkActive)
+    }
+
+    /**
+     * The loaded request's audit binding token: occurrenceId plus the load-attempt id, so a source
+     * fallback inside the same occurrence invalidates targets and results bound to the older attempt.
+     * Empty while nothing is loaded.
+     */
+    internal fun acousticRequestKey(): String =
+        playback.loadedRequest()
+            ?.let { "${it.occurrenceId}#${it.attemptId ?: -1L}" }
+            .orEmpty()
+
+    /**
+     * Opens the audit surface with [target] bound to the request loaded right now — menu callers cannot
+     * read the attempt themselves because the request only exists inside the port.
+     */
+    internal fun openAcousticAudit(target: AcousticAuditTarget) {
+        acoustic.openDialog(target.copy(requestKey = acousticRequestKey()))
+    }
+
+    init {
+        // An open audit dialog rebinds to the live request key on every snapshot: a source fallback
+        // inside the same occurrence retires the key the dialog opened with, so a result decoded
+        // under the retired key stops matching instead of displaying as stale evidence.
+        scope.launch {
+            player.snapshot.collect {
+                if (acoustic.dialogTarget.value != null) {
+                    acoustic.rebindDialogKey(acousticRequestKey())
+                }
+            }
+        }
+    }
 
     /**
      * The one pause-on-device-mute driver of this process: the stored option over the observed output
@@ -295,6 +339,16 @@ class DesktopSessionGraph internal constructor(
      */
     fun setAudioOutputEnabled(enabled: Boolean) {
         playback.setAudioOutputEnabled(enabled)
+    }
+
+    /**
+     * Parks the output device while playback is paused — the desktop's STOPPED_ON_BACKGROUND: the
+     * paused occurrence keeps its place and the next play or seek reopens the device at it. The
+     * window lifecycle calls this once a pause outlives its grace, or sooner while the window is
+     * off-screen; it is a no-op while audio is playing or nothing is loaded.
+     */
+    fun releaseAudioOutput() {
+        playback.releaseOutput()
     }
 
     /** Writes one sanitized diagnostic line to the local log. Host diagnostics are not telemetry. */

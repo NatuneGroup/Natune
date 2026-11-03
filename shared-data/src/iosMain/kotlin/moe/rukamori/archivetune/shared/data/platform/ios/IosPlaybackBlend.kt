@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.data.platform.ios
 import cnames.structs.at_audio_output
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
+import moe.rukamori.archivetune.nativeaudio.at_audio_pitch
 import moe.rukamori.archivetune.nativeaudio.at_audio_speed
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
 import moe.rukamori.archivetune.shared.data.playback.IosBlendProgress
@@ -112,6 +113,23 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
     fun setSpeed(speed: Float) {
         at_audio_speed(graph.current.output, speed)
         next?.let { at_audio_speed(it.output, speed) }
+    }
+
+    /**
+     * Pitch applies in two places: the blend's own unit on each deck, since the manual pull carries decoder PCM,
+     * and the native output's unit, so the graph it resumes as after a promotion keeps the same shift.
+     */
+    fun setPitch(cents: Float) {
+        at_audio_pitch(graph.current.output, cents)
+        next?.let { at_audio_pitch(it.output, cents) }
+        graph.setPitch(cents)
+    }
+
+    /** The same two paths as [setPitch]: the deck units render the fade, the native units survive it. */
+    fun setEqualizer(enabled: Boolean, bands: List<IosEqBand>) {
+        applyIosEqualizer(graph.current.output, bands, enabled)
+        next?.let { applyIosEqualizer(it.output, bands, enabled) }
+        graph.setEqualizer(enabled, bands)
     }
 
     fun play(): Boolean = graph.play()

@@ -69,6 +69,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -525,7 +526,11 @@ internal class DesktopPlayerQueueActions(
 
     override fun setAodMode() = unsupported("setAodMode")
     override fun openEqualizer() = graph.equalizer.openSheet()
-    override fun openAcousticQuality(track: PlayerQueueTrack) = unsupported("openAcousticQuality")
+    override fun openAcousticQuality(track: PlayerQueueTrack) {
+        graph.openAcousticAudit(
+            AcousticAuditTarget(track.mediaId, track.title, track.artists.joinToString { it.name }),
+        )
+    }
     override fun cast(track: PlayerQueueTrack) = unsupported("cast")
     override fun openWithExternalDownloader(url: String) = unsupported("openWithExternalDownloader")
     /** The canvas owner's own resolve; a stale menu target refetches nothing. */
@@ -674,7 +679,7 @@ internal fun DesktopPlayerMenuDialog(
         searchableSources = graph.audioSources.searchableSources,
         alwaysOnDisplaySupported = false,
         radioSupported = desktopRadioSeedSupported(item.ref),
-        acousticQualitySupported = false,
+        acousticQualitySupported = true,
         equalizerSupported = true,
         downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
         tempoPitchPresets = parseTempoPitchPresets(snapshot?.get(TempoPitchPresetsJsonKey)),

@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
@@ -231,6 +232,109 @@ class DesktopPlaybackPortTest {
             awaitValue("the unmuted flag") { port.audioOutputEnabled.value.takeIf { it } }
             val unmuted = port.awaitSnapshot("position past the mute") { it.positionMs >= muted.positionMs + 200L }
             assertTrue(unmuted.isAudioAdvancing)
+        } finally {
+            port.close()
+        }
+    }
+
+    @Test
+    fun releaseParksTheDeviceAndPlayReopensAtTheParkedPosition() {
+        val port = DesktopPlaybackPort(backend = EngineBackend.NULL)
+        try {
+            port.submit(PlaybackCommand.Load(localRequest("occ-park", "ramp-48k.wav"), 0L, playWhenReady = true))
+            port.awaitSnapshot("playback past 300 ms") { it.positionMs >= 300L }
+            port.submit(PlaybackCommand.Pause)
+            val paused = port.awaitSnapshot("a paused snapshot") { !it.playWhenReady }
+
+            port.releaseOutput()
+            awaitValue("the parked output") { port.outputSuspended.value.takeIf { it } }
+            // A second release while parked is a no-op, not a second teardown.
+            port.releaseOutput()
+            Thread.sleep(150L)
+            val held = assertNotNull(port.snapshots.value)
+            assertEquals("occ-park", held.occurrenceId)
+            assertFalse(held.playWhenReady)
+            assertFalse(held.isAudioAdvancing)
+
+            port.submit(PlaybackCommand.Play)
+            val resumed = port.awaitSnapshot("audio after the device reopened") {
+                it.isAudioAdvancing && it.positionMs >= paused.positionMs
+            }
+            assertEquals("occ-park", resumed.occurrenceId)
+            awaitValue("the unparked flag") { port.outputSuspended.value.takeIf { !it } }
+        } finally {
+            port.close()
+        }
+    }
+
+    @Test
+    fun releaseIsIgnoredWhileAudioIsPlaying() {
+        val port = DesktopPlaybackPort(backend = EngineBackend.NULL)
+        try {
+            port.submit(PlaybackCommand.Load(localRequest("occ-playing", "ramp-48k.wav"), 0L, playWhenReady = true))
+            port.awaitSnapshot("advancing audio") { it.isAudioAdvancing }
+
+            port.releaseOutput()
+            Thread.sleep(300L)
+
+            assertFalse(port.outputSuspended.value, "a playing occurrence keeps the device")
+            assertTrue(port.snapshots.value?.isAudioAdvancing == true, "release never interrupted playback")
+        } finally {
+            port.close()
+        }
+    }
+
+    @Test
+    fun releaseWithoutALoadedOccurrenceIsQuiet() {
+        val port = DesktopPlaybackPort(backend = EngineBackend.NULL)
+        try {
+            port.releaseOutput()
+            Thread.sleep(200L)
+            assertFalse(port.outputSuspended.value)
+            assertNull(port.snapshots.value)
+        } finally {
+            port.close()
+        }
+    }
+
+    @Test
+    fun seekReopensTheParkedOutputAtTheRequestedPosition() {
+        val port = DesktopPlaybackPort(backend = EngineBackend.NULL)
+        try {
+            port.submit(PlaybackCommand.Load(localRequest("occ-park-seek", "ramp-48k.wav"), 0L, playWhenReady = true))
+            port.awaitSnapshot("playback past 200 ms") { it.positionMs >= 200L }
+            port.submit(PlaybackCommand.Pause)
+            port.awaitSnapshot("a paused snapshot") { !it.playWhenReady }
+            port.releaseOutput()
+            awaitValue("the parked output") { port.outputSuspended.value.takeIf { it } }
+
+            port.submit(PlaybackCommand.SeekTo(2_000L))
+            val moved = port.awaitSnapshot("the parked occurrence moved") {
+                it.positionMs in 2_000L..2_800L && it.discontinuityGeneration >= 1L
+            }
+            assertFalse(moved.playWhenReady, "a seek on a parked output reopens it still paused")
+            awaitValue("the unparked flag") { port.outputSuspended.value.takeIf { !it } }
+        } finally {
+            port.close()
+        }
+    }
+
+    @Test
+    fun stopOnAParkedOutputEndsTheOccurrence() {
+        val port = DesktopPlaybackPort(backend = EngineBackend.NULL)
+        try {
+            port.submit(PlaybackCommand.Load(localRequest("occ-park-stop", "ramp-48k.wav"), 0L, playWhenReady = true))
+            port.awaitSnapshot("playback past 200 ms") { it.positionMs >= 200L }
+            port.submit(PlaybackCommand.Pause)
+            port.awaitSnapshot("a paused snapshot") { !it.playWhenReady }
+            port.releaseOutput()
+            awaitValue("the parked output") { port.outputSuspended.value.takeIf { it } }
+
+            port.submit(PlaybackCommand.Stop)
+            Thread.sleep(200L)
+
+            assertFalse(port.outputSuspended.value, "stop clears the parked flag")
+            assertFalse(port.snapshots.value?.playWhenReady == true)
         } finally {
             port.close()
         }

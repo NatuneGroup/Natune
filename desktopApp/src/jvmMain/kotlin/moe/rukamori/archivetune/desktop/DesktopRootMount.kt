@@ -192,6 +192,7 @@ internal fun DesktopMountedRoot(
             quit = quit,
             // A room guest leaves queue order and position to the room host, matching the Android room rule.
             guestLocked = { graph.listenTogether.isGuestInRoom() },
+            releaseAudioOutput = graph::releaseAudioOutput,
             reportUnavailable = graph::report,
         )
     }

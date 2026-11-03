@@ -43,6 +43,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
+import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityOverlay
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate
 import moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource
@@ -142,6 +143,7 @@ internal fun desktopHostBindings(
             DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph, canvas) { target -> ownRoutes.trySend(target) }
             DesktopSleepTimerOverlay(sleepSheet, graph.sleepTimer)
             DesktopEqualizerOverlay(graph.equalizer)
+            AcousticQualityOverlay(graph.acoustic)
             DesktopFeedbackOverlay(feedback, graph)
             DesktopBackupRestartDialog(graph, quit)
             DesktopLyricsShareNotice(lyricsTools)

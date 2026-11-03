@@ -57,6 +57,9 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.m5pqDetailsRes
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_acoustic_quality_title
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_equalizer
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_tempo_and_pitch
 import org.jetbrains.compose.resources.stringResource
 
@@ -319,6 +322,18 @@ internal fun IosSongMenu(
         add(OverflowAction("media_info", m5pqDetailsRes) { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(ref.id)) })
         // The shared tempo/pitch dialog is owned by the session graph, so the row opens it like the timer row.
         add(OverflowAction("tempo_pitch", Res.string.m5pq_tempo_and_pitch) { menu.dismiss(); tempoSheet.open = true })
+        // The equalizer sheet and the acoustic audit dialog are owned by the session graph too.
+        add(OverflowAction("equalizer", Res.string.m5pq_equalizer) { menu.dismiss(); graph.equalizer.openSheet() })
+        add(OverflowAction("acoustic_quality", Res.string.m5pq_acoustic_quality_title) {
+            menu.dismiss()
+            graph.openAcousticAudit(
+                AcousticAuditTarget(
+                    ref.id,
+                    occurrence.item.title,
+                    occurrence.item.artists.joinToString { it.name },
+                ),
+            )
+        })
         menu.playlistId?.let { playlistId -> add(playlistOccurrenceRemoval(playlistId, occurrence, graph.library)) }
         add(customArtworkEntryAction { menu.openCustomArtwork() })
     }.filter { it.id in iosBoundSongRows(ref, facts, artistRef != null) }
@@ -381,6 +396,9 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         add("sleep_timer")
         // The shared tempo/pitch dialog is owned by the session graph too, so the row is always connected.
         add("tempo_pitch")
+        // The equalizer sheet and the acoustic audit dialog are owned by the session graph as well.
+        add("equalizer")
+        add("acoustic_quality")
         if (hasArtist) add("view_artist")
         // A provider that can only stream encrypted audio has no stored file here, so it offers no download row.
         if (iosDownloadRefusal(ref) == null) {

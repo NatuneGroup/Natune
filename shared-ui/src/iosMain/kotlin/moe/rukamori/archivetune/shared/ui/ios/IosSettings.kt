@@ -9,8 +9,10 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,7 +68,9 @@ import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.youTubeLoginBlock
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.ui.IosHost
+import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityPanel
 import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
@@ -90,7 +94,6 @@ import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings
 import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
 import moe.rukamori.archivetune.shared.ui.settings.DeveloperSettings
-import moe.rukamori.archivetune.shared.ui.settings.HostAcousticQualitySection
 import moe.rukamori.archivetune.shared.ui.settings.HostDiscordDebugSection
 import moe.rukamori.archivetune.shared.ui.settings.HostNerdStatsSection
 import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
@@ -792,10 +795,10 @@ private fun IosListenerPresenceSection(store: ListenerPresenceStore, report: (St
 }
 
 /**
- * Settings > Misc on this host. The Discord card reads the presence owner's live debug state and nerd stats
- * poll the player snapshot; this host keeps no stored audio file to parse and cannot decode for the spectral
- * check, so the encoded-format fields and the acoustic run report themselves unavailable rather than hiding
- * the panels.
+ * Settings > Misc on this host. The acoustic audit mounts the shared panel over the queue's current song,
+ * through the session's audit owner. The Discord card reads the presence owner's live debug state and nerd
+ * stats poll the player snapshot; this host keeps no stored audio file to parse, so the encoded-format
+ * fields report themselves unavailable rather than hiding the panels.
  */
 @Composable
 private fun IosDeveloperSettingsPage(
@@ -809,15 +812,7 @@ private fun IosDeveloperSettingsPage(
         controller = controller,
         navigate = navigate,
         playerAvailable = true,
-        acousticQualitySection = { active ->
-            HostAcousticQualitySection(
-                active = active,
-                player = graph.player,
-                queue = graph.queue.state,
-                resolved = graph.loadedRequest,
-                measure = null,
-            )
-        },
+        acousticQualitySection = { active -> IosAcousticQualitySection(graph, active) },
         discordDebugSection = { HostDiscordDebugSection(graph.discord.debug, ::iosDiagnosticTime) },
         nerdStatsSection = {
             HostNerdStatsSection(
@@ -831,6 +826,47 @@ private fun IosDeveloperSettingsPage(
         scrollTo = scrollTo,
     )
 }
+
+/**
+ * The developer-page acoustic section: the shared audit panel of the queue's current song, or the
+ * no-song note when nothing is loaded. Leaving or hiding the section cancels a run in flight.
+ */
+@Composable
+private fun IosAcousticQualitySection(graph: IosSessionGraph, active: Boolean) {
+    val queueState by graph.queue.state.collectAsState()
+    val current = queueState.currentOccurrenceId
+        ?.let { id -> queueState.entries.firstOrNull { it.occurrenceId == id }?.item }
+    DisposableEffect(graph.acoustic, active) {
+        graph.acoustic.setActive(active)
+        onDispose { graph.acoustic.setActive(false) }
+    }
+    if (current == null) {
+        Text(
+            stringResource(Res.string.m6aq_code_no_current_source),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        return
+    }
+    // The snapshot collection keeps the audit key recomputing as the loaded request moves, so a
+    // source fallback inside the same occurrence retires the older attempt's binding.
+    val requestKey by produceState("") {
+        graph.player.snapshot.collect { value = graph.acousticRequestKey() }
+    }
+    AcousticQualityPanel(
+        target = AcousticAuditTarget(
+            current.ref.id,
+            current.title,
+            current.artists.joinToString { it.name },
+            requestKey = requestKey,
+        ),
+        owner = graph.acoustic,
+        active = active,
+        modifier = Modifier.padding(horizontal = 16.dp),
+    )
+}
+
 
 /** Settings > Language packs over the host's Japanese pack manager; the SpatialFlow add-on is not offered on iOS. */
 @Composable
