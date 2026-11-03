@@ -43,7 +43,8 @@ private const val SEARCHED_ID_CACHE_SIZE = 64
  *
  * [fallback] runs the shipped extractor tiers in the order the shared failsafe walk gives them: InnerTubeX through
  * [DesktopInnerTubeXTier], then NewPipe through [DesktopNewPipeTier], which also deciphers what the primary walk
- * skipped. Echo is an Android-only resolver, so its tier answers null, which the walk reads as a failed tier. Every tier
+ * skipped. Echo runs on Android and iOS only; the desktop has no
+ * Echo port, so its tier answers null, which the walk reads as a failed tier. Every tier
  * writes one diagnostic line with its outcome.
  */
 internal class DesktopYouTubeResolver(
