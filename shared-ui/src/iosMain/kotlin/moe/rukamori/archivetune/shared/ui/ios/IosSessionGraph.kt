@@ -662,6 +662,7 @@ internal class IosSessionGraph private constructor(
                         providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
                     },
                     poTokens = poTokens,
+                    report = report,
                 ),
             )
             // Both media owners write into the app container, which the host creates once here.

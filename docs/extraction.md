@@ -100,6 +100,28 @@ Echo tier answers null.
   tier is also the desktop's only cipher path. Its one BotGuard mint is optional and bounded well
   inside the tier budget, so a stalled minting endpoint leaves untokened extraction its time.
 
+## iOS host tiers
+
+The iOS host walks the same tier order through `OrderedAudioResolver`/`YouTubeFailsafePolicy` and
+`IosYouTubeResolver.fallback`, each tier bounded by the shared timeout and each writing one
+`YouTube tier=<name> resolved=<bool> elapsedMs=<n>` diagnostics line like the desktop host.
+
+- The iOS InnerTubeX tier is the same `innertubex` `v0.11.2` stack as the other hosts, anonymous,
+  with the pure-Kotlin QuackJS cipher — no native player engine is needed for it.
+- The iOS NewPipe tier cannot run `org.schabi.newpipe.extractor` (JVM-only, like the desktop tier's
+  own extractor pass). Instead it runs the tier's mechanism on common Kotlin pieces: anonymous
+  visitor `player` requests over the extractor's client set — ANDROID_VR first, then the shipped
+  ANDROID_MUSIC/IOS/WEB_REMIX walk — deciphering `signatureCipher`/`cipher` and the n parameter
+  through the shared `YouTubeCipherService` (QuackJS), the pure-Kotlin counterpart of NewPipe's
+  JavaScript-player deobfuscation. Its BotGuard mint binds the visitor session, stays optional and
+  is bounded inside the tier budget.
+- The iOS Echo tier keeps the cascade over the live session: WEB_REMIX first for the age-gate and
+  private-track signals, then VISIONOS/ANDROID_VR 1.65/TVHTML5/ANDROID_VR 1.43/IPADOS/IOS/WEB_CREATOR
+  with login-required clients skipped while anonymous, the same deciphering, the HEAD+Range
+  validation probe, and the last client accepted unvalidated. Android's WebView-hosted
+  meriyah/astring solver and WebView token generator are the Echo pieces that stay JVM-only; the
+  QuackJS cipher and the shipped BotGuard support stand in for them.
+
 ## The cipher seam
 
 `StreamUrlExtractor` (`playback/stream/`) is the app-side contract for the cipher step:
