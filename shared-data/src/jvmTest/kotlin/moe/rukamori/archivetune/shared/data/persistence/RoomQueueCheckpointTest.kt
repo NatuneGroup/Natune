@@ -54,6 +54,32 @@ class RoomQueueCheckpointTest {
             assertEquals(1, results.count { it })
         } finally { db.close() }
     }
+    @Test fun restoreHydratesMissingDurationsInBatchesWhileReadKeepsTheStoredQueue() = runTest {
+        val db = openPortableStateDatabase(":memory:")
+        try {
+            val saved = List(1_000) { ContentItem(ContentRef("youtube", ContentKind.SONG, "s$it"), "t$it", durationMs = 1_000L + it) }
+            saved.forEach { db.library().putItem(libraryItemRow(it, liked = false, addedSeq = 0, likedSeq = 0)) }
+            // Same media id as a queued entry under another provider: that duration belongs to a different song.
+            val tidal = ContentItem(ContentRef("tidal", ContentKind.SONG, "other"), "x", durationMs = 5)
+            db.library().putItem(libraryItemRow(tidal, liked = false, addedSeq = 0, likedSeq = 0))
+            val entries = saved.map { ContentOccurrence("o-${it.ref.id}", it.copy(durationMs = null)) } +
+                ContentOccurrence("foreign", ContentItem(ContentRef("youtube", ContentKind.SONG, "other"), "f")) +
+                ContentOccurrence("unknown", ContentItem(ContentRef("youtube", ContentKind.SONG, "missing"), "u")) +
+                ContentOccurrence("kept", ContentItem(ContentRef("youtube", ContentKind.SONG, "s0"), "k", durationMs = 42))
+            val ids = entries.map { it.occurrenceId }
+            val checkpoint = QueueCheckpoint(QueueState(1, entries, ids.first(), ids), 0)
+            val store = RoomQueueCheckpointStore(db.checkpoints(), db.library())
+            assertTrue(store.write(checkpoint, null))
+            assertEquals(checkpoint, store.read())
+            val restored = assertNotNull(store.readForRestore()).queue.entries
+                .associate { it.occurrenceId to it.item.durationMs }
+            assertEquals(1_000L, restored["o-s0"])
+            assertEquals(1_999L, restored["o-s999"])
+            assertNull(restored["foreign"])
+            assertNull(restored["unknown"])
+            assertEquals(42L, restored["kept"])
+        } finally { db.close() }
+    }
     @Test fun jsonRejectsBadVersionAndDoesNotCoalesceDuplicates() {
         val encoded = QueueCheckpointJson.encode(checkpoint())
         assertEquals(checkpoint(), QueueCheckpointJson.decode(encoded))

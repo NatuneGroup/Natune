@@ -4,6 +4,7 @@ import androidx.room.*
 import androidx.sqlite.SQLiteDriver
 import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskDao
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskRow
@@ -131,35 +132,49 @@ class RoomQueueCheckpointStore(
     private val libraryDao: PortableLibraryDao? = null,
 ) : QueueCheckpointStore {
     override suspend fun read(): QueueCheckpoint? = dao.read()?.let {
-        QueueCheckpointJson.decode(it.json)
-            .also { checkpoint -> require(checkpoint.queue.revision == it.revision) }
-            .hydratingDurations()
+        QueueCheckpointJson.decode(it.json).also { checkpoint -> require(checkpoint.queue.revision == it.revision) }
     }
+
+    override suspend fun readForRestore(): QueueCheckpoint? = read()?.hydratingDurations()
 
     /**
      * A saved item row keeps the whole item, so it supplies the duration a checkpoint entry lacks, the same
      * way the Android restore fills queue durations from the songs table. An entry without a stored row
-     * keeps its null rather than being guessed at.
+     * keeps its null rather than being guessed at. The lookups are batched because a restored queue can hold
+     * thousands of entries and a query per entry would stall startup.
      */
     private suspend fun QueueCheckpoint.hydratingDurations(): QueueCheckpoint {
         val dao = libraryDao ?: return this
-        if (queue.entries.all { it.item.durationMs != null }) return this
-        var changed = false
+        val missing = queue.entries.mapNotNullTo(HashSet()) { occurrence ->
+            occurrence.item.takeIf { it.durationMs == null }?.ref?.let { Triple(it.provider, it.kind.name, it.id) }
+        }
+        if (missing.isEmpty()) return this
+        val durations = HashMap<Triple<String, String, String>, Long>()
+        for (ids in missing.mapTo(LinkedHashSet()) { it.third }.chunked(DURATION_LOOKUP_CHUNK)) {
+            val rows = runCatching { dao.itemsByMediaIds(ids) }.getOrNull() ?: continue
+            for (row in rows) {
+                val key = Triple(row.provider, row.kind, row.mediaId)
+                if (key !in missing) continue
+                val durationMs = runCatching {
+                    ContentJson.decode(Json.parseToJsonElement(row.json).jsonObject).item.durationMs
+                }.getOrNull() ?: continue
+                durations[key] = durationMs
+            }
+        }
+        if (durations.isEmpty()) return this
         val entries = queue.entries.map { occurrence ->
-            if (occurrence.item.durationMs != null) return@map occurrence
-            val stored = runCatching {
-                dao.item(occurrence.item.ref.provider, occurrence.item.ref.kind.name, occurrence.item.ref.id)
-            }.getOrNull() ?: return@map occurrence
-            val durationMs = ContentJson.decode(
-                kotlinx.serialization.json.Json.parseToJsonElement(stored.json).jsonObject,
-            ).item.durationMs ?: return@map occurrence
-            changed = true
+            val ref = occurrence.item.ref
+            val durationMs = occurrence.item.takeIf { it.durationMs == null }
+                ?.let { durations[Triple(ref.provider, ref.kind.name, ref.id)] } ?: return@map occurrence
             occurrence.copy(item = occurrence.item.copy(durationMs = durationMs))
         }
-        return if (changed) copy(queue = queue.copy(entries = entries)) else this
+        return copy(queue = queue.copy(entries = entries))
     }
     override suspend fun write(checkpoint: QueueCheckpoint, expectedRevision: Long?): Boolean =
         dao.compareAndSwap(checkpoint, expectedRevision)
     override suspend fun updatePosition(expectedRevision: Long, occurrenceId: String, positionMs: Long): Boolean =
         dao.updatePosition(expectedRevision, occurrenceId, positionMs)
 }
+
+// Stays under SQLite's historical 999 bound-parameter limit, which older bundled builds still enforce.
+private const val DURATION_LOOKUP_CHUNK = 900
