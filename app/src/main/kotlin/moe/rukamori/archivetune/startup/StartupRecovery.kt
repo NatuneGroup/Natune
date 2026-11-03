@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
+import android.view.ViewTreeObserver
 import java.io.File
 import kotlin.system.exitProcess
 import moe.rukamori.archivetune.BuildConfig
@@ -80,11 +81,32 @@ object StartupRecovery {
         val handler = Handler(Looper.getMainLooper())
         val resumed = mutableSetOf<Activity>()
         val callbacks = object : Application.ActivityLifecycleCallbacks {
+            private var marked = false
+
+            private fun markHealthyNow() {
+                if (marked) return
+                marked = true
+                runCatching { store(application).markHealthy(current) }
+                application.unregisterActivityLifecycleCallbacks(this)
+            }
+
             private val healthy = Runnable {
-                if (resumed.any { !it.isFinishing && !it.isDestroyed }) {
-                    runCatching { store(application).markHealthy(current) }
-                    application.unregisterActivityLifecycleCallbacks(this)
-                }
+                if (resumed.any { !it.isFinishing && !it.isDestroyed }) markHealthyNow()
+            }
+
+            // The marker means "startup never completed", so the first laid-out frame already ends
+            // it: a background kill afterwards is an ordinary death, not a failed launch. The delayed
+            // fallback below still covers an activity that never reaches layout.
+            override fun onActivityCreated(activity: Activity, state: Bundle?) {
+                val decorView = activity.window?.decorView ?: return
+                decorView.viewTreeObserver.addOnGlobalLayoutListener(
+                    object : ViewTreeObserver.OnGlobalLayoutListener {
+                        override fun onGlobalLayout() {
+                            decorView.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                            markHealthyNow()
+                        }
+                    },
+                )
             }
 
             override fun onActivityResumed(activity: Activity) {
@@ -96,7 +118,6 @@ object StartupRecovery {
                 resumed -= activity
                 if (resumed.isEmpty()) handler.removeCallbacks(healthy)
             }
-            override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
             override fun onActivityStarted(activity: Activity) = Unit
             override fun onActivityStopped(activity: Activity) = Unit
             override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
