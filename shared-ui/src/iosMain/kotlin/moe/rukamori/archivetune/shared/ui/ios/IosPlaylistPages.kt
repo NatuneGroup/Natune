@@ -30,6 +30,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistEditLockKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistSortDescendingKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaylistSortTypeKey
+import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.PlaylistTagPalette
 import moe.rukamori.archivetune.shared.ui.host.playlistTagColor
@@ -160,7 +161,7 @@ private fun IosSessionGraph.taggedPlaylistRows(): Flow<List<PlaylistCollectionRo
             combine(
                 rows.map { row ->
                     playlistTags.observePlaylistTags(row.item.ref.id).map { assigned ->
-                        row.copy(tagIds = assigned.mapTo(HashSet()) { it.id })
+                        row.copy(tagIds = assigned.mapTo(HashSet()) { it.id }, exportable = true)
                     }
                 },
             ) { it.toList() }
@@ -168,12 +169,12 @@ private fun IosSessionGraph.taggedPlaylistRows(): Flow<List<PlaylistCollectionRo
     }
 
 /**
- * The local playlists with their real counts and tags. The playlist overflow menu, the CSV export and the custom order
- * have no owner on this host, so those requests show the unavailable notice instead of doing nothing.
+ * The local playlists with their real counts, tags, CSV export and custom order.
  */
 @Composable
 internal fun iosPlaylistsPage(
     graph: IosSessionGraph,
+    host: IosHost,
     creation: IosPlaylistCreation,
     tagState: IosPlaylistTagsState,
     menu: IosItemMenuState,
@@ -240,8 +241,25 @@ internal fun iosPlaylistsPage(
             }
         },
         assignTags = { ref -> if (ref.provider == ContentProvider.LOCAL.id) tagState.openTags(ref) else menu.refuse() },
-        exportCsv = { menu.refuse() },
-        move = { _, _, _ -> menu.refuse() },
+        exportCsv = { ref ->
+            val name = rows.orEmpty().firstOrNull { it.item.ref == ref }?.item?.title ?: ref.id
+            write("the playlist CSV could not be exported") { iosExportPlaylistCsv(host, graph, ref, name) }
+        },
+        move = { ref, neighbour, after ->
+            if (ref.provider == ContentProvider.LOCAL.id && neighbour.provider == ContentProvider.LOCAL.id) {
+                write("the playlist move was not saved") {
+                    graph.library.mutate(
+                        moe.rukamori.archivetune.shared.domain.repository.LibraryMutation.MovePlaylist(
+                            ref.id,
+                            neighbour.id,
+                            after,
+                        ),
+                    )
+                }
+            } else {
+                menu.refuse()
+            }
+        },
         retry = { attempt += 1 },
     )
     return ArchiveGraphPage.Playlists(state, actions)

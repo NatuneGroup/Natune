@@ -23,6 +23,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentAccountRequired
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
@@ -40,7 +41,7 @@ private const val ACCOUNT_PAGE_LIMIT = 25
  * host boundary, never a fabricated empty surface.
  */
 @Composable
-internal fun desktopAccountPage(graph: DesktopSessionGraph): ArchiveGraphPage {
+internal fun desktopAccountPage(graph: DesktopSessionGraph, menu: DesktopItemMenuState): ArchiveGraphPage {
     var selected by remember { mutableStateOf(AccountContentType.PLAYLISTS) }
     var lists by remember { mutableStateOf<Map<AccountContentType, List<ContentItem>>?>(null) }
     var denied by remember { mutableStateOf(false) }
@@ -71,7 +72,9 @@ internal fun desktopAccountPage(graph: DesktopSessionGraph): ArchiveGraphPage {
             artists = listsNow?.get(AccountContentType.ARTISTS),
         ),
         select = { selected = it },
-        more = null,
+        more = { item ->
+            menu.open(ContentOccurrence("account:${item.ref.provider}:${item.ref.kind}:${item.ref.id}", item))
+        },
     )
 }
 

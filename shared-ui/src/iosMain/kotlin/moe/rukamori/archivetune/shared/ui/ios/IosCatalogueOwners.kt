@@ -1,10 +1,16 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.shared.data.provider.YouTubeArtistDetail
+import moe.rukamori.archivetune.shared.data.provider.YouTubeCatalogueTransport
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.QueueStart
 import moe.rukamori.archivetune.shared.domain.repository.TypedContentRepository
@@ -28,12 +34,20 @@ import org.jetbrains.compose.resources.getString
  */
 internal class IosCatalogueOwners(
     private val catalog: TypedContentRepository,
-    private val owners: LibraryPageOwners,
+    internal val youtubeCatalogue: YouTubeCatalogueTransport,
+    internal val owners: LibraryPageOwners,
 ) {
     // Insertion order is the age order, so the oldest page's rows are dropped first once the bound is reached.
     private val shownLists = LinkedHashMap<ContentRequest, List<ContentOccurrence>>()
     private val heldContinuations = LinkedHashMap<ContentRequest, String?>()
     private val shownShelves = LinkedHashMap<ContentRequest, LinkedHashMap<String, List<ContentOccurrence>>>()
+    private val artists = LinkedHashMap<ContentRef, IosArtistOwner>()
+
+    fun artist(ref: ContentRef): IosArtistOwner =
+        artists.getOrPut(ref) {
+            while (artists.size >= MAX_SHOWN_PAGES) artists.remove(artists.keys.first())
+            IosArtistOwner(this, ref)
+        }
 
     fun record(collection: ContentRequest, rows: List<ContentOccurrence>, continuation: String?) {
         shownLists.remove(collection)
@@ -109,5 +123,45 @@ internal class IosCatalogueOwners(
     private companion object {
         /** A few pages back in the navigation stack; an older page reloads its first rows when it plays. */
         const val MAX_SHOWN_PAGES = 8
+    }
+}
+
+/**
+ * The remote artist page behind the artist routes. [load] re-requests the provider page; a failure keeps the last
+ * good page and raises [failed] only while nothing has loaded, matching the Android screen's load-state gate.
+ */
+internal class IosArtistOwner(
+    private val owners: IosCatalogueOwners,
+    val ref: ContentRef,
+) {
+    var page by mutableStateOf<YouTubeArtistDetail?>(null)
+        private set
+    var loading by mutableStateOf(true)
+        private set
+    var failed by mutableStateOf(false)
+        private set
+
+    private var generation = 0
+
+    fun load() {
+        val gen = ++generation
+        loading = true
+        owners.owners.scope.launch {
+            try {
+                val detail = owners.youtubeCatalogue.artist(ref.id)
+                if (gen != generation) return@launch
+                page = detail
+                failed = false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (gen == generation) {
+                    failed = page == null
+                    owners.owners.report("artist page could not be loaded: ${failure::class.simpleName}")
+                }
+            } finally {
+                if (gen == generation) loading = false
+            }
+        }
     }
 }

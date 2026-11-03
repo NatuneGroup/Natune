@@ -416,6 +416,7 @@ private val IOS_SETTINGS_ROUTES = setOf(
 internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: ArchiveRoute, navigation: ShellNavigation) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var showCrossServiceImport by remember { mutableStateOf(false) }
     val scrollTo = route.arguments["scrollTo"]
     val navigate: (String) -> Unit = { target -> navigation.open(target) }
     val changeFailed = stringResource(Res.string.ios_settings_change_failed)
@@ -515,8 +516,11 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                     logOut = owners.youTube::logOut,
                     revokeCodeSession = owners.youTube::revokeCodeSession,
                     onAuthCommitted = { scope.launch { owners.youTube.sessionChanged() } },
-                    // iOS has no YouTube library sync, so a switch reports that instead of silently doing nothing.
-                    onForceSyncAfterSwitch = { show(featureUnavailable) },
+                    onForceSyncAfterSwitch = {
+                        scope.launch {
+                            runCatching { IosYouTubeLibrarySync(owners.graph).performFullSync(authoritative = true) }
+                        }
+                    },
                     navigate = navigate,
                     onNotice = onNotice,
                     onFailure = onFailure,
@@ -619,7 +623,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                     onLogoutSpotify = owners.spotifyCatalog::logOut,
                     onDismissSpotifyError = owners.spotifyCatalog::dismissError,
                     onPoolAccountsChanged = { enabled -> owners.onPoolAccountsChanged(enabled) },
-                    onOpenCrossServiceImport = { show(featureUnavailable) },
+                    onOpenCrossServiceImport = { showCrossServiceImport = true },
                     onFailure = onFailure,
                     scrollTo = scrollTo,
                 )
@@ -711,6 +715,16 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                     )
                 }
             }
+        }
+        if (showCrossServiceImport) {
+            IosCrossServiceImportDialog(
+                graph = owners.graph,
+                onOpenRoute = { target ->
+                    showCrossServiceImport = false
+                    navigation.open(target)
+                },
+                onDismiss = { showCrossServiceImport = false },
+            )
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }
