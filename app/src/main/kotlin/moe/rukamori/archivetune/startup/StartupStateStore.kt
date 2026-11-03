@@ -14,6 +14,7 @@ internal data class StartupAttempt(
     val version: String,
     val versionCode: Long = UNKNOWN_VERSION_CODE,
     val installedSinceMs: Long = 0L,
+    val healthyAtMs: Long = 0L,
 ) {
     /**
      * Build + install identity captured at marker write time. A field only proves a foreign install
@@ -40,6 +41,10 @@ internal class StartupStateStore(private val directory: File) {
     fun lastAttempt(): StartupAttempt? = readAttempt(LAST_ATTEMPT_FILE)
 
     fun begin(attempt: StartupAttempt) {
+        // Every start is journaled even while a failed attempt still owns the pending slot, so the
+        // recovery gate can tell a crash loop apart from one unlucky launch. A journaling failure
+        // must never cost the pending marker itself.
+        runCatching { recordStart(attempt) }
         // A service/provider restart must not replace the failed attempt before the launcher reads it.
         if (pendingExists()) return
         val encoded = "${attempt.timestampMs}\n${attempt.pid}\n${attempt.version.take(128)}\n" +
@@ -49,6 +54,9 @@ internal class StartupStateStore(private val directory: File) {
     }
 
     fun markHealthy(attempt: StartupAttempt): Boolean {
+        // The first frame ends startup for this attempt even while another process's marker keeps
+        // the sentinel: journal the completion so a later runtime death is never a startup crash.
+        runCatching { recordHealthyCompletion(attempt) }
         val stored = pendingAttempt()
         // Only a marker of this install owned by another (dead) process is protected until the
         // launcher reads it. A healthy launch retires anything else, including unreadable markers.
@@ -56,7 +64,55 @@ internal class StartupStateStore(private val directory: File) {
         return clearPending()
     }
 
+    /** First-frame completion is stamped on the attempt's own journal line; an unmatched stamp writes nothing. */
+    private fun recordHealthyCompletion(attempt: StartupAttempt) {
+        val starts = recentStarts()
+        val now = System.currentTimeMillis()
+        val updated = starts.map { start ->
+            if (start.healthyAtMs == 0L && start.timestampMs == attempt.timestampMs &&
+                start.pid == attempt.pid
+            ) {
+                start.copy(healthyAtMs = now)
+            } else {
+                start
+            }
+        }
+        if (updated != starts) {
+            writeSync(RECENT_STARTS_FILE, updated.joinToString("\n", postfix = "\n") { startLine(it) })
+        }
+    }
+
     fun clearPending(): Boolean = File(directory, PENDING_FILE).let { !it.exists() || it.delete() }
+
+    /** Bounded journal of process starts, oldest first, used to correlate deaths with their launch. */
+    fun recentStarts(): List<StartupAttempt> {
+        val journal = read(RECENT_STARTS_FILE, 4_096) ?: return emptyList()
+        return journal
+            .lineSequence()
+            .mapNotNull { line ->
+                val fields = line.split('|')
+                val timestamp = fields.getOrNull(0)?.toLongOrNull() ?: return@mapNotNull null
+                val pid = fields.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
+                StartupAttempt(
+                    timestampMs = timestamp,
+                    pid = pid,
+                    version = fields.getOrElse(2) { "" },
+                    versionCode = fields.getOrNull(3)?.toLongOrNull() ?: UNKNOWN_VERSION_CODE,
+                    installedSinceMs = fields.getOrNull(4)?.toLongOrNull() ?: 0L,
+                    healthyAtMs = fields.getOrNull(5)?.toLongOrNull() ?: 0L,
+                )
+            }.toList()
+    }
+
+    private fun recordStart(attempt: StartupAttempt) {
+        val kept = (recentStarts() + attempt).distinct().takeLast(MAX_RECENT_STARTS)
+        writeSync(RECENT_STARTS_FILE, kept.joinToString("\n", postfix = "\n") { startLine(it) })
+    }
+
+    private fun startLine(attempt: StartupAttempt): String =
+        "${attempt.timestampMs}|${attempt.pid}|" +
+            "${attempt.version.replace('|', ' ').replace('\n', ' ').take(128)}|" +
+            "${attempt.versionCode}|${attempt.installedSinceMs}|${attempt.healthyAtMs}"
 
     fun captureJava(
         timestampMs: Long,
@@ -221,7 +277,9 @@ internal class StartupStateStore(private val directory: File) {
         private const val JAVA_CRASH_FILE = "java_crash.txt"
         private const val REVIEWED_FILE = "reviewed_through"
         private const val EXITS_IMPORTED_FILE = "exits_imported_through"
+        private const val RECENT_STARTS_FILE = "recent_starts"
         private const val RECORDS_DIRECTORY = "records"
+        private const val MAX_RECENT_STARTS = 16
         internal const val MAX_JAVA_CHARS = 16_000
     }
 }

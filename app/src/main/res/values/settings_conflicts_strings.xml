@@ -21,6 +21,7 @@
     <string name="settings_liquid_glass_required">Enable Liquid Glass effects and restart to use this material.</string>
     <string name="settings_material_unsupported">This material requires supported backdrop blur (Android 12 or newer on Android).</string>
     <string name="settings_word_sync_fallback">First tries BetterLyrics, YouLyPlus and Unison in a fixed order, regardless of their switches. Provider switches and priority below still control fallback and manual provider search.</string>
+    <string name="provider_order_overridden_by_word_sync">Unused while word-synced lyrics are prioritized — sync quality decides the provider order.</string>
     <string name="settings_proxy_rotation_precedence">Active IP rotation takes priority over the manual proxy for YouTube API requests. Other clients keep the manual proxy; stream bypass applies only to media streams.</string>
     <string name="settings_lyrics_motion_disabled">Animations are disabled by the app or system. This effect is paused; your saved tuning is kept.</string>
     <string name="settings_lyrics_tuning">Animation tuning</string>

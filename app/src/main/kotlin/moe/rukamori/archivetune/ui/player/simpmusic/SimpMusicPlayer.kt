@@ -1078,7 +1078,7 @@ private fun SimpMusicLyricsCard(
             LyricsUtils.isLineSyncedLrc(lyricsText) -> stringResource(R.string.line_synced)
             else -> stringResource(R.string.unsynced)
         }
-    val provider = lyricsEntity?.providerName?.takeIf { it.isNotBlank() }
+    val provider = lyricsEntity?.displayProviderName?.takeIf { it.isNotBlank() }
 
     ElevatedCard(
         shape = RoundedCornerShape(8.dp),
