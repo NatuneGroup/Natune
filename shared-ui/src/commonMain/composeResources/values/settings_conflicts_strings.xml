@@ -22,6 +22,7 @@
     <string name="m6_material_unsupported">This material requires supported backdrop blur (Android 12 or newer on Android).</string>
     <string name="m6_blur_disabled">Enable blur effects to use this material. Your saved choice is kept.</string>
     <string name="m6_word_sync_fallback">First tries BetterLyrics, YouLyPlus and Unison in a fixed order, regardless of their switches. Provider switches and priority below still control fallback and manual provider search.</string>
+    <string name="m6_provider_order_word_sync">Unused while word-synced lyrics are prioritized — sync quality decides the provider order.</string>
     <string name="m6_proxy_rotation_precedence">Active IP rotation takes priority over the manual proxy for YouTube API requests. Other clients keep the manual proxy; stream bypass applies only to media streams.</string>
     <string name="m6_lyrics_tuning_unavailable">These V2 effects are currently applied only by the Android renderer. This host keeps your saved tuning but does not apply it yet.</string>
     <string name="m6_custom_font_picker_unavailable">Custom-font picking is not available on this host. Your saved font selection is kept.</string>

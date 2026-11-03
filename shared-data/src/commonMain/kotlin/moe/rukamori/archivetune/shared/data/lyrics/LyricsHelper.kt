@@ -29,7 +29,7 @@ class LyricsHelper(
     private val isEnabled: (providerName: String) -> Boolean,
     scope: CoroutineScope,
     /** The Android "Prioritize Word Synced Lyrics" toggle. Read on every lookup, so a toggle change applies at once. */
-    private val prioritizeWordSynced: suspend () -> Boolean = { false },
+    private val prioritizeWordSynced: suspend () -> Boolean = { true },
     /** Mirrors the Android connectivity check. An exception from it counts as connected. */
     private val isNetworkAvailable: () -> Boolean = { true },
     /** Receives provider failures that Android reports through `reportException`. */

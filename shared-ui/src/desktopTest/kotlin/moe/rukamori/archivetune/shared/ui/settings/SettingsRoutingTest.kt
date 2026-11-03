@@ -25,11 +25,21 @@ class SettingsRoutingTest {
     @Test fun wordSyncKeepsFallbackAndManualProviderControlsUsable() {
         val prefs = PreferenceSnapshot.of(PrioritizeWordSyncedLyricsKey to true, EnableLrcLibKey to false)
         // A built-in Lyprio pair keeps every provider toggle usable; without one that row alone greys out.
+        // The provider-order row is the deliberate exception: with the sweep on, sync quality picks.
         val rows = lyricsProviderSettingsRows(prefs, {}, {}, {}, lyprioBuiltInServer = true)
         assertTrue(rows.single { it.anchor == "prioritize_word_synced_lyrics" }.enabled)
-        assertTrue(rows.all { it.enabled })
+        assertTrue(rows.all { it.enabled || it.anchor == "lyrics_provider_order" })
+        val order = rows.single { it.anchor == "lyrics_provider_order" }
+        assertFalse(order.enabled)
+        assertNotNull(order.description)
         assertNotNull(rows.single { it.anchor == "prioritize_word_synced_lyrics" }.description)
         assertFalse(prefs[EnableLrcLibKey, true])
+        // With the sweep off, the order row stays interactive.
+        val off = lyricsProviderSettingsRows(
+            PreferenceSnapshot.of(PrioritizeWordSyncedLyricsKey to false), {}, {}, {}, lyprioBuiltInServer = true,
+        )
+        assertTrue(off.all { it.enabled })
+        assertNull(off.single { it.anchor == "lyrics_provider_order" }.description)
     }
 
     @Test fun legacyV2SearchAnchorOpensTheCanonicalRendererChoice() {
