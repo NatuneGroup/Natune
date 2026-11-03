@@ -174,7 +174,7 @@ private suspend fun runIosCodeSignIn(
             val expiresAt = Clock.System.now().toEpochMilliseconds() + poll.expiresInSeconds * 1_000L
             controller.edit {
                 this[InnerTubeOAuthTokenKey] = poll.accessToken
-                poll.refreshToken?.let { this[InnerTubeOAuthRefreshTokenKey] = it }
+                this[InnerTubeOAuthRefreshTokenKey] = poll.refreshToken
                 this[InnerTubeOAuthExpiresAtKey] = expiresAt
             }
             IosCodeSignInState.SignedIn
