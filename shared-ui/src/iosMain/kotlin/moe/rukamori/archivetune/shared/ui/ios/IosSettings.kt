@@ -397,7 +397,7 @@ private val IOS_SETTINGS_ROUTES = setOf(
     "settings", "settings/tidal", "settings/deezer", "settings/telegram", "settings/privacy", "settings/logcat",
     AppleMusicLoginRoute, CrashLogsRoute, CrashLogRecordRoute,
     "settings/qobuz", QobuzLoginRoute, TidalLoginRoute, DeezerLoginRoute, "settings/update",
-    "settings/account", YouTubeAccountRoute, YouTubeLoginRoute,
+    "settings/account", YouTubeAccountRoute, YouTubeLoginRoute, IosYouTubeOAuthRoute,
     "settings/integration", "settings/misc", "settings/language_packs", "settings/lyrics/providers",
     "settings/lyrics/romanisation", "settings/ai_integration", "settings/about", IosListenTogetherSettingsRoute,
 ) + IOS_GENERAL_SETTINGS_ROUTES + IOS_LANE_SETTINGS_ROUTES
@@ -518,6 +518,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 )
             }
             YouTubeLoginRoute -> IosYouTubeLoginPage(owners.youTube, navigation)
+            IosYouTubeOAuthRoute -> IosYouTubeOAuthPage(owners.graph.http, owners.controller, navigation, host::report)
             "settings/deezer" -> DeezerSettings(
                 controller = owners.controller,
                 accounts = owners.accounts,
