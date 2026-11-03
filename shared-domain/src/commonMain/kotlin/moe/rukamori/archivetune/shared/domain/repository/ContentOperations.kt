@@ -7,7 +7,7 @@ data class ContentShelf(val section: ContentSection, val title: String, val page
 data class DiscoveryContent(val shelves: List<ContentShelf>)
 interface DiscoveryRepository { suspend fun load(forceRefresh: Boolean = false): DiscoveryContent }
 
-/** Retained NewsItem fields. No endpoint is invented for the currently inactive Android news feed. */
+/** Retained NewsItem fields of one Natune feed entry. [timestamp] is the feed's epoch seconds, as Android stores it. */
 data class ContentNews(val id: String, val title: String, val description: String, val imageUrls: List<String>,
     val important: Boolean, val author: String, val timestamp: Long)
 interface NewsRepository {

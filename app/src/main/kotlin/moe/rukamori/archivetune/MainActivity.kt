@@ -2964,7 +2964,7 @@ class MainActivity : ComponentActivity() {
                                                                         profileMenuExpanded = false
                                                                         navController.navigate("news")
                                                                     },
-                                                                ),
+                                                                ).takeIf { BuildConfig.NATUNE_NEWS_URL.isNotBlank() },
                                                                 ProfileMenuItem(
                                                                     icon = R.drawable.new_release,
                                                                     label = stringResource(R.string.new_release_albums),
