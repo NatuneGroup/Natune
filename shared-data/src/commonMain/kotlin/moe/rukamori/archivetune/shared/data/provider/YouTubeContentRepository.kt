@@ -168,7 +168,7 @@ class YouTubeAccountBinding(
  */
 class YouTubeContentRepository(
     private val transport: YouTubeBrowseTransport,
-    private val account: YouTubeAccountBinding? = null,
+    val account: YouTubeAccountBinding? = null,
 ) : TypedContentRepository {
     override val provider: ContentProvider = ContentProvider.YOUTUBE
 

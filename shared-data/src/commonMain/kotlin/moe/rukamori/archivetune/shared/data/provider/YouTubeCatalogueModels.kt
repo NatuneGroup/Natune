@@ -111,4 +111,7 @@ interface YouTubeCatalogueTransport {
 
     /** The new-releases page: every album the endpoint returned, in the provider's order. */
     suspend fun newReleases(): List<YouTubeRelease>
+
+    /** The remote artist page: header facts, ordered sections and the watch endpoints the provider gave. */
+    suspend fun artist(browseId: String): YouTubeArtistDetail
 }

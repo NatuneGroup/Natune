@@ -1,12 +1,18 @@
 package moe.rukamori.archivetune.shared.ui.ios
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.data.download.downloadTaskId
+import moe.rukamori.archivetune.shared.data.provider.YouTubeArtistDetail
+import moe.rukamori.archivetune.shared.data.provider.YouTubeRelease
+import moe.rukamori.archivetune.shared.data.provider.YouTubeReleaseType
+import moe.rukamori.archivetune.shared.data.provider.YouTubeWatchTarget
 import moe.rukamori.archivetune.shared.domain.library.AlbumSortType
 import moe.rukamori.archivetune.shared.domain.library.LibraryAlbumRow
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
@@ -15,9 +21,12 @@ import moe.rukamori.archivetune.shared.domain.library.writeTo
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentPage
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
+import moe.rukamori.archivetune.shared.domain.repository.ContentSection
+import moe.rukamori.archivetune.shared.domain.repository.ContentShelf
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.repository.QueueCollectionKind
 import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
@@ -33,9 +42,11 @@ import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistAlbumMenuTar
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistAlbumNowPlaying
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistBlockUiState
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistLibraryUi
+import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistPageUi
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistReleaseType
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistReleaseUi
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistShelfLayout
+import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistShelfUi
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistSongSort
 import moe.rukamori.archivetune.shared.ui.screens.artistalbum.ArtistSongSortType
 import moe.rukamori.archivetune.shared.ui.screens.rememberPagedContent
@@ -48,20 +59,24 @@ internal fun iosArtistRef(route: ArchiveRoute): ContentRef? {
 }
 
 /**
- * The artist page over the library, the subscription flag and the blocklist. This host has no artist-page shelf
- * transport, so the provider part of the page is reported as not loaded (`pageFailed`) instead of an empty page, and
- * the library songs, albums, follow and block controls stay usable.
+ * The artist page over the remote YouTube artist catalogue, the library, the subscription flag and the blocklist.
+ * Shelf rows record under the artist's own collection so tapping a song or shelf queues that section.
  */
 @Composable
 internal fun iosArtistPage(
     graph: IosSessionGraph,
     host: IosHost,
+    catalogue: IosCatalogueOwners,
     route: ArchiveRoute,
     menu: IosItemMenuState,
     openRoute: (String) -> Unit,
     back: () -> Unit,
 ): ArchiveGraphPage {
     val artist = iosArtistRef(route) ?: return ArchiveGraphPage.Host
+    val isLocal = artist.provider == ContentProvider.LOCAL.id
+    val owner = remember(artist) { if (isLocal) null else catalogue.artist(artist) }
+    LaunchedEffect(owner) { owner?.load() }
+    val detail = owner?.page
     val blocked by remember(artist) { graph.artistBlocks.observeBlocked(artist) }.collectAsState(null)
     val subscribed by remember(artist) { graph.libraryContent.isLiked(artist) }.collectAsState(false)
     val songs by remember(artist) {
@@ -74,12 +89,13 @@ internal fun iosArtistPage(
     val savedAlbums = albums.orEmpty()
     return ArchiveGraphPage.Artist(
         artist = artist,
-        page = null,
-        pageFailed = true,
+        page = detail?.toUi(catalogue, artist),
+        pageFailed = owner?.failed == true,
         library = ArtistLibraryUi(
-            name = artistNameOf(artist, savedSongs.map { it.item } + savedAlbums.map { it.album }),
-            artworkUri = null,
-            isLocal = artist.provider == ContentProvider.LOCAL.id,
+            name = detail?.artist?.title
+                ?: artistNameOf(artist, savedSongs.map { it.item } + savedAlbums.map { it.album }),
+            artworkUri = detail?.artist?.artworkUri,
+            isLocal = isLocal,
             subscribed = subscribed,
             songs = savedSongs,
             albums = savedAlbums.map { it.toReleaseUi() },
@@ -89,20 +105,78 @@ internal fun iosArtistPage(
             else -> ArtistBlockUiState.Known(blocked == true)
         },
         nowPlaying = iosNowPlaying(graph),
-        host = IosArtistAlbumHost(graph, host, menu, openRoute, back),
+        host = IosArtistAlbumHost(graph, host, catalogue, menu, openRoute, back),
     )
 }
+
+/** The provider page as the screen binds it. Shelf rows queue under the artist's own collection. */
+private fun YouTubeArtistDetail.toUi(catalogue: IosCatalogueOwners, artist: ContentRef): ArtistPageUi {
+    val collection = ContentRequest(ContentProvider.YOUTUBE, ContentSurface.ARTIST, parent = artist)
+    return ArtistPageUi(
+        artist = catalogueOccurrence(collection, this.artist, 0).item,
+        description = description,
+        monthlyListenersText = monthlyListenersText,
+        subscribersText = subscribersText,
+        shelves = shelves.mapIndexed { index, section ->
+            val rows = section.entries.mapIndexed { row, entry ->
+                catalogueOccurrence(collection, entry, index * 10_000 + row)
+            }
+            catalogue.recordShelf(collection, section.title, rows)
+            ArtistShelfUi(
+                shelf = ContentShelf(
+                    section = section.more ?: ContentSection("${artist.id}#$index", null),
+                    title = section.title,
+                    page = ContentPage(rows),
+                ),
+                layout = if (section.grid) ArtistShelfLayout.GRID else ArtistShelfLayout.LIST,
+                more = section.more?.let {
+                    ContentRequest(ContentProvider.YOUTUBE, ContentSurface.ARTIST, parent = artist, section = it)
+                },
+            )
+        },
+        releases = releases.map { it.toReleaseUi() },
+        shareLink = shareLink,
+        play = play?.toWatchRequest(artist),
+        shuffle = shuffle?.toWatchRequest(artist),
+        radio = radio?.toWatchRequest(artist),
+    )
+}
+
+private fun YouTubeRelease.toReleaseUi(): ArtistReleaseUi =
+    ArtistReleaseUi(
+        album = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.ALBUM, entry.id),
+        title = entry.title,
+        artworkUri = entry.artworkUri,
+        year = year,
+        type = when (type) {
+            YouTubeReleaseType.ALBUM -> ArtistReleaseType.ALBUM
+            YouTubeReleaseType.SINGLE -> ArtistReleaseType.SINGLE
+            YouTubeReleaseType.EP -> ArtistReleaseType.EP
+        },
+    )
+
+private fun YouTubeWatchTarget.toWatchRequest(artist: ContentRef): ContentRequest =
+    ContentRequest(
+        ContentProvider.YOUTUBE,
+        ContentSurface.ARTIST,
+        text = videoId,
+        parent = artist,
+        section = playlistId?.takeIf { it.isNotBlank() }?.let { ContentSection(it, params) },
+    )
 
 @Composable
 internal fun iosArtistSongsPage(
     graph: IosSessionGraph,
     host: IosHost,
+    catalogue: IosCatalogueOwners,
     route: ArchiveRoute,
     menu: IosItemMenuState,
     openRoute: (String) -> Unit,
     back: () -> Unit,
 ): ArchiveGraphPage {
     val artist = iosArtistRef(route) ?: return ArchiveGraphPage.Host
+    val owner = remember(artist) { if (artist.provider == ContentProvider.LOCAL.id) null else catalogue.artist(artist) }
+    LaunchedEffect(owner) { owner?.load() }
     val snapshot by graph.settings.snapshots.collectAsState()
     val sort = ArtistSongSort(
         type = snapshot?.get(ArtistSongSortTypeKey)
@@ -114,34 +188,39 @@ internal fun iosArtistSongsPage(
         .collectAsState(null)
     val saved = songs.orEmpty()
     return ArchiveGraphPage.ArtistSongs(
-        artistName = artistNameOf(artist, saved.map { it.item }).orEmpty(),
+        artistName = owner?.page?.artist?.title ?: artistNameOf(artist, saved.map { it.item }).orEmpty(),
         songs = saved,
         sort = sort,
         nowPlaying = iosNowPlaying(graph),
-        host = IosArtistAlbumHost(graph, host, menu, openRoute, back),
+        host = IosArtistAlbumHost(graph, host, catalogue, menu, openRoute, back),
     )
 }
 
-/** The artist's saved albums. The provider discography needs the artist-page transport this host does not have. */
+/** The artist's discography releases from the provider page, falling back to saved library albums. */
 @Composable
 internal fun iosArtistAlbumsPage(
     graph: IosSessionGraph,
     host: IosHost,
+    catalogue: IosCatalogueOwners,
     route: ArchiveRoute,
     menu: IosItemMenuState,
     openRoute: (String) -> Unit,
     back: () -> Unit,
 ): ArchiveGraphPage {
     val artist = iosArtistRef(route) ?: return ArchiveGraphPage.Host
+    val owner = remember(artist) { if (artist.provider == ContentProvider.LOCAL.id) null else catalogue.artist(artist) }
+    LaunchedEffect(owner) { owner?.load() }
     val albums by remember(artist) {
         graph.libraryContent.artistAlbums(artist, LibrarySortState(AlbumSortType.NAME, descending = false))
     }.collectAsState(null)
     val saved = albums.orEmpty()
+    val releases = owner?.page?.releases?.map { it.toReleaseUi() }?.ifEmpty { saved.map { it.toReleaseUi() } }
+        ?: saved.map { it.toReleaseUi() }
     return ArchiveGraphPage.ArtistAlbums(
-        title = artistNameOf(artist, saved.map { it.album }).orEmpty(),
-        albums = saved.map { it.toReleaseUi() },
+        title = owner?.page?.artist?.title ?: artistNameOf(artist, saved.map { it.album }).orEmpty(),
+        albums = releases,
         nowPlaying = iosNowPlaying(graph),
-        host = IosArtistAlbumHost(graph, host, menu, openRoute, back),
+        host = IosArtistAlbumHost(graph, host, catalogue, menu, openRoute, back),
     )
 }
 
@@ -166,7 +245,7 @@ internal fun iosArtistItemsPage(
         layout = route.artistItemsLayout,
         repository = graph.youtubeContent,
         nowPlaying = iosNowPlaying(graph),
-        host = IosArtistAlbumHost(graph, host, menu, openRoute, back),
+        host = IosArtistAlbumHost(graph, host, catalogue, menu, openRoute, back),
     )
 }
 
@@ -203,6 +282,7 @@ private fun ArtistSongSort.toLibrarySort(): LibrarySortState<SongSortType> =
 internal class IosArtistAlbumHost(
     private val graph: IosSessionGraph,
     private val host: IosHost,
+    private val catalogue: IosCatalogueOwners,
     private val menu: IosItemMenuState,
     private val openRoute: (String) -> Unit,
     private val backRequest: () -> Unit,
@@ -214,9 +294,13 @@ internal class IosArtistAlbumHost(
     override fun openArtistAlbums(artist: ContentRef) = openRoute(ArchiveRoutes.artistAlbums(artist))
     override fun openArtistSection(request: ContentRequest, title: String, layout: ArtistShelfLayout) =
         openRoute(ArchiveRoutes.artistItems(request, title, layout))
-    override fun openDownloads() = menu.refuse()
+    override fun openDownloads() = openRoute("auto_playlist/downloaded")
 
-    override fun loadArtistPage(artist: ContentRef) = menu.refuse()
+    override fun loadArtistPage(artist: ContentRef) {
+        if (artist.provider != ContentProvider.LOCAL.id) {
+            catalogue.artist(artist).load()
+        }
+    }
 
     override fun loadAlbumPage(album: ContentRef) {
         // Album pages mount through the shared catalogue detail page, which reloads on retry itself.
@@ -258,8 +342,21 @@ internal class IosArtistAlbumHost(
     override fun setArtistBlocked(artist: ContentRef, name: String, blocked: Boolean) =
         launch("the blocklist change could not be written") { graph.artistBlocks.setBlocked(artist, name, blocked) }
 
-    override fun downloadSongs(songs: List<ContentRef>) = menu.refuse()
-    override fun removeDownloads(songs: List<ContentRef>) = menu.refuse()
+    override fun downloadSongs(songs: List<ContentRef>) =
+        launch("the songs could not be downloaded") {
+            for (ref in songs) {
+                if (iosDownloadRefusal(ref) != null) continue
+                val item = graph.library.findSong(ref.id, ref.provider) ?: ContentItem(ref, ref.id)
+                graph.downloads.start(item)
+            }
+        }
+
+    override fun removeDownloads(songs: List<ContentRef>) =
+        launch("the downloads could not be removed") {
+            for (ref in songs) {
+                graph.downloads.remove(downloadTaskId(ref))
+            }
+        }
 
     override fun share(link: String) = iosShareText(host, link)
     override fun copyLink(link: String) = copyToIosClipboard(link)

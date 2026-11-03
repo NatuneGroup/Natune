@@ -34,6 +34,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepositor
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomLocalMediaLibrary
+import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepository
@@ -103,6 +104,7 @@ import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
+import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
 import moe.rukamori.archivetune.shared.ui.host.SponsorBlockDriver
@@ -183,6 +185,8 @@ internal class IosSessionGraph private constructor(
     val songLyricsOffsets = RoomSongLyricsOffsetRepository(database.songLyricsOffsets())
     /** The playlist tag catalog and assignments, in the same portable file as the playlists; the tag manager is not mounted on iOS. */
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
+    /** The CSV export owner over the same Room library rows. */
+    val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
     /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
     /** The request the engine was last told to load; consumers gating on the resolved source read it. */
@@ -223,6 +227,8 @@ internal class IosSessionGraph private constructor(
         restoreVolume = ::setVolume,
         report = ::report,
     )
+
+    internal val youtubeLibrarySync = IosYouTubeLibrarySync(this)
 
     /**
      * Next/previous enablement for the system transport: the same successors the on-screen controls compute, so the

@@ -7,9 +7,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.repository.*
 import moe.rukamori.archivetune.shared.ui.glass.GlassScreenHeaderOverlay
@@ -59,7 +61,8 @@ fun DetailScreen(
     val moveAction = playlistControl.moveAction(state)
     val drag = rememberPlaylistRowDrag(listState, state.items, contentPadding, moveAction)
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val wideHeader = isWideDetailHero(maxWidth)
         LazyColumn(
             Modifier
                 .fillMaxSize()
@@ -82,37 +85,43 @@ fun DetailScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     if (!glassHeader) TextButton(onClick = actions.back) { Text(stringResource(Res.string.m4_back)) }
-                    header?.let {
-                        PlaylistArtwork(it, headerMosaicItems, artwork,
-                            Modifier.size(if (kind == DetailKind.Artist) 180.dp else 224.dp)
-                                .clip(if (kind == DetailKind.Artist) CircleShape else RoundedCornerShape(16.dp)))
-                        Text(it.title, style = MaterialTheme.typography.headlineLarge)
-                        Text(it.subtitle, style = MaterialTheme.typography.bodyLarge)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        actions.playAll?.let { play ->
-                            Button(onClick = play, enabled = state.items.isNotEmpty() && !state.loading,
-                                modifier = Modifier.testTag("detail-play")) { Text(stringResource(Res.string.m4_play)) }
-                        }
-                        // Podcast's baseline has no shuffle/library/overflow hero actions.
-                        if (kind != DetailKind.Podcast) {
-                            actions.shuffle?.let { shuffle ->
-                                OutlinedButton(onClick = shuffle, enabled = state.complete && state.items.isNotEmpty(),
-                                    modifier = Modifier.testTag("detail-shuffle")) { Text(stringResource(Res.string.m4_shuffle)) }
+                    if (wideHeader && header != null) {
+                        Row(
+                            Modifier.fillMaxWidth().testTag("detail-hero-wide"),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PlaylistArtwork(
+                                header,
+                                headerMosaicItems,
+                                artwork,
+                                Modifier
+                                    .size(if (kind == DetailKind.Artist) 180.dp else 200.dp)
+                                    .clip(if (kind == DetailKind.Artist) CircleShape else RoundedCornerShape(16.dp)),
+                            )
+                            Column(
+                                Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Text(header.title, style = MaterialTheme.typography.headlineLarge)
+                                Text(header.subtitle, style = MaterialTheme.typography.bodyLarge)
+                                DetailHeroActions(kind, state, actions)
                             }
                         }
-                    }
-                    if (kind != DetailKind.Podcast) {
-                        Row {
-                            actions.toggleLibrary?.let { toggle ->
-                                TextButton(onClick = toggle) { Text(stringResource(Res.string.m4_library_action)) }
-                            }
-                            actions.more?.let { more ->
-                                TextButton(onClick = more, modifier = Modifier.testTag("detail-more")) {
-                                    Text(stringResource(Res.string.m4_more))
-                                }
-                            }
+                    } else {
+                        header?.let {
+                            PlaylistArtwork(
+                                it,
+                                headerMosaicItems,
+                                artwork,
+                                Modifier
+                                    .size(if (kind == DetailKind.Artist) 180.dp else 224.dp)
+                                    .clip(if (kind == DetailKind.Artist) CircleShape else RoundedCornerShape(16.dp)),
+                            )
+                            Text(it.title, style = MaterialTheme.typography.headlineLarge)
+                            Text(it.subtitle, style = MaterialTheme.typography.bodyLarge)
                         }
+                        DetailHeroActions(kind, state, actions)
                     }
                 }
             }
@@ -137,6 +146,47 @@ fun DetailScreen(
                 onBack = actions.back,
                 onBackLongClick = LocalBackToMain.current ?: actions.back,
             )
+        }
+    }
+}
+
+internal fun isWideDetailHero(maxWidth: Dp): Boolean = maxWidth >= 600.dp
+
+@Composable
+private fun DetailHeroActions(
+    kind: DetailKind,
+    state: PagedContentState,
+    actions: DetailActions,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        actions.playAll?.let { play ->
+            Button(
+                onClick = play,
+                enabled = state.items.isNotEmpty() && !state.loading,
+                modifier = Modifier.testTag("detail-play"),
+            ) { Text(stringResource(Res.string.m4_play)) }
+        }
+        // Podcast's baseline has no shuffle/library/overflow hero actions.
+        if (kind != DetailKind.Podcast) {
+            actions.shuffle?.let { shuffle ->
+                OutlinedButton(
+                    onClick = shuffle,
+                    enabled = state.complete && state.items.isNotEmpty(),
+                    modifier = Modifier.testTag("detail-shuffle"),
+                ) { Text(stringResource(Res.string.m4_shuffle)) }
+            }
+        }
+    }
+    if (kind != DetailKind.Podcast) {
+        Row {
+            actions.toggleLibrary?.let { toggle ->
+                TextButton(onClick = toggle) { Text(stringResource(Res.string.m4_library_action)) }
+            }
+            actions.more?.let { more ->
+                TextButton(onClick = more, modifier = Modifier.testTag("detail-more")) {
+                    Text(stringResource(Res.string.m4_more))
+                }
+            }
         }
     }
 }
