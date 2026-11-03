@@ -37,7 +37,13 @@ data class PortablePlaylistRow(@PrimaryKey val id: String, val title: String, va
     val createdSeq: Long? = null,
     @ColumnInfo(defaultValue = "'CUSTOM'") val songSortType: String = "CUSTOM",
     @ColumnInfo(defaultValue = "1") val songSortDescending: Boolean = true,
-    @ColumnInfo(defaultValue = "0") val isHidden: Boolean = false)
+    @ColumnInfo(defaultValue = "0") val isHidden: Boolean = false,
+    /** The user's collection order, written as a complete list so a move cannot collide; null keeps title order. */
+    val customOrder: Int? = null,
+    /** The linked YouTube playlist id once the playlist was pushed or synced, as the baseline's browseId. */
+    val browseId: String? = null,
+    /** The remote song count the last push or pull stored, as the baseline's remoteSongCount. */
+    val remoteSongCount: Int? = null)
 
 @Entity(tableName = "portable_tag")
 data class PortableTagRow(@PrimaryKey val id: String, val name: String, val color: String)
@@ -130,8 +136,18 @@ abstract class PortableLibraryDao {
     abstract suspend fun playlist(id: String): PortablePlaylistRow?
     @Query("SELECT * FROM portable_playlist WHERE instr(lower(title), lower(:text)) > 0 ORDER BY title, id LIMIT :limit OFFSET :offset")
     abstract suspend fun playlists(text: String, limit: Int, offset: Int): List<PortablePlaylistRow>
-    @Query("SELECT * FROM portable_playlist WHERE instr(lower(title), lower(:text)) > 0 ORDER BY title, id")
+    @Query("SELECT * FROM portable_playlist WHERE instr(lower(title), lower(:text)) > 0 ORDER BY CASE WHEN customOrder IS NULL THEN 1 ELSE 0 END, customOrder, title, id")
     abstract fun observePlaylists(text: String): Flow<List<PortablePlaylistRow>>
+
+    /** The collection in the order it is listed: the custom order where one was written, title order elsewhere. */
+    @Query("SELECT * FROM portable_playlist ORDER BY CASE WHEN customOrder IS NULL THEN 1 ELSE 0 END, customOrder, title, id")
+    abstract suspend fun playlistsInStoredOrder(): List<PortablePlaylistRow>
+
+    @Query("UPDATE portable_playlist SET customOrder = :customOrder WHERE id = :id")
+    abstract suspend fun setPlaylistCustomOrder(id: String, customOrder: Int): Int
+
+    @Query("UPDATE portable_playlist SET browseId = :browseId, remoteSongCount = :remoteSongCount WHERE id = :id")
+    abstract suspend fun updatePlaylistRemote(id: String, browseId: String?, remoteSongCount: Int?): Int
     @Query("UPDATE portable_playlist SET title = :title WHERE id = :id")
     abstract suspend fun rename(id: String, title: String): Int
     @Query("SELECT * FROM portable_playlist WHERE isHidden = 1 ORDER BY title, id")
@@ -272,6 +288,8 @@ abstract class PortableLibraryDao {
             }
             is LibraryMutation.SetPlaylistTags -> replaceTagsByName(mutation.playlistId, mutation.tags)
             is LibraryMutation.MoveInPlaylist -> moveEntry(mutation)
+            is LibraryMutation.MovePlaylist -> movePlaylist(mutation)
+            is LibraryMutation.ReplacePlaylistEntries -> replaceEntries(mutation)
         }
     }
 
@@ -301,6 +319,43 @@ abstract class PortableLibraryDao {
         }
         clearPlaylistTags(playlistId)
         putTagAssignments(tagIds.map { PortablePlaylistTagRow(playlistId, it) })
+    }
+
+    /**
+     * Moves one playlist beside another in the collection's custom order. Every row is assigned its new position in one
+     * transaction, so the order becomes explicit over the whole list on the first move; after that a move only
+     * rewrites the positions it changed. An id outside the stored order refuses the whole write.
+     */
+    @Transaction
+    open suspend fun movePlaylist(mutation: LibraryMutation.MovePlaylist) {
+        val rows = playlistsInStoredOrder()
+        val order = requireNotNull(PlaylistSongOrder.moveBeside(rows.map { it.id },
+            mutation.playlistId, mutation.neighbourPlaylistId, mutation.after)) { "Unknown playlist" }
+        val byId = rows.associateBy { it.id }
+        for ((index, id) in order.withIndex()) {
+            val row = requireNotNull(byId[id])
+            if (row.customOrder != index) setPlaylistCustomOrder(id, index)
+        }
+    }
+
+    /**
+     * Rewrites a playlist's whole stored order, as the remote-pull sync does: entries the pull did not return leave the
+     * list, and the new rows take consecutive positions and sequences after the rows they replace.
+     */
+    @Transaction
+    open suspend fun replaceEntries(mutation: LibraryMutation.ReplacePlaylistEntries) {
+        requireNotNull(playlist(mutation.playlistId)) { "Unknown local playlist" }
+        val existing = entries(mutation.playlistId, Int.MAX_VALUE, 0)
+        val ids = mutation.occurrences.mapTo(mutableSetOf()) { it.occurrenceId }
+        require(mutation.occurrences.all { it.occurrenceId.isNotBlank() } && ids.size == mutation.occurrences.size) {
+            "Duplicate occurrence identity"
+        }
+        val firstSeq = (existing.maxOfOrNull { it.addedSeq } ?: 0L) + 1
+        clearEntries(mutation.playlistId)
+        putEntries(mutation.occurrences.mapIndexed { index, occurrence ->
+            PortablePlaylistEntry(mutation.playlistId, occurrence.occurrenceId, index,
+                ContentJson.encode(occurrence).toString(), firstSeq + index)
+        })
     }
 
     /** Removes the tag's assignments and the tag in one transaction, so no assignment outlives its tag. */

@@ -105,8 +105,7 @@ internal fun desktopListenTogetherChatPage(graph: DesktopSessionGraph, back: () 
             client = owner.client,
             scope = graph.scope,
             history = DesktopListenTogetherChatHistoryStore(graph.settings, graph::report),
-            // The desktop host has no member picture picker, so no local picture is published; members keep initials.
-            localAvatarBytes = { null },
+            localAvatarBytes = { owner.localAvatarBytes() },
             nowMs = System::currentTimeMillis,
             onDiagnostic = graph::report,
         )
