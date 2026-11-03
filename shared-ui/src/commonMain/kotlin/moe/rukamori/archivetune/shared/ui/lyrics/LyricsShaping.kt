@@ -141,6 +141,7 @@ private fun wordBox(
         rightPx = right,
         line = line,
         letters = letters?.first,
+        wrapsLines = lastLine != line,
     ) to letters?.second
 }
 

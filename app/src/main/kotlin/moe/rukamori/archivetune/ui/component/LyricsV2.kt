@@ -156,6 +156,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
+import moe.rukamori.archivetune.lyrics.sleepUntilNext
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -532,10 +533,7 @@ fun LyricsV2(
                 sliderPos != null -> delay(pollIntervalMs)
                 !player.isPlaying -> delay(PAUSED_POLL_MS)
                 useFrameClock && schedule.isLive(currentPositionMs) -> withFrameNanos { }
-                else -> {
-                    val next = schedule.nextChangeAfter(currentPositionMs)
-                    delay(if (next == null) IDLE_POLL_MS else (next - currentPositionMs).coerceIn(pollIntervalMs, IDLE_POLL_MS))
-                }
+                else -> schedule.sleepUntilNext(currentPositionMs, player.playbackParameters.speed, pollIntervalMs, IDLE_POLL_MS)
             }
         }
     }

@@ -117,8 +117,10 @@ internal fun BasicSyncedLyricsList(
     val starts = remember(lines) { IntArray(lines.size) { lines[it].start } }
     val ends = remember(lines) { IntArray(lines.size) { lines[it].end } }
     val interludes = remember(starts, ends) { enhancedInterludes(starts, ends) }
-    // The lit line opens its activation-lead early; the word sweep still follows the real starts.
-    val activationStarts = remember(starts, ends) { enhancedActivationStarts(starts, ends) }
+    val wordSynced = remember(lines) { BooleanArray(lines.size) { lines[it].hasWordTiming() } }
+    // The lit line opens its activation-lead early; the word sweep still follows the real starts, and
+    // a line-synced row activates at its own start — no lead on top of the LRC lead.
+    val activationStarts = remember(starts, ends, wordSynced) { enhancedActivationStarts(starts, ends, wordSynced) }
     val activeIndex by remember(activationStarts) {
         derivedStateOf { activeSyncedLineIndex(activationStarts, currentPosition()) }
     }
@@ -363,14 +365,28 @@ private fun BasicSyncedLyricLine(
                 Text(text = line.content, style = normalLineTextStyle, color = textColor, textAlign = textAlign)
         }
         (karaoke as? KaraokeLine.MainKaraokeLine)?.accompanimentLines?.forEach { accompaniment ->
-            val accompanimentText = (accompaniment as? KaraokeLine)?.syllables?.joinSyllableContents().orEmpty()
-            if (accompanimentText.isNotBlank()) {
-                Text(
-                    text = accompanimentText,
-                    style = accompanimentLineTextStyle,
-                    color = textColor.copy(alpha = 0.6f),
-                    textAlign = textAlign,
-                )
+            val accompanimentLine = accompaniment as? KaraokeLine
+            val accompanimentSyllables = accompanimentLine?.syllables.orEmpty()
+            val accompanimentText = accompanimentSyllables.joinSyllableContents()
+            when {
+                accompanimentText.isBlank() -> Unit
+                // Background vocals carry their own word times, so on the sung row they sweep and lift over
+                // their own spans like the main voice instead of sitting as plain text.
+                isActive && accompanimentLine?.hasWordTiming() == true ->
+                    EnhancedSweptLine(
+                        syllables = accompanimentSyllables,
+                        style = accompanimentLineTextStyle.copy(textAlign = textAlign),
+                        textColor = textColor.copy(alpha = textColor.alpha * 0.6f),
+                        reduceMotion = animationsDisabled,
+                        currentPosition = currentPosition,
+                    )
+                else ->
+                    Text(
+                        text = accompanimentText,
+                        style = accompanimentLineTextStyle,
+                        color = textColor.copy(alpha = 0.6f),
+                        textAlign = textAlign,
+                    )
             }
         }
         if (showTranslation) {

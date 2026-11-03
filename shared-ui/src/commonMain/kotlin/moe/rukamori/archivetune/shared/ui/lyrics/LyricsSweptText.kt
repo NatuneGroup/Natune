@@ -141,24 +141,163 @@ private fun DrawScope.drawRefinedLine(
     palette: LyricsPalette,
 ) {
     val layout = shaped.layout
+    val liftMaxPx = LyricsSweepGeometry.WORD_LIFT_DP.dp.toPx()
     val index = LyricsSweepGeometry.activeIndex(boxes, position)
     val box = boxes.getOrNull(index)
-    val hole = if (box != null && box.letters != null) {
-        Rect(box.leftPx, shaped.bands.tops[box.line], box.rightPx, shaped.bands.bottoms[box.line])
-    } else {
-        null
+    // How far below its seat each word draws: the row sinks into the low seat just before its first
+    // word, then each word eases back up through its own completion lift. A word wrapped over two
+    // bands has no single band to rise in, so it stays seated.
+    val firstStart = boxes.first().startMs
+    val sinkPx = liftMaxPx * LyricsSweepGeometry.sinkAt(firstStart, position, false)
+    val drop = FloatArray(boxes.size)
+    for (i in boxes.indices) {
+        val word = boxes[i]
+        if (word.wrapsLines) continue
+        val nextStart = boxes.getOrNull(i + 1)?.startMs ?: Long.MAX_VALUE
+        drop[i] = liftMaxPx * LyricsSweepGeometry.dropAt(firstStart, word.startMs, word.endMs, nextStart, position, false)
     }
-    if (hole == null) {
-        drawText(layout, color = palette.dim)
-    } else {
-        clipPath(outsideOf(hole)) { drawText(layout, color = palette.dim) }
+    // A started word that has not landed draws in its own window, dim and lit at one offset, so the
+    // sweep never lights it at another height than its dim ink. The rise costs a clip and a
+    // translate, never a relayout. The sung emphasized word rides its letters in its own hole instead.
+    val liftHoles = ArrayList<Rect>(2)
+    val liftOffsets = ArrayList<Float>(2)
+    val liftBoxes = ArrayList<LyricsWordBox>(2)
+    for (i in boxes.indices) {
+        val word = boxes[i]
+        if (word.wrapsLines || position < word.startMs || drop[i] <= 0f) continue
+        if (i == index && word.letters != null) continue
+        liftBoxes += word
+        liftHoles += wordHole(word, shaped.bands, liftMaxPx)
+        liftOffsets += drop[i]
     }
-    drawFeatheredSweep(shaped, boxes, position, rtl, minSweepMs, palette, hole, box)
+    val hole = if (box != null && box.letters != null) wordHole(box, shaped.bands, liftMaxPx) else null
+    val holes = if (hole != null) liftHoles + hole else liftHoles
+
+    // The words not yet started sit one sink low. They are the tail of each visual band in sung
+    // order, so per band one rect from the first to the last of them holds them all; the rest of
+    // the band, sung words and wrapped words included, draws seated.
+    val seatedRegion = Path()
+    val unsungRegion = Path()
+    val overshoot = shaped.bands.overshootPx
+    val width = shaped.bands.widthPx
+    for (band in 0 until shaped.bands.lineCount) {
+        val top = shaped.bands.tops[band] - overshoot
+        val bottom = shaped.bands.bottoms[band] + overshoot
+        var left = Float.POSITIVE_INFINITY
+        var right = Float.NEGATIVE_INFINITY
+        if (sinkPx > 0f) {
+            for (word in boxes) {
+                if (word.line != band || word.wrapsLines || position >= word.startMs) continue
+                left = minOf(left, word.leftPx)
+                right = maxOf(right, word.rightPx)
+            }
+        }
+        if (left < right) {
+            if (left > 0f) seatedRegion.addRect(Rect(0f, top, left, bottom))
+            if (right < width) seatedRegion.addRect(Rect(right, top, width, bottom))
+            unsungRegion.addRect(Rect(left, top, right, bottom + liftMaxPx))
+        } else {
+            seatedRegion.addRect(Rect(0f, top, width, bottom))
+        }
+    }
+
+    clipOutside(holes) {
+        clipPath(seatedRegion) { drawText(layout, color = palette.dim) }
+        if (sinkPx > 0f) {
+            clipPath(unsungRegion) {
+                withTransform({ translate(top = sinkPx) }) {
+                    drawText(layout, color = palette.dim)
+                }
+            }
+        }
+        drawFeatheredSweep(shaped, boxes, position, rtl, minSweepMs, palette, holes, box)
+    }
+    for (i in liftBoxes.indices) {
+        drawLiftedWord(layout, liftBoxes[i], liftHoles[i], liftOffsets[i], position, rtl, minSweepMs, palette)
+    }
     if (box != null && hole != null) {
-        drawEmphasizedWord(
-            layout, box, hole, sweepEdge(box, position, rtl, minSweepMs), rtl, position, palette,
-            shaped.bands.overshootPx, shaped.letterRuns.getOrNull(index),
-        )
+        // The emphasized word keeps the row's drop under its ripple, so it leaves the low seat with
+        // the rest of the row instead of snapping up as it starts.
+        withTransform({ translate(top = drop[index]) }) {
+            drawEmphasizedWord(
+                layout, box, hole, wordSeat(box, shaped.bands), sweepEdge(box, position, rtl, minSweepMs), rtl,
+                position, palette, shaped.bands.overshootPx, shaped.letterRuns.getOrNull(index),
+            )
+        }
+    }
+}
+
+/** The band box of one word: the seat its glyphs sit in on their own baseline. */
+private fun wordSeat(word: LyricsWordBox, bands: LyricsLineBands): Rect =
+    Rect(word.leftPx, bands.tops[word.line], word.rightPx, bands.bottoms[word.line])
+
+/**
+ * Where the plain passes leave one word out while it draws in its own window: its [wordSeat] grown by
+ * the glyph overshoot above and below, so accents and descenders move with the word instead of being
+ * cut at the band or drawn a second time at the seat, and dipped [dipPx] further for the word's
+ * lowered ink, so no low sliver survives under a rising word or an emphasized word's letters.
+ */
+private fun wordHole(word: LyricsWordBox, bands: LyricsLineBands, dipPx: Float): Rect {
+    val seat = wordSeat(word, bands)
+    return Rect(seat.left, seat.top - bands.overshootPx, seat.right, seat.bottom + bands.overshootPx + dipPx)
+}
+
+/**
+ * Runs [block] with every rect in [holes] clipped out. Each hole clips to everything outside itself, so
+ * nesting them subtracts them all — the lifted words and the emphasized word leave no ink in the
+ * plain passes to double up with their own windows.
+ */
+private fun DrawScope.clipOutside(holes: List<Rect>, index: Int = 0, block: DrawScope.() -> Unit) {
+    if (index >= holes.size) {
+        block()
+        return
+    }
+    clipPath(outsideOf(holes[index])) { clipOutside(holes, index + 1, block) }
+}
+
+/**
+ * One started word that has not landed yet, drawn whole out of the line layout [dropPx] below its
+ * seat, inside [window] — exactly the hole the plain passes leave, so no neighbouring ink is drawn
+ * twice at two heights. The word keeps the line's own shaping — dim under, then lit through the same
+ * feathered edge the rest of the row uses — so it crosses the sweep edge with no seam.
+ */
+private fun DrawScope.drawLiftedWord(
+    layout: TextLayoutResult,
+    word: LyricsWordBox,
+    window: Rect,
+    dropPx: Float,
+    positionMs: Long,
+    rtl: Boolean,
+    minSweepMs: Long,
+    palette: LyricsPalette,
+) {
+    val edge = sweepEdge(word, positionMs, rtl, minSweepMs)
+    val feather = sweepFeather(word)
+    clipPath(Path().apply { addRect(window) }) {
+        withTransform({ translate(top = dropPx) }) {
+            drawText(layout, color = palette.dim)
+            drawIntoCanvas { canvas ->
+                canvas.saveLayer(window.translate(0f, -dropPx), Paint())
+                drawText(layout, color = palette.bright)
+                val mask =
+                    Brush.horizontalGradient(
+                        if (rtl) {
+                            listOf(Color.Transparent, Color.Black)
+                        } else {
+                            listOf(Color.Black, Color.Transparent)
+                        },
+                        startX = edge - feather,
+                        endX = edge + feather,
+                    )
+                drawRect(
+                    brush = mask,
+                    topLeft = Offset(window.left, window.top - dropPx),
+                    size = Size(window.width, window.height),
+                    blendMode = BlendMode.DstIn,
+                )
+                canvas.restore()
+            }
+        }
     }
 }
 
@@ -173,8 +312,8 @@ private fun sweepEdge(box: LyricsWordBox, positionMs: Long, rtl: Boolean, minSwe
  * The refined sweep of the sung line. Lines above the sung one are fully bright, as before. The sung line is bright up
  * to the sweep edge and fades to dim across a share of the active word's width on either side of it,
  * so the fill has a soft leading edge sized to the word it crosses.
- * The fade is a mask on a layer limited to the sung line's band, so the lines above and below are left alone. A
- * [hole] is left out of the sung line, because that word is drawn lifted instead.
+ * The fade is a mask on a layer limited to the sung line's band, so the lines above and below are left alone. The
+ * [holes] are left out of the sung line, because those words draw in their own windows instead.
  */
 private fun DrawScope.drawFeatheredSweep(
     shaped: LyricsShapedRow,
@@ -183,7 +322,7 @@ private fun DrawScope.drawFeatheredSweep(
     rtl: Boolean,
     minSweepMs: Long,
     palette: LyricsPalette,
-    hole: Rect?,
+    holes: List<Rect>,
     box: LyricsWordBox?,
 ) {
     val rects = LyricsSweepGeometry.clipRects(boxes, shaped.bands, position, rtl, false, minSweepMs)
@@ -211,11 +350,7 @@ private fun DrawScope.drawFeatheredSweep(
     val mask = Brush.horizontalGradient(fade, startX = edge - feather, endX = edge + feather)
     drawIntoCanvas { canvas ->
         canvas.saveLayer(Rect(0f, top, width, top + height), Paint())
-        if (hole == null) {
-            drawText(layout, color = palette.bright)
-        } else {
-            clipPath(outsideOf(hole)) { drawText(layout, color = palette.bright) }
-        }
+        clipOutside(holes) { drawText(layout, color = palette.bright) }
         drawRect(brush = mask, topLeft = Offset(0f, top), size = Size(width, height), blendMode = BlendMode.DstIn)
         canvas.restore()
     }
@@ -231,12 +366,14 @@ private fun DrawScope.drawFeatheredSweep(
  * [LyricsShapedRow.letterRuns] — inside a window that only reaches the grapheme's own overhang and
  * swell. Isolated ink is what keeps a held word's overlapping windows from repainting neighbouring
  * glyphs at a different transform: foreign ink simply is not in the run. Slices without runs take the
- * plain feathered fill inside the hole instead.
+ * plain feathered fill inside the hole instead. Each letter is placed on [seat], the word's band, while
+ * [hole] is the wider cut the plain passes left for it.
  */
 private fun DrawScope.drawEmphasizedWord(
     layout: TextLayoutResult,
     box: LyricsWordBox,
     hole: Rect,
+    seat: Rect,
     edge: Float,
     rtl: Boolean,
     positionMs: Long,
@@ -251,7 +388,7 @@ private fun DrawScope.drawEmphasizedWord(
     val feather = sweepFeather(box)
     // The reach of a letter's repaint window: just past its own overhang and swell, never into the
     // ink of the lines above or below.
-    val vPad = overshootPx + hole.height * LyricsEmphasis.SCALE_BOOST * 0.5f
+    val vPad = overshootPx + seat.height * LyricsEmphasis.SCALE_BOOST * 0.5f
     val fade = if (rtl) {
         listOf(Color.Transparent, Color.Black)
     } else {
@@ -282,16 +419,16 @@ private fun DrawScope.drawEmphasizedWord(
         val lift = liftMax * bump
         val scale = 1f + LyricsEmphasis.SCALE_BOOST * bump
         val centreX = (left + right) / 2f
-        val centreY = (hole.top + hole.bottom) / 2f
+        val centreY = (seat.top + seat.bottom) / 2f
         if (bump > 0f) {
             drawRoundRect(
                 color = palette.glow.copy(alpha = palette.glow.alpha * GLOW_ALPHA * bump),
-                topLeft = Offset(left - vPad * 0.3f, hole.top - lift - 2f),
-                size = Size(right - left + vPad * 0.6f, hole.height + 4f),
+                topLeft = Offset(left - vPad * 0.3f, seat.top - lift - 2f),
+                size = Size(right - left + vPad * 0.6f, seat.height + 4f),
                 cornerRadius = CornerRadius(GLOW_CORNER_DP.dp.toPx()),
             )
         }
-        val window = Rect(left - vPad, hole.top - lift - vPad, right + vPad, hole.bottom + vPad)
+        val window = Rect(left - vPad, seat.top - lift - vPad, right + vPad, seat.bottom + vPad)
         clipPath(Path().apply { addRect(window) }) {
             withTransform({
                 translate(top = -lift)
@@ -299,7 +436,7 @@ private fun DrawScope.drawEmphasizedWord(
             }) {
                 // The letter's own layout sits on its slice's advance position; only its ink exists
                 // inside the window, so nothing neighbouring can be torn along.
-                drawText(letter, color = palette.dim, topLeft = Offset(left, hole.top))
+                drawText(letter, color = palette.dim, topLeft = Offset(left, seat.top))
                 // The line's feathered edge mapped into the letter's scaled frame: a canvas x lands
                 // at centreX + (x - centreX) / scale, so the mask tracks the same edge.
                 val edgeLocal = centreX + (edge - centreX) / scale
@@ -312,7 +449,7 @@ private fun DrawScope.drawEmphasizedWord(
                     )
                 drawIntoCanvas { canvas ->
                     canvas.saveLayer(window, Paint())
-                    drawText(letter, color = palette.bright, topLeft = Offset(left, hole.top))
+                    drawText(letter, color = palette.bright, topLeft = Offset(left, seat.top))
                     drawRect(
                         brush = mask,
                         topLeft = Offset(window.left, window.top),
@@ -326,15 +463,22 @@ private fun DrawScope.drawEmphasizedWord(
     }
 }
 
-/** The canvas without [hole], as up to four rectangles, so a clip can leave one word out of its line. */
+/**
+ * Everything but [hole], as four rectangles, so a clip can leave one word out of its line. Glyph ink
+ * overflows the component — accents above the first band, descenders and the sunk row below the last —
+ * so the outside reaches well past the canvas instead of clipping that ink away.
+ */
 private fun DrawScope.outsideOf(hole: Rect): Path {
-    val width = size.width
-    val height = size.height
+    val reach = maxOf(size.width, size.height)
+    val left = -reach
+    val top = -reach
+    val right = size.width + reach
+    val bottom = size.height + reach
     return Path().apply {
-        if (hole.top > 0f) addRect(Rect(0f, 0f, width, hole.top))
-        if (hole.bottom < height) addRect(Rect(0f, hole.bottom, width, height))
-        if (hole.left > 0f) addRect(Rect(0f, hole.top, hole.left, hole.bottom))
-        if (hole.right < width) addRect(Rect(hole.right, hole.top, width, hole.bottom))
+        addRect(Rect(left, top, right, hole.top))
+        addRect(Rect(left, hole.bottom, right, bottom))
+        addRect(Rect(left, hole.top, hole.left, hole.bottom))
+        addRect(Rect(hole.right, hole.top, right, hole.bottom))
     }
 }
 

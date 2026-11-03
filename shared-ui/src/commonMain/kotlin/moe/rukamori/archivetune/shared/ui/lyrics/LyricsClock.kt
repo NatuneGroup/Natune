@@ -29,6 +29,10 @@ internal class LyricsClock {
     /** The lyric feed position in milliseconds: playback position with the sync offset, lead and visual tuning. */
     val feedMs: MutableLongState = mutableLongStateOf(0L)
 
+    /** The media rate of the latest accepted snapshot; idle parks convert media-time gaps to wall time with it. */
+    var playbackSpeed: Float = 1f
+        private set
+
     /** Counts discontinuity resets. A change tells the scroll owner to jump rather than animate. */
     val discontinuities: MutableIntState = mutableIntStateOf(0)
 
@@ -41,6 +45,7 @@ internal class LyricsClock {
     fun accept(snapshot: PlaybackSnapshot, nowNanos: Long): LyricsAnchorChange {
         val change = smooth.accept(snapshot, nowNanos)
         if (change != LyricsAnchorChange.STALE) {
+            playbackSpeed = snapshot.playbackSpeed
             outputDelayMs = ((snapshot.outputLatencyMs ?: 0L).toDouble() * snapshot.playbackSpeed).roundToLong()
         }
         if (change == LyricsAnchorChange.RESET) {
@@ -105,7 +110,7 @@ internal fun rememberLyricsClock(
             clock.advance(SystemMonotonicClock.nowNanos())
             if (deadlines != null && !deadlines.isLive(clock.feedMs.longValue)) {
                 val next = deadlines.nextChangeAfter(clock.feedMs.longValue)
-                delay(if (next == null) IDLE_POLL_MS else (next - clock.feedMs.longValue).coerceIn(1L, IDLE_POLL_MS))
+                delay(lyricsIdleParkMs(next, clock.feedMs.longValue, clock.playbackSpeed, 1L, IDLE_POLL_MS))
             } else {
                 withFrameNanos { clock.advance(SystemMonotonicClock.nowNanos()) }
             }

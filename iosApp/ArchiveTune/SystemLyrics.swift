@@ -83,6 +83,9 @@ private enum SystemLyricsMetrics {
     static let glowCorner: CGFloat = 8
     static let emphasisLift: CGFloat = 2
     static let emphasisScale: CGFloat = 0.10
+    /// The low seat every unsung word sits at and the rise a completing word crosses — the shared
+    /// lift (LyricsSweepGeometry.WORD_LIFT_DP), so the three renderers draw the same rise.
+    static let wordLift: CGFloat = 2
     static let interludeDotDiameter: CGFloat = 10
     static let interludeDotGap: CGFloat = 6
     static let interludeEnterMs: Int64 = 400
@@ -554,6 +557,7 @@ private struct LyricSweepRenderer: TextRenderer {
         for (index, group) in slices {
             unions[index] = group.dropFirst().reduce(group[0].rect) { $0.union($1.rect) }
         }
+        let firstStartMs = spans.map(\.startMs).min() ?? 0
         for line in layout {
             for run in line {
                 guard let span = run[LyricSpanAttribute.self], span.index < spans.count else {
@@ -561,16 +565,24 @@ private struct LyricSweepRenderer: TextRenderer {
                     continue
                 }
                 let word = spans[span.index]
+                // The shared drop: the row sinks one lift low just before its first word and each word
+                // eases back up through its own completion lift. Every run of the word, emphasized
+                // letters included, moves by the same offset, as the Compose sweep moves them.
+                var seat = context
+                let offset = SystemLyricsMetrics.wordLift * drop(of: word, index: span.index, firstStartMs: firstStartMs)
+                if offset > 0.01 {
+                    seat.translateBy(x: 0, y: offset)
+                }
                 if span.letter >= 0,
                    let group = slices[span.index],
                    let union = unions[span.index],
                    !wrapped.contains(span.index) {
                     drawEmphasizedLetter(
-                        run: run, word: word, group: group, union: union, in: &context
+                        run: run, word: word, group: group, union: union, in: &seat
                     )
                 } else {
                     let bounds = span.letter >= 0 ? unions[span.index] : nil
-                    drawPlainRun(run: run, word: word, bounds: bounds, in: &context)
+                    drawPlainRun(run: run, word: word, bounds: bounds, in: &seat)
                 }
             }
         }
@@ -679,7 +691,7 @@ private struct LyricSweepRenderer: TextRenderer {
     }
 
     /// The share of [word] that is sung, from 0 to 1 — the shared sweep share, so reduced motion jumps
-    /// between the two and a very short word still sweeps over the shared minimum.
+    /// between the two and each word fills over exactly its own timing.
     private func fraction(of word: NativeLyricsSpan) -> CGFloat {
         CGFloat(LyricsSweepGeometry.shared.progressAt(
             startMs: word.startMs,
@@ -687,6 +699,20 @@ private struct LyricSweepRenderer: TextRenderer {
             positionMs: positionMs,
             reduceMotion: reduceMotion,
             minSweepMs: minSweepMs
+        ))
+    }
+
+    /// How far below its seat the word at [index] draws, as a share of one lift: 0 seated, 1 one lift
+    /// low — the shared curve, so a seek lands on the same height and reduced motion keeps every word seated.
+    private func drop(of word: NativeLyricsSpan, index: Int, firstStartMs: Int64) -> CGFloat {
+        let nextStart = index + 1 < spans.count ? spans[index + 1].startMs : Int64.max
+        return CGFloat(LyricsSweepGeometry.shared.dropAt(
+            firstWordStartMs: firstStartMs,
+            wordStartMs: word.startMs,
+            wordEndMs: word.endMs,
+            nextWordStartMs: nextStart,
+            positionMs: positionMs,
+            reduceMotion: reduceMotion
         ))
     }
 
