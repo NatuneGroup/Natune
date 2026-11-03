@@ -32,6 +32,7 @@ internal class IosBlendSource(
     fun release() {
         at_audio_stop(output)
         at_audio_destroy(output)
+        IosStreamLease.retireOutput(output.toLong())
         transport?.close()
     }
 
@@ -117,6 +118,7 @@ internal class IosBlendSource(
             } finally {
                 if (!accepted) {
                     at_audio_destroy(native)
+                    IosStreamLease.retireOutput(native.toLong())
                     transport?.close()
                     telegramSource?.close()
                 }
