@@ -40,7 +40,7 @@ concurrency:
 jobs:
   analysis:
     name: Compiler-backed dependency and dead-code analysis
-    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    if: github.repository == 'NatuneGroup/Natune'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 45
     steps:

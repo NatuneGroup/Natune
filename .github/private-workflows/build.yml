@@ -27,7 +27,7 @@ jobs:
     # Dependabot/Renovate pushes skip the matrix: this manual workflow builds only the
     # dispatched candidate; the repository guard is in the `if:` below.
     if: >-
-      github.repository == 'NatuneGroup/ArchiveTune-KMP' &&
+      github.repository == 'NatuneGroup/Natune' &&
       github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]' &&
       (github.event_name == 'workflow_dispatch' ||
        contains(github.event.head_commit.message, '[mirror]') == false)

@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   kotlin-header:
-    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    if: github.repository == 'NatuneGroup/Natune'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:

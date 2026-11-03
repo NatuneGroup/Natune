@@ -22,7 +22,7 @@ concurrency:
 jobs:
   prepare:
     name: Check nightly changes and select version
-    if: github.repository == 'NatuneGroup/ArchiveTune-KMP' && github.ref == 'refs/heads/dev'
+    if: github.repository == 'NatuneGroup/Natune' && github.ref == 'refs/heads/dev'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read
