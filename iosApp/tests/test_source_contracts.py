@@ -19,7 +19,13 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertTrue(info["LSSupportsOpeningDocumentsInPlace"])
         self.assertNotIn("NSAppTransportSecurity", info)
         self.assertEqual(
-            ["archivetune", "discord-1165706613961789445"],
+            [
+                "archivetune",
+                "discord-1165706613961789445",
+                "natune",
+                "vnd.youtube",
+                "$(ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME)",
+            ],
             info["CFBundleURLTypes"][0]["CFBundleURLSchemes"],
         )
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
