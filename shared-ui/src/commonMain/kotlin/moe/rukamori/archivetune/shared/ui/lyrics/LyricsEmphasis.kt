@@ -4,6 +4,7 @@ import moe.rukamori.archivetune.shared.domain.lyrics.unicode.UnicodeBidi
 import moe.rukamori.archivetune.shared.domain.lyrics.unicode.UnicodeScript
 import moe.rukamori.archivetune.shared.domain.lyrics.unicode.UnicodeScripts
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.sin
 
 /**
@@ -27,6 +28,9 @@ object LyricsEmphasis {
 
     /** The stagger divisor the per-letter wave shares with the whole word's span. */
     private const val STAGGER_DIVISOR = 2.5f
+
+    /** How far an isolated run's advance may drift from its slice before its glyphs count as changed. */
+    private const val ISOLATED_RUN_TOLERANCE_PX = 0.5f
 
     /**
      * Scripts whose letters shape the same whether their neighbours draw with them or not. Joined
@@ -70,6 +74,24 @@ object LyricsEmphasis {
                 }
             if (UnicodeScripts.scriptOf(codePoint) !in SAFE_SCRIPTS) return false
             index += if (codePoint >= 0x10000) 2 else 1
+        }
+        return true
+    }
+
+    /**
+     * Whether a word's isolated per-letter runs kept the shaping the full line produced. Each run is
+     * measured alone; when its own advance differs from the slice the line gave that cluster by more
+     * than [tolerancePx], the cluster ligated with or took a contextual form from its neighbours, and
+     * the cut-apart glyphs would overlap or jump under the ripple — the word keeps the plain
+     * feathered sweep instead. [supports] already rules out scripts that join on purpose; this
+     * catches the same tear inside the safe scripts, where a font still ligates pairs like "fi".
+     * [slices] is the flat (left, right) slice list [LyricsWordBox.letters] carries, [runWidths] the
+     * advance each isolated run reports — the same bounding-box metric both times.
+     */
+    fun isolatedRunsMatchLine(slices: FloatArray?, runWidths: FloatArray, tolerancePx: Float = ISOLATED_RUN_TOLERANCE_PX): Boolean {
+        if (slices == null || slices.size != runWidths.size * 2) return false
+        for (index in runWidths.indices) {
+            if (abs(runWidths[index] - (slices[index * 2 + 1] - slices[index * 2])) > tolerancePx) return false
         }
         return true
     }
