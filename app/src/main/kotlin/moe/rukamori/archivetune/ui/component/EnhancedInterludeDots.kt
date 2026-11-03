@@ -107,7 +107,11 @@ internal fun enhancedActivationStarts(
             } else {
                 0L
             }
-        result[index] = (startMs - lead).coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
+        // A lead never reaches back past the row before it: a word-synced row right after a line-synced
+        // one would otherwise light first, and the binary search over these starts needs them in order.
+        val previousMs = if (index > 0) result[index - 1].toLong() else null
+        val cappedLead = if (previousMs == null) lead else lead.coerceIn(0L, maxOf(0L, startMs - previousMs))
+        result[index] = (startMs - cappedLead).coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
         reachedMs = maxOf(reachedMs, ends[index].toLong())
     }
     return result
