@@ -83,6 +83,7 @@ import platform.Foundation.NSDateFormatterMediumStyle
 import platform.Foundation.NSDateFormatterShortStyle
 import platform.Foundation.NSURLComponents
 import platform.Foundation.NSURLQueryItem
+import platform.Foundation.dateWithTimeIntervalSince1970
 
 /**
  * The iOS Drive app-data backup owners, the same wiring the desktop host mounts: the Google authorization over the

@@ -114,6 +114,9 @@ class RoomLibraryRemoveTest {
                 .sortedWith(compareBy({ it.provider }, { it.kind }, { it.mediaId }))
                 .firstOrNull()
 
+        override suspend fun itemsByMediaIds(ids: List<String>): List<LibraryItemRow> =
+            items.values.filter { it.mediaId in ids }
+
         override suspend fun putItem(row: LibraryItemRow) {
             items[Triple(row.provider, row.kind, row.mediaId)] = row
         }
