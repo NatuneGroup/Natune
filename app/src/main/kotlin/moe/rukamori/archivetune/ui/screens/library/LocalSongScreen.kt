@@ -447,7 +447,7 @@ fun LocalSongScreen(
                                         } else {
                                             context.getString(R.string.queue_searched_songs)
                                         },
-                                    items = queueItems.shuffled(),
+                                    items = queueItems.shuffled(), finite = true,
                                 ),
                             )
                         }
@@ -517,7 +517,7 @@ fun LocalSongScreen(
                                                             context.getString(R.string.queue_searched_songs)
                                                         },
                                                     items = queueItems,
-                                                    startIndex = index,
+                                                    startIndex = index, finite = true,
                                                 ),
                                             )
                                         }

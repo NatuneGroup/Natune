@@ -42,6 +42,11 @@ data class PersistQueue(
      * which reads as expired — their position is dropped rather than trusted.
      */
     val savedAtEpochMs: Long = 0L,
+    /**
+     * A built-in collection queue stays finite after a restart too. Queues serialized before the
+     * field existed decode as false — they keep the old auto-load-more behavior, as expected.
+     */
+    val finite: Boolean = false,
 ) : Serializable {
     companion object {
         private const val serialVersionUID = 1L

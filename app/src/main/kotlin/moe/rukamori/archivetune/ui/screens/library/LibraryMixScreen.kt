@@ -289,7 +289,7 @@ fun LibraryMixScreen(
                             remember(album.tracks, playerConnection) {
                                 {
                                     playerConnection.playQueue(
-                                        ListQueue(items = album.tracks.map { it.toMediaItem() }),
+                                        ListQueue(items = album.tracks.map { it.toMediaItem() }, finite = true),
                                     )
                                 }
                             }
@@ -297,7 +297,7 @@ fun LibraryMixScreen(
                             remember(album.tracks, playerConnection) {
                                 {
                                     playerConnection.playQueue(
-                                        ListQueue(items = album.tracks.shuffled().map { it.toMediaItem() }),
+                                        ListQueue(items = album.tracks.shuffled().map { it.toMediaItem() }, finite = true),
                                     )
                                 }
                             }
@@ -552,9 +552,7 @@ fun LibraryMixScreen(
                                 onConfigureAi = { navController.navigate("settings/ai_integration") },
                                 onPlayMix = { mix ->
                                     playerConnection.playQueue(
-                                        ListQueue(
-                                            items = mix.tracks.map { it.toMediaItem() },
-                                        ),
+                                        ListQueue(items = mix.tracks.map { it.toMediaItem() }, finite = true),
                                     )
                                 },
                             )
