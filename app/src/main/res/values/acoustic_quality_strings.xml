@@ -2,7 +2,7 @@
 <resources>
     <string name="acoustic_quality_title">Acoustic quality graph</string>
     <string name="acoustic_quality_row_description">Check whether the current song is really full quality.</string>
-    <string name="acoustic_quality_explanation">Draws the sound of about 20 seconds of this song so you can see whether it is real lossless quality. Playback is not affected.</string>
+    <string name="acoustic_quality_explanation">Shows the average spectrum of about 20 seconds of this song, so you can see whether it looks like real lossless quality. Playback is not affected.</string>
     <string name="acoustic_quality_idle">Not checked yet.</string>
     <string name="acoustic_quality_resolving">Finding the song file…</string>
     <string name="acoustic_quality_decoding">Reading part of the song…</string>
@@ -15,23 +15,33 @@
     <string name="acoustic_quality_retry">Check again</string>
     <string name="acoustic_quality_cancel">Cancel</string>
     <string name="acoustic_quality_close">Close</string>
-    <string name="acoustic_quality_progress">%1$d%%</string>
+    <string name="acoustic_quality_verdict_lossless">Likely lossless</string>
+    <string name="acoustic_quality_verdict_lossless_support">Sound reaches most of the chart; nothing looks cut off in this part.</string>
+    <string name="acoustic_quality_verdict_upscaled">Likely upscaled from lossy</string>
+    <string name="acoustic_quality_verdict_upscaled_support">The spectrum drops away well below what this file could hold.</string>
+    <string name="acoustic_quality_verdict_inconclusive">Inconclusive</string>
+    <string name="acoustic_quality_verdict_inconclusive_support">This part of the song doesn\'t give a clear answer.</string>
+    <string name="acoustic_quality_axis_zero">0</string>
+    <string name="acoustic_quality_axis_khz">%1$dk</string>
+    <string name="acoustic_quality_chip_sample_rate">%1$.1f kHz</string>
+    <string name="acoustic_quality_chip_pcm16">16-bit</string>
+    <string name="acoustic_quality_chip_pcm_float">32-bit float</string>
+    <string name="acoustic_quality_chip_cutoff">Cutoff %1$.1f kHz</string>
+    <string name="acoustic_quality_chip_cutoff_none">No cutoff found</string>
+    <string name="acoustic_quality_details_label">Details</string>
+    <string name="acoustic_quality_details_expand">Show details</string>
+    <string name="acoustic_quality_details_collapse">Hide details</string>
     <string name="acoustic_quality_details">Checked %1$s–%2$s · %3$.1f kHz %4$s · %5$s</string>
     <string name="acoustic_quality_mono">mono</string>
     <string name="acoustic_quality_stereo">stereo</string>
     <string name="acoustic_quality_channels">%1$d channels</string>
-    <string name="acoustic_quality_cutoff">Sound reaches up to %1$.1f kHz. The top of the chart is %2$.1f kHz.</string>
-    <string name="acoustic_quality_cutoff_unknown">Couldn\'t tell where the sound stops. The top of the chart is %1$.1f kHz.</string>
+    <string name="acoustic_quality_cutoff">Sound reaches up to %1$.1f kHz. The right edge of the chart is %2$.1f kHz.</string>
+    <string name="acoustic_quality_cutoff_unknown">Couldn\'t tell where the sound stops. The right edge of the chart is %1$.1f kHz.</string>
     <string name="acoustic_quality_cutoff_marker">sound stops · %1$.1fk</string>
-    <string name="acoustic_quality_inconclusive">Can\'t tell from this part of the song</string>
-    <string name="acoustic_quality_no_cutoff">Looks like full quality</string>
-    <string name="acoustic_quality_suspected">Probably upscaled from a lower-quality copy</string>
     <string name="acoustic_quality_read_title">How to read it</string>
-    <string name="acoustic_quality_read_axes">Up = higher pitch: bass at the bottom, cymbals at the top. The top is half the sample rate, the highest pitch the file can hold (22 kHz for 44.1 kHz audio). Left to right = time.</string>
-    <string name="acoustic_quality_read_colour">Colour = how loud that pitch is, from black (silent) through purple, red and yellow to white (loudest).</string>
-    <string name="acoustic_quality_read_cutoff">Real lossless music usually has sound almost to the top. If everything above one sharp line is dark, the file was probably made from an MP3 or AAC copy; those usually stop around 16–20 kHz.</string>
-    <string name="acoustic_quality_heat_legend_low">Silent</string>
-    <string name="acoustic_quality_heat_legend_high">Loud</string>
+    <string name="acoustic_quality_read_axes">Left to right = pitch, from bass on the left to the highest pitch the file can hold on the right edge (half the sample rate, 22 kHz for 44.1 kHz audio). Higher = louder.</string>
+    <string name="acoustic_quality_read_curve">The filled curve shows how loud each pitch is on average across the checked part of the song.</string>
+    <string name="acoustic_quality_read_cutoff">Real lossless music usually stays strong almost to the right edge. If the curve falls away well before it, the file was probably made from an MP3 or AAC copy; those usually stop around 16–20 kHz.</string>
     <string name="acoustic_quality_no_song">No song playing. Pick a song first; opening this never starts playback.</string>
     <string name="acoustic_quality_expand">Expand acoustic quality graph</string>
     <string name="acoustic_quality_collapse">Collapse acoustic quality graph</string>
@@ -49,6 +59,7 @@
     <string name="acoustic_quality_code_qobuz_backup_current">Qobuz backup (streaming)</string>
     <string name="acoustic_quality_code_insufficient_active_evidence">This part is too quiet to judge. Try again later in the song.</string>
     <string name="acoustic_quality_code_pcm_budget_shortened_excerpt">Less than 20 seconds fit in memory, so a shorter part was checked.</string>
+    <string name="acoustic_quality_code_spectral_heuristic">This is a reading of the sound itself — a hint, not proof of where the file came from.</string>
     <string name="acoustic_quality_code_deadline_exceeded">The check took too long. Try again.</string>
     <string name="acoustic_quality_code_analysis_busy">Still finishing the last check. Try again in a moment.</string>
     <string name="acoustic_quality_code_source_changed">The song changed. Check again.</string>
