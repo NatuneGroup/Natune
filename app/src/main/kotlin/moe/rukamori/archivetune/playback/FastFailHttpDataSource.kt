@@ -37,18 +37,25 @@ object FastFailReadPolicy {
      * the caller reports end-of-input instead of opening.
      */
     fun resumeDataSpec(dataSpec: DataSpec, bytesServed: Long): DataSpec? {
-        if (dataSpec.length != C.LENGTH_UNSET.toLong() && bytesServed >= dataSpec.length) {
-            return null
-        }
-        val builder =
-            dataSpec
-                .buildUpon()
-                .setPosition(dataSpec.position + bytesServed)
-        if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-            builder.setLength(dataSpec.length - bytesServed)
-        }
-        return builder.build()
+        val range = resumeRange(dataSpec.position, dataSpec.length, bytesServed) ?: return null
+        return dataSpec.buildUpon().setPosition(range.position).setLength(range.length).build()
     }
+
+    /**
+     * The position/length of the resumed open, or null when the declared range is already fully
+     * served. Kept free of Media3 types so the policy pins under ordinary unit tests — a
+     * DataSpec needs android.net.Uri, which local tests cannot build.
+     */
+    fun resumeRange(position: Long, length: Long, bytesServed: Long): ResumeRange? {
+        if (length != C.LENGTH_UNSET.toLong() && bytesServed >= length) return null
+        return ResumeRange(
+            position + bytesServed,
+            if (length == C.LENGTH_UNSET.toLong()) length else length - bytesServed,
+        )
+    }
+
+    /** The bounded remainder of a resumed stream open. */
+    data class ResumeRange(val position: Long, val length: Long)
 }
 
 /**
