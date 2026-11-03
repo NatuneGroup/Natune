@@ -77,6 +77,7 @@ internal class PlaybackOutputFades(
     /** Ramps the live output to zero over [OutputFadePolicy.PAUSE_FADE_MS], then runs [pause]. */
     fun fadedPause(pause: () -> Unit) {
         val p = runCatching(player).getOrNull()
+        val wasRamping = actionJob?.isActive == true || dipJob?.isActive == true
         actionJob?.cancel()
         actionJob = null
         dipJob?.cancel()
@@ -86,6 +87,7 @@ internal class PlaybackOutputFades(
             !OutputFadePolicy.hasAudibleEdge(OutputFadePolicy.Edge.PAUSE, p.playWhenReady)
         ) {
             pause()
+            if (wasRamping) restoreLevel(p)
             return
         }
         actionJob =
@@ -106,6 +108,7 @@ internal class PlaybackOutputFades(
     /** Plays at zero output and ramps up over [OutputFadePolicy.RESUME_FADE_MS]. */
     fun mutedPlay(play: () -> Unit) {
         val p = runCatching(player).getOrNull()
+        val wasRamping = actionJob?.isActive == true || dipJob?.isActive == true
         actionJob?.cancel()
         actionJob = null
         dipJob?.cancel()
@@ -115,6 +118,7 @@ internal class PlaybackOutputFades(
             !OutputFadePolicy.hasAudibleEdge(OutputFadePolicy.Edge.PLAY, p.playWhenReady)
         ) {
             play()
+            if (wasRamping) restoreLevel(p)
             return
         }
         actionJob =
@@ -150,6 +154,32 @@ internal class PlaybackOutputFades(
             }
         }
         p.volume = target
+    }
+
+    /** Linear ramp from [from] to [target]; unlike fadeIn it never dips below its start. */
+    private suspend fun rampTo(p: Player, from: Float, target: Float, durationMs: Long) {
+        repeat(OutputFadePolicy.FADE_STEPS) { step ->
+            coroutineContext.ensureActive()
+            val t = (step + 1) / OutputFadePolicy.FADE_STEPS.toFloat()
+            p.volume = (from + (target - from) * t).coerceIn(0f, 1f)
+            if (step + 1 < OutputFadePolicy.FADE_STEPS) {
+                delay(durationMs / OutputFadePolicy.FADE_STEPS)
+            }
+        }
+        p.volume = target
+    }
+
+    /**
+     * A superseded ramp must not strand the level mid-fade: when no new fade takes over, the
+     * output climbs back to the honest base on the decorative slot — a later intent or dip
+     * may still supersede it, and every such successor ends at base itself.
+     */
+    private fun restoreLevel(p: Player?) {
+        if (p == null || !allowed()) return
+        dipJob =
+            scope.launch {
+                rampTo(p, p.volume, baseVolume().coerceIn(0f, 1f), OutputFadePolicy.SEEK_FADE_MS)
+            }
     }
 
     fun cancel() {

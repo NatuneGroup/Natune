@@ -288,7 +288,16 @@ internal class PRDownloaderDataSource private constructor(
     override fun getUri(): Uri? = synchronized(requestLock) { active?.source?.uri }
 
     override fun close() {
-        val state = synchronized(requestLock) { active } ?: return
+        // Detach and mark cancelled inside one lock acquisition: the retry's ownership
+        // re-check must never observe a still-live `active` for a request that is already
+        // closing, or the replacement download would outlive the close.
+        val state =
+            synchronized(requestLock) {
+                active?.also {
+                    it.cancel()
+                    active = null
+                }
+            } ?: return
         release(state)
     }
 
