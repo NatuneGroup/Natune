@@ -156,6 +156,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
+import moe.rukamori.archivetune.lyrics.lyricsIdleParkMs
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
@@ -659,7 +660,8 @@ fun LyricsEnhanced(
                 // playbackPositionMs.longValue (we already have the value in
                 // `rawPosition` / `nextPosition`).
                 val effectivePositionMs: Long
-                // Between word and line boundaries the drawn state is static, so the loop sleeps to the next deadline.
+                // Between word and line boundaries the drawn state is static, so the loop parks until the next deadline.
+                var parkMs = 0L
                 val idleFeedEstimateMs =
                     (rawPosition + latestLyricsSyncOffset.value.toLong() +
                         latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
@@ -669,18 +671,15 @@ fun LyricsEnhanced(
                 if (!enhancedLibraryViewActive && sliderPosition == null && player.isPlaying && !animationsDisabled &&
                     !deadlineSchedule.isLive(idleFeedEstimateMs) && !interludeGate.covers(idleFeedEstimateMs)
                 ) {
+                    // Publish before parking, so a sweep or lift that just left its live span shows its final frame now.
                     val next = deadlineSchedule.nextChangeAfter(idleFeedEstimateMs)
-                    delay(if (next == null) IDLE_POLL_MS else (next - idleFeedEstimateMs).coerceIn(16L, IDLE_POLL_MS))
-                    val restedPosition = player.currentPosition.coerceAtLeast(0L)
-                    anchorPlayerPositionMs = restedPosition
+                    parkMs = lyricsIdleParkMs(next, idleFeedEstimateMs, latestPlaybackSpeed.value, 16L, IDLE_POLL_MS)
+                    anchorPlayerPositionMs = rawPosition
                     anchorFrameNanos = 0L
-                    if (playbackPositionMs.longValue != restedPosition) {
-                        playbackPositionMs.longValue = restedPosition
+                    if (playbackPositionMs.longValue != rawPosition) {
+                        playbackPositionMs.longValue = rawPosition
                     }
-                    effectivePositionMs =
-                        (restedPosition + latestLyricsSyncOffset.value.toLong() +
-                            latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
-                            .coerceIn(0L, Int.MAX_VALUE.toLong())
+                    effectivePositionMs = idleFeedEstimateMs
                 } else if (sliderPosition != null || !player.isPlaying || animationsDisabled) {
                     anchorPlayerPositionMs = rawPosition
                     anchorFrameNanos = 0L
@@ -769,6 +768,7 @@ fun LyricsEnhanced(
                         }
                     }
                 }
+                if (parkMs > 0L) delay(parkMs)
             }
         }
     }
