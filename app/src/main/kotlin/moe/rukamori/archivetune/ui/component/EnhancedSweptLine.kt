@@ -348,7 +348,9 @@ private class EnhancedSyllableText(
  * One row laid out once, with the timed boxes that the draw phase clips against. [letterRuns] mirrors
  * [boxes]: for a box that earned the [LyricsEmphasis] ripple it holds one shaped run per grapheme
  * cluster, laid out once so the draw phase transforms only that grapheme's own ink — redrawing the
- * full-line layout per letter would repaint its neighbours at the wrong transform.
+ * full-line layout per letter would repaint its neighbours at the wrong transform. A word whose
+ * isolated runs shaped different advances than the line gets no runs and keeps the plain feathered
+ * sweep: the glyphs changed between contexts, so moving one would tear the text.
  */
 private class EnhancedShapedLine(
     val text: String,
@@ -410,15 +412,23 @@ private fun shapeEnhancedSyllables(
         enhancedWordBox(joined.text, clusters, range, syllable.start.toLong(), syllable.end.toLong(), layout)
     }.sortedBy { it.first.startMs }
     val boxes = words.map { it.first }
-    val letterRuns = words.map { (_, ranges) ->
+    val letterRuns = words.map { (box, ranges) ->
         if (ranges == null) {
             null
         } else {
-            List(ranges.size / 2) { i ->
+            val runs = List(ranges.size / 2) { i ->
                 measurer.measure(
                     text = AnnotatedString(joined.text.substring(ranges[i * 2], ranges[i * 2 + 1])),
                     style = style,
                 )
+            }
+            // A cluster measured alone can shape a different glyph than the line shaped for it — a
+            // ligature broken apart or a contextual form lost — and that letter would overlap or
+            // jump under the ripple, so the word keeps the plain feathered sweep.
+            if (LyricsEmphasis.isolatedRunsMatchLine(box.letters, FloatArray(runs.size) { isolatedRunWidth(runs[it]) })) {
+                runs
+            } else {
+                null
             }
         }
     }
@@ -509,6 +519,13 @@ private fun emphasisLetters(
         index++
     }
     return slices to ranges
+}
+
+/** The advance an isolated run reports for its cluster, the same bounding-box metric [emphasisLetters] read in the line. */
+private fun isolatedRunWidth(run: TextLayoutResult): Float {
+    val head = run.getBoundingBox(0)
+    val tail = run.getBoundingBox(run.layoutInput.text.length - 1)
+    return maxOf(head.right, tail.right) - minOf(head.left, tail.left)
 }
 
 /** The feathered edge width for [box], a share of its own width clamped to the sweep bounds. */
