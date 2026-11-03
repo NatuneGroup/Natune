@@ -14,7 +14,7 @@ import java.nio.file.Path
 import java.util.Locale
 import kotlin.io.path.Path
 
-/** Channel the desktop artifact matcher uses per release naming: `natune-<os>-<arch>-<version>.<ext>`. */
+/** Channel the desktop artifact matcher uses per release naming: `natune-desktop-<os>-<arch>-<version>.<ext>`. */
 internal class DesktopUpdateOwner(
     private val graph: DesktopSessionGraph,
     appDataDir: Path,
@@ -36,7 +36,7 @@ internal class DesktopUpdateOwner(
         }
     }
     private val archToken = System.getProperty("os.arch", "").lowercase(Locale.US).let {
-        if (it.contains("aarch64") || it.contains("arm")) "aarch64" else "x64"
+        if (it.contains("aarch64") || it.contains("arm")) "arm64" else "x64"
     }
 
     private val profile = UpdateInstallProfile(
@@ -144,7 +144,7 @@ internal class DesktopUpdateOwner(
     }
 
     private fun matchesDesktopArtifact(name: String): Boolean =
-        name.startsWith("natune-$osToken-$archToken") &&
+        name.startsWith("natune-desktop-$osToken-$archToken-") &&
             name.substringAfterLast('.').lowercase(Locale.US) in DESKTOP_UPDATE_EXTENSIONS
 
     private companion object {

@@ -2,7 +2,9 @@
 """Builds the schema-v1 update-feed manifest for a published release.
 
 nightly.yml (nightly.json) and release.yml (stable.json) run this after `gh release create`,
-passing the signed APK files that were just uploaded. The manifest is uploaded to the fixed
+passing the APKs and desktop installers that were just uploaded. Android picks its APK by exact
+name; the desktop host takes the first asset named for its platform and architecture, so the
+caller lists the preferred installer of each first. The manifest is uploaded to the fixed
 `update-feed` release, whose assets the unauthenticated in-app updater fetches instead of the
 API: release-asset downloads are CDN-served and do not count against the 60-requests-per-hour
 limit. The JSON schema is contracted by the app's UpdateFeedManifest.kt (schema == 1); nothing
@@ -61,7 +63,7 @@ def build_manifest(
     published_at: str,
     release_url: str,
     notes: str,
-    apk_paths: list[Path],
+    asset_paths: list[Path],
     download_url_base: str,
 ) -> dict:
     return {
@@ -74,7 +76,7 @@ def build_manifest(
         "publishedAt": normalize_published_at(published_at),
         "releaseUrl": release_url,
         "notes": notes,
-        "assets": [asset_entry(path, tag, download_url_base) for path in apk_paths],
+        "assets": [asset_entry(path, tag, download_url_base) for path in asset_paths],
     }
 
 
@@ -94,7 +96,7 @@ def main() -> int:
         help="asset URL prefix; the manifest URL is <base>/<tag>/<asset name>",
     )
     parser.add_argument("--output", help="write JSON here instead of stdout")
-    parser.add_argument("apks", nargs="+", help="signed APK files uploaded to the release")
+    parser.add_argument("assets", nargs="+", help="APK and desktop installer files uploaded to the release")
     args = parser.parse_args()
 
     if args.version_code <= 0:
@@ -102,10 +104,13 @@ def main() -> int:
     if not args.tag.strip():
         parser.error("--tag must not be blank")
 
-    apk_paths = [Path(apk) for apk in args.apks]
-    for path in apk_paths:
+    asset_paths = [Path(asset) for asset in args.assets]
+    names = [path.name for path in asset_paths]
+    if len(set(names)) != len(names):
+        parser.error("asset names must be unique; the download URL is derived from the name")
+    for path in asset_paths:
         if not path.is_file():
-            parser.error(f"APK not found: {path}")
+            parser.error(f"asset not found: {path}")
 
     notes = ""
     if args.notes_file:
@@ -123,7 +128,7 @@ def main() -> int:
         published_at=args.published_at,
         release_url=args.release_url,
         notes=notes,
-        apk_paths=apk_paths,
+        asset_paths=asset_paths,
         download_url_base=args.download_url_base.rstrip("/"),
     )
 
