@@ -130,6 +130,9 @@ class RoomLibraryRemoveTest {
         override suspend fun playlist(id: String) = playlists[id]
         override suspend fun playlists(text: String, limit: Int, offset: Int) = unused<List<PortablePlaylistRow>>()
         override fun observePlaylists(text: String) = unused<Flow<List<PortablePlaylistRow>>>()
+        override suspend fun playlistsInStoredOrder() = unused<List<PortablePlaylistRow>>()
+        override suspend fun setPlaylistCustomOrder(id: String, customOrder: Int) = unused<Int>()
+        override suspend fun updatePlaylistRemote(id: String, browseId: String?, remoteSongCount: Int?) = unused<Int>()
         override suspend fun rename(id: String, title: String) = unused<Int>()
         override fun observeHiddenPlaylists() = unused<Flow<List<PortablePlaylistRow>>>()
         override suspend fun setPlaylistHidden(id: String, hidden: Boolean) = unused<Int>()

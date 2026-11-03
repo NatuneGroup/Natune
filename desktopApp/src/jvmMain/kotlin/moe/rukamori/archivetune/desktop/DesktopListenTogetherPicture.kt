@@ -49,18 +49,26 @@ internal class DesktopListenTogetherPicture(private val directory: Path) {
 
     /** The OS pick on the event queue, as the artwork chooser opens its own. Null when the user cancels. */
     private suspend fun pickFile(): File? = suspendCancellableCoroutine { continuation ->
+        var dialog: FileDialog? = null
+        // A cancelled pick never opens a queued chooser, and an open one closes instead of stranding on screen.
+        continuation.invokeOnCancellation {
+            EventQueue.invokeLater { dialog?.dispose() }
+        }
         EventQueue.invokeLater {
+            if (!continuation.isActive) return@invokeLater
             val chosen = try {
-                val dialog = FileDialog(null as Frame?, DesktopStrings["listen_together_avatar_pick"], FileDialog.LOAD)
-                dialog.isMultipleMode = false
-                dialog.setFilenameFilter { _, name ->
+                val shown = FileDialog(null as Frame?, DesktopStrings["listen_together_avatar_pick"], FileDialog.LOAD)
+                dialog = shown
+                shown.isMultipleMode = false
+                shown.setFilenameFilter { _, name ->
                     name.substringAfterLast('.', "").lowercase() in PICTURE_EXTENSIONS
                 }
                 // A modal file dialog blocks this event-queue task until it closes, while AWT keeps pumping events.
-                dialog.isVisible = true
-                val name = dialog.file
-                val folder = dialog.directory
-                dialog.dispose()
+                shown.isVisible = true
+                val name = shown.file
+                val folder = shown.directory
+                shown.dispose()
+                dialog = null
                 if (name == null || folder == null) null else File(folder, name)
             } catch (failure: Exception) {
                 desktopDiagnostic("avatar chooser unavailable: ${failure.javaClass.simpleName}")
