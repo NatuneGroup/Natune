@@ -22,7 +22,8 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
  * search history and video-id lookup tables, and the hidden flag on playlists, by
  * [PortableStateMigrations.V7_TO_V8]. Version 9 adds the podcast episode progress table, by
  * [PortableStateMigrations.V8_TO_V9]. Version 10 adds per-song display edits by [SongMetadataOverrideMigration]. Version 11 adds the persisted
- * per-song lyrics offset by [SongLyricsOffsetMigration].
+ * per-song lyrics offset by [SongLyricsOffsetMigration]. Version 12 adds the collection order and the linked
+ * remote playlist record on each playlist, by [PlaylistRemoteMigration].
  */
 @Database(
     entities = [QueueCheckpointRow::class, LibraryItemRow::class, PortablePlaylistRow::class,
@@ -32,7 +33,7 @@ import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
         PortableDownloadTaskRow::class, PortableLocalTrackRow::class,
         PortableSearchHistoryRow::class, PortableSetVideoIdRow::class, PortablePodcastProgressRow::class,
         PortableSongMetadataOverrideRow::class, PortableSongLyricsOffsetRow::class],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 @ConstructedBy(PortableStateDatabaseConstructor::class)
@@ -73,6 +74,7 @@ fun RoomDatabase.Builder<PortableStateDatabase>.buildPortableStateDatabase(): Po
         PortableStateMigrations.V8_TO_V9,
         SongMetadataOverrideMigration,
         SongLyricsOffsetMigration,
+        PlaylistRemoteMigration,
     )
         .setDriver(portableStateDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
 

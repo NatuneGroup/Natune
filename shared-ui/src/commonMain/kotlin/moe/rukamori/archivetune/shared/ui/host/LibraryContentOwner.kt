@@ -144,6 +144,7 @@ class LibraryContentOwner(
                 createdEpochMs = summary.createdSeq,
                 updatedEpochMs = summary.newestAddedSeq,
                 hidden = summary.hidden,
+                browseId = summary.browseId,
                 previewItems = summary.previewItems,
             )
         }
