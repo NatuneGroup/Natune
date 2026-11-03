@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 class PersistedPreferenceRegistrySettingsTest {
     @Test
     fun registryHoldsEveryGeneratedKeyExactlyOnce() {
-        assertEquals(665, PersistedPreferenceKeys.size)
+        assertEquals(664, PersistedPreferenceKeys.size)
         assertEquals(PersistedPreferenceKeys.size, PersistedPreferenceKeys.toSet().size)
     }
 
@@ -71,7 +71,6 @@ class PersistedPreferenceRegistrySettingsTest {
                 PlayerDesignStyleKey,
                 LibraryStyleKey,
                 AppleMusicExperienceKey,
-                AppleMusicHeadersKey,
                 AppleMusicMenusKey,
                 AppleMusicSearchBarKey,
                 AppleMusicPaletteKey,

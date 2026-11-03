@@ -457,7 +457,6 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         ShowSpotifyPlaylistsKey,
         LibrarySourceKey,
         AppleMusicExperienceKey,
-        AppleMusicHeadersKey,
         AppleMusicMenusKey,
         AppleMusicSearchBarKey,
         AppleMusicPaletteKey,

@@ -11,7 +11,6 @@ class IndependentAppleMusicSettingsTest {
         { this[PlayerDesignStyleKey] = if (it) "APPLE_MUSIC" else "V4" },
         { setLibraryStyle(if (it) LibraryStyle.APPLE_MUSIC else LibraryStyle.DEFAULT) },
         { this[NavigationBarStyleKey] = if (it) "APPLE_MUSIC" else "DEFAULT" },
-        { this[AppleMusicHeadersKey] = it },
         { this[AppleMusicMenusKey] = it },
         { this[AppleMusicSearchBarKey] = it },
         { this[AppleMusicPaletteKey] = it },
@@ -21,7 +20,7 @@ class IndependentAppleMusicSettingsTest {
         snapshot.selectedPlayerDesignStyle() == PlayerDesignStyle.APPLE_MUSIC,
         snapshot.libraryStyle() == LibraryStyle.APPLE_MUSIC,
         snapshot.selectedNavigationBarStyle() == NavigationBarStyle.APPLE_MUSIC,
-        snapshot.appleMusicHeaders(), snapshot.appleMusicMenus(), snapshot.appleMusicSearchBar(), snapshot.appleMusicPalette(),
+        snapshot.appleMusicMenus(), snapshot.appleMusicSearchBar(), snapshot.appleMusicPalette(),
     )
 
     @Test fun eachIndividualOptionChangesOnlyItsOwnSurfaceFromMaterial() {
@@ -29,7 +28,7 @@ class IndependentAppleMusicSettingsTest {
             val editor = PreferenceSnapshot.of(AppleMusicMenusKey to false).toEditor()
             edit(editor, true)
             editor.migrateAppleMusicSettings()
-            assertEquals(List(7) { it == index }, selections(editor.snapshot()), "surface $index")
+            assertEquals(List(6) { it == index }, selections(editor.snapshot()), "surface $index")
             assertEquals(InterfaceStyle.CUSTOM, editor.snapshot().interfaceStyle())
             assertNull(editor[AppleMusicExperienceKey])
         }
@@ -41,7 +40,7 @@ class IndependentAppleMusicSettingsTest {
             editor.applyInterfaceStyle(InterfaceStyle.APPLE_MUSIC)
             edit(editor, false)
             editor.migrateAppleMusicSettings()
-            assertEquals(List(7) { it != index }, selections(editor.snapshot()), "surface $index")
+            assertEquals(List(6) { it != index }, selections(editor.snapshot()), "surface $index")
             assertEquals(InterfaceStyle.CUSTOM, editor.snapshot().interfaceStyle())
             assertTrue(editor[AppleMusicExperienceKey] == true)
         }
@@ -59,13 +58,25 @@ class IndependentAppleMusicSettingsTest {
         assertEquals("FLOATING", editor[NavigationStyleBeforeAppleMusicKey])
         assertEquals("TIKTOK", editor[PlayerDesignStyleKey])
         assertEquals("DEFAULT", editor[LibraryStyleKey])
-        assertTrue(editor.snapshot().appleMusicHeaders())
+        assertTrue(editor.snapshot().appleMusicSearchBar())
         editor[NavigationBarStyleKey] = "SUKISU"
-        editor[AppleMusicHeadersKey] = false
+        editor[AppleMusicSearchBarKey] = false
         val afterManualEdit = editor.snapshot()
         editor.migrateAppleMusicSettings()
         assertTrue(SettingsChange(afterManualEdit, editor.snapshot()).changedKeys.isEmpty())
-        assertFalse(editor.snapshot().appleMusicHeaders())
+        assertFalse(editor.snapshot().appleMusicSearchBar())
+    }
+
+    @Test fun unknownBooleanOptionsDoNotParticipateInPresetStatusOrEdits() {
+        val unknown = BooleanPreferenceKey("future_presentation_option")
+        val editor = PreferenceSnapshot.of(unknown to true).toEditor()
+        assertEquals(InterfaceStyle.MATERIAL_EXPRESSIVE, editor.snapshot().interfaceStyle())
+        editor.applyInterfaceStyle(InterfaceStyle.APPLE_MUSIC)
+        assertEquals(InterfaceStyle.APPLE_MUSIC, editor.snapshot().interfaceStyle())
+        assertTrue(editor[unknown, false])
+        editor.applyInterfaceStyle(InterfaceStyle.MATERIAL_EXPRESSIVE)
+        assertEquals(InterfaceStyle.MATERIAL_EXPRESSIVE, editor.snapshot().interfaceStyle())
+        assertTrue(editor[unknown, false])
     }
 
     @Test fun presetRestoresThePreviousBarButNeverOverwritesANewerManualBar() {

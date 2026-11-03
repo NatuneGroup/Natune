@@ -478,7 +478,6 @@ val SpotifyLibrespotCatalogSpDcKey = StringPreferenceKey("spotify_librespot_cata
 val ShowSpotifyPlaylistsKey = BooleanPreferenceKey("show_spotify_playlists")
 val LibrarySourceKey = StringPreferenceKey("library_source")
 val AppleMusicExperienceKey = BooleanPreferenceKey("apple_music_experience")
-val AppleMusicHeadersKey = BooleanPreferenceKey("apple_music_headers")
 val AppleMusicMenusKey = BooleanPreferenceKey("apple_music_menus")
 val AppleMusicSearchBarKey = BooleanPreferenceKey("apple_music_search_bar")
 val AppleMusicPaletteKey = BooleanPreferenceKey("apple_music_palette")
