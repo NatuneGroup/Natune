@@ -9,6 +9,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
+import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
+import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
+import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import kotlin.math.PI
 import kotlin.math.cos
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsActivation
@@ -50,11 +53,47 @@ internal fun enhancedInterludes(starts: IntArray, ends: IntArray): Map<Int, Enha
 }
 
 /**
+ * Whether a position sits inside a break the in-house list draws its dots over, so the position loop
+ * keeps stepping frames there instead of idle-polling. The breaks are re-derived only when [lyrics]
+ * hands back a new object, because the loop asks every iteration.
+ */
+internal class EnhancedInterludeGate(private val lyrics: () -> SyncedLyrics) {
+    private var derivedFrom: SyncedLyrics? = null
+    private var breaks: Collection<EnhancedInterlude> = emptyList()
+
+    fun covers(positionMs: Long): Boolean {
+        val current = lyrics()
+        if (current !== derivedFrom) {
+            derivedFrom = current
+            val lines = current.lines
+            breaks = enhancedInterludes(IntArray(lines.size) { lines[it].start }, IntArray(lines.size) { lines[it].end }).values
+        }
+        return breaks.any { positionMs >= it.startMs && positionMs < it.endMs }
+    }
+}
+
+/**
+ * Whether the row carries real per-word timing. A line-synced row built as a [KaraokeLine] only to hang
+ * a romanisation on has every "syllable" pegged at [MIN_KARAOKE_SYLLABLE_DURATION_MS]; a word-synced row
+ * has at least one genuinely timed word.
+ */
+internal fun ISyncedLine.hasWordTiming(): Boolean =
+    this is KaraokeLine && syllables.any { it.end - it.start > MIN_KARAOKE_SYLLABLE_DURATION_MS }
+
+/**
  * When each line activates, [LyricsActivation.leadMs] ahead of its timed start, measured against the
  * furthest point the earlier lines reach — the same gap the interlude dots measure. The word sweep
  * still follows the real word times; only the lit line moves early, so a seek lands on the same frame.
+ *
+ * [wordSynced] marks the rows that carry word timing, and only those take the lead: on a line-synced
+ * row the lead stacked on the LRC lead and the visual tuning offset and lit it up to a second before it
+ * was sung, so line-synced rows activate at their timed start.
  */
-internal fun enhancedActivationStarts(starts: IntArray, ends: IntArray): IntArray {
+internal fun enhancedActivationStarts(
+    starts: IntArray,
+    ends: IntArray,
+    wordSynced: BooleanArray,
+): IntArray {
     val result = IntArray(starts.size)
     var reachedMs = 0L
     for (index in starts.indices) {
@@ -63,8 +102,10 @@ internal fun enhancedActivationStarts(starts: IntArray, ends: IntArray): IntArra
         val lead =
             if (index > 0 && starts[index] == starts[index - 1]) {
                 startMs - result[index - 1]
-            } else {
+            } else if (index < wordSynced.size && wordSynced[index]) {
                 LyricsActivation.leadMs(if (reachedMs > 0L) startMs - reachedMs else null)
+            } else {
+                0L
             }
         result[index] = (startMs - lead).coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
         reachedMs = maxOf(reachedMs, ends[index].toLong())
