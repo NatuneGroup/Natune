@@ -42,6 +42,11 @@ data class TelegramBotsUi(
      * shows the failure with a retry instead of an empty list, and editing waits for a successful read.
      */
     val loadFailed: Boolean,
+    /**
+     * False until the first store read lands: the saved list and the forward choice are unknown then, so the
+     * screen shows a loading state instead of flashing an empty list, and editing stays disabled.
+     */
+    val loaded: Boolean,
 )
 
 /**
@@ -76,13 +81,13 @@ fun TelegramBotsScreen(
             placeholder = { Text(stringResource(Res.string.m4_telegram_bots_hint)) },
             singleLine = true,
             // Editing waits for a successful read: a save made from a list that was never read would overwrite it.
-            enabled = state.ready && !state.adding && !state.loadFailed,
+            enabled = state.ready && !state.adding && !state.loadFailed && state.loaded,
             trailingIcon = {
                 if (state.adding) {
                     BusyCircularProgress(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
                     TextButton(onClick = { actions.add(state.input) },
-                        enabled = state.ready && !state.loadFailed && state.input.isNotBlank(),
+                        enabled = state.ready && !state.loadFailed && state.loaded && state.input.isNotBlank(),
                         modifier = Modifier.testTag("telegram-bot-add")) {
                         Text(stringResource(Res.string.m4_telegram_bots_add))
                     }
@@ -101,6 +106,9 @@ fun TelegramBotsScreen(
             state.loadFailed -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 LoadFeedback(loading = false, failed = true, empty = false, retry = actions.retry)
             }
+            !state.loaded -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                LoadFeedback(loading = true, failed = false, empty = false, retry = actions.retry)
+            }
             !state.ready -> Box(Modifier.fillMaxWidth().weight(1f).padding(24.dp), contentAlignment = Alignment.Center) {
                 Text(stringResource(Res.string.m4_telegram_login_required))
             }
@@ -113,8 +121,8 @@ fun TelegramBotsScreen(
                 }
             }
         }
-        // The forward choice is unknown until the saved list has been read, so no switch is shown after a failed read.
-        if (!state.loadFailed) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        // The forward choice is unknown until the saved list has been read, so the switch shows only then.
+        if (state.loaded) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(Res.string.m4_telegram_forward_title), style = MaterialTheme.typography.bodyLarge)
                 Text(stringResource(Res.string.m4_telegram_forward_summary), style = MaterialTheme.typography.bodySmall,

@@ -351,6 +351,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         QuickPicksKey,
         NewsLastReadTimestampKey,
         SpeedDialSongIdsKey,
+        BlockedSongIdsKey,
         LyricsProviderOrderKey,
         ArtworkProviderOrderKey,
         QueueEditLockKey,
