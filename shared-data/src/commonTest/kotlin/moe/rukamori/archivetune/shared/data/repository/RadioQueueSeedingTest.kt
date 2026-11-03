@@ -6,7 +6,9 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -277,6 +279,47 @@ class RadioQueueSeedingTest {
         advanceUntilIdle()
         assertFalse(h.owner.withQueueAccess { h.owner.startRadioSeamlessly() })
         assertEquals(0, h.youtube.radioPageCalls)
+    }
+
+    @Test
+    fun seededRadioOnThePlayingSongKeepsItAndReplacesOnlyTheTail() = scope.runTest {
+        val h = Harness(backgroundScope)
+        h.youtube.playlistPages += page(song("p1"), song("p2"))
+        h.youtube.radioPages += page(song("p1"), song("r1"), continuation = "rc1")
+        h.youtube.radioPages += page(song("p1"), song("rA"), song("rB"), continuation = "rcS")
+
+        h.owner.withQueueAccess { h.owner.loadCollection(QueueLoadRequest(playlistRequest("PL1"), QueueCollectionKind.FINITE)) }
+        advanceUntilIdle()
+        assertTrue(h.owner.startRadioOnSeed(song("p1").item.ref) { error("The playing seed must not be replaced") })
+
+        val queue = h.owner.state.value
+        assertEquals("p1", queue.currentOccurrenceId)
+        assertEquals(listOf("p1", "rA", "rB"), queue.entries.map { it.occurrenceId })
+    }
+
+    @Test
+    fun seededRadioComparesTheSeedUnderTheQueueLock() = scope.runTest {
+        val h = Harness(backgroundScope)
+        h.youtube.playlistPages += page(song("p1"), song("p2"), song("p3"))
+        h.youtube.radioPages += page(song("p1"), song("r1"), continuation = "rc1")
+        h.youtube.radioPages += page(song("rA"), song("rB"), continuation = "rcS")
+
+        h.owner.withQueueAccess { h.owner.loadCollection(QueueLoadRequest(playlistRequest("PL1"), QueueCollectionKind.FINITE)) }
+        advanceUntilIdle()
+        // An automatic advance holds the queue lock when "Start radio" on p1 arrives. The seed must be compared
+        // after that advance commits, so p1 plays again as a solo seed rather than seeding radio from p2.
+        val advancing = CompletableDeferred<Unit>()
+        val advance = launch { h.owner.withQueueAccess { advancing.await(); h.owner.select("p2", 0L) } }
+        val solo = song("p1").copy(occurrenceId = "p1-solo")
+        val radio = async { h.owner.startRadioOnSeed(song("p1").item.ref) { solo } }
+        advancing.complete(Unit)
+        advance.join()
+        assertTrue(radio.await())
+
+        val queue = h.owner.state.value
+        assertEquals("p1-solo", queue.currentOccurrenceId)
+        assertEquals("p1-solo", queue.entries.first().occurrenceId)
+        assertTrue(queue.entries.none { it.occurrenceId == "p2" })
     }
 
     @Test

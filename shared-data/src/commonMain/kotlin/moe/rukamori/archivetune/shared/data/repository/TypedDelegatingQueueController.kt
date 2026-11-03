@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.data.repository
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpointStore
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.repository.QueueLoadRequest
 import moe.rukamori.archivetune.shared.domain.repository.QueueEditingCommands
@@ -57,6 +58,10 @@ class TypedDelegatingQueueController(
 
     /** "Start radio" on the song playing now. False when it cannot seed a watch-next queue. */
     suspend fun startRadioSeamlessly(): Boolean = owner.withQueueAccess { owner.startRadioSeamlessly() }
+
+    /** "Start radio" on [seed], with the playing-song check inside the owner's lock; see [startRadioOnSeed]. */
+    suspend fun startRadio(seed: ContentRef, solo: suspend () -> ContentOccurrence): Boolean =
+        owner.startRadioOnSeed(seed, solo)
 
     override suspend fun checkpoint(): Boolean = owner.withQueueAccess {
         val savedRevision = checkpoints.read()?.queue?.revision
