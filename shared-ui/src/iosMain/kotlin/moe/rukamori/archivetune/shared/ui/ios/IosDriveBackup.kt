@@ -21,10 +21,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -65,6 +68,7 @@ import moe.rukamori.archivetune.shared.domain.platform.BrowserAuthRequest
 import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.SecureCredentialStore
+import moe.rukamori.archivetune.shared.ui.settings.DriveAppDataActivity
 import moe.rukamori.archivetune.shared.ui.settings.DriveAppDataBackupHost
 import moe.rukamori.archivetune.shared.ui.settings.DriveAppDataFailure
 import moe.rukamori.archivetune.shared.ui.settings.DriveAppDataSnapshot
@@ -135,17 +139,22 @@ internal class IosDriveBackup(
      * The page's Drive host. Disconnecting also forgets and revokes the stored Google grant. While the build has
      * no iOS OAuth client id, its snapshot reports CONFIGURATION once the owner's state settles, so the page shows
      * the localized not-configured string as the Drive sign-in's unavailable state; choosing an account still
-     * runs the chooser, which refuses with the same failure.
+     * runs the chooser, which refuses with the same failure. While an upload waits on its network rule, the
+     * snapshot reports WAITING, the owner's own activity always winning, so the page shows its waiting row and the
+     * Cancel action that drops the held request.
      */
     val drive: DriveAppDataBackupHost = object : DriveAppDataBackupHost by binding {
         override val snapshot: StateFlow<DriveAppDataSnapshot?> =
-            if (configured) {
-                binding.snapshot
-            } else {
-                binding.snapshot
-                    .map { state -> state?.copy(failure = state.failure ?: DriveAppDataFailure.CONFIGURATION) }
-                    .stateIn(scope, SharingStarted.Eagerly, binding.snapshot.value)
-            }
+            combine(binding.snapshot, scheduler.waitingForNetwork) { state, waiting ->
+                var next = state
+                if (!configured) {
+                    next = next?.copy(failure = next.failure ?: DriveAppDataFailure.CONFIGURATION)
+                }
+                if (waiting && next?.activity == null) {
+                    next = next?.copy(activity = DriveAppDataActivity.WAITING)
+                }
+                next
+            }.stateIn(scope, SharingStarted.Eagerly, binding.snapshot.value)
 
         override suspend fun disconnect() {
             val account = owner.state.value.settings.accountName
@@ -468,6 +477,17 @@ internal class IosDriveScheduler(
     private var periodic: Job? = null
     private var manual: Job? = null
 
+    /** Count of runs currently held in [awaitUploadNetwork]; manual and periodic waits can overlap. */
+    private val networkWaiters = MutableStateFlow(0)
+
+    /**
+     * True while an upload waits for a route that satisfies its network rule. The host publishes it as the page's
+     * WAITING activity, so the user sees the held request and its Cancel instead of an upload surfacing later.
+     */
+    val waitingForNetwork: StateFlow<Boolean> = networkWaiters
+        .map { it > 0 }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     fun bind(owner: DriveAppDataBackupOwner) {
         this.owner = owner
     }
@@ -537,16 +557,26 @@ internal class IosDriveScheduler(
     /**
      * Holds the run until the default route satisfies [network]: UNMETERED waits for a non-WWAN route — cellular
      * counts as metered — and CONNECTED waits for any online route. Returns false when the account changed
-     * mid-wait or the job was cancelled, so a stale run never starts an upload.
+     * mid-wait or the job was cancelled, so a stale run never starts an upload. The hold is published through
+     * [waitingForNetwork] from the first refused poll until the run proceeds, ends or is cancelled.
      */
     private suspend fun awaitUploadNetwork(accountName: String, network: DriveAppDataNetwork): Boolean {
-        while (currentCoroutineContext().isActive) {
-            val bound = owner ?: return false
-            if (bound.state.value.settings.accountName != accountName) return false
-            if (iosBackupNetworkAllowed(unmeteredOnly = network == DriveAppDataNetwork.UNMETERED)) return true
-            delay(NETWORK_WAIT_MS)
+        var holding = false
+        try {
+            while (currentCoroutineContext().isActive) {
+                val bound = owner ?: return false
+                if (bound.state.value.settings.accountName != accountName) return false
+                if (iosBackupNetworkAllowed(unmeteredOnly = network == DriveAppDataNetwork.UNMETERED)) return true
+                if (!holding) {
+                    holding = true
+                    networkWaiters.update { it + 1 }
+                }
+                delay(NETWORK_WAIT_MS)
+            }
+            return false
+        } finally {
+            if (holding) networkWaiters.update { (it - 1).coerceAtLeast(0) }
         }
-        return false
     }
 
     private companion object {
