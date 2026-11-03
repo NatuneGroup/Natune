@@ -10,6 +10,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.ACOUSTIC_LOSSLESS_CODECS
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditLimits
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticPcm
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticWindow
 import moe.rukamori.archivetune.shared.domain.dsp.spectral.SpectralAssessment
 import moe.rukamori.archivetune.shared.domain.dsp.spectral.SpectralAuthenticityAnalyzer
 import moe.rukamori.archivetune.shared.domain.dsp.spectral.SpectralVerdict
@@ -69,15 +73,67 @@ class DesktopSpectralAuthenticity internal constructor(
     }
 
     /**
+     * One bounded source-rate PCM window of [locator]'s source for the acoustic audit, through the same private
+     * probe the spectral check uses: it never touches a deck, the mixer or the playback executor. A source with
+     * no string form is refused, so the audit never reads ciphertext, leases or prepared views as plain audio.
+     */
+    suspend fun acousticWindow(
+        locator: PlaybackLocator,
+        startPositionMs: Long = 0L,
+        requestKey: String = "",
+        occurrenceKey: String = "",
+    ): AcousticWindow {
+        require(startPositionMs >= 0L) { "startPositionMs must not be negative, was $startPositionMs" }
+        val source = engineSourceOf(locator) ?: return AcousticWindow.Refused("no_safe_source")
+        val decoded = try {
+            decode(source, startPositionMs * MICROS_PER_MILLI,
+                AcousticAuditLimits.MAX_PCM_FRAMES, FloatArray(ACOUSTIC_WINDOW_SAMPLES))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: IllegalStateException) {
+            return AcousticWindow.Refused("input_unreadable")
+        } catch (_: IllegalArgumentException) {
+            return AcousticWindow.Refused("input_unreadable")
+        }
+        val window = decoded.window
+        if (window.frames <= 0 || window.channels !in 1..MAX_CHANNELS || window.pcmSampleRateHz <= 0) {
+            return AcousticWindow.Refused("insufficient_pcm")
+        }
+        val codec = window.codecName.ifEmpty { null }
+        return AcousticWindow.Decoded(
+            pcm = AcousticPcm(
+                samples = decoded.samples.copyOf(window.frames * window.channels),
+                sampleRate = window.pcmSampleRateHz,
+                channelCount = window.channels,
+                startUs = startPositionMs * MICROS_PER_MILLI,
+                frames = window.frames,
+                truncated = !window.endOfSource,
+            ),
+            sourceLabel = if (locator is PlaybackLocator.LocalFile) "LOCAL_FILE" else "REMOTE_STREAM",
+            advertisedSampleRate = window.advertisedSampleRateHz.takeIf { it > 0 },
+            claimedLossless = codec in ACOUSTIC_LOSSLESS_CODECS || codec in LOSSLESS_CODECS,
+            limitations = buildList {
+                if (codec == null) add("codec_unknown")
+            },
+            requestKey = requestKey,
+            occurrenceKey = occurrenceKey,
+        )
+    }
+
+    /**
      * Reads one window on an IO thread. A cancelled caller asks the native read to stop, then waits for it to return
      * before the probe is closed, because the native handle must not be freed while a read still uses it.
      */
-    private suspend fun decode(source: String, startUs: Long): DecodedWindow {
+    private suspend fun decode(
+        source: String,
+        startUs: Long,
+        maxFrames: Int = MAX_FRAMES,
+        samples: FloatArray = FloatArray(WINDOW_SAMPLES),
+    ): DecodedWindow {
         val probe = NativeSpectralProbe.create()
         try {
             return coroutineScope {
-                val samples = FloatArray(WINDOW_SAMPLES)
-                val reading = async(Dispatchers.IO) { probe.read(source, startUs, MAX_FRAMES, samples) }
+                val reading = async(Dispatchers.IO) { probe.read(source, startUs, maxFrames, samples) }
                 val window = try {
                     reading.await()
                 } catch (cancelled: CancellationException) {
@@ -136,6 +192,9 @@ class DesktopSpectralAuthenticity internal constructor(
         const val STEREO = 2
         const val MAX_CHANNELS = 8
         const val MAX_FRAMES = SpectralAuthenticityAnalyzer.MAX_ANALYSIS_FRAMES
+
+        /** Interleaved samples the audit window is bounded by: the shared PCM budget in samples. */
+        const val ACOUSTIC_WINDOW_SAMPLES = AcousticAuditLimits.MAX_PCM_BYTES / Float.SIZE_BYTES
 
         /**
          * Sized for stereo, the common case. A wider source gets fewer frames from the same buffer, but never fewer

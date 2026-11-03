@@ -9,7 +9,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.ln
 import kotlin.math.round
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +30,7 @@ import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStageRequest
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.normalization.NormalizationGain
-import moe.rukamori.archivetune.shared.domain.dsp.spectral.SpectralVerdict
+import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.playback.MonotonicClock
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
@@ -104,11 +103,17 @@ class DesktopPlaybackPort(
     /** Confined to [executor]. The shared handoff rules, kept in step with the mixer's committed state. */
     private val scheduler = TwoDeckTransitionScheduler(TransitionDeck.FIRST)
 
-    /** Confined to [executor]. Null until the first load opens the output device. */
+    /** Confined to [executor]. Null until the first load opens the device, and while a pause parks it. */
     private var mixer: NativeTwoDeckMixer? = null
 
     /** Confined to [executor]. The last mixer commit this port has adopted. */
     private var committedSequence = 0L
+
+    /** Confined to [executor]. The paused occurrence parked by [releaseOutput]; its deck is gone. */
+    private var suspendedSession: DeckSession? = null
+
+    /** Confined to [executor]. The microsecond position [suspendedSession] reopens at. */
+    private var suspendedPositionUs = 0L
 
     /** Confined to [executor]. The software stages the user asked for, before the bit-perfect gate narrows them. */
     private var stages = StageConfig()
@@ -121,6 +126,9 @@ class DesktopPlaybackPort(
 
     /** The published [outputEnabled], so a mute-transition policy outside the executor can follow it. */
     private val outputEnabledFlow = MutableStateFlow(true)
+
+    /** The published suspended flag, so a lifecycle owner or a test can follow the parked output. */
+    private val outputSuspendedFlow = MutableStateFlow(false)
 
     /**
      * Confined to [executor]. One watchdog per deck: a deck that expects progress but renders none is
@@ -142,8 +150,8 @@ class DesktopPlaybackPort(
      * The spectral check owns its own IO and default dispatchers and never waits on [executor], so it is driven
      * from the caller's coroutine. Only conclusive results are cached, and only under the source they measured.
      */
-    private val spectral = DesktopSpectralAuthenticity()
-    private val spectralCache = SourceBoundSpectralCache(SPECTRAL_CACHE_CAPACITY)
+    internal val spectral = DesktopSpectralAuthenticity()
+    internal val spectralCache = SourceBoundSpectralCache(SPECTRAL_CACHE_CAPACITY)
 
     /**
      * The signed-in Telegram session's TDLib calls and accepted-account store, read on the playback thread when a Telegram
@@ -160,6 +168,9 @@ class DesktopPlaybackPort(
      * executor for the session's mute-transition policy, which reads it next to the stored volume.
      */
     val audioOutputEnabled: StateFlow<Boolean> = outputEnabledFlow.asStateFlow()
+
+    /** True while [releaseOutput] has parked the device; the next play or seek reopens it at the held position. */
+    val outputSuspended: StateFlow<Boolean> = outputSuspendedFlow.asStateFlow()
 
     private val activePollIntervalMs = pollIntervalMs
     private val idlePollIntervalMs = maxOf(pollIntervalMs, IDLE_POLL_INTERVAL_MS)
@@ -205,6 +216,18 @@ class DesktopPlaybackPort(
             outputEnabledFlow.value = enabled
             applyStages()
         }
+    }
+
+    /**
+     * Releases the output device while a paused, seekable occurrence holds it — the desktop's
+     * STOPPED_ON_BACKGROUND: a session parked long enough or sent off-screen no longer holds the
+     * sound card, its callback thread or its decode buffers, yet keeps its place so the next
+     * [PlaybackCommand.Play] or [PlaybackCommand.SeekTo] reopens it where it stopped. Playing,
+     * buffering, ended and unloaded states never park, so a transition or a live stream is never
+     * interrupted; a parked locator that cannot reopen fails once on resume, like an output stall.
+     */
+    fun releaseOutput() {
+        submitTask { suspendOutput(clock.nowNanos()) }
     }
 
     /**
@@ -279,23 +302,11 @@ class DesktopPlaybackPort(
     }
 
     /**
-     * Opt-in spectral evidence for the source at [locator], measured from that source's own decoded PCM at
-     * [startPositionMs]. It never analyses engine output, which is resampled to the device rate, and it never
-     * touches a deck, the mixer or the playback executor, so it cannot change the audible output or the bit-perfect
-     * state.
-     *
-     * A conclusive verdict is cached under the engine source and start position, so it applies only to that exact
-     * source. An inconclusive one is not cached, so a later request retries it. Cancelling the caller stops the
-     * native read, and a cancelled check caches nothing.
+     * The active deck's loaded request on the playback thread, which the spectral entry points in
+     * [DesktopSpectralAudit] bind their audit target to. A deck that is not loaded has none.
      */
-    suspend fun assessSpectrum(locator: PlaybackLocator, startPositionMs: Long = 0L): DesktopSpectralEvidence {
-        val source = engineSourceOf(locator) ?: return spectral.assess(locator, startPositionMs)
-        val key = SpectralCacheKey(source, startPositionMs)
-        spectralCache.get(key)?.let { return it }
-        val evidence = spectral.assess(locator, startPositionMs)
-        if (evidence.assessment.verdict != SpectralVerdict.UNKNOWN) spectralCache.put(key, evidence)
-        return evidence
-    }
+    internal fun loadedRequest(): PlaybackRequest? =
+        runOnPlaybackThread(fallback = null) { sessions[activeIndex()]?.request }
 
     /**
      * Binds the Telegram session the host has signed in, or unbinds it with null. The binding carries the account store and
@@ -380,13 +391,22 @@ class DesktopPlaybackPort(
     private fun applyCommand(command: PlaybackCommand) {
         syncHandoff()
         when (command) {
-            is PlaybackCommand.Load -> load(command)
-            PlaybackCommand.Play -> activeEngine()?.play()
+            is PlaybackCommand.Load -> {
+                // A new occurrence replaces the parked one too; its deck died with the parked mixer.
+                suspendedSession = null
+                outputSuspendedFlow.value = false
+                load(command)
+            }
+            PlaybackCommand.Play -> {
+                resumeOutput()
+                activeEngine()?.play()
+            }
             PlaybackCommand.Pause -> {
                 settleArmed()
                 activeEngine()?.pause()
             }
             is PlaybackCommand.SeekTo -> {
+                resumeOutput()
                 settleArmed()
                 activeEngine()?.seek(command.positionMs * MICROS_PER_MILLI)
             }
@@ -397,7 +417,7 @@ class DesktopPlaybackPort(
             is PlaybackCommand.SetPitch -> {
                 stages = stages.copy(
                     request = stages.request.copy(
-                        pitchSemitones = 12.0 * ln(command.pitch.toDouble()) / ln(2.0)
+                        pitchSemitones = PitchConversion.multiplierToSemitones(command.pitch.toDouble())
                     )
                 )
                 applyStages()
@@ -405,6 +425,8 @@ class DesktopPlaybackPort(
             PlaybackCommand.Stop -> {
                 // The shared scheduler promotes the incoming deck on stop, so the stopped occurrence is the one
                 // the listener now hears, not the fade's outgoing deck.
+                suspendedSession = null
+                outputSuspendedFlow.value = false
                 settleArmed()
                 stopSession()
             }
@@ -584,7 +606,13 @@ class DesktopPlaybackPort(
         try {
             NativeTwoDeckMixer.create(backend).also {
                 mixer = it
-                committedSequence = it.snapshot().commitSequence
+                // A fresh mixer always starts on its own first deck, which a parked scheduler may not
+                // still name: adopt the mixer's deck like [resumeOutput] so [activeIndex] is its deck.
+                val timing = it.snapshot()
+                committedSequence = timing.commitSequence
+                scheduler.adoptActive(
+                    TransitionDeck.entries.getOrElse(timing.activeDeck) { TransitionDeck.FIRST },
+                )
             }
         } catch (error: IllegalStateException) {
             fail(request, PlaybackFailureReason.OUTPUT_FAILED, error.message ?: "the audio output did not start")
@@ -782,6 +810,77 @@ class DesktopPlaybackPort(
     }
 
     /**
+     * Parks the output device: stops the mixer and keeps the paused occurrence's session and
+     * position so [resumeOutput] can reopen it. Only a paused, seekable, still-loaded occurrence
+     * parks; a non-seekable live stream keeps the device because its parked position could not be
+     * honoured on reopen. The published snapshot stays the paused occurrence: this frees hardware.
+     */
+    private fun suspendOutput(nowNanos: Long) {
+        if (suspendedSession != null) return
+        val mix = mixer ?: return
+        val index = activeIndex()
+        val session = sessions[index] ?: return
+        val state = mix.deck(index).snapshot()
+        if (!state.hasSource || state.playWhenReady || state.isBuffering || state.isEnded || !state.isSeekable) return
+        // A prepared plaintext handle is single-use: the original load already spent it, so parking it
+        // would strand the resume on a source it cannot reopen. It keeps the device instead.
+        if (session.request.locator is PlaybackLocator.PreparedPlaintext) return
+        // A transition never outlives the device that carries it; the queue arms a fresh one on resume.
+        cancelArmed(mix)
+        suspendedSession = session
+        suspendedPositionUs = state.positionUs.coerceAtLeast(0L)
+        sessions[index] = null
+        failureMappers[index].stopped(nowNanos)
+        stallWatchdogs[index].reset()
+        lastTimelineFrames = NO_TIMELINE
+        mix.close()
+        mixer = null
+        outputSuspendedFlow.value = true
+    }
+
+    /**
+     * Reopens the device for a parked occurrence, reloaded paused at its parked position; the
+     * waking command applies right after. A device that cannot open reports once and stays parked
+     * for the next attempt; a locator that cannot reopen fails like a failed load.
+     */
+    private fun resumeOutput() {
+        val session = suspendedSession ?: return
+        val positionUs = suspendedPositionUs
+        val fresh = try {
+            NativeTwoDeckMixer.create(backend)
+        } catch (error: IllegalStateException) {
+            fail(session.request, PlaybackFailureReason.OUTPUT_FAILED, error.message ?: "the audio output did not start")
+            return
+        }
+        suspendedSession = null
+        outputSuspendedFlow.value = false
+        mixer = fresh
+        val timing = fresh.snapshot()
+        committedSequence = timing.commitSequence
+        scheduler.adoptActive(TransitionDeck.entries.getOrElse(timing.activeDeck) { TransitionDeck.FIRST })
+        val index = activeIndex()
+        val source = engineSourceOpen(session.request.locator, telegramFiles)
+        if (source == null) {
+            stopSession()
+            val (reason, message) = refusalOf(session.request.locator)
+            fail(session.request, reason, message)
+            return
+        }
+        val generation = fresh.deck(index).load(source, positionUs, playWhenReady = false)
+        if (generation == REJECTED_LOAD) {
+            stopSession()
+            fail(session.request, PlaybackFailureReason.OPEN_FAILED, "the engine rejected the source")
+            return
+        }
+        sessions[index] = session.copy(generation = generation)
+        failureMappers[index].beginRequest(session.request, generation)
+        mapper.beginRequest(session.request, generation)
+        rebuiltForLoadGeneration = NO_LOAD
+        stallWatchdogs[index].reset()
+        applyStages()
+    }
+
+    /**
      * Reopens the output device and resumes the stalled occurrence where it froze. The device is
      * the only thing rebuilt: the scheduler, the session bookkeeping and the occurrence all stay,
      * so a dead or replaced output device is recovered rather than "playing" into silence forever,
@@ -893,43 +992,3 @@ class DesktopPlaybackPort(
     }
 }
 
-/**
- * The occurrence a deck plays. [trackGainDb] and [trackPeak] describe it for normalization, and are null
- * when the caller has not supplied them, which leaves the track at unity gain.
- */
-private data class DeckSession(
-    val request: PlaybackRequest,
-    val generation: Long,
-    val trackGainDb: Double? = null,
-    val trackPeak: Double? = null,
-)
-
-/**
- * Plain playback runs no software stage. The route is unverified, so bit-perfect is never claimed for it.
- * The native output reports no route facts, so the sample rate here is only a placeholder that yields no
- * resampler stage; the engine resamples every source to its output rate inside its own graph.
- */
-private data class StageConfig(
-    val request: SoftwareStageRequest = PLAIN_REQUEST,
-    val bands: List<EqualizerBand> = emptyList(),
-    val routeFacts: BitPerfectRouteFacts = UNVERIFIED_ROUTE,
-)
-
-private val PLAIN_REQUEST = SoftwareStageRequest(
-    normalizationEnabled = false,
-    equalizerEnabled = false,
-    speed = 1.0,
-    pitchSemitones = 0.0,
-    silenceSkippingEnabled = false,
-    twoDeckMixingEnabled = true,
-)
-
-private val UNVERIFIED_ROUTE = BitPerfectRouteFacts(
-    bitPerfectRequested = false,
-    softwareDspEngaged = false,
-    usbExclusive = false,
-    directPlaybackQueried = false,
-    directPlaybackSupported = false,
-    inputSampleRateHz = 48_000,
-    inputBitDepth = 32,
-)

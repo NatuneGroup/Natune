@@ -73,6 +73,7 @@ import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
@@ -165,7 +166,7 @@ internal class IosSessionGraph private constructor(
     /** The Discord owner: PKCE sheet sign-in and playback-driven presence, closed with the graph. */
     val discord: IosDiscordPresence,
     private val owner: PortableQueueOwner,
-    private val playbackPort: IosPlaybackPort,
+    internal val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
     private val progressDriver: PodcastProgressDriver,
@@ -185,6 +186,23 @@ internal class IosSessionGraph private constructor(
 
     /** The one sleep timer of this process. It only pauses [player], so every surface shares it. */
     val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause, ::iosNowMillis)
+
+    /** The one equalizer owner of this process: the same shared keys and band layout the desktop owner drives. */
+    internal val equalizer = IosEqualizer(scope, settings, playbackPort)
+
+    /**
+     * The one acoustic audit owner of this process: it decodes a bounded PCM window of the current
+     * occurrence's own source through the portable probe, exactly like the desktop host. A target that
+     * is not the loaded request is refused instead of auditing the wrong song. The request binding,
+     * key watcher and menu entry point are the extensions in IosSessionGraphAcoustic.kt.
+     */
+    internal val acoustic = AcousticAuditOwner(scope) { target, checkActive ->
+        acousticWindow(target, checkActive)
+    }
+
+    init {
+        watchAcousticBinding()
+    }
 
     /**
      * The "pause on device mute" policy: it watches the system output volume and the app-level output

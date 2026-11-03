@@ -43,9 +43,10 @@ kotlin {
             // androidx coordinates pull androidx.compose.ui:ui:1.6.0, whose stale Application_desktopKt shadows the
             // real entry point on the runtime classpath.
             implementation(compose.materialIconsExtended)
-            // Pinned here for the isolated native lane; centralize in the catalog at integration.
-            implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
-            implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
+            // Pure-JVM D-Bus client behind the Linux MPRIS and StatusNotifierItem exports; MIT-licensed,
+            // notice in desktopApp/packaging/notices. The native-unixsocket transport needs no JNI.
+            implementation(libs.dbus.java.core)
+            implementation(libs.dbus.java.transport.native.unixsocket)
             implementation("net.java.dev.jna:jna:5.17.0")
             // The TDLight binding behind the Telegram file adapter. Integration registers this project in the root
             // settings; its native library and notices are staged by stageDesktopNativeResources.

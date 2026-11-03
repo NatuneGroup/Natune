@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceEditor
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaybackPitchKey
@@ -79,11 +80,11 @@ internal class IosTempoPitchSheetState {
 
 /**
  * The iOS owner of the shared tempo/pitch dialog's commands. The five commands the dialog uses are real:
- * tempo reaches the engine through the one player while pitch — which the engine cannot express — is
- * remembered and persisted rather than submitted to a port that must reject it; presets and the
- * remembered flag persist exactly like the desktop owner. The three sleep commands delegate to the
- * session's timer so a preset row never loses them, and every command a dialog this owner renders
- * cannot reach is reported as unconnected, never shown as done.
+ * tempo and pitch reach the engine through the one player — the port shifts pitch through the output
+ * graph's time-pitch unit while the engine keeps owning tempo; presets and the remembered flag persist
+ * exactly like the desktop owner. The three sleep commands delegate to the session's timer so a preset
+ * row never loses them, and every command a dialog this owner renders cannot reach is reported as
+ * unconnected, never shown as done.
  */
 internal class IosTempoPitchActions(private val graph: IosSessionGraph) : PlayerQueueMenuActions {
     // The applied tempo and pitch of this session, as the baseline's live playback parameters. The
@@ -91,14 +92,14 @@ internal class IosTempoPitchActions(private val graph: IosSessionGraph) : Player
     private val appliedSpeed = MutableStateFlow(storedValue(PlaybackSpeedKey))
     private val appliedPitch = MutableStateFlow(storedValue(PlaybackPitchKey))
     val playbackPitch: StateFlow<Float> = appliedPitch.asStateFlow()
-    private var pitchNoticeShown = false
 
     init {
         // With "Remember" on, the stored tempo restores at startup through the one player, as the
-        // Android session restores it; the port holds the value until an output exists. Pitch stays
-        // stored only, because this engine cannot express it.
+        // Android session restores it; the port holds the value until an output exists. Pitch restores
+        // through the same player call, which the port holds until its first output too.
         if (graph.settings.snapshots.value?.get(TempoPitchRememberedKey) == true) {
             graph.player.setPlaybackSpeed(appliedSpeed.value)
+            graph.player.setPlaybackPitch(appliedPitch.value)
         }
     }
 
@@ -112,18 +113,9 @@ internal class IosTempoPitchActions(private val graph: IosSessionGraph) : Player
 
     override fun applyPlaybackParameters(speed: Float, pitch: Float) {
         graph.player.setPlaybackSpeed(speed)
+        graph.player.setPlaybackPitch(pitch)
         appliedSpeed.value = speed
         appliedPitch.value = pitch
-        // The iOS engine exposes tempo only: a non-unity pitch is stored and reported once per
-        // departure from unity, not sent to a port that answers it with a user-visible failure.
-        if (pitch != 1f) {
-            if (!pitchNoticeShown) {
-                pitchNoticeShown = true
-                graph.report("pitch shift is not supported by this audio engine")
-            }
-        } else {
-            pitchNoticeShown = false
-        }
         if (graph.settings.snapshots.value?.get(TempoPitchRememberedKey) == true) {
             persistTempoPitch {
                 set(PlaybackSpeedKey, speed)
@@ -199,8 +191,10 @@ internal class IosTempoPitchActions(private val graph: IosSessionGraph) : Player
     override fun addToQueue(track: PlayerQueueTrack) = unconnected("addToQueue")
     override fun setAodMode() = unconnected("setAodMode")
     override fun copyLinkAtCurrentPosition(url: String) = unconnected("copyLinkAtCurrentPosition")
-    override fun openEqualizer() = unconnected("openEqualizer")
-    override fun openAcousticQuality(track: PlayerQueueTrack) = unconnected("openAcousticQuality")
+    override fun openEqualizer() = graph.equalizer.openSheet()
+    override fun openAcousticQuality(track: PlayerQueueTrack) = graph.openAcousticAudit(
+        AcousticAuditTarget(track.mediaId, track.title, track.artists.joinToString { it.name }),
+    )
     override fun cast(track: PlayerQueueTrack) = unconnected("cast")
     override fun refreshSongSources(track: PlayerQueueTrack) = unconnected("refreshSongSources")
     override suspend fun searchSongSources(

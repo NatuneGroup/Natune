@@ -1,4 +1,4 @@
 language = C
-headers = ATNativeAudio.h
-headerFilter = ATNativeAudio.h archivetune_engine.h
+headers = ATNativeAudio.h archivetune_probe.h
+headerFilter = ATNativeAudio.h archivetune_engine.h archivetune_probe.h
 package = moe.rukamori.archivetune.nativeaudio

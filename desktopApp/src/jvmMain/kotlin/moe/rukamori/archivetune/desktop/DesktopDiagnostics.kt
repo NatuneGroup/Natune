@@ -1,6 +1,13 @@
 package moe.rukamori.archivetune.desktop
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import java.awt.EventQueue
 import java.awt.FileDialog
 import java.awt.Frame
@@ -16,7 +23,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.coroutines.resume
-import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +33,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
+import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityPanel
 import moe.rukamori.archivetune.shared.data.diagnostics.JvmDiagnosticLogFiles
 import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
 import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogKind
@@ -37,14 +45,9 @@ import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLogStore
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticRecord
 import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
 import moe.rukamori.archivetune.shared.domain.mediainfo.MediaCodec
-import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
-import moe.rukamori.archivetune.shared.ui.settings.AcousticMeasurement
-import moe.rukamori.archivetune.shared.ui.settings.AcousticRunFields
-import moe.rukamori.archivetune.shared.ui.settings.AcousticTarget
-import moe.rukamori.archivetune.shared.ui.settings.HostAcousticQualitySection
 import moe.rukamori.archivetune.shared.ui.settings.HostDiscordDebugSection
 import moe.rukamori.archivetune.shared.ui.settings.HostNerdStatsSection
 import moe.rukamori.archivetune.shared.ui.settings.NerdStatsFormat
@@ -347,10 +350,10 @@ internal fun DesktopDiagnosticLogPage(settings: SettingsStore, navigation: Shell
 }
 
 /**
- * Settings > Developer. The Discord card reads the presence owner's live debug state, nerd stats poll the
- * player snapshot plus the stored-file facts the media-info owner has for the current track, and the acoustic
- * check runs the spectral probe only on Run and only on audio stored on this device; fields this host cannot
- * supply report themselves unavailable rather than hiding the panels.
+ * Settings > Developer. The acoustic audit mounts the shared panel over the queue's current song, through
+ * the graph's audit owner. The Discord card reads the presence owner's live debug state, and nerd stats
+ * poll the player snapshot plus the stored-file facts the media-info owner has for the current track;
+ * fields this host cannot supply report themselves unavailable rather than hiding the panels.
  */
 @Composable
 internal fun DesktopDeveloperSettingsPage(
@@ -365,15 +368,7 @@ internal fun DesktopDeveloperSettingsPage(
         controller = controller,
         navigate = navigate,
         playerAvailable = true,
-        acousticQualitySection = { active ->
-            HostAcousticQualitySection(
-                active = active,
-                player = graph.player,
-                queue = graph.queue.state,
-                resolved = graph.loadedRequest,
-                measure = { target -> desktopAcousticMeasurement(graph, target) },
-            )
-        },
+        acousticQualitySection = { active -> DesktopAcousticQualitySection(graph, active) },
         discordDebugSection = { HostDiscordDebugSection(discord.debug, ::formatDiagnosticTime) },
         nerdStatsSection = {
             HostNerdStatsSection(
@@ -410,30 +405,6 @@ private suspend fun desktopStoredAudioFile(
 }
 
 /**
- * One bounded spectral check over the target's own stored file, reusing the playback port's source-bound
- * probe and cache. Everything without a stored file reports [AcousticMeasurement.Unmeasurable].
- */
-private suspend fun desktopAcousticMeasurement(
-    graph: DesktopSessionGraph,
-    target: AcousticTarget,
-): AcousticMeasurement {
-    val file = desktopStoredAudioFile(graph, target.provider, target.mediaId)
-        ?: return AcousticMeasurement.Unmeasurable
-    val evidence = graph.assessSpectrum(PlaybackLocator.LocalFile(file.absolutePath))
-    return AcousticMeasurement.Measured(
-        AcousticRunFields(
-            verdict = evidence.assessment.verdict,
-            confidencePercent = (evidence.assessment.confidence * 100.0).roundToInt(),
-            cutoffHz = evidence.assessment.cutoffFrequencyHz,
-            pcmSampleRateHz = evidence.pcmSampleRateHz,
-            channelCount = evidence.channelCount,
-            codecName = evidence.codecName,
-            claimedLossless = evidence.claimedLossless,
-        )
-    )
-}
-
-/**
  * Stored-file format facts for the nerd card: the header's own codec/rate plus the real byte count.
  * A header that states nothing leaves those fields null — unavailable, not estimated from a quality tier.
  */
@@ -445,5 +416,49 @@ private suspend fun desktopNerdFormat(graph: DesktopSessionGraph, ref: ContentRe
         bitrateKbps = technical?.bitrateBitsPerSecond?.let { (it / 1_000L).toInt() },
         sampleRateHz = technical?.sampleRate,
         contentLengthBytes = file.length(),
+    )
+}
+
+/**
+ * The developer-page acoustic section: the shared audit panel of the queue's current song, or the
+ * unavailable note while nothing is loaded. Leaving or hiding the section cancels a run in flight.
+ */
+@Composable
+private fun DesktopAcousticQualitySection(graph: DesktopSessionGraph, active: Boolean) {
+    val queueState by graph.queue.state.collectAsState()
+    val current = queueState.currentOccurrenceId
+        ?.let { id -> queueState.entries.firstOrNull { it.occurrenceId == id }?.item }
+    DisposableEffect(graph.acoustic, active) {
+        graph.acoustic.setActive(active)
+        onDispose { graph.acoustic.setActive(false) }
+    }
+    if (current == null) {
+        DesktopUnavailablePanel()
+        return
+    }
+    // The snapshot collection keeps the audit key recomputing as the loaded request moves, so a
+    // source fallback inside the same occurrence retires the older attempt's binding.
+    val playbackSnapshot by graph.player.snapshot.collectAsState()
+    val requestKey = playbackSnapshot?.let { graph.acousticRequestKey() }.orEmpty()
+    AcousticQualityPanel(
+        target = AcousticAuditTarget(
+            current.ref.id,
+            current.title,
+            current.artists.joinToString { it.name },
+            requestKey = requestKey,
+        ),
+        owner = graph.acoustic,
+        active = active,
+        modifier = Modifier.padding(horizontal = 16.dp),
+    )
+}
+
+@Composable
+private fun DesktopUnavailablePanel() {
+    Text(
+        DesktopStrings["settings_feature_unavailable"],
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
     )
 }
