@@ -373,6 +373,7 @@ fun AutoPlaylistScreen(
                                     ListQueue(
                                         title = playlist,
                                         items = songs.shuffled().map { it.toMediaItem() },
+                                        finite = true,
                                     ),
                                 )
                             },
@@ -381,6 +382,7 @@ fun AutoPlaylistScreen(
                                     ListQueue(
                                         title = playlist,
                                         items = songs.map { it.toMediaItem() },
+                                        finite = true,
                                     ),
                                 )
                             },
@@ -523,6 +525,7 @@ fun AutoPlaylistScreen(
                                                         title = playlist,
                                                         items = visibleSongs.map { it.toMediaItem() },
                                                         startIndex = index,
+                                                        finite = true,
                                                     ),
                                                 )
                                             }

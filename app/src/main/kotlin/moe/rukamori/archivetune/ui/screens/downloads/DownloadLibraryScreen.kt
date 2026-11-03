@@ -131,6 +131,7 @@ fun DownloadLibraryScreen(
                             title = event.metadata.title,
                             items = event.queue.map { metadata -> metadata.toMediaItem() },
                             startIndex = event.startIndex,
+                            finite = true,
                         ),
                     )
                 }

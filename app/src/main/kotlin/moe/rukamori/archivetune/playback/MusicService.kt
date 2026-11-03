@@ -7565,7 +7565,7 @@ class MusicService :
     }
 
     private fun Queue.shouldBootstrapInfiniteQueue(): Boolean =
-        if (this is YouTubePlaylistQueue) confirmedExhausted else preloadItem != null || !hasNextPage()
+        if (this is ListQueue && finite) false else if (this is YouTubePlaylistQueue) confirmedExhausted else preloadItem != null || !hasNextPage()
 
     private fun Queue.infiniteQueueSeedMediaId(): String? =
         if (this is YouTubePlaylistQueue) null else preloadItem?.id?.trim()?.takeIf { it.isNotBlank() }
