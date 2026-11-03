@@ -85,8 +85,8 @@ those features or benchmark gains are enabled in this direct-audio fallback.
 The desktop host walks the same tier order through the shared `OrderedAudioResolver` and
 `YouTubeFailsafePolicy`: its own client walk (`DesktopYouTubeResolver.primary`), then
 `DesktopInnerTubeXTier`, then `DesktopNewPipeTier`, each bounded by the shared tier timeout and
-each writing one host diagnostic line with its outcome. Echo is Android-only, so the desktop
-Echo tier answers null.
+each writing one host diagnostic line with its outcome. Echo runs on Android and iOS only, so
+the desktop Echo tier answers null.
 
 - The desktop InnerTubeX tier uses `innertubexDesktopVersion`, today the same `v0.11.2`
   release as the Android pin — the version key stays separate only so a host can diverge again
