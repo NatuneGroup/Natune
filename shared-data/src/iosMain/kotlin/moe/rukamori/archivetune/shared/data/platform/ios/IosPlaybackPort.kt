@@ -390,7 +390,7 @@ class IosPlaybackPort : PlaybackPort {
             queuedViews.clear()
             supersede()
             stop()
-            output?.let { at_audio_destroy(it) }
+            output?.let { at_audio_destroy(it); IosStreamLease.retireOutput(it.toLong()) }
             output = null
             scope.cancel()
         }
@@ -525,7 +525,7 @@ class IosPlaybackPort : PlaybackPort {
             // An accepted lease is closed by the engine itself, and closing again is harmless. This also covers a refusal
             // that never reached the engine, so the transport is never left open.
             transport.close()
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(PlaybackFailureReason.OPEN_FAILED, openFailureMessage(isNetworkOpen = true))
             return
         }
         liveTransport = transport
@@ -555,7 +555,7 @@ class IosPlaybackPort : PlaybackPort {
         )
         if (generation == 0uL) {
             // The engine refused the lease before any connection was opened, so there is nothing to release here.
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(PlaybackFailureReason.OPEN_FAILED, openFailureMessage(isNetworkOpen = true))
             return
         }
         mapper.beginRequest(playable, generation.toLong())
@@ -606,14 +606,25 @@ class IosPlaybackPort : PlaybackPort {
             locator is PlaybackLocator.DeezerEncrypted -> IosStreamLease.loadDeezer(native, locator, startUs, play)
             // A lease-bound HLS playlist: the engine's lease refuses child fetches, so the host expands the segments.
             locator is PlaybackLocator.Remote && isHlsPlaylistUrl(locator.url) &&
-                (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null) ->
+                (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null ||
+                    IosStreamProxyRouting.mustProxy()) ->
                 loadSegmentedHls(native, locator, startUs, play)
-            locator is PlaybackLocator.Remote && (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null) ->
+            // Header- and expiry-free remotes keep the engine's own opener only while no proxy route or
+            // rotation applies: a live stream route means the lease transport, so playlist expansions and
+            // progressive streams alike leave through the proxy the settings chose — and a rotation with no
+            // member fails the open here rather than leaking it direct.
+            locator is PlaybackLocator.Remote && (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null ||
+                IosStreamProxyRouting.mustProxy()) ->
                 IosStreamLease.loadRemote(native, locator, startUs, play)
             else -> at_audio_load(native, source, startUs, play)
         }
         if (generation == 0uL) {
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(
+                PlaybackFailureReason.OPEN_FAILED,
+                openFailureMessage(
+                    locator is PlaybackLocator.Remote || locator is PlaybackLocator.DeezerEncrypted,
+                ),
+            )
             return
         }
         mapper.beginRequest(command.request, generation.toLong())
@@ -765,7 +776,7 @@ class IosPlaybackPort : PlaybackPort {
     /** The one engine output: created on first use, and recreated only after the engine reported an output fault. */
     private fun outputForLoad(): CPointer<at_audio_output>? {
         if (reopenOutput) {
-            output?.let { at_audio_destroy(it) }
+            output?.let { at_audio_destroy(it); IosStreamLease.retireOutput(it.toLong()) }
             output = null
             reopenOutput = false
         }
@@ -817,6 +828,7 @@ class IosPlaybackPort : PlaybackPort {
                 // Both nodes are already switched before the old decoder/transport can be released.
                 at_audio_stop(native)
                 at_audio_destroy(native)
+                IosStreamLease.retireOutput(native.toLong())
                 liveTransport?.close()
                 output = incoming.output
                 request = incoming.request
@@ -833,7 +845,10 @@ class IosPlaybackPort : PlaybackPort {
             }
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
             mapper.observe(read.state, now, outputLatencyMillis(engine.outputLatencySeconds()))?.let { state.value = it }
-            mapper.failure(read.state) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
+            mapper.failure(read.state) {
+                IosStreamLease.refusalOf(engine.currentOutput.toLong(), read.state.loadGeneration)
+                    ?: "iOS native playback failed"
+            }?.let { errors.tryEmit(it) }
             watchStall(read.state, now)
             return read.state.hasSource &&
                 (read.state.isBuffering || (read.state.playWhenReady && !read.state.isEnded))
@@ -851,7 +866,10 @@ class IosPlaybackPort : PlaybackPort {
                 now,
                 outputLatencyMs = outputLatencyMillis(at_audio_output_latency(native)),
             )?.let { state.value = it }
-            mapper.failure(observation) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
+            mapper.failure(observation) {
+                IosStreamLease.refusalOf(native.toLong(), observation.loadGeneration)
+                    ?: "iOS native playback failed"
+            }?.let { errors.tryEmit(it) }
             watchStall(observation, now)
             observation.hasSource &&
                 (observation.isBuffering || (observation.playWhenReady && !observation.isEnded))
@@ -927,9 +945,22 @@ class IosPlaybackPort : PlaybackPort {
         blend?.cancelNext()
     }
 
-    private fun fail(reason: PlaybackFailureReason) {
-        request?.let { errors.tryEmit(PlaybackFailure(it.occurrenceId, reason, "iOS playback rejected", attemptId = it.attemptId)) }
+    private fun fail(reason: PlaybackFailureReason, message: String? = null) {
+        request?.let {
+            errors.tryEmit(
+                PlaybackFailure(it.occurrenceId, reason, message ?: "iOS playback rejected", attemptId = it.attemptId),
+            )
+        }
     }
+
+    /**
+     * The wording of a refused lease open: a starved rotation refused the transport inside it, so the
+     * sanitized status replaces the engine's generic rejection — it names no proxy address and maps to
+     * the dialog's unblocking guidance. A local path never reaches the routing layer, so [isNetworkOpen]
+     * keeps it on the ordinary wording.
+     */
+    private fun openFailureMessage(isNetworkOpen: Boolean): String? =
+        if (isNetworkOpen && IosStreamProxyRouting.streamBlocked()) STREAM_BLOCKED_MESSAGE else null
 
     private fun micros(ms: Long): ULong = ms.coerceAtMost(Long.MAX_VALUE / 1_000).toULong() * 1_000uL
 

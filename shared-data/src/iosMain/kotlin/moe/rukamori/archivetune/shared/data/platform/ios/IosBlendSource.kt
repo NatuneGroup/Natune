@@ -7,6 +7,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.toLong
 import moe.rukamori.archivetune.nativeaudio.*
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceAccount
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceLease
@@ -32,6 +33,7 @@ internal class IosBlendSource(
     fun release() {
         at_audio_stop(output)
         at_audio_destroy(output)
+        IosStreamLease.retireOutput(output.toLong())
         transport?.close()
     }
 
@@ -85,13 +87,18 @@ internal class IosBlendSource(
                                 // A lease-bound playlist cannot expand through the engine's empty whitelist,
                                 // so the host reads its segments itself, under the same lease policy as Load.
                                 isHlsPlaylistUrl(locator.url) &&
-                                    (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null) -> {
+                                    (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null ||
+                                        IosStreamProxyRouting.mustProxy()) -> {
                                     val segmented = segmentedPlaintext(locator) ?: return null
                                     transport = segmented.first
                                     IosStreamLease.loadPlaintext(
                                         native, IosPlaintextSource(segmented.first, segmented.second), 0uL, 0)
                                 }
-                                locator.headers.isEmpty() -> at_audio_load(native, locator.url, 0uL, 0)
+                                // The engine's own opener keeps only the streams no route claims: a live
+                                // proxy route or rotation sends the blend through the lease transport too,
+                                // and a blocked rotation fails the open rather than leaking it direct.
+                                locator.headers.isEmpty() && locator.expiresAtEpochMs == null &&
+                                    !IosStreamProxyRouting.mustProxy() -> at_audio_load(native, locator.url, 0uL, 0)
                                 else -> IosStreamLease.loadRemote(native, locator, 0uL, 0)
                             }
                         }
@@ -112,6 +119,7 @@ internal class IosBlendSource(
             } finally {
                 if (!accepted) {
                     at_audio_destroy(native)
+                    IosStreamLease.retireOutput(native.toLong())
                     transport?.close()
                     telegramSource?.close()
                 }
