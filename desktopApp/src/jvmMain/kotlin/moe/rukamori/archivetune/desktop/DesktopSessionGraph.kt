@@ -49,6 +49,7 @@ import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueContr
 import moe.rukamori.archivetune.desktop.playback.acousticWindow
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
@@ -250,6 +251,24 @@ class DesktopSessionGraph internal constructor(
      */
     internal val acoustic = AcousticAuditOwner(scope) { target, checkActive ->
         playback.acousticWindow(target, checkActive)
+    }
+
+    /**
+     * The loaded request's audit binding token: occurrenceId plus the load-attempt id, so a source
+     * fallback inside the same occurrence invalidates targets and results bound to the older attempt.
+     * Empty while nothing is loaded.
+     */
+    internal fun acousticRequestKey(): String =
+        playback.loadedRequest()
+            ?.let { "${it.occurrenceId}#${it.attemptId ?: -1L}" }
+            .orEmpty()
+
+    /**
+     * Opens the audit surface with [target] bound to the request loaded right now — menu callers cannot
+     * read the attempt themselves because the request only exists inside the port.
+     */
+    internal fun openAcousticAudit(target: AcousticAuditTarget) {
+        acoustic.openDialog(target.copy(requestKey = acousticRequestKey()))
     }
 
     /**

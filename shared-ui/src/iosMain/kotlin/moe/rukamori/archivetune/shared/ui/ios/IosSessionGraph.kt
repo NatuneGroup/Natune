@@ -75,6 +75,7 @@ import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueContr
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticWindow
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
@@ -198,7 +199,31 @@ internal class IosSessionGraph private constructor(
         when {
             request == null -> AcousticWindow.Refused("no_current_source")
             request.mediaId != target.mediaId -> AcousticWindow.Refused("current_source_unavailable")
-            else -> IosAcousticProbe.window(request.locator, requestKey = request.occurrenceId)
+            else -> IosAcousticProbe.window(
+                request.locator,
+                requestKey = "${request.occurrenceId}#${request.attemptId ?: -1L}",
+                occurrenceKey = request.occurrenceId,
+            )
+        }
+    }
+
+    /**
+     * The loaded request's audit binding token: occurrenceId plus the load-attempt id, so a source
+     * fallback inside the same occurrence invalidates targets and results bound to the older attempt.
+     * Empty while nothing is loaded.
+     */
+    internal suspend fun acousticRequestKey(): String =
+        playbackPort.currentRequest()
+            ?.let { "${it.occurrenceId}#${it.attemptId ?: -1L}" }
+            .orEmpty()
+
+    /**
+     * Opens the audit surface with [target] bound to the request loaded right now — menu callers cannot
+     * read the attempt themselves because the request only exists inside the port.
+     */
+    internal fun openAcousticAudit(target: AcousticAuditTarget) {
+        scope.launch {
+            acoustic.openDialog(target.copy(requestKey = acousticRequestKey()))
         }
     }
 

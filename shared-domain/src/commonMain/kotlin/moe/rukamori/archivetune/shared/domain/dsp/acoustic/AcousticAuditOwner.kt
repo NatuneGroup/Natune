@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,15 +26,22 @@ import kotlinx.coroutines.withTimeout
  * mid-decode track change cannot corrupt the result. [setActive] false and [closeDialog] both cancel a run
  * in flight, the same way leaving the settings page does on Android.
  *
- * All shared state moves under [lock]: the host scope is multi-threaded (Dispatchers.Default), so plain
- * reads and writes would race without it. The non-suspend entry points callers reach from Compose launch
- * onto [scope] and take the lock there, which preserves their call order; the liveness check a decode or
- * analyze step receives is bound to the launched job itself, which is thread-safe by construction.
+ * [start] and [cancel] only enqueue; ONE consumer coroutine drains [commands] in FIFO order, so a
+ * Run-then-dismiss sequence always executes as start-then-cancel, never the reverse — the host scope is
+ * multi-threaded (Dispatchers.Default), where independent launches can reorder. The [lock] guards only the
+ * state the run job and the consumer share; nothing acquires it while already holding it.
  */
 class AcousticAuditOwner(
     private val scope: CoroutineScope,
     private val decode: suspend (target: AcousticAuditTarget, checkActive: () -> Unit) -> AcousticWindow,
 ) {
+    /** The commands the consumer drains in call order. */
+    private sealed interface Command {
+        class Start(val target: AcousticAuditTarget) : Command
+        data object Cancel : Command
+    }
+
+    private val commands = Channel<Command>(Channel.UNLIMITED)
     private val lock = Mutex()
     private val mutableState = MutableStateFlow(AcousticAuditState())
 
@@ -46,6 +54,23 @@ class AcousticAuditOwner(
 
     private var generation = 0L
     private var job: Job? = null
+
+    init {
+        scope.launch {
+            for (command in commands) {
+                try {
+                    when (command) {
+                        is Command.Start -> startRun(command.target)
+                        Command.Cancel -> cancelRun()
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // A failed command never kills the queue; the next one still drains.
+                }
+            }
+        }
+    }
 
     /** Opens a host audit surface for [target]; the surface calls [start] itself when the user asks to run. */
     fun openDialog(target: AcousticAuditTarget) {
@@ -60,17 +85,39 @@ class AcousticAuditOwner(
 
     /** Starts one bounded run. A run already in flight blocks another start. */
     fun start(target: AcousticAuditTarget) {
-        scope.launch {
-            lock.withLock {
-                if (job?.isActive == true) return@withLock
-                val token = ++generation
-                // The job is assigned before it starts, so a liveness check that fires first can never
-                // run against a null handle; the LAZY start orders assignment before the body runs.
-                val launched = scope.launch(start = CoroutineStart.LAZY) { runAudit(token, target) }
-                job = launched
-                mutableState.value = AcousticAuditState(AcousticAuditStatus.RESOLVING, 0f)
-                launched.start()
-            }
+        commands.trySend(Command.Start(target))
+    }
+
+    fun cancel() {
+        commands.trySend(Command.Cancel)
+    }
+
+    /** A settings surface mounts active and unmounts inactive; an inactive owner cancels a run in flight. */
+    fun setActive(value: Boolean) {
+        if (!value) cancel()
+    }
+
+    /** Consumer-side start; runs only on the single draining coroutine. */
+    private suspend fun startRun(target: AcousticAuditTarget) {
+        lock.withLock {
+            if (job?.isActive == true) return
+            val token = ++generation
+            // The job is assigned before it starts, so a liveness check that fires first can never
+            // run against a null handle; the LAZY start orders assignment before the body runs.
+            val launched = scope.launch(start = CoroutineStart.LAZY) { runAudit(token, target) }
+            job = launched
+            mutableState.value = AcousticAuditState(AcousticAuditStatus.RESOLVING, 0f)
+            launched.start()
+        }
+    }
+
+    /** Consumer-side cancel; runs only on the single draining coroutine. */
+    private suspend fun cancelRun() {
+        lock.withLock {
+            ++generation
+            job?.cancel()
+            job = null
+            mutableState.value = AcousticAuditState(AcousticAuditStatus.CANCELLED)
         }
     }
 
@@ -87,8 +134,13 @@ class AcousticAuditOwner(
                 is AcousticWindow.Refused ->
                     publish(token, AcousticAuditState(AcousticAuditStatus.UNAVAILABLE, message = window.code))
                 is AcousticWindow.Decoded -> {
-                    if (target.requestKey.isNotEmpty() && window.requestKey != target.requestKey) {
-                        // The request the target named is not the request the probe decoded.
+                    val bound = window.occurrenceKey == target.requestKey ||
+                        window.requestKey == target.requestKey
+                    if (target.requestKey.isEmpty() || !bound) {
+                        // The request the target named is not the request the probe decoded. A target
+                        // bound to the occurrence id matches that key; one bound to the graph's
+                        // occurrence#attempt key requires the full identity — an empty or stale key
+                        // never matches, so no stale result can bind.
                         publish(token, AcousticAuditState(AcousticAuditStatus.UNAVAILABLE, message = "current_source_unavailable"))
                         return
                     }
@@ -100,7 +152,13 @@ class AcousticAuditOwner(
                     ) { progress ->
                         publishNow(token, AcousticAuditState(AcousticAuditStatus.ANALYZING, progress))
                     }
-                    publish(token, AcousticAuditState(AcousticAuditStatus.COMPLETE, 1f, result.copy(requestKey = window.requestKey)))
+                    publish(
+                        token,
+                        AcousticAuditState(
+                            AcousticAuditStatus.COMPLETE, 1f,
+                            result.copy(requestKey = window.requestKey, occurrenceKey = window.occurrenceKey),
+                        ),
+                    )
                 }
             }
         } catch (_: TimeoutCancellationException) {
@@ -113,22 +171,6 @@ class AcousticAuditOwner(
             // Probe and decoder messages can carry source URIs; only the code reaches state.
             publish(token, AcousticAuditState(AcousticAuditStatus.FAILED, message = "analysis_failed"))
         }
-    }
-
-    fun cancel() {
-        scope.launch {
-            lock.withLock {
-                ++generation
-                job?.cancel()
-                job = null
-                mutableState.value = AcousticAuditState(AcousticAuditStatus.CANCELLED)
-            }
-        }
-    }
-
-    /** A settings surface mounts active and unmounts inactive; an inactive owner cancels a run in flight. */
-    fun setActive(value: Boolean) {
-        if (!value) cancel()
     }
 
     /** Suspend publish for status transitions inside a run; a superseded token never lands. */
@@ -152,7 +194,7 @@ class AcousticAuditOwner(
     }
 
     fun close() {
-        cancel()
+        commands.close()
         mutableDialogTarget.value = null
     }
 }

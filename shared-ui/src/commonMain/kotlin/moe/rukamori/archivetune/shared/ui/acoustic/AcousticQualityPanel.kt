@@ -129,8 +129,11 @@ fun AcousticQualityPanel(
         state.message?.let { Text(acousticCodeText(it)) }
         state.result
             ?.takeIf {
-                active && it.mediaId == target.mediaId &&
-                    (target.requestKey.isEmpty() || it.requestKey == target.requestKey)
+                // The target key binds the result at its own granularity — an occurrence id matches
+                // occurrenceKey, the graph's occurrence#attempt key matches requestKey. An empty or
+                // stale key never matches a stored result.
+                active && it.mediaId == target.mediaId && target.requestKey.isNotEmpty() &&
+                    (it.requestKey == target.requestKey || it.occurrenceKey == target.requestKey)
             }
             ?.let { result ->
                 AcousticQualityResult(result)

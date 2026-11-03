@@ -304,7 +304,7 @@ internal fun IosSongMenu(
         add(OverflowAction("equalizer", Res.string.m5pq_equalizer) { menu.dismiss(); graph.equalizer.openSheet() })
         add(OverflowAction("acoustic_quality", Res.string.m5pq_acoustic_quality_title) {
             menu.dismiss()
-            graph.acoustic.openDialog(
+            graph.openAcousticAudit(
                 AcousticAuditTarget(
                     ref.id,
                     occurrence.item.title,
