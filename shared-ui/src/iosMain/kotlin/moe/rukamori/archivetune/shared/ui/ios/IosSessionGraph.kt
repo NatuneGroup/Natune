@@ -39,7 +39,6 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
-import moe.rukamori.archivetune.shared.data.persistence.openNow
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCanvasCacheStore
@@ -407,7 +406,9 @@ internal class IosSessionGraph private constructor(
                     if (recoveryMode) {
                         openPortableStateDatabase(":memory:")
                     } else {
-                        openGraphDatabase(databasePath, databaseDirectory, restoreStart, settings, report)
+                        openIosGraphDatabase(
+                            databasePath, databaseDirectory, DATABASE_FILE, restoreStart, settings, report,
+                        )
                             ?: openPortableStateDatabase(":memory:").also { recoveryMode = true }
                     }
                 }
@@ -541,74 +542,6 @@ internal class IosSessionGraph private constructor(
                 }
                 scope.cancel()
                 throw failure
-            }
-        }
-
-        /**
-         * Opens the portable state database; when a staged library was swapped in, it is opened now so a file Room
-         * refuses still lets the previous database come back instead of leaving a broken library. Null means the
-         * vault rollback failed beside it: markers and the blocked flag stay, and the caller assembles recovery
-         * mode instead of a mismatched pair.
-         */
-        private suspend fun openGraphDatabase(
-            databasePath: String,
-            databaseDirectory: String,
-            start: IosRestoreStart,
-            settings: VaultSettingsStore,
-            report: (String) -> Unit,
-        ): PortableStateDatabase? {
-            val database = openPortableStateDatabase(databasePath)
-            val swapped = start.databaseSwapped || start.pending?.databaseSwapped == true
-            if (!swapped) return database
-            try {
-                database.openNow()
-                return database
-            } catch (cancelled: CancellationException) {
-                database.close()
-                throw cancelled
-            } catch (failure: Exception) {
-                report("restored library refused: ${failure::class.simpleName}")
-                val ops = IosRestoreFileOps()
-                var vaultOk = true
-                withContext(NonCancellable) {
-                    // Room releases the files before the rollback replaces them; the abort marker is durable
-                    // first so a kill re-enters the joint undo instead of a fresh interpretation.
-                    runCatching { database.close() }
-                    start.pending?.let { pending ->
-                        if (start.transaction != null) {
-                            val abortPersisted = runCatching {
-                                ops.writeAtomically(
-                                    IosRestoreRecovery.abortMarkerPath(pending.directory),
-                                    byteArrayOf(1),
-                                )
-                            }.isSuccess
-                            if (abortPersisted) {
-                                // A vault merge that already landed goes back with the files it belongs to.
-                                if (pending.hasSettingsBefore) {
-                                    vaultOk = runCatching {
-                                        IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
-                                    }.isSuccess
-                                    if (!vaultOk) report("restored settings rollback failed")
-                                }
-                                runCatching { start.transaction.rollbackCommitted() }
-                            } else {
-                                // No durable abort decision: a kill now would re-read a half-undone set
-                                // as a fresh restore, so block and hold for recovery mode.
-                                report("restore abort marker not written")
-                                vaultOk = false
-                            }
-                        } else {
-                            pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
-                        }
-                    }
-                    if (vaultOk) {
-                        runCatching { start.pending?.markFailed() }
-                    } else {
-                        runCatching { IosRestoreRecovery.block(ops, databaseDirectory) }
-                    }
-                }
-                if (!vaultOk) return null
-                return openPortableStateDatabase(databasePath)
             }
         }
 

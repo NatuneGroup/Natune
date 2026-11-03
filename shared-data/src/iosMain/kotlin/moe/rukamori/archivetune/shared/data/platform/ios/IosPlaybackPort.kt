@@ -10,16 +10,11 @@ import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.flow.*
 import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.nativeaudio.*
-import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceAccount
-import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceLease
 import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
-import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
 import moe.rukamori.archivetune.shared.data.playback.PlaybackProgressWatchdog
 import moe.rukamori.archivetune.shared.data.playback.outputLatencyMillis
-import moe.rukamori.archivetune.shared.data.stream.NativePlaintext
-import moe.rukamori.archivetune.shared.data.stream.hls.HlsSegmentedSource
 import moe.rukamori.archivetune.shared.data.stream.hls.isHlsPlaylistUrl
 import moe.rukamori.archivetune.shared.data.stream.nativePlaintext
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
@@ -36,12 +31,6 @@ import platform.Foundation.NSURL
 /** The message for account-scoped audio before the account store is attached. The store is never defaulted. */
 private const val ACCOUNTS_NOT_ATTACHED =
     "account-scoped audio needs the account store, which this host has not attached"
-
-/** The lease account of an anonymous segmented stream, matching the anonymous header-bearing lease. */
-private const val SEGMENTED_PROVIDER = "playback"
-
-/** The MIME a segmented view reports before its first payload bytes are classified. */
-private const val SEGMENTED_UNKNOWN_MIME = "application/octet-stream"
 
 /**
  * One main-queue command owner over the same portable decoder used on desktop.
@@ -714,64 +703,13 @@ class IosPlaybackPort : PlaybackPort {
         }
     }
 
-    /**
-     * Loads an anonymous segmented lease for a header-bearing or expiry-carrying HLS remote. The engine's lease cannot
-     * fetch child resources, so the host expands the playlist into a segmented plaintext view itself: the playlist
-     * document, each segment and each AES-128 key are read through [IosCiphertextOpener], which anchors credentials at
-     * the playlist origin — the locator's headers never reach a segment host that lives elsewhere. The playlist is
-     * fetched lazily on the producer thread, so this runs on the command loop without blocking it.
-     */
+    /** The host-expanded HLS lease of [loadIosSegmentedHls]; an accepted transport becomes the live one. */
     private fun loadSegmentedHls(
         native: CPointer<at_audio_output>,
         locator: PlaybackLocator.Remote,
         startUs: ULong,
         play: Int,
-    ): ULong {
-        val origin = StreamOrigin.parse(locator.url) ?: return 0uL
-        val account = ByteSourceAccount(provider = SEGMENTED_PROVIDER, accountId = null)
-        val transport =
-            IosCiphertextOpener(
-                boundScope = ANONYMOUS_ACCOUNT_SCOPE,
-                account = account,
-                recheckFor = null,
-                headers = locator.headers,
-                credentialAnchor = origin,
-            )
-        val view =
-            HlsSegmentedSource(
-                lease =
-                    ByteSourceLease(
-                        account = account,
-                        primaryOrigin = origin,
-                        permittedOrigins = setOf(origin),
-                        // The query string carries a per-request signature, so it never becomes part of the cache key.
-                        cacheKey = locator.url.substringBefore('?'),
-                        expiresAtEpochMs = locator.expiresAtEpochMs,
-                        lengthBytes = null,
-                    ),
-                playlistUrl = locator.url,
-                playlistText = null,
-                accountScope = ANONYMOUS_ACCOUNT_SCOPE,
-                opener = transport,
-            )
-        val plaintext =
-            NativePlaintext(
-                source = view,
-                mimeType = SEGMENTED_UNKNOWN_MIME,
-                codec = "",
-                length = null,
-                expiresAtEpochMs = locator.expiresAtEpochMs,
-            )
-        val generation =
-            IosStreamLease.loadPlaintext(native, IosPlaintextSource(transport, plaintext), startUs, play)
-        if (generation == 0uL) {
-            // An accepted lease is closed by the engine itself, and closing again is harmless.
-            transport.close()
-        } else {
-            liveTransport = transport
-        }
-        return generation
-    }
+    ): ULong = loadIosSegmentedHls(native, locator, startUs, play) { liveTransport = it }
 
     /** The one engine output: created on first use, and recreated only after the engine reported an output fault. */
     private fun outputForLoad(): CPointer<at_audio_output>? {
