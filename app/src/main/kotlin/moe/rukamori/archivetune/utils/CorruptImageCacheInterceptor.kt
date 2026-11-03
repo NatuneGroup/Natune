@@ -24,14 +24,16 @@ internal class CorruptImageCacheInterceptor(
         if (first !is ErrorResult || !isOnline()) return first
         val request = chain.request
         val key = effectiveImageCacheKey(request.diskCacheKey, request.data) ?: return first
-        val droppedDisk = diskCache != null && runCatching { diskCache.remove(key) }.getOrDefault(false)
+        val disk = diskCache
+        val droppedDisk = disk != null && runCatching { disk.remove(key) }.getOrDefault(false)
         val memoryKey = request.memoryCacheKey ?: key
+        val memory = memoryCache
         val droppedMemory =
-            memoryCache != null &&
+            memory != null &&
                 runCatching {
-                    memoryCache.keys
+                    memory.keys
                         .filter { it.key == memoryKey }
-                        .map { memoryCache.remove(it) }
+                        .map { memory.remove(it) }
                         .any { it }
                 }.getOrDefault(false)
         // Nothing cached under the key means the error came straight from the network; a retry
