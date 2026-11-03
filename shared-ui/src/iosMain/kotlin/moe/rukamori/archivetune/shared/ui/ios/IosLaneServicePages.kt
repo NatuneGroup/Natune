@@ -201,6 +201,9 @@ internal fun IosLaneServiceSettingsPage(
         )
         "settings/internet" -> {
             val network = owners.graph.network
+            // A fetch filling the pool or a disable flips this without a preference commit, so the row
+            // collects it as state instead of reading it once.
+            val rotationBlocked by network.rotationBlocked.collectAsState()
             Column(Modifier.fillMaxSize()) {
                 Text(
                     stringResource(Res.string.ios_services_internet_note),
@@ -214,7 +217,7 @@ internal fun IosLaneServiceSettingsPage(
                     activeRotationCount = network.activeRotationCount(),
                     // An enabled rotation with nothing to route through blocks every stream open — the
                     // row names it and how to unblock instead of leaving a silent dead end.
-                    rotationBlocked = network.rotationBlocked(),
+                    rotationBlocked = rotationBlocked,
                     applyNetworkSettings = { snapshot ->
                         // The stream transport re-reads its route on every connection, so the saved route and
                         // its bypass switch apply live. The engine keeps the route it was built with, and that

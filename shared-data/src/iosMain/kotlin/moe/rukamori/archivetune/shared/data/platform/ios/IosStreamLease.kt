@@ -2,16 +2,20 @@
 
 package moe.rukamori.archivetune.shared.data.platform.ios
 
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.cinterop.*
 import cnames.structs.at_audio_output
 import moe.rukamori.archivetune.nativeaudio.*
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceAccount
+import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceLease
 import moe.rukamori.archivetune.shared.data.bytesource.RandomAccessByteSource
 import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.stream.deezer.DeezerCrypto
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
+import moe.rukamori.archivetune.shared.domain.playback.STREAM_BLOCKED_MESSAGE
+import platform.Foundation.NSLock
 import platform.posix.memcpy
 
 /*
@@ -58,7 +62,7 @@ internal interface IosLeaseSource {
  * the command thread under the engine mutex and only cancels in-flight work. The engine retracts the lease before it
  * calls close, so an interrupt never reaches a closed lease, and close releases the StableRef exactly once.
  */
-internal class IosStreamLease private constructor(
+internal class IosStreamLease internal constructor(
     private val source: IosLeaseSource,
 ) {
     // Producer-thread state. The engine opens once, then reads and seeks in sequence.
@@ -67,6 +71,17 @@ internal class IosStreamLease private constructor(
 
     // Set when the engine closes the lease. A refusal that never reached the close path leaves the StableRef to the caller.
     private var released = false
+
+    /** The engine load generation [attach] put this lease under — written once, before the register entry goes in. */
+    @Volatile
+    internal var engineGeneration = NO_GENERATION
+
+    /**
+     * The sanitized refusal this lease's open carried, or null. open() writes it on the producer thread and
+     * the error report reads it on the command loop, so it is volatile.
+     */
+    @Volatile
+    internal var openRefusal: String? = null
 
     /** Probes the resource and writes its length (-1 when unknown) and seekability. Returns 0 when the source opened. */
     internal fun openStream(sizeOut: CPointer<LongVar>, seekableOut: CPointer<IntVar>): Int = try {
@@ -79,7 +94,13 @@ internal class IosStreamLease private constructor(
     } catch (cancelled: CancellationException) {
         IO_INTERRUPTED
     } catch (failure: Throwable) {
-        // The engine has no retry for open, so a failed probe is final for this load.
+        // The engine has no retry for open, so a failed probe is final for this load. A refusal the
+        // stream routing made keeps its sanitized status so the error report can name it later.
+        if (generateSequence(failure) { it.cause }
+                .any { it is ByteSourceException && it.message == STREAM_BLOCKED_MESSAGE }
+        ) {
+            openRefusal = STREAM_BLOCKED_MESSAGE
+        }
         IO_FAILED
     }
 
@@ -124,10 +145,47 @@ internal class IosStreamLease private constructor(
     /** Called once, after the engine has retracted the lease. Releases the connection. */
     internal fun closeStream() {
         released = true
+        unregister(engineGeneration)
         source.close()
     }
 
     companion object {
+        private const val NO_GENERATION = -1L
+
+        /**
+         * Live leases by their engine load generation: an open refusal lands asynchronously on the
+         * producer thread, and the error report asks for it by generation on the command loop, so the
+         * lookup and the write it reads are both locked. An entry leaves when its lease closes.
+         */
+        private val liveLeasesLock = NSLock()
+        private val liveLeases = HashMap<Long, IosStreamLease>()
+
+        /** Registers [lease] under [generation], the moment the engine accepted the load. */
+        internal fun register(generation: Long, lease: IosStreamLease) = liveLeasesLock.locked {
+            liveLeases[generation] = lease
+        }
+
+        /** Drops the lease under [generation] when the engine retracted it. */
+        internal fun unregister(generation: Long) = liveLeasesLock.locked {
+            liveLeases.remove(generation)
+        }
+
+        /**
+         * The sanitized refusal the open of [generation] carried, or null — a stale generation or a
+         * clean open both answer null, so the error report falls back to the engine's own wording.
+         */
+        internal fun refusalOf(generation: Long): String? = liveLeasesLock.locked {
+            liveLeases[generation]?.openRefusal
+        }
+
+        private inline fun <T> NSLock.locked(block: () -> T): T {
+            lock()
+            try {
+                return block()
+            } finally {
+                unlock()
+            }
+        }
         /**
          * Loads a header-bearing progressive [locator] into [output] through the host lease. Returns the load generation,
          * or 0 when the engine refuses it. The engine owns an accepted lease and closes it once, so this side frees the
@@ -227,6 +285,12 @@ internal class IosStreamLease private constructor(
             // A refusal after the copy closes the lease synchronously and sets [released]. Only an ABI mismatch returns
             // before that path, and then no callback has run, so this side frees the StableRef.
             if (generation == 0uL && !lease.released) reference.dispose()
+            if (generation != 0uL) {
+                // The open may run later on the producer thread — record which generation it belongs to
+                // before it does, so a refusal it writes can be found by the error report.
+                lease.engineGeneration = generation.toLong()
+                register(generation.toLong(), lease)
+            }
             return generation
         }
     }

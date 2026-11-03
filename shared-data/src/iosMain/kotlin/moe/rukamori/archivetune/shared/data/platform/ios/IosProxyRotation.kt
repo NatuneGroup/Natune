@@ -55,11 +55,11 @@ private fun nowNanos(): Long = SystemMonotonicClock.nowNanos()
  */
 internal class IosProxyRotation(
     /**
-     * The fetch-and-validate step a refresh awaits — bound to the public list and the probe in
-     * production, a deferred in tests, so an enable held open mid-fetch can be observed.
+     * The fetch-and-validate step a refresh awaits — null binds the public list and the probe, a
+     * deferred in tests lets an enable be held open mid-fetch. It is nullable because a constructor
+     * default cannot reference the instance's [networkFetch].
      */
-    private val fetch: suspend (savedRoute: () -> ProxyRoute?) -> List<ProxyRoute> =
-        { savedRoute -> networkFetch(savedRoute) },
+    private val fetch: (suspend (savedRoute: () -> ProxyRoute?) -> List<ProxyRoute>)? = null,
 ) {
     private class Entry(val route: ProxyRoute, var deadUntilNanos: Long)
 
@@ -128,7 +128,7 @@ internal class IosProxyRotation(
      * answer keeps the pool it was meant to replace rather than stripping working members mid-rotation.
      */
     suspend fun fetchAndLoad(savedRoute: () -> ProxyRoute? = { null }): Int {
-        val live = fetch(savedRoute)
+        val live = fetch?.invoke(savedRoute) ?: networkFetch(savedRoute)
         // A fetch or validation that finds nothing keeps the pool it was meant to replace: the members
         // already validated are a better answer than an empty set while the caller's toggle stays on.
         replaceRoutes(live)
