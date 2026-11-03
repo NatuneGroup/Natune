@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.provider.YouTubeCatalogueTransport
+import moe.rukamori.archivetune.shared.data.provider.filterBlockedSongs
 import moe.rukamori.archivetune.shared.data.provider.YouTubeEntry
 import moe.rukamori.archivetune.shared.data.provider.YouTubeExplore
 import moe.rukamori.archivetune.shared.data.provider.YouTubeFeedChip
@@ -30,7 +31,9 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSection
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
 import moe.rukamori.archivetune.shared.domain.settings.ShowHomeCategoryChipsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
@@ -261,7 +264,8 @@ internal fun iosHomePage(
         remember(graph, scope, catalogue) {
             IosShelfFeed(scope, graph::report) { token, params ->
                 graph.youtubeTransport.refreshSession(graph.settings.snapshots.value)
-                catalogue.home(token, params)
+                // Blocked songs leave the recommendation feed, as the Android home does.
+                catalogue.home(token, params).filterBlockedSongs(iosBlockedSongRefs(graph))
             }
         }
     LaunchedEffect(feed) { feed.reload() }
@@ -313,7 +317,8 @@ internal fun iosDiscoveryPage(graph: IosSessionGraph, lists: IosCatalogueOwners)
         remember(graph, scope, catalogue) {
             IosShelfFeed(scope, graph::report) { token, _ ->
                 graph.youtubeTransport.refreshSession(graph.settings.snapshots.value)
-                catalogue.home(token, null)
+                // The suggestion surface filters the same recommendation feed, as Android's suggestion list does.
+                catalogue.home(token, null).filterBlockedSongs(iosBlockedSongRefs(graph))
             }
         }
     LaunchedEffect(feed) { feed.reload() }
@@ -464,3 +469,7 @@ internal fun catalogueOccurrence(request: ContentRequest, entry: YouTubeEntry, o
 /** The request a shelf's "see all" endpoint browses to, under the page's own surface. */
 internal fun browseRequest(surface: ContentSurface, section: ContentSection): ContentRequest =
     ContentRequest(ContentProvider.YOUTUBE, surface, section = section)
+
+/** The stored song block list, read per feed request so an unblock shows on the next reload. */
+private fun iosBlockedSongRefs(graph: IosSessionGraph) =
+    parseBlockedSongRefs(graph.settings.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()

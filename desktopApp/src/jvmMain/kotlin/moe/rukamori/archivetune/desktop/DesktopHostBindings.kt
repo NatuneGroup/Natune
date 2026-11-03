@@ -108,6 +108,8 @@ internal fun desktopHostBindings(
             override fun candidates(occurrences: List<ContentOccurrence>): Flow<List<PlaylistPickerCandidate>> =
                 graph.library.observePlaylistPicker(occurrences)
         },
+        // The restart-scoped custom font resolves from the file the picker stored by file URI.
+        customFontLoader = { uri -> desktopCustomFontFamily(uri) },
         settings = graph.settings,
         actionScope = graph.scope,
         // Deep links from the desktop intake open their page through the root. Back arrives from the window.

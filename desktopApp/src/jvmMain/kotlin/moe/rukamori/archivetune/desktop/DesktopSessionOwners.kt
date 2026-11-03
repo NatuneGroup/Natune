@@ -72,6 +72,8 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.YouTubeLocale
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
 import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentCountryKey
@@ -288,6 +290,9 @@ internal suspend fun assembleDesktopSessionOwners(
         hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
         hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
         blockedArtistIds = { queueArtistBlocks.value },
+        blockedSongRefs = {
+            parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
+        },
         handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
         songMetadata = songMetadata,
     )

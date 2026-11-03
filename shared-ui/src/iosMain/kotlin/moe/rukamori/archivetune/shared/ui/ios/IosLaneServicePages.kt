@@ -60,8 +60,6 @@ import moe.rukamori.archivetune.shared.ui.settings.InternetSupport
 import moe.rukamori.archivetune.shared.ui.settings.PoTokenGeneration
 import moe.rukamori.archivetune.shared.ui.settings.PoTokenSettings
 import moe.rukamori.archivetune.shared.ui.settings.ProxyConnectionResult
-import moe.rukamori.archivetune.shared.ui.settings.QqLoginFailure
-import moe.rukamori.archivetune.shared.ui.settings.QqLoginUiState
 import moe.rukamori.archivetune.shared.ui.settings.QqMusicSettings
 import moe.rukamori.archivetune.shared.ui.settings.SettingsCacheKind
 import moe.rukamori.archivetune.shared.ui.settings.SettingsNotice
@@ -227,9 +225,10 @@ internal fun IosLaneServiceSettingsPage(
                     scrollTo = scrollTo,
                     modifier = Modifier.weight(1f),
                     // The Darwin engine cannot re-route a live session, and playback audio never takes the proxy, so the
-                    // stream switch does not apply. DNS-over-HTTPS and the YouTube region have no iOS runtime yet.
+                    // stream switch does not apply. DNS-over-HTTPS has no Darwin resolver hook. The YouTube region
+                    // applies through the browse transport's session refresh and stays a restart reason like Android.
                     support = InternetSupport(
-                        rotation = false, streamBypass = false, dnsOverHttps = false, youtubeRegion = false,
+                        rotation = false, streamBypass = false, dnsOverHttps = false, youtubeRegion = true,
                     ),
                 )
             }
@@ -255,17 +254,20 @@ internal fun IosLaneServiceSettingsPage(
             copyToClipboard = ::copyToIosClipboard,
             onFailure = onFailure,
         )
-        "settings/qqmusic" -> QqMusicSettings(
-            controller = owners.controller,
-            accounts = owners.accounts,
-            // The QR sign-in loop has no iOS implementation, so the card shows its unavailable state.
-            loginState = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE),
-            onStartSignIn = { },
-            onCancelSignIn = { },
-            onSignOut = { },
-            onFailure = onFailure,
-            scrollTo = scrollTo,
-        )
+        "settings/qqmusic" -> {
+            val loginState by owners.qqMusic.loginState.collectAsState()
+            QqMusicSettings(
+                controller = owners.controller,
+                accounts = owners.accounts,
+                loginState = loginState,
+                onStartSignIn = owners.qqMusic::start,
+                onCancelSignIn = owners.qqMusic::cancel,
+                // The host holds no QQ session beyond the attempt, so only the attempt stops; the lifecycle signs out.
+                onSignOut = { owners.qqMusic.cancel() },
+                onFailure = onFailure,
+                scrollTo = scrollTo,
+            )
+        }
         "settings/spotify_streaming" -> {
             val streamingBusy by owners.spotifyStreaming.signInInProgress.collectAsState()
             val streamingRefusal by owners.spotifyStreaming.refusal.collectAsState()
@@ -286,9 +288,9 @@ internal fun IosLaneServiceSettingsPage(
         "settings/storage" -> {
             var storageBusy by remember { mutableStateOf(false) }
             var cacheTick by remember { mutableIntStateOf(0) }
-            // The image cache is the one store this host keeps: the shared URL cache plus the decoded-image holder.
+            // The caches this host keeps: the shared URL cache plus the decoded-image holder and the canvas store.
             val usedBytes by produceState<Map<SettingsCacheKind, Long>>(emptyMap(), cacheTick) {
-                value = iosLaneUsedCacheBytes()
+                value = iosLaneUsedCacheBytes(owners.graph)
             }
             StorageSettings(
                 controller = owners.controller,
@@ -309,7 +311,7 @@ internal fun IosLaneServiceSettingsPage(
                     cacheTick += 1
                 },
                 applyCacheLimits = { preferences ->
-                    iosApplyImageCacheLimit(preferences)
+                    iosApplyCacheLimits(preferences, owners.graph.canvasStore)
                     cacheTick += 1
                 },
                 onFailure = onFailure,

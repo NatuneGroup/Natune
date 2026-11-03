@@ -152,6 +152,8 @@ internal fun iosHostBindings(
             ): Flow<List<moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate>> =
                 graph.library.observePlaylistPicker(occurrences)
         },
+        // The restart-scoped custom font resolves from the file the picker stored in the app container.
+        customFontLoader = { uri -> IosCustomFont.family(uri) },
         settings = graph.settings,
         actionScope = graph.scope,
         // Links the Swift app session hands in merge with the host's own route opens. The system back
