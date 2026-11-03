@@ -927,7 +927,6 @@ fun LyricsEnhanced(
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
-
     // Remembered: fresh TextStyle identities every recomposition forced the karaoke view to
     // re-measure all lines on unrelated state changes (scroll flags, selection, etc.).
     val typography = MaterialTheme.typography
@@ -935,22 +934,23 @@ fun LyricsEnhanced(
         remember(typography, lyricsTextSize, lyricsFontFamily) {
             typography.headlineMedium.copy(
                 fontSize = lyricsTextSize.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = lyricsFontFamily ?: typography.headlineMedium.fontFamily,
+                fontWeight = FontWeight.Bold, fontFamily = lyricsFontFamily ?: typography.headlineMedium.fontFamily,
+                // headlineMedium's 36sp leading is tuned for its 28sp font: scale it or the sweep bands slice glyph ink.
+                lineHeight = (lyricsTextSize * 9f / 7f).coerceAtLeast(36f).sp,
             )
         }
     val accompanimentTextStyle =
         remember(typography, lyricsTextSize, lyricsFontFamily) {
             typography.titleLarge.copy(
-                fontSize = (lyricsTextSize * 0.82f).sp,
-                fontFamily = lyricsFontFamily ?: typography.titleLarge.fontFamily,
+                fontSize = (lyricsTextSize * 0.82f).sp, fontFamily = lyricsFontFamily ?: typography.titleLarge.fontFamily,
+                lineHeight = (lyricsTextSize * 0.82f * 14f / 11f).coerceAtLeast(28f).sp,
             )
         }
     val phoneticTextStyle =
         remember(typography, lyricsTextSize) {
             typography.bodyMedium.copy(
-                fontSize = (lyricsTextSize * 0.55f).sp,
-                fontWeight = FontWeight.Normal,
+                fontSize = (lyricsTextSize * 0.55f).sp, fontWeight = FontWeight.Normal,
+                lineHeight = (lyricsTextSize * 0.55f * 1.25f).coerceAtLeast(20f).sp,
             )
         }
     val plainLyrics =

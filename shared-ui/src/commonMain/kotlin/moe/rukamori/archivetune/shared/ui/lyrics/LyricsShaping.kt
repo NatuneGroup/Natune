@@ -5,6 +5,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.TextUnit
 import moe.rukamori.archivetune.shared.domain.lyrics.unicode.GraphemeClusterSegmenter
 
 /** Identity of one shaped row: which row, at which width, in which style. */
@@ -16,12 +17,17 @@ internal data class LyricsShapeKey(
 
 /**
  * A row laid out once. [boxes] locate the timed words on [layout], sorted by start, and [bands] hold each visual
- * line's vertical extent. The draw phase builds its clip regions from these values and never measures again.
+ * line's vertical extent. [letterRuns] mirrors [boxes]: for a box that earned the [LyricsEmphasis] ripple it holds
+ * one shaped run per grapheme cluster, laid out once so the draw phase transforms only that grapheme's own ink —
+ * redrawing the full-line layout per letter would repaint its neighbours at the wrong transform.
+ * A word whose isolated runs shaped different advances than the line gets no runs and keeps the
+ * plain feathered sweep: the glyphs changed between contexts, so moving one would tear the text.
  */
 internal class LyricsShapedRow(
     val layout: TextLayoutResult,
     val boxes: List<LyricsWordBox>,
     val bands: LyricsLineBands,
+    val letterRuns: List<List<TextLayoutResult>?>,
 )
 
 /** Shaped-row cache for one row list. Build a new cache whenever the list changes, so stale words never survive. */
@@ -63,11 +69,45 @@ internal fun shapeLyricRow(
         widthPx = layout.size.width.toFloat(),
         tops = FloatArray(lineCount) { layout.getLineTop(it) },
         bottoms = FloatArray(lineCount) { layout.getLineBottom(it) },
+        overshootPx =
+            if (key.style.fontSize == TextUnit.Unspecified) {
+                0f
+            } else {
+                with(layout.layoutInput.density) { key.style.fontSize.toPx() * LyricsLineBands.OVERSHOOT_EM }
+            },
     )
-    val boxes = row.words.orEmpty()
+    val words = row.words.orEmpty()
         .mapNotNull { timing -> timing.range?.let { wordBox(row.text, it, timing, layout) } }
-        .sortedBy { it.startMs }
-    return LyricsShapedRow(layout, boxes, bands)
+        .sortedBy { it.first.startMs }
+    val boxes = words.map { it.first }
+    val letterRuns = words.map { (box, ranges) ->
+        if (ranges == null) {
+            null
+        } else {
+            val runs = List(ranges.size / 2) { i ->
+                measurer.measure(
+                    text = AnnotatedString(row.text.substring(ranges[i * 2], ranges[i * 2 + 1])),
+                    style = key.style,
+                )
+            }
+            // A cluster measured alone can shape a different glyph than the line shaped for it — a
+            // ligature broken apart or a contextual form lost — and that letter would overlap or
+            // jump under the ripple, so the word keeps the plain feathered sweep.
+            if (LyricsEmphasis.isolatedRunsMatchLine(box.letters, FloatArray(runs.size) { isolatedRunWidth(runs[it]) })) {
+                runs
+            } else {
+                null
+            }
+        }
+    }
+    return LyricsShapedRow(layout, boxes, bands, letterRuns)
+}
+
+/** The advance an isolated run reports for its cluster, the same bounding-box metric [emphasisLetters] read in the line. */
+private fun isolatedRunWidth(run: TextLayoutResult): Float {
+    val head = run.getBoundingBox(0)
+    val tail = run.getBoundingBox(run.layoutInput.text.length - 1)
+    return maxOf(head.right, tail.right) - minOf(head.left, tail.left)
 }
 
 /**
@@ -79,7 +119,7 @@ private fun wordBox(
     range: IntRange,
     timing: LyricsWordTiming,
     layout: TextLayoutResult,
-): LyricsWordBox? {
+): Pair<LyricsWordBox, IntArray?>? {
     val starts = GraphemeClusterSegmenter.clusterStarts(text)
     val start = starts.lastOrNull { it <= range.first } ?: 0
     val end = starts.firstOrNull { it > range.last } ?: text.length
@@ -90,24 +130,26 @@ private fun wordBox(
     val last = layout.getBoundingBox(end - 1)
     val left = minOf(first.left, last.left)
     val right = if (lastLine == line) maxOf(first.right, last.right) else layout.getLineRight(line)
+    val letters = emphasisLetters(
+        text, starts, start, end, line, lastLine, left, right,
+        timing.endMs - timing.startMs, layout,
+    )
     return LyricsWordBox(
         startMs = timing.startMs,
         endMs = timing.endMs,
         leftPx = left,
         rightPx = right,
         line = line,
-        letters =
-            emphasisLetters(
-                text, starts, start, end, line, lastLine, left, right,
-                timing.endMs - timing.startMs, layout,
-            ),
-    )
+        letters = letters?.first,
+    ) to letters?.second
 }
 
 /**
- * The (left, right) slice of each grapheme cluster in a word that earned the [LyricsEmphasis] ripple,
- * in sung order, or null when the word keeps the plain sweep. A word that wraps to a second visual
- * line keeps the plain sweep, because its slices could not stay on one band.
+ * The (left, right) slice and the (start, end) character range of each grapheme cluster in a word that
+ * earned the [LyricsEmphasis] ripple, in sung order, or null when the word keeps the plain sweep. The
+ * ranges feed the per-grapheme runs the draw phase transforms, so a moving letter never drags its
+ * neighbours' ink along. A word that wraps to a second visual line keeps the plain sweep, because its
+ * slices could not stay on one band.
  */
 private fun emphasisLetters(
     text: String,
@@ -120,7 +162,7 @@ private fun emphasisLetters(
     boxRight: Float,
     durationMs: Long,
     layout: TextLayoutResult,
-): FloatArray? {
+): Pair<FloatArray, IntArray>? {
     if (line != lastLine) return null
     // Edge clusters that only carry whitespace leave no letter to move.
     var first = start
@@ -131,6 +173,7 @@ private fun emphasisLetters(
     val count = clusterStarts.count { it in first until last }
     if (!LyricsEmphasis.isEmphasized(text.substring(first, last), count, durationMs)) return null
     val slices = FloatArray(count * 2)
+    val ranges = IntArray(count * 2)
     var index = 0
     for (clusterStart in clusterStarts) {
         if (clusterStart < first || clusterStart >= last) continue
@@ -139,9 +182,11 @@ private fun emphasisLetters(
         val tail = layout.getBoundingBox(clusterEnd - 1)
         slices[index * 2] = minOf(head.left, tail.left).coerceIn(boxLeft, boxRight)
         slices[index * 2 + 1] = maxOf(head.right, tail.right).coerceIn(boxLeft, boxRight)
+        ranges[index * 2] = clusterStart
+        ranges[index * 2 + 1] = clusterEnd
         index++
     }
-    return slices
+    return slices to ranges
 }
 
 private const val SHAPE_CACHE_ENTRIES = 256

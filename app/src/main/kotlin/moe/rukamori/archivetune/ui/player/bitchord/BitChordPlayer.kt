@@ -476,7 +476,7 @@ fun BitChordPlayerContent(
     }
     val lyrics = parsedLyrics?.lines
     val lyricsSynced = parsedLyrics?.isSynced ?: true
-    val lyricsProviderName = lyricsEntity?.providerName.orEmpty()
+    val lyricsProviderName = lyricsEntity?.displayProviderName.orEmpty()
     val lyricsUnavailable = lyricsEntity?.lyrics == LyricsEntityNotFound
 
     // ── Auto translation (ArchiveTune addition) ──

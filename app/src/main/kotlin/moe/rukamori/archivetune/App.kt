@@ -180,7 +180,12 @@ class App :
         BotGuardTokenGenerator.initialize(this)
         PreferenceStore.start(this)
         JapaneseLanguagePackManager.initialize(this)
-        Timber.plant(Timber.DebugTree())
+        // Release builds keep only the GlobalLog tree below: DebugTree would write every
+        // debug/verbose line to logcat, where the persistent capture then re-parses,
+        // redacts and rewrites each one to disk.
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
         try {
             Timber.plant(
                 moe.rukamori.archivetune.utils

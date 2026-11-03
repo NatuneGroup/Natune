@@ -440,7 +440,7 @@ fun Lyrics(
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val lyricsEntity by playerConnection.currentLyrics.collectAsStateWithLifecycle(initialValue = null)
     val lyrics = remember(lyricsEntity) { lyricsEntity?.lyrics?.trim() }
-    val lyricsProviderName = lyricsEntity?.providerName.orEmpty()
+    val lyricsProviderName = lyricsEntity?.displayProviderName.orEmpty()
 
     val lines =
         remember(lyrics, mediaMetadata?.duration) {

@@ -22,23 +22,50 @@ internal fun liveMainProcessId(context: Context): Int? = runCatching {
  * shared store first, so both are judged together. Only unacknowledged failures of the installed build can
  * interrupt startup; the same records keep listing on the Crash logs page after that.
  */
+/**
+ * The launcher's recovery decision. Android's exit history and a captured Java crash are imported into the
+ * shared store first, so both are judged together. The screen interrupts only for a startup crash loop of
+ * the installed build: a stale marker from another build is retired silently, and a dead marker without
+ * crash evidence is only an unclean exit — never a crash. The same records keep listing on the Crash logs
+ * page after that.
+ */
 internal fun previousLaunchReport(context: Context): StartupReport? {
     val store = StartupRecovery.store(context)
     val install = currentInstall(context)
     val pending = store.pendingAttempt()
+    // A marker written by another build survived an update. It belongs to a process that can never
+    // come back, so it is deleted without a word instead of interrupting every launch.
+    val freshPending = if (pending != null && isStaleAttempt(pending, install)) {
+        runCatching { store.clearPending() }
+        null
+    } else {
+        pending
+    }
     val last = store.lastAttempt()
-    val reviewed = store.acknowledgedThrough()
-    val incomplete = previousStartupIncomplete(
-        store.pendingExists(), pending, liveMainProcessId(context), install,
-    )
     val historyUnavailable = importCrashRecords(context, store)
-    val since = reportSince(last?.timestampMs, reviewed)
-    val listed = store.listRecords().filter { it.timestampMs > since }
-    val interrupting = listed.filter { it.interruptsStartup(install) }
-    val stalePending = staleAttemptUnacknowledged(pending, install, reviewed)
-    if (!incomplete && !stalePending && interrupting.isEmpty()) return null
+    val records = store.listRecords()
+    val starts = (store.recentStarts() + listOfNotNull(freshPending, last)).distinct()
+    // Records at or before the acknowledged attempt were already shown and dismissed; only newer
+    // evidence can re-arm the gate, or closing the screen would never stick across a reopen.
+    val reviewed = store.acknowledgedThrough()
+    val consecutive = consecutiveStartupCrashes(
+        starts = starts,
+        crashes = records,
+        install = install,
+        nowMs = System.currentTimeMillis(),
+        acknowledgedThroughMs = reviewed,
+    )
+    if (consecutive < REQUIRED_CONSECUTIVE_CRASHES) {
+        // A leftover marker only proves a dead process — a swipe-away, force-stop, reboot, update or
+        // low-memory kill — none of which is a crash. Retire it unless its process is still running.
+        if (freshPending != null && freshPending.pid != liveMainProcessId(context)) {
+            runCatching { store.clearPending() }
+        }
+        return null
+    }
 
-    val safeMode = incomplete || interrupting.any { it.kind == ProcessExitKind.INITIALIZATION_FAILURE }
+    val since = reportSince(last?.timestampMs, reviewed)
+    val listed = records.filter { it.timestampMs > since }
     val text = buildString {
         appendLine(context.getString(R.string.startup_report_title))
         appendLine(context.getString(R.string.startup_report_build, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE.toString()))
@@ -49,15 +76,7 @@ internal fun previousLaunchReport(context: Context): StartupReport? {
                 formatCrashTime(context, it.timestampMs), it.pid.toString()))
         }
         appendLine()
-        appendLine(
-            context.getString(
-                when {
-                    incomplete -> R.string.startup_incomplete_explanation
-                    stalePending -> R.string.startup_outdated_attempt_explanation
-                    else -> R.string.startup_previous_exit_explanation
-                },
-            ),
-        )
+        appendLine(context.getString(R.string.startup_previous_exit_explanation))
         if (listed.none { it.captured }) appendLine(context.getString(R.string.startup_report_no_java))
         for (record in listed) {
             appendLine()
@@ -79,8 +98,8 @@ internal fun previousLaunchReport(context: Context): StartupReport? {
         val notice = "\n" + context.getString(R.string.startup_report_truncated)
         redacted.take((MAX_REPORT_CHARS - notice.length).coerceAtLeast(0)) + notice.take(MAX_REPORT_CHARS)
     } else redacted
-    val through = maxOf(reviewed, pending?.timestampMs ?: 0L, listed.maxOfOrNull { it.timestampMs } ?: 0L)
-    return StartupReport(bounded, safeMode, through)
+    val through = maxOf(reviewed, freshPending?.timestampMs ?: 0L, listed.maxOfOrNull { it.timestampMs } ?: 0L)
+    return StartupReport(bounded, safeMode = true, reviewedThroughMs = through)
 }
 
 internal fun previousStartupIncomplete(pendingExists: Boolean, pendingPid: Int?, livePid: Int?): Boolean =
