@@ -2,7 +2,7 @@
  "formatVersion": 1,
  "database": {
   "version": 12,
-  "identityHash": "3d0b4e399855c6ab8f8bb2c0fbbc79f8",
+  "identityHash": "f66896c32e594d32f09af06cf7fcac47",
   "entities": [
    {
     "tableName": "queue_checkpoint",
@@ -1002,7 +1002,7 @@
   ],
   "setupQueries": [
    "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-   "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3d0b4e399855c6ab8f8bb2c0fbbc79f8')"
+   "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f66896c32e594d32f09af06cf7fcac47')"
   ]
  }
 }
