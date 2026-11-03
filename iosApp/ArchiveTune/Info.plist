@@ -33,6 +33,7 @@
     <key>ArchiveTuneSpotifyOauthClientId</key><string>$(ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID)</string>
     <key>ArchiveTuneYouTubeOauthClientId</key><string>$(ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID)</string>
     <key>ArchiveTuneYouTubeOauthClientSecret</key><string>$(ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET)</string>
+    <key>NatuneNewsUrl</key><string>$(NATUNE_NEWS_URL)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>

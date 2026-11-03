@@ -78,6 +78,10 @@ class ArchiveTuneHostBindings(
     val nativeChrome: NativeShellChrome? = null,
     /** Toggles the platform window's own fullscreen; null where the host window has no fullscreen surface. */
     val toggleWindowFullscreen: (() -> Unit)? = null,
+    /** False when the build has no news feed, which hides the News entry. */
+    val newsAvailable: Boolean = true,
+    /** Whether the feed holds an item newer than the last one the user saw; drives the News unread dot. */
+    val unreadNews: Flow<Boolean> = flowOf(false),
 )
 
 /** Host lifecycle is an input: losing UI visibility never pauses background audio. */
@@ -152,6 +156,7 @@ private fun ArchiveTuneLoadedRoot(
     systemDark: Boolean,
 ) {
         val navigation = rememberShellNavigation(preferences)
+        val unreadNews by host.unreadNews.collectAsState(false)
         val interaction = remember { PlayerInteractionState() }
         var expanded by remember { mutableStateOf(false) }
         // Collapsing is the root's own action, so the native owner never receives it.
@@ -296,7 +301,7 @@ private fun ArchiveTuneLoadedRoot(
                     ) {
                         ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
                             host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
-                            preferences = preferences)
+                            preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews))
                     }
                     // Keep the interaction owner above style dispatch; a saved style edit cannot reset
                     // seek ownership, queue/lyrics panels or the fullscreen scroll owner.

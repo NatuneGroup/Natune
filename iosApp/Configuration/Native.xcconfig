@@ -68,4 +68,7 @@ ARCHIVETUNE_ARCHIVEPOOL_BASE_URL =
 // The registered public OAuth client id of the Librespot Spotify streaming sign-in reaches the app through
 // Info.plist the same way. It is a PKCE public client, never a secret; a blank value keeps that sign-in unavailable.
 ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID =
+// The in-app News feed reaches the app through Info.plist the same way. Unlike the values above it has a default, the
+// Android build's; set it blank in Credentials.xcconfig to disable the feed and hide the News entry.
+NATUNE_NEWS_URL = https:/$()/natune.pages.dev/api/news
 #include? "Credentials.xcconfig"

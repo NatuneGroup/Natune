@@ -124,7 +124,10 @@ internal fun desktopHostBindings(
         // Item and news images load over the graph's one client, public http or https only; a failed image keeps its frame.
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
-        formatNewsDate = { epochMs -> dates.format(Date(epochMs)) },
+        // Feed dates are epoch seconds, the unit the Android host stores and formats.
+        formatNewsDate = { epochSeconds -> dates.format(Date(epochSeconds * 1_000L)) },
+        newsAvailable = graph.newsFeed.enabled,
+        unreadNews = graph.newsFeed.unread,
         librarySourceSelector = { DesktopLibrarySourceSelector(graph, settingsOwners.spotify) },
         hostScreen = { route, navigation ->
             if (desktopMountsSettings(route)) {

@@ -166,7 +166,10 @@ internal fun iosHostBindings(
         },
         artwork = { item, modifier -> IosRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> IosRemoteArtwork(uri, graph.artworkLoader, modifier) },
-        formatNewsDate = ::iosDiagnosticTime,
+        // Feed dates are epoch seconds, the unit the Android host stores and formats.
+        formatNewsDate = { epochSeconds -> iosDiagnosticTime(epochSeconds * 1_000L) },
+        newsAvailable = graph.newsFeed.enabled,
+        unreadNews = graph.newsFeed.unread,
         librarySourceSelector = { },
         hostScreen = { route, navigation ->
             if (iosMountsSettings(route)) {

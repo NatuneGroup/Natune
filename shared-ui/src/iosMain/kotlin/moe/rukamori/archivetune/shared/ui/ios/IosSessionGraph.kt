@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.backup.IosRestoreFileOps
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.localmedia.IosLocalMediaSource
+import moe.rukamori.archivetune.shared.data.news.NatuneNewsClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
@@ -53,6 +54,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTransportAvailability
+import moe.rukamori.archivetune.shared.data.platform.ios.iosNatuneNewsUrl
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
@@ -107,6 +109,7 @@ import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
 import moe.rukamori.archivetune.shared.ui.host.SponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
+import moe.rukamori.archivetune.shared.ui.news.NewsFeedOwner
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
@@ -183,6 +186,9 @@ internal class IosSessionGraph private constructor(
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
     /** The request the engine was last told to load; consumers gating on the resolved source read it. */
     val loadedRequest: StateFlow<PlaybackRequest?> get() = owner.loadedRequest
+
+    /** The `news` feed and its unread mark, over the shared client and the build's NATUNE_NEWS_URL; blank disables it. */
+    val newsFeed = NewsFeedOwner(NatuneNewsClient(http, iosNatuneNewsUrl()), settings, scope, ::report)
 
     /** The one sleep timer of this process. It only pauses [player], so every surface shares it. */
     val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause, ::iosNowMillis)
