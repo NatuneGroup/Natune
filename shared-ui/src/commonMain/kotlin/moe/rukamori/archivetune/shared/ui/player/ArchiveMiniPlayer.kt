@@ -121,7 +121,6 @@ internal fun ArchiveMiniPlayer(
                     Modifier
                         .fillMaxWidth()
                         .heightIn(min = 72.dp)
-                        .clickable(onClick = onExpand)
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                         .testTag("desktop-transport-bar"),
                     verticalAlignment = Alignment.CenterVertically,
@@ -132,15 +131,24 @@ internal fun ArchiveMiniPlayer(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        artwork(current.item, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)))
-                        Column(Modifier.weight(1f)) {
-                            MarqueeText(current.item.title, style = MaterialTheme.typography.titleSmall)
-                            if (current.item.subtitle.isNotBlank()) {
-                                MarqueeText(
-                                    current.item.subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                        Row(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(onClick = onExpand),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            artwork(current.item, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)))
+                            Column(Modifier.weight(1f)) {
+                                MarqueeText(current.item.title, style = MaterialTheme.typography.titleSmall)
+                                if (current.item.subtitle.isNotBlank()) {
+                                    MarqueeText(
+                                        current.item.subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                         PlayerIcon(
