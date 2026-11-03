@@ -18,6 +18,12 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
     private var stalledAtNanos: Long? = null
     val hasNext: Boolean get() = next != null
 
+    /**
+     * The output the audible generation belongs to. It follows promotion — after the incoming source
+     * takes over, the key a refused lease registered under is this output's identity, not the old one.
+     */
+    val currentOutput: CPointer<at_audio_output> get() = graph.current.output
+
     class Read(val state: EnginePlaybackState, val promoted: IosBlendSource? = null)
 
     /** Success transfers [source] here; refusal leaves it with the caller. */

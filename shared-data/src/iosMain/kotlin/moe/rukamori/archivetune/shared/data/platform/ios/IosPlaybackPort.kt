@@ -377,7 +377,7 @@ class IosPlaybackPort : PlaybackPort {
             queuedViews.clear()
             supersede()
             stop()
-            output?.let { at_audio_destroy(it) }
+            output?.let { at_audio_destroy(it); IosStreamLease.retireOutput(it.toLong()) }
             output = null
             scope.cancel()
         }
@@ -758,7 +758,7 @@ class IosPlaybackPort : PlaybackPort {
     /** The one engine output: created on first use, and recreated only after the engine reported an output fault. */
     private fun outputForLoad(): CPointer<at_audio_output>? {
         if (reopenOutput) {
-            output?.let { at_audio_destroy(it) }
+            output?.let { at_audio_destroy(it); IosStreamLease.retireOutput(it.toLong()) }
             output = null
             reopenOutput = false
         }
@@ -783,6 +783,7 @@ class IosPlaybackPort : PlaybackPort {
                 // Both nodes are already switched before the old decoder/transport can be released.
                 at_audio_stop(native)
                 at_audio_destroy(native)
+                IosStreamLease.retireOutput(native.toLong())
                 liveTransport?.close()
                 output = incoming.output
                 request = incoming.request
@@ -798,7 +799,7 @@ class IosPlaybackPort : PlaybackPort {
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
             mapper.observe(read.state, now, outputLatencyMillis(engine.outputLatencySeconds()))?.let { state.value = it }
             mapper.failure(read.state) {
-                IosStreamLease.refusalOf(engine.output.toLong(), read.state.loadGeneration)
+                IosStreamLease.refusalOf(engine.currentOutput.toLong(), read.state.loadGeneration)
                     ?: "iOS native playback failed"
             }?.let { errors.tryEmit(it) }
             watchStall(read.state, now)

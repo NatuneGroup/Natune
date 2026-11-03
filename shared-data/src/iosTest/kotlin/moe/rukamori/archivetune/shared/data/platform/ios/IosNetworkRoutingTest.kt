@@ -444,8 +444,6 @@ class IosNetworkRoutingTest {
     @OptIn(ExperimentalForeignApi::class)
     fun aLeaseOpenRefusedByTheRotationCarriesTheSanitizedStatus() {
         val lease = refusedLease()
-        lease.outputIdentity = 1L
-        lease.engineGeneration = 7
         IosStreamLease.register(1L, 7, lease)
         assertTrue(refuseOpen(lease) != 0)
         // The async error read asks by output and generation: the current one names the block.
@@ -460,8 +458,6 @@ class IosNetworkRoutingTest {
     @OptIn(ExperimentalForeignApi::class)
     fun aRefusalOutlivesTheLeaseCloseUntilTheReportReadsIt() {
         val lease = refusedLease()
-        lease.outputIdentity = 1L
-        lease.engineGeneration = 7
         IosStreamLease.register(1L, 7, lease)
         refuseOpen(lease)
         // The engine retracts a failed lease before it publishes the error — the refusal must survive.
@@ -472,18 +468,34 @@ class IosNetworkRoutingTest {
 
     @Test
     @OptIn(ExperimentalForeignApi::class)
-    fun aLeaseClosedBeforeAttachKeepsItsRefusalAndNeverRegisters() {
+    fun aLeaseClosedBeforeAttachKeepsItsRefusalUnderOneKey() {
         val lease = refusedLease()
         refuseOpen(lease)
-        // The engine opens and retracts inside the load call — the lease is closed before attach
-        // even learns its generation, so the refusal must not ride the live registry.
+        // The engine opens and retracts inside the load call — the lease is closed before the register
+        // publishes its key, so the refusal must land under the real key, never under a half-assigned one.
         lease.closeStream()
-        lease.engineGeneration = 9
-        lease.outputIdentity = 1L
         IosStreamLease.register(1L, 9, lease)
         assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(1L, 9))
-        // Nothing of the closed lease stayed live to answer a second read.
+        // Exactly one refusal, under the correct key: nothing under output 0 and nothing left live.
+        assertNull(IosStreamLease.refusalOf(0L, 9))
         assertNull(IosStreamLease.refusalOf(1L, 9))
+    }
+
+    @Test
+    @OptIn(ExperimentalForeignApi::class)
+    fun aRetiredOutputLeavesNoEntriesForAReusedAddress() {
+        val lease = refusedLease()
+        IosStreamLease.register(1L, 0, lease)
+        refuseOpen(lease)
+        lease.closeStream()
+        // The output is destroyed before its refusal is read — retiring it clears live and refusal slots.
+        IosStreamLease.retireOutput(1L)
+        assertNull(IosStreamLease.refusalOf(1L, 0))
+        // A later lease on the same address answers for its own open only.
+        val reused = refusedLease { IllegalStateException("decoder refused") }
+        IosStreamLease.register(1L, 0, reused)
+        assertNull(IosStreamLease.refusalOf(1L, 0))
+        IosStreamLease.unregister(1L, 0, reused)
     }
 
     @Test
@@ -492,10 +504,6 @@ class IosNetworkRoutingTest {
         val first = refusedLease()
         val second = refusedLease()
         val next = refusedLease()
-        first.outputIdentity = 1L
-        first.engineGeneration = 0
-        second.outputIdentity = 2L
-        second.engineGeneration = 0
         IosStreamLease.register(1L, 0, first)
         IosStreamLease.register(2L, 0, second)
         refuseOpen(first)
@@ -511,5 +519,6 @@ class IosNetworkRoutingTest {
         IosStreamLease.unregister(1L, 1, first)
         assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(1L, 1))
         IosStreamLease.unregister(1L, 1, next)
+        IosStreamLease.retireOutput(2L)
     }
 }

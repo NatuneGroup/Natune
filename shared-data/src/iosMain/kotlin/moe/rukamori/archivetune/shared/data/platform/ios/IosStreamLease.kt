@@ -74,13 +74,12 @@ internal class IosStreamLease internal constructor(
     @Volatile
     internal var released = false
 
-    /** The engine load generation [attach] put this lease under — written once, before the register entry goes in. */
+    /**
+     * The (output, generation) key the register put this lease under, or null while attach has not
+     * published one — written under liveLeasesLock so a close can never see a half-assigned key.
+     */
     @Volatile
-    internal var engineGeneration = NO_GENERATION
-
-    /** The identity of the output this lease loads into — part of its registry key, set beside [engineGeneration]. */
-    @Volatile
-    internal var outputIdentity = 0L
+    internal var registryKey: LeaseKey? = null
 
     /**
      * The sanitized refusal this lease's open carried, or null. open() writes it on the producer thread and
@@ -156,8 +155,7 @@ internal class IosStreamLease internal constructor(
     internal fun closeStream() {
         liveLeasesLock.locked {
             released = true
-            if (engineGeneration != NO_GENERATION) {
-                val key = LeaseKey(outputIdentity, engineGeneration)
+            registryKey?.let { key ->
                 openRefusal?.let { refusals[key] = it }
                 if (liveLeases[key] === this) liveLeases.remove(key)
             }
@@ -166,10 +164,8 @@ internal class IosStreamLease internal constructor(
     }
 
     companion object {
-        private const val NO_GENERATION = -1L
-
         /** One engine's output and one of its load generations — generations restart per output. */
-        private data class LeaseKey(val output: Long, val generation: Long)
+        internal data class LeaseKey(val output: Long, val generation: Long)
 
         /**
          * Live leases by their (output, generation) key. Closed leases drop out on close, but their
@@ -189,10 +185,22 @@ internal class IosStreamLease internal constructor(
         internal fun register(output: Long, generation: Long, lease: IosStreamLease) =
             liveLeasesLock.locked {
                 val key = LeaseKey(output, generation)
+                // The key lands under the same lock the close path takes, so a lease closed between
+                // the native call and this line keeps its refusal under the correct key only.
+                lease.registryKey = key
                 lease.openRefusal?.let { refusals[key] = it }
                 if (!lease.released) liveLeases[key] = lease
                 refusals.keys.removeAll { it.output == output && it.generation != generation }
             }
+
+        /**
+         * Drops every live lease and refusal of a destroyed output — a pointer the allocator reuses
+         * must not surface a refusal recorded for the output that used to sit at the address.
+         */
+        internal fun retireOutput(output: Long) = liveLeasesLock.locked {
+            liveLeases.keys.removeAll { it.output == output }
+            refusals.keys.removeAll { it.output == output }
+        }
 
         /**
          * Drops the entry under the key only while it still names [lease] — a newer lease may already
@@ -321,11 +329,9 @@ internal class IosStreamLease internal constructor(
             // before that path, and then no callback has run, so this side frees the StableRef.
             if (generation == 0uL && !lease.released) reference.dispose()
             if (generation != 0uL) {
-                // The open may run later on the producer thread — record which output and generation it
-                // belongs to before it does, so a refusal it writes can be found by the error report.
-                lease.engineGeneration = generation.toLong()
-                lease.outputIdentity = output.toLong()
-                register(lease.outputIdentity, lease.engineGeneration, lease)
+                // The open may already have run (and the lease closed) inside the native call — the
+                // register publishes this lease's key and records a refusal it carried in one lock.
+                register(output.toLong(), generation.toLong(), lease)
             }
             return generation
         }
