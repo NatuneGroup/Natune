@@ -664,8 +664,10 @@ fun LyricsEnhanced(
                     (rawPosition + latestLyricsSyncOffset.value.toLong() +
                         latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
                         .coerceIn(0L, Int.MAX_VALUE.toLong())
-                if (sliderPosition == null && player.isPlaying && !animationsDisabled &&
-                    !deadlineSchedule.isLive(idleFeedEstimateMs)
+                // The library view lifts each syllable for 700 ms past its start and breathes its interlude dots from the
+                // position, neither of which the schedule knows about, so it gets a fresh position every frame.
+                if (!enhancedLibraryViewActive && sliderPosition == null && player.isPlaying &&
+                    !animationsDisabled && !deadlineSchedule.isLive(idleFeedEstimateMs)
                 ) {
                     val next = deadlineSchedule.nextChangeAfter(idleFeedEstimateMs)
                     delay(if (next == null) IDLE_POLL_MS else (next - idleFeedEstimateMs).coerceIn(16L, IDLE_POLL_MS))
@@ -752,14 +754,10 @@ fun LyricsEnhanced(
                             pos >= cachedNextLineStart ||
                             pos < cachedCurrentLineStart
                     if (needsResearch) {
-                        // The lit line opens its activation-lead early; the word sweep still
-                        // follows the real starts, which the pane reads for itself.
+                        // Follows whichever list draws, so the first-focus gate and the strip never run ahead of it.
                         val activationStarts =
                             cachedActivationStarts
-                                ?: enhancedActivationStarts(
-                                    IntArray(syncedLyricsNow.lines.size) { syncedLyricsNow.lines[it].start },
-                                    IntArray(syncedLyricsNow.lines.size) { syncedLyricsNow.lines[it].end },
-                                ).also { cachedActivationStarts = it }
+                                ?: enhancedPaneLineStarts(syncedLyricsNow).also { cachedActivationStarts = it }
                         val newLineIdx = activeSyncedLineIndex(activationStarts, pos)
                         cachedLineIdx = newLineIdx
                         cachedCurrentLineStart =
@@ -861,8 +859,9 @@ fun LyricsEnhanced(
         // the LYRIC_FIRST_FOCUS_TIMEOUT_MS safety net above covers the case where it never arrives.
         snapshotFlow { latestSyncedLyricsForScroll.value.lines.isNotEmpty() }.first { it }
 
-        // BasicSyncedLyricsList is the only auto-scroll owner. A second app-side scroller fought it and clipped the top
-        // active line of an accompaniment/duet aggregate. This collector only decides when the hidden list may fade in.
+        // The pane's list (KaraokeLyricsView, or BasicSyncedLyricsList below API 29) is the only auto-scroll owner. A
+        // second app-side scroller fought it and clipped the top active line of an accompaniment/duet aggregate. This
+        // collector only decides when the hidden list may fade in.
         snapshotFlow {
             if (isManualScrolling || isSelectionModeActive) {
                 LYRIC_FOCUS_TARGET_MANUAL
@@ -1193,8 +1192,8 @@ fun LyricsEnhanced(
                         normalLineTextStyle = normalTextStyle,
                         accompanimentLineTextStyle = accompanimentTextStyle,
                         phoneticTextStyle = phoneticTextStyle,
-                        // The list decides whether the distance blur may run (Android 12+, motion on, not low-end,
-                        // not mid-scroll). This passes only the user's line-blur choice.
+                        // The pane gates the distance blur on motion and on what the device can draw. This passes only
+                        // the user's line-blur choice.
                         useBlurEffect = lyricsLineBlur,
                         manualScrolling = isManualScrolling,
                         credits = lyricsCredits,
@@ -1710,7 +1709,7 @@ private fun buildSyncedLyrics(
             val lineEnd =
                 if (nextEntry != null && nextEntry.time > entry.time) {
                     val handOver = entry.time + LINE_SYNCED_MAX_FOCUS_HOLD_MS
-                    if (nextEntry.time - handOver >= ENHANCED_INTERLUDE_MIN_BREAK_MS) {
+                    if (nextEntry.time - handOver >= enhancedLineSyncedBreakMs) {
                         // The silence after the hold is at least the dots' minimum break, so the dots draw there.
                         handOver.toInt()
                     } else {
