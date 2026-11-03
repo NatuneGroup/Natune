@@ -287,7 +287,8 @@ private fun BitChordHomeFeed(
                         }
                     }
 
-                    if (content.keepListening.isNotEmpty()) {
+                    // A shelf shorter than a row reads as noise on home; the gate is five items.
+                    if (content.keepListening.size >= 5) {
                         item(key = "bitchord_keep_listening", contentType = "media_shelf") {
                             BitChordLocalShelf(
                                 title = keepListeningTitle,

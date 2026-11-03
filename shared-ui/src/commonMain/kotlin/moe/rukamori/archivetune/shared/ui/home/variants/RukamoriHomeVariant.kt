@@ -332,7 +332,8 @@ private fun RukamoriHomeFeed(
                     }
                 }
 
-                if (content.keepListening.isNotEmpty()) {
+                // A shelf shorter than a row reads as noise on home; the gate is five items.
+                if (content.keepListening.size >= 5) {
                     rukamoriSpacer("keep_listening")
                     item(key = "home_keep_listening_header", contentType = "section_header") {
                         HomeFeedSectionHeader(title = keepListeningTitle)
