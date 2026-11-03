@@ -8,23 +8,41 @@
 
 package moe.rukamori.archivetune.ui.utils
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlin.math.roundToInt
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.acoustics.AcousticAssessment
 import moe.rukamori.archivetune.acoustics.AcousticAuditController
@@ -57,41 +75,49 @@ internal fun AcousticQualityContent(
             state.status == AcousticAuditStatus.DECODING ||
             state.status == AcousticAuditStatus.ANALYZING
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(target.title, style = MaterialTheme.typography.titleMedium)
-        if (target.artists.isNotBlank())
-            Text(target.artists, style = MaterialTheme.typography.bodyMedium)
-        Text(
-            stringResource(R.string.acoustic_quality_explanation),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            stringResource(
-                when (state.status) {
-                    AcousticAuditStatus.IDLE -> R.string.acoustic_quality_idle
-                    AcousticAuditStatus.RESOLVING -> R.string.acoustic_quality_resolving
-                    AcousticAuditStatus.DECODING -> R.string.acoustic_quality_decoding
-                    AcousticAuditStatus.ANALYZING -> R.string.acoustic_quality_analyzing
-                    AcousticAuditStatus.COMPLETE -> R.string.acoustic_quality_complete
-                    AcousticAuditStatus.UNAVAILABLE -> R.string.acoustic_quality_unavailable
-                    AcousticAuditStatus.FAILED -> R.string.acoustic_quality_failed
-                    AcousticAuditStatus.CANCELLED -> R.string.acoustic_quality_cancelled
-                }
-            ),
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(target.title, style = MaterialTheme.typography.titleMedium)
+            if (target.artists.isNotBlank()) {
+                Text(
+                    target.artists,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (running) {
-            state.progress
-                ?.takeIf { it.isFinite() }
-                ?.let {
-                    Text(
-                        stringResource(
-                            R.string.acoustic_quality_progress,
-                            (it.coerceIn(0f, 1f) * 100).roundToInt(),
-                        )
+            val progress = state.progress?.takeIf { it.isFinite() }?.coerceIn(0f, 1f)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (progress == null) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                Text(
+                    acousticQualityStatusText(state.status),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        } else if (state.status != AcousticAuditStatus.COMPLETE) {
+            Text(
+                acousticQualityStatusText(state.status),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
-        state.message?.let { Text(acousticCodeText(it)) }
+        state.message?.let {
+            Text(
+                acousticCodeText(it),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         state.result
             ?.takeIf { active && it.mediaId == target.mediaId }
             ?.let { result ->
@@ -117,6 +143,21 @@ internal fun AcousticQualityContent(
     }
 }
 
+@Composable
+private fun acousticQualityStatusText(status: AcousticAuditStatus): String =
+    stringResource(
+        when (status) {
+            AcousticAuditStatus.IDLE -> R.string.acoustic_quality_idle
+            AcousticAuditStatus.RESOLVING -> R.string.acoustic_quality_resolving
+            AcousticAuditStatus.DECODING -> R.string.acoustic_quality_decoding
+            AcousticAuditStatus.ANALYZING -> R.string.acoustic_quality_analyzing
+            AcousticAuditStatus.COMPLETE -> R.string.acoustic_quality_complete
+            AcousticAuditStatus.UNAVAILABLE -> R.string.acoustic_quality_unavailable
+            AcousticAuditStatus.FAILED -> R.string.acoustic_quality_failed
+            AcousticAuditStatus.CANCELLED -> R.string.acoustic_quality_cancelled
+        }
+    )
+
 /**
  * Notes that change how to read a result; the rest of [AcousticAuditResult.limitations] is fixed
  * method detail.
@@ -125,7 +166,38 @@ private val ReaderNotes = setOf("insufficient_active_evidence", "pcm_budget_shor
 
 @Composable
 private fun AcousticQualityResult(result: AcousticAuditResult) {
-    val source = acousticCodeText(result.sourceLabel)
+    val headline =
+        stringResource(
+            when (result.assessment) {
+                AcousticAssessment.INCONCLUSIVE -> R.string.acoustic_quality_verdict_inconclusive
+                AcousticAssessment.NO_SUSPICIOUS_CUTOFF -> R.string.acoustic_quality_verdict_lossless
+                AcousticAssessment.SUSPECTED_UPSCALED -> R.string.acoustic_quality_verdict_upscaled
+            }
+        )
+    val support =
+        stringResource(
+            when (result.assessment) {
+                AcousticAssessment.INCONCLUSIVE ->
+                    R.string.acoustic_quality_verdict_inconclusive_support
+                AcousticAssessment.NO_SUSPICIOUS_CUTOFF ->
+                    R.string.acoustic_quality_verdict_lossless_support
+                AcousticAssessment.SUSPECTED_UPSCALED ->
+                    R.string.acoustic_quality_verdict_upscaled_support
+            }
+        )
+    val headlineColor =
+        when (result.assessment) {
+            AcousticAssessment.NO_SUSPICIOUS_CUTOFF -> MaterialTheme.colorScheme.primary
+            AcousticAssessment.SUSPECTED_UPSCALED -> MaterialTheme.colorScheme.error
+            AcousticAssessment.INCONCLUSIVE -> MaterialTheme.colorScheme.onSurface
+        }
+    val topKHz = result.nyquistHz / 1000f
+    val cutoff =
+        result.cutoffHz
+            ?.takeIf { it.isFinite() }
+            ?.let {
+                stringResource(R.string.acoustic_quality_cutoff, it / 1000f, topKHz)
+            } ?: stringResource(R.string.acoustic_quality_cutoff_unknown, topKHz)
     val channels =
         when (result.channelCount) {
             1 -> stringResource(R.string.acoustic_quality_mono)
@@ -139,50 +211,159 @@ private fun AcousticQualityResult(result: AcousticAuditResult) {
             AcousticHeatAxis.formatClock((result.startMs + result.durationMs) / 1000.0),
             result.sampleRate / 1000f,
             channels,
-            source,
+            acousticCodeText(result.sourceLabel),
         )
-    val topKHz = result.nyquistHz / 1000f
-    val cutoff =
-        result.cutoffHz
-            ?.takeIf { it.isFinite() }
-            ?.let {
-                stringResource(R.string.acoustic_quality_cutoff, it / 1000f, topKHz)
-            } ?: stringResource(R.string.acoustic_quality_cutoff_unknown, topKHz)
-    val assessment =
-        stringResource(
-            when (result.assessment) {
-                AcousticAssessment.INCONCLUSIVE -> R.string.acoustic_quality_inconclusive
-                AcousticAssessment.NO_SUSPICIOUS_CUTOFF -> R.string.acoustic_quality_no_cutoff
-                AcousticAssessment.SUSPECTED_UPSCALED -> R.string.acoustic_quality_suspected
-            }
-        )
-    Text(assessment, style = MaterialTheme.typography.titleSmall)
-    Text(cutoff)
-    AcousticHeatGraph(result, "$assessment. $cutoff. $details")
-    Text(details, style = MaterialTheme.typography.bodySmall)
-    result.limitations
-        .distinct()
-        .filter { it in ReaderNotes }
-        .forEach {
-            Text(acousticCodeText(it), style = MaterialTheme.typography.bodySmall)
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                headline,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = headlineColor,
+            )
+            Text(
+                support,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        AcousticSpectrumGraph(result, "$headline. $support. $cutoff. $details")
+        AcousticQualityFacts(result)
+        AcousticQualityDetails(result, details, cutoff)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AcousticQualityFacts(result: AcousticAuditResult) {
+    val sampleRate = stringResource(R.string.acoustic_quality_chip_sample_rate, result.sampleRate / 1000f)
+    val pcmFormat =
+        when {
+            "decoded_pcm_float" in result.limitations ->
+                stringResource(R.string.acoustic_quality_chip_pcm_float)
+            "decoded_pcm16" in result.limitations ->
+                stringResource(R.string.acoustic_quality_chip_pcm16)
+            else -> null
+        }
+    val cutoffHz = result.cutoffHz?.takeIf { it.isFinite() && it > 0f }
+    val cutoff =
+        if (cutoffHz != null) {
+            stringResource(R.string.acoustic_quality_chip_cutoff, cutoffHz / 1000f)
+        } else {
+            stringResource(R.string.acoustic_quality_chip_cutoff_none)
+        }
+    val source = acousticCodeText(result.sourceLabel)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FactChip(sampleRate)
+        pcmFormat?.let { FactChip(it) }
+        FactChip(cutoff)
+        FactChip(source)
+    }
+}
+
+@Composable
+private fun FactChip(text: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
         Text(
-            stringResource(R.string.acoustic_quality_read_title),
-            style = MaterialTheme.typography.labelLarge,
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
         )
-        Text(
-            stringResource(R.string.acoustic_quality_read_axes),
-            style = MaterialTheme.typography.bodySmall,
+    }
+}
+
+@Composable
+private fun AcousticQualityDetails(
+    result: AcousticAuditResult,
+    details: String,
+    cutoff: String,
+) {
+    var expanded by rememberSaveable(result.mediaId) { mutableStateOf(false) }
+    val expandedDescription =
+        stringResource(
+            if (expanded) R.string.acoustic_quality_expanded
+            else R.string.acoustic_quality_collapsed,
         )
-        Text(
-            stringResource(R.string.acoustic_quality_read_colour),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            stringResource(R.string.acoustic_quality_read_cutoff),
-            style = MaterialTheme.typography.bodySmall,
-        )
+    Column {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { expanded = !expanded }
+                    .semantics { stateDescription = expandedDescription }
+                    .padding(vertical = 6.dp),
+        ) {
+            Text(
+                stringResource(R.string.acoustic_quality_details_label),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                painterResource(
+                    if (expanded) R.drawable.expand_less else R.drawable.expand_more,
+                ),
+                contentDescription =
+                    stringResource(
+                        if (expanded) R.string.acoustic_quality_details_collapse
+                        else R.string.acoustic_quality_details_expand,
+                    ),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 4.dp),
+            ) {
+                Text(
+                    stringResource(R.string.acoustic_quality_explanation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(details, style = MaterialTheme.typography.bodySmall)
+                Text(cutoff, style = MaterialTheme.typography.bodySmall)
+                result.limitations
+                    .distinct()
+                    .filter { it in ReaderNotes }
+                    .forEach {
+                        Text(acousticCodeText(it), style = MaterialTheme.typography.bodySmall)
+                    }
+                if ("spectral_heuristic_not_provenance" in result.limitations) {
+                    Text(
+                        stringResource(R.string.acoustic_quality_code_spectral_heuristic),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    stringResource(R.string.acoustic_quality_read_title),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    stringResource(R.string.acoustic_quality_read_axes),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    stringResource(R.string.acoustic_quality_read_curve),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    stringResource(R.string.acoustic_quality_read_cutoff),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }
 
@@ -202,6 +383,8 @@ internal fun acousticCodeText(code: String): String =
                 R.string.acoustic_quality_code_insufficient_active_evidence
             "pcm_budget_shortened_excerpt" ->
                 R.string.acoustic_quality_code_pcm_budget_shortened_excerpt
+            "spectral_heuristic_not_provenance" ->
+                R.string.acoustic_quality_code_spectral_heuristic
             "deadline_exceeded" -> R.string.acoustic_quality_code_deadline_exceeded
             "analysis_busy" -> R.string.acoustic_quality_code_analysis_busy
             "source_changed" -> R.string.acoustic_quality_code_source_changed
