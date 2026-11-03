@@ -3,6 +3,8 @@ package moe.rukamori.archivetune.lyrics
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsActivation
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsIdleParkMs
 
 /**
  * When the lyric feed can change what a frame shows. While the feed sits between two of these
@@ -74,13 +76,33 @@ class LyricsDeadlineSchedule(
                 reachedMs = maxOf(reachedMs, scanEndMs(entry))
                 changes.add(scanStart - lead)
                 changes.add(entry.time)
-                for (word in entry.words.orEmpty()) {
-                    val start = (word.startTime * 1000.0).roundToLong()
-                    val end = maxOf((word.endTime * 1000.0).roundToLong(), start + minSweepMs)
-                    starts.add(start)
-                    ends.add(end)
-                    changes.add(start)
-                    changes.add(end)
+                // Main and background voices draw as separate lines, so each keeps its own sink and its
+                // own next-word hand-off — the same neighbours the renderer's lift reads.
+                val (mainWords, backgroundWords) = entry.words.orEmpty().partition { !it.isBackground }
+                for (words in listOf(mainWords, backgroundWords)) {
+                    val first = words.minOfOrNull { (it.startTime * 1000.0).roundToLong() } ?: continue
+                    // The active row sinks into its low seat over the instants before its first word.
+                    starts.add(first - LyricsSweepGeometry.SINK_MS)
+                    ends.add(first)
+                    changes.add(first - LyricsSweepGeometry.SINK_MS)
+                    words.forEachIndexed { index, word ->
+                        val start = (word.startTime * 1000.0).roundToLong()
+                        val end = (word.endTime * 1000.0).roundToLong()
+                        val nextStart =
+                            words.getOrNull(index + 1)?.let { (it.startTime * 1000.0).roundToLong() }
+                                ?: Long.MAX_VALUE
+                        // A zero-length word's completion lift outlives its span; keep frames running through it.
+                        val spanEnd =
+                            maxOf(
+                                end,
+                                start + minSweepMs,
+                                LyricsSweepGeometry.liftEndMs(start, end, nextStart),
+                            )
+                        starts.add(start)
+                        ends.add(spanEnd)
+                        changes.add(start)
+                        changes.add(spanEnd)
+                    }
                 }
             }
             return LyricsDeadlineSchedule(
@@ -108,13 +130,13 @@ class LyricsDeadlineSchedule(
 /**
  * Suspends until the next deadline boundary (bounded by [idlePollMs]) — the app renderers park
  * their position loop on this while the drawn state is static between a word's sweep end and the
- * next word/line edge.
+ * next word/line edge. [speed] is the playback speed: the boundary is in media time, the sleep is not.
  */
 internal suspend fun LyricsDeadlineSchedule.sleepUntilNext(
     feedMs: Long,
+    speed: Float,
     minSleepMs: Long = 1L,
     idlePollMs: Long = 250L,
 ) {
-    val next = nextChangeAfter(feedMs)
-    delay(if (next == null) idlePollMs else (next - feedMs).coerceIn(minSleepMs, idlePollMs))
+    delay(lyricsIdleParkMs(nextChangeAfter(feedMs), feedMs, speed, minSleepMs, idlePollMs))
 }

@@ -85,7 +85,7 @@ data class NativeLyricsDocument(
     val mainSizeSp: Float = LyricsModeProfile.TEXT_SIZE_DEFAULT_SP,
     /** The quick scale the sung line pops to while it is sung; 1 keeps its size. */
     val activeScale: Float = 1f,
-    /** The shortest visible word sweep: a shorter word still fills over it rather than its own span. */
+    /** Guards a zero-length word sweep; every other word fills over its own span. */
     val minSweepMs: Long = LyricsSweepGeometry.MIN_SWEEP_MS,
     /** The bloom colour behind an emphasized word's bumping letter, as 0xAARRGGBB. */
     val glowArgb: Int = colorArgb,

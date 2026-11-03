@@ -8,12 +8,15 @@ import kotlin.test.assertTrue
 /** The draw-phase sweep share and its feathered edge, in the scalar form the platform renderer reads. */
 class LyricsSweepGeometryTest {
     @Test
-    fun theSweepShareTravelsTheWordWithTheMinimumSweep() {
+    fun theSweepShareTravelsTheWordOverItsOwnTiming() {
         // A one-second word is half sung halfway through.
         assertEquals(0.5f, LyricsSweepGeometry.progressAt(1_000L, 2_000L, 1_500L, reduceMotion = false))
-        // A word shorter than the minimum sweep still takes the minimum to cross.
-        val tiny = LyricsSweepGeometry.progressAt(1_000L, 1_050L, 1_075L, reduceMotion = false)
-        assertEquals(0.5f, tiny, 0.01f)
+        // A 50 ms word fills over its own 50 ms, not a stretched floor.
+        assertEquals(0.5f, LyricsSweepGeometry.progressAt(1_000L, 1_050L, 1_025L, reduceMotion = false), 0.01f)
+        assertEquals(1f, LyricsSweepGeometry.progressAt(1_000L, 1_050L, 1_050L, reduceMotion = false))
+        // A zero-length word still fills, over the one-frame guard.
+        val empty = LyricsSweepGeometry.progressAt(1_000L, 1_000L, 1_008L, reduceMotion = false)
+        assertEquals(0.5f, empty, 0.01f)
     }
 
     @Test

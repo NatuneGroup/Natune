@@ -38,6 +38,7 @@ class BasicSyncedLyricsListTest {
         val activation = enhancedActivationStarts(
             starts = intArrayOf(1_000, 4_000, 4_000, 20_000),
             ends = intArrayOf(3_000, 5_000, 5_000, 24_000),
+            wordSynced = BooleanArray(4) { true },
         )
         // The first line and gaps past the band get the default 250ms lead; the two shared-start
         // lines reuse the same lead so a duet lights together.
@@ -49,10 +50,38 @@ class BasicSyncedLyricsListTest {
         val activation = enhancedActivationStarts(
             starts = intArrayOf(1_000, 4_300),
             ends = intArrayOf(4_000, 8_000),
+            wordSynced = BooleanArray(2) { true },
         )
         // A 300ms gap sits inside the 200..750ms band: lead = 480 + (300-200) * 270/550 = 529.
         assertEquals(750, activation[0])
         assertEquals(4_300 - 529, activation[1])
+    }
+
+    @Test
+    fun aWordSyncedRowAfterALineSyncedOneNeverLightsBeforeIt() {
+        // The line-synced row takes no lead; the word-synced row's lead would reach back to 850.
+        val activation = enhancedActivationStarts(
+            starts = intArrayOf(1_000, 1_100),
+            ends = intArrayOf(1_100, 2_000),
+            wordSynced = booleanArrayOf(false, true),
+        )
+        assertEquals(listOf(1_000, 1_000), activation.toList())
+        assertEquals(1, activeSyncedLineIndex(activation, 1_000))
+    }
+
+    @Test
+    fun activationStartsStayInOrderAcrossMixedTiming() {
+        val starts = intArrayOf(1_000, 1_100, 1_150, 5_000, 5_050, 9_000)
+        val activation = enhancedActivationStarts(
+            starts = starts,
+            ends = intArrayOf(1_100, 1_150, 5_000, 5_050, 8_900, 9_500),
+            wordSynced = booleanArrayOf(false, true, true, false, true, true),
+        )
+        for (index in 1 until activation.size) {
+            assertTrue("activation went backwards at $index: ${activation.toList()}", activation[index] >= activation[index - 1])
+        }
+        // A lead only ever moves a row earlier than its timed start.
+        for (index in starts.indices) assertTrue(activation[index] <= starts[index])
     }
 
     @Test

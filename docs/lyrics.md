@@ -70,8 +70,9 @@ lyric clock through `NativeLyricsDocument` and `NativeLyricsTimeline`, so seekin
 and the tap policy match the Compose renderer. The document carries the Enhanced refinements the
 same way: emphasis letters for held words, the interlude break each row owns, the saved text size,
 the active-line pop, the uniform blur veil with its stagger, duet end-alignment by
-`LyricsAlignmentPolicy`, and the credits footer with the machine-made badges. The sweep share and
-the emphasis wave are the shared `LyricsSweepGeometry.progressAt` and `LyricsEmphasis.bumpAt` math
+`LyricsAlignmentPolicy`, and the credits footer with the machine-made badges. The sweep share, the
+emphasis wave and the completion lift are the shared `LyricsSweepGeometry.progressAt`,
+`LyricsEmphasis.bumpAt` and `LyricsSweepGeometry.dropAt` math
 rather than a port, so reduced motion and word completion behave identically, and readings slide in
 when their text publishes to a row, not when the row starts singing. The saved size also rides
 Dynamic Type through `UIFontMetrics`. What stays Compose-only there is the line-change settle glide
@@ -106,13 +107,19 @@ shape arrives from providers carrying `[translated_lyrics]`.
 
 Frame requests are **deadline-gated**, not per-vsync. `LyricsDeadlineSchedule` (shared-ui, plus the
 `LyricsEntry` copy in `app/lyrics`) lists the live spans where motion is continuous — a word sweep
-in flight (at least `minSweepMs`), a breathing interlude — and the discrete edges where the drawn
+in flight over its exact timing, a breathing interlude — and the discrete edges where the drawn
 state changes. The clock loop requests a frame inside a live span, sleeps to the next boundary
-otherwise, and re-checks at most every 250 ms so a seek still lands promptly; paused surfaces poll
-at 100 ms. The SwiftUI view already pauses its `TimelineView` when hidden and polls a held
-position at 250 ms, matching the same budget. The Android Enhanced pane is the exception while the
-library's `KaraokeLyricsView` draws it: that view lifts each syllable for 700 ms past its start
-and breathes its dots from the position, so the loop steps every frame while the song plays.
+otherwise, and re-checks at most every 250 ms so a seek still lands promptly. Every such loop (the
+shared `rememberLyricsClock`, and Lyrics, V2, SimpMusic and Enhanced on Android) publishes the
+position and line before it parks, and divides the media-time gap by the playback speed
+(`lyricsIdleParkMs` in shared-ui; the app's `sleepUntilNext` wraps it), so a 2× track never sleeps
+through a sweep; paused surfaces poll at 100 ms. The SwiftUI view already pauses its `TimelineView`
+when hidden and polls a held position at 250 ms, matching the same budget. A word's live span runs
+through its completion lift (`LyricsSweepGeometry.liftEndMs`), so the loop stays awake until the
+word is seated, and each row's `SINK_MS` before its first word is live too. The Android Enhanced
+loop also steps every frame inside an interlude break its dots draw over (`enhancedInterludes`),
+because the dots breathe from the position and the word schedule holds nothing there. The parked
+`KaraokeLyricsView` branch is the exception: that view animates every frame while the song plays.
 
 `LyricsMode` (settings) picks between these. Do not delete `SimpMusicLyrics`
 thinking it is player-style chrome — it is a lyrics style a user can select.
@@ -140,7 +147,10 @@ screen to read as anything but flicker). The style's own fullscreen lyrics sheet
 `SweptLyricLine` draws a line in two layers: the whole line dim, then the sung part bright,
 clipped to however much has been sung. The clip is recomputed in the draw phase, so a frame
 costs a clip and a redraw rather than a recomposition. The glow is a tinted rounded box behind
-the word being sung, not a blurred copy of the text.
+the word being sung, not a blurred copy of the text. Each word fills over exactly its provider
+span. `LyricsSweepGeometry.MIN_SWEEP_MS` (16 ms, about one frame) only keeps a zero or negative
+span from dividing by zero, so a quick word is never stretched past the next one. The V2 profile
+keeps its own 180 ms `minSweepMs`.
 
 ENHANCED (the `refinedMotion` flag on `LyricsModeProfile`, in `shared-ui`) adds these, all of
 them skipped under reduced motion:
@@ -149,15 +159,32 @@ them skipped under reduced motion:
   default, growing toward 750 ms when the silence before it is a tight 200–750 ms hand-off. The
   word sweep still follows the real word times; only the lit line, the deadline edges and the
   scroll target move early. Overlapping duet rows measure the silence against the furthest
-  earlier end, so they light together. The Android library view takes no activation lead, and
-  the Enhanced line index (first focus, TikTok strip) follows it.
+  earlier end, so they light together. Only a word-synced row takes the lead: on a line-synced row
+  it stacked on the LRC lead and the visual tuning offset and lit the row up to a second early, so
+  line-synced rows activate at their timed start — the same instant the parked library view uses —
+  and the Enhanced line index (first focus, TikTok strip) follows the same gated starts.
 - The sung edge is feathered across a fifth of the active word's width, clamped to 4–28 dp, with
   a `DstIn` mask on a layer limited to the line's band (`LyricsSweepGeometry.sweepFeatherPx`).
 - A word earns emphasis only when it is held at least 1 s, is at most 7 grapheme clusters and is
   written in an unjoined safe script (`LyricsEmphasis`). Its letters ripple a couple of dp and a
   few percent of scale one at a time as the sweep crosses them, and its glow — scaled by how long
   it is held (`LyricsSweepGeometry.emphasisGain`) — rises and falls. Every other word keeps the
-  plain feathered sweep, no lift, no glow.
+  plain feathered sweep, no letter ripple and no emphasis glow.
+- Every unsung word sits `LyricsSweepGeometry.WORD_LIFT_DP` (2 dp) below its seat and eases up
+  through the last half of its own span — clamped to 120–300 ms, shortened near a tight hand-off and
+  never longer than the word itself (`liftDurationMs`/`liftStartMs`/`liftEndMs`) — so it is seated
+  exactly at its provider end, as its sweep finishes. Only a zero-length word rises past its end.
+  The rise is an ease-out (`liftAt`) with no pause and no jump. Inactive rows draw seated, so a lit row sinks
+  into that low seat over the `SINK_MS` (200 ms, inside the shortest 250 ms activation lead) before
+  its first word (`sinkAt`) instead of dropping in one frame; `dropAt` is the product every renderer
+  reads. A started word that has not landed draws dim and lit in its own window at one offset, so
+  the sweep never lights it at another height than its dim ink. The rise is a clip plus a translate
+  in the draw pass, never a relayout. An emphasized word rides the same drop under its letter
+  ripple, and a word wrapped over two visual lines stays seated on Compose. Reduced motion seats
+  every word, the same no-bounce behaviour as before. On Android a timed background voice under the
+  sung row sweeps and lifts over its own word spans the same way. A rising or emphasized word's cut
+  and repaint window reach the band's glyph overshoot plus the lift, so accents and descenders move
+  with the word on their own baseline rather than being clipped or drawn twice.
 - The sung line pops to 1.05× over 100 ms when it activates (`LyricsModeProfile.activeScale`),
   scaling from its aligned edge.
 - An instrumental break of 9 s or more shows three dots above the next line (`LyricsInterludes`,
@@ -181,17 +208,22 @@ them skipped under reduced motion:
   (`LyricsParser.parseTtmlCredits`) close the list as a dim credits footer; a provider-supplied
   reading is never badged.
 
-On Android 10 and later the Enhanced pane draws with the lyrics-ui `KaraokeLyricsView`, which
-brings its own Apple-Music-style motion: the syllable sweep, the per-letter rise, swell and glow on
-held words, the distance-staggered spring placement, the distance blur and the breathing dots. Line-synced
-rows light at their own start with no extra activation lead. Below Android 10 the in-house path
-(`EnhancedSweptLine`, `BasicSyncedLyricsList`, `EnhancedInterludeDots`) mirrors the shared
-refinements: activation leads, the per-letter ripple, the width-share feather, the uniform blur, the
+The Enhanced pane draws with the in-house list on every API level again. The lyrics-ui
+`KaraokeLyricsView` is parked behind `USE_KARAOKE_LIBRARY_VIEW` for comparison and rollback: its
+word lift is hard-coded — every syllable floats 4 px into place over a fixed 700 ms from its start —
+which is the choppy completion motion the shared lift replaces, and the published artifact cannot be
+patched. The in-house path (`EnhancedSweptLine`, `BasicSyncedLyricsList`,
+`EnhancedInterludeDots`) mirrors the shared
+refinements: activation leads on word-synced rows, the shared completion lift, the per-letter
+ripple, the width-share feather, the uniform blur, the
 15% anchor, the 4.5 s hold, the 350 ms scroll, the active-line pop, the dots and the credits footer.
+Line-synced rows light at their own start with no activation lead — the timing the library view
+kept — and descenders keep their band overshoot.
 
 The iOS 26 native Enhanced view (`iosApp/ArchiveTune/SystemLyrics.swift`) draws its own sweep. It
-takes the idle alpha and the depth values from the shared profile, but not the feather, lift,
-glow gating, dots, stagger or glide.
+takes the idle alpha and the depth values from the shared profile and the completion lift from
+`LyricsSweepGeometry.dropAt` (sink and lift, emphasized letters included), but not the feather
+tuning, glow gating, dots, stagger or glide.
 
 It is fed by `rememberLyricsClock`, which carries the player's twice-a-second position
 report forward on the frame clock so the sweep does not step.
@@ -214,21 +246,21 @@ under them, and the mask only fades the lyrics, never the glass or artwork behin
 SimpMusic card, every player style's lyrics pane) must not add a second edge mask.
 Flamingo keeps only its controls-visible mask that clears the lines from under its controls.
 
-Enhanced's synced pane (`ui/component/EnhancedKaraokePane.kt`) draws with the library's
-`KaraokeLyricsView` from API 29 and with `BasicSyncedLyricsList` below it. The library view owns
-its auto-scroll, sweep, spring placement, blur and dots; its line blur is off with animations
-disabled. It has no slot for the songwriter credits footer, so that footer shows only on the
-in-house list for now. A line-synced row hands focus over after its 5 s hold only when more than
-5 s of silence follows, the library's own dots threshold (the in-house list keeps 9 s). The in-house list owns its auto-scroll to the anchor, sweeps
-the active karaoke line with `EnhancedSweptLine`, glides rows on a line change, scales and fades
-rows by their distance from the sung line, and shows interlude dots over silences of 4 s or more.
+Enhanced's synced pane (`ui/component/EnhancedKaraokePane.kt`) draws with
+`BasicSyncedLyricsList` on every API level; the library's `KaraokeLyricsView` branch
+(`USE_KARAOKE_LIBRARY_VIEW`, switched off) keeps its own auto-scroll, sweep, spring placement,
+blur and dots for comparison, with a hard-coded 20dp/100dp mask the pane's fade does not touch.
+The in-house list owns its auto-scroll to the anchor, sweeps
+the active karaoke line with `EnhancedSweptLine` — lift, feather and emphasis letters — glides
+rows on a line change, scales and fades
+rows by their distance from the sung line, and shows interlude dots over silences of 9 s or more.
+A line-synced row hands focus over after its 5 s hold only when more than 9 s of silence follows,
+the interlude dots' own threshold. While the
+library branch is parked the songwriter credits footer shows on every API level.
 Following pauses for 3 s after a user drag, and a tap-to-seek resumes it at once. While the user
 scrolls, every line is un-blurred. Distance blur needs Android 12+ and the line-blur setting, and
 is off under reduced motion, with animations disabled, and on low-end devices.
 
-The library's `KaraokeLyricsView` (lyrics-ui 1.0.x, which hard-codes a 20dp/100dp mask) is
-selected by `USE_KARAOKE_LIBRARY_VIEW`, switched on. Its measure-taller-and-lift workaround and the
-20dp anchor offset apply only to that branch; re-check those numbers when the library is upgraded.
 The single-active-line strip (TikTok main lyrics) has no list and no fade.
 
 ## Two things that were wrong, so they do not come back
@@ -241,8 +273,11 @@ The single-active-line strip (TikTok main lyrics) has no list and no fade.
 - **The in-house list on Android 10+.** From 2026-10-31 to 2026-11-03 Enhanced drew every
   API level with `BasicSyncedLyricsList`. Its sweep clip bands sliced descenders and lifted
   letters, and its activation lead stacked on the LRC lead and the visual tuning offset, so
-  line-synced rows lit 0.7–1.2 s before they were sung. Keep the library view on Android 10+
-  until the in-house list is verified on a device.
+  line-synced rows lit 0.7–1.2 s before they were sung. Both faults are fixed by construction —
+  the bands carry a descender overshoot (`LyricsLineBands.overshootPx`) and the lead is gated to
+  word-synced rows — so the list draws on every API level again, and the library view stays parked
+  behind `USE_KARAOKE_LIBRARY_VIEW` because its own lift is the hard-coded one. Device verification
+  of the restored list is still pending.
 - **Truncation.** A one-line strip with `TextOverflow.Ellipsis` ended most lyrics in
   a "…". The strips reserve two lines and hold that height whether they fill it or
   not; growing to fit would move the controls underneath every time the line changed.

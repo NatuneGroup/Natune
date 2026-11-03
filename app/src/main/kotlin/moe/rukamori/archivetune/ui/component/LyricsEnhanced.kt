@@ -157,6 +157,8 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsIdleParkMs
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -172,8 +174,7 @@ private const val LRC_LEAD_MS = 300L
 private const val TTML_LEAD_MS = 0L
 private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
 
-/** The shortest span the karaoke sweep animates for; the slowest idle re-poll below it. */
-private const val ENHANCED_SWEEP_MIN_MS = 150L
+/** The slowest idle re-poll. */
 private const val IDLE_POLL_MS = 250L
 private const val MANUAL_SCROLL_TIMEOUT_MS = 4500L
 private const val MANUAL_SCROLL_DEBOUNCE_MS = 50L
@@ -612,7 +613,7 @@ fun LyricsEnhanced(
 
     val lifecycleOwner = LocalLifecycleOwner.current
     // The word/line boundaries below which the position loop sleeps instead of frame-stepping.
-    val deadlineSchedule = remember(lyricsEntries) { LyricsDeadlineSchedule.of(lyricsEntries, ENHANCED_SWEEP_MIN_MS) }
+    val deadlineSchedule = remember(lyricsEntries) { LyricsDeadlineSchedule.of(lyricsEntries, LyricsSweepGeometry.MIN_SWEEP_MS) }
     LaunchedEffect(player, lyricsSessionKey, animationsDisabled, playbackParameters.speed, deadlineSchedule) {
         var wasSliderActive = false
         var anchorPlayerPositionMs = player.currentPosition.coerceAtLeast(0L)
@@ -625,6 +626,7 @@ fun LyricsEnhanced(
         var cachedCurrentLineStart = Int.MIN_VALUE
         var cachedNextLineStart = Int.MAX_VALUE
         var cachedActivationStarts: IntArray? = null
+        val interludeGate = EnhancedInterludeGate { latestSyncedLyrics.value }
         // Parks the frame loop while the screen is not resumed, so a paused or backgrounded lyrics view stops polling.
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (isActive) {
@@ -658,29 +660,26 @@ fun LyricsEnhanced(
                 // playbackPositionMs.longValue (we already have the value in
                 // `rawPosition` / `nextPosition`).
                 val effectivePositionMs: Long
-                // Between word and line boundaries the drawn state is static: sleep to the next
-                // deadline and re-read the feed, rather than frame-stepping an unmoving sweep.
+                // Between word and line boundaries the drawn state is static, so the loop parks until the next deadline.
+                var parkMs = 0L
                 val idleFeedEstimateMs =
                     (rawPosition + latestLyricsSyncOffset.value.toLong() +
                         latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
                         .coerceIn(0L, Int.MAX_VALUE.toLong())
-                // The library view lifts each syllable for 700 ms past its start and breathes its interlude dots from the
-                // position, neither of which the schedule knows about, so it gets a fresh position every frame.
-                if (!enhancedLibraryViewActive && sliderPosition == null && player.isPlaying &&
-                    !animationsDisabled && !deadlineSchedule.isLive(idleFeedEstimateMs)
+                // The library view lifts each syllable for 700 ms past its start, and both lists breathe their interlude
+                // dots from the position; the word schedule knows neither, so those get a fresh position every frame.
+                if (!enhancedLibraryViewActive && sliderPosition == null && player.isPlaying && !animationsDisabled &&
+                    !deadlineSchedule.isLive(idleFeedEstimateMs) && !interludeGate.covers(idleFeedEstimateMs)
                 ) {
+                    // Publish before parking, so a sweep or lift that just left its live span shows its final frame now.
                     val next = deadlineSchedule.nextChangeAfter(idleFeedEstimateMs)
-                    delay(if (next == null) IDLE_POLL_MS else (next - idleFeedEstimateMs).coerceIn(16L, IDLE_POLL_MS))
-                    val restedPosition = player.currentPosition.coerceAtLeast(0L)
-                    anchorPlayerPositionMs = restedPosition
+                    parkMs = lyricsIdleParkMs(next, idleFeedEstimateMs, latestPlaybackSpeed.value, 16L, IDLE_POLL_MS)
+                    anchorPlayerPositionMs = rawPosition
                     anchorFrameNanos = 0L
-                    if (playbackPositionMs.longValue != restedPosition) {
-                        playbackPositionMs.longValue = restedPosition
+                    if (playbackPositionMs.longValue != rawPosition) {
+                        playbackPositionMs.longValue = rawPosition
                     }
-                    effectivePositionMs =
-                        (restedPosition + latestLyricsSyncOffset.value.toLong() +
-                            latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
-                            .coerceIn(0L, Int.MAX_VALUE.toLong())
+                    effectivePositionMs = idleFeedEstimateMs
                 } else if (sliderPosition != null || !player.isPlaying || animationsDisabled) {
                     anchorPlayerPositionMs = rawPosition
                     anchorFrameNanos = 0L
@@ -769,6 +768,7 @@ fun LyricsEnhanced(
                         }
                     }
                 }
+                if (parkMs > 0L) delay(parkMs)
             }
         }
     }
