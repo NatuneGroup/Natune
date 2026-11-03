@@ -15,6 +15,7 @@ import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.LongVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -421,27 +422,94 @@ class IosNetworkRoutingTest {
         assertFalse(IosStreamProxyRouting.mustProxy())
     }
 
-    @Test
+    /** A lease whose open refuses with the given failure — the rotation block is the one it records. */
     @OptIn(ExperimentalForeignApi::class)
-    fun aLeaseOpenRefusedByTheRotationCarriesTheSanitizedStatus() = memScoped {
-        val lease = IosStreamLease(
+    private fun refusedLease(failure: () -> Throwable = { ByteSourceException(STREAM_BLOCKED_MESSAGE) }) =
+        IosStreamLease(
             object : IosLeaseSource {
-                override fun probe(): IosHttpRangeSource.Probe =
-                    throw ByteSourceException(STREAM_BLOCKED_MESSAGE)
+                override fun probe(): IosHttpRangeSource.Probe = throw failure()
 
                 override fun readBlocking(position: Long, buffer: ByteArray, offset: Int, length: Int): Int = 0
                 override fun interrupt() {}
                 override fun close() {}
             },
         )
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun refuseOpen(lease: IosStreamLease) = memScoped {
+        lease.openStream(alloc<LongVar>().ptr, alloc<IntVar>().ptr)
+    }
+
+    @Test
+    @OptIn(ExperimentalForeignApi::class)
+    fun aLeaseOpenRefusedByTheRotationCarriesTheSanitizedStatus() {
+        val lease = refusedLease()
+        lease.outputIdentity = 1L
         lease.engineGeneration = 7
-        IosStreamLease.register(7, lease)
-        val result = lease.openStream(alloc<LongVar>().ptr, alloc<IntVar>().ptr)
-        assertTrue(result != 0)
-        // The async error read asks by generation: the current one names the block, a stale one does not.
-        assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(7))
-        assertNull(IosStreamLease.refusalOf(8))
-        IosStreamLease.unregister(7)
-        assertNull(IosStreamLease.refusalOf(7))
+        IosStreamLease.register(1L, 7, lease)
+        assertTrue(refuseOpen(lease) != 0)
+        // The async error read asks by output and generation: the current one names the block.
+        assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(1L, 7))
+        assertNull(IosStreamLease.refusalOf(1L, 8))
+        assertNull(IosStreamLease.refusalOf(2L, 7))
+        IosStreamLease.unregister(1L, 7, lease)
+        assertNull(IosStreamLease.refusalOf(1L, 7))
+    }
+
+    @Test
+    @OptIn(ExperimentalForeignApi::class)
+    fun aRefusalOutlivesTheLeaseCloseUntilTheReportReadsIt() {
+        val lease = refusedLease()
+        lease.outputIdentity = 1L
+        lease.engineGeneration = 7
+        IosStreamLease.register(1L, 7, lease)
+        refuseOpen(lease)
+        // The engine retracts a failed lease before it publishes the error — the refusal must survive.
+        lease.closeStream()
+        assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(1L, 7))
+        assertNull(IosStreamLease.refusalOf(1L, 7))
+    }
+
+    @Test
+    @OptIn(ExperimentalForeignApi::class)
+    fun aLeaseClosedBeforeAttachKeepsItsRefusalAndNeverRegisters() {
+        val lease = refusedLease()
+        refuseOpen(lease)
+        // The engine opens and retracts inside the load call — the lease is closed before attach
+        // even learns its generation, so the refusal must not ride the live registry.
+        lease.closeStream()
+        lease.engineGeneration = 9
+        lease.outputIdentity = 1L
+        IosStreamLease.register(1L, 9, lease)
+        assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(1L, 9))
+        // Nothing of the closed lease stayed live to answer a second read.
+        assertNull(IosStreamLease.refusalOf(1L, 9))
+    }
+
+    @Test
+    @OptIn(ExperimentalForeignApi::class)
+    fun generationsOfDifferentOutputsNeverShareARefusal() {
+        val first = refusedLease()
+        val second = refusedLease()
+        val next = refusedLease()
+        first.outputIdentity = 1L
+        first.engineGeneration = 0
+        second.outputIdentity = 2L
+        second.engineGeneration = 0
+        IosStreamLease.register(1L, 0, first)
+        IosStreamLease.register(2L, 0, second)
+        refuseOpen(first)
+        refuseOpen(second)
+        first.closeStream()
+        second.closeStream()
+        // A newer generation on one output supersedes its unobserved refusal and leaves the other's.
+        IosStreamLease.register(1L, 1, next)
+        assertNull(IosStreamLease.refusalOf(1L, 0))
+        assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(2L, 0))
+        // A close that names another lease under the key removes nothing of the live entry.
+        next.openRefusal = STREAM_BLOCKED_MESSAGE
+        IosStreamLease.unregister(1L, 1, first)
+        assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(1L, 1))
+        IosStreamLease.unregister(1L, 1, next)
     }
 }

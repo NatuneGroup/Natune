@@ -798,7 +798,8 @@ class IosPlaybackPort : PlaybackPort {
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
             mapper.observe(read.state, now, outputLatencyMillis(engine.outputLatencySeconds()))?.let { state.value = it }
             mapper.failure(read.state) {
-                IosStreamLease.refusalOf(read.state.loadGeneration) ?: "iOS native playback failed"
+                IosStreamLease.refusalOf(engine.output.toLong(), read.state.loadGeneration)
+                    ?: "iOS native playback failed"
             }?.let { errors.tryEmit(it) }
             watchStall(read.state, now)
             return read.state.hasSource &&
@@ -818,7 +819,8 @@ class IosPlaybackPort : PlaybackPort {
                 outputLatencyMs = outputLatencyMillis(at_audio_output_latency(native)),
             )?.let { state.value = it }
             mapper.failure(observation) {
-                IosStreamLease.refusalOf(observation.loadGeneration) ?: "iOS native playback failed"
+                IosStreamLease.refusalOf(native.toLong(), observation.loadGeneration)
+                    ?: "iOS native playback failed"
             }?.let { errors.tryEmit(it) }
             watchStall(observation, now)
             observation.hasSource &&
