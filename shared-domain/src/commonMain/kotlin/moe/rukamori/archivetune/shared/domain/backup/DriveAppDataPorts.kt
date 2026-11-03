@@ -23,6 +23,12 @@ object DriveAppDataLimits {
     const val DESKTOP_FILE_NAME: String = "ArchiveTune-desktop.backup"
 
     /**
+     * Name of the iOS backup file. iOS archives share the desktop portable format but keep their own slot, so an
+     * upload on one host never replaces another host's backup inside a shared app data folder.
+     */
+    const val IOS_FILE_NAME: String = "ArchiveTune-ios.backup"
+
+    /**
      * OAuth scope for the hidden app data folder. Host authorization adds whatever prefix its account API
      * requires; the scope itself is not changed.
      */

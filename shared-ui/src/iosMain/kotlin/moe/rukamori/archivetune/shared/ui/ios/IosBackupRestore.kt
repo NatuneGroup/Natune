@@ -449,6 +449,14 @@ internal class IosBackupOwner(
         restores.discard(handle)
     }
 
+    /**
+     * Raises the same restart flag a staged restore asks for, on behalf of the Drive host's cloud restore:
+     * an applied Drive archive stages the same pending set and needs the same restart the file path requests.
+     */
+    fun requestRestart() {
+        restarting.value = true
+    }
+
     fun dismissRestart() {
         restarting.value = false
     }
