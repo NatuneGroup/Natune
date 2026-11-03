@@ -39,7 +39,7 @@ concurrency:
 jobs:
   repeat-tests:
     name: Repeated isolated test execution
-    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    if: github.repository == 'NatuneGroup/Natune'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 45
     steps:

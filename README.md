@@ -11,7 +11,7 @@
 
 ## Project overview
 
-Natune (formerly ArchiveTune) is a music-player project targeting Android, Windows, Linux, macOS, and iOS. This private repository contains the Kotlin Multiplatform port of the existing Android application. The port and platform integrations are incomplete; the current implementation state and outstanding work are recorded at the end of this document.
+Natune (formerly ArchiveTune) is a music-player project targeting Android, Windows, Linux, macOS, and iOS. This repository contains the Kotlin Multiplatform port of the existing Android application. The port and platform integrations are incomplete; the current implementation state and outstanding work are recorded at the end of this document.
 
 The visible app name is Natune. Existing Android application, iOS bundle, Kotlin package, and persistent-data identities are retained for compatibility.
 
@@ -27,7 +27,7 @@ The following describes the Android product that this port preserves; it is not 
 
 ## Android distribution
 
-Android Stable and Nightly releases are published by the public [Natune Android project](https://github.com/NatuneGroup/ArchiveTune/releases). This private KMP repository has no verified KMP release.
+Android Stable and Nightly releases are published by the public [Natune Android project](https://github.com/NatuneGroup/ArchiveTune/releases). This KMP repository has no verified KMP release.
 
 - Android Stable downloads are also listed on [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/NatuneGroup/ArchiveTune/), [IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/moe.rukamori.archivetune), [OpenAPK](https://www.openapk.net/archivetune/moe.rukamori.archivetune/), and [Unclouded](https://unclouded.app/apps/archivetune/).
 - [GitHub Stable releases](https://github.com/NatuneGroup/ArchiveTune/releases/latest) and [Nightly pre-releases](https://github.com/NatuneGroup/ArchiveTune/releases) are available from the public Android project.
@@ -110,7 +110,7 @@ Copyright © vossgraves / Natune and contributors; earlier portions © their res
 
 ## Private KMP work in progress
 
-This private NatuneGroup/ArchiveTune-KMP workspace starts from
+This NatuneGroup/Natune workspace starts from
 NatuneGroup/ArchiveTune `dev` commit
 `b7e4dd444fea202a5c32e96f7b1199a74fe3ae70`. It remains private until the
 official Metrolist KMP release. Recovered Metrolist builds are reference material,

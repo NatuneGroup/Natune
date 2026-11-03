@@ -34,7 +34,9 @@ concurrency:
 
 jobs:
   ios-compile:
-    runs-on: blacksmith-6vcpu-macos-latest
+    # GitHub-hosted arm64 macOS 26 image: free on the public repo and ships Xcode 26.x
+    # (the Select step below pins /Applications/Xcode_26.4.app for the iOS 26 SDK APIs).
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       # The job compiles only Kotlin/Native iOS targets; it never needs the Android SDK.
