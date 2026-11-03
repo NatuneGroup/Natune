@@ -127,6 +127,11 @@ private const val USE_KARAOKE_LIBRARY_VIEW = true
 internal val enhancedLibraryViewActive: Boolean
     get() = USE_KARAOKE_LIBRARY_VIEW && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
+/** The shortest silence after a line-synced row's hold that ends the row early, so interlude dots draw there. */
+internal val enhancedLineSyncedBreakMs: Long
+    // The library draws its dots only over a silence strictly longer than 5 s; the in-house dots need their own minimum.
+    get() = if (enhancedLibraryViewActive) 5_001L else ENHANCED_INTERLUDE_MIN_BREAK_MS
+
 /**
  * When each line lights in the pane: the library view lights it at its timed start, the in-house list its activation
  * lead early.
