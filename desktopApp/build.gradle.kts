@@ -1,6 +1,7 @@
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.testing.Test
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -207,7 +208,7 @@ val desktopForkDirty = runCatching {
 // environment/CI variable, then the baked-in default. Unlike a provider credential, an explicitly blank value is kept:
 // it disables the feed and hides the News entry.
 val desktopNatuneNewsUrl = run {
-    val localProperties = java.util.Properties()
+    val localProperties = Properties()
     rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { localProperties.load(it) }
     (localProperties.getProperty("NATUNE_NEWS_URL") ?: System.getenv("NATUNE_NEWS_URL") ?: "https://natune.pages.dev/api/news")
         .trim().trimEnd('/')
