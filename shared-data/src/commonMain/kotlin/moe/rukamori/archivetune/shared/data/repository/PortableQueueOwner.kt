@@ -127,6 +127,14 @@ class PortableQueueOwner(
     private val source = MutableStateFlow<ContentRequest?>(null)
     override val queueSource: StateFlow<ContentRequest?> = source.asStateFlow()
 
+    private val loadedRequests = MutableStateFlow<PlaybackRequest?>(null)
+
+    /**
+     * The request the engine was last told to load, handoff commits included. Consumers that gate on the
+     * resolved audio source (SponsorBlock, the acoustic check) read it; null once playback stops.
+     */
+    val loadedRequest: StateFlow<PlaybackRequest?> = loadedRequests.asStateFlow()
+
     private val advanceFailureFlow = MutableSharedFlow<Throwable>(extraBufferCapacity = 8)
 
     /** Failures of the automatic end-of-track advance, which has no caller to return them to. */
@@ -152,7 +160,7 @@ class PortableQueueOwner(
         state = state,
         commit = { currentState = it; revalidateHandoff() },
         content = content,
-        filter = { it.filterPlaybackContent() },
+        filter = { it.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds()) },
         enabled = autoLoadMoreEnabled,
         repeatOff = { repeatMode() == QueueRepeatMode.OFF },
         nowMs = monotonicTimeMs,
@@ -262,7 +270,7 @@ class PortableQueueOwner(
             tail = QueueTail(collection = collection, continuation = first.continuation, kind = QueueCollectionKind.RADIO)
         }
         // The hidden-content rules of `Queue.Status.filterPlaybackContent` apply to every queue load.
-        loaded = loaded.filterPlaybackContent()
+        loaded = loaded.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds())
         if (loaded.isEmpty()) throw IncompleteFinitePlaylistException("Collection returned no songs")
         QueueEditPolicy.requireUnique(loaded)
 
@@ -437,6 +445,7 @@ class PortableQueueOwner(
             )
             successor == null && current != null -> {
                 forgetHandoff()
+                loadedRequests.value = null
                 player.stop()
             }
             else -> revalidateHandoff()
@@ -535,7 +544,8 @@ class PortableQueueOwner(
         val kept = queue.entries.subList(0, currentIndex + 1)
         val knownOccurrences = kept.mapTo(HashSet()) { it.occurrenceId }
         val radioItems = moe.rukamori.archivetune.shared.domain.queue.InfiniteQueuePolicy.fresh(
-            page.items.filterPlaybackContent(), kept.map { it.item.ref },
+            page.items.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds()),
+            kept.map { it.item.ref },
         ) { it.item.ref }.filter { knownOccurrences.add(it.occurrenceId) }
         val tail = QueueTail(collection = collection, continuation = page.continuation, kind = QueueCollectionKind.RADIO)
         if (radioItems.isEmpty()) {
@@ -625,6 +635,7 @@ class PortableQueueOwner(
         if (playRequest == null) {
             failureScore = 0
             forgetHandoff()
+            loadedRequests.value = null
             player.stop()
         } else {
             // The position belongs to the restored current item; a stamp older than the resume
@@ -720,6 +731,7 @@ class PortableQueueOwner(
         if (queue.entries.none { it.occurrenceId == incoming }) return
         currentState = queue.copy(revision = queue.revision + 1, currentOccurrenceId = incoming)
         streamRecovery.loaded(handoff.request, 0L, player.snapshot.value?.playWhenReady ?: true)
+        loadedRequests.value = handoff.request
     }
 
     /**
@@ -925,7 +937,7 @@ class PortableQueueOwner(
         FinitePlaylistCompletion.validateNext(page.continuation, consumed, page.items.size)
         val known = queue.entries.mapTo(HashSet()) { it.occurrenceId }
         val fresh = mutableListOf<ContentOccurrence>()
-        for (item in page.items.filterPlaybackContent()) {
+        for (item in page.items.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds())) {
             if (known.add(item.occurrenceId)) fresh += item
         }
         currentState = queue.copy(
@@ -949,28 +961,18 @@ class PortableQueueOwner(
             is Prepared.Ready -> {
                 val attempted = streamRecovery.nextAttempt(prepared.request)
                 streamRecovery.loaded(attempted, positionMs, playWhenReady, recovering)
+                loadedRequests.value = attempted
                 player.load(attempted, positionMs, playWhenReady)
             }
             is Prepared.Unresolved -> {
                 streamRecovery.unresolved()
+                loadedRequests.value = null
                 player.stop()
                 resolutionFailureFlow.tryEmit(prepared.failure)
             }
         }
     }
 
-    /** The hidden-content rules of `Queue.Status.filterPlaybackContent`: explicit, video and blocked artists. */
-    private fun List<ContentOccurrence>.filterPlaybackContent(): List<ContentOccurrence> {
-        val explicit = hideExplicit()
-        val video = hideVideo()
-        val blocked = blockedArtistIds()
-        if (!explicit && !video && blocked.isEmpty()) return this
-        return filter { occurrence ->
-            (!explicit || !occurrence.item.explicit) &&
-                (!video || !occurrence.item.isVideo) &&
-                occurrence.item.canonicalSong().artists.none { it.id != null && it.id in blocked }
-        }
-    }
 
     private companion object {
         /** Resolve and preload this far ahead of the blend, as Android prepares its second player. */

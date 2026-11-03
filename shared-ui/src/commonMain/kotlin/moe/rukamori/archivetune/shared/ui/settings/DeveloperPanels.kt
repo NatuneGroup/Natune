@@ -37,9 +37,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.dsp.spectral.SpectralVerdict
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -80,6 +83,21 @@ import moe.rukamori.archivetune.shared.ui.resources.m6_dev_presence_running
 import moe.rukamori.archivetune.shared.ui.resources.m6_dev_presence_stopped
 import moe.rukamori.archivetune.shared.ui.resources.m6_dev_real_time_stats
 import moe.rukamori.archivetune.shared.ui.resources.m6_dev_sample_rate_label
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_amazon
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_apple
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_deezer
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_discord
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_jiosaavn
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_lastfm
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_local
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_qobuz
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_qobuz_backup
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_qq
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_spotify
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_spotify_streaming
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_telegram
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_tidal
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_youtube
 import moe.rukamori.archivetune.shared.ui.resources.m6_dev_state_buffering
 import moe.rukamori.archivetune.shared.ui.resources.m6_dev_state_ended
 import moe.rukamori.archivetune.shared.ui.resources.m6_dev_state_idle
@@ -93,6 +111,7 @@ import moe.rukamori.archivetune.shared.ui.resources.m6_dev_yes
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.formatReportedBitrate
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.formatReportedByteCount
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.formatReportedSampleRate
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 // ----------------------------------------------------------------------------- models
@@ -122,7 +141,7 @@ data class NerdStatsState(
     val mediaId: String? = null,
     val title: String? = null,
     val artists: String? = null,
-    val sourceLabel: String? = null,
+    val sourceProviderId: String? = null,
     val format: NerdStatsFormat? = null,
     val positionMs: Long? = null,
     val bufferedPositionMs: Long? = null,
@@ -131,10 +150,11 @@ data class NerdStatsState(
     val state: NerdPlaybackState = NerdPlaybackState.IDLE,
 )
 
-/** The song or episode the acoustic check would measure. */
+/** The song or episode the acoustic check would measure. [source] names the audio source the run is bound to. */
 data class AcousticTarget(
     val mediaId: String,
     val provider: String,
+    val source: String?,
     val title: String,
     val artists: String?,
 )
@@ -171,7 +191,7 @@ internal fun nerdStatsStateOf(
     title = item?.title?.takeIf { it.isNotBlank() },
     artists = item?.artists?.joinToString(", ") { it.name }?.takeIf { it.isNotBlank() }
         ?: item?.subtitle?.takeIf { it.isNotBlank() },
-    sourceLabel = item?.ref?.provider?.let(::nerdSourceLabel),
+    sourceProviderId = item?.ref?.provider,
     format = format,
     positionMs = positionMs,
     bufferedPositionMs = snapshot?.bufferedPositionMs,
@@ -186,35 +206,52 @@ internal fun nerdStatsStateOf(
 )
 
 /** The occurrence the snapshot names, as the acoustic check's target. Null while nothing plays. */
-internal fun acousticTargetOf(snapshot: PlaybackSnapshot?, queue: QueueState): AcousticTarget? {
-    val item = queue.entries.firstOrNull { it.occurrenceId == snapshot?.occurrenceId }?.item ?: return null
+internal fun acousticTargetOf(
+    snapshot: PlaybackSnapshot?,
+    queue: QueueState,
+    resolved: PlaybackRequest? = null,
+): AcousticTarget? {
+    val occurrence = queue.entries.firstOrNull { it.occurrenceId == snapshot?.occurrenceId } ?: return null
+    val item = occurrence.item
+    val source = resolved?.takeIf { it.occurrenceId == occurrence.occurrenceId }?.locator?.let(::acousticSourceId)
     return AcousticTarget(
         mediaId = item.ref.id,
         provider = item.ref.provider,
+        source = source,
         title = item.title,
         artists = item.artists.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
             ?: item.subtitle.takeIf { it.isNotBlank() },
     )
 }
 
-/** The provider name a nerd-stats source row shows. Unknown ids pass through rather than hiding the row. */
-internal fun nerdSourceLabel(providerId: String): String = when (providerId) {
-    ContentProvider.LOCAL.id -> "Local"
-    ContentProvider.YOUTUBE.id -> "YouTube"
-    ContentProvider.SPOTIFY_CATALOG.id -> "Spotify"
-    ContentProvider.SPOTIFY_STREAMING.id -> "Spotify (streaming)"
-    ContentProvider.TIDAL.id -> "Tidal"
-    ContentProvider.QOBUZ.id -> "Qobuz"
-    ContentProvider.QOBUZ_BACKUP.id -> "Qobuz (backup)"
-    ContentProvider.DEEZER.id -> "Deezer"
-    ContentProvider.APPLE.id -> "Apple Music"
-    ContentProvider.JIOSAAVN.id -> "JioSaavn"
-    ContentProvider.AMAZON.id -> "Amazon"
-    ContentProvider.QQ.id -> "QQ Music"
-    ContentProvider.TELEGRAM.id -> "Telegram"
-    ContentProvider.LASTFM.id -> "Last.fm"
-    ContentProvider.DISCORD.id -> "Discord"
-    else -> providerId
+/**
+ * The audio-source identity an acoustic run binds to: the resolved stream's provider, or the locator
+ * kind for playback no provider chain answers (an imported file, a stored download, a Telegram track).
+ */
+private fun acousticSourceId(locator: PlaybackLocator): String = when (locator) {
+    is PlaybackLocator.LocalFile -> ContentProvider.LOCAL.id
+    is PlaybackLocator.TelegramFile -> ContentProvider.TELEGRAM.id
+    else -> locator.source?.name ?: "UNKNOWN"
+}
+
+/** The label resource a nerd-stats source row shows. Unknown ids map to null so the row shows the raw id. */
+internal fun nerdSourceLabel(providerId: String): StringResource? = when (providerId) {
+    ContentProvider.LOCAL.id -> Res.string.m6_dev_source_local
+    ContentProvider.YOUTUBE.id -> Res.string.m6_dev_source_youtube
+    ContentProvider.SPOTIFY_CATALOG.id -> Res.string.m6_dev_source_spotify
+    ContentProvider.SPOTIFY_STREAMING.id -> Res.string.m6_dev_source_spotify_streaming
+    ContentProvider.TIDAL.id -> Res.string.m6_dev_source_tidal
+    ContentProvider.QOBUZ.id -> Res.string.m6_dev_source_qobuz
+    ContentProvider.QOBUZ_BACKUP.id -> Res.string.m6_dev_source_qobuz_backup
+    ContentProvider.DEEZER.id -> Res.string.m6_dev_source_deezer
+    ContentProvider.APPLE.id -> Res.string.m6_dev_source_apple
+    ContentProvider.JIOSAAVN.id -> Res.string.m6_dev_source_jiosaavn
+    ContentProvider.AMAZON.id -> Res.string.m6_dev_source_amazon
+    ContentProvider.QQ.id -> Res.string.m6_dev_source_qq
+    ContentProvider.TELEGRAM.id -> Res.string.m6_dev_source_telegram
+    ContentProvider.LASTFM.id -> Res.string.m6_dev_source_lastfm
+    ContentProvider.DISCORD.id -> Res.string.m6_dev_source_discord
+    else -> null
 }
 
 /** Buffered share of the known duration, rounded down like the player's own percentage. */
@@ -349,7 +386,8 @@ fun HostNerdStatsSection(
             } else {
                 DevFieldRow(stringResource(Res.string.m6_dev_track_label),
                     listOfNotNull(stats.title, stats.artists).joinToString(" — ").ifBlank { null })
-                DevFieldRow(stringResource(Res.string.m6_dev_stream_source_label), stats.sourceLabel)
+                DevFieldRow(stringResource(Res.string.m6_dev_stream_source_label),
+                    stats.sourceProviderId?.let { id -> nerdSourceLabel(id)?.let { stringResource(it) } ?: id })
                 DevFieldRow(stringResource(Res.string.m6_dev_codec_label), format?.codec)
                 DevFieldRow(stringResource(Res.string.m6_dev_bitrate_label),
                     format?.bitrateKbps?.let { formatReportedBitrate(it * 1_000) })
@@ -411,6 +449,21 @@ private sealed interface AcousticPhase {
 }
 
 /**
+ * One acoustic run bound to its target identity: the phase shown and the job producing it share a
+ * lifetime, so an identity change or a dispose cancels the run rather than letting it publish into
+ * the next track's state.
+ */
+private class AcousticRunState {
+    var phase by mutableStateOf<AcousticPhase>(AcousticPhase.Idle)
+    var job: Job? = null
+
+    fun cancel() {
+        job?.cancel()
+        job = null
+    }
+}
+
+/**
  * The developer acoustic check. It runs only on Run, is cancelled when the section deactivates, and shows every
  * measured field or an honest "unavailable" — the check reports spectral suspicion, never proof of provenance.
  * A null [measure] means this host cannot decode audio for the check at all, so Run stays disabled instead of
@@ -421,23 +474,24 @@ fun HostAcousticQualitySection(
     active: Boolean,
     player: MusicPlayerController,
     queue: StateFlow<QueueState>,
+    resolved: StateFlow<PlaybackRequest?>,
     measure: (suspend (AcousticTarget) -> AcousticMeasurement)?,
     modifier: Modifier = Modifier,
 ) {
     val snapshot by player.snapshot.collectAsState()
     val queueState by queue.collectAsState()
-    val target = acousticTargetOf(snapshot, queueState)
-    // A result stays bound to the track it measured; the runner itself may be recomposed.
-    var phase by remember(target?.mediaId) { mutableStateOf<AcousticPhase>(AcousticPhase.Idle) }
+    val loadedRequest by resolved.collectAsState()
+    val target = acousticTargetOf(snapshot, queueState, loadedRequest)
+    // A result stays bound to the full source identity it measured — provider, media id and the
+    // resolved source — and a target change cancels the run belonging to the previous identity.
+    val run = remember(target) { AcousticRunState() }
     val runner by rememberUpdatedState(measure)
     val scope = rememberCoroutineScope()
-    var runJob by remember { mutableStateOf<Job?>(null) }
-    DisposableEffect(Unit) { onDispose { runJob?.cancel() } }
-    LaunchedEffect(active) {
+    DisposableEffect(run) { onDispose { run.cancel() } }
+    LaunchedEffect(active, run) {
         if (!active) {
-            runJob?.cancel()
-            runJob = null
-            phase = AcousticPhase.Idle
+            run.cancel()
+            run.phase = AcousticPhase.Idle
         }
     }
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -451,12 +505,12 @@ fun HostAcousticQualitySection(
                     .ifBlank { null })
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(
-                    enabled = measure != null && phase !is AcousticPhase.Running,
+                    enabled = measure != null && run.phase !is AcousticPhase.Running,
                     onClick = {
                         val runner = runner ?: return@Button
                         val targetNow = target
-                        phase = AcousticPhase.Running
-                        runJob = scope.launch {
+                        run.phase = AcousticPhase.Running
+                        run.job = scope.launch {
                             val result = try {
                                 runner(targetNow)
                             } catch (cancelled: CancellationException) {
@@ -464,16 +518,19 @@ fun HostAcousticQualitySection(
                             } catch (_: Exception) {
                                 AcousticMeasurement.Unmeasurable
                             }
-                            phase = when (result) {
-                                is AcousticMeasurement.Measured -> AcousticPhase.Measured(result.fields)
-                                AcousticMeasurement.Unmeasurable -> AcousticPhase.Unmeasurable
+                            // A run cancelled by an identity change or a dispose must not publish.
+                            if (isActive && run.phase is AcousticPhase.Running) {
+                                run.phase = when (result) {
+                                    is AcousticMeasurement.Measured -> AcousticPhase.Measured(result.fields)
+                                    AcousticMeasurement.Unmeasurable -> AcousticPhase.Unmeasurable
+                                }
                             }
                         }
                     },
                 ) {
                     Text(stringResource(Res.string.m6_dev_acoustic_run))
                 }
-                if (phase is AcousticPhase.Running) {
+                if (run.phase is AcousticPhase.Running) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                     Text(stringResource(Res.string.m6_dev_acoustic_running),
                         style = MaterialTheme.typography.bodySmall,
@@ -483,11 +540,11 @@ fun HostAcousticQualitySection(
             if (measure == null) {
                 Text(stringResource(Res.string.m6_dev_acoustic_unsupported),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else if (phase is AcousticPhase.Unmeasurable) {
+            } else if (run.phase is AcousticPhase.Unmeasurable) {
                 Text(stringResource(Res.string.m6_dev_acoustic_unmeasurable),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            val fields = (phase as? AcousticPhase.Measured)?.fields
+            val fields = (run.phase as? AcousticPhase.Measured)?.fields
             DevFieldRow(stringResource(Res.string.m6_dev_acoustic_verdict), fields?.verdict?.let {
                 stringResource(when (it) {
                     SpectralVerdict.UNKNOWN -> Res.string.m6_dev_acoustic_verdict_unknown

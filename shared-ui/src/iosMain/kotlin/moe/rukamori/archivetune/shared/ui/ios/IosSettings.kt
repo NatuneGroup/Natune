@@ -809,6 +809,7 @@ private fun IosDeveloperSettingsPage(
                 active = active,
                 player = graph.player,
                 queue = graph.queue.state,
+                resolved = graph.loadedRequest,
                 measure = null,
             )
         },

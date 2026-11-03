@@ -340,6 +340,7 @@ internal suspend fun assembleDesktopSessionOwners(
         scope = scope,
         player = player,
         queue = queue.state,
+        resolved = owner.loadedRequest,
         preferences = vault.snapshots,
         repository = KtorSponsorBlockRepository(http),
         report = ::desktopDiagnostic,

@@ -11,12 +11,14 @@ import moe.rukamori.archivetune.shared.data.provider.SkipSegment
 import moe.rukamori.archivetune.shared.data.provider.SponsorBlockConfig
 import moe.rukamori.archivetune.shared.data.provider.SponsorBlockSegmentSource
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.playback.SponsorBlockPlaybackPolicy
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
+import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SponsorBlockApiUrlKey
 import moe.rukamori.archivetune.shared.domain.settings.SponsorBlockCategoriesKey
@@ -27,14 +29,17 @@ import moe.rukamori.archivetune.shared.domain.settings.SponsorBlockPodcastsEnabl
  * Seeks past SponsorBlock segments in songs and podcast episodes that play from YouTube, the shared
  * counterpart of the Android `SponsorBlockPlaybackController`. Songs need only the main opt-in;
  * episodes additionally need the podcast opt-in, exactly like the Android host. The driver reads
- * only the snapshots the player already publishes, so it adds no ticker. Segment lookups are
- * occurrence- and settings-bound child jobs, so switching tracks/accounts or disabling an opt-in
- * discards an in-flight response rather than continuing to skip cached segments.
+ * only the snapshots the player already publishes plus the request the queue last loaded, so it adds
+ * no ticker. That loaded request is what makes an item eligible: a catalog entry resolved through a
+ * non-YouTube source is never looked up or skipped, since video segments do not describe that audio.
+ * Segment lookups are occurrence- and settings-bound child jobs, so switching tracks/accounts or
+ * disabling an opt-in discards an in-flight response rather than continuing to skip cached segments.
  */
 class SponsorBlockDriver(
     private val scope: CoroutineScope,
     private val player: MusicPlayerController,
     private val queue: StateFlow<QueueState>,
+    private val resolved: StateFlow<PlaybackRequest?>,
     private val preferences: StateFlow<PreferenceSnapshot?>,
     private val repository: SponsorBlockSegmentSource,
     private val report: (String) -> Unit = {},
@@ -49,7 +54,7 @@ class SponsorBlockDriver(
 
     // Declared after every field it reads, because the collector may run before the constructor returns.
     private val job = scope.launch {
-        combine(player.snapshot, queue, preferences, loaded) { snapshot, _, _, _ -> snapshot }
+        combine(player.snapshot, queue, preferences, resolved, loaded) { snapshot, _, _, _, _ -> snapshot }
             .collect { snapshot -> observe(snapshot) }
     }
 
@@ -92,6 +97,12 @@ class SponsorBlockDriver(
 
     private fun lookupKey(snapshot: PlaybackSnapshot): LookupKey? {
         val ref = queue.value.entries.firstOrNull { it.occurrenceId == snapshot.occurrenceId }?.item?.ref ?: return null
+        // Segments describe the audio actually loaded, not the catalog provider: the resolved source must be
+        // YouTube and the loaded media the video the lookup names, or a Tidal/Deezer render of a YouTube
+        // entry would seek with unrelated video segments. A re-resolve to another source drops the key.
+        val request = resolved.value?.takeIf { it.occurrenceId == snapshot.occurrenceId && it.mediaId == ref.id }
+            ?: return null
+        if (request.locator.source != AudioSourceType.YOUTUBE) return null
         val config = sponsorBlockConfig(ref, preferences.value) ?: return null
         return LookupKey(snapshot.occurrenceId, snapshot.playbackGeneration, ref.id, config)
     }
