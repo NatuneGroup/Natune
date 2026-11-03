@@ -1709,7 +1709,7 @@ private fun buildSyncedLyrics(
             val lineEnd =
                 if (nextEntry != null && nextEntry.time > entry.time) {
                     val handOver = entry.time + LINE_SYNCED_MAX_FOCUS_HOLD_MS
-                    if (nextEntry.time - handOver >= ENHANCED_INTERLUDE_MIN_BREAK_MS) {
+                    if (nextEntry.time - handOver >= enhancedLineSyncedBreakMs) {
                         // The silence after the hold is at least the dots' minimum break, so the dots draw there.
                         handOver.toInt()
                     } else {

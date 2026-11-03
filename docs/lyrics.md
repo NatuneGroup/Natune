@@ -217,7 +217,9 @@ Flamingo keeps only its controls-visible mask that clears the lines from under i
 Enhanced's synced pane (`ui/component/EnhancedKaraokePane.kt`) draws with the library's
 `KaraokeLyricsView` from API 29 and with `BasicSyncedLyricsList` below it. The library view owns
 its auto-scroll, sweep, spring placement, blur and dots; its line blur is off with animations
-disabled. The in-house list owns its auto-scroll to the anchor, sweeps
+disabled. It has no slot for the songwriter credits footer, so that footer shows only on the
+in-house list for now. A line-synced row hands focus over after its 5 s hold only when more than
+5 s of silence follows, the library's own dots threshold (the in-house list keeps 9 s). The in-house list owns its auto-scroll to the anchor, sweeps
 the active karaoke line with `EnhancedSweptLine`, glides rows on a line change, scales and fades
 rows by their distance from the sung line, and shows interlude dots over silences of 4 s or more.
 Following pauses for 3 s after a user drag, and a tap-to-seek resumes it at once. While the user
