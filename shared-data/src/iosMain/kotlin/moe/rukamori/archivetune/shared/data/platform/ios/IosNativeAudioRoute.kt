@@ -12,14 +12,20 @@ import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookieSource
 import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.bytesource.cookiesForLease
 import moe.rukamori.archivetune.shared.data.bytesource.toByteSourceAccount
+import moe.rukamori.archivetune.shared.data.stream.AdmittedCiphertextOpener
+import moe.rukamori.archivetune.shared.data.stream.NativePlaintextHandle
 import moe.rukamori.archivetune.shared.data.stream.NativePlaybackRoute
+import moe.rukamori.archivetune.shared.data.stream.NativePreparation
+import moe.rukamori.archivetune.shared.data.stream.NativeRecipePreparation
 import moe.rukamori.archivetune.shared.data.stream.NativeRouteOutcome
 import moe.rukamori.archivetune.shared.data.stream.accountProviderId
+import moe.rukamori.archivetune.shared.data.stream.hls.isHlsPlaylistUrl
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.AccountAdmission
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccount
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.playback.PreparedPlaintextHandle
+import moe.rukamori.archivetune.shared.domain.repository.NativeAudioRecipe
 import moe.rukamori.archivetune.shared.domain.repository.PreparedAudio
 import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.source.DirectStream
@@ -34,6 +40,9 @@ private const val ACCOUNT_UNREADABLE = "the account could not be read, so nothin
 /** The message a request reports when its account is no longer the entry it was admitted under. Nothing is sent. */
 private const val ACCOUNT_NO_LONGER_ADMITTED =
     "the account is no longer admitted for this stream, so nothing was read"
+
+/** The lease account of an anonymous segmented stream, matching the anonymous progressive lease. */
+private const val PLAYBACK_PROVIDER = "playback"
 
 /**
  * The iOS side of the common native route. [NativePlaybackRoute] makes every decision about scope, admission and
@@ -153,6 +162,7 @@ internal class IosNativeAudioRoute(
      * silent downgrade. Reads run on the default dispatcher; the engine opens the lease later on its producer thread.
      */
     private suspend fun admitProgressive(stream: DirectStream): Outcome {
+        if (isHlsPlaylistUrl(stream.uri)) return admitSegmented(stream)
         val scope = stream.accountScope
         if (scope == null || scope == ANONYMOUS_ACCOUNT_SCOPE) {
             return Outcome.Refused("The ${stream.source.name} stream names no personal account; nothing was read")
@@ -183,6 +193,87 @@ internal class IosNativeAudioRoute(
         )
         val recheck = PersonalCookieRecheck(accounts, cookies, admission, lease)
         return Outcome.Streamed(IosAdmittedRemote(stream.toPlaybackLocator(), lease, recheck))
+    }
+
+    /**
+     * Admits a non-DRM HLS progressive stream — a URL that serves a media playlist — and prepares it into a segmented
+     * plaintext view. The engine cannot expand a playlist through its lease, because the lease's protocol whitelist is
+     * empty, so the host expands it instead.
+     *
+     * A personal scope is admitted before any byte is requested, exactly like a personal progressive stream, and the
+     * transport binds every request — the playlist document, each segment and each key — to that entry through the
+     * same recheck. The playlist origin is the credential anchor: the stream's headers and its cookies never reach a
+     * segment or key host that lives elsewhere. An anonymous scope is admitted as anonymous — it carries the stream's
+     * headers on the playlist origin only, and no cookie is read.
+     */
+    private suspend fun admitSegmented(stream: DirectStream): Outcome {
+        val scope = stream.accountScope ?: ANONYMOUS_ACCOUNT_SCOPE
+        val provider = stream.source.accountProviderId()
+        val origin =
+            StreamOrigin.parse(stream.uri)
+                ?: return Outcome.Refused("The ${stream.source.name} playlist is not an HTTP(S) URL; nothing was read")
+        val admission: AccountAdmission?
+        if (scope == ANONYMOUS_ACCOUNT_SCOPE) {
+            admission = null
+        } else {
+            if (provider == null) {
+                return Outcome.Refused("${stream.source.name} has no account slot for a personal scope")
+            }
+            admission =
+                try {
+                    accounts.admit(provider, scope)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    return Outcome.Refused(ACCOUNT_UNREADABLE)
+                } ?: return Outcome.Refused("No accepted $provider account; sign in again to play it")
+        }
+        val account =
+            admission?.toByteSourceAccount()
+                ?: ByteSourceAccount(provider = provider ?: PLAYBACK_PROVIDER, accountId = null)
+        val transport =
+            IosCiphertextOpener(
+                boundScope = scope,
+                account = account,
+                recheckFor =
+                    admission?.let { captured ->
+                        { lease: ByteSourceLease -> PersonalCookieRecheck(accounts, cookies, captured, lease) }
+                    },
+                headers = stream.headers,
+                credentialAnchor = origin,
+            )
+        // The one validated preparation path parses the playlist here, bounds the origins it names, indexes the
+        // first segment and sniffs the container, so every segmented form shares the same checks as the recipes.
+        val host =
+            if (admission == null) transport else AdmittedCiphertextOpener(admission, accounts, transport)
+        val preparation =
+            try {
+                NativeRecipePreparation.prepare(
+                    NativeAudioRecipe.SegmentedHls(
+                        playlistUrl = stream.uri,
+                        playlistText = null,
+                        audioSource = stream.source,
+                        accountScope = scope,
+                        expiresAtEpochMs = stream.expiresAtEpochMs,
+                    ),
+                    host,
+                    admission,
+                )
+            } catch (cancelled: CancellationException) {
+                transport.close()
+                throw cancelled
+            } catch (_: Throwable) {
+                transport.close()
+                return Outcome.Failed(PREPARATION_FAILED)
+            }
+        return when (preparation) {
+            is NativePreparation.Ready ->
+                Outcome.Ready(NativePlaintextHandle(preparation.plaintext), transport)
+            is NativePreparation.Refused -> {
+                transport.close()
+                Outcome.Refused(preparation.reason)
+            }
+        }
     }
 }
 

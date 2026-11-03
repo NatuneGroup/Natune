@@ -46,8 +46,8 @@ object NativePlaybackRoute {
         return when (prepared) {
             is PreparedAudio.Native -> {
                 val recipe = prepared.recipe
-                admitAndPrepare(recipe.source, recipe.accountScope, opener, accounts) { host, _ ->
-                    NativeRecipePreparation.prepare(recipe, host)
+                admitAndPrepare(recipe.source, recipe.accountScope, opener, accounts) { host, admission ->
+                    NativeRecipePreparation.prepare(recipe, host, admission)
                 }
             }
             is PreparedAudio.TidalManifest -> {
