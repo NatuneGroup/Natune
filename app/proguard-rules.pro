@@ -119,6 +119,13 @@
     #public static int e(...);
 }
 
+# Timber D/V calls are deliberately NOT stripped here: assumenosideeffects on a
+# tagged call (Timber.tag("X").d(...)) removed the call that consumed the
+# thread-local tag, so the next untagged I/W/E line inherited a stale tag.
+# Release builds instead rely on GlobalLogTree.isLoggable, which rejects D/V
+# before Timber formats the message and still consumes the explicit tag, while
+# info/warn/error keep flowing to GlobalLog and logcat for crash reports.
+
 # Generated automatically by the Android Gradle plugin.
 -dontwarn java.beans.BeanDescriptor
 -dontwarn java.beans.BeanInfo
