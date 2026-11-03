@@ -96,6 +96,25 @@ sealed interface LibraryMutation {
         val neighbourOccurrenceId: String,
         val after: Boolean,
     ) : LibraryMutation
+
+    /**
+     * Places one playlist beside another in the collection's custom order, below the neighbour when [after] is true.
+     * The store writes the complete order once a move lands, so a later drag reorders positions rather than ids.
+     */
+    data class MovePlaylist(
+        val playlistId: String,
+        val neighbourPlaylistId: String,
+        val after: Boolean,
+    ) : LibraryMutation
+
+    /**
+     * Replaces a playlist's whole stored song order with [occurrences], as a remote pull does. The replacement is one
+     * commit: an occurrence the pull dropped leaves the playlist, and the kept rows take consecutive positions.
+     */
+    data class ReplacePlaylistEntries(
+        val playlistId: String,
+        val occurrences: List<ContentOccurrence>,
+    ) : LibraryMutation
 }
 
 interface LibraryRepository : ContentRepository {

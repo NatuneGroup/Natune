@@ -239,6 +239,50 @@ class PortableStateMigrationTest {
         }
     }
 
+    @Test fun versionElevenFileMigratesToLatestGainingPlaylistRemoteColumns() = runBlocking<Unit> {
+        val file = Files.createTempFile("archivetune-v11", ".db")
+        rebuildFromExport(11, file, listOf(
+            "INSERT INTO portable_playlist (id, title, tags, createdSeq, songSortType, songSortDescending, isHidden) " +
+                "VALUES ('keep-me', 'Seeded', '[]', 1, 'CUSTOM', 1, 0)",
+        ))
+
+        val database = openPortableStateDatabase(file.toString())
+        try {
+            database.openNow()
+        } finally {
+            database.close()
+        }
+
+        val migrated = BundledSQLiteDriver().open(file.toString())
+        try {
+            migrated.prepare("PRAGMA user_version").use {
+                assertTrue(it.step())
+                assertEquals(PORTABLE_STATE_SCHEMA_VERSION.toLong(), it.getLong(0))
+            }
+            migrated.prepare("PRAGMA table_info(`portable_playlist`)").use {
+                val columns = mutableListOf<String>()
+                while (it.step()) columns += it.getText(1)
+                for (column in listOf("customOrder", "browseId", "remoteSongCount")) {
+                    assertTrue(column in columns, "portable_playlist did not gain $column")
+                }
+            }
+            migrated.prepare(
+                "SELECT id, coalesce(customOrder, -1), coalesce(browseId, 'missing'), " +
+                    "coalesce(remoteSongCount, -1) FROM portable_playlist",
+            ).use {
+                assertTrue(it.step())
+                assertEquals("keep-me", it.getText(0))
+                assertEquals(-1L, it.getLong(1))
+                assertEquals("missing", it.getText(2))
+                assertEquals(-1L, it.getLong(3))
+                assertFalse(it.step())
+            }
+        } finally {
+            migrated.close()
+            Files.deleteIfExists(file)
+        }
+    }
+
     @Test fun currentSchemaExportIdentityMatchesARoomCreatedDatabase() = runBlocking<Unit> {
         val file = Files.createTempFile("archivetune-schema-export", ".db")
         val database = openPortableStateDatabase(file.toString())
