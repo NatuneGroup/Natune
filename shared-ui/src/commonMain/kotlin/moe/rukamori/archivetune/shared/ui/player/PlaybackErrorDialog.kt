@@ -98,6 +98,8 @@ fun PlaybackErrorDialog(
     val timeout = stringResource(Res.string.m12_error_timeout)
     val noStream = stringResource(Res.string.m12_error_no_stream)
     val malformed = stringResource(Res.string.m12_error_malformed_stream)
+    val streamBlocked = stringResource(Res.string.m12_error_stream_blocked)
+    val streamBlockedReason = stringResource(Res.string.m12_error_stream_blocked_reason)
     val codeLabel = stringResource(Res.string.m12_playback_error_code)
     val httpLabel = stringResource(Res.string.m12_playback_error_http)
     val messageLabel = stringResource(Res.string.m12_playback_error_message)
@@ -115,6 +117,7 @@ fun PlaybackErrorDialog(
         PlaybackErrorKind.TIMEOUT -> timeout
         PlaybackErrorKind.NO_STREAM -> noStream
         PlaybackErrorKind.MALFORMED_STREAM -> malformed
+        PlaybackErrorKind.STREAM_BLOCKED -> streamBlocked
         PlaybackErrorKind.DECODER, PlaybackErrorKind.HTTP, PlaybackErrorKind.UNKNOWN -> fallbackUnknown
     }
     val reason = when (kind) {
@@ -122,6 +125,7 @@ fun PlaybackErrorDialog(
         PlaybackErrorKind.CONFIRMATION_REQUIRED -> confirmationReason
         PlaybackErrorKind.DECODER -> "$fallbackUnknown ($codeLabel ${info.code})"
         PlaybackErrorKind.HTTP -> "$fallbackUnknown ($httpLabel ${info.httpStatus})"
+        PlaybackErrorKind.STREAM_BLOCKED -> streamBlockedReason
         PlaybackErrorKind.UNKNOWN -> failure.message.trim().ifEmpty { fallbackUnknown }
         else -> title
     }
