@@ -150,7 +150,7 @@ fun LyricsProvidersSettings(
     val (enableDeezerLyrics, onEnableDeezerLyricsChange) =
         prefs.state(key = EnableDeezerLyricsKey, defaultValue = true)
     val (prioritizeWordSynced, onPrioritizeWordSyncedChange) =
-        prefs.state(key = PrioritizeWordSyncedLyricsKey, defaultValue = false)
+        prefs.state(key = PrioritizeWordSyncedLyricsKey, defaultValue = true)
     val (enableMusixmatchExperimental, onEnableMusixmatchExperimentalChange) =
         prefs.state(key = EnableMusixmatchExperimentalKey, defaultValue = false)
     val (providerOrderStr, onProviderOrderStrChange) =
@@ -568,14 +568,20 @@ fun LyricsProvidersSettings(
                     )
                 }
 
+                // With the word-synced sweep on, sync quality picks the providers and the order row
+                // only misleads — it stays listed, greyed, saying why.
                 item {
                     PreferenceEntry(
                         modifier = positions.modifierFor("set_first_lyrics_provider", "first_lyrics_provider"),
                         title = { Text(stringResource(R.string.set_first_lyrics_provider)) },
-                        description = providerOrder.firstOrNull()?.displayName(),
+                        description = if (prioritizeWordSynced) {
+                            stringResource(R.string.provider_order_overridden_by_word_sync)
+                        } else {
+                            providerOrder.firstOrNull()?.displayName()
+                        },
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         onClick = { showProviderOrderDialog = true },
-                        isEnabled = providerTogglesEnabled,
+                        isEnabled = providerTogglesEnabled && !prioritizeWordSynced,
                     )
                 }
             }
