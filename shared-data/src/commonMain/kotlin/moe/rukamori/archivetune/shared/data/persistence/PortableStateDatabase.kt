@@ -4,6 +4,7 @@ import androidx.room.*
 import androidx.sqlite.SQLiteDriver
 import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.json.jsonObject
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskDao
 import moe.rukamori.archivetune.shared.data.download.PortableDownloadTaskRow
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
@@ -121,9 +122,41 @@ abstract class QueueCheckpointDao {
     }
 }
 
-class RoomQueueCheckpointStore(private val dao: QueueCheckpointDao) : QueueCheckpointStore {
+class RoomQueueCheckpointStore(
+    private val dao: QueueCheckpointDao,
+    /**
+     * The saved-item store a restored queue hydrates missing durations from, the way the Android
+     * `persistQueue` restore fills them from the songs table. Absent, durations stay as stored.
+     */
+    private val libraryDao: PortableLibraryDao? = null,
+) : QueueCheckpointStore {
     override suspend fun read(): QueueCheckpoint? = dao.read()?.let {
-        QueueCheckpointJson.decode(it.json).also { checkpoint -> require(checkpoint.queue.revision == it.revision) }
+        QueueCheckpointJson.decode(it.json)
+            .also { checkpoint -> require(checkpoint.queue.revision == it.revision) }
+            .hydratingDurations()
+    }
+
+    /**
+     * A saved item row keeps the whole item, so it supplies the duration a checkpoint entry lacks, the same
+     * way the Android restore fills queue durations from the songs table. An entry without a stored row
+     * keeps its null rather than being guessed at.
+     */
+    private suspend fun QueueCheckpoint.hydratingDurations(): QueueCheckpoint {
+        val dao = libraryDao ?: return this
+        if (queue.entries.all { it.item.durationMs != null }) return this
+        var changed = false
+        val entries = queue.entries.map { occurrence ->
+            if (occurrence.item.durationMs != null) return@map occurrence
+            val stored = runCatching {
+                dao.item(occurrence.item.ref.provider, occurrence.item.ref.kind.name, occurrence.item.ref.id)
+            }.getOrNull() ?: return@map occurrence
+            val durationMs = ContentJson.decode(
+                kotlinx.serialization.json.Json.parseToJsonElement(stored.json).jsonObject,
+            ).item.durationMs ?: return@map occurrence
+            changed = true
+            occurrence.copy(item = occurrence.item.copy(durationMs = durationMs))
+        }
+        return if (changed) copy(queue = queue.copy(entries = entries)) else this
     }
     override suspend fun write(checkpoint: QueueCheckpoint, expectedRevision: Long?): Boolean =
         dao.compareAndSwap(checkpoint, expectedRevision)
