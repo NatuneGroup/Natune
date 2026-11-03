@@ -19,9 +19,13 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -32,14 +36,12 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import moe.rukamori.archivetune.shared.data.spotify.KtorSpotifyAuth
-import moe.rukamori.archivetune.shared.data.youtube.YouTubePlaylistImportSearch
+import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImportSearch
 import moe.rukamori.archivetune.shared.domain.library.DefaultLibraryFilterOrder
 import moe.rukamori.archivetune.shared.domain.library.LibraryDefaults
 import moe.rukamori.archivetune.shared.domain.library.LibraryFilter
 import moe.rukamori.archivetune.shared.domain.library.LibrarySource
 import moe.rukamori.archivetune.shared.domain.library.toLibraryFilterOrder
-import moe.rukamori.archivetune.shared.domain.playlistimport.PlaylistImportTrack
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
@@ -62,13 +64,16 @@ import moe.rukamori.archivetune.shared.domain.settings.LibraryChipOrderKey
 import moe.rukamori.archivetune.shared.domain.settings.LibrarySourceKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.ShowSpotifyPlaylistsKey
-import moe.rukamori.archivetune.shared.domain.settings.SpotifyAccessTokenKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
 import moe.rukamori.archivetune.shared.domain.settings.TopSize
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
+import moe.rukamori.archivetune.shared.ui.IosHost
+import moe.rukamori.archivetune.shared.ui.host.hostCatalogDetailPage
 import moe.rukamori.archivetune.shared.ui.host.hostLibraryPage
 import moe.rukamori.archivetune.shared.ui.host.queuedEntry
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
+import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.ios_library_source_spotify
@@ -283,6 +288,7 @@ private fun iosSpotifyMixHeader(
 internal fun iosSpotifyPlaylistPage(
     graph: IosSessionGraph,
     playlistId: String,
+    back: () -> Unit,
 ): ArchiveGraphPage {
     var attempt by remember { mutableStateOf(0) }
     var header by remember(playlistId) { mutableStateOf<ContentItem?>(null) }
@@ -310,7 +316,7 @@ internal fun iosSpotifyPlaylistPage(
                 )
                 items = tracks
             } else {
-                val loaded = client.fetchPlaylistDetail(playlistId)
+                val loaded = client.fetchPlaylistDetail(playlistId, spotifySubtitle)
                 header = loaded.first
                 items = loaded.second
             }
@@ -324,12 +330,6 @@ internal fun iosSpotifyPlaylistPage(
             failed = true
         }
     }
-    val playIndex: (Int) -> Unit = { index ->
-        val occurrence = items.getOrNull(index)
-        if (occurrence != null) {
-            iosPlaySpotifyOccurrence(graph, request, QueueStart(occurrence.occurrenceId, occurrence.item.ref, index))
-        }
-    }
     return ArchiveGraphPage.Detail(
         kind = DetailKind.Playlist,
         header = header,
@@ -338,15 +338,169 @@ internal fun iosSpotifyPlaylistPage(
             content = ContentActions(
                 open = { occ ->
                     val idx = items.indexOfFirst { it.occurrenceId == occ.occurrenceId }
-                    if (idx >= 0) playIndex(idx)
+                    if (idx >= 0) {
+                        iosPlaySpotifyTrackList(graph, playlistId, items, startIndex = idx, shuffled = false)
+                    }
                 },
                 more = null,
                 loadMore = {},
                 retry = { attempt += 1 },
             ),
-            back = {},
-            playAll = { if (items.isNotEmpty()) playIndex(0) },
-            shuffle = { if (items.isNotEmpty()) playIndex(items.indices.random()) },
+            back = back,
+            playAll = {
+                if (items.isNotEmpty()) {
+                    iosPlaySpotifyTrackList(graph, playlistId, items, startIndex = 0, shuffled = false)
+                }
+            },
+            shuffle = {
+                if (items.isNotEmpty()) {
+                    iosPlaySpotifyTrackList(graph, playlistId, items, startIndex = 0, shuffled = true)
+                }
+            },
+            toggleLibrary = null,
+            more = null,
+        ),
+    )
+}
+
+@Composable
+internal fun iosSpotifyArtistPage(
+    graph: IosSessionGraph,
+    host: IosHost,
+    catalogue: IosCatalogueOwners,
+    route: ArchiveRoute,
+    menu: IosItemMenuState,
+    openRoute: (String) -> Unit,
+    back: () -> Unit,
+): ArchiveGraphPage {
+    val artistId = route.arguments.getValue("artistId")
+    var attempt by remember(artistId) { mutableStateOf(0) }
+    var resolvedRef by remember(artistId) { mutableStateOf<ContentRef?>(null) }
+    var loading by remember(artistId) { mutableStateOf(true) }
+    var failed by remember(artistId) { mutableStateOf(false) }
+    val spotifyRef = remember(artistId) { ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ARTIST, artistId) }
+    val spotifySubtitle = stringResource(Res.string.ios_library_source_spotify)
+    LaunchedEffect(artistId, attempt) {
+        loading = true
+        failed = false
+        try {
+            val ytRef = iosResolveSpotifyCatalogRef(graph, spotifyRef, null) ?: error("No YouTube artist match")
+            resolvedRef = ytRef
+            loading = false
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            graph.report("spotify artist not resolved: ${failure::class.simpleName}")
+            loading = false
+            failed = true
+        }
+    }
+    val resolved = resolvedRef
+    if (resolved != null) {
+        val ytRoute = remember(resolved) {
+            ArchiveRoute(
+                destination = ArchiveDestination.ARTIST,
+                raw = ArchiveRoutes.artist(resolved.id),
+                arguments = mapOf("artistId" to resolved.id, "provider" to ContentProvider.YOUTUBE.id),
+            )
+        }
+        return iosArtistPage(graph, host, catalogue, ytRoute, menu, openRoute, back)
+    }
+    val request = ContentRequest(provider = ContentProvider.SPOTIFY_CATALOG, surface = ContentSurface.ARTIST, parent = spotifyRef)
+    return ArchiveGraphPage.Detail(
+        kind = DetailKind.Artist,
+        header = ContentItem(spotifyRef, artistId, spotifySubtitle),
+        page = PagedContentState(request = request, items = emptyList(), initialized = !loading || failed, loading = loading, failed = failed),
+        actions = DetailActions(
+            content = ContentActions(open = {}, more = null, loadMore = {}, retry = { attempt += 1 }),
+            back = back,
+            playAll = {},
+            shuffle = {},
+            toggleLibrary = null,
+            more = null,
+        ),
+    )
+}
+
+@Composable
+internal fun iosSpotifyAlbumPage(
+    graph: IosSessionGraph,
+    owners: IosCatalogOwners,
+    route: ArchiveRoute,
+    menu: IosItemMenuState,
+    back: () -> Unit,
+): ArchiveGraphPage {
+    val albumId = route.arguments.getValue("albumId")
+    var attempt by remember(albumId) { mutableStateOf(0) }
+    var resolvedRef by remember(albumId) { mutableStateOf<ContentRef?>(null) }
+    var fallbackHeader by remember(albumId) { mutableStateOf<ContentItem?>(null) }
+    var fallbackItems by remember(albumId) { mutableStateOf<List<ContentOccurrence>>(emptyList()) }
+    var loading by remember(albumId) { mutableStateOf(true) }
+    var failed by remember(albumId) { mutableStateOf(false) }
+    val spotifyRef = remember(albumId) { ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ALBUM, albumId) }
+    val spotifySubtitle = stringResource(Res.string.ios_library_source_spotify)
+    val client = remember(graph) { IosSpotifyRestClient(graph) }
+    val request = ContentRequest(provider = ContentProvider.SPOTIFY_CATALOG, surface = ContentSurface.ALBUM, parent = spotifyRef)
+    LaunchedEffect(albumId, attempt) {
+        loading = true
+        failed = false
+        try {
+            val ytRef = iosResolveSpotifyCatalogRef(graph, spotifyRef, null)
+            if (ytRef != null) {
+                resolvedRef = ytRef
+            } else {
+                val detail = client.fetchAlbumDetail(albumId, spotifySubtitle)
+                fallbackHeader = detail.first
+                fallbackItems = detail.second
+                IosSpotifySongCache.record(request, detail.second)
+            }
+            loading = false
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            graph.report("spotify album not loaded: ${failure::class.simpleName}")
+            loading = false
+            failed = true
+        }
+    }
+    val resolved = resolvedRef
+    if (resolved != null) {
+        val ytRoute = remember(resolved) {
+            ArchiveRoute(
+                destination = ArchiveDestination.ALBUM,
+                raw = ArchiveRoutes.album(resolved.id),
+                arguments = mapOf("albumId" to resolved.id, "provider" to ContentProvider.YOUTUBE.id),
+            )
+        }
+        hostCatalogDetailPage(owners.pages, ytRoute) { menu.open(it) }?.let { return it }
+    }
+    return ArchiveGraphPage.Detail(
+        kind = DetailKind.Album,
+        header = fallbackHeader,
+        page = PagedContentState(request = request, items = fallbackItems, initialized = !loading || failed, loading = loading, failed = failed),
+        actions = DetailActions(
+            content = ContentActions(
+                open = { occ ->
+                    val idx = fallbackItems.indexOfFirst { it.occurrenceId == occ.occurrenceId }
+                    if (idx >= 0) {
+                        iosPlaySpotifyTrackList(graph, "album:$albumId", fallbackItems, startIndex = idx, shuffled = false)
+                    }
+                },
+                more = null,
+                loadMore = {},
+                retry = { attempt += 1 },
+            ),
+            back = back,
+            playAll = {
+                if (fallbackItems.isNotEmpty()) {
+                    iosPlaySpotifyTrackList(graph, "album:$albumId", fallbackItems, startIndex = 0, shuffled = false)
+                }
+            },
+            shuffle = {
+                if (fallbackItems.isNotEmpty()) {
+                    iosPlaySpotifyTrackList(graph, "album:$albumId", fallbackItems, startIndex = 0, shuffled = true)
+                }
+            },
             toggleLibrary = null,
             more = null,
         ),
@@ -360,32 +514,81 @@ internal fun iosPlaySpotifyOccurrence(
 ): Boolean {
     if (collection?.provider != ContentProvider.SPOTIFY_CATALOG) return false
     val list = IosSpotifySongCache.itemsFor(collection)
-    val selected = list.firstOrNull { it.occurrenceId == start.occurrenceId }
-        ?: list.getOrNull(start.index ?: -1)
+    if (list.isEmpty()) return false
+    val index = list.indexOfFirst { it.occurrenceId == start.occurrenceId }
+        .takeIf { it >= 0 }
+        ?: start.originalIndex?.takeIf { it in list.indices }
         ?: return false
+    val key = collection.parent?.id ?: collection.surface.name.lowercase()
+    iosPlaySpotifyTrackList(graph, key, list, startIndex = index, shuffled = false)
+    return true
+}
+
+internal fun iosPlaySpotifyTrackList(
+    graph: IosSessionGraph,
+    collectionKey: String,
+    tracks: List<ContentOccurrence>,
+    startIndex: Int,
+    shuffled: Boolean,
+) {
+    if (tracks.isEmpty()) return
+    val ordered = if (shuffled) tracks.shuffled() else tracks
+    val safeStart = if (shuffled) 0 else startIndex.coerceIn(0, ordered.lastIndex)
+    val search = YouTubePlaylistImportSearch(graph.youtubeContent)
     graph.scope.launch {
         try {
-            val resolved = withContext(Dispatchers.Default) {
-                YouTubePlaylistImportSearch(graph.youtubeContent).findSong(
-                    PlaylistImportTrack(
-                        title = selected.item.title,
-                        artists = selected.item.subtitle.orEmpty().split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                        durationSeconds = selected.item.durationMs?.let { (it / 1000L).toInt() },
-                    ),
-                )
+            val firstResolved = withContext(Dispatchers.Default) {
+                resolveOneSpotifySong(search, ordered[safeStart])
             } ?: return@launch graph.report("spotify song could not be matched on YouTube")
-            val entry = ContentOccurrence(
-                occurrenceId = "spotify:resolved:${selected.occurrenceId}:${resolved.ref.id}",
-                item = resolved,
+            val firstEntry = ContentOccurrence(
+                occurrenceId = "spotify:$collectionKey:$safeStart:${firstResolved.ref.id}",
+                item = firstResolved,
             ).queuedEntry()
-            graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
+            graph.queue.replace(listOf(firstEntry), firstEntry.occurrenceId, playWhenReady = true)
+            if (ordered.size <= 1) return@launch
+            val resolvedAll = withContext(Dispatchers.Default) {
+                coroutineScope {
+                    val out = arrayOfNulls<ContentItem>(ordered.size)
+                    out[safeStart] = firstResolved
+                    ordered.indices.filter { it != safeStart }.chunked(4).forEach { batch ->
+                        batch.map { idx ->
+                            async { idx to resolveOneSpotifySong(search, ordered[idx]) }
+                        }.awaitAll().forEach { (idx, item) -> out[idx] = item }
+                    }
+                    out.toList()
+                }
+            }
+            val entries = resolvedAll.mapIndexedNotNull { idx, item ->
+                item?.let {
+                    ContentOccurrence(
+                        occurrenceId = "spotify:$collectionKey:$idx:${it.ref.id}",
+                        item = it,
+                    ).queuedEntry()
+                }
+            }
+            if (entries.size > 1) {
+                val startOcc = entries.firstOrNull { it.occurrenceId == firstEntry.occurrenceId }?.occurrenceId
+                    ?: entries.first().occurrenceId
+                graph.queue.replace(entries, startOcc, playWhenReady = true)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            graph.report("spotify song play failed: ${failure::class.simpleName}")
+            graph.report("spotify queue play failed: ${failure::class.simpleName}")
         }
     }
-    return true
+}
+
+private suspend fun resolveOneSpotifySong(
+    search: YouTubePlaylistImportSearch,
+    occurrence: ContentOccurrence,
+): ContentItem? {
+    val query = listOfNotNull(
+        occurrence.item.subtitle.takeIf { it.isNotBlank() },
+        occurrence.item.title.takeIf { it.isNotBlank() },
+    ).joinToString(" ").trim()
+    if (query.isBlank()) return null
+    return runCatching { search.firstSong(query) }.getOrNull()
 }
 
 internal suspend fun iosResolveSpotifyCatalogRef(graph: IosSessionGraph, ref: ContentRef, titleHint: String?): ContentRef? =
@@ -394,7 +597,7 @@ internal suspend fun iosResolveSpotifyCatalogRef(graph: IosSessionGraph, ref: Co
         val query = titleHint?.takeIf { it.isNotBlank() } ?: client.fetchEntityTitle(ref) ?: return@withContext null
         val filter = if (ref.kind == ContentKind.ARTIST) ContentSearchFilter.ARTISTS else ContentSearchFilter.ALBUMS
         val page = graph.youtubeContent.page(
-            ContentRequest(provider = ContentProvider.YOUTUBE, surface = ContentSurface.SEARCH, query = query, filter = filter),
+            ContentRequest(provider = ContentProvider.YOUTUBE, surface = ContentSurface.SEARCH, text = query, filter = filter),
         )
         page.items.firstOrNull { it.item.ref.kind == ref.kind }?.item?.ref
     }
@@ -418,89 +621,134 @@ private fun LibraryFilter.toSurface(): ContentSurface = when (this) {
 private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    private suspend fun token(): String {
-        val snap = graph.settings.snapshots.value
-        val existing = snap?.get(SpotifyAccessTokenKey)?.trim().orEmpty()
-        if (existing.isNotEmpty()) return existing
-        val spDc = snap?.get(SpotifySpDcKey)?.trim().orEmpty()
-        require(spDc.isNotEmpty()) { "Spotify sp_dc not configured" }
-        val refreshed = KtorSpotifyAuth(graph.httpClient).refreshAccessToken(spDc)
-        graph.settings.edit { this[SpotifyAccessTokenKey] = refreshed.accessToken }
-        return refreshed.accessToken
-    }
-
     private suspend fun getJson(url: String): JsonObject = withContext(Dispatchers.Default) {
-        val response = graph.httpClient.get(url) {
-            header(HttpHeaders.Authorization, "Bearer ${token()}")
+        val firstToken = iosValidSpotifyCatalogToken(graph)
+        val firstResponse = graph.http.get(url) {
+            header(HttpHeaders.Authorization, "Bearer $firstToken")
+        }
+        val response = if (firstResponse.status == HttpStatusCode.Unauthorized) {
+            val freshToken = iosValidSpotifyCatalogToken(graph, forceRefresh = true)
+            graph.http.get(url) {
+                header(HttpHeaders.Authorization, "Bearer $freshToken")
+            }
+        } else {
+            firstResponse
         }
         require(response.status.isSuccess()) { "Spotify HTTP ${response.status.value}" }
         json.parseToJsonElement(response.bodyAsText()).jsonObject
     }
 
     suspend fun fetchPlaylists(): List<ContentOccurrence> {
-        val items = getJson("https://api.spotify.com/v1/me/playlists?limit=50")["items"] as? JsonArray ?: return emptyList()
-        return items.mapIndexedNotNull { idx, el ->
-            val obj = el as? JsonObject ?: return@mapIndexedNotNull null
-            val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
-            val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
-            val owner = obj["owner"]?.jsonObject?.get("display_name")?.jsonPrimitive?.contentOrNull
-            val img = (obj["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-            ContentOccurrence(
-                "spotify:library:playlists:$idx:$id",
-                ContentItem(ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.PLAYLIST, id), name, owner, img),
-            )
+        val out = mutableListOf<ContentOccurrence>()
+        var nextUrl: String? = "https://api.spotify.com/v1/me/playlists?limit=50"
+        var pages = 0
+        while (nextUrl != null && pages++ < 10) {
+            val root = getJson(nextUrl)
+            val items = root["items"] as? JsonArray ?: break
+            items.forEach { el ->
+                val obj = el as? JsonObject ?: return@forEach
+                val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val owner = obj["owner"]?.jsonObject?.get("display_name")?.jsonPrimitive?.contentOrNull.orEmpty()
+                val img = (obj["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                val idx = out.size
+                out += ContentOccurrence(
+                    "spotify:library:playlists:$idx:$id",
+                    ContentItem(ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.PLAYLIST, id), name, owner, img),
+                )
+            }
+            nextUrl = root["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         }
+        return out
     }
 
     suspend fun fetchLikedTracks(): List<ContentOccurrence> {
-        val items = getJson("https://api.spotify.com/v1/me/tracks?limit=50")["items"] as? JsonArray ?: return emptyList()
-        return items.mapIndexedNotNull { idx, el ->
-            val track = (el as? JsonObject)?.get("track") as? JsonObject ?: return@mapIndexedNotNull null
-            parseTrackOccurrence("spotify:library:songs:$idx", track)
+        val out = mutableListOf<ContentOccurrence>()
+        var nextUrl: String? = "https://api.spotify.com/v1/me/tracks?limit=50"
+        var pages = 0
+        while (nextUrl != null && pages++ < 10) {
+            val root = getJson(nextUrl)
+            val items = root["items"] as? JsonArray ?: break
+            items.forEach { el ->
+                val track = (el as? JsonObject)?.get("track") as? JsonObject ?: return@forEach
+                parseTrackOccurrence("spotify:library:songs:${out.size}", track)?.let { out += it }
+            }
+            nextUrl = root["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         }
+        return out
     }
 
     suspend fun fetchArtists(): List<ContentOccurrence> {
-        val artistsObj = getJson("https://api.spotify.com/v1/me/following?type=artist&limit=50")["artists"]?.jsonObject
-        val items = artistsObj?.get("items") as? JsonArray ?: return emptyList()
-        return items.mapIndexedNotNull { idx, el ->
-            val obj = el as? JsonObject ?: return@mapIndexedNotNull null
-            val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
-            val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
-            val img = (obj["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-            ContentOccurrence(
-                "spotify:library:artists:$idx:$id",
-                ContentItem(ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ARTIST, id), name, null, img),
-            )
+        val out = mutableListOf<ContentOccurrence>()
+        var nextUrl: String? = "https://api.spotify.com/v1/me/following?type=artist&limit=50"
+        var pages = 0
+        while (nextUrl != null && pages++ < 10) {
+            val artistsObj = getJson(nextUrl)["artists"]?.jsonObject ?: break
+            val items = artistsObj["items"] as? JsonArray ?: break
+            items.forEach { el ->
+                val obj = el as? JsonObject ?: return@forEach
+                val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val img = (obj["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                val idx = out.size
+                out += ContentOccurrence(
+                    "spotify:library:artists:$idx:$id",
+                    ContentItem(ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ARTIST, id), name, "", img),
+                )
+            }
+            nextUrl = artistsObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         }
+        return out
     }
 
     suspend fun fetchAlbums(): List<ContentOccurrence> {
-        val items = getJson("https://api.spotify.com/v1/me/albums?limit=50")["items"] as? JsonArray ?: return emptyList()
-        return items.mapIndexedNotNull { idx, el ->
-            val album = (el as? JsonObject)?.get("album") as? JsonObject ?: return@mapIndexedNotNull null
-            val id = album["id"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
-            val name = album["name"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
-            val artists = (album["artists"] as? JsonArray)?.mapNotNull {
-                it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
-            }?.joinToString(", ")
-            val img = (album["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-            ContentOccurrence(
-                "spotify:library:albums:$idx:$id",
-                ContentItem(ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ALBUM, id), name, artists, img),
-            )
+        val out = mutableListOf<ContentOccurrence>()
+        var nextUrl: String? = "https://api.spotify.com/v1/me/albums?limit=50"
+        var pages = 0
+        while (nextUrl != null && pages++ < 10) {
+            val root = getJson(nextUrl)
+            val items = root["items"] as? JsonArray ?: break
+            items.forEach { el ->
+                val album = (el as? JsonObject)?.get("album") as? JsonObject ?: return@forEach
+                val id = album["id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val name = album["name"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val artists = (album["artists"] as? JsonArray)?.mapNotNull {
+                    it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
+                }?.joinToString(", ").orEmpty()
+                val img = (album["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                val idx = out.size
+                out += ContentOccurrence(
+                    "spotify:library:albums:$idx:$id",
+                    ContentItem(ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ALBUM, id), name, artists, img),
+                )
+            }
+            nextUrl = root["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         }
+        return out
     }
 
-    suspend fun fetchPlaylistDetail(playlistId: String): Pair<ContentItem, List<ContentOccurrence>> {
+    suspend fun fetchPlaylistDetail(playlistId: String, defaultSubtitle: String): Pair<ContentItem, List<ContentOccurrence>> {
         val root = getJson("https://api.spotify.com/v1/playlists/$playlistId")
-        val title = root["name"]?.jsonPrimitive?.contentOrNull ?: "Spotify Playlist"
-        val owner = root["owner"]?.jsonObject?.get("display_name")?.jsonPrimitive?.contentOrNull
+        val title = root["name"]?.jsonPrimitive?.contentOrNull ?: playlistId
+        val owner = root["owner"]?.jsonObject?.get("display_name")?.jsonPrimitive?.contentOrNull ?: defaultSubtitle
         val img = (root["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
-        val items = root["tracks"]?.jsonObject?.get("items") as? JsonArray ?: JsonArray(emptyList())
-        val tracks = items.mapIndexedNotNull { idx, el ->
-            val track = (el as? JsonObject)?.get("track") as? JsonObject ?: return@mapIndexedNotNull null
-            parseTrackOccurrence("spotify:playlist:$playlistId:$idx", track)
+        val tracks = mutableListOf<ContentOccurrence>()
+        val tracksObj = root["tracks"]?.jsonObject
+        val firstItems = tracksObj?.get("items") as? JsonArray ?: JsonArray(emptyList())
+        firstItems.forEach { el ->
+            val track = (el as? JsonObject)?.get("track") as? JsonObject ?: return@forEach
+            parseTrackOccurrence("spotify:playlist:$playlistId:${tracks.size}", track)?.let { tracks += it }
+        }
+        var nextUrl = tracksObj?.get("next")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+        var pages = 1
+        while (nextUrl != null && pages++ < 10) {
+            val pageObj = getJson(nextUrl)
+            val pageItems = pageObj["items"] as? JsonArray ?: break
+            pageItems.forEach { el ->
+                val track = (el as? JsonObject)?.get("track") as? JsonObject ?: return@forEach
+                parseTrackOccurrence("spotify:playlist:$playlistId:${tracks.size}", track)?.let { tracks += it }
+            }
+            nextUrl = pageObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         }
         return ContentItem(
             ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.PLAYLIST, playlistId),
@@ -510,19 +758,53 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         ) to tracks
     }
 
+    suspend fun fetchAlbumDetail(albumId: String, defaultSubtitle: String): Pair<ContentItem, List<ContentOccurrence>> {
+        val root = getJson("https://api.spotify.com/v1/albums/$albumId")
+        val title = root["name"]?.jsonPrimitive?.contentOrNull ?: albumId
+        val artists = (root["artists"] as? JsonArray)?.mapNotNull {
+            it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
+        }?.joinToString(", ") ?: defaultSubtitle
+        val img = (root["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+        val tracks = mutableListOf<ContentOccurrence>()
+        val tracksObj = root["tracks"]?.jsonObject
+        val firstItems = tracksObj?.get("items") as? JsonArray ?: JsonArray(emptyList())
+        firstItems.forEach { el ->
+            val track = el as? JsonObject ?: return@forEach
+            parseTrackOccurrence("spotify:album:$albumId:${tracks.size}", track, img)?.let { tracks += it }
+        }
+        var nextUrl = tracksObj?.get("next")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+        var pages = 1
+        while (nextUrl != null && pages++ < 10) {
+            val pageObj = getJson(nextUrl)
+            val pageItems = pageObj["items"] as? JsonArray ?: break
+            pageItems.forEach { el ->
+                val track = el as? JsonObject ?: return@forEach
+                parseTrackOccurrence("spotify:album:$albumId:${tracks.size}", track, img)?.let { tracks += it }
+            }
+            nextUrl = pageObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+        }
+        return ContentItem(
+            ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ALBUM, albumId),
+            title = title,
+            subtitle = artists,
+            artworkUri = img,
+        ) to tracks
+    }
+
     suspend fun fetchEntityTitle(ref: ContentRef): String? = runCatching {
         val path = if (ref.kind == ContentKind.ARTIST) "artists/${ref.id}" else "albums/${ref.id}"
         getJson("https://api.spotify.com/v1/$path")["name"]?.jsonPrimitive?.contentOrNull
     }.getOrNull()
 
-    private fun parseTrackOccurrence(prefix: String, track: JsonObject): ContentOccurrence? {
+    private fun parseTrackOccurrence(prefix: String, track: JsonObject, fallbackArtwork: String? = null): ContentOccurrence? {
         val id = track["id"]?.jsonPrimitive?.contentOrNull ?: return null
         val name = track["name"]?.jsonPrimitive?.contentOrNull ?: return null
         val artists = (track["artists"] as? JsonArray)?.mapNotNull {
             it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
-        }?.joinToString(", ")
+        }?.joinToString(", ").orEmpty()
         val img = (track["album"]?.jsonObject?.get("images") as? JsonArray)
             ?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+            ?: fallbackArtwork
         val durationMs = track["duration_ms"]?.jsonPrimitive?.intOrNull?.toLong()
         return ContentOccurrence(
             occurrenceId = "$prefix:$id",

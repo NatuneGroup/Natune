@@ -30,6 +30,7 @@ import moe.rukamori.archivetune.shared.domain.settings.YtmSyncKey
 import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
 import moe.rukamori.archivetune.shared.domain.settings.serializeSpeedDialPins
 import moe.rukamori.archivetune.shared.domain.settings.toggleSpeedDialPin
+import moe.rukamori.archivetune.shared.domain.settings.youTubeSignedIn
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
 import moe.rukamori.archivetune.shared.ui.menu.MenuShareHandler
@@ -132,7 +133,6 @@ internal class IosPlaylistMenuHost(
         val videoIds = page?.items.orEmpty()
             .filter { it.item.ref.provider == ContentProvider.YOUTUBE.id && it.item.ref.kind == ContentKind.SONG }
             .map { it.item.ref.id }
-            .distinct()
         val title = menu.target?.takeIf { it.item.ref == playlist }?.item?.title ?: playlist.id
         IosYouTubeLibrarySync(graph).syncPlaylist(playlist.id, title, videoIds)
     }
@@ -230,7 +230,7 @@ internal fun IosPlaylistRowMenu(
             else -> CollectionDownloadState.NOT_DOWNLOADED
         }
     }
-    val isHidden = hiddenPlaylists.any { it.occurrence.item.ref.id == ref.id }
+    val isHidden = hiddenPlaylists.any { it.id == ref.id }
     val browseId = localPlaylists.firstOrNull { it.occurrence.item.ref.id == ref.id }?.browseId
     val artworkOverrides by graph.customArtwork.overrides.collectAsState()
     val snapshot by graph.settings.snapshots.collectAsState()

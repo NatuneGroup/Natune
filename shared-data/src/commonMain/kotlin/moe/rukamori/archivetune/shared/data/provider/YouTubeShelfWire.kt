@@ -160,6 +160,96 @@ internal fun youTubeSearchSummaryPage(tabbedSearchResultsRenderer: JsonObject?, 
     return entries.distinctBy { it.id }
 }
 
+/** The remote artist page: header facts, ordered sections and the watch endpoints the provider gave. */
+internal fun youTubeArtistDetailPage(
+    browseId: String,
+    immersiveHeader: JsonObject?,
+    visualHeader: JsonObject?,
+    detailHeader: JsonObject?,
+    responsiveHeader: JsonObject?,
+    sectionList: JsonObject?,
+): YouTubeArtistDetail {
+    val headerJson = immersiveHeader ?: visualHeader ?: detailHeader ?: responsiveHeader
+    val header = headerJson?.let { SHELF_JSON.decodeFromJsonElement<WireArtistHeader>(it) }
+    val artistTitle = header?.title?.text()?.takeIf(String::isNotBlank) ?: browseId
+    val subscribersText =
+        header?.subscriptionButton?.subscribeButtonRenderer?.subscriberCountText?.text()?.takeIf(String::isNotBlank)
+    val monthlyListenersText = header?.monthlyListenerCount?.text()?.takeIf(String::isNotBlank)
+    val description = header?.description?.text()?.takeIf(String::isNotBlank)
+    val artworkUri = (header?.thumbnail ?: header?.foregroundThumbnail)?.bestUrl()
+    val playTarget = header?.playButton?.buttonRenderer?.navigationEndpoint.toWatchTarget()
+    val shuffleTarget = header?.shuffleButton?.buttonRenderer?.navigationEndpoint.toWatchTarget()
+    val radioTarget = header?.startRadioButton?.buttonRenderer?.navigationEndpoint.toWatchTarget()
+
+    val list = sectionList?.decodeSectionList()
+    val shelves = mutableListOf<YouTubeArtistSection>()
+    val releases = mutableListOf<YouTubeRelease>()
+    list?.contents.orEmpty().forEach { item ->
+        item.musicCarouselShelfRenderer?.let { carousel ->
+            val shelfHeader = carousel.header?.musicCarouselShelfBasicHeaderRenderer ?: return@let
+            val title = shelfHeader.title?.text()?.takeIf(String::isNotBlank) ?: return@let
+            val entries = carousel.contents.orEmpty().mapNotNull { it.toEntry() }
+            if (entries.isNotEmpty()) {
+                shelves +=
+                    YouTubeArtistSection(
+                        title = title,
+                        entries = entries,
+                        more = shelfHeader.moreContentButton?.buttonRenderer?.navigationEndpoint?.toSection(),
+                        grid = true,
+                    )
+            }
+            carousel.contents.orEmpty().forEach { cell -> cell.musicTwoRowItemRenderer?.toRelease()?.let(releases::add) }
+        }
+        item.musicShelfRenderer?.let { shelf ->
+            val title = shelf.title?.text()?.takeIf(String::isNotBlank) ?: return@let
+            val entries = shelf.contents.orEmpty().mapNotNull { it.toEntry() }
+            if (entries.isNotEmpty()) {
+                shelves +=
+                    YouTubeArtistSection(
+                        title = title,
+                        entries = entries,
+                        more = shelf.bottomEndpoint?.toSection(),
+                        grid = false,
+                    )
+            }
+        }
+    }
+    return YouTubeArtistDetail(
+        artist =
+            YouTubeEntry(
+                kind = ContentKind.ARTIST,
+                id = browseId,
+                title = artistTitle,
+                subtitle = subscribersText ?: monthlyListenersText.orEmpty(),
+                artworkUri = artworkUri,
+            ),
+        subscribersText = subscribersText,
+        monthlyListenersText = monthlyListenersText,
+        description = description,
+        shelves = shelves,
+        releases = releases.distinctBy { it.entry.id },
+        shareLink = "https://music.youtube.com/channel/$browseId",
+        play = playTarget,
+        shuffle = shuffleTarget,
+        radio = radioTarget,
+    )
+}
+
+private fun WireEndpoint?.toWatchTarget(): YouTubeWatchTarget? {
+    this ?: return null
+    watchEndpoint?.let { watch ->
+        if (watch.videoId != null || watch.playlistId != null) {
+            return YouTubeWatchTarget(watch.videoId, watch.playlistId, watch.params)
+        }
+    }
+    watchPlaylistEndpoint?.let { wp ->
+        if (wp.playlistId != null) {
+            return YouTubeWatchTarget(null, wp.playlistId, wp.params)
+        }
+    }
+    return null
+}
+
 private fun JsonObject?.decodeSectionList(): WireSectionList? =
     this?.let { SHELF_JSON.decodeFromJsonElement<WireSectionList>(it) }
 
@@ -504,6 +594,7 @@ private data class WireButtonRenderer(val navigationEndpoint: WireEndpoint? = nu
 private data class WireShelf(
     val title: WireRuns? = null,
     val contents: List<WireShelfCell>? = null,
+    val bottomEndpoint: WireEndpoint? = null,
 )
 
 @Serializable
@@ -623,7 +714,34 @@ private data class WireEndpoint(
 private data class WireBrowseEndpoint(val browseId: String? = null, val params: String? = null)
 
 @Serializable
-private data class WireWatchEndpoint(val videoId: String? = null)
+private data class WireWatchEndpoint(
+    val videoId: String? = null,
+    val playlistId: String? = null,
+    val params: String? = null,
+)
+
+@Serializable
+private data class WireArtistHeader(
+    val title: WireRuns? = null,
+    val description: WireRuns? = null,
+    val thumbnail: WireThumbnailRenderer? = null,
+    val foregroundThumbnail: WireThumbnailRenderer? = null,
+    val subscriptionButton: WireSubscriptionButton? = null,
+    val monthlyListenerCount: WireRuns? = null,
+    val playButton: WireButton? = null,
+    val startRadioButton: WireButton? = null,
+    val shuffleButton: WireButton? = null,
+)
+
+@Serializable
+private data class WireSubscriptionButton(
+    val subscribeButtonRenderer: WireSubscribeButtonRenderer? = null,
+)
+
+@Serializable
+private data class WireSubscribeButtonRenderer(
+    val subscriberCountText: WireRuns? = null,
+)
 
 @Serializable
 private data class WireWatchPlaylistEndpoint(val playlistId: String? = null, val params: String? = null)

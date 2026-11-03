@@ -88,6 +88,23 @@ class IosYouTubeCatalogueTransport(
         if (!direct.isNullOrEmpty()) return direct
         return explore().releases
     }
+
+    override suspend fun artist(browseId: String): YouTubeArtistDetail {
+        val response =
+            innerTube.browse(
+                YouTubeClient.WEB_REMIX,
+                browseId = browseId,
+                setLogin = true,
+            ).body<BrowseResponse>()
+        return youTubeArtistDetailPage(
+            browseId = browseId,
+            immersiveHeader = response.header?.musicImmersiveHeaderRenderer,
+            visualHeader = response.header?.musicVisualHeaderRenderer,
+            detailHeader = response.header?.musicDetailHeaderRenderer,
+            responsiveHeader = response.header?.musicResponsiveHeaderRenderer,
+            sectionList = sectionListOf(response.contents),
+        )
+    }
 }
 
 /** The section list under whichever browse-results wrapper the response carries. */
