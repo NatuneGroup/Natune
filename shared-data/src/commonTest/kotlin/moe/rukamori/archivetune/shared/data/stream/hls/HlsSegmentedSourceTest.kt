@@ -217,9 +217,9 @@ class HlsSegmentedSourceTest {
 
     @Test
     fun segmentedHlsLeaseAdoptsTheEarliestOfExplicitAndSignedExpiries() = runTest {
-        // The playlist URL's `etsp` signature grants a 1_800_000 s window. When the resolver stated an earlier
+        // The playlist URL's `etsp` signature expires at epoch second 1_800_000_000. When the resolver stated an earlier
         // expiry as stream metadata, that earlier one must win: authorization ends when the stream said it ends.
-        val signed = "$base?etsp=1800000"
+        val signed = "$base?etsp=1800000000"
         val playlistText = "#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST\n"
         val opener = FakeOpener(
             signed to playlistText.encodeToByteArray(),
