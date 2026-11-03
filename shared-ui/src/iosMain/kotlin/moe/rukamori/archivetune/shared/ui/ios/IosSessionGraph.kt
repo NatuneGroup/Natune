@@ -74,6 +74,7 @@ import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueContr
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
@@ -100,7 +101,7 @@ import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
-import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
+import moe.rukamori.archivetune.shared.ui.host.SponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
@@ -177,6 +178,8 @@ internal class IosSessionGraph private constructor(
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
     /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
+    /** The request the engine was last told to load; consumers gating on the resolved source read it. */
+    val loadedRequest: StateFlow<PlaybackRequest?> get() = owner.loadedRequest
 
     /** The one sleep timer of this process. It only pauses [player], so every surface shares it. */
     val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause, ::iosNowMillis)
@@ -768,12 +771,14 @@ internal class IosSessionGraph private constructor(
                 nowMs = ::iosNowMillis,
             )
             // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
-            PodcastSponsorBlockDriver(
+            SponsorBlockDriver(
                 scope = scope,
                 player = player,
                 queue = queue.state,
+                resolved = owner.loadedRequest,
                 preferences = vault.snapshots,
                 repository = KtorSponsorBlockRepository(http),
+                report = report,
             )
             // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
             val lyrics = HostLyrics(

@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
 import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.playback.DesktopSpectralEvidence
 import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
@@ -49,6 +50,8 @@ import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueContr
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
@@ -188,6 +191,9 @@ class DesktopSessionGraph internal constructor(
     /** The playlist file exports, read from the same portable file. */
     internal val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
 
+    /** The request the engine was last told to load; consumers gating on the resolved source read it. */
+    internal val loadedRequest: StateFlow<PlaybackRequest?> get() = owner.loadedRequest
+
     /** The owners the shared Library and playlist pages read and write: the same library, queue and history as above. */
     internal val pageOwners = LibraryPageOwners(
         content = libraryContent,
@@ -240,6 +246,13 @@ class DesktopSessionGraph internal constructor(
      * [settings].
      */
     internal val equalizer = DesktopEqualizer(scope = scope, settings = settings, playback = playback)
+
+    /**
+     * Opt-in bounded spectral evidence for one stored source, read by the developer acoustic panel only.
+     * The probe never touches the playback decks; see [DesktopPlaybackPort.assessSpectrum] for the contract.
+     */
+    internal suspend fun assessSpectrum(locator: PlaybackLocator): DesktopSpectralEvidence =
+        playback.assessSpectrum(locator)
 
     /**
      * The one pause-on-device-mute driver of this process: the stored option over the observed output
