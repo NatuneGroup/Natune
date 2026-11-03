@@ -101,6 +101,7 @@ class PortableQueueOwner(
     private val hideVideo: () -> Boolean = { false },
     /** The provider artist ids the user blocked; entries carrying one never reach the queue. */
     private val blockedArtistIds: () -> Set<String> = { emptySet() },
+    private val blockedSongRefs: () -> Set<moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef> = { emptySet() },
     /** Records the complete track list of an album whose whole walk was loaded. Absent, nothing is recorded. */
     albumCompletion: AlbumCompletionIndex? = null,
     /** Blends songs into each other. Absent, every song ends before its successor loads, as before. */
@@ -959,16 +960,21 @@ class PortableQueueOwner(
         }
     }
 
-    /** The hidden-content rules of `Queue.Status.filterPlaybackContent`: explicit, video and blocked artists. */
+    /** The hidden-content rules of `Queue.Status.filterPlaybackContent`: explicit, video, blocked artists and blocked songs. */
     private fun List<ContentOccurrence>.filterPlaybackContent(): List<ContentOccurrence> {
         val explicit = hideExplicit()
         val video = hideVideo()
         val blocked = blockedArtistIds()
-        if (!explicit && !video && blocked.isEmpty()) return this
+        val blockedSongs = blockedSongRefs()
+        if (!explicit && !video && blocked.isEmpty() && blockedSongs.isEmpty()) return this
         return filter { occurrence ->
             (!explicit || !occurrence.item.explicit) &&
                 (!video || !occurrence.item.isVideo) &&
-                occurrence.item.canonicalSong().artists.none { it.id != null && it.id in blocked }
+                occurrence.item.canonicalSong().artists.none { it.id != null && it.id in blocked } &&
+                occurrence.item.ref.let { ref ->
+                    ref.kind != ContentKind.SONG ||
+                        moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef(ref.provider, ref.id) !in blockedSongs
+                }
         }
     }
 

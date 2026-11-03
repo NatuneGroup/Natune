@@ -138,9 +138,9 @@ internal fun IosItemMenuDialog(
     menu.artworkTarget?.let { item ->
         BoundCustomArtworkEditDialog(
             artworkUrl = item.artworkUri,
-            // This host plays no canvas loop, so a stored canvas would never show; without a song id the canvas rows
-            // report unsupported instead of saving one.
-            songId = null,
+            // Canvas plays on this host, so a stored canvas shows; the song id opens the canvas rows to a SONG item,
+            // matching the desktop dialog. Other kinds carry none and keep the unsupported state.
+            songId = item.ref.id.takeIf { item.ref.kind == ContentKind.SONG },
             repository = graph.customArtwork,
             pick = { pickIosArtworkFile(host, it) },
             onDismiss = menu::closeCustomArtwork,
