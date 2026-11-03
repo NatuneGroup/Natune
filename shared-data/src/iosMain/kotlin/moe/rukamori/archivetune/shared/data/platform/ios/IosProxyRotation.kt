@@ -75,6 +75,14 @@ internal class IosProxyRotation {
         index = 0
     }
 
+    /**
+     * The commit a finished fetch runs: an empty result keeps the pool it was meant to replace — the members
+     * already validated, cooled ones included, are a better answer than nothing while rotation stays on.
+     */
+    fun replaceRoutes(routes: List<ProxyRoute>) {
+        if (routes.isNotEmpty()) loadRoutes(routes)
+    }
+
     /** Advances the start point without refetching; a member leaves early only through [markFailed]. */
     fun rotate() = lock.locked {
         if (entries.isNotEmpty()) index = (index + 1) % entries.size
@@ -123,9 +131,7 @@ internal class IosProxyRotation {
         }
         // A fetch or validation that finds nothing keeps the pool it was meant to replace: the members
         // already validated are a better answer than an empty set while the caller's toggle stays on.
-        if (live.isNotEmpty()) {
-            loadRoutes(live.map { (host, port) -> ProxyRoute(ProxyRouteType.HTTP, host, port) })
-        }
+        replaceRoutes(live.map { (host, port) -> ProxyRoute(ProxyRouteType.HTTP, host, port) })
         return live.size
     }
 
