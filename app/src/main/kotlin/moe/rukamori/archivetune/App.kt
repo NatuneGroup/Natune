@@ -75,6 +75,7 @@ import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.utils.applyStartupRandomTheme
 import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
+import moe.rukamori.archivetune.utils.CorruptImageCacheInterceptor
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.ProxyUtils
@@ -719,6 +720,11 @@ class App :
         return ImageLoader
             .Builder(this)
             .components {
+                add(
+                    CorruptImageCacheInterceptor(diskCache) {
+                        this@App.isInternetConnected()
+                    },
+                )
                 add(CustomArtworkInterceptor())
                 add(moe.rukamori.archivetune.telegram.TelegramThumbnailFetcher.Factory())
                 add(OkHttpNetworkFetcherFactory(imageHttpClient))
