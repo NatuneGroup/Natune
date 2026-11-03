@@ -445,6 +445,19 @@ class IosYouTubeBrowseTransport(
         if (subscribed) innerTube.subscribeChannel(BROWSE_CLIENT, browseId) else innerTube.unsubscribeChannel(BROWSE_CLIENT, browseId)
     }
 
+    suspend fun createPlaylist(title: String): String {
+        val response = innerTube.createPlaylist(BROWSE_CLIENT, title.trim()).body<JsonObject>()
+        val playlistId = (response["playlistId"] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+        return playlistId ?: throw IllegalStateException("Create playlist returned no playlistId")
+    }
+
+    suspend fun addSongsToPlaylist(playlistId: String, videoIds: List<String>) {
+        val normalizedId = playlistId.removePrefix("VL")
+        for (videoId in videoIds) {
+            innerTube.addToPlaylist(BROWSE_CLIENT, normalizedId, videoId)
+        }
+    }
+
     /** The playlist id the album's own header play endpoint carries, used by the album like. */
     private suspend fun albumPlaylistId(browseId: String): String? {
         val response = innerTube.browse(BROWSE_CLIENT, browseId = browseId).body<BrowseResponse>()

@@ -95,4 +95,18 @@
 
     <string name="ios_lane_aod_note">These settings are saved, but the iOS app has no always-on display.</string>
     <string name="ios_lane_storage_note">The iOS app keeps its data in the app container; choosing another storage location is not available.</string>
+
+    <string name="ios_library_source_ytm">YouTube Music</string>
+    <string name="ios_library_source_spotify">Spotify</string>
+    <string name="ios_cross_service_import_url_label">Playlist URL</string>
+    <string name="ios_cross_service_import_hint">Paste a public playlist URL from YouTube Music, Spotify, Apple Music, Amazon Music, Tidal, Qobuz or Deezer.</string>
+    <string name="ios_cross_service_import_fetching">Fetching playlist…</string>
+    <string name="ios_cross_service_import_resolving">Matching tracks (%1$d/%2$d)…</string>
+    <string name="ios_cross_service_import_done">Imported %1$d of %2$d tracks</string>
+    <string name="ios_cross_service_import_start">Import</string>
+    <string name="ios_cross_service_import_open">Open playlist</string>
+    <string name="ios_cross_service_import_close">Close</string>
+    <string name="ios_spotify_your_playlists">Your playlists</string>
+    <string name="ios_spotify_your_artists">Your artists</string>
+    <string name="ios_spotify_liked_songs">Liked Songs</string>
 </resources>

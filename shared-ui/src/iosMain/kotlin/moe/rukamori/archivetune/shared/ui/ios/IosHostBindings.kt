@@ -141,7 +141,10 @@ internal fun iosHostBindings(
     val playlistCreation = IosPlaylistCreation(graph.scope, graph.libraryContent, openOwnRoute)
     val playlistTags = IosPlaylistTagsState(openOwnRoute)
     // The playlist overflow menu's host: pins, tags, covers and deletion run against the same owners as the page.
-    val playlistMenus = IosPlaylistMenuHost(graph, itemMenu, playlistTags, openOwnRoute)
+    val playlistMenus = IosPlaylistMenuHost(graph, host, itemMenu, playlistTags, openOwnRoute)
+    graph.scope.launch {
+        runCatching { IosYouTubeLibrarySync(graph).performFullSync(authoritative = false) }
+    }
     return ArchiveTuneHostBindings(
         queue = graph.queue,
         songMetadata = graph.library.songMetadata,
@@ -170,7 +173,7 @@ internal fun iosHostBindings(
         formatNewsDate = { epochSeconds -> iosDiagnosticTime(epochSeconds * 1_000L) },
         newsAvailable = graph.newsFeed.enabled,
         unreadNews = graph.newsFeed.unread,
-        librarySourceSelector = { },
+        librarySourceSelector = { IosLibrarySourceSelector(graph) },
         hostScreen = { route, navigation ->
             if (iosMountsSettings(route)) {
                 IosSettingsScreen(host, settingsOwners, route, navigation)
@@ -225,7 +228,7 @@ private fun iosGraphPage(
     key(route.value) {
         when (route.destination) {
             ArchiveDestination.LIBRARY ->
-                hostLibraryPage(graph.pageOwners, stringResource(Res.string.ios_library_top_mixes_unavailable), openRoute)
+                iosLibraryOrSpotifyPage(graph, openRoute)
             ArchiveDestination.HISTORY -> iosHistoryPage(graph, menu)
             ArchiveDestination.LOCAL_SONGS -> iosLocalSongsPage(graph, menu, back)
             ArchiveDestination.DOWNLOADS -> iosDownloadsPage(graph, back)

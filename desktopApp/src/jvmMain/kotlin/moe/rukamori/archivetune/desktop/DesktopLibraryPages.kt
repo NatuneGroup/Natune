@@ -118,7 +118,7 @@ internal fun desktopGraphPage(
         ArchiveDestination.TELEGRAM_BOTS -> desktopTelegramBotsPage(graph, back, openRoute)
         ArchiveDestination.TELEGRAM_BOT_CHAT -> desktopTelegramBotChatPage(graph, route.arguments.getValue("botId"))
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu, spotify)
-        ArchiveDestination.ACCOUNT -> desktopAccountPage(graph)
+        ArchiveDestination.ACCOUNT -> desktopAccountPage(graph, menu)
         ArchiveDestination.NEWS -> newsFeedPage(graph.newsFeed)
         ArchiveDestination.ARTICLE -> newsArticlePage(graph.newsFeed, route.arguments.getValue("newsId"))
         ArchiveDestination.PODCASTS -> desktopPodcastsPage(podcasts)
