@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.library.PlaylistSortType
@@ -69,7 +70,7 @@ fun PlaylistCollectionScreen(
         visiblePlaylists(state, textOrder)
     }
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val columns = if (state.grid) (if (maxWidth >= 840.dp) 4 else 2) else 1
+        val columns = playlistGridColumns(state.grid, maxWidth)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
             item("header") {
                 ManagementHeader(stringResource(Res.string.m4_playlists), actions.back)
@@ -156,4 +157,12 @@ private fun PlaylistCollectionControls(row: PlaylistCollectionRow, busy: Boolean
             Text(stringResource(Res.string.m4_export_csv))
         }
     }
+}
+
+internal fun playlistGridColumns(grid: Boolean, maxWidth: Dp): Int = when {
+    !grid -> 1
+    maxWidth >= 1200.dp -> 5
+    maxWidth >= 840.dp -> 4
+    maxWidth >= 600.dp -> 3
+    else -> 2
 }
