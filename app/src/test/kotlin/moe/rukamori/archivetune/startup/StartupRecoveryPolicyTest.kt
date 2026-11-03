@@ -139,6 +139,82 @@ class StartupRecoveryPolicyTest {
         assertFalse(sameCode.copy(installedSinceMs = 0L).isFromEarlierVersion(install))
     }
 
+    @Test fun aSingleStartupCrashIsOnlyOneUnluckyLaunch() {
+        val starts = listOf(start(1_000L, 10))
+        val crashes = listOf(crashRecord(timestampMs = 5_000L, versionCode = 100L, pid = 10))
+        assertEquals(1, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
+    @Test fun twoBackToBackStartupCrashesInTheSameBuildAreACrashLoop() {
+        val starts = listOf(start(1_000L, 10), start(6_000L, 11))
+        val crashes = listOf(
+            crashRecord(timestampMs = 5_000L, versionCode = 100L, pid = 10),
+            crashRecord(timestampMs = 9_000L, versionCode = 100L, pid = 11),
+        )
+        assertEquals(2, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
+    @Test fun aCrashLongAfterItsProcessStartedIsARuntimeCrash() {
+        val starts = listOf(start(1_000L, 10))
+        val crashes = listOf(crashRecord(timestampMs = 60_000L, versionCode = 100L, pid = 10))
+        assertEquals(0, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
+    @Test fun anUncleanExitWithoutCrashEvidenceIsNeverACrashLoop() {
+        // A swipe-away, force-stop, reboot or low-memory kill leaves starts but no crash record.
+        val starts = listOf(start(1_000L, 10), start(6_000L, 11))
+        assertEquals(0, consecutiveStartupCrashes(starts, emptyList(), install(), nowMs = 100_000L))
+    }
+
+    @Test fun aCompletedStartupBetweenCrashesBreaksTheStreak() {
+        val starts = listOf(start(1_000L, 10), start(20_000L, 11), start(40_000L, 12))
+        val crashes = listOf(
+            crashRecord(timestampMs = 5_000L, versionCode = 100L, pid = 10),
+            crashRecord(timestampMs = 45_000L, versionCode = 100L, pid = 12),
+        )
+        // The middle attempt ran past its startup window without crashing.
+        assertEquals(1, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
+    @Test fun aHealthyLaunchAfterTheNewestCrashEndsTheStreak() {
+        val starts = listOf(start(1_000L, 10), start(6_000L, 11), start(50_000L, 12))
+        val crashes = listOf(
+            crashRecord(timestampMs = 5_000L, versionCode = 100L, pid = 10),
+            crashRecord(timestampMs = 9_000L, versionCode = 100L, pid = 11),
+        )
+        assertEquals(0, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
+    @Test fun onlyCrashExitReasonsCountAsEvidence() {
+        val starts = listOf(start(1_000L, 10), start(6_000L, 11))
+        val exits = listOf(
+            crashRecord(timestampMs = 5_000L, versionCode = 100L, pid = 10,
+                kind = ProcessExitKind.LOW_MEMORY),
+            crashRecord(timestampMs = 9_000L, versionCode = 100L, pid = 11,
+                kind = ProcessExitKind.INITIALIZATION_FAILURE),
+        )
+        assertEquals(0, consecutiveStartupCrashes(starts, exits, install(), nowMs = 100_000L))
+    }
+
+    @Test fun aCrashFromAnEarlierBuildDoesNotCount() {
+        val starts = listOf(start(1_000L, 10), start(6_000L, 11))
+        val crashes = listOf(
+            crashRecord(timestampMs = 5_000L, versionCode = 99L, pid = 10),
+            crashRecord(timestampMs = 9_000L, versionCode = 99L, pid = 11),
+        )
+        assertEquals(0, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
+    @Test fun aStartStillInsideItsWindowDoesNotBreakTheStreak() {
+        // The newest attempt may still crash; it is not a completed startup yet.
+        val starts = listOf(start(1_000L, 10), start(98_000L, 11))
+        val crashes = listOf(crashRecord(timestampMs = 5_000L, versionCode = 100L, pid = 10))
+        assertEquals(1, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
+    private fun start(timestampMs: Long, pid: Int) =
+        StartupAttempt(timestampMs, pid, "N20261101", versionCode = 100L, installedSinceMs = 1_000L)
+
     private fun install(
         installedSinceMs: Long = 1_000L,
         versionCode: Long = 100L,
@@ -148,12 +224,14 @@ class StartupRecoveryPolicyTest {
     private fun crashRecord(
         timestampMs: Long,
         versionCode: Long,
+        pid: Int = 10,
+        kind: ProcessExitKind = ProcessExitKind.CRASH,
         versionName: String = "N20261101",
         installedSinceMs: Long = 0L,
     ) = CrashRecord(
         timestampMs = timestampMs,
-        pid = 10,
-        kind = ProcessExitKind.CRASH,
+        pid = pid,
+        kind = kind,
         status = 0,
         captured = true,
         process = "moe.rukamori.archivetune",
