@@ -47,6 +47,7 @@ fun ArchiveNavigationHost(
     overlays: @Composable (ArchiveRoute) -> Unit,
     modifier: Modifier = Modifier,
     preferences: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
+    newsEntry: NewsEntry = NewsEntry(),
 ) {
     NavigationEntryContent(navigation, modifier) {
         val route = requireNotNull(ArchiveRoutes.resolve(navigation.route)) { "Unregistered ArchiveTune route: ${navigation.route}" }
@@ -71,7 +72,7 @@ fun ArchiveNavigationHost(
                 }
                 HomeScreen(binding.source, binding.availableSources, binding.sourceChange, binding.design, binding.shelves,
                     binding.page, content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
-                    headerActions = { ArchiveEntryLinks(navigation) }, accountName = binding.accountName,
+                    headerActions = { ArchiveEntryLinks(navigation, newsEntry) }, accountName = binding.accountName,
                     blurEffects = binding.blurEffects, activeIds = binding.activeIds, playing = binding.playing,
                     thumbnailAspectRatio = binding.thumbnailAspectRatio,
                     refreshing = binding.refreshing, onRefresh = binding.refresh,
@@ -80,21 +81,21 @@ fun ArchiveNavigationHost(
             }
             is ArchiveGraphPage.HomeRukamori -> {
                 require(route.destination == ArchiveDestination.HOME)
-                HomeVariantFrame(navigation, binding.source) { contentPadding ->
+                HomeVariantFrame(navigation, newsEntry, binding.source) { contentPadding ->
                     RukamoriHomeVariant(binding.state, binding.actions, artwork, binding.nowPlaying, binding.image,
                         contentPadding = contentPadding, thumbnailAspectRatio = binding.thumbnailAspectRatio)
                 }
             }
             is ArchiveGraphPage.HomeSpotify -> {
                 require(route.destination == ArchiveDestination.HOME)
-                HomeVariantFrame(navigation, binding.source) { contentPadding ->
+                HomeVariantFrame(navigation, newsEntry, binding.source) { contentPadding ->
                     SpotifyHomeVariant(binding.state, binding.actions, artwork, binding.nowPlaying, binding.blurEffects,
                         contentPadding = contentPadding, thumbnailAspectRatio = binding.thumbnailAspectRatio)
                 }
             }
             is ArchiveGraphPage.HomeBitChord -> {
                 require(route.destination == ArchiveDestination.HOME)
-                HomeVariantFrame(navigation, binding.source, atmosphere = binding.blurEffects,
+                HomeVariantFrame(navigation, newsEntry, binding.source, atmosphere = binding.blurEffects,
                     greeting = { HomeWelcomeHeader(binding.accountName) }) { contentPadding ->
                     BitChordHomeVariant(binding.state, binding.actions, artwork, binding.nowPlaying,
                         contentPadding = contentPadding, thumbnailAspectRatio = binding.thumbnailAspectRatio)
@@ -102,7 +103,7 @@ fun ArchiveNavigationHost(
             }
             is ArchiveGraphPage.HomeQq -> {
                 require(route.destination == ArchiveDestination.HOME)
-                HomeVariantFrame(navigation, binding.source) { contentPadding ->
+                HomeVariantFrame(navigation, newsEntry, binding.source) { contentPadding ->
                     QqHomeScreen(binding.state, binding.actions, artwork, binding.activeRef, binding.isPlaying,
                         contentPadding = contentPadding, refreshing = binding.refreshing)
                 }
@@ -120,7 +121,7 @@ fun ArchiveNavigationHost(
                 require(route.destination == ArchiveDestination.LIBRARY)
                 LibraryScreen(binding.filter, binding.order, binding.filterChange, binding.page,
                     content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
-                    librarySourceSelector, { ArchiveEntryLinks(navigation, binding.myTopSize) }, mixHeader = binding.mixHeader)
+                    librarySourceSelector, { ArchiveEntryLinks(navigation, newsEntry, binding.myTopSize) }, mixHeader = binding.mixHeader)
             }
             is ArchiveGraphPage.Discovery -> {
                 require(route.destination == ArchiveDestination.DISCOVERY)
@@ -350,6 +351,7 @@ private class NavigationArtistAlbumHost(
 @Composable
 private fun HomeVariantFrame(
     navigation: ShellNavigation,
+    newsEntry: NewsEntry,
     home: HomeSourceBinding,
     atmosphere: Boolean = false,
     greeting: (@Composable () -> Unit)? = null,
@@ -360,7 +362,7 @@ private fun HomeVariantFrame(
     Box(Modifier.fillMaxSize()) {
         if (atmosphere) HomeClassicAtmosphereBackground()
         Column(Modifier.fillMaxSize()) {
-            HomePageHeader(home.source, home.available, home.change, headerActions = { ArchiveEntryLinks(navigation) },
+            HomePageHeader(home.source, home.available, home.change, headerActions = { ArchiveEntryLinks(navigation, newsEntry) },
                 modifier = Modifier.fillMaxWidth().padding(top = shell.calculateTopPadding()))
             greeting?.invoke()
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -371,9 +373,16 @@ private fun HomeVariantFrame(
     }
 }
 
+/**
+ * What the More list shows for News. A build without a feed hides the entry, as the Android profile menu does, and
+ * [unread] puts the Android unread dot on it.
+ */
+@Immutable
+data class NewsEntry(val available: Boolean = true, val unread: Boolean = false)
+
 /** One real entry-point list shared by Home and Library, rather than routes discoverable only in tests. */
 @Composable
-private fun ArchiveEntryLinks(navigation: ShellNavigation, myTopSize: Int? = null) {
+private fun ArchiveEntryLinks(navigation: ShellNavigation, newsEntry: NewsEntry, myTopSize: Int? = null) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         TextButton({ expanded = true }, Modifier.testTag("archive-destinations")) { Text(stringResource(Res.string.m4_more)) }
@@ -383,7 +392,7 @@ private fun ArchiveEntryLinks(navigation: ShellNavigation, myTopSize: Int? = nul
             listOfNotNull(
                 "discovery" to Res.string.m4_discover, "mood_and_genres" to Res.string.m4_moods_genres,
                 "charts_screen" to Res.string.m4_charts, "new_release" to Res.string.m4_new_releases,
-                "podcasts" to Res.string.m4_podcasts, "news" to Res.string.m4_news,
+                "podcasts" to Res.string.m4_podcasts, ("news" to Res.string.m4_news).takeIf { newsEntry.available },
                 "local_songs" to Res.string.m4_local_songs, "auto_playlist/downloaded" to Res.string.m4_downloads,
                 "uploaded_songs" to Res.string.uploads_title,
                 "history" to Res.string.m4_history, "library/playlists" to Res.string.m4_playlists, myTop,
@@ -395,7 +404,10 @@ private fun ArchiveEntryLinks(navigation: ShellNavigation, myTopSize: Int? = nul
             ).forEach { (route, label) ->
                 DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = {
                     expanded = false; navigation.open(route)
-                }, modifier = Modifier.testTag("archive-open-$route"))
+                }, modifier = Modifier.testTag("archive-open-$route"),
+                    trailingIcon = if (route == "news" && newsEntry.unread) {
+                        { Badge(Modifier.testTag("archive-news-unread")) }
+                    } else null)
             }
         }
     }

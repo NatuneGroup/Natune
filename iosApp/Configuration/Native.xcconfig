@@ -76,4 +76,7 @@ ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID =
 // id (com.googleusercontent.apps.<id>) when it is blank. A blank client id keeps the Drive section not-configured.
 ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID =
 ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME =
+// The in-app News feed reaches the app through Info.plist the same way. Unlike the values above it has a default, the
+// Android build's; set it blank in Credentials.xcconfig to disable the feed and hide the News entry.
+NATUNE_NEWS_URL = https:/$()/natune.pages.dev/api/news
 #include? "Credentials.xcconfig"

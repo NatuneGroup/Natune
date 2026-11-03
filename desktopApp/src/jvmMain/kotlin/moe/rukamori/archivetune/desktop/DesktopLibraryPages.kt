@@ -46,6 +46,8 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
+import moe.rukamori.archivetune.shared.ui.news.newsArticlePage
+import moe.rukamori.archivetune.shared.ui.news.newsFeedPage
 import moe.rukamori.archivetune.shared.ui.screens.ContentActions
 import moe.rukamori.archivetune.shared.ui.screens.DetailActions
 import moe.rukamori.archivetune.shared.ui.screens.DetailKind
@@ -117,8 +119,8 @@ internal fun desktopGraphPage(
         ArchiveDestination.TELEGRAM_BOT_CHAT -> desktopTelegramBotChatPage(graph, route.arguments.getValue("botId"))
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu, spotify)
         ArchiveDestination.ACCOUNT -> desktopAccountPage(graph)
-        ArchiveDestination.NEWS -> desktopNewsPage()
-        ArchiveDestination.ARTICLE -> desktopArticlePage(route.arguments.getValue("newsId"))
+        ArchiveDestination.NEWS -> newsFeedPage(graph.newsFeed)
+        ArchiveDestination.ARTICLE -> newsArticlePage(graph.newsFeed, route.arguments.getValue("newsId"))
         ArchiveDestination.PODCASTS -> desktopPodcastsPage(podcasts)
         ArchiveDestination.PODCAST -> desktopPodcastPage(podcasts, route.arguments.getValue("browseId"))
         ArchiveDestination.LOCAL_SONGS -> desktopLocalSongsPage(graph, menu)

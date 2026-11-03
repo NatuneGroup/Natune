@@ -25,6 +25,8 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
+import moe.rukamori.archivetune.shared.ui.news.newsArticlePage
+import moe.rukamori.archivetune.shared.ui.news.newsFeedPage
 import moe.rukamori.archivetune.shared.ui.screens.rememberPagedContent
 
 /**
@@ -83,8 +85,8 @@ internal fun iosCatalogGraphPage(
     ArchiveDestination.ACCOUNT -> iosAccountPage(graph, menu)
     ArchiveDestination.PLAYLISTS -> iosPlaylistsPage(graph, creation, tags, menu)
     ArchiveDestination.TAGS -> iosTagsPage(graph, tags)
-    ArchiveDestination.NEWS -> iosNewsPage()
-    ArchiveDestination.ARTICLE -> iosArticlePage(route.arguments.getValue("newsId"))
+    ArchiveDestination.NEWS -> newsFeedPage(graph.newsFeed)
+    ArchiveDestination.ARTICLE -> newsArticlePage(graph.newsFeed, route.arguments.getValue("newsId"))
     ArchiveDestination.PODCASTS -> iosPodcastsPage()
     ArchiveDestination.PODCAST -> iosPodcastPage(route.arguments.getValue("browseId"))
     ArchiveDestination.TRACK_INFO -> iosTrackInfoPage(graph, route.arguments.getValue("trackId"))

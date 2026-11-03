@@ -35,7 +35,7 @@ import androidx.compose.runtime.setValue
 typealias NewsImage = @Composable (uri: String, modifier: Modifier) -> Unit
 data class NewsUi(
     val items: List<ContentNews>,
-    /** The inherited Android repository is inactive; a host must explicitly supply availability. */
+    /** False when the build carries a blank news feed URL; a host must explicitly supply availability. */
     val available: Boolean,
     val query: String = "",
     val loading: Boolean = false,

@@ -591,7 +591,6 @@ internal suspend fun assembleDesktopSessionOwners(
         localMedia = localMediaOwner,
         statistics = statisticsOwner,
         mediaInfo = mediaInfoOwner,
-        news = DesktopNewsRepository(),
         drivers = drivers,
     )
     // A TDLib database left by an earlier sign-in restores its session, so Telegram tracks in a restored queue
