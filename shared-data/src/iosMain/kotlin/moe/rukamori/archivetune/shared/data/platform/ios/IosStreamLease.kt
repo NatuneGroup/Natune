@@ -198,6 +198,10 @@ internal class IosStreamLease internal constructor(
          * must not surface a refusal recorded for the output that used to sit at the address.
          */
         internal fun retireOutput(output: Long) = liveLeasesLock.locked {
+            // at_audio_destroy can return before the producer thread joined, so a retracted lease's
+            // closeStream may still run — blanking its key first keeps that late close from writing
+            // the refusal back under an output that no longer exists.
+            liveLeases.values.forEach { if (it.registryKey?.output == output) it.registryKey = null }
             liveLeases.keys.removeAll { it.output == output }
             refusals.keys.removeAll { it.output == output }
         }

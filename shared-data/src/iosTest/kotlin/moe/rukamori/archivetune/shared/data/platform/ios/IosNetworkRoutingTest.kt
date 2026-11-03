@@ -500,6 +500,19 @@ class IosNetworkRoutingTest {
 
     @Test
     @OptIn(ExperimentalForeignApi::class)
+    fun aLateCloseAfterRetirementWritesNoRefusal() {
+        val lease = refusedLease()
+        IosStreamLease.register(1L, 0, lease)
+        refuseOpen(lease)
+        // at_audio_destroy can return before the producer thread joined, so the retracted lease's
+        // closeStream may still run — after retirement it must not write the refusal back.
+        IosStreamLease.retireOutput(1L)
+        lease.closeStream()
+        assertNull(IosStreamLease.refusalOf(1L, 0))
+    }
+
+    @Test
+    @OptIn(ExperimentalForeignApi::class)
     fun generationsOfDifferentOutputsNeverShareARefusal() {
         val first = refusedLease()
         val second = refusedLease()
