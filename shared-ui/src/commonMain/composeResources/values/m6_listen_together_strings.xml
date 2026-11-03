@@ -4,6 +4,7 @@
     <string name="m6_listen_username">Username</string>
     <string name="m6_listen_server_url">Server URL</string>
     <string name="m6_listen_custom_avatar">Custom profile picture</string>
+    <string name="m6_listen_avatar_failed">The picture could not be saved.</string>
     <string name="m6_listen_custom_avatar_desc">Pick any photo from your gallery as your Listen Together avatar; everyone in the room sees it</string>
     <string name="m6_listen_choose_avatar">Choose avatar</string>
     <string name="m6_listen_blocked_users">Blocked Users</string>

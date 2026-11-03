@@ -133,6 +133,11 @@
     <string name="listen_together_invalid_room_response">The server returned an invalid room response. Try reconnecting or choose another server.</string>
     <string name="listen_together_request_in_progress">Another room request is still in progress. Open the invite again in a moment.</string>
     <string name="listen_together_chat_unsupported_server">Chat is not supported by this server</string>
+    <string name="listen_together_suggestion_guest_only">Suggestions can be sent only as a guest in a room.</string>
+    <string name="listen_together_avatar_pick">Choose a member picture</string>
+    <string name="playlist_synced">Playlist synced to YouTube.</string>
+    <string name="playlist_sync_disabled">YouTube sync is disabled in settings.</string>
+    <string name="playlist_sync_not_logged_in">Sign in to YouTube to sync this playlist.</string>
     <string name="listen_together_suggestion_sent">Suggestion sent to host!</string>
     <string name="ok">OK</string>
     <string name="playlist_action_failed">The playlist could not be changed.</string>

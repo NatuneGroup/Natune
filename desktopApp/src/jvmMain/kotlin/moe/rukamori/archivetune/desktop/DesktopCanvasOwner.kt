@@ -30,10 +30,13 @@ import moe.rukamori.archivetune.desktop.integration.DesktopNetworkAvailability
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkDirectory
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkKeys
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkLimits
+import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkResult
+import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
+import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueCanvasRefetchResult
 import moe.rukamori.archivetune.spotify.Spotify
 
 internal data class DesktopCanvasTarget(
@@ -52,6 +55,10 @@ internal class DesktopCanvasOwner(
     internal val scope = CoroutineScope(graph.scope.coroutineContext + lifetime)
     private val network = DesktopNetworkAvailability(scope)
     private val visible = MutableStateFlow(false)
+    /** True while an explicit save or refetch runs, so the menu's own provider reads pass the policy check. */
+    private val canvasBusy = MutableStateFlow(false)
+    /** True while a refetch runs; the player menu mirrors it into its busy row. */
+    internal val refetching = MutableStateFlow(false)
     val target = MutableStateFlow<DesktopCanvasTarget?>(null)
     var notice: String? by mutableStateOf(null)
         private set
@@ -61,7 +68,9 @@ internal class DesktopCanvasOwner(
     private val previousTrack = SpotifyCanvasProvider.trackUriResolver
     private val previousEndpoints = SpotifyCanvasProvider.extraResolverEndpointsProvider
     private val policy: (CanvasSource) -> Unit = { source ->
-        check(!closed && visible.value && remoteAllowed(source)) { "Canvas request denied by current preferences/network" }
+        check(!closed && (visible.value || canvasBusy.value) && remoteAllowed(source)) {
+            "Canvas request denied by current preferences/network"
+        }
     }
     private val token: suspend () -> String? = {
         policy(CanvasSource.SPOTIFY)
@@ -140,23 +149,124 @@ internal class DesktopCanvasOwner(
         }
     }
 
-    private suspend fun resolve(id: String, title: String, artist: String): Pair<String, CanvasSource>? {
+    private suspend fun resolve(
+        id: String, title: String, artist: String, requireVertical: Boolean = false,
+    ): Pair<String, CanvasSource>? {
         val storefront = Locale.getDefault().country.lowercase(Locale.ROOT).takeIf { it.length == 2 } ?: "us"
         for (provider in CanvasSource.entries.filter { it != CanvasSource.ALL }) {
             if (!remoteAllowed(provider)) continue
             policy(provider)
-            val artwork: CanvasArtwork? = when (provider) {
-                CanvasSource.BETTER_LYRICS, CanvasSource.APPLE_MUSIC ->
-                    ArchiveTuneCanvas.getBySongArtist(title, artist, storefront, source = provider)
-                CanvasSource.TIDAL -> TidalCanvasProvider.getBySongArtist(title, artist, storefront)
-                CanvasSource.SPOTIFY -> SpotifyCanvasProvider.getByVideoId(id, title, artist)
-                CanvasSource.ALL -> null
-            }
+            val artwork = providerArtwork(provider, id, title, artist, storefront)
             policy(provider)
-            val url = artwork?.preferredAnimationUrl ?: artwork?.preferredVerticalAnimationUrl
+            val url = if (requireVertical) {
+                artwork?.preferredVerticalAnimationUrl ?: artwork?.preferredAnimationUrl
+            } else {
+                artwork?.preferredAnimationUrl ?: artwork?.preferredVerticalAnimationUrl
+            }
             if (url != null && desktopCanvasHttpsUrl(url)) return url to provider
         }
         return null
+    }
+
+    /** One provider's artwork record for the song, as the playback resolver calls it. */
+    private suspend fun providerArtwork(
+        provider: CanvasSource, id: String, title: String, artist: String, storefront: String,
+    ): CanvasArtwork? = when (provider) {
+        CanvasSource.BETTER_LYRICS, CanvasSource.APPLE_MUSIC ->
+            ArchiveTuneCanvas.getBySongArtist(title, artist, storefront, source = provider)
+        CanvasSource.TIDAL -> TidalCanvasProvider.getBySongArtist(title, artist, storefront)
+        CanvasSource.SPOTIFY -> SpotifyCanvasProvider.getByVideoId(id, title, artist)
+        CanvasSource.ALL -> null
+    }
+
+    /** The save picker's resolved urls of the last [fetchSaveSources], keyed on the provider name. */
+    private var saveUrls: Map<String, String> = emptyMap()
+
+    /**
+     * Every provider animation a save may pick, as the baseline's Save Canvas dialog listed its sources. Provider
+     * reads run under the same allowance playback uses; HLS urls are not kept, as a save is a file copy and the
+     * baseline refused playlists it could not store.
+     */
+    internal suspend fun fetchSaveSources(item: ContentItem): List<Pair<CanvasSource, String>> {
+        check(!closed)
+        canvasBusy.value = true
+        try {
+            val canonical = item.canonicalSong()
+            val artist = canonical.artists.firstOrNull()?.name ?: canonical.subtitle.takeIf(String::isNotBlank)
+                ?: return emptyList()
+            val title = canonical.title
+            val storefront = Locale.getDefault().country.lowercase(Locale.ROOT).takeIf { it.length == 2 } ?: "us"
+            val found = LinkedHashMap<CanvasSource, String>()
+            for (provider in CanvasSource.entries.filter { it != CanvasSource.ALL }) {
+                if (!remoteAllowed(provider)) continue
+                val artwork = try {
+                    providerArtwork(provider, item.ref.id, title, artist, storefront)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    continue
+                }
+                val url = artwork?.preferredAnimationUrl ?: artwork?.preferredVerticalAnimationUrl
+                if (url != null && desktopCanvasHttpsUrl(url) && !url.lowercase(Locale.ROOT).contains(".m3u8")) {
+                    found[provider] = url
+                }
+            }
+            saveUrls = found.mapKeys { it.key.name }
+            return found.toList()
+        } finally {
+            canvasBusy.value = false
+        }
+    }
+
+    /** Stores the picked source's file as the song's custom canvas; false leaves the canvas as it was. */
+    internal suspend fun saveCanvas(songId: String, sourceKey: String): Boolean {
+        // The picker's allowance still holds: a source switched off between the fetch and the pick saves nothing.
+        val provider = CanvasSource.entries.firstOrNull { it.name == sourceKey && remoteAllowed(it) } ?: return false
+        val url = saveUrls[provider.name] ?: return false
+        val bytes = try {
+            downloadDesktopCanvas(graph, url)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return false
+        return graph.customArtwork.setCanvas(songId, DesktopBytesArtworkSource(bytes, canvasUrlExtension(url))) ==
+            CustomArtworkResult.SAVED
+    }
+
+    /**
+     * The menu's Refetch canvas row: the playback resolve runs again for the queued song and a hit replaces the shown
+     * target. A concurrent refetch answers ALREADY_RUNNING rather than racing the resolve.
+     */
+    internal suspend fun refetch(item: ContentItem, requireVertical: Boolean): PlayerQueueCanvasRefetchResult {
+        if (closed) return PlayerQueueCanvasRefetchResult.FAILURE
+        if (!refetching.compareAndSet(false, true)) return PlayerQueueCanvasRefetchResult.ALREADY_RUNNING
+        canvasBusy.value = true
+        try {
+            val row = graph.queue.state.value.entries.firstOrNull { it.item.ref.id == item.ref.id }
+                ?: return PlayerQueueCanvasRefetchResult.FAILURE
+            val canonical = item.canonicalSong()
+            val artist = canonical.artists.firstOrNull()?.name ?: canonical.subtitle.takeIf(String::isNotBlank)
+                ?: return PlayerQueueCanvasRefetchResult.FAILURE
+            val result = try {
+                withTimeoutOrNull(45_000L) { resolve(item.ref.id, canonical.title, artist, requireVertical) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            return if (result != null) {
+                val (uri, provider) = result
+                target.value = DesktopCanvasTarget(row.occurrenceId, uri, image = false, provider = provider)
+                PlayerQueueCanvasRefetchResult.SUCCESS
+            } else {
+                notice = "content_canvas_failed"
+                PlayerQueueCanvasRefetchResult.FAILURE
+            }
+        } finally {
+            canvasBusy.value = false
+            refetching.value = false
+        }
     }
 
     internal fun remoteAllowed(source: CanvasSource): Boolean {
