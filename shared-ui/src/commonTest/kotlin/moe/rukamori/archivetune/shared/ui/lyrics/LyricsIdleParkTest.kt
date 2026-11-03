@@ -1,7 +1,7 @@
-package moe.rukamori.archivetune.lyrics
+package moe.rukamori.archivetune.shared.ui.lyrics
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class LyricsIdleParkTest {
     @Test

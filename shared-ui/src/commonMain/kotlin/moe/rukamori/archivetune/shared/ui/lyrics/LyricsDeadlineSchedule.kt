@@ -94,3 +94,14 @@ internal class LyricsDeadlineSchedule(
         }
     }
 }
+
+/**
+ * How long, in wall-clock ms, an idle position loop may park before the feed at [feedMs] reaches
+ * [nextChangeMs]. Deadline schedules are in media time, which runs [speed] times as fast as the wall
+ * clock, so at 2x a 400 ms gap is a 200 ms wait; sleeping the media gap would skip whole word sweeps.
+ * With no boundary ahead, or a stalled or invalid speed, the loop polls at [maxParkMs].
+ */
+fun lyricsIdleParkMs(nextChangeMs: Long?, feedMs: Long, speed: Float, minParkMs: Long, maxParkMs: Long): Long {
+    if (nextChangeMs == null || !(speed > 0f)) return maxParkMs
+    return ((nextChangeMs - feedMs) / speed).toLong().coerceIn(minParkMs, maxParkMs)
+}
