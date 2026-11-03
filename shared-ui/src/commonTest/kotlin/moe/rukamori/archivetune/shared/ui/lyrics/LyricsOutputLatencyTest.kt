@@ -55,6 +55,16 @@ class LyricsOutputLatencyTest {
     }
 
     @Test
+    fun theIdleParkFollowsTheSpeedOfTheLatestFreshSnapshot() {
+        val clock = LyricsClock()
+        assertEquals(1f, clock.playbackSpeed)
+        clock.accept(snapshot.copy(sampleMonotonicNanos = 100, playbackSpeed = 2f), 100)
+        assertEquals(2f, clock.playbackSpeed)
+        clock.accept(snapshot.copy(sampleMonotonicNanos = 0, playbackSpeed = 0.5f), 100)
+        assertEquals(2f, clock.playbackSpeed)
+    }
+
+    @Test
     fun aStaleSnapshotCannotReplaceTheOutputDelay() {
         val clock = LyricsClock()
         clock.accept(snapshot.copy(sampleMonotonicNanos = 100), 100)

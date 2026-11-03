@@ -28,8 +28,8 @@ import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 
 /**
  * The synced Enhanced lyrics list inside a box whose top and bottom edges fade, wherever the list is scrolled. The
- * active line sits 15% of the box height below the top. From API 29 the library's [KaraokeLyricsView] draws the lines;
- * below it, where the library view cannot run, [BasicSyncedLyricsList] takes its place.
+ * active line sits 15% of the box height below the top. [BasicSyncedLyricsList] draws the lines on every API level:
+ * the library's [KaraokeLyricsView] hard-codes its per-word motion, so the shared lift curve cannot reach it there.
  */
 @Composable
 internal fun EnhancedKaraokePane(
@@ -118,10 +118,13 @@ internal fun EnhancedKaraokePane(
     }
 }
 
-// The library view draws each glyph from its own layout and lights a line-synced row exactly at its start. The in-house
-// list sliced descenders at its clip bands and lit LRC rows up to a second early, so it stays the pre-API-29 fallback
-// until it is verified on a device.
-private const val USE_KARAOKE_LIBRARY_VIEW = true
+// The library's KaraokeLyricsView hard-codes the completion lift — every syllable floats 4 px into place over a
+// fixed 700 ms from its start (FixedSimpleAnimationDurationMs in its drawRowText) — which is the choppy, slow
+// word-completion motion the listener hears, and the published artifact is not ours to patch. The in-house list now
+// draws the shared sink-and-lift curve from [LyricsSweepGeometry.dropAt], keeps the PR #76 fixes (descender-safe clip bands,
+// line-synced rows lighting at their timed start, library line blur off with animations disabled) and draws Enhanced
+// word-synced rows on every API level. The flag and the library branch stay for comparison and rollback.
+private const val USE_KARAOKE_LIBRARY_VIEW = false
 
 /** True where [EnhancedKaraokePane] draws with the library's [KaraokeLyricsView], not [BasicSyncedLyricsList]. */
 internal val enhancedLibraryViewActive: Boolean
@@ -139,7 +142,11 @@ internal val enhancedLineSyncedBreakMs: Long
 internal fun enhancedPaneLineStarts(lyrics: SyncedLyrics): IntArray {
     val starts = IntArray(lyrics.lines.size) { lyrics.lines[it].start }
     if (enhancedLibraryViewActive) return starts
-    return enhancedActivationStarts(starts, IntArray(lyrics.lines.size) { lyrics.lines[it].end })
+    return enhancedActivationStarts(
+        starts,
+        IntArray(lyrics.lines.size) { lyrics.lines[it].end },
+        BooleanArray(lyrics.lines.size) { lyrics.lines[it].hasWordTiming() },
+    )
 }
 
 // lyrics-ui 1.0.x hard-codes a DstIn ramp over KaraokeLyricsView (20dp in at the top, 100dp out at

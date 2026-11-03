@@ -4,7 +4,7 @@ import androidx.room.useWriterConnection
 import androidx.sqlite.SQLiteConnection
 
 /** The schema version [PortableStateDatabase] declares. Snapshots newer than this cannot be opened by this build. */
-const val PORTABLE_STATE_SCHEMA_VERSION: Int = 11
+const val PORTABLE_STATE_SCHEMA_VERSION: Int = 12
 
 /** The 16-byte header every SQLite database file starts with. */
 internal val SQLITE_FILE_HEADER: ByteArray = "SQLite format 3\u0000".encodeToByteArray()

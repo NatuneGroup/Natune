@@ -10,11 +10,9 @@
 
 package moe.rukamori.archivetune.ui.component
 
-import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -45,7 +43,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -101,34 +98,6 @@ public fun MediaDetailHero(
     canvasVisible: Boolean = true,
     useBlurredPlayButton: Boolean = false,
 ) {
-    // The independent Apple Music headers option swaps these headers. Seven screens call
-    // MediaDetailHero — playlists local and online, albums, top/auto/cache playlists, Spotify
-    // playlists — so the switch belongs here rather than repeated at each of them, and a screen
-    // added later gets it for free.
-    //
-    // The artwork backdrop is what goes: the iOS-style header is a large left-aligned title over
-    // the plain page surface with pink accent pills, so the thumbnail, canvas video, description
-    // and metadata block below it have nowhere to sit and are deliberately dropped rather than
-    // wedged in.
-    if (rememberAppleMusicHeaders()) {
-        AppleMusicPlaylistHero(
-            sectionLabel = null,
-            title = title,
-            subtitle = metadata ?: subtitle?.text,
-            onPlay = onPlay,
-            onShuffle = onShuffle,
-            onPrimaryTrailing = onToggleAdd,
-            primaryTrailingIcon = if (isAdded) R.drawable.done else R.drawable.add,
-            primaryTrailingDescription = if (isAdded) removeContentDescription else addContentDescription,
-            additionalActions =
-                additionalPrimaryActions?.let { actions ->
-                    { Row(verticalAlignment = Alignment.CenterVertically) { actions(heroActionAccent()) } }
-                },
-            modifier = modifier.padding(top = systemBarsTopPadding),
-        )
-        return
-    }
-
     val surfaceColor = MaterialTheme.colorScheme.surface
     val menuState = LocalMenuState.current
     val heroContentColor =
@@ -754,11 +723,3 @@ private enum class MediaDetailActionLayoutId {
     Play,
     ToggleAdd,
 }
-
-/**
- * The colour [MediaDetailHero] hands to its `additionalPrimaryActions` slot under the Apple Music
- * Experience. The normal hero derives one from the artwork backdrop it is drawn over; the iOS
- * header has no backdrop, so the actions take the same pink accent as the pills beside them.
- */
-@Composable
-private fun heroActionAccent(): Color = AppleMusicStyleAccentColor

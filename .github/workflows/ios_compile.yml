@@ -34,7 +34,9 @@ concurrency:
 
 jobs:
   ios-compile:
-    runs-on: blacksmith-6vcpu-macos-latest
+    # GitHub-hosted arm64 macOS 26 image: free on the public repo and ships Xcode 26.x
+    # (the Select step below pins /Applications/Xcode_26.4.app for the iOS 26 SDK APIs).
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       # The job compiles only Kotlin/Native iOS targets; it never needs the Android SDK.
@@ -52,28 +54,13 @@ jobs:
           submodules: true
           persist-credentials: false
 
-      # The Liquid Glass and TextRenderer APIs exist only in the iOS 26 SDK. Keep the runner's Xcode when it is
-      # already the 26.4 the native closure expects; otherwise pick 26.4 or the newest installed Xcode 26.
-      - name: Select Xcode 26
-        shell: bash
-        run: |
-          set -euo pipefail
-          current="$(xcodebuild -version 2>/dev/null | awk 'NR == 1 { print $2 }' || true)"
-          if [[ "$current" != "26.4" ]]; then
-            candidate=""
-            for preferred in /Applications/Xcode_26.4.app /Applications/Xcode_26.4.0.app; do
-              if [[ -d "$preferred" ]]; then candidate="$preferred"; break; fi
-            done
-            if [[ -z "$candidate" ]]; then
-              candidate="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' -print 2>/dev/null | sort -V | tail -n 1 || true)"
-            fi
-            if [[ -z "$candidate" ]]; then
-              echo "::error::No Xcode 26 is installed on this runner; the selected Xcode is ${current:-none}."
-              exit 1
-            fi
-            sudo xcode-select -s "$candidate/Contents/Developer"
-          fi
-          xcodebuild -version
+      # The Liquid Glass and TextRenderer APIs exist only in the iOS 26 SDK. The native closure pins 26.4
+      # and setup-xcode resolves exactly that release (26.4 -> /Applications/Xcode_26.4.app) — a newer
+      # 26.x is never substituted, matching the release pipeline's macOS jobs.
+      - name: Select Xcode 26.4
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4'
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5

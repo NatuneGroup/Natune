@@ -14,7 +14,7 @@ import kotlin.test.*
 class AppearanceSettingsTest {
     @Test fun individualAppleControlsNeverApplyThePresetAndReportMixedStatus() {
         val rows = appearanceThemeSettingsRows(PreferenceSnapshot.EMPTY, false, false, false, false, {}, {}, {}, {}, {})
-        listOf("apple_music_headers", "apple_music_menus", "apple_music_search_bar", "apple_music_palette").forEach { anchor ->
+        listOf("apple_music_menus", "apple_music_search_bar", "apple_music_palette").forEach { anchor ->
             val toggle = rows.single { it.anchor == anchor } as SettingsRow.Toggle
             val editor = PreferenceSnapshot.EMPTY.toEditor()
             toggle.write(editor, true)

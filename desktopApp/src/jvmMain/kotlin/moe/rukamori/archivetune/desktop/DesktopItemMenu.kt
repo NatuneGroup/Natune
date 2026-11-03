@@ -11,9 +11,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.library.AutoPlaylistSongSortType
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
@@ -24,30 +26,38 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
 import moe.rukamori.archivetune.shared.domain.settings.ExternalDownloaderEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
 import moe.rukamori.archivetune.shared.ui.host.queuedEntry
+import moe.rukamori.archivetune.shared.ui.menu.CanvasSaveMenuState
+import moe.rukamori.archivetune.shared.ui.menu.CanvasSourcePicker
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
 import moe.rukamori.archivetune.shared.ui.menu.MenuShareHandler
 import moe.rukamori.archivetune.shared.ui.menu.OverflowAction
 import moe.rukamori.archivetune.shared.ui.menu.SharedOverflowMenu
 import moe.rukamori.archivetune.shared.ui.menu.SongMenuFacts
 import moe.rukamori.archivetune.shared.ui.menu.SongOverflowMenu
+import moe.rukamori.archivetune.shared.ui.menu.rememberCanvasSaveMenuState
+import moe.rukamori.archivetune.shared.ui.menu.saveCanvasOverflowAction
 import moe.rukamori.archivetune.shared.ui.menu.playlistOccurrenceRemoval
 import moe.rukamori.archivetune.shared.ui.menu.songLibraryAndDownloadActions
 import moe.rukamori.archivetune.shared.ui.menu.songOverflowActions
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.customartwork.BoundCustomArtworkEditDialog
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /**
  * The one row menu of the desktop host. A row's overflow opens it on that row's occurrence. It mounts the shared song
  * menu with the owners this host actually has: queue, library like and add-to-playlist, share, history
  * removal, playlist-row removal, album navigation, the sleep timer sheet, cover-art save, track info, the download
- * owner's start, removal and export, radio, speed dial and the media-info route. A row keeps its real actions; missing
+ * owner's start, removal and export, radio, speed dial, recommendation blocks and the media-info route. A row keeps
+ * its real actions; missing
  * platform owners give a resource-backed reason rather than disappearing.
  */
 internal class DesktopItemMenuState {
@@ -70,10 +80,18 @@ internal class DesktopItemMenuState {
     var message: String? by mutableStateOf(null)
         private set
 
+    /**
+     * The item the save-canvas flow is bound to. The pick must outlive the menu's own dismiss, so the item is kept
+     * until the next open replaces it.
+     */
+    var canvasItem: ContentItem? by mutableStateOf(null)
+        private set
+
     private var refusalKey: String? = null
 
     fun open(occurrence: ContentOccurrence, playlistId: String? = null) {
         target = occurrence
+        canvasItem = occurrence.item
         this.playlistId = playlistId
         artworkTarget = null
         artistTarget = null
@@ -111,6 +129,11 @@ internal class DesktopItemMenuState {
         message = null
     }
 
+    /** The text a host action reports in place of the generic failure, as the canvas save does. */
+    fun notice(text: String) {
+        message = text
+    }
+
     /** A failed menu row: the unavailable notice for a row this host does not connect, otherwise the failure. */
     fun failed() {
         message = DesktopStrings[refusalKey ?: "menu_action_failed"]
@@ -143,9 +166,18 @@ internal fun DesktopItemMenuDialog(
     graph: DesktopSessionGraph,
     routeKey: String,
     sleepSheet: DesktopSleepTimerSheetState,
+    canvas: DesktopCanvasOwner,
     openRoute: (String) -> Unit,
 ) {
     DisposableEffect(routeKey) { onDispose { menu.dismiss() } }
+    // The save state and its picker live outside the menu's conditional lifetime, as other hoisted dialogs do:
+    // the Save canvas row dismisses the menu, and the pick still needs its fetch scope and its dialog.
+    val canvasHost = remember(graph, canvas) { DesktopCanvasMenuHost(canvas) { menu.canvasItem } }
+    val canvasScope = rememberCoroutineScope()
+    val canvasSave = rememberCanvasSaveMenuState(menu.canvasItem?.ref?.id ?: "", canvasHost) { resource ->
+        canvasScope.launch { menu.notice(getString(resource)) }
+    }
+    CanvasSourcePicker(canvasSave)
     menu.artworkTarget?.let { item ->
         BoundCustomArtworkEditDialog(
             artworkUrl = item.artworkUri,
@@ -167,7 +199,7 @@ internal fun DesktopItemMenuDialog(
         return
     }
     if (occurrence.item.ref.kind == ContentKind.SONG || occurrence.item.ref.kind == ContentKind.EPISODE) {
-        DesktopSongMenu(menu, graph, occurrence, sleepSheet, openRoute)
+        DesktopSongMenu(menu, graph, occurrence, sleepSheet, canvasSave, openRoute)
     } else {
         DesktopCollectionRowMenu(menu, graph, occurrence, openRoute)
     }
@@ -180,9 +212,10 @@ private fun DesktopSongMenu(
     graph: DesktopSessionGraph,
     occurrence: ContentOccurrence,
     sleepSheet: DesktopSleepTimerSheetState,
+    canvasSave: CanvasSaveMenuState,
     openRoute: (String) -> Unit,
 ) {
-    val sharing = remember(menu) { MenuShareHandler(desktopMenuSharing(menu)) }
+    val sharing = remember(menu, graph) { MenuShareHandler(desktopMenuSharing(menu, graph)) }
     val host = remember(menu, graph, occurrence, sleepSheet, openRoute) {
         DesktopSongMenuHost(menu, graph, occurrence, sleepSheet, openRoute)
     }
@@ -254,7 +287,9 @@ private fun DesktopSongMenu(
         fromCache = occurrence.occurrenceId.startsWith("cache:"),
         albumId = occurrence.item.albumId.takeUnless { ref.kind == ContentKind.EPISODE },
         artworkUrl = occurrence.item.artworkUri,
-        recommendationBlocked = false,
+        recommendationBlocked = ref.supportsDesktopSongPin() &&
+            parseBlockedSongRefs(preferences?.get(BlockedSongIdsKey).orEmpty())
+                .any { it.provider == ref.provider && it.id == ref.id },
         externalDownloaderEnabled = preferences?.get(ExternalDownloaderEnabledKey) == true,
         // Android package configuration cannot launch a desktop app; the row explains this when selected.
         externalDownloaderConfigured = true,
@@ -274,7 +309,7 @@ private fun DesktopSongMenu(
                 when (action.id) {
                     "share" -> OverflowAction(
                         action.id, if (isLocal) Res.string.content_reveal_audio else action.label,
-                    ) { shareDesktopItem(occurrence.item, graph, menu) }
+                    ) { shareDesktopItem(occurrence.item, graph, menu, sharing) }
                     "view_artist" -> OverflowAction(
                         action.id, if (ref.kind == ContentKind.EPISODE) Res.string.content_view_podcast else action.label,
                         dismissOnSuccess = false,
@@ -297,9 +332,8 @@ private fun DesktopSongMenu(
         add(OverflowAction("custom_artwork", Res.string.m4_custom_artwork_title, dismissOnSuccess = false) {
             menu.openCustomArtwork(occurrence.item)
         })
-        add(OverflowAction("save_canvas", Res.string.m6_save_canvas) {
-            menu.unavailable("content_menu_canvas_export_unsupported")
-        })
+        // The shared row asks the picker for its sources, and the picker's pick saves through the canvas owner.
+        add(canvasSave.saveCanvasOverflowAction())
     }
     SongOverflowMenu(
         identity = "desktop-song:${occurrence.occurrenceId}",
@@ -322,9 +356,10 @@ private fun DesktopCollectionRowMenu(
     openRoute: (String) -> Unit,
 ) {
     val ref = occurrence.item.ref
+    val sharing = remember(menu, graph) { MenuShareHandler(desktopMenuSharing(menu, graph)) }
     val actions = listOf(
         OverflowAction("open_item", m5pqDetailsRes) { openRoute(ArchiveRoutes.content(ref)) },
-        OverflowAction("share", Res.string.m6_share) { shareDesktopItem(occurrence.item, graph, menu) },
+        OverflowAction("share", Res.string.m6_share) { shareDesktopItem(occurrence.item, graph, menu, sharing) },
     )
     SharedOverflowMenu(
         menuIdentity = "desktop-item:${occurrence.occurrenceId}",

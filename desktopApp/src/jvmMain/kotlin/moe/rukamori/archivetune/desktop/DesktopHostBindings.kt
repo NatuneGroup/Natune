@@ -43,6 +43,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
+import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityOverlay
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.playlist.PlaylistPickerCandidate
 import moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource
@@ -108,6 +109,8 @@ internal fun desktopHostBindings(
             override fun candidates(occurrences: List<ContentOccurrence>): Flow<List<PlaylistPickerCandidate>> =
                 graph.library.observePlaylistPicker(occurrences)
         },
+        // The restart-scoped custom font resolves from the file the picker stored by file URI.
+        customFontLoader = { uri -> desktopCustomFontFamily(uri) },
         settings = graph.settings,
         actionScope = graph.scope,
         // Deep links from the desktop intake open their page through the root. Back arrives from the window.
@@ -121,7 +124,10 @@ internal fun desktopHostBindings(
         // Item and news images load over the graph's one client, public http or https only; a failed image keeps its frame.
         artwork = { item, modifier -> DesktopRemoteArtwork(item.artworkUri, graph.artworkLoader, modifier) },
         newsImage = { uri, modifier -> DesktopRemoteArtwork(uri, graph.artworkLoader, modifier) },
-        formatNewsDate = { epochMs -> dates.format(Date(epochMs)) },
+        // Feed dates are epoch seconds, the unit the Android host stores and formats.
+        formatNewsDate = { epochSeconds -> dates.format(Date(epochSeconds * 1_000L)) },
+        newsAvailable = graph.newsFeed.enabled,
+        unreadNews = graph.newsFeed.unread,
         librarySourceSelector = { DesktopLibrarySourceSelector(graph, settingsOwners.spotify) },
         hostScreen = { route, navigation ->
             if (desktopMountsSettings(route)) {
@@ -134,12 +140,13 @@ internal fun desktopHostBindings(
             DisposableEffect(podcasts, topMixes, canvas, lyricsTools) {
                 onDispose { podcasts.close(); topMixes.close(); canvas.close(); lyricsTools.close() }
             }
-            DesktopItemMenuDialog(menu, graph, route.value, sleepSheet) { target -> ownRoutes.trySend(target) }
+            DesktopItemMenuDialog(menu, graph, route.value, sleepSheet, canvas) { target -> ownRoutes.trySend(target) }
             DesktopCreatePlaylistOverlay(createPlaylist, route)
             DesktopPlaylistMenuOverlay(playlistMenus, graph, route.value)
-            DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph) { target -> ownRoutes.trySend(target) }
+            DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph, canvas) { target -> ownRoutes.trySend(target) }
             DesktopSleepTimerOverlay(sleepSheet, graph.sleepTimer)
             DesktopEqualizerOverlay(graph.equalizer)
+            AcousticQualityOverlay(graph.acoustic)
             DesktopFeedbackOverlay(feedback, graph)
             DesktopBackupRestartDialog(graph, quit)
             DesktopLyricsShareNotice(lyricsTools)

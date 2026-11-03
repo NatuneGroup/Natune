@@ -21,7 +21,10 @@ concurrency:
 
 jobs:
   build:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Public repo: fork pull requests cannot reach Blacksmith runners and must not burn the org's
+    # minutes, so they run on GitHub-hosted Ubuntu instead. Same-repo PRs and dev pushes stay on
+    # Blacksmith (github.event.pull_request is empty there, so the label falls through).
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -85,14 +88,15 @@ jobs:
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
+          # Pull request builds run code that has not been reviewed yet, so no provider secret reaches
+          # them; the fields resolve blank and the build still succeeds. dev pushes keep the secrets.
           # Canonical names first; the legacy secrets remain a fallback for repositories that still hold them.
-          ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY || secrets.LASTFM_API_KEY }}
-          ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET || secrets.LASTFM_SECRET }}
-          # Built-in Lyprio server pair. Fork pull requests get neither variable nor secret, so the
-          # fields resolve blank and the build still succeeds.
+          ARCHIVETUNE_LASTFM_API_KEY: ${{ github.event_name != 'pull_request' && (secrets.ARCHIVETUNE_LASTFM_API_KEY || secrets.LASTFM_API_KEY) || '' }}
+          ARCHIVETUNE_LASTFM_API_SECRET: ${{ github.event_name != 'pull_request' && (secrets.ARCHIVETUNE_LASTFM_API_SECRET || secrets.LASTFM_SECRET) || '' }}
+          # Built-in Lyprio server pair. Fork pull requests get no variable either.
           ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
           ARCHIVETUNE_ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL }}
-          ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
+          ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ github.event_name != 'pull_request' && secrets.LYPRIO_HMAC_KEY || '' }}
           # Public ArchivePool base URL. The pool's /api/sources and /api/discovery/*
           # endpoints reject unauthenticated reads with HTTP 401, so without these
           # three values baked into BuildConfig the app silently gets 0 accounts
@@ -100,8 +104,8 @@ jobs:
           # Precedence: Actions variable (preferred — non-sensitive), then secret
           # (kept for forks that stored the URL as a secret before vars existed),
           # then the gradle default (https://archivepool.vercel.app) in build.gradle.kts.
-          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
-          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || (github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_URL || '') }}
+          SOURCE_PROVIDER_KEY: ${{ github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_KEY || '' }}
           # POOL_CLIENT_KEY not needed: v2 feed protocol derives encryption from the read key.
 
       - name: Compile KMP shared modules
@@ -142,7 +146,8 @@ jobs:
   # The desktop host compiles in its own job so a mid-flight desktopApp breakage reports
   # itself without blocking the Android assemble/lint signal.
   desktop-compile:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Same fork routing as the build job: fork pull requests use the free GitHub-hosted pool.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
 
     steps:
       - uses: actions/checkout@v7

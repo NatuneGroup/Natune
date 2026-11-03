@@ -637,7 +637,7 @@ fun Lyrics(
                 seekingNow -> if (isTtmlLyrics) withFrameNanos { } else delay(50L)
                 !playerConnection.player.isPlaying -> delay(PAUSED_POLL_MS)
                 isTtmlLyrics && schedule.isLive(syncedPosition) -> withFrameNanos { }
-                else -> schedule.sleepUntilNext(syncedPosition, if (isTtmlLyrics) 16L else 50L)
+                else -> schedule.sleepUntilNext(syncedPosition, playerConnection.playbackParameters.value.speed, if (isTtmlLyrics) 16L else 50L)
             }
         }
     }

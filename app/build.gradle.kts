@@ -85,7 +85,7 @@ val addonsRevision = runCatching {
 }.getOrDefault("")
 val addonsBaseUrl =
     if (addonsRevision.length == 40) {
-        "https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/$addonsRevision/addons"
+        "https://raw.githubusercontent.com/NatuneGroup/Natune/$addonsRevision/addons"
     } else {
         ""
     }
@@ -282,6 +282,18 @@ android {
             "\"${project.findProperty("tdlibNativeBaseUrl") as String?
                 ?: "https://github.com/NatuneGroup/ArchiveTune/releases/download/tdlight-2b51b33"}\"",
         )
+
+        // In-app announcements feed ("News"): a JSON index plus Markdown content served
+        // first-party from the Natune site. Precedence: local.properties, then the
+        // NATUNE_NEWS_URL env/CI variable, then the baked-in default. An explicitly blank
+        // value disables the feature and hides the News entry point.
+        val natuneNewsUrl =
+            (
+                localProperties.getProperty("NATUNE_NEWS_URL")
+                    ?: System.getenv("NATUNE_NEWS_URL")
+                    ?: "https://natune.pages.dev/api/news"
+                ).trim().trimEnd('/')
+        buildConfigField("String", "NATUNE_NEWS_URL", "\"$natuneNewsUrl\"")
 
         // Base URL of the community Source Pool website (Next.js). When set, the app auto-discovers
         // health-checked Tidal/Qobuz instances from it. Precedence: local.properties override, then

@@ -109,6 +109,17 @@ class KtorQqMusicRepository(client: HttpClient, private val access: QqMusicAcces
                     it.startsWith("https://") && !it.startsWith("https://ws")
                 } ?: "https://isure.stream.qqmusic.qq.com/"
                 val url = streamUrl(if (path.startsWith("http")) path else cdn.trimEnd('/') + "/" + path.trimStart('/'))
+                // A manifest answer is a media playlist, not a progressive file: it takes the segmented native route,
+                // which is what the progressive engine path plays it as on hosts that expand HLS themselves.
+                if (path.substringBefore('?').lowercase().endsWith(".m3u8")) {
+                    val manifestStream = direct(request, track, url, "application/vnd.apple.mpegurl", "",
+                        accountScope = streamAccount(account.scope))
+                    check(account.isActive())
+                    return PreparedAudio.Native(manifestStream,
+                        NativeAudioRecipe.SegmentedHls(playlistUrl = url, playlistText = null,
+                            audioSource = AudioSourceType.QQ, accountScope = account.scope,
+                            expiresAtEpochMs = manifestStream.expiresAtEpochMs))
+                }
                 val mime = when (extension) { ".flac", ".mflac" -> "audio/flac"; ".mp3" -> "audio/mpeg"; else -> "audio/ogg" }
                 val codec = when (mime) { "audio/flac" -> "flac"; "audio/mpeg" -> "mp3"; else -> "vorbis" }
                 val stream = direct(request, track, url, mime, codec, accountScope = streamAccount(account.scope))

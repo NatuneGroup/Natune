@@ -19,7 +19,13 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertTrue(info["LSSupportsOpeningDocumentsInPlace"])
         self.assertNotIn("NSAppTransportSecurity", info)
         self.assertEqual(
-            ["archivetune", "discord-1165706613961789445"],
+            [
+                "archivetune",
+                "discord-1165706613961789445",
+                "natune",
+                "vnd.youtube",
+                "$(PRODUCT_BUNDLE_IDENTIFIER)",
+            ],
             info["CFBundleURLTypes"][0]["CFBundleURLSchemes"],
         )
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
@@ -169,7 +175,10 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertNotIn("onChange(of: active)", swift)
         # The renderer's inout context arguments match the declaration labels.
         self.assertNotIn("context: &context", swift)
-        self.assertIn("in: &context", swift)
+        self.assertIn("in: &seat", swift)
+        # Every run reads the shared drop, so the sink and the completion lift match Compose.
+        self.assertIn("LyricsSweepGeometry.shared.dropAt(", swift)
+        self.assertIn("wordEndMs: word.endMs", swift)
 
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()

@@ -115,7 +115,7 @@ private fun playOccurrences(
     refusal: String,
 ) {
     graph.scope.launchCommand(graph, refusal) {
-        graph.queue.replace(occurrences, startOccurrenceId, playWhenReady = true)
+        graph.queue.replace(occurrences, startOccurrenceId, playWhenReady = true, staysFinite = true)
     }
 }
 

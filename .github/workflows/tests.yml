@@ -30,7 +30,9 @@ concurrency:
 jobs:
   unit-tests:
     name: Compile and run unit tests
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Public repo: fork pull requests cannot reach Blacksmith runners and must not burn the org's
+    # minutes, so they run on GitHub-hosted Ubuntu. Same-repo PRs, dev pushes and dispatches stay.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -69,15 +71,17 @@ jobs:
         env:
           PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          # Pull request runs execute unreviewed code, so they get no provider secret; blank values
+          # are the documented unconfigured build. dev pushes and dispatches keep the secrets.
           # Canonical names first; the legacy secrets remain a fallback for repositories that still hold them.
-          ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY || secrets.LASTFM_API_KEY }}
-          ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET || secrets.LASTFM_SECRET }}
+          ARCHIVETUNE_LASTFM_API_KEY: ${{ github.event_name != 'pull_request' && (secrets.ARCHIVETUNE_LASTFM_API_KEY || secrets.LASTFM_API_KEY) || '' }}
+          ARCHIVETUNE_LASTFM_API_SECRET: ${{ github.event_name != 'pull_request' && (secrets.ARCHIVETUNE_LASTFM_API_SECRET || secrets.LASTFM_SECRET) || '' }}
           ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
           ARCHIVETUNE_ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL }}
-          ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
-          START_IO_APP_ID: ${{ secrets.START_IO_APP_ID }}
-          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
-          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+          ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ github.event_name != 'pull_request' && secrets.LYPRIO_HMAC_KEY || '' }}
+          START_IO_APP_ID: ${{ github.event_name != 'pull_request' && secrets.START_IO_APP_ID || '' }}
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || (github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_URL || '') }}
+          SOURCE_PROVIDER_KEY: ${{ github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_KEY || '' }}
 
       - name: Run shared KMP module tests
         shell: bash

@@ -26,6 +26,7 @@ import okhttp3.Protocol
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
+import java.net.SocketTimeoutException
 import okhttp3.Call
 import java.util.concurrent.TimeUnit
 import timber.log.Timber
@@ -85,16 +86,30 @@ internal class PRDownloaderDataSource private constructor(
             .build()
     }
 
+    /**
+     * Fast-fail probe client: the first attempt at a content-length probe times out in a few
+     * seconds and escalates into [headClient]'s slower budget, mirroring the streaming path.
+     */
+    private val probeFastClient: OkHttpClient by lazy {
+        OkHttpClient.Builder().withAppProxy()
+            .connectTimeout(FastFailReadPolicy.FAST_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(FastFailReadPolicy.FAST_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .callTimeout(8, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(4, 30_000, TimeUnit.MILLISECONDS))
+            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            .build()
+    }
+
     override fun open(dataSpec: DataSpec): Long {
         transferInitializing(dataSpec)
         val url = dataSpec.uri.toString()
         // PRDownloader is initialized once at app start (see App.kt).
         // If it isn't initialized, we fail fast — there's no graceful
         // degradation possible without a fetcher.
-        val requestDir = DownloadRequestLifetime.createDirectory(File(context.cacheDir, "prd_tmp"))
+        var requestDir = DownloadRequestLifetime.createDirectory(File(context.cacheDir, "prd_tmp"))
         val safeName = "content"
-        val target = File(requestDir, safeName)
-        val state = RequestState(requestDir)
+        var target = File(requestDir, safeName)
+        var state = RequestState(requestDir)
         synchronized(requestLock) {
             if (active != null) {
                 cleanup(state)
@@ -103,13 +118,6 @@ internal class PRDownloaderDataSource private constructor(
             active = state
         }
         try {
-            // Build the download request with optional headers.
-            // PRDownloader.download() returns a DownloadRequestBuilder — headers
-            // and user-agent must be set on the builder BEFORE calling .build(),
-            // which converts it into a DownloadRequest (which only supports
-            // progress/pause/cancel listeners + start()).
-            val requestBuilder = PRDownloader.download(url, requestDir.absolutePath, safeName)
-
             // YouTube's googlevideo CDN enforces strict User-Agent / Origin / Referer
             // matching against the `c` (client) query parameter embedded in the
             // stream URL. If the UA doesn't match what the client expects (e.g.
@@ -124,108 +132,119 @@ internal class PRDownloaderDataSource private constructor(
             }.getOrNull()
             val resolvedUserAgent = youTubeMediaProfile?.userAgent?.takeIf(String::isNotBlank)
                 ?: userAgent
-            if (resolvedUserAgent.isNotBlank()) requestBuilder.setUserAgent(resolvedUserAgent)
-            if (youTubeMediaProfile != null) {
-                youTubeMediaProfile.origin?.takeIf(String::isNotBlank)?.let {
-                    requestBuilder.setHeader("Origin", it)
-                }
-                youTubeMediaProfile.referer?.takeIf(String::isNotBlank)?.let {
-                    requestBuilder.setHeader("Referer", it)
-                }
-                // YouTube media endpoints reject transparent gzip on audio/mp4
-                // streams — without this, PRDownloader's OkHttp client may
-                // advertise gzip and the response comes back compressed, which
-                // both corrupts the cached bytes and triggers
-                // ParserException("Multiple Segment elements not supported")
-                // when the player later tries to decode the gzipped payload as
-                // an MP4 container.
-                requestBuilder.setHeader("Accept-Encoding", "identity")
-                requestBuilder.setHeader("Connection", "keep-alive")
-            }
-            dataSpec.httpRequestHeaders.forEach { (k, v) ->
-                // PRDownloader doesn't accept "Range" via setHeader — it
-                // manages its own range requests internally for resume.
-                // We drop any caller-supplied Range header to avoid conflict.
-                // We also drop User-Agent / Origin / Referer / Accept-Encoding
-                // because we just set them from the stream-client profile.
-                val lower = k.lowercase()
-                if (lower != "range" &&
-                    lower != "user-agent" &&
-                    lower != "origin" &&
-                    lower != "referer" &&
-                    lower != "accept-encoding" &&
-                    lower != "x-expected-content-length"
-                ) {
-                    requestBuilder.setHeader(k, v)
-                }
-            }
-            val builder: DownloadRequest = requestBuilder.build()
 
-            builder.setOnCancelListener {
-                state.cancel()
-                state.cleanup()
-            }
-            synchronized(requestLock) {
-                checkCurrent(state)
-                state.downloadId = builder.start(object : OnDownloadListener {
-                    override fun onDownloadComplete() {
-                        state.completed()
+            // Retryable classes: status-0 transport failures (no HTTP answer), 5xx server
+            // errors and silently truncated bodies — Spotify's segment retry classes.
+            var attempt = 0
+            while (true) {
+                attempt++
+                val attemptState = state
+                val attemptTarget = target
+                val builder =
+                    buildDownloadRequest(
+                        url,
+                        requestDir,
+                        safeName,
+                        youTubeMediaProfile,
+                        resolvedUserAgent,
+                        dataSpec,
+                    )
+
+                builder.setOnCancelListener {
+                    attemptState.cancel()
+                    attemptState.cleanup()
+                }
+                synchronized(requestLock) {
+                    checkCurrent(attemptState)
+                    attemptState.downloadId =
+                        builder.start(object : OnDownloadListener {
+                            override fun onDownloadComplete() {
+                                attemptState.completed()
+                            }
+
+                            override fun onError(error: Error) {
+                                attemptState.failed(error)
+                            }
+                        })
+                }
+
+                // Block until PRDownloader finishes or the timeout expires.
+                // 30 min is generous — a 150 MB FLAC on a 10 Mbps link is ~2 min,
+                // and we'd rather let a slow download finish than fail and force
+                // a restart.
+                if (!attemptState.latch.await(DOWNLOAD_WAIT_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
+                    throw IOException("PRDownloader timed out after $DOWNLOAD_WAIT_TIMEOUT_MINUTES min")
+                }
+                synchronized(requestLock) {
+                    checkCurrent(attemptState)
+                    attemptState.downloadId = -1
+                }
+
+                val err = attemptState.error.get()
+                val fileReady = err == null && attemptTarget.exists() && attemptTarget.length() > 0L
+                // ── Real integrity verification ── PRDownloader 1.0.2 has a known issue where
+                // `onDownloadComplete()` can fire on a partial file when the upstream connection
+                // drops mid-stream (especially on chunked-transfer CDNs that don't send
+                // Content-Length).
+                val expectedLength =
+                    if (fileReady) resolveExpectedContentLength(url, dataSpec, attemptState) else 0L
+                val truncated =
+                    fileReady && isDownloadedContentTruncated(attemptTarget.length(), expectedLength)
+                if (err == null && fileReady && !truncated) break
+
+                val failureClass =
+                    when {
+                        err != null ->
+                            classifyDownloadFailure(
+                                err.isConnectionError,
+                                err.isServerError,
+                                err.responseCode,
+                            )
+
+                        !fileReady -> DownloadFailureClass.EMPTY_RESULT
+                        else -> DownloadFailureClass.TRUNCATED_BODY
                     }
-
-                    override fun onError(error: Error) {
-                        state.failed(error)
-                    }
-                })
-            }
-
-            // Block until PRDownloader finishes or the timeout expires.
-            // 30 min is generous — a 150 MB FLAC on a 10 Mbps link is ~2 min,
-            // and we'd rather let a slow download finish than fail and force
-            // a restart.
-            if (!state.latch.await(DOWNLOAD_WAIT_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
-                throw IOException("PRDownloader timed out after $DOWNLOAD_WAIT_TIMEOUT_MINUTES min")
-            }
-            synchronized(requestLock) {
-                checkCurrent(state)
-                state.downloadId = -1
-            }
-
-            state.error.get()?.let { err ->
-                runCatching { target.delete() }
-                val msg = buildString {
-                    append("PRDownloader failed")
-                    if (err.isConnectionError) append(" (connection error)")
-                    if (err.isServerError) append(" (server error)")
-                    if (err.responseCode > 0) append(" (HTTP ${err.responseCode})")
-                }
                 Timber.tag("PlaybackDiagnostics").w(
-                    "Download request failed connectionError=%s serverError=%s responseCode=%d",
-                    err.isConnectionError,
-                    err.isServerError,
-                    err.responseCode,
-                )
-                throw IOException(msg)
-            }
-
-            if (!target.exists() || target.length() == 0L) {
-                runCatching { target.delete() }
-                throw IOException("PRDownloader reported success but the downloaded file is missing or empty")
-            }
-
-            // ── Real integrity verification ── PRDownloader 1.0.2 has a known issue where
-            // `onDownloadComplete()` can fire on a partial file when the upstream connection drops
-            // mid-stream (especially on chunked-transfer CDNs that don't send Content-Length).
-            val expectedLength = resolveExpectedContentLength(url, dataSpec, state)
-            val actualLength = target.length()
-            if (isDownloadedContentTruncated(actualLength, expectedLength)) {
-                Timber.tag("PlaybackDiagnostics").w(
-                    "Download incomplete expectedBytes=%d actualBytes=%d",
+                    "Download attempt %d failed class=%s connectionError=%s serverError=%s responseCode=%d expectedBytes=%d actualBytes=%d",
+                    attempt,
+                    failureClass,
+                    err?.isConnectionError,
+                    err?.isServerError,
+                    err?.responseCode ?: -1,
                     expectedLength,
-                    actualLength,
+                    if (attemptTarget.exists()) attemptTarget.length() else -1L,
                 )
-                runCatching { target.delete() }
-                throw IOException("PRDownloader returned an incomplete response")
+                runCatching { attemptTarget.delete() }
+                if (!isRetryableDownloadFailure(failureClass) || attempt >= MAX_DOWNLOAD_ATTEMPTS) {
+                    throw IOException(downloadFailureMessage(err, failureClass))
+                }
+                attemptState.cleanup()
+                // Fresh staging so a partial file can never leak into the next attempt.
+                val nextDir =
+                    DownloadRequestLifetime.createDirectory(File(context.cacheDir, "prd_tmp"))
+                val nextState = RequestState(nextDir)
+                // The swap is only legal while this attempt still owns `active` under the
+                // lock: a close() that landed while the failed attempt wound down cancelled it
+                // and cleared `active` (and a newer open() may already own it), so reviving the
+                // retry here would resurrect a cancelled download or clobber a newer request.
+                var rejected = false
+                synchronized(requestLock) {
+                    if (attemptState.cancelled || active !== attemptState) {
+                        rejected = true
+                    } else {
+                        active = nextState
+                    }
+                }
+                if (rejected) {
+                    nextState.cancel()
+                    nextState.cleanup()
+                    throw IOException("Download request closed")
+                }
+                requestDir = nextDir
+                target = File(nextDir, safeName)
+                state = nextState
             }
+
 
             // Build a child DataSpec pointing at the local file, preserving
             // position / length / key. FileDataSource honors position to
@@ -269,7 +288,16 @@ internal class PRDownloaderDataSource private constructor(
     override fun getUri(): Uri? = synchronized(requestLock) { active?.source?.uri }
 
     override fun close() {
-        val state = synchronized(requestLock) { active } ?: return
+        // Detach and mark cancelled inside one lock acquisition: the retry's ownership
+        // re-check must never observe a still-live `active` for a request that is already
+        // closing, or the replacement download would outlive the close.
+        val state =
+            synchronized(requestLock) {
+                active?.also {
+                    it.cancel()
+                    active = null
+                }
+            } ?: return
         release(state)
     }
 
@@ -343,8 +371,86 @@ internal class PRDownloaderDataSource private constructor(
         }.getOrDefault(knownHeadLength)
     }
 
-    private fun probe(state: RequestState, request: Request): okhttp3.Response {
-        val call = headClient.newCall(request)
+    /**
+     * Builds one download attempt's request. PRDownloader returns a DownloadRequestBuilder —
+     * headers and user-agent must be set on it BEFORE .build() converts it into a
+     * DownloadRequest (which only supports progress/pause/cancel listeners + start()).
+     */
+    private fun buildDownloadRequest(
+        url: String,
+        requestDir: File,
+        safeName: String,
+        youTubeMediaProfile: StreamClientUtils.StreamRequestProfile?,
+        resolvedUserAgent: String,
+        dataSpec: DataSpec,
+    ): DownloadRequest {
+        val requestBuilder = PRDownloader.download(url, requestDir.absolutePath, safeName)
+        if (resolvedUserAgent.isNotBlank()) requestBuilder.setUserAgent(resolvedUserAgent)
+        if (youTubeMediaProfile != null) {
+            youTubeMediaProfile.origin?.takeIf(String::isNotBlank)?.let {
+                requestBuilder.setHeader("Origin", it)
+            }
+            youTubeMediaProfile.referer?.takeIf(String::isNotBlank)?.let {
+                requestBuilder.setHeader("Referer", it)
+            }
+            // YouTube media endpoints reject transparent gzip on audio/mp4
+            // streams — without this, PRDownloader's OkHttp client may
+            // advertise gzip and the response comes back compressed, which
+            // both corrupts the cached bytes and triggers
+            // ParserException("Multiple Segment elements not supported")
+            // when the player later tries to decode the gzipped payload as
+            // an MP4 container.
+            requestBuilder.setHeader("Accept-Encoding", "identity")
+            requestBuilder.setHeader("Connection", "keep-alive")
+        }
+        dataSpec.httpRequestHeaders.forEach { (k, v) ->
+            // PRDownloader doesn't accept "Range" via setHeader — it
+            // manages its own range requests internally for resume.
+            // We drop any caller-supplied Range header to avoid conflict.
+            // We also drop User-Agent / Origin / Referer / Accept-Encoding
+            // because we just set them from the stream-client profile.
+            val lower = k.lowercase()
+            if (lower != "range" &&
+                lower != "user-agent" &&
+                lower != "origin" &&
+                lower != "referer" &&
+                lower != "accept-encoding" &&
+                lower != "x-expected-content-length"
+            ) {
+                requestBuilder.setHeader(k, v)
+            }
+        }
+        return requestBuilder.build()
+    }
+
+    private fun downloadFailureMessage(err: Error?, failureClass: DownloadFailureClass): String =
+        when (failureClass) {
+            DownloadFailureClass.EMPTY_RESULT ->
+                "PRDownloader reported success but the downloaded file is missing or empty"
+
+            DownloadFailureClass.TRUNCATED_BODY -> "PRDownloader returned an incomplete response"
+
+            else ->
+                buildString {
+                    append("PRDownloader failed")
+                    err?.let {
+                        if (it.isConnectionError) append(" (connection error)")
+                        if (it.isServerError) append(" (server error)")
+                        if (it.responseCode > 0) append(" (HTTP ${it.responseCode})")
+                    }
+                }
+        }
+
+    private fun probe(state: RequestState, request: Request): okhttp3.Response =
+        try {
+            executeProbe(state, probeFastClient, request)
+        } catch (e: SocketTimeoutException) {
+            // Fast-fail probe: the retry rides the slower head client's budget.
+            executeProbe(state, headClient, request)
+        }
+
+    private fun executeProbe(state: RequestState, client: OkHttpClient, request: Request): okhttp3.Response {
+        val call = client.newCall(request)
         synchronized(requestLock) {
             checkCurrent(state)
             state.probe = call
@@ -369,5 +475,8 @@ internal class PRDownloaderDataSource private constructor(
     companion object {
         private const val DEFAULT_USER_AGENT = "ArchiveTune"
         private const val DOWNLOAD_WAIT_TIMEOUT_MINUTES = 30L
+
+        /** A failed download gets one retry on a retryable class before open() gives up. */
+        private const val MAX_DOWNLOAD_ATTEMPTS = 2
     }
 }

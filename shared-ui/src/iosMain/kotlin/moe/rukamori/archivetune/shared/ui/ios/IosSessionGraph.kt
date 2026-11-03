@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.backup.IosRestoreFileOps
 import moe.rukamori.archivetune.shared.data.customartwork.FileCustomArtworkRepository
 import moe.rukamori.archivetune.shared.data.localmedia.IosLocalMediaSource
+import moe.rukamori.archivetune.shared.data.news.NatuneNewsClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
@@ -38,7 +39,6 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomQueueCheckpointStore
 import moe.rukamori.archivetune.shared.data.persistence.iosPortableStateDatabasePath
-import moe.rukamori.archivetune.shared.data.persistence.openNow
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.persistence.snapshotTo
 import moe.rukamori.archivetune.shared.data.platform.ios.IosCanvasCacheStore
@@ -53,6 +53,7 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTelegramClient
 import moe.rukamori.archivetune.shared.data.platform.ios.IosTransportAvailability
+import moe.rukamori.archivetune.shared.data.platform.ios.iosNatuneNewsUrl
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNetworkAvailable
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.platform.ios.iosTidalDeviceClient
@@ -73,7 +74,9 @@ import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
@@ -82,6 +85,8 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
 import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsDefaults
@@ -100,9 +105,10 @@ import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
-import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
+import moe.rukamori.archivetune.shared.ui.host.SponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
+import moe.rukamori.archivetune.shared.ui.news.NewsFeedOwner
 import moe.rukamori.archivetune.shared.ui.settings.ProviderAccountLifecycle
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import moe.rukamori.archivetune.shared.ui.settings.providerAccountScope
@@ -155,6 +161,8 @@ internal class IosSessionGraph private constructor(
     val downloads: IosDownloadsOwner,
     /** Backup and restore: the portable-format gateway, the prepared-restore registry and the restart request. */
     val backup: IosBackupOwner,
+    /** The Google Drive app-data backup owners. Its rows report the not-configured state when the build carries no iOS OAuth client id. */
+    val driveBackup: IosDriveBackup,
     /** The imported local songs: the Files picker, the shared scan pipeline and the `local` library rows. */
     val localMedia: IosLocalMediaOwner,
     /** The Last.fm, Libre.fm and custom-endpoint scrobbler over the one player and queue, closed with the graph. */
@@ -162,7 +170,7 @@ internal class IosSessionGraph private constructor(
     /** The Discord owner: PKCE sheet sign-in and playback-driven presence, closed with the graph. */
     val discord: IosDiscordPresence,
     private val owner: PortableQueueOwner,
-    private val playbackPort: IosPlaybackPort,
+    internal val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
     private val progressDriver: PodcastProgressDriver,
@@ -177,9 +185,31 @@ internal class IosSessionGraph private constructor(
     val playlistTags: PlaylistTagsRepository = RoomPlaylistTagsRepository(database.library())
     /** The crossfade or automix blend armed into the next song by the same occurrence-aware queue owner. */
     val handoff: StateFlow<QueueHandoffState?> get() = owner.handoff
+    /** The request the engine was last told to load; consumers gating on the resolved source read it. */
+    val loadedRequest: StateFlow<PlaybackRequest?> get() = owner.loadedRequest
+
+    /** The `news` feed and its unread mark, over the shared client and the build's NATUNE_NEWS_URL; blank disables it. */
+    val newsFeed = NewsFeedOwner(NatuneNewsClient(http, iosNatuneNewsUrl()), settings, scope, ::report)
 
     /** The one sleep timer of this process. It only pauses [player], so every surface shares it. */
     val sleepTimer = SharedSleepTimer(scope, player.snapshot, player::pause, ::iosNowMillis)
+
+    /** The one equalizer owner of this process: the same shared keys and band layout the desktop owner drives. */
+    internal val equalizer = IosEqualizer(scope, settings, playbackPort)
+
+    /**
+     * The one acoustic audit owner of this process: it decodes a bounded PCM window of the current
+     * occurrence's own source through the portable probe, exactly like the desktop host. A target that
+     * is not the loaded request is refused instead of auditing the wrong song. The request binding,
+     * key watcher and menu entry point are the extensions in IosSessionGraphAcoustic.kt.
+     */
+    internal val acoustic = AcousticAuditOwner(scope) { target, checkActive ->
+        acousticWindow(target, checkActive)
+    }
+
+    init {
+        watchAcousticBinding()
+    }
 
     /**
      * The "pause on device mute" policy: it watches the system output volume and the app-level output
@@ -297,6 +327,7 @@ internal class IosSessionGraph private constructor(
         listenDriver.close()
         progressDriver.close()
         lyrics.close()
+        newsFeed.close()
         drivers.forEach { it.cancel() }
         // The download and import owners write rows and files, so both stop before the checkpoint and the database.
         downloads.close()
@@ -375,7 +406,9 @@ internal class IosSessionGraph private constructor(
                     if (recoveryMode) {
                         openPortableStateDatabase(":memory:")
                     } else {
-                        openGraphDatabase(databasePath, databaseDirectory, restoreStart, settings, report)
+                        openIosGraphDatabase(
+                            databasePath, databaseDirectory, DATABASE_FILE, restoreStart, settings, report,
+                        )
                             ?: openPortableStateDatabase(":memory:").also { recoveryMode = true }
                     }
                 }
@@ -484,6 +517,8 @@ internal class IosSessionGraph private constructor(
             val network = IosNetworkOwner({ settings.snapshots.value }, report)
             val http = HttpClient(Darwin) { engine { network.configure(this) } }
             report(network.describe())
+            // Rotation a user left on comes back off the launch path, like the desktop owner's restore.
+            network.start(scope)
             return try {
                 assemble(
                     host, scope, settings, accounts, database, databaseDirectory, http, network, report,
@@ -507,74 +542,6 @@ internal class IosSessionGraph private constructor(
                 }
                 scope.cancel()
                 throw failure
-            }
-        }
-
-        /**
-         * Opens the portable state database; when a staged library was swapped in, it is opened now so a file Room
-         * refuses still lets the previous database come back instead of leaving a broken library. Null means the
-         * vault rollback failed beside it: markers and the blocked flag stay, and the caller assembles recovery
-         * mode instead of a mismatched pair.
-         */
-        private suspend fun openGraphDatabase(
-            databasePath: String,
-            databaseDirectory: String,
-            start: IosRestoreStart,
-            settings: VaultSettingsStore,
-            report: (String) -> Unit,
-        ): PortableStateDatabase? {
-            val database = openPortableStateDatabase(databasePath)
-            val swapped = start.databaseSwapped || start.pending?.databaseSwapped == true
-            if (!swapped) return database
-            try {
-                database.openNow()
-                return database
-            } catch (cancelled: CancellationException) {
-                database.close()
-                throw cancelled
-            } catch (failure: Exception) {
-                report("restored library refused: ${failure::class.simpleName}")
-                val ops = IosRestoreFileOps()
-                var vaultOk = true
-                withContext(NonCancellable) {
-                    // Room releases the files before the rollback replaces them; the abort marker is durable
-                    // first so a kill re-enters the joint undo instead of a fresh interpretation.
-                    runCatching { database.close() }
-                    start.pending?.let { pending ->
-                        if (start.transaction != null) {
-                            val abortPersisted = runCatching {
-                                ops.writeAtomically(
-                                    IosRestoreRecovery.abortMarkerPath(pending.directory),
-                                    byteArrayOf(1),
-                                )
-                            }.isSuccess
-                            if (abortPersisted) {
-                                // A vault merge that already landed goes back with the files it belongs to.
-                                if (pending.hasSettingsBefore) {
-                                    vaultOk = runCatching {
-                                        IosRestoreStartup.rollbackPendingSettings(pending, ops, settings)
-                                    }.isSuccess
-                                    if (!vaultOk) report("restored settings rollback failed")
-                                }
-                                runCatching { start.transaction.rollbackCommitted() }
-                            } else {
-                                // No durable abort decision: a kill now would re-read a half-undone set
-                                // as a fresh restore, so block and hold for recovery mode.
-                                report("restore abort marker not written")
-                                vaultOk = false
-                            }
-                        } else {
-                            pending.rollbackDatabase(databaseDirectory, DATABASE_FILE)
-                        }
-                    }
-                    if (vaultOk) {
-                        runCatching { start.pending?.markFailed() }
-                    } else {
-                        runCatching { IosRestoreRecovery.block(ops, databaseDirectory) }
-                    }
-                }
-                if (!vaultOk) return null
-                return openPortableStateDatabase(databasePath)
             }
         }
 
@@ -657,6 +624,7 @@ internal class IosSessionGraph private constructor(
                         providerAccountScope(ContentProvider.YOUTUBE.id, CredentialScope.PERSONAL)
                     },
                     poTokens = poTokens,
+                    report = report,
                 ),
             )
             // Both media owners write into the app container, which the host creates once here.
@@ -681,8 +649,9 @@ internal class IosSessionGraph private constructor(
                 nowMs = ::iosNowMillis,
                 report = report,
             )
-            // The one image cache this host keeps: the saved limit applies to the shared URL cache at open.
-            iosApplyImageCacheLimit(vault.snapshots.value)
+            // The canvas store and the image cache are the two this host keeps; the saved limits apply at open.
+            val canvasStore = IosCanvasCacheStore().also { it.ensure() }
+            iosApplyCacheLimits(vault.snapshots.value, canvasStore)
             // Backup archives hold a VACUUM INTO snapshot of this same database, staged beside it on restore.
             val backup = IosBackupOwner(
                 settings = vault,
@@ -690,6 +659,21 @@ internal class IosSessionGraph private constructor(
                 instanceDirectory = databaseDirectory,
                 initialRestoreFailed = restoreFailed,
                 initialRecoveryMode = recoveryMode,
+            )
+            // The Drive app-data backup mounts on every build; its chooser reports CONFIGURATION while the build
+            // carries no Google iOS OAuth client, so the page shows the localized not-configured state rather than
+            // hiding the rows. The same gateway and restore registry serve it, so a Drive archive is byte-identical
+            // to a file export and a cloud restore stages like a file restore.
+            val driveBackup = IosDriveBackup(
+                scope = scope,
+                http = http,
+                credentials = host.credentials,
+                browser = host.browser,
+                instanceDirectory = databaseDirectory,
+                archives = backup.archives,
+                restores = backup.restores,
+                onRestartRequired = backup::requestRestart,
+                report = report,
             )
             val locators = IosQueueLocatorResolver(
                 audio = audioResolver,
@@ -718,9 +702,12 @@ internal class IosSessionGraph private constructor(
                 hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
                 hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
                 blockedArtistIds = { queueArtistBlocks.value },
+                blockedSongRefs = {
+                    parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
+                },
                 handoffEngine = handoff,
             )
-            val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
+            val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints(), database.library()))
             try {
                 queue.resume()
             } catch (cancelled: CancellationException) {
@@ -768,12 +755,14 @@ internal class IosSessionGraph private constructor(
                 nowMs = ::iosNowMillis,
             )
             // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
-            PodcastSponsorBlockDriver(
+            SponsorBlockDriver(
                 scope = scope,
                 player = player,
                 queue = queue.state,
+                resolved = owner.loadedRequest,
                 preferences = vault.snapshots,
                 repository = KtorSponsorBlockRepository(http),
+                report = report,
             )
             // The build-time Lyprio pair is the only endpoint the provider can have; there is no user setting.
             val lyrics = HostLyrics(
@@ -898,11 +887,12 @@ internal class IosSessionGraph private constructor(
                 customArtwork = customArtwork,
                 playbackPool = playbackPool,
                 artworkLoader = IosArtworkLoader(http, customArtwork, customArtworkFiles),
-                canvasStore = IosCanvasCacheStore().also { it.ensure() },
+                canvasStore = canvasStore,
                 listenTogether = listenTogether,
                 uploads = uploads,
                 downloads = downloads,
                 backup = backup,
+                driveBackup = driveBackup,
                 localMedia = localMedia,
                 lastFm = lastFm,
                 discord = discord,
@@ -922,6 +912,8 @@ internal class IosSessionGraph private constructor(
             // Re-arms a persisted download queue and publishes the imported songs the last session listed.
             downloads.start()
             localMedia.start()
+            // Re-arms the Drive schedule; its uploads only live as long as this process, like the desktop host's.
+            driveBackup.start()
             return graph
         }
     }

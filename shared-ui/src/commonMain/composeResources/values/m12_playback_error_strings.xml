@@ -4,6 +4,8 @@
     <string name="m12_error_timeout">Timeout</string>
     <string name="m12_error_no_stream">No stream available</string>
     <string name="m12_error_malformed_stream">Source error</string>
+    <string name="m12_error_stream_blocked">Streaming blocked</string>
+    <string name="m12_error_stream_blocked_reason">IP rotation has no usable proxy — refresh the proxy list, turn IP rotation off, or set a static proxy.</string>
     <string name="m12_retry">Retry</string>
     <string name="m12_close">Close</string>
     <string name="m12_copy">Copy</string>

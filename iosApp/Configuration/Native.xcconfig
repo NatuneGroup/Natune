@@ -68,4 +68,15 @@ ARCHIVETUNE_ARCHIVEPOOL_BASE_URL =
 // The registered public OAuth client id of the Librespot Spotify streaming sign-in reaches the app through
 // Info.plist the same way. It is a PKCE public client, never a secret; a blank value keeps that sign-in unavailable.
 ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID =
+// The Google OAuth client of type "iOS" for Drive app-data backup reaches the app through Info.plist the same
+// way: an iOS client of the app's bundle id in a Google Cloud project with the Drive API and the drive.appdata
+// scope. It is a public installed-app client, never a secret. CFBundleURLTypes always registers the resolved
+// bundle id ($(PRODUCT_BUNDLE_IDENTIFIER)), a scheme Google accepts for iOS clients, so no build can produce an
+// empty scheme entry; an explicit URL scheme is only an override, and sign-in falls back to the reversed client
+// id (com.googleusercontent.apps.<id>) when it is blank. A blank client id keeps the Drive section not-configured.
+ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID =
+ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME =
+// The in-app News feed reaches the app through Info.plist the same way. Unlike the values above it has a default, the
+// Android build's; set it blank in Credentials.xcconfig to disable the feed and hide the News entry.
+NATUNE_NEWS_URL = https:/$()/natune.pages.dev/api/news
 #include? "Credentials.xcconfig"

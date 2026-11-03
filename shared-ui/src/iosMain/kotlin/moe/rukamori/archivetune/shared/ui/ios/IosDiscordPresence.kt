@@ -20,7 +20,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -33,12 +35,14 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherSocket
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.provider.readBoundedText
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.platform.BrowserAuthPort
 import moe.rukamori.archivetune.shared.domain.platform.BrowserAuthRequest
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.settings.DiscordDebugState
 import platform.Foundation.NSURLSession
 import platform.Foundation.NSURLSessionConfiguration
 import platform.Security.SecRandomCopyBytes
@@ -78,6 +82,14 @@ internal class IosDiscordPresence(
     private var presenceDriver: Job? = null
 
     @Volatile private var lastSequence: Int? = null
+
+    private val debugFlow = MutableStateFlow(DiscordDebugState())
+
+    /**
+     * Live state for the developer card: [DiscordDebugState.running] is a live identified gateway, and the
+     * timestamps are the track window the last presence update carried, the same facts Android's card reads.
+     */
+    val debug: StateFlow<DiscordDebugState> = debugFlow.asStateFlow()
 
     // ------------------------------------------------------------------ OAuth
 
@@ -243,6 +255,7 @@ internal class IosDiscordPresence(
         gateway?.close(NORMAL_CLOSE_CODE, "")
         gateway = null
         lastSequence = null
+        publishRunning()
     }
 
     /** IDENTIFY stays minimal: intents=0, no capabilities, gateway v10, no compression. */
@@ -294,6 +307,7 @@ internal class IosDiscordPresence(
         socketRef.socket = socket
         return if (withTimeoutOrNull(IDENTIFY_TIMEOUT_MS) { identified.await() } == true) {
             gateway = socket
+            publishRunning()
             socket
         } else {
             socket.cancel()
@@ -326,6 +340,7 @@ internal class IosDiscordPresence(
         if (gateway === socket) {
             gateway = null
             lastSequence = null
+            publishRunning()
         }
         socket.close(NORMAL_CLOSE_CODE, "heartbeat ack missed")
     }
@@ -339,6 +354,7 @@ internal class IosDiscordPresence(
         if (gateway === socket) {
             gateway = null
             lastSequence = null
+            publishRunning()
         }
     }
 
@@ -349,6 +365,7 @@ internal class IosDiscordPresence(
         source: PresenceSource = currentSource(),
     ) {
         val snapshot = player.snapshot.value
+        val now = iosNowMillis()
         val payload = buildDiscordPresenceJson(
             preferences = preferences,
             track = DiscordPresenceTrack(
@@ -360,9 +377,29 @@ internal class IosDiscordPresence(
             positionMs = snapshot?.positionMs,
             durationMs = snapshot?.durationMs,
             paused = snapshot?.playWhenReady == false,
-            nowMillis = iosNowMillis(),
+            nowMillis = now,
         )
         socket.send(payload.encodeToByteArray())
+        publishPresenceWindow(snapshot, now)
+        publishRunning()
+    }
+
+    /**
+     * The track window the just-sent update carried, like Android's last-RPC lines: an unpaused track with a
+     * known duration has one, everything else clears the pair rather than keeping a stale window.
+     */
+    private fun publishPresenceWindow(snapshot: PlaybackSnapshot?, nowMs: Long) {
+        val paused = snapshot?.playWhenReady == false
+        val durationMs = snapshot?.durationMs?.takeIf { it > 0L }
+        val positionMs = snapshot?.positionMs
+        val start = if (paused || durationMs == null || positionMs == null) null
+        else nowMs - positionMs.coerceAtLeast(0L)
+        debugFlow.value = debugFlow.value.copy(lastStartMs = start, lastEndMs = start?.plus(durationMs ?: 0L))
+    }
+
+    /** [DiscordDebugState.running] is a live gateway under an active driver — optimistic like Android's started flag. */
+    private fun publishRunning() {
+        debugFlow.value = debugFlow.value.copy(running = presenceDriver?.isActive == true && gateway != null)
     }
 
     /** The refresh action's source: whatever the player holds now, resolved the same way the driver resolves it. */

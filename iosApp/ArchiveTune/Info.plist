@@ -31,10 +31,15 @@
     <key>ArchiveTuneLyprioHmacKey</key><string>$(ARCHIVETUNE_LYPRIO_HMAC_KEY)</string>
     <key>ArchiveTuneArchivePoolBaseUrl</key><string>$(ARCHIVETUNE_ARCHIVEPOOL_BASE_URL)</string>
     <key>ArchiveTuneSpotifyOauthClientId</key><string>$(ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID)</string>
+    <key>ArchiveTuneYouTubeOauthClientId</key><string>$(ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID)</string>
+    <key>ArchiveTuneYouTubeOauthClientSecret</key><string>$(ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET)</string>
+    <key>ArchiveTuneGoogleDriveClientId</key><string>$(ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID)</string>
+    <key>ArchiveTuneGoogleDriveUrlScheme</key><string>$(ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME)</string>
+    <key>NatuneNewsUrl</key><string>$(NATUNE_NEWS_URL)</string>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>moe.rukamori.archivetune.oauth</string>
-        <key>CFBundleURLSchemes</key><array><string>archivetune</string><string>discord-1165706613961789445</string><string>natune</string></array>
+        <key>CFBundleURLSchemes</key><array><string>archivetune</string><string>discord-1165706613961789445</string><string>natune</string><string>vnd.youtube</string><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string></array>
     </dict></array>
     <key>LSRequiresIPhoneOS</key><true/>
     <key>CADisableMinimumFrameDurationOnPhone</key><true/>

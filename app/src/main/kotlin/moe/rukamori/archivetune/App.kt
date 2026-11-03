@@ -75,6 +75,7 @@ import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.utils.applyStartupRandomTheme
 import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
+import moe.rukamori.archivetune.utils.CorruptImageCacheInterceptor
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.ProxyUtils
@@ -716,21 +717,28 @@ class App :
                 .followSslRedirects(true)
                 .build()
 
+        val memoryCache =
+            MemoryCache
+                .Builder()
+                .maxSizePercent(this, if (lowRam) 0.15 else 0.25)
+                .build()
+
         return ImageLoader
             .Builder(this)
             .components {
+                add(
+                    CorruptImageCacheInterceptor(diskCache, memoryCache) {
+                        this@App.isInternetConnected()
+                    },
+                )
                 add(CustomArtworkInterceptor())
                 add(moe.rukamori.archivetune.telegram.TelegramThumbnailFetcher.Factory())
                 add(OkHttpNetworkFetcherFactory(imageHttpClient))
             }
             .crossfade(!lowRam)
             .allowHardware(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-            .memoryCache {
-                MemoryCache
-                    .Builder()
-                    .maxSizePercent(this@App, if (lowRam) 0.15 else 0.25)
-                    .build()
-            }.memoryCachePolicy(CachePolicy.ENABLED)
+            .memoryCache(memoryCache)
+            .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCache(diskCache)
             .diskCachePolicy(imageCacheConfig.policy)
             .build()

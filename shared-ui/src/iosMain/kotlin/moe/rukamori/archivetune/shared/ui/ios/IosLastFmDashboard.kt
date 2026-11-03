@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
@@ -23,6 +24,8 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.settings.LastFmPreferYtThumbnailsKey
+import moe.rukamori.archivetune.shared.ui.menu.LocalPlaylistPickerContext
+import moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerDialog
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
 import moe.rukamori.archivetune.shared.ui.settings.lastfmdashboard.LastFmArtworkRequest
 import moe.rukamori.archivetune.shared.ui.settings.lastfmdashboard.LastFmDashboardBinding
@@ -40,12 +43,15 @@ internal const val IosLastFmDashboardRoute = "settings/lastfm/dashboard"
 @Composable
 internal fun IosLastFmDashboardPage(graph: IosSessionGraph, navigation: ShellNavigation, unavailable: () -> Unit) {
     val currentUnavailable by rememberUpdatedState(unavailable)
-    val binding = remember(graph) {
+    val host = remember(graph) {
+        IosLastFmDashboardHost(graph, openRoute = navigation::open, unavailable = { currentUnavailable() })
+    }
+    val binding = remember(graph, host) {
         LastFmDashboardBinding(
             scope = graph.scope,
             reader = graph.lastFm.dashboardReader,
             service = graph.lastFm.dashboardService,
-            host = IosLastFmDashboardHost(graph, openRoute = navigation::open, unavailable = { currentUnavailable() }),
+            host = host,
         )
     }
     val snapshot by graph.settings.snapshots.collectAsState()
@@ -60,6 +66,22 @@ internal fun IosLastFmDashboardPage(graph: IosSessionGraph, navigation: ShellNav
         // The settings screen already pads its box by the shell padding.
         contentPadding = PaddingValues(),
     )
+    val playlistPick by host.playlistPick.collectAsState()
+    val picker = LocalPlaylistPickerContext.current
+    val picked = playlistPick
+    if (picked != null) {
+        if (picker != null) {
+            PlaylistPickerDialog(
+                occurrences = listOf(picked),
+                context = picker,
+                library = graph.library,
+                onFinished = { host.playlistPick.value = null },
+            )
+        } else {
+            host.playlistPick.value = null
+            currentUnavailable()
+        }
+    }
 }
 
 /**
@@ -71,6 +93,9 @@ internal class IosLastFmDashboardHost(
     private val openRoute: (String) -> Unit,
     private val unavailable: () -> Unit,
 ) : LastFmDashboardHost {
+    /** The YouTube match the add-to-playlist picker is open on; the page clears it when the dialog closes. */
+    val playlistPick = MutableStateFlow<ContentOccurrence?>(null)
+
     override suspend fun findYouTubeSong(artist: String?, title: String): ContentOccurrence? =
         firstYouTubeResult(searchTerm(title, artist), ContentSearchFilter.SONGS, ContentKind.SONG)
 
@@ -86,9 +111,7 @@ internal class IosLastFmDashboardHost(
             return
         }
         queueCommand("the radio could not be started") {
-            val entry = song.queuedEntry()
-            graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
-            check(graph.queue.startRadioSeamlessly()) { "The radio tail could not be seeded" }
+            check(graph.queue.startRadio(song.item.ref) { song.queuedEntry() }) { "The radio tail could not be seeded" }
         }
     }
 
@@ -100,9 +123,18 @@ internal class IosLastFmDashboardHost(
         queueCommand("the song was not queued") { graph.queue.insert(listOf(song.queuedEntry()), UserQueuedKind.ADD_TO_QUEUE) }
     }
 
-    /** This host has no add-to-playlist picker yet, so the request is announced as unavailable. */
+    /** The track's YouTube match opens the picker; no match and a failed lookup both report unavailable. */
     override fun addToPlaylist(track: LastFmDashboardTrack) {
-        unavailable()
+        graph.scope.launch {
+            try {
+                val song = findYouTubeSong(track.artist, track.title)
+                if (song != null) playlistPick.value = song else unavailable()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                unavailable()
+            }
+        }
     }
 
     override fun copyText(text: String) = copyToIosClipboard(text)

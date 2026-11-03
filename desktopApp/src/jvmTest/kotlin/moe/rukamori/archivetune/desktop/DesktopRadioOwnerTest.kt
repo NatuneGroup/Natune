@@ -121,8 +121,12 @@ class DesktopRadioOwnerTest {
             seamlessStarts++
             return seamlessResult
         }
-        override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) =
-            error("Radio must not commit a solo queue")
+        override suspend fun replace(
+            entries: List<ContentOccurrence>,
+            startOccurrenceId: String,
+            playWhenReady: Boolean,
+            staysFinite: Boolean,
+        ) = error("Radio must not commit a solo queue")
         override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind) = error("Unexpected insert")
         override suspend fun remove(occurrenceIds: Set<String>) = error("Unexpected remove")
         override suspend fun move(occurrenceId: String, beforeOccurrenceId: String?) = error("Unexpected move")

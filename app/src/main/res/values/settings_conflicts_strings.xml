@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="interface_style_custom_mixed">Custom / mixed</string>
-    <string name="apple_music_headers">Apple Music page headers</string>
     <string name="apple_music_menus">Apple Music action menus</string>
     <string name="apple_music_search_bar">Apple Music search field</string>
     <string name="apple_music_palette">Apple Music default accent</string>

@@ -1,6 +1,6 @@
 # Releasing Natune
 
-The private `NatuneGroup/ArchiveTune-KMP` repository has two release channels:
+The `NatuneGroup/Natune` repository has two release channels:
 
 | Channel | Branch | Trigger | Release |
 | --- | --- | --- | --- |
@@ -67,9 +67,14 @@ Non-Android release assets use
 `natune-<platform>-<arch>-<version>.<ext>` (the iOS name is
 `natune-ios-<version>.ipa`). If any Android signing secret is missing, the APKs
 are published unsigned and the release notes identify that state.
-The publisher expects 16 files for Nightly or 17 for Stable, including the ten
-non-Android assets. The Actions handoff artifacts (including the update-feed
-manifest) expire after three days; the published private release assets remain.
+The publisher checks each expected file by name instead of one fixed total.
+The Android APKs and the Windows/Linux installers stay required; the two macOS
+DMGs and the iOS IPA are best-effort on their GitHub-hosted legs, so a leg that
+fails or never picks up leaves a partial release whose notes list the missing
+names. A complete run still carries 16 files for Nightly or 17 for Stable,
+including the ten non-Android assets. The Actions handoff artifacts (including
+the update-feed manifest) expire after three days; the published release assets
+remain.
 
 Workflow-artifact storage is metered separately from release assets, so a full
 artifact quota must not break a run whose builds succeeded. Each build job tries
@@ -88,9 +93,9 @@ they are no longer needed.
 The workflows also publish `stable.json` and `nightly.json` to the fixed
 `update-feed` prerelease in this repository. The manifest links point to this
 repository's release assets. The app's current updater repository constants
-still name `NatuneGroup/ArchiveTune`; private KMP releases are not publicly
-downloadable, so updater endpoint and access behavior must be resolved before
-using that feed for public updates.
+still name `NatuneGroup/ArchiveTune`; whether this repository's own feed should
+serve app updates is a separate product decision, so those endpoints stay
+unchanged until it is resolved.
 
 ## GitHub Actions secrets
 
@@ -144,8 +149,11 @@ they must not be server-administrator credentials.
 
 ## Native build prerequisites and validation
 
-The release matrix publishes only when every platform job succeeds. Workflow and
-recipe changes still require an exact-head Blacksmith packaging run:
+The release matrix publishes while the required legs deliver; the macOS and iOS
+legs are best-effort, so a failed or unscheduled one leaves a partial release
+instead of blocking the rest. Workflow and recipe changes still require an
+exact-head packaging run — Blacksmith for the Android, Windows and Linux legs,
+GitHub-hosted `macos-26` for the macOS and iOS legs:
 
 - Windows x64: `desktopApp/native/scripts/build-native-deps.sh` now also builds
   under MSYS2 MinGW-w64 (`mingw64` OpenSSL target, w32threads for FFmpeg).
@@ -178,7 +186,8 @@ recipe changes still require an exact-head Blacksmith packaging run:
   the playback engine and media closure as stale browser outputs.
 - Linux x64 and arm64 install `gperf` for TDLib source generation. The arm64 leg
   uses `blacksmith-8vcpu-ubuntu-2404-arm`.
-- iOS release CI explicitly expects the runner's Xcode 26.6 and builds only the
+- iOS release CI explicitly expects the pinned Xcode 26.4 (`setup-xcode`,
+  resolving to the GitHub `macos-26` image's 26.4.1) and builds only the
   `iphoneos` native closure. It retains the producer's strict version check
   rather than allowing an arbitrary/unverified Xcode, and keeps code signing
   disabled for the IPA. The job installs gpg like the desktop macOS legs, and the

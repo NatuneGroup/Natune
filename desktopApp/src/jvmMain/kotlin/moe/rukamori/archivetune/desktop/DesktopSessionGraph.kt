@@ -15,6 +15,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -24,6 +25,8 @@ import moe.rukamori.archivetune.desktop.integration.DesktopMediaMetadata
 import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.playback.DesktopSpectralEvidence
+import moe.rukamori.archivetune.desktop.playback.assessSpectrum
 import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
@@ -39,6 +42,7 @@ import moe.rukamori.archivetune.shared.data.playlistexport.PlaylistExportOwner
 import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.openNow
 import moe.rukamori.archivetune.shared.data.download.JvmDownloadRepository
+import moe.rukamori.archivetune.shared.data.news.NatuneNewsClient
 import moe.rukamori.archivetune.shared.data.persistence.openPortableStateDatabase
 import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeCatalogueTransport
 import moe.rukamori.archivetune.shared.data.provider.TidalAccountAuth
@@ -46,9 +50,14 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
+import moe.rukamori.archivetune.desktop.playback.acousticWindow
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.repository.ContinuationQueueController
@@ -57,6 +66,7 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.shared.domain.settings.PlayerVolumeKey
 import moe.rukamori.archivetune.shared.ui.host.CatalogPageOwners
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.SharedSleepTimer
+import moe.rukamori.archivetune.shared.ui.news.NewsFeedOwner
 import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.LibraryPageOwners
@@ -117,7 +127,7 @@ class DesktopSessionGraph internal constructor(
     /** The one BotGuard poToken owner; settings generation and the resolver tiers share it. */
     internal val poTokens: DesktopPoTokenOwner,
     private val owner: PortableQueueOwner,
-    /** The engine behind [player], reached directly only for the output volume, which is not a queue command. */
+    /** The engine behind [player], reached directly for output volume and the paused-output park, not queue commands. */
     private val playback: DesktopPlaybackPort,
     private val ordinarySettings: DesktopSettingsStore,
     private val database: PortableStateDatabase,
@@ -174,8 +184,6 @@ class DesktopSessionGraph internal constructor(
     internal val statistics: DesktopStatisticsOwner,
     /** The `track_info` and `media_info` fact owner. */
     internal val mediaInfo: DesktopMediaInfoOwner,
-    /** The `news` source, inactive exactly like the Android baseline's repository. */
-    internal val news: DesktopNewsRepository,
     private val drivers: List<Job>,
 ) {
     internal val podcastProgress = RoomPodcastProgressStore(database.podcastProgress())
@@ -187,6 +195,9 @@ class DesktopSessionGraph internal constructor(
 
     /** The playlist file exports, read from the same portable file. */
     internal val playlistExport = PlaylistExportOwner(RoomPlaylistExportSource(database.library()))
+
+    /** The request the engine was last told to load; consumers gating on the resolved source read it. */
+    internal val loadedRequest: StateFlow<PlaybackRequest?> get() = owner.loadedRequest
 
     /** The owners the shared Library and playlist pages read and write: the same library, queue and history as above. */
     internal val pageOwners = LibraryPageOwners(
@@ -209,6 +220,14 @@ class DesktopSessionGraph internal constructor(
     // releases all read through it, and [catalogueOwners] holds the rows each page showed so a tap can queue them.
     internal val catalogue = JvmYouTubeCatalogueTransport()
     internal val catalogueOwners = DesktopCatalogueOwners(catalogue, youtubeContent, pageOwners)
+
+    /** The `news` feed and its unread mark, over the shared client and the build's NATUNE_NEWS_URL; blank disables it. */
+    internal val newsFeed = NewsFeedOwner(
+        NatuneNewsClient(http, DesktopBuildIdentity.NATUNE_NEWS_URL),
+        settings,
+        scope,
+        ::report,
+    )
 
     /** The one artwork loader of the window slots. It fetches over the same client as the sources and holds no other resource. */
     internal val artworkLoader = DesktopArtworkLoader(http, customArtwork, customArtworkFiles) { fileId ->
@@ -240,6 +259,53 @@ class DesktopSessionGraph internal constructor(
      * [settings].
      */
     internal val equalizer = DesktopEqualizer(scope = scope, settings = settings, playback = playback)
+
+    /**
+ * Opt-in bounded spectral evidence for one stored source, read by the developer acoustic panel only.
+     * The probe never touches the playback decks; see [DesktopPlaybackPort.assessSpectrum] for the contract.
+     */
+    internal suspend fun assessSpectrum(locator: PlaybackLocator): DesktopSpectralEvidence =
+        playback.assessSpectrum(locator)
+
+    /**
+     * The one acoustic audit owner of this process. Its decode runs through [playback], so the audit
+     * reads the same current source the player does, and [DesktopPlayerMenuDialog] plus the developer
+     * page both show its one state.
+     */
+    internal val acoustic = AcousticAuditOwner(scope) { target, checkActive ->
+        playback.acousticWindow(target, checkActive)
+    }
+
+    /**
+     * The loaded request's audit binding token: occurrenceId plus the load-attempt id, so a source
+     * fallback inside the same occurrence invalidates targets and results bound to the older attempt.
+     * Empty while nothing is loaded.
+     */
+    internal fun acousticRequestKey(): String =
+        playback.loadedRequest()
+            ?.let { "${it.occurrenceId}#${it.attemptId ?: -1L}" }
+            .orEmpty()
+
+    /**
+     * Opens the audit surface with [target] bound to the request loaded right now — menu callers cannot
+     * read the attempt themselves because the request only exists inside the port.
+     */
+    internal fun openAcousticAudit(target: AcousticAuditTarget) {
+        acoustic.openDialog(target.copy(requestKey = acousticRequestKey()))
+    }
+
+    init {
+        // An open audit dialog rebinds to the live request key on every snapshot: a source fallback
+        // inside the same occurrence retires the key the dialog opened with, so a result decoded
+        // under the retired key stops matching instead of displaying as stale evidence.
+        scope.launch {
+            player.snapshot.collect {
+                if (acoustic.dialogTarget.value != null) {
+                    acoustic.rebindDialogKey(acousticRequestKey())
+                }
+            }
+        }
+    }
 
     /**
      * The one pause-on-device-mute driver of this process: the stored option over the observed output
@@ -282,6 +348,16 @@ class DesktopSessionGraph internal constructor(
      */
     fun setAudioOutputEnabled(enabled: Boolean) {
         playback.setAudioOutputEnabled(enabled)
+    }
+
+    /**
+     * Parks the output device while playback is paused — the desktop's STOPPED_ON_BACKGROUND: the
+     * paused occurrence keeps its place and the next play or seek reopens the device at it. The
+     * window lifecycle calls this once a pause outlives its grace, or sooner while the window is
+     * off-screen; it is a no-op while audio is playing or nothing is loaded.
+     */
+    fun releaseAudioOutput() {
+        playback.releaseOutput()
     }
 
     /** Writes one sanitized diagnostic line to the local log. Host diagnostics are not telemetry. */
@@ -346,6 +422,7 @@ class DesktopSessionGraph internal constructor(
         japaneseLanguagePack?.close()
         lyrics.close()
         listenerPresence.close()
+        newsFeed.close()
         drivers.forEach { it.cancel() }
         checkpointNow(queue)
         owner.close()

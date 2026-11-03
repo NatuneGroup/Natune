@@ -18,8 +18,8 @@ concurrency:
 jobs:
   kmp-scaffold:
     name: KMP scaffold readiness
-    # Private destination only: the public NatuneGroup/ArchiveTune repository never runs this check.
-    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    # This repository only: the NatuneGroup/ArchiveTune Android repository never runs this check.
+    if: github.repository == 'NatuneGroup/Natune'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 30
     env:

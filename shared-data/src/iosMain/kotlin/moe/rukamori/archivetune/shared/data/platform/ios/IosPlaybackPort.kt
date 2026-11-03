@@ -15,7 +15,10 @@ import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackMapper
 import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
 import moe.rukamori.archivetune.shared.data.playback.PlaybackProgressWatchdog
 import moe.rukamori.archivetune.shared.data.playback.outputLatencyMillis
+import moe.rukamori.archivetune.shared.data.stream.hls.isHlsPlaylistUrl
 import moe.rukamori.archivetune.shared.data.stream.nativePlaintext
+import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
+import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.playback.*
@@ -59,6 +62,12 @@ class IosPlaybackPort : PlaybackPort {
     // Main-queue only. The tempo every output loads with: a SetSpeed that finds no live output is held
     // here instead of being dropped, and outputForLoad applies it to whatever it creates or recreates.
     private var desiredSpeed = 1f
+
+    // Main-queue only. The pitch and equalizer tone every output loads with, applied like [desiredSpeed]. The
+    // native units keep their parameters across manual output, so the tone survives a blend and its promotion.
+    private var desiredPitchCents = 0f
+    private var equalizerEnabled = false
+    private var equalizerBands: List<IosEqBand> = emptyList()
 
     // Main-queue state for host-prepared audio. Every Load, Stop and preparation advances [ticket]. A preparation whose
     // ticket no longer matches when it returns is discarded with its transport, so a superseded occurrence never plays.
@@ -214,8 +223,13 @@ class IosPlaybackPort : PlaybackPort {
                     outcome = null
                     telegramSource = null
                     val prepared = source ?: return@withContext false
-                    val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also { blend = it }
-                        ?: return@withContext false
+                    // A blend opened under a stored pitch/equalizer tone renders the same curve the
+                    // port's outputs do: the deck units render the fade and the promoted output keeps it.
+                    val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also {
+                        blend = it
+                        it.setPitch(desiredPitchCents)
+                        it.setEqualizer(equalizerEnabled, equalizerBands)
+                    } ?: return@withContext false
                     if (!engine.arm(prepared, overlapMs)) return@withContext false
                     source = null
                     armedEpoch = issuedAt
@@ -269,8 +283,10 @@ class IosPlaybackPort : PlaybackPort {
         // Blank values are refused before conversion, because the locator constructors reject them by throwing.
         val locator: PlaybackLocator? = when (prepared) {
             // A personal stream has no anonymous locator, so it is admitted below instead of being read with no account.
+            // A lease-bound HLS playlist is admitted too: the engine cannot expand segments through its lease.
             is PreparedAudio.Progressive ->
-                prepared.stream.takeIf { it.uri.isNotBlank() && !it.isPersonal() }?.toPlaybackLocator()
+                prepared.stream.takeIf { it.uri.isNotBlank() && !it.isPersonal() && !it.needsSegmentedRoute() }
+                    ?.toPlaybackLocator()
             is PreparedAudio.DeezerEncrypted -> prepared.takeIf {
                 it.stream.uri.isNotBlank() && it.trackId.isNotBlank()
             }?.toPlaybackLocator()
@@ -281,7 +297,8 @@ class IosPlaybackPort : PlaybackPort {
             return
         }
         val needsAdmission = prepared is PreparedAudio.Native || prepared is PreparedAudio.TidalManifest ||
-            (prepared is PreparedAudio.Progressive && prepared.stream.isPersonal())
+            (prepared is PreparedAudio.Progressive &&
+                (prepared.stream.isPersonal() || prepared.stream.needsSegmentedRoute()))
         if (needsAdmission) {
             enqueue(Inbound.Prepare(occurrenceId, mediaId, prepared, startPositionMs, playWhenReady), occurrenceId)
             return
@@ -362,7 +379,7 @@ class IosPlaybackPort : PlaybackPort {
             queuedViews.clear()
             supersede()
             stop()
-            output?.let { at_audio_destroy(it) }
+            output?.let { at_audio_destroy(it); IosStreamLease.retireOutput(it.toLong()) }
             output = null
             scope.cancel()
         }
@@ -397,9 +414,14 @@ class IosPlaybackPort : PlaybackPort {
                 desiredSpeed = command.speed
                 blend?.setSpeed(command.speed) ?: output?.let { at_audio_speed(it, command.speed) }
             }
-            // ae_engine only exposes an atempo stage (tempo without pitch shift), so a pitch
-            // multiplier cannot be applied here; the command is rejected instead of no-opping.
-            is PlaybackCommand.SetPitch -> fail(PlaybackFailureReason.OUTPUT_FAILED)
+            is PlaybackCommand.SetPitch -> {
+                handoffEpoch++
+                // An invalid multiplier cannot reach the unit; it stays unshifted instead.
+                desiredPitchCents = if (command.pitch.isFinite() && command.pitch > 0f) {
+                    PitchConversion.multiplierToCents(command.pitch.toDouble()).toFloat()
+                } else 0f
+                blend?.setPitch(desiredPitchCents) ?: output?.let { at_audio_pitch(it, desiredPitchCents) }
+            }
             PlaybackCommand.Stop -> {
                 supersede()
                 stop()
@@ -492,7 +514,7 @@ class IosPlaybackPort : PlaybackPort {
             // An accepted lease is closed by the engine itself, and closing again is harmless. This also covers a refusal
             // that never reached the engine, so the transport is never left open.
             transport.close()
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(PlaybackFailureReason.OPEN_FAILED, openFailureMessage(isNetworkOpen = true))
             return
         }
         liveTransport = transport
@@ -522,7 +544,7 @@ class IosPlaybackPort : PlaybackPort {
         )
         if (generation == 0uL) {
             // The engine refused the lease before any connection was opened, so there is nothing to release here.
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(PlaybackFailureReason.OPEN_FAILED, openFailureMessage(isNetworkOpen = true))
             return
         }
         mapper.beginRequest(playable, generation.toLong())
@@ -571,12 +593,27 @@ class IosPlaybackPort : PlaybackPort {
         // Deezer ciphertext and header-bearing remotes also stay under the lease policy.
         val generation = when {
             locator is PlaybackLocator.DeezerEncrypted -> IosStreamLease.loadDeezer(native, locator, startUs, play)
-            locator is PlaybackLocator.Remote && (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null) ->
+            // A lease-bound HLS playlist: the engine's lease refuses child fetches, so the host expands the segments.
+            locator is PlaybackLocator.Remote && isHlsPlaylistUrl(locator.url) &&
+                (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null ||
+                    IosStreamProxyRouting.mustProxy()) ->
+                loadSegmentedHls(native, locator, startUs, play)
+            // Header- and expiry-free remotes keep the engine's own opener only while no proxy route or
+            // rotation applies: a live stream route means the lease transport, so playlist expansions and
+            // progressive streams alike leave through the proxy the settings chose — and a rotation with no
+            // member fails the open here rather than leaking it direct.
+            locator is PlaybackLocator.Remote && (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null ||
+                IosStreamProxyRouting.mustProxy()) ->
                 IosStreamLease.loadRemote(native, locator, startUs, play)
             else -> at_audio_load(native, source, startUs, play)
         }
         if (generation == 0uL) {
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(
+                PlaybackFailureReason.OPEN_FAILED,
+                openFailureMessage(
+                    locator is PlaybackLocator.Remote || locator is PlaybackLocator.DeezerEncrypted,
+                ),
+            )
             return
         }
         mapper.beginRequest(command.request, generation.toLong())
@@ -666,10 +703,18 @@ class IosPlaybackPort : PlaybackPort {
         }
     }
 
+    /** The host-expanded HLS lease of [loadIosSegmentedHls]; an accepted transport becomes the live one. */
+    private fun loadSegmentedHls(
+        native: CPointer<at_audio_output>,
+        locator: PlaybackLocator.Remote,
+        startUs: ULong,
+        play: Int,
+    ): ULong = loadIosSegmentedHls(native, locator, startUs, play) { liveTransport = it }
+
     /** The one engine output: created on first use, and recreated only after the engine reported an output fault. */
     private fun outputForLoad(): CPointer<at_audio_output>? {
         if (reopenOutput) {
-            output?.let { at_audio_destroy(it) }
+            output?.let { at_audio_destroy(it); IosStreamLease.retireOutput(it.toLong()) }
             output = null
             reopenOutput = false
         }
@@ -680,8 +725,35 @@ class IosPlaybackPort : PlaybackPort {
             output = it
             at_audio_volume(it, volume)
             at_audio_speed(it, desiredSpeed)
+            at_audio_pitch(it, desiredPitchCents)
+            applyEqualizer(it)
         }
     }
+
+    /**
+     * Applies the shared equalizer tone on every live output and any created or recreated later, like [setVolume].
+     * iOS renders the bands through each output's in-graph unit; the shared band list is converted once per call.
+     */
+    fun setEqualizer(enabled: Boolean, bands: List<EqualizerBand>) {
+        scope.launch {
+            if (closed) return@launch
+            equalizerEnabled = enabled
+            equalizerBands = bands.toIosEqBands()
+            output?.let { applyEqualizer(it) }
+            blend?.setEqualizer(enabled, equalizerBands)
+        }
+    }
+
+    /**
+     * The request the engine currently has loaded, for bounded off-queue reads such as the acoustic audit.
+     * Null while nothing is loaded or the port is closed; the read never mutates the command loop.
+     */
+    suspend fun currentRequest(): PlaybackRequest? =
+        runCatching { withContext(scope.coroutineContext) { request.takeUnless { closed } } }.getOrNull()
+
+    /** Packs the stored equalizer bands into the native ABI and applies them to [native]. */
+    private fun applyEqualizer(native: CPointer<at_audio_output>) =
+        applyIosEqualizer(native, equalizerBands, equalizerEnabled)
 
     /** Returns true while the engine plays or buffers, the states whose position and failure reads must stay prompt. */
     private fun observe(): Boolean {
@@ -694,6 +766,7 @@ class IosPlaybackPort : PlaybackPort {
                 // Both nodes are already switched before the old decoder/transport can be released.
                 at_audio_stop(native)
                 at_audio_destroy(native)
+                IosStreamLease.retireOutput(native.toLong())
                 liveTransport?.close()
                 output = incoming.output
                 request = incoming.request
@@ -704,11 +777,16 @@ class IosPlaybackPort : PlaybackPort {
                 stallWatchdog.reset()
                 at_audio_volume(incoming.output, volume)
                 at_audio_speed(incoming.output, desiredSpeed)
+                at_audio_pitch(incoming.output, desiredPitchCents)
+                applyEqualizer(incoming.output)
                 mapper.beginRequest(incoming.request, incoming.generation)
             }
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
             mapper.observe(read.state, now, outputLatencyMillis(engine.outputLatencySeconds()))?.let { state.value = it }
-            mapper.failure(read.state) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
+            mapper.failure(read.state) {
+                IosStreamLease.refusalOf(engine.currentOutput.toLong(), read.state.loadGeneration)
+                    ?: "iOS native playback failed"
+            }?.let { errors.tryEmit(it) }
             watchStall(read.state, now)
             return read.state.hasSource &&
                 (read.state.isBuffering || (read.state.playWhenReady && !read.state.isEnded))
@@ -726,7 +804,10 @@ class IosPlaybackPort : PlaybackPort {
                 now,
                 outputLatencyMs = outputLatencyMillis(at_audio_output_latency(native)),
             )?.let { state.value = it }
-            mapper.failure(observation) { "iOS native playback failed" }?.let { errors.tryEmit(it) }
+            mapper.failure(observation) {
+                IosStreamLease.refusalOf(native.toLong(), observation.loadGeneration)
+                    ?: "iOS native playback failed"
+            }?.let { errors.tryEmit(it) }
             watchStall(observation, now)
             observation.hasSource &&
                 (observation.isBuffering || (observation.playWhenReady && !observation.isEnded))
@@ -802,9 +883,22 @@ class IosPlaybackPort : PlaybackPort {
         blend?.cancelNext()
     }
 
-    private fun fail(reason: PlaybackFailureReason) {
-        request?.let { errors.tryEmit(PlaybackFailure(it.occurrenceId, reason, "iOS playback rejected", attemptId = it.attemptId)) }
+    private fun fail(reason: PlaybackFailureReason, message: String? = null) {
+        request?.let {
+            errors.tryEmit(
+                PlaybackFailure(it.occurrenceId, reason, message ?: "iOS playback rejected", attemptId = it.attemptId),
+            )
+        }
     }
+
+    /**
+     * The wording of a refused lease open: a starved rotation refused the transport inside it, so the
+     * sanitized status replaces the engine's generic rejection — it names no proxy address and maps to
+     * the dialog's unblocking guidance. A local path never reaches the routing layer, so [isNetworkOpen]
+     * keeps it on the ordinary wording.
+     */
+    private fun openFailureMessage(isNetworkOpen: Boolean): String? =
+        if (isNetworkOpen && IosStreamProxyRouting.streamBlocked()) STREAM_BLOCKED_MESSAGE else null
 
     private fun micros(ms: Long): ULong = ms.coerceAtMost(Long.MAX_VALUE / 1_000).toULong() * 1_000uL
 
@@ -869,6 +963,14 @@ private fun IosNativeAudioRoute.Outcome.release() {
  * no account, or the anonymous scope, keeps the anonymous path, which is cookie-free.
  */
 private fun DirectStream.isPersonal(): Boolean = accountScope != null && accountScope != ANONYMOUS_ACCOUNT_SCOPE
+
+/**
+ * A stream whose URI is an HLS playlist and that needs the host's segmented lease: it carries request headers or a
+ * known authorization expiry, so the engine's own opener may not fetch it. A header-free anonymous playlist keeps the
+ * engine path, whose own protocols already expand it.
+ */
+private fun DirectStream.needsSegmentedRoute(): Boolean =
+    isHlsPlaylistUrl(uri) && (!headers.isEmpty() || expiresAtEpochMs != null)
 
 /** An http(s) URL with a host and no embedded credentials, the only remote form the engine and the host lease accept. */
 internal fun isWebUrl(url: String): Boolean {

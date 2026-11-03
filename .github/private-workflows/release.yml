@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   check-version:
-    if: github.repository == 'NatuneGroup/ArchiveTune-KMP' && contains(github.ref, 'refs/tags') == false
+    if: github.repository == 'NatuneGroup/Natune' && contains(github.ref, 'refs/tags') == false
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 20
     outputs:

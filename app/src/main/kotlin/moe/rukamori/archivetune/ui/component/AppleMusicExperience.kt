@@ -19,7 +19,6 @@ import moe.rukamori.archivetune.constants.LibraryStyleKey
 import moe.rukamori.archivetune.kmp.settings.sharedSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.InterfaceStyle as SharedInterfaceStyle
 import moe.rukamori.archivetune.shared.domain.settings.applyInterfaceStyle as applySharedInterfaceStyle
-import moe.rukamori.archivetune.shared.domain.settings.appleMusicHeaders
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicPalette
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicSearchBar
@@ -58,9 +57,6 @@ fun PreferenceSnapshot.libraryStyle(): Pair<LibraryStyle, (LibraryStyle) -> Unit
 fun rememberAppleMusicExperience(): Boolean {
     return rememberPreferenceSnapshot().current.sharedSnapshot().interfaceStyle() == SharedInterfaceStyle.APPLE_MUSIC
 }
-
-@Composable
-fun rememberAppleMusicHeaders(): Boolean = rememberPreferenceSnapshot().current.sharedSnapshot().appleMusicHeaders()
 
 @Composable
 fun rememberAppleMusicMenus(): Boolean = rememberPreferenceSnapshot().current.sharedSnapshot().appleMusicMenus()

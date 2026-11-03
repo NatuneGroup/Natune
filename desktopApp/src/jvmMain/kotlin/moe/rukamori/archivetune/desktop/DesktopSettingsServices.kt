@@ -124,7 +124,7 @@ internal class DesktopSettingsServices(
     suspend fun loadUpdateCommits(channel: UpdateChannel): List<UpdateCommit> = withContext(Dispatchers.IO) {
         val branch = if (channel == UpdateChannel.NIGHTLY) "dev" else "main"
         val text = httpGet(
-            "https://api.github.com/repos/NatuneGroup/ArchiveTune/commits?sha=$branch&per_page=30",
+            "https://api.github.com/repos/NatuneGroup/Natune/commits?sha=$branch&per_page=30",
             "Accept" to "application/vnd.github+json",
         ) ?: return@withContext emptyList()
         runCatching {
@@ -150,7 +150,7 @@ internal class DesktopSettingsServices(
 
     suspend fun fetchChangelog(channel: UpdateChannel): List<ChangelogRelease> = withContext(Dispatchers.IO) {
         val text = httpGet(
-            "https://api.github.com/repos/NatuneGroup/ArchiveTune/releases?per_page=30",
+            "https://api.github.com/repos/NatuneGroup/Natune/releases?per_page=30",
             "Accept" to "application/vnd.github+json",
         ) ?: error("Release feed unreachable")
         val parsed = runCatching {
@@ -267,8 +267,8 @@ internal class DesktopSettingsServices(
 
     companion object {
         private const val UPDATE_FEED_BASE =
-            "https://github.com/NatuneGroup/ArchiveTune/releases/download/update-feed"
-        private const val UPDATE_RELEASES_BASE = "https://github.com/NatuneGroup/ArchiveTune/releases"
+            "https://github.com/NatuneGroup/Natune/releases/download/update-feed"
+        private const val UPDATE_RELEASES_BASE = "https://github.com/NatuneGroup/Natune/releases"
         private const val UPDATE_FEED_MANIFEST_SCHEMA = 1
 
         /** Fixed pointer file the next launch reads before opening the instance directory. */

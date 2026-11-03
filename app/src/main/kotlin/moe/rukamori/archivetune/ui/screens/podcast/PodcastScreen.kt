@@ -103,6 +103,7 @@ fun PodcastScreen(
                             title = event.request.title,
                             items = event.request.items.map { metadata -> metadata.toMediaItem() },
                             startIndex = event.request.startIndex,
+                            finite = true,
                         ),
                     )
                 }

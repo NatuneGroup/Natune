@@ -16,6 +16,12 @@ data class QueueState(
     val shuffleEnabled: Boolean = false,
     /** Hand-queued kind per occurrence. It decides where the next manual song is placed. */
     val manualKinds: Map<String, UserQueuedKind> = emptyMap(),
+    /**
+     * A built-in collection queue stays finite: the recommendation tail never seeds on it, so a library
+     * list ends where the user sees it end. Loading an explicit radio clears it, as does any queue that
+     * did not come from a built-in collection. Checkpoints persist it so a restored list stays finite.
+     */
+    val staysFinite: Boolean = false,
     /** Paging still owed by the collection this queue came from. Null when nothing more can be loaded. */
     val tail: QueueTail? = null,
 )
@@ -38,7 +44,18 @@ data class QueueTail(
 interface QueueController {
     val player: MusicPlayerController
     val state: StateFlow<QueueState>
-    suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean)
+
+    /**
+     * [staysFinite] marks entries taken from a built-in collection (library songs, liked, downloads, local files,
+     * history, statistics, podcasts) so the queue ends with them, as [QueueState.staysFinite] describes. User
+     * playlists, albums, shelves and ad-hoc picks leave it false and keep their recommendation continuation.
+     */
+    suspend fun replace(
+        entries: List<ContentOccurrence>,
+        startOccurrenceId: String,
+        playWhenReady: Boolean,
+        staysFinite: Boolean = false,
+    )
 
     /** The occurrences actually queued; duplicate prevention can refuse some or all of the batch. */
     suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind): Int

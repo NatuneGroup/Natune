@@ -1,6 +1,6 @@
-# ArchiveTune-KMP handoff — 2026-10-27
+# Natune handoff — 2026-10-27
 
-Repo: `NatuneGroup/ArchiveTune-KMP`. Integration branch: `dev`. Head: `3a104d3`.
+Repo: `NatuneGroup/Natune`. Integration branch: `dev`. Head: `3a104d3`.
 Reference (port source of truth): `NatuneGroup/ArchiveTune` branch `dev`, HEAD `b7e4dd444`.
 
 ## Repo state
@@ -34,7 +34,7 @@ Reference (port source of truth): `NatuneGroup/ArchiveTune` branch `dev`, HEAD `
 ## Termux-safe workflow (no heavy builds locally)
 
 ```sh
-git clone https://github.com/NatuneGroup/ArchiveTune-KMP && cd ArchiveTune-KMP && git checkout dev
+git clone https://github.com/NatuneGroup/Natune && cd Natune && git checkout dev
 # edit sources; never run ./gradlew assemble* in Termux
 python3 scripts/check_repository.py --worktree          # fast static check only
 git checkout -b devin/$(date +%s)-<slug> && git commit -am "..." && git push -u origin HEAD

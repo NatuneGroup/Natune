@@ -1,6 +1,7 @@
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.testing.Test
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -43,9 +44,10 @@ kotlin {
             // androidx coordinates pull androidx.compose.ui:ui:1.6.0, whose stale Application_desktopKt shadows the
             // real entry point on the runtime classpath.
             implementation(compose.materialIconsExtended)
-            // Pinned here for the isolated native lane; centralize in the catalog at integration.
-            implementation("com.github.hypfvieh:dbus-java-core:5.1.1")
-            implementation("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.1.1")
+            // Pure-JVM D-Bus client behind the Linux MPRIS and StatusNotifierItem exports; MIT-licensed,
+            // notice in desktopApp/packaging/notices. The native-unixsocket transport needs no JNI.
+            implementation(libs.dbus.java.core)
+            implementation(libs.dbus.java.transport.native.unixsocket)
             implementation("net.java.dev.jna:jna:5.17.0")
             // The TDLight binding behind the Telegram file adapter. Integration registers this project in the root
             // settings; its native library and notices are staged by stageDesktopNativeResources.
@@ -202,6 +204,18 @@ val desktopForkDirty = runCatching {
         commandLine("git", "status", "--porcelain", "--untracked-files=no")
     }.standardOutput.asText.get().isNotBlank()
 }.getOrDefault(false)
+// The in-app News feed, with the Android build's precedence: local.properties, then the NATUNE_NEWS_URL
+// environment/CI variable, then the baked-in default. Unlike a provider credential, an explicitly blank value is kept:
+// it disables the feed and hides the News entry.
+val desktopNatuneNewsUrl = run {
+    val localProperties = Properties()
+    rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { localProperties.load(it) }
+    (localProperties.getProperty("NATUNE_NEWS_URL") ?: System.getenv("NATUNE_NEWS_URL") ?: "https://natune.pages.dev/api/news")
+        .trim().trimEnd('/')
+}
+require(desktopNatuneNewsUrl.none { it == '"' || it == '\\' || it == '$' || it.isWhitespace() }) {
+    "NATUNE_NEWS_URL must be a plain URL."
+}
 val desktopBuildIdentityDirectory = layout.buildDirectory.dir("generated/buildIdentity")
 val generateDesktopBuildIdentity = tasks.register("generateBuildIdentity") {
     val revision = desktopForkRevision
@@ -209,12 +223,14 @@ val generateDesktopBuildIdentity = tasks.register("generateBuildIdentity") {
     val dirty = desktopForkDirty
     val version = desktopDisplayVersion
     val code = desktopVersionCode
+    val newsUrl = desktopNatuneNewsUrl
     val output = desktopBuildIdentityDirectory
     inputs.property("revision", revision)
     inputs.property("branch", branch)
     inputs.property("dirty", dirty)
     inputs.property("version", version)
     inputs.property("versionCode", code)
+    inputs.property("natuneNewsUrl", newsUrl)
     outputs.dir(output)
     doLast {
         val directory = output.get().asFile.resolve("moe/rukamori/archivetune/desktop")
@@ -229,6 +245,7 @@ val generateDesktopBuildIdentity = tasks.register("generateBuildIdentity") {
             |    const val FORK_REVISION = "$revision"
             |    const val FORK_BRANCH = "$branch"
             |    const val FORK_DIRTY = $dirty
+            |    const val NATUNE_NEWS_URL = "$newsUrl"
             |}
             |""".trimMargin(),
         )
