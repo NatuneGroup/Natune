@@ -588,9 +588,15 @@ class IosPlaybackPort : PlaybackPort {
             locator is PlaybackLocator.DeezerEncrypted -> IosStreamLease.loadDeezer(native, locator, startUs, play)
             // A lease-bound HLS playlist: the engine's lease refuses child fetches, so the host expands the segments.
             locator is PlaybackLocator.Remote && isHlsPlaylistUrl(locator.url) &&
-                (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null) ->
+                (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null ||
+                    IosStreamProxyRouting.mustProxy()) ->
                 loadSegmentedHls(native, locator, startUs, play)
-            locator is PlaybackLocator.Remote && (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null) ->
+            // Header- and expiry-free remotes keep the engine's own opener only while no proxy route or
+            // rotation applies: a live stream route means the lease transport, so playlist expansions and
+            // progressive streams alike leave through the proxy the settings chose — and a rotation with no
+            // member fails the open here rather than leaking it direct.
+            locator is PlaybackLocator.Remote && (!locator.headers.isEmpty() || locator.expiresAtEpochMs != null ||
+                IosStreamProxyRouting.mustProxy()) ->
                 IosStreamLease.loadRemote(native, locator, startUs, play)
             else -> at_audio_load(native, source, startUs, play)
         }

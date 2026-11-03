@@ -133,12 +133,13 @@ class IosNetworkRoutingTest {
     @Test
     fun aStreamFollowsTheSavedRouteUnlessItIsBypassed() {
         try {
-            IosStreamProxyRouting.updateStreamRoute(httpRoute())
+            IosStreamProxyRouting.updateStreamRoute(httpRoute(), bypass = false)
             assertEquals("http://proxy.example:3128", IosStreamProxyRouting.routeForStream()?.endpointKey)
-            IosStreamProxyRouting.updateStreamRoute(httpRoute().copy(bypassStreams = true))
+            IosStreamProxyRouting.updateStreamRoute(httpRoute(), bypass = true)
             assertNull(IosStreamProxyRouting.routeForStream())
+            assertFalse(IosStreamProxyRouting.mustProxy())
         } finally {
-            IosStreamProxyRouting.updateStreamRoute(null)
+            IosStreamProxyRouting.updateStreamRoute(null, bypass = false)
         }
     }
 
@@ -148,13 +149,31 @@ class IosNetworkRoutingTest {
         rotation.loadRoutes(listOf(httpRoute(host = "pool.example", port = 8080)))
         try {
             IosStreamProxyRouting.updateRotation(rotation)
-            IosStreamProxyRouting.updateStreamRoute(httpRoute().copy(bypassStreams = true))
+            // A bypass saved while the static proxy was off still rules the stream route.
+            IosStreamProxyRouting.updateStreamRoute(null, bypass = true)
             assertNull(IosStreamProxyRouting.routeForStream())
-            IosStreamProxyRouting.updateStreamRoute(httpRoute())
+            assertFalse(IosStreamProxyRouting.mustProxy())
+            IosStreamProxyRouting.updateStreamRoute(httpRoute(), bypass = false)
             assertEquals("http://pool.example:8080", IosStreamProxyRouting.routeForStream()?.endpointKey)
         } finally {
             IosStreamProxyRouting.updateRotation(null)
-            IosStreamProxyRouting.updateStreamRoute(null)
+            IosStreamProxyRouting.updateStreamRoute(null, bypass = false)
+        }
+    }
+
+    @Test
+    fun aRotationWithNoMemberAndNoSavedRouteMustNotLeakDirect() {
+        val rotation = IosProxyRotation()
+        try {
+            IosStreamProxyRouting.updateRotation(rotation)
+            assertTrue(IosStreamProxyRouting.streamBlocked())
+            assertTrue(IosStreamProxyRouting.mustProxy())
+            IosStreamProxyRouting.updateStreamRoute(httpRoute(), bypass = false)
+            assertFalse(IosStreamProxyRouting.streamBlocked())
+            assertEquals("http://proxy.example:3128", IosStreamProxyRouting.routeForStream()?.endpointKey)
+        } finally {
+            IosStreamProxyRouting.updateRotation(null)
+            IosStreamProxyRouting.updateStreamRoute(null, bypass = false)
         }
     }
 
