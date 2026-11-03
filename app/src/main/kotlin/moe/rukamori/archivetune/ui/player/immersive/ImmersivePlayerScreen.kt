@@ -30,7 +30,9 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.lazy.items
@@ -329,6 +331,7 @@ private fun ImmersiveLandscape(
             modifier =
                 Modifier
                     .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Start))
                     .padding(start = 24.dp)
                     .statusBarsPadding()
                     .padding(top = 18.dp),
@@ -339,7 +342,12 @@ private fun ImmersiveLandscape(
                     .fillMaxHeight()
                     .fillMaxWidth(0.52f)
                     .align(Alignment.CenterEnd)
-                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.End + WindowInsetsSides.Top))
+                    // A landscape notch sits on a side system bars do not describe; union the cutout.
+                    .windowInsetsPadding(
+                        WindowInsets.systemBars
+                            .union(WindowInsets.displayCutout)
+                            .only(WindowInsetsSides.End + WindowInsetsSides.Top),
+                    )
                     .padding(
                         start = 30.dp,
                         top = 18.dp,
