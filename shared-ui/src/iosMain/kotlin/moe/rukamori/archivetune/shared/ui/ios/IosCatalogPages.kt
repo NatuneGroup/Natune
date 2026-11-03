@@ -66,12 +66,16 @@ internal fun iosCatalogGraphPage(
     ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
         hostSearchPage(owners.pages, route) { openRoute(ArchiveRoutes.musicRecognition()) }
     ArchiveDestination.ALBUM ->
-        hostCatalogDetailPage(owners.pages, route) { menu.open(it) }
+        if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
+            iosSpotifyAlbumPage(graph, owners, route, menu, back)
+        } else {
+            hostCatalogDetailPage(owners.pages, route) { menu.open(it) }
+        }
     ArchiveDestination.PLAYLIST ->
         if (route.arguments["playlistType"] == "spotify_playlist" ||
             route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id
         ) {
-            iosSpotifyPlaylistPage(graph, route.arguments.getValue("playlistId"))
+            iosSpotifyPlaylistPage(graph, route.arguments.getValue("playlistId"), back)
         } else {
             hostCatalogDetailPage(owners.pages, route) { menu.open(it) }
                 ?: hostPlaylistPage(graph.pageOwners, route) { occurrence ->
@@ -84,7 +88,12 @@ internal fun iosCatalogGraphPage(
                     )
                 }
         }
-    ArchiveDestination.ARTIST -> iosArtistPage(graph, host, owners.lists, route, menu, openRoute, back)
+    ArchiveDestination.ARTIST ->
+        if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
+            iosSpotifyArtistPage(graph, host, owners.lists, route, menu, openRoute, back)
+        } else {
+            iosArtistPage(graph, host, owners.lists, route, menu, openRoute, back)
+        }
     ArchiveDestination.ARTIST_SONGS -> iosArtistSongsPage(graph, host, owners.lists, route, menu, openRoute, back)
     ArchiveDestination.ARTIST_ALBUMS -> iosArtistAlbumsPage(graph, host, owners.lists, route, menu, openRoute, back)
     ArchiveDestination.ARTIST_ITEMS -> iosArtistItemsPage(graph, host, owners.lists, route, menu, openRoute, back)

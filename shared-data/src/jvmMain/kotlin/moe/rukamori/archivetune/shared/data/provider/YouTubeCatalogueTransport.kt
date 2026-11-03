@@ -63,7 +63,7 @@ class JvmYouTubeCatalogueTransport : YouTubeCatalogueTransport {
     }
 
     /** The remote artist page: header facts, ordered sections and the watch endpoints the provider gave. */
-    suspend fun artist(browseId: String): YouTubeArtistDetail {
+    override suspend fun artist(browseId: String): YouTubeArtistDetail {
         val page = YouTube.artist(browseId).getOrThrow()
         val shelves =
             page.sections.map { section ->

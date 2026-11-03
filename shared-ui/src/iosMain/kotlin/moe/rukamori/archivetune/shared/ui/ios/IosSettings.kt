@@ -719,6 +719,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
         if (showCrossServiceImport) {
             IosCrossServiceImportDialog(
                 graph = owners.graph,
+                host = host,
                 onOpenRoute = { target ->
                     showCrossServiceImport = false
                     navigation.open(target)

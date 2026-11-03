@@ -10,7 +10,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -120,7 +119,7 @@ class ArchiveMiniPlayerTest {
                 DetailScreen(
                     kind = DetailKind.Playlist,
                     header = item,
-                    state = PagedContentState(items = listOf(occurrence), initialized = true, complete = true),
+                    state = PagedContentState(items = listOf(occurrence), initialized = true),
                     actions = DetailActions(ContentActions({}, null, {}, {}), {}, {}, {}, null, null),
                     artwork = { _, modifier -> Box(modifier.background(Color.Blue)) },
                     modifier = Modifier.requiredSize(720.dp, 800.dp),
