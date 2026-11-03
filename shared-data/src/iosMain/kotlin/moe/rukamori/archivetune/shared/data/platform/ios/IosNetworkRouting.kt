@@ -16,11 +16,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
 import moe.rukamori.archivetune.shared.domain.settings.IpRotationEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.PROXY_LOCAL_HOST_EXCEPTIONS
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.ProxyRoute
 import moe.rukamori.archivetune.shared.domain.settings.ProxyRouteType
+import moe.rukamori.archivetune.shared.domain.settings.StreamBypassProxyKey
 import moe.rukamori.archivetune.shared.domain.settings.proxyRoute
 import platform.Foundation.NSURLCredential
 import platform.Foundation.NSURLCredentialPersistence
@@ -116,11 +118,18 @@ internal object IosStreamProxyRouting {
     private var savedRoute: ProxyRoute? = null
 
     @Volatile
+    private var bypassStreams = false
+
+    @Volatile
     private var pool: IosProxyRotation? = null
 
-    /** The saved route the next stream honours; its bypass switch takes the stream traffic off the proxy. */
-    fun updateStreamRoute(route: ProxyRoute?) {
+    /**
+     * The saved route and its bypass switch for the next stream. The flag is kept apart from the route
+     * because it survives a disabled static proxy: a saved bypass stays in force while rotation runs.
+     */
+    fun updateStreamRoute(route: ProxyRoute?, bypass: Boolean) {
         savedRoute = route
+        bypassStreams = bypass
     }
 
     /** The pool a stream consults first, or null while rotation is off. */
@@ -130,21 +139,38 @@ internal object IosStreamProxyRouting {
 
     /**
      * The route the next stream connection opens with. The bypass switch beats everything — the desktop
-     * selector sends bypassed streams to the system route even while it rotates — rotation beats the saved
-     * static route, and no route at all keeps the system connection.
+     * selector sends bypassed streams to the system route even while it rotates — an empty rotation pool
+     * falls back to the saved route, and no route at all keeps the system connection.
      */
     fun routeForStream(): ProxyRoute? {
-        val saved = savedRoute
-        if (saved?.bypassStreams == true) return null
+        if (bypassStreams) return null
         pool?.next()?.let { return it }
-        return saved
+        return savedRoute
     }
 
     /**
+     * True while rotation is on but has no member and no saved route to fall back on: a stream opened now
+     * would leak off the real address, so the host transport must fail it rather than open it direct.
+     */
+    fun streamBlocked(): Boolean =
+        !bypassStreams && savedRoute == null && pool?.let { !it.hasMembers() } == true
+
+    /**
+     * True when a stream must open through the host transport rather than the engine's own URL fetcher:
+     * a route or a rotation is live. The blocked case counts too — [applyTo] then refuses the connection
+     * instead of answering the direct route the engine's fetcher would have taken.
+     */
+    fun mustProxy(): Boolean = !bypassStreams && (savedRoute != null || pool != null)
+
+    /**
      * Applies [routeForStream] to a session configuration and answers the chosen route, so the transfer that
-     * opens it can report a broken connection back to the pool.
+     * opens it can report a broken connection back to the pool. Throws [ByteSourceException] when rotation is
+     * on with nothing to route through, which fails the open instead of leaking it direct.
      */
     fun applyTo(configuration: NSURLSessionConfiguration): ProxyRoute? {
+        if (streamBlocked()) {
+            throw ByteSourceException("ip rotation is on but has no live proxy member")
+        }
         val route = routeForStream() ?: return null
         configuration.connectionProxyDictionary = iosProxySessionDictionary(route)
         return route
@@ -179,8 +205,12 @@ class IosNetworkOwner(
 
     init {
         // The stream transport reads its route per connection, so it starts on the saved one and never has to
-        // wait for the first settings commit. A leftover pool from a replaced graph is dropped the same way.
-        IosStreamProxyRouting.updateStreamRoute(runningRoute)
+        // wait for the first settings commit. The bypass switch is read on its own because it outlives a
+        // disabled static route, and a leftover pool from a replaced graph is dropped the same way.
+        IosStreamProxyRouting.updateStreamRoute(
+            runningRoute,
+            preferences()?.get(StreamBypassProxyKey) == true,
+        )
         IosStreamProxyRouting.updateRotation(null)
     }
 
@@ -205,7 +235,10 @@ class IosNetworkOwner(
      * engine the stream sessions are rebuilt per request, so this is the one route an edit moves live.
      */
     fun applyStreamRoute(snapshot: PreferenceSnapshot?) {
-        IosStreamProxyRouting.updateStreamRoute(snapshot?.proxyRoute())
+        IosStreamProxyRouting.updateStreamRoute(
+            snapshot?.proxyRoute(),
+            snapshot?.get(StreamBypassProxyKey) == true,
+        )
     }
 
     /** The members the rotation pool currently counts live; 0 while rotation is off. */
@@ -233,9 +266,11 @@ class IosNetworkOwner(
 
     /**
      * Enables, refreshes or stops the rotating pool and answers its live size, for the settings page's
-     * enable/refresh contract. A refresh refetches — the refresh action exists to replace the pool. An enable
-     * that validates nothing answers 0 so the page can revert the toggle. Rotation changes which proxy the
-     * next stream connection opens with; it never re-routes the engine's pinned session.
+     * enable/refresh contract. A refresh refetches and keeps the pool it was meant to replace when the new
+     * fetch finds nothing — stripping working members while the saved toggle stays on would send later
+     * streams out direct. An enable that still counts nothing answers 0 so the page can revert the toggle.
+     * Rotation changes which proxy the next stream connection opens with; it never re-routes the engine's
+     * pinned session.
      */
     suspend fun applyIpRotation(enabled: Boolean, refresh: Boolean): Int = rotationLock.withLock {
         if (!enabled) {
@@ -252,7 +287,16 @@ class IosNetworkOwner(
             rotating = true
             IosStreamProxyRouting.updateRotation(rotation)
             count
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: Throwable) {
+            // A failed refresh leaves a working pool in place; a failed enable keeps streams off rotation.
+            val count = rotation.activeCount()
+            if (count > 0) {
+                rotating = true
+                IosStreamProxyRouting.updateRotation(rotation)
+                return@withLock count
+            }
             disableRotation()
             throw failure
         }

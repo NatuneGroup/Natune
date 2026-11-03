@@ -66,6 +66,9 @@ internal class IosProxyRotation {
         return lock.locked { entries.count { it.deadUntilNanos <= now } }
     }
 
+    /** Whether the pool holds any member at all, cooled ones included — [next] can always answer then. */
+    fun hasMembers(): Boolean = lock.locked { entries.isNotEmpty() }
+
     /** Replaces the pool, as a finished fetch does; callers in tests inject members the same way. */
     fun loadRoutes(routes: List<ProxyRoute>) = lock.locked {
         entries = routes.map { Entry(it, deadUntilNanos = 0L) }
@@ -110,7 +113,7 @@ internal class IosProxyRotation {
      * [VALIDATION_PERMITS] at a time like the desktop pool. The list fetch itself takes the saved route when
      * there is one — a network that only reaches the web through the static proxy cannot read the list direct.
      */
-    suspend fun fetchAndLoad(savedRoute: () -> ProxyRoute? = { null }) {
+    suspend fun fetchAndLoad(savedRoute: () -> ProxyRoute? = { null }): Int {
         val candidates = fetchCandidates(savedRoute)
         val live = coroutineScope {
             val permits = Semaphore(VALIDATION_PERMITS)
@@ -118,7 +121,12 @@ internal class IosProxyRotation {
                 async { permits.withPermit { if (probeThrough(candidate)) candidate else null } }
             }.awaitAll().filterNotNull().take(MAX_POOL_SIZE)
         }
-        loadRoutes(live.map { (host, port) -> ProxyRoute(ProxyRouteType.HTTP, host, port) })
+        // A fetch or validation that finds nothing keeps the pool it was meant to replace: the members
+        // already validated are a better answer than an empty set while the caller's toggle stays on.
+        if (live.isNotEmpty()) {
+            loadRoutes(live.map { (host, port) -> ProxyRoute(ProxyRouteType.HTTP, host, port) })
+        }
+        return live.size
     }
 
     private suspend fun fetchCandidates(savedRoute: () -> ProxyRoute?): List<Pair<String, Int>> {
