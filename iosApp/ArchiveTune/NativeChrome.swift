@@ -87,6 +87,8 @@ private struct NativeChromeBar: View {
                         NativeTabRow(state: state, chrome: model.chrome, reduceMotion: reduceMotion)
                     }
                 }
+                // On unfolded iPhone Fold and iPad viewports, keep the liquid-glass bar as a centered floating pill.
+                .frame(maxWidth: 520)
                 .padding(.horizontal, 18)
                 .padding(.bottom, 6)
                 .onGeometryChange(for: CGFloat.self) { proxy in

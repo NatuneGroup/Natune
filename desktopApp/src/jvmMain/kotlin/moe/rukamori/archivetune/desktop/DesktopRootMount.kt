@@ -215,10 +215,12 @@ internal fun DesktopMountedRoot(
         }
         val focus = KeyboardFocusManager.getCurrentKeyboardFocusManager()
         focus.addKeyEventDispatcher(dispatcher)
-        // The mouse's side buttons are no key event; button 4 is the platform's back gesture like Alt+Left.
+        // The mouse's side buttons are no key event; button 4 (or button 6 on X11 toolkits) is the platform's back gesture like Alt+Left.
+        val backMouseButton = if (Toolkit.getDefaultToolkit().javaClass.name == "sun.awt.X11.XToolkit") 6 else 4
         val mouse = AWTEventListener { event ->
             val press = event as? MouseEvent
-            if (press != null && press.getID() == MouseEvent.MOUSE_PRESSED && press.button == 4 &&
+            if (press != null && press.getID() == MouseEvent.MOUSE_PRESSED &&
+                (press.button == 4 || press.button == backMouseButton) &&
                 press.component?.let { SwingUtilities.getWindowAncestor(it) } === window) {
                 backRequests.tryEmit(Unit)
             }
