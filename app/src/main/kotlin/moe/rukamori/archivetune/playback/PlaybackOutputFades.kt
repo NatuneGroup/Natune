@@ -160,12 +160,16 @@ internal class PlaybackOutputFades(
     private suspend fun rampTo(p: Player, from: Float, target: Float, durationMs: Long) {
         repeat(OutputFadePolicy.FADE_STEPS) { step ->
             coroutineContext.ensureActive()
+            // Crossfade or cast can take volume ownership while a step is suspended —
+            // once they do, every later write would stomp their levels, so stop instead.
+            if (!allowed()) return
             val t = (step + 1) / OutputFadePolicy.FADE_STEPS.toFloat()
             p.volume = (from + (target - from) * t).coerceIn(0f, 1f)
             if (step + 1 < OutputFadePolicy.FADE_STEPS) {
                 delay(durationMs / OutputFadePolicy.FADE_STEPS)
             }
         }
+        if (!allowed()) return
         p.volume = target
     }
 
