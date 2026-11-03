@@ -729,7 +729,7 @@ internal class IosSessionGraph private constructor(
                 },
                 handoffEngine = handoff,
             )
-            val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
+            val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints(), database.library()))
             try {
                 queue.resume()
             } catch (cancelled: CancellationException) {
