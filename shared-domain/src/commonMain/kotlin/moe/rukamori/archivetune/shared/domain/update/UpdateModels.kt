@@ -41,7 +41,7 @@ data class GitCommit(
 
 /** The update repository and feed location. Both channels publish on the same repository. */
 object UpdateRepository {
-    const val OWNER: String = "NatuneGroup/ArchiveTune"
+    const val OWNER: String = "NatuneGroup/Natune"
     const val RELEASES_BASE_URL: String = "https://github.com/$OWNER/releases"
     const val API_RELEASES_URL: String = "https://api.github.com/repos/$OWNER/releases"
     const val API_COMMITS_URL: String = "https://api.github.com/repos/$OWNER/commits"

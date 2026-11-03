@@ -246,7 +246,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
             self.assertIn("Android build-tools do not contain apksigner and zipalign.", result.stdout)
             self.assertEqual(b"unsigned APK fixture", apk.read_bytes())
 
-    def publish_fixture(self, directory, channel, *, drop=(), stale=False):
+    def publish_fixture(self, directory, channel, *, drop=(), stale=False, flags=None):
         root = Path(directory)
         assets = root / "downloaded-artifacts"
         assets.mkdir()
@@ -293,7 +293,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                            REMOTE_SHA="b" * 40 if stale else commit, ANDROID_SIGNING_STATUS="unsigned",
                            GITHUB_REPOSITORY="NatuneGroup/Natune", GITHUB_OUTPUT=str(root / "output"),
                            RUNNER_TEMP=str(temporary), GH_CALLS=str(root / "gh-calls"), GH_TOKEN="",
-                           PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+                           PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], **(flags or {}))
         return result, names
 
     def test_unsigned_nightly_and_stable_publish_the_channel_inventory_and_private_manifest(self):
@@ -347,6 +347,54 @@ class ReleaseWorkflowTest(unittest.TestCase):
             for name in optional:
                 self.assertIn(name, notes)
 
+    def test_publishing_without_a_required_build_leg_is_rejected_before_the_release_exists(self):
+        # publish: true with a required leg disabled fails before any release exists — previously the
+        # release was created and the manifest step then failed on the missing inventory.
+        for flags in (
+            {"BUILD_ANDROID": "false"},
+            {"BUILD_DESKTOP": "false"},
+            {"BUILD_ANDROID": "false", "BUILD_DESKTOP": "false"},
+        ):
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, _ = self.publish_fixture(root, "nightly", flags=flags)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("::error::", result.stdout)
+                self.assertFalse((root / "gh-calls").exists(), "no gh call may run before the rejection")
+
+    def test_publishing_with_only_the_optional_ios_leg_disabled_still_ships(self):
+        # build_ios=false drops the IPA from the optional inventory; the release still publishes.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result, _ = self.publish_fixture(
+                root, "nightly", drop=("natune-ios-fixture.ipa",), flags={"BUILD_IOS": "false"})
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("did_publish=true\n", (root / "output").read_text())
+
+    def test_publish_gate_needs_required_results_not_always(self):
+        # The publish job no longer fires under always(): it needs !cancelled() and a successful
+        # Android plus Windows/Linux result; the macOS and iOS legs stay optional.
+        text = WORKFLOW.read_text()
+        publish_block = re.split(r"(?m)^  [a-z][a-z-]*:", text.split("  publish-release:", 1)[1], maxsplit=1)[0]
+        condition = re.search(r"(?ms)^    if: (.+?)\n    [a-z]", publish_block).group(1)
+        self.assertNotIn("always()", condition)
+        self.assertIn("!cancelled()", condition)
+        self.assertIn("inputs.publish", condition)
+        self.assertIn("needs.android.result == 'success'", condition)
+        self.assertIn("needs.desktop.result == 'success'", condition)
+        self.assertNotIn("needs.desktop-macos.result == 'success'", condition)
+        self.assertNotIn("needs.ios.result == 'success'", condition)
+        for job in ("desktop-macos", "ios"):
+            self.assertIn("      - " + job, publish_block)
+
+    def test_staging_restore_warns_and_continues_for_optional_legs(self):
+        # A staging release whose assets never landed must not block publishing: optional macOS/iOS
+        # legs warn and continue; any required leg still aborts the restore.
+        script = step_script("Restore the staging release hand-off")
+        self.assertIn("*-desktop-macos-*|*-ios)", script)
+        self.assertIn("::warning::", script)
+        self.assertIn("::error::", script)
+
     def test_stale_head_is_not_published(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -357,7 +405,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
     def test_release_handoff_artifacts_expire_after_three_days(self):
         retention = re.findall(r"retention-days: (\d+)", WORKFLOW.read_text())
-        self.assertEqual(["3"] * 4, retention)
+        self.assertEqual(["3"] * 5, retention)
 
     def test_every_artifact_hand_off_has_a_staging_release_fallback(self):
         blocks = step_blocks()
@@ -365,7 +413,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
             (index, name, body) for index, (name, body) in enumerate(blocks)
             if "uses: actions/upload-artifact@" in body or "uses: actions/download-artifact@" in body
         ]
-        self.assertEqual(6, len(primaries))
+        self.assertEqual(7, len(primaries))
         for index, name, body in primaries:
             with self.subTest(step=name):
                 identifier = re.search(r"(?m)^        id: ([\w-]+)$", body)[1]
@@ -392,7 +440,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
     def test_only_the_jobs_that_write_release_assets_get_contents_write(self):
         workflow = WORKFLOW.read_text()
-        self.assertEqual(5, len(re.findall(r"(?m)^      contents: write$", workflow)))
+        self.assertEqual(6, len(re.findall(r"(?m)^      contents: write$", workflow)))
         self.assertNotIn("contents: read", workflow)
 
     def test_android_upload_failure_parks_the_apk_on_a_prerelease_hand_off(self):

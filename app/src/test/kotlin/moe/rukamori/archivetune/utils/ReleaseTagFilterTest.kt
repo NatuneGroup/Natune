@@ -27,7 +27,7 @@ class ReleaseTagFilterTest {
             name = tag,
             body = null,
             publishedAt = publishedAt,
-            htmlUrl = "https://github.com/NatuneGroup/ArchiveTune/releases/tag/$tag",
+            htmlUrl = "https://github.com/NatuneGroup/Natune/releases/tag/$tag",
         )
 
     @Test

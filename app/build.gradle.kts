@@ -85,7 +85,7 @@ val addonsRevision = runCatching {
 }.getOrDefault("")
 val addonsBaseUrl =
     if (addonsRevision.length == 40) {
-        "https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/$addonsRevision/addons"
+        "https://raw.githubusercontent.com/NatuneGroup/Natune/$addonsRevision/addons"
     } else {
         ""
     }

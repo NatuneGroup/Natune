@@ -28,18 +28,18 @@ class UpdateFeedManifestTest {
           "versionCode": 6731,
           "commit": "abc1234def5678",
           "publishedAt": "2026-10-13T15:30:00Z",
-          "releaseUrl": "https://github.com/NatuneGroup/ArchiveTune/releases/tag/N202610131530",
+          "releaseUrl": "https://github.com/NatuneGroup/Natune/releases/tag/N202610131530",
           "notes": "Nightly build notes",
           "assets": [
             {
               "name": "app-gms-mobile-arm64-nightly.apk",
-              "url": "https://github.com/NatuneGroup/ArchiveTune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
+              "url": "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
               "size": 59000000,
               "sha256": "deadbeef"
             },
             {
               "name": "app-foss-mobile-universal-nightly.apk",
-              "url": "https://github.com/NatuneGroup/ArchiveTune/releases/download/N202610131530/app-foss-mobile-universal-nightly.apk",
+              "url": "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-foss-mobile-universal-nightly.apk",
               "size": 58000000,
               "sha256": "cafebabe"
             }
@@ -59,7 +59,7 @@ class UpdateFeedManifestTest {
         assertEquals("2026-10-13T15:30:00Z", manifest?.publishedAt)
         assertEquals(2, manifest?.assets?.size)
         assertEquals(
-            "https://github.com/NatuneGroup/ArchiveTune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
+            "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
             manifest?.assets?.first()?.url,
         )
     }
@@ -117,7 +117,7 @@ class UpdateFeedManifestTest {
         val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = "nightly")!!
 
         assertEquals(
-            "https://github.com/NatuneGroup/ArchiveTune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
+            "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
             selectUpdateFeedAssetUrl(manifest.assets, "app-gms-mobile-arm64-nightly.apk"),
         )
     }
@@ -127,7 +127,7 @@ class UpdateFeedManifestTest {
         val manifest = parseUpdateFeedManifest(validNightlyManifest, expectedChannel = "nightly")!!
 
         assertEquals(
-            "https://github.com/NatuneGroup/ArchiveTune/releases/download/N202610131530/app-foss-mobile-universal-nightly.apk",
+            "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-foss-mobile-universal-nightly.apk",
             selectUpdateFeedAssetUrl(manifest.assets, "app-foss-mobile-universal-nightly.apk"),
         )
     }

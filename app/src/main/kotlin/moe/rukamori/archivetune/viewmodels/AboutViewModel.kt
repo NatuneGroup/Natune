@@ -411,7 +411,7 @@ class AboutViewModel
                             id = "github",
                             iconResId = R.drawable.github,
                             labelResId = R.string.about_content_desc_github,
-                            url = "https://github.com/NatuneGroup/ArchiveTune",
+                            url = "https://github.com/NatuneGroup/Natune",
                         ),
                         AboutLinkUiModel(
                             id = "telegram",

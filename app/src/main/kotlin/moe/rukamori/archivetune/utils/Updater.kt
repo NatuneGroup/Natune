@@ -106,7 +106,7 @@ object Updater {
     private const val ReleaseCacheCheckIntervalMs: Long = 6 * 60 * 60 * 1000L
     private const val NightlyCacheCheckIntervalMs: Long = 15 * 60 * 1000L
     private const val CommitHistoryCacheIntervalMs: Long = 15 * 60 * 1000L
-    private const val OWNER = "NatuneGroup/ArchiveTune"
+    private const val OWNER = "NatuneGroup/Natune"
     private const val StableReleaseBaseUrl = "https://github.com/$OWNER/releases"
 
     // The pre-release channel is served as a GitHub pre-release on this repo. NightlyReleaseBaseUrl
