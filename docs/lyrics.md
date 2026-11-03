@@ -109,7 +109,9 @@ Frame requests are **deadline-gated**, not per-vsync. `LyricsDeadlineSchedule` (
 `LyricsEntry` copy in `app/lyrics`) lists the live spans where motion is continuous — a word sweep
 in flight over its exact timing, a breathing interlude — and the discrete edges where the drawn
 state changes. The clock loop requests a frame inside a live span, sleeps to the next boundary
-otherwise, and re-checks at most every 250 ms so a seek still lands promptly; paused surfaces poll
+otherwise, and re-checks at most every 250 ms so a seek still lands promptly. The Android Enhanced
+loop publishes the position and line before it parks, and divides the media-time gap by the
+playback speed (`lyricsIdleParkMs`), so a 2× track never sleeps through a sweep; paused surfaces poll
 at 100 ms. The SwiftUI view already pauses its `TimelineView` when hidden and polls a held
 position at 250 ms, matching the same budget. A word's live span runs through its completion lift
 (`LyricsSweepGeometry.liftEndMs`), so the loop stays awake until the word is seated, and each row's
