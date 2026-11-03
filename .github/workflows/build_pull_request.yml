@@ -21,7 +21,10 @@ concurrency:
 
 jobs:
   build:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Public repo: fork pull requests cannot reach Blacksmith runners and must not burn the org's
+    # minutes, so they run on GitHub-hosted Ubuntu instead. Same-repo PRs and dev pushes stay on
+    # Blacksmith (github.event.pull_request is empty there, so the label falls through).
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -142,7 +145,8 @@ jobs:
   # The desktop host compiles in its own job so a mid-flight desktopApp breakage reports
   # itself without blocking the Android assemble/lint signal.
   desktop-compile:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Same fork routing as the build job: fork pull requests use the free GitHub-hosted pool.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
 
     steps:
       - uses: actions/checkout@v7
