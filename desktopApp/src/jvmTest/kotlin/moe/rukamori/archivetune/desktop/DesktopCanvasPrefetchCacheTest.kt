@@ -40,7 +40,7 @@ class DesktopCanvasPrefetchCacheTest {
         val signedOut = listOf<Any?>(true, "ALL", null)
         cache.retainProbe(signedOut)
         assertEquals(0, cache.size())
-        assertNull(cache.take("a", probe) { true })
+        assertNull(cache.take("a", signedOut) { true })
         // A lookahead that began under the old account cannot land after the change.
         assertFalse(cache.put(target("c"), probe))
         assertNull(cache.take("c", signedOut) { true })
