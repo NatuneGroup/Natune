@@ -210,25 +210,30 @@ internal fun IosLaneServiceSettingsPage(
                 )
                 InternetSettings(
                     controller = owners.controller,
-                    // No route is offered while running: the Darwin engine keeps the proxy it started with.
-                    activeRotationCount = 0,
+                    // The pool's validated members, for the row's "N active proxies" line.
+                    activeRotationCount = network.activeRotationCount(),
                     applyNetworkSettings = { snapshot ->
-                        // The edits are already persisted by the page. This reports the one thing it cannot do: the
-                        // running session keeps its route until the next launch.
+                        // The stream transport re-reads its route on every connection, so the saved route and
+                        // its bypass switch apply live. The engine keeps the route it was built with, and that
+                        // pinned part is what the restart notice still reports.
+                        network.applyStreamRoute(snapshot)
                         if (network.savedRouteChanged(snapshot)) {
                             onNotice(SettingsNotice.Message(Res.string.ios_services_internet_applies_next_launch))
                         }
                     },
-                    applyIpRotation = { _, _ -> 0 },
+                    applyIpRotation = { enabled, refresh -> network.applyIpRotation(enabled, refresh) },
                     testProxy = { snapshot -> network.testProxy(snapshot).toProxyConnectionResult() },
                     onFailure = onFailure,
                     scrollTo = scrollTo,
                     modifier = Modifier.weight(1f),
-                    // The Darwin engine cannot re-route a live session, and playback audio never takes the proxy, so the
-                    // stream switch does not apply. DNS-over-HTTPS has no Darwin resolver hook. The YouTube region
-                    // applies through the browse transport's session refresh and stays a restart reason like Android.
+                    // Rotation and the stream bypass apply to the stream transport's per-connection sessions:
+                    // the rotating pool sends each new playback connection through the next validated member,
+                    // while the catalogue keeps the session's pinned route. The YouTube region applies through
+                    // the browse transport's session refresh and stays a restart reason like Android.
+                    // DNS-over-HTTPS stays refused: NSURLSession exposes no DNS hook, the NetworkExtension
+                    // resolver is entitlement-bound and device-wide, and pinning IPs would break TLS SNI.
                     support = InternetSupport(
-                        rotation = false, streamBypass = false, dnsOverHttps = false, youtubeRegion = true,
+                        rotation = true, streamBypass = true, dnsOverHttps = false, youtubeRegion = true,
                     ),
                 )
             }

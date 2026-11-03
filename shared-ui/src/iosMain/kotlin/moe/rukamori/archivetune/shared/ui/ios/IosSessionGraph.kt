@@ -489,6 +489,8 @@ internal class IosSessionGraph private constructor(
             val network = IosNetworkOwner({ settings.snapshots.value }, report)
             val http = HttpClient(Darwin) { engine { network.configure(this) } }
             report(network.describe())
+            // Rotation a user left on comes back off the launch path, like the desktop owner's restore.
+            network.start(scope)
             return try {
                 assemble(
                     host, scope, settings, accounts, database, databaseDirectory, http, network, report,
