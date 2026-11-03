@@ -253,6 +253,23 @@ class StartupRecoveryPolicyTest {
         assertEquals(0, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 10_000L))
     }
 
+    @Test fun aHealthyStartThatCrashedAtRuntimeKeepsTheStreakAtOne() {
+        // The same attempt appears twice: journaled with its first-frame stamp and again from the
+        // last-start marker without one. The merged copy must not let the runtime death count, and
+        // a start that died does not prove the launch survived either — only the real startup
+        // crash remains.
+        val starts = listOf(
+            start(1_000L, 10),
+            start(6_000L, 11, healthyAtMs = 7_000L),
+            start(6_000L, 11),
+        )
+        val crashes = listOf(
+            crashRecord(timestampMs = 3_000L, versionCode = 100L, pid = 10),
+            crashRecord(timestampMs = 13_000L, versionCode = 100L, pid = 11),
+        )
+        assertEquals(1, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
     private fun start(timestampMs: Long, pid: Int, healthyAtMs: Long = 0L) =
         StartupAttempt(
             timestampMs, pid, "N20261101",
