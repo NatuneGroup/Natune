@@ -1043,7 +1043,7 @@ fun SpatialFlowPlayerContent(
                     currentSong = mediaMetadata,
                     syncedLyrics = syncedLyrics,
                     plainLyrics = plainLyrics,
-                    lyricsProvider = currentLyricsEntity?.providerName,
+                    lyricsProvider = currentLyricsEntity?.displayProviderName,
                     contentReady = lyricsContentReady,
                     backgroundBrush = lyricsBackgroundBrush,
                     artUrl = artUrl,

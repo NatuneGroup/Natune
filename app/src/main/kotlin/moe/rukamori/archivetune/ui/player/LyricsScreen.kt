@@ -281,7 +281,7 @@ fun LyricsScreen(
 
     // Read through the preference rather than inside the effect so that flipping the toggle while
     // the panel is open re-runs the fetch instead of leaving the stored lyrics untouched.
-    val (prioritizeWordSynced) = rememberPreference(PrioritizeWordSyncedLyricsKey, defaultValue = false)
+    val (prioritizeWordSynced) = rememberPreference(PrioritizeWordSyncedLyricsKey, defaultValue = true)
 
     LaunchedEffect(
         mediaMetadata.id,
@@ -774,7 +774,7 @@ fun LyricsScreen(
                                     onControlsInteraction = onControlsInteraction,
                                     foregroundColor = foregroundColor,
                                     currentFormat = currentFormat,
-                                    lyricsProviderName = currentLyrics?.providerName.orEmpty(),
+                                    lyricsProviderName = currentLyrics?.displayProviderName.orEmpty(),
                                     hasLyrics = currentLyrics != null,
                                     onOverflowClick = openLyricsMenuFromControls,
                                     onOverflowPositioned = { controlsMoreBounds = it },
@@ -823,7 +823,7 @@ fun LyricsScreen(
                         onControlsInteraction = onControlsInteraction,
                         foregroundColor = foregroundColor,
                         currentFormat = currentFormat,
-                        lyricsProviderName = currentLyrics?.providerName.orEmpty(),
+                        lyricsProviderName = currentLyrics?.displayProviderName.orEmpty(),
                         hasLyrics = currentLyrics != null,
                         onOverflowClick = openLyricsMenuFromControls,
                         onOverflowPositioned = { controlsMoreBounds = it },

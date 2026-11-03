@@ -28,8 +28,22 @@ data class LyricsEntity(
             source == Source.USER_SELECTION.value ||
             source == Source.EMBEDDED.value
 
+    /**
+     * The persisted [providerName] as the attribution label for "Lyrics from …". Provider keys
+     * are already the canonical brand labels the settings rows use — "lrc.red", "LrcLib" — so the
+     * key is shown as stored; only a stored URL collapses to its host so the chip never shows a
+     * link.
+     */
+    val displayProviderName: String
+        get() = providerDisplayName(providerName)
+
     companion object {
         const val LYRICS_NOT_FOUND = "LYRICS_NOT_FOUND"
+
+        fun providerDisplayName(providerName: String): String {
+            val raw = providerName.trim()
+            return raw.substringAfter("://", raw).substringBefore('/').removePrefix("www.").ifBlank { raw }
+        }
     }
 
     enum class Source(
