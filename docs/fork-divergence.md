@@ -47,8 +47,8 @@ They have since taken that haptics processor from here, so the skin is the only 
 `AppleMusicOnlineSearchResult` and `AppleMusicSearchViewModel` are here now, and `APPLE_MUSIC`
 joins the `SearchProvider` enum, the source picker and the settings default. This fork already had
 the other half — `AppleMusicAudioProvider`, `AppleMusicVirtualStream`, `AppleMusicPlayer`,
-`AppleMusicQueueSheet`, `AppleMusicSlider`, `AppleMusicLyricsPolicy`, `AppleMusicExperience`,
-`AppleMusicPlaylistHero` and a canvas provider — so this is the only fork with both.
+`AppleMusicQueueSheet`, `AppleMusicSlider`, `AppleMusicLyricsPolicy`, `AppleMusicExperience`
+and a canvas provider — so this is the only fork with both.
 
 ### Robustness the other fork has and we do not
 
@@ -137,12 +137,9 @@ was a scoped port, not a merge:
 - **Playlist UI, the self-contained parts**: CSV export (`9b42c9176`) and the online-playlist
   list-state fix.
 
-**Deliberately not taken**: their playlist-screen rework. On their side the six playlist screens
-render `AppleMusicPlaylistHero` with a canvas slot and a `ScreenHeaderHaze`/glass subsystem (~41
-files) *instead of* our `MediaDetailHero` (thumbnail, bookmark, download actions, its LiquidGlass
-backdrop). Swapping it is a rewrite of the library's visual language rather than a port, and it
-would take the Apple Music playlist header with it. If it is ever wanted, it is one decision —
-adopt the hero *and* the haze subsystem together, on all six screens.
+**Deliberately not taken**: their six-screen playlist rewrite and its separate hero/canvas plus
+`ScreenHeaderHaze`/glass subsystem (~41 files). This fork retained `MediaDetailHero` with artwork,
+bookmark and download actions rather than replacing the library's visual language.
 
 Also not taken: their `echo/` extraction stack (still the largest genuine gap, see above), and any
 TikTok/lyrics/AOD work, which is theirs alone.

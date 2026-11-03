@@ -33,7 +33,7 @@ fun PreferenceEditor.applyInterfaceStyle(style: InterfaceStyle) {
 }
 
 private val appleMusicSurfaceKeys =
-    listOf(AppleMusicHeadersKey, AppleMusicMenusKey, AppleMusicSearchBarKey, AppleMusicPaletteKey)
+    listOf(AppleMusicMenusKey, AppleMusicSearchBarKey, AppleMusicPaletteKey)
 
 /**
  * Materializes the old read-side overrides once, preserving the presentation of an existing install.
@@ -69,7 +69,6 @@ fun PreferenceEditor.setPlayerMenuStyle(style: PlayerMenuStyle) {
 private fun PreferenceSnapshot.appleMusicSurface(key: BooleanPreferenceKey): Boolean =
     this[key] ?: (!this[AppleMusicSettingsMigratedKey, false] && this[AppleMusicExperienceKey, false])
 
-fun PreferenceSnapshot.appleMusicHeaders(): Boolean = appleMusicSurface(AppleMusicHeadersKey)
 /**
  * The menu surface is the effective menu look rather than the raw legacy key: a fresh install renders Apple Music,
  * so its toggle and the experience indicator must read the same thing the menus render.
@@ -112,7 +111,7 @@ fun PreferenceSnapshot.interfaceStyle(): InterfaceStyle {
         selectedPlayerDesignStyle() == PlayerDesignStyle.APPLE_MUSIC,
         libraryStyle() == LibraryStyle.APPLE_MUSIC,
         selectedNavigationBarStyle() == NavigationBarStyle.APPLE_MUSIC,
-        appleMusicHeaders(), chosenMenus, appleMusicSearchBar(), appleMusicPalette(),
+        chosenMenus, appleMusicSearchBar(), appleMusicPalette(),
     )
     return when {
         surfaces.all { it } -> InterfaceStyle.APPLE_MUSIC

@@ -90,11 +90,12 @@ The Search tab's field can sit at the top (default) or float above the bottom ba
 magnifier for Material, a capsule for the independent `AppleMusicSearchBarKey` option.
 
 Only the explicit preset coordinates `PlayerDesignStyleKey`, `LibraryStyleKey`,
-`NavigationBarStyleKey`, `AppleMusicHeadersKey`, `AppleMusicMenusKey`,
-`AppleMusicSearchBarKey` and `AppleMusicPaletteKey`. Every individual control writes only its own
-piece, including animated artwork, backdrop motion, pause scaling, marquee and seek growth.
-Headers, action menus, search field and default accent have independent controls. Wallpaper,
-artwork and custom palettes still take priority over the default accent.
+`NavigationBarStyleKey`, `AppleMusicMenusKey`, `AppleMusicSearchBarKey` and `AppleMusicPaletteKey`.
+Every individual control writes only its own piece, including animated artwork, backdrop motion,
+pause scaling, marquee and seek growth. Action menus, search field and default accent have
+independent controls. Menu headers and track-information cards follow the menus option. Album
+and playlist detail pages always keep their standard artwork-backed Material hero, regardless of
+preset. Wallpaper, artwork and custom palettes still take priority over the default accent.
 
 The one-time `independent_apple_music_settings` migration materializes old experience overrides,
 including the previously forced tab bar, without replacing explicit library/player choices.

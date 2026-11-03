@@ -40,8 +40,7 @@ internal const val PLAYLIST_CANVAS_LOOKUP_TIMEOUT_MS = 30_000L
  * ViewModels rather than in the player's artwork pipeline.
  *
  * Only the Online and Top playlist pages ask for it: the two that pass the artwork to
- * `MediaDetailHero`, which loops it unless the Apple Music Experience is on — that branch swaps in
- * `AppleMusicPlaylistHero`, which has no backdrop for a canvas to sit behind. The other four
+ * `MediaDetailHero`, which loops it behind the standard artwork-backed header. The other four
  * playlist pages pass no canvas and show static artwork.
  */
 internal suspend fun fetchPlaylistCanvasArtwork(

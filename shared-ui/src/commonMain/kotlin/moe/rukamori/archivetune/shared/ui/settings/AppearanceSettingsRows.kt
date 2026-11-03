@@ -35,8 +35,6 @@ fun appearanceThemeSettingsRows(
         InterfaceStyle.APPLE_MUSIC -> Res.string.m6_apple_music
         InterfaceStyle.CUSTOM -> Res.string.m6_interface_custom_mixed
     }))
-    add(SettingsRow.Toggle("apple_music_headers", Res.string.m6_apple_music_headers, AppleMusicHeadersKey, false,
-        description = Res.string.m6_apple_music_independent_desc, read = { it.appleMusicHeaders() }))
     add(SettingsRow.Toggle("apple_music_menus", Res.string.m6_apple_music_menus, AppleMusicMenusKey, false,
         description = Res.string.m6_apple_music_independent_desc, read = { it.appleMusicMenus() }))
     add(SettingsRow.Toggle("apple_music_search_bar", Res.string.m6_apple_music_search_bar, AppleMusicSearchBarKey, false,

@@ -18,7 +18,6 @@ import moe.rukamori.archivetune.ui.component.rememberPlayerMenuStyleSetter
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
 
 private val appleMusicSurfaceOptions = listOf(
-    Triple("apple_music_headers", AppleMusicHeadersKey, R.string.apple_music_headers),
     Triple("apple_music_menus", AppleMusicMenusKey, R.string.apple_music_menus),
     Triple("apple_music_search_bar", AppleMusicSearchBarKey, R.string.apple_music_search_bar),
     Triple("apple_music_palette", AppleMusicPaletteKey, R.string.apple_music_palette),
