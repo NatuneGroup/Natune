@@ -129,15 +129,21 @@ internal class DesktopYouTubeLibrarySync(
             parent = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PLAYLIST, browseId),
         )
         val items = mutableListOf<ContentOccurrence>()
+        // The wrapped cursor carries the request key and a running offset, so a provider token repeated at a later
+        // offset never equals itself. Repeat detection runs on the raw token after the second separator, which is
+        // the identity the provider itself returns.
         val consumed = mutableSetOf<String>()
         var continuation: String? = null
+        var rawNext: String? = null
         var requests = 0
         do {
             if (++requests > FinitePlaylistCompletion.MAX_REQUESTS) throw IncompleteFinitePlaylistException()
             val token = continuation
-            if (token != null && !consumed.add(token)) throw IncompleteFinitePlaylistException()
+            val raw = rawNext
+            if (raw != null && !consumed.add(raw)) throw IncompleteFinitePlaylistException()
             val page = content.page(request, token)
-            FinitePlaylistCompletion.validateNext(page.continuation, consumed, page.items.size, initial = requests == 1)
+            rawNext = page.continuation?.let(::rawContinuationToken)
+            FinitePlaylistCompletion.validateNext(rawNext, consumed, page.items.size, initial = requests == 1)
             items += page.items
             continuation = page.continuation
         } while (continuation != null)
@@ -241,3 +247,7 @@ internal class DesktopYouTubeLibrarySync(
 
 /** The pre-check a playlist menu reads before its sync row runs. */
 enum class DesktopPlaylistSyncGate { READY, SYNC_DISABLED, NOT_SIGNED_IN }
+
+/** The raw provider token of a wrapped continuation cursor; anything without the two separators is taken whole. */
+private fun rawContinuationToken(wrapped: String): String =
+    wrapped.split('|', limit = 3).let { if (it.size == 3) it[2] else wrapped }

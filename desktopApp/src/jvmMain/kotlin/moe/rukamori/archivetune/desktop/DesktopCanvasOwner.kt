@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -179,8 +180,9 @@ internal class DesktopCanvasOwner(
         CanvasSource.ALL -> null
     }
 
-    /** The save picker's resolved urls of the last [fetchSaveSources], keyed on the provider name. */
-    private var saveUrls: Map<String, String> = emptyMap()
+    /** The save picker's resolved urls per song: a superseded fetch only ever writes its own song's entry. */
+    private val saveUrls = LinkedHashMap<String, Map<String, String>>()
+    private var fetchJob: Job? = null
 
     /**
      * Every provider animation a save may pick, as the baseline's Save Canvas dialog listed its sources. Provider
@@ -189,6 +191,10 @@ internal class DesktopCanvasOwner(
      */
     internal suspend fun fetchSaveSources(item: ContentItem): List<Pair<CanvasSource, String>> {
         check(!closed)
+        // A new fetch supersedes the one still running for another song; the late writer can no longer
+        // overwrite the url list a different pick reads.
+        fetchJob?.cancel()
+        fetchJob = currentCoroutineContext()[Job]
         canvasBusy.value = true
         try {
             val canonical = item.canonicalSong()
@@ -211,7 +217,10 @@ internal class DesktopCanvasOwner(
                     found[provider] = url
                 }
             }
-            saveUrls = found.mapKeys { it.key.name }
+            // Results stay bound to the song they were fetched for: a superseded fetch that still lands can
+            // only write its own entry, never the one the open picker saves from.
+            saveUrls[item.ref.id] = found.mapKeys { it.key.name }
+            if (saveUrls.size > 16) saveUrls.remove(saveUrls.keys.first())
             return found.toList()
         } finally {
             canvasBusy.value = false
@@ -222,7 +231,7 @@ internal class DesktopCanvasOwner(
     internal suspend fun saveCanvas(songId: String, sourceKey: String): Boolean {
         // The picker's allowance still holds: a source switched off between the fetch and the pick saves nothing.
         val provider = CanvasSource.entries.firstOrNull { it.name == sourceKey && remoteAllowed(it) } ?: return false
-        val url = saveUrls[provider.name] ?: return false
+        val url = saveUrls[songId]?.get(provider.name) ?: return false
         val bytes = try {
             downloadDesktopCanvas(graph, url)
         } catch (cancelled: CancellationException) {
