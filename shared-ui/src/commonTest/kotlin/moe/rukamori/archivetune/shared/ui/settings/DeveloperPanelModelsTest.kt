@@ -3,7 +3,9 @@ package moe.rukamori.archivetune.shared.ui.settings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackOutputRoute
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -12,6 +14,12 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
+import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
+import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_local
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_spotify_streaming
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_telegram
+import moe.rukamori.archivetune.shared.ui.resources.m6_dev_source_youtube
 
 class DeveloperPanelModelsTest {
 
@@ -34,7 +42,7 @@ class DeveloperPanelModelsTest {
         assertEquals("abcdefghijk", stats.mediaId)
         assertEquals("A song", stats.title)
         assertEquals("An artist", stats.artists)
-        assertEquals("YouTube", stats.sourceLabel)
+        assertEquals(ContentProvider.YOUTUBE.id, stats.sourceProviderId)
         assertEquals(43_000L, stats.positionMs)
         assertEquals(90_000L, stats.bufferedPositionMs)
         assertEquals(1.25f, stats.playbackSpeed)
@@ -56,12 +64,15 @@ class DeveloperPanelModelsTest {
         assertEquals("A show", stats.artists)
     }
 
-    @Test fun sourceLabelsCoverEveryKnownProviderAndPassUnknownIdsThrough() {
-        assertEquals("Local", nerdSourceLabel(ContentProvider.LOCAL.id))
-        assertEquals("YouTube", nerdSourceLabel(ContentProvider.YOUTUBE.id))
-        assertEquals("Telegram", nerdSourceLabel(ContentProvider.TELEGRAM.id))
-        assertEquals("Spotify (streaming)", nerdSourceLabel(ContentProvider.SPOTIFY_STREAMING.id))
-        assertEquals("upstream-test", nerdSourceLabel("upstream-test"))
+    @Test fun sourceLabelsCoverKnownProvidersAndPassUnknownIdsThrough() {
+        assertEquals(Res.string.m6_dev_source_local, nerdSourceLabel(ContentProvider.LOCAL.id))
+        assertEquals(Res.string.m6_dev_source_youtube, nerdSourceLabel(ContentProvider.YOUTUBE.id))
+        assertEquals(Res.string.m6_dev_source_telegram, nerdSourceLabel(ContentProvider.TELEGRAM.id))
+        assertEquals(
+            Res.string.m6_dev_source_spotify_streaming,
+            nerdSourceLabel(ContentProvider.SPOTIFY_STREAMING.id),
+        )
+        assertNull(nerdSourceLabel("upstream-test"))
     }
 
     @Test fun bufferPercentNeedsBothFields() {
@@ -88,6 +99,24 @@ class DeveloperPanelModelsTest {
         assertEquals("A song", target?.title)
         assertEquals("An artist", target?.artists)
         assertNull(acousticTargetOf(snapshot(occurrenceId = "occ-3"), queue))
+    }
+
+    @Test fun theAcousticTargetCarriesTheResolvedSource() {
+        val queue = QueueState(
+            revision = 1,
+            entries = listOf(ContentOccurrence("occ-1", item())),
+            currentOccurrenceId = "occ-1",
+            playOrder = listOf("occ-1"),
+        )
+        val request = PlaybackRequest(
+            occurrenceId = "occ-1",
+            mediaId = "abcdefghijk",
+            locator = PlaybackLocator.Remote("https://audio.example/track", source = AudioSourceType.TIDAL),
+        )
+        val target = acousticTargetOf(snapshot(), queue, request)
+        assertEquals(AudioSourceType.TIDAL.name, target?.source)
+        // A resolved request belonging to another occurrence must not name this target's source.
+        assertNull(acousticTargetOf(snapshot(), queue, request.copy(occurrenceId = "occ-2"))?.source)
     }
 
     private fun item() = ContentItem(

@@ -370,6 +370,7 @@ internal fun DesktopDeveloperSettingsPage(
                 active = active,
                 player = graph.player,
                 queue = graph.queue.state,
+                resolved = graph.loadedRequest,
                 measure = { target -> desktopAcousticMeasurement(graph, target) },
             )
         },
