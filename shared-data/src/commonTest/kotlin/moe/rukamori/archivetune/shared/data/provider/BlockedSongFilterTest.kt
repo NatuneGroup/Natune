@@ -2,7 +2,6 @@ package moe.rukamori.archivetune.shared.data.provider
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -18,6 +17,7 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackFailure
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackPort
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
+import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
 import moe.rukamori.archivetune.shared.domain.repository.ContentCredit
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind

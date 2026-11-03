@@ -208,14 +208,7 @@ class DesktopSessionGraph internal constructor(
     // Shares the InnerTube client the browse transport signed in: home, discovery, charts, moods, browse and
     // releases all read through it, and [catalogueOwners] holds the rows each page showed so a tap can queue them.
     internal val catalogue = JvmYouTubeCatalogueTransport()
-    internal val catalogueOwners = DesktopCatalogueOwners(
-        catalogue, youtubeContent, pageOwners,
-        blockedSongRefs = {
-            moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs(
-                settings.snapshots.value?.get(moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey).orEmpty(),
-            ).toSet()
-        },
-    )
+    internal val catalogueOwners = DesktopCatalogueOwners(catalogue, youtubeContent, pageOwners)
 
     /** The one artwork loader of the window slots. It fetches over the same client as the sources and holds no other resource. */
     internal val artworkLoader = DesktopArtworkLoader(http, customArtwork, customArtworkFiles) { fileId ->
