@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
@@ -69,7 +70,7 @@ fun BottomSheetPlayer(
     }
     DisposableEffect(interaction) { onDispose { interaction.cancelPreview() } }
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val landscape=maxWidth>maxHeight
+        val landscape=isSplitPlayerViewport(maxWidth,maxHeight)
         val surfaces=playerSurfaceActivity(presentation.style,interaction.panel,interaction.fullscreenLyrics,landscape,state.active)
         // Occluded or hidden shells get a static artwork policy, so decorative blur and motion stop with their surface.
         val optical=opticalPolicy(preferences,OpticalCapabilities(blur=blurSupported,refraction=false),visible=surfaces.background)
@@ -162,3 +163,6 @@ internal fun PlayerColumn(modifier: Modifier = Modifier,content: @Composable Col
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
 }
+
+internal fun isSplitPlayerViewport(maxWidth: Dp, maxHeight: Dp): Boolean =
+    maxWidth > maxHeight || (maxWidth >= 600.dp && maxHeight >= 480.dp)
