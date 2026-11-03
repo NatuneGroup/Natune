@@ -193,8 +193,9 @@ internal class DesktopCanvasOwner(
         check(!closed)
         // A new fetch supersedes the one still running for another song; the late writer can no longer
         // overwrite the url list a different pick reads.
-        fetchJob?.cancel()
-        fetchJob = currentCoroutineContext()[Job]
+        val current = currentCoroutineContext()[Job]
+        if (fetchJob !== current) fetchJob?.cancel()
+        fetchJob = current
         canvasBusy.value = true
         try {
             val canonical = item.canonicalSong()
