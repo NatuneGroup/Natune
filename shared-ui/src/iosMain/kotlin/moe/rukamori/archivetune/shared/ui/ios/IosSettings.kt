@@ -90,6 +90,9 @@ import moe.rukamori.archivetune.shared.ui.settings.AddonDownloadUiState
 import moe.rukamori.archivetune.shared.ui.settings.AiIntegrationSettings
 import moe.rukamori.archivetune.shared.ui.settings.AiSettingsActions
 import moe.rukamori.archivetune.shared.ui.settings.DeveloperSettings
+import moe.rukamori.archivetune.shared.ui.settings.HostAcousticQualitySection
+import moe.rukamori.archivetune.shared.ui.settings.HostDiscordDebugSection
+import moe.rukamori.archivetune.shared.ui.settings.HostNerdStatsSection
 import moe.rukamori.archivetune.shared.ui.settings.IntegrationSettings
 import moe.rukamori.archivetune.shared.ui.settings.LanguagePackSettings
 import moe.rukamori.archivetune.shared.ui.settings.LyricsProviderSettings
@@ -624,7 +627,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 scrollTo = scrollTo,
                 host = host,
             )
-            "settings/misc" -> IosDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
+            "settings/misc" -> IosDeveloperSettingsPage(owners.graph, owners.controller, navigate, onFailure, scrollTo)
             "settings/language_packs" -> IosLanguagePackSettingsPage(host, owners.controller, onFailure)
             "settings/lyrics/providers" -> LyricsProviderSettings(
                 controller = owners.controller,
@@ -785,11 +788,14 @@ private fun IosListenerPresenceSection(store: ListenerPresenceStore, report: (St
 }
 
 /**
- * Settings > Misc on this host. The acoustic audit, Discord debug and nerd-stats sections need owners this host does not
- * connect, so each reports itself unavailable rather than showing an empty block.
+ * Settings > Misc on this host. The Discord card reads the presence owner's live debug state and nerd stats
+ * poll the player snapshot; this host keeps no stored audio file to parse and cannot decode for the spectral
+ * check, so the encoded-format fields and the acoustic run report themselves unavailable rather than hiding
+ * the panels.
  */
 @Composable
 private fun IosDeveloperSettingsPage(
+    graph: IosSessionGraph,
     controller: SettingsController,
     navigate: (String) -> Unit,
     onFailure: () -> Unit,
@@ -799,22 +805,26 @@ private fun IosDeveloperSettingsPage(
         controller = controller,
         navigate = navigate,
         playerAvailable = true,
-        acousticQualitySection = { IosUnavailablePanel() },
-        discordDebugSection = { IosUnavailablePanel() },
-        nerdStatsSection = { IosUnavailablePanel() },
+        acousticQualitySection = { active ->
+            HostAcousticQualitySection(
+                active = active,
+                player = graph.player,
+                queue = graph.queue.state,
+                resolved = graph.loadedRequest,
+                measure = null,
+            )
+        },
+        discordDebugSection = { HostDiscordDebugSection(graph.discord.debug, ::iosDiagnosticTime) },
+        nerdStatsSection = {
+            HostNerdStatsSection(
+                player = graph.player,
+                queue = graph.queue.state,
+                formatFor = { null },
+            )
+        },
         resumed = true,
         onFailure = onFailure,
         scrollTo = scrollTo,
-    )
-}
-
-@Composable
-private fun IosUnavailablePanel() {
-    Text(
-        stringResource(Res.string.ios_settings_feature_unavailable),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
     )
 }
 

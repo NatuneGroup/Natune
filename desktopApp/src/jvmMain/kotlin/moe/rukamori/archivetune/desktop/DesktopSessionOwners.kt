@@ -96,7 +96,7 @@ import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
-import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
+import moe.rukamori.archivetune.shared.ui.host.SponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
@@ -336,12 +336,14 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
     )
     // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
-    PodcastSponsorBlockDriver(
+    SponsorBlockDriver(
         scope = scope,
         player = player,
         queue = queue.state,
+        resolved = owner.loadedRequest,
         preferences = vault.snapshots,
         repository = KtorSponsorBlockRepository(http),
+        report = ::desktopDiagnostic,
     )
     val lastFm = DesktopLastFm(
         scope = scope,

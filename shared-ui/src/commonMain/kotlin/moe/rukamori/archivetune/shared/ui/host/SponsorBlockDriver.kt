@@ -11,12 +11,14 @@ import moe.rukamori.archivetune.shared.data.provider.SkipSegment
 import moe.rukamori.archivetune.shared.data.provider.SponsorBlockConfig
 import moe.rukamori.archivetune.shared.data.provider.SponsorBlockSegmentSource
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRequest
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.playback.SponsorBlockPlaybackPolicy
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.QueueState
+import moe.rukamori.archivetune.shared.domain.source.AudioSourceType
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SponsorBlockApiUrlKey
 import moe.rukamori.archivetune.shared.domain.settings.SponsorBlockCategoriesKey
@@ -24,17 +26,23 @@ import moe.rukamori.archivetune.shared.domain.settings.SponsorBlockEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.SponsorBlockPodcastsEnabledKey
 
 /**
- * Seeks past SponsorBlock segments in podcast episodes that play from YouTube. Songs are not handled here: the shared
- * player has no song skipping yet. The driver reads only the snapshots the player already publishes, so it adds no
- * ticker. Segment lookups are occurrence- and settings-bound child jobs, so switching tracks/accounts or disabling
- * the podcast opt-in discards an in-flight response rather than continuing to skip cached segments.
+ * Seeks past SponsorBlock segments in songs and podcast episodes that play from YouTube, the shared
+ * counterpart of the Android `SponsorBlockPlaybackController`. Songs need only the main opt-in;
+ * episodes additionally need the podcast opt-in, exactly like the Android host. The driver reads
+ * only the snapshots the player already publishes plus the request the queue last loaded, so it adds
+ * no ticker. That loaded request is what makes an item eligible: a catalog entry resolved through a
+ * non-YouTube source is never looked up or skipped, since video segments do not describe that audio.
+ * Segment lookups are occurrence- and settings-bound child jobs, so switching tracks/accounts or
+ * disabling an opt-in discards an in-flight response rather than continuing to skip cached segments.
  */
-class PodcastSponsorBlockDriver(
+class SponsorBlockDriver(
     private val scope: CoroutineScope,
     private val player: MusicPlayerController,
     private val queue: StateFlow<QueueState>,
+    private val resolved: StateFlow<PlaybackRequest?>,
     private val preferences: StateFlow<PreferenceSnapshot?>,
     private val repository: SponsorBlockSegmentSource,
+    private val report: (String) -> Unit = {},
 ) {
     private data class LookupKey(val occurrenceId: String, val generation: Long, val videoId: String, val config: SponsorBlockConfig)
     private class Loaded(val key: LookupKey, val segments: List<SkipSegment>)
@@ -46,7 +54,7 @@ class PodcastSponsorBlockDriver(
 
     // Declared after every field it reads, because the collector may run before the constructor returns.
     private val job = scope.launch {
-        combine(player.snapshot, queue, preferences, loaded) { snapshot, _, _, _ -> snapshot }
+        combine(player.snapshot, queue, preferences, resolved, loaded) { snapshot, _, _, _, _ -> snapshot }
             .collect { snapshot -> observe(snapshot) }
     }
 
@@ -73,12 +81,9 @@ class PodcastSponsorBlockDriver(
         val current = loaded.value?.takeIf { it.key == key } ?: return
         if (!snapshot.isAudioAdvancing || !snapshot.isSeekable) return
         val position = player.positionMs() ?: snapshot.positionMs
-        val segment = current.segments.firstOrNull { position >= it.startMs && position < it.endMs - SKIP_TAIL_MS }
-            ?: return
-        // Landing past the end would finish the episode early, so a segment that runs to the end plays out.
-        val duration = snapshot.durationMs
-        if (duration != null && segment.endMs >= duration - SKIP_TAIL_MS) return
+        val segment = skippableSegment(current.segments, position, snapshot.durationMs) ?: return
         if (!skippedEnds.add(segment.endMs)) return
+        report("sponsorblock: skipping ${segment.category}: ${position}ms -> ${segment.endMs}ms")
         player.seekTo(segment.endMs)
     }
 
@@ -92,24 +97,48 @@ class PodcastSponsorBlockDriver(
 
     private fun lookupKey(snapshot: PlaybackSnapshot): LookupKey? {
         val ref = queue.value.entries.firstOrNull { it.occurrenceId == snapshot.occurrenceId }?.item?.ref ?: return null
-        val config = podcastSponsorBlockConfig(ref, preferences.value) ?: return null
+        // Segments describe the audio actually loaded, not the catalog provider: the resolved source must be
+        // YouTube and the loaded media the video the lookup names, or a Tidal/Deezer render of a YouTube
+        // entry would seek with unrelated video segments. A re-resolve to another source drops the key.
+        val request = resolved.value?.takeIf { it.occurrenceId == snapshot.occurrenceId && it.mediaId == ref.id }
+            ?: return null
+        if (request.locator.source != AudioSourceType.YOUTUBE) return null
+        val config = sponsorBlockConfig(ref, preferences.value) ?: return null
         return LookupKey(snapshot.occurrenceId, snapshot.playbackGeneration, ref.id, config)
-    }
-
-    private companion object {
-        /** Too close to the end to be worth a seek, and close enough that seeking may overshoot. */
-        const val SKIP_TAIL_MS = 300L
     }
 }
 
-/** Evaluated before every lookup/skip observation, including settings changes while the episode is paused. */
-internal fun podcastSponsorBlockConfig(ref: ContentRef, prefs: PreferenceSnapshot?): SponsorBlockConfig? {
-    if (ref.kind != ContentKind.EPISODE || prefs == null) return null
+/**
+ * The segment a seek should leave from this position: the first one it is inside, minus a tail margin
+ * where a seek is not worth it. A segment that runs to the end of the track is left to play out, because
+ * landing past the end would finish the track early. A null duration cannot prove the tail, so it passes.
+ */
+internal fun skippableSegment(segments: List<SkipSegment>, positionMs: Long, durationMs: Long?): SkipSegment? {
+    val segment = segments.firstOrNull { positionMs >= it.startMs && positionMs < it.endMs - SKIP_TAIL_MS }
+        ?: return null
+    if (durationMs != null && segment.endMs >= durationMs - SKIP_TAIL_MS) return null
+    return segment
+}
+
+/** Too close to the end to be worth a seek, and close enough that seeking may overshoot. */
+private const val SKIP_TAIL_MS = 300L
+
+/**
+ * Evaluated before every lookup/skip observation, including settings changes while the track is paused.
+ * Songs and episodes are the only playable kinds; episodes additionally need the podcast opt-in.
+ */
+internal fun sponsorBlockConfig(ref: ContentRef, prefs: PreferenceSnapshot?): SponsorBlockConfig? {
+    val isPodcast = when (ref.kind) {
+        ContentKind.SONG -> false
+        ContentKind.EPISODE -> true
+        else -> return null
+    }
+    if (prefs == null) return null
     if (!SponsorBlockPlaybackPolicy.allowsLookup(
             ref.id,
             enabled = prefs[SponsorBlockEnabledKey] == true,
             podcastsEnabled = prefs[SponsorBlockPodcastsEnabledKey] == true,
-            isPodcast = true,
+            isPodcast = isPodcast,
             isLocal = ref.provider == ContentProvider.LOCAL.id,
             isYouTube = ref.provider == ContentProvider.YOUTUBE.id,
         )) return null
