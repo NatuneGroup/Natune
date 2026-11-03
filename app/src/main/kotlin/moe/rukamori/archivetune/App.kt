@@ -717,11 +717,17 @@ class App :
                 .followSslRedirects(true)
                 .build()
 
+        val memoryCache =
+            MemoryCache
+                .Builder()
+                .maxSizePercent(this, if (lowRam) 0.15 else 0.25)
+                .build()
+
         return ImageLoader
             .Builder(this)
             .components {
                 add(
-                    CorruptImageCacheInterceptor(diskCache) {
+                    CorruptImageCacheInterceptor(diskCache, memoryCache) {
                         this@App.isInternetConnected()
                     },
                 )
@@ -731,12 +737,8 @@ class App :
             }
             .crossfade(!lowRam)
             .allowHardware(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-            .memoryCache {
-                MemoryCache
-                    .Builder()
-                    .maxSizePercent(this@App, if (lowRam) 0.15 else 0.25)
-                    .build()
-            }.memoryCachePolicy(CachePolicy.ENABLED)
+            .memoryCache(memoryCache)
+            .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCache(diskCache)
             .diskCachePolicy(imageCacheConfig.policy)
             .build()
