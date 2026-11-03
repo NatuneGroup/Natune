@@ -192,7 +192,7 @@ internal class IosTempoPitchActions(private val graph: IosSessionGraph) : Player
     override fun setAodMode() = unconnected("setAodMode")
     override fun copyLinkAtCurrentPosition(url: String) = unconnected("copyLinkAtCurrentPosition")
     override fun openEqualizer() = graph.equalizer.openSheet()
-    override fun openAcousticQuality(track: PlayerQueueTrack) = graph.acoustic.openDialog(
+    override fun openAcousticQuality(track: PlayerQueueTrack) = graph.openAcousticAudit(
         AcousticAuditTarget(track.mediaId, track.title, track.artists.joinToString { it.name }),
     )
     override fun cast(track: PlayerQueueTrack) = unconnected("cast")

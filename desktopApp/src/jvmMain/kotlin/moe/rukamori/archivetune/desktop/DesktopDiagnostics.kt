@@ -388,12 +388,16 @@ private fun DesktopAcousticQualitySection(graph: DesktopSessionGraph, active: Bo
         DesktopUnavailablePanel()
         return
     }
+    // The snapshot collection keeps the audit key recomputing as the loaded request moves, so a
+    // source fallback inside the same occurrence retires the older attempt's binding.
+    val playbackSnapshot by graph.player.snapshot.collectAsState()
+    val requestKey = playbackSnapshot?.let { graph.acousticRequestKey() }.orEmpty()
     AcousticQualityPanel(
         target = AcousticAuditTarget(
             current.ref.id,
             current.title,
             current.artists.joinToString { it.name },
-            requestKey = queueState.currentOccurrenceId.orEmpty(),
+            requestKey = requestKey,
         ),
         owner = graph.acoustic,
         active = active,

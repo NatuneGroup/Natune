@@ -37,17 +37,20 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
  * decodes the first audio stream at the rate the source reports. Only a source the engine could open as a
  * plain string is auditable: ciphertext, leases and prepared views stay out, exactly like on desktop.
  */
+@OptIn(ExperimentalForeignApi::class)
 object IosAcousticProbe {
     /**
      * The bounded PCM window of [locator]'s source, or the refusal reason. The blocking read runs off the
      * caller's dispatcher; a cancelled caller asks the native read to stop, then waits for it to return
      * before the probe is destroyed, because the handle must not be freed while a read still uses it.
-     * [requestKey] is stamped onto the window so the audit owner binds the result to the exact request.
+     * [requestKey] (occurrence plus attempt identity) and [occurrenceKey] are stamped onto the window so
+     * the audit owner binds the result to the exact request and occurrence.
      */
     suspend fun window(
         locator: PlaybackLocator,
         startPositionMs: Long = 0L,
         requestKey: String = "",
+        occurrenceKey: String = "",
     ): AcousticWindow {
         if (startPositionMs < 0L) return AcousticWindow.Refused("input_unreadable")
         val source = iosProbeSourceOf(locator) ?: return AcousticWindow.Refused("no_safe_source")
@@ -65,7 +68,7 @@ object IosAcousticProbe {
                     withContext(NonCancellable) { reading.join() }
                     throw cancelled
                 }
-                decodedOf(locator, probe, samples, info, startPositionMs, requestKey)
+                decodedOf(locator, probe, samples, info, startPositionMs, requestKey, occurrenceKey)
             }
         } finally {
             ae_probe_destroy(probe)
@@ -121,6 +124,7 @@ object IosAcousticProbe {
         info: ProbeInfo,
         startPositionMs: Long,
         requestKey: String,
+        occurrenceKey: String,
     ): AcousticWindow {
         if (info.frames <= 0 || info.channels !in 1..8 || info.sampleRate <= 0) {
             return AcousticWindow.Refused("insufficient_pcm")
@@ -148,6 +152,7 @@ object IosAcousticProbe {
                 if (codec.isNullOrBlank()) add("codec_unknown")
             },
             requestKey = requestKey,
+            occurrenceKey = occurrenceKey,
         )
     }
 

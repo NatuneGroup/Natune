@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -833,12 +834,17 @@ private fun IosAcousticQualitySection(graph: IosSessionGraph, active: Boolean) {
         )
         return
     }
+    // The snapshot collection keeps the audit key recomputing as the loaded request moves, so a
+    // source fallback inside the same occurrence retires the older attempt's binding.
+    val requestKey by produceState("") {
+        graph.player.snapshot.collect { value = graph.acousticRequestKey() }
+    }
     AcousticQualityPanel(
         target = AcousticAuditTarget(
             current.ref.id,
             current.title,
             current.artists.joinToString { it.name },
-            requestKey = queueState.currentOccurrenceId.orEmpty(),
+            requestKey = requestKey,
         ),
         owner = graph.acoustic,
         active = active,

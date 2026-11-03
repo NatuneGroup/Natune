@@ -511,7 +511,7 @@ internal class DesktopPlayerQueueActions(
     override fun setAodMode() = unsupported("setAodMode")
     override fun openEqualizer() = graph.equalizer.openSheet()
     override fun openAcousticQuality(track: PlayerQueueTrack) {
-        graph.acoustic.openDialog(
+        graph.openAcousticAudit(
             AcousticAuditTarget(track.mediaId, track.title, track.artists.joinToString { it.name }),
         )
     }

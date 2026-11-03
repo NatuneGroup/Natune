@@ -10,9 +10,10 @@ package moe.rukamori.archivetune.shared.domain.dsp.acoustic
  */
 
 /**
- * What an audit runs on. [mediaId] names the song; [requestKey] is the queue-request token (occurrence
- * and attempt identity) when the caller knows it, so a result decoded from a different request of the
- * same song is refused and hidden instead of shown against the wrong source.
+ * What an audit runs on. [mediaId] names the song; [requestKey] binds the audit to a source identity:
+ * a queue occurrence id, or the session graph's occurrence#attempt key which also pins the load
+ * attempt. It never carries a wildcard — an empty key refuses on the owner and never matches a stored
+ * result — and a fallback to another attempt or source retires bindings made under the older key.
  */
 data class AcousticAuditTarget(
     val mediaId: String,
@@ -44,8 +45,10 @@ data class AcousticAuditResult(
     val magnitudeDb: FloatArray,
     val assessment: AcousticAssessment,
     val limitations: List<String>,
-    /** The request token of the source this result was decoded from; surfaces bind it to the target's key. */
+    /** The decoded source's request token (occurrence plus attempt identity); surfaces never bind on it alone. */
     val requestKey: String = "",
+    /** The queue occurrence the source was decoded under; surfaces bind it to the target's key, never "". */
+    val occurrenceKey: String = "",
 )
 
 data class AcousticAuditState(
@@ -90,8 +93,10 @@ sealed interface AcousticWindow {
         val advertisedSampleRate: Int?,
         val claimedLossless: Boolean,
         val limitations: List<String> = emptyList(),
-        /** The request token of the source the window decoded; the owner binds it to the target's key. */
+        /** The decoded source's request token (occurrence plus attempt identity), e.g. "occurrence#attempt". */
         val requestKey: String = "",
+        /** The queue occurrence the source was decoded under; the owner binds it to the target's key. */
+        val occurrenceKey: String = "",
     ) : AcousticWindow
 
     /** [code] names the refusal reason for the state message; codes come from the shared string table. */

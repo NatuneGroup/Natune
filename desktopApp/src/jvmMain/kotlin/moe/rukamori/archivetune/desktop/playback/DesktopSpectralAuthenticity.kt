@@ -81,6 +81,7 @@ class DesktopSpectralAuthenticity internal constructor(
         locator: PlaybackLocator,
         startPositionMs: Long = 0L,
         requestKey: String = "",
+        occurrenceKey: String = "",
     ): AcousticWindow {
         require(startPositionMs >= 0L) { "startPositionMs must not be negative, was $startPositionMs" }
         val source = engineSourceOf(locator) ?: return AcousticWindow.Refused("no_safe_source")
@@ -115,6 +116,7 @@ class DesktopSpectralAuthenticity internal constructor(
                 if (codec == null) add("codec_unknown")
             },
             requestKey = requestKey,
+            occurrenceKey = occurrenceKey,
         )
     }
 
