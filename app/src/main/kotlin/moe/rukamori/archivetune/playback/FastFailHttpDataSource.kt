@@ -31,14 +31,21 @@ object FastFailReadPolicy {
         return false
     }
 
-    /** The spec that re-opens a stream [bytesServed] into [dataSpec] at the right byte. */
-    fun resumeDataSpec(dataSpec: DataSpec, bytesServed: Long): DataSpec {
+    /**
+     * The spec that re-opens a stream [bytesServed] into [dataSpec] at the right byte, or null
+     * when the declared range is already fully served — Media3 rejects a zero-length open, so
+     * the caller reports end-of-input instead of opening.
+     */
+    fun resumeDataSpec(dataSpec: DataSpec, bytesServed: Long): DataSpec? {
+        if (dataSpec.length != C.LENGTH_UNSET.toLong() && bytesServed >= dataSpec.length) {
+            return null
+        }
         val builder =
             dataSpec
                 .buildUpon()
                 .setPosition(dataSpec.position + bytesServed)
         if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-            builder.setLength((dataSpec.length - bytesServed).coerceAtLeast(0L))
+            builder.setLength(dataSpec.length - bytesServed)
         }
         return builder.build()
     }
@@ -59,6 +66,10 @@ internal class FastFailHttpDataSource private constructor(
     private var bytesServed = 0L
 
     override fun open(dataSpec: DataSpec): Long {
+        // Re-arm the fast attempt: a previous stream's escalation must not leak into this
+        // open — close() between opens is not guaranteed on a loader retry.
+        escalated = false
+        delegate = fast
         openedSpec = dataSpec
         bytesServed = 0L
         return try {
@@ -87,10 +98,13 @@ internal class FastFailHttpDataSource private constructor(
     private fun escalateOrThrow(e: IOException): Int {
         val spec = openedSpec
         if (escalated || !FastFailReadPolicy.shouldEscalateToSlowPath(e) || spec == null) throw e
+        // Declared range already fully served: the timeout hit at the end of the stream, so
+        // the honest answer is end-of-input — a zero-length resume open is invalid anyway.
+        val resumed = FastFailReadPolicy.resumeDataSpec(spec, bytesServed) ?: return C.RESULT_END_OF_INPUT
         escalated = true
         runCatching { fast.close() }
         delegate = slow
-        slow.open(FastFailReadPolicy.resumeDataSpec(spec, bytesServed))
+        slow.open(resumed)
         // No bytes this call: the loader retries the read against the slow stream.
         return 0
     }
