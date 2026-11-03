@@ -1,42 +1,26 @@
 package moe.rukamori.archivetune.playback
 
-import androidx.media3.common.Player
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The click-free edge rules: which commands the service re-drives and the ramp shapes. */
+/** The click-free edge rules: which transport edges earn a fade and the ramp shapes. */
 class OutputFadePolicyTest {
     @Test
-    fun pauseAndPlayCommandsAreIntercepted() {
-        assertEquals(
-            OutputFadePolicy.Intercepted.PAUSE,
-            OutputFadePolicy.interceptedCommand(Player.COMMAND_PAUSE, playWhenReady = true),
-        )
-        assertEquals(
-            OutputFadePolicy.Intercepted.PLAY,
-            OutputFadePolicy.interceptedCommand(Player.COMMAND_PLAY, playWhenReady = false),
-        )
+    fun aPauseEdgeFadesOnlyWhileOutputIsLive() {
+        // The session-facing wrapper reports PAUSE for pause() and setPlayWhenReady(false);
+        // it only crosses a boundary when playback was actually wanted.
+        assertTrue(OutputFadePolicy.hasAudibleEdge(OutputFadePolicy.Edge.PAUSE, playWhenReady = true))
+        assertFalse(OutputFadePolicy.hasAudibleEdge(OutputFadePolicy.Edge.PAUSE, playWhenReady = false))
     }
 
     @Test
-    fun theToggleFollowsTheCurrentIntent() {
-        assertEquals(
-            OutputFadePolicy.Intercepted.PAUSE,
-            OutputFadePolicy.interceptedCommand(Player.COMMAND_PLAY_PAUSE, playWhenReady = true),
-        )
-        assertEquals(
-            OutputFadePolicy.Intercepted.PLAY,
-            OutputFadePolicy.interceptedCommand(Player.COMMAND_PLAY_PAUSE, playWhenReady = false),
-        )
-    }
-
-    @Test
-    fun seeksAndStopsPassThroughUnmodified() {
-        assertNull(OutputFadePolicy.interceptedCommand(Player.COMMAND_SEEK_TO_NEXT, true))
-        assertNull(OutputFadePolicy.interceptedCommand(Player.COMMAND_STOP, true))
-        assertNull(OutputFadePolicy.interceptedCommand(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, true))
+    fun aPlayEdgeFadesOnlyWhileOutputIsMuted() {
+        // play() and setPlayWhenReady(true) only dip when the player was muted; an already
+        // live edge forwards straight through so a repeated tap never flickers the level.
+        assertTrue(OutputFadePolicy.hasAudibleEdge(OutputFadePolicy.Edge.PLAY, playWhenReady = false))
+        assertFalse(OutputFadePolicy.hasAudibleEdge(OutputFadePolicy.Edge.PLAY, playWhenReady = true))
     }
 
     @Test

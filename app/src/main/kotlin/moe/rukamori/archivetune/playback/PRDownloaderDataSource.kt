@@ -220,11 +220,29 @@ internal class PRDownloaderDataSource private constructor(
                 }
                 attemptState.cleanup()
                 // Fresh staging so a partial file can never leak into the next attempt.
-                requestDir =
+                val nextDir =
                     DownloadRequestLifetime.createDirectory(File(context.cacheDir, "prd_tmp"))
-                target = File(requestDir, safeName)
-                state = RequestState(requestDir)
-                synchronized(requestLock) { active = state }
+                val nextState = RequestState(nextDir)
+                // The swap is only legal while this attempt still owns `active` under the
+                // lock: a close() that landed while the failed attempt wound down cancelled it
+                // and cleared `active` (and a newer open() may already own it), so reviving the
+                // retry here would resurrect a cancelled download or clobber a newer request.
+                var rejected = false
+                synchronized(requestLock) {
+                    if (attemptState.cancelled || active !== attemptState) {
+                        rejected = true
+                    } else {
+                        active = nextState
+                    }
+                }
+                if (rejected) {
+                    nextState.cancel()
+                    nextState.cleanup()
+                    throw IOException("Download request closed")
+                }
+                requestDir = nextDir
+                target = File(nextDir, safeName)
+                state = nextState
             }
 
 

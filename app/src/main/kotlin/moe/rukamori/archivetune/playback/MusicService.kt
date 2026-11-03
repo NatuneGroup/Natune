@@ -904,15 +904,13 @@ class MusicService :
         )
     }
 
-    /** Runs a controller pause/play request through [outputFades] so it lands click-free. */
-    private fun handleFadedCommand(command: OutputFadePolicy.Intercepted): Boolean {
-        if (!::player.isInitialized) return false
-        when (command) {
-            OutputFadePolicy.Intercepted.PAUSE -> outputFades.fadedPause { player.pause() }
-            OutputFadePolicy.Intercepted.PLAY -> outputFades.mutedPlay { player.play() }
-        }
-        return true
-    }
+    /**
+     * Session-facing player: controller transport edges arrive as real play()/pause()/
+     * setPlayWhenReady() calls, so [OutputFadingPlayer] applies the click-free fade with the
+     * true intent while Media3 session processing stays intact. Rebuilt per promotion because
+     * the wrapped player itself is.
+     */
+    private fun sessionFacingPlayer(): Player = OutputFadingPlayer(player, outputFades)
     private var secondaryCrossfadePlayer: ExoPlayer? = null
     private var secondaryCrossfadeTarget: CrossfadeTarget? = null
     // The crossfade flag doubles as the UI's mixing signal: the flow backs the plain
@@ -1538,11 +1536,10 @@ class MusicService :
             toggleLibrary = ::toggleLibrary
             isListenTogetherGuestActive = { listenTogetherManager.isInRoom && !listenTogetherManager.isHost }
             onStopCommand = { recoveryRetry.cancelPending() }
-            onOutputFadeCommand = ::handleFadedCommand
         }
         mediaSession =
             MediaLibrarySession
-                .Builder(this, player, mediaLibrarySessionCallback)
+                .Builder(this, sessionFacingPlayer(), mediaLibrarySessionCallback)
                 .setSessionActivity(
                     PendingIntent.getActivity(
                         this,
@@ -4394,7 +4391,7 @@ class MusicService :
             incomingPlayer.addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
 
             // 4. MediaSession + observable player state.
-            mediaSession.player = player
+            mediaSession.player = sessionFacingPlayer()
             _playerFlow.value = player
             pausedPlaybackGate.sync(player)
             recoveryRetry.cancelPending()
@@ -8075,6 +8072,9 @@ class MusicService :
             )
             if (!crossfadeHandoffInProgress) {
                 cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "seek")
+                // A manual seek is a context change too: without this stamp an in-item seek
+                // into the tail lets the rescheduled crossfade start inside the guard window.
+                lastBlendContextChangeAtMs = android.os.SystemClock.elapsedRealtime()
             }
             // A seek forces a re-buffer; the BUFFERING->READY transition re-fires the reactive
             // volume pipeline (playerVolume x normalize x focus), which can pin the primary

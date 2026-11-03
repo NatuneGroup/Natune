@@ -23,7 +23,7 @@ class CrossfadeCurvePolicyTest {
         assertTrue(CrossfadePolicy.logarithmicFadeInGain(0.5f) > 0.5f)
         // Monotone across the whole fade — a step back would read as a swell.
         var lastOut = Float.MAX_VALUE
-        var lastIn = Float.MIN_VALUE
+        var lastIn = Float.NEGATIVE_INFINITY
         (0..20).forEach {
             val t = it / 20f
             val out = CrossfadePolicy.exponentialFadeOutGain(t)
