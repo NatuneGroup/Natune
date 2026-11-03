@@ -1,7 +1,6 @@
 package moe.rukamori.archivetune.playback
 
 import androidx.media3.common.C
-import androidx.media3.datasource.DataSpec
 import java.io.IOException
 import java.net.SocketTimeoutException
 import org.junit.Assert.assertEquals
@@ -39,26 +38,19 @@ class FastFailReadPolicyTest {
 
     @Test
     fun theResumeSpecContinuesAtTheServedByte() {
-        val spec =
-            DataSpec.Builder()
-                .setUri("https://example.test/audio")
-                .setPosition(0L)
-                .setLength(100L)
-                .build()
-        val resumed = FastFailReadPolicy.resumeDataSpec(spec, bytesServed = 30L)
+        val resumed = FastFailReadPolicy.resumeRange(position = 0L, length = 100L, bytesServed = 30L)
         assertEquals(30L, resumed?.position)
         assertEquals(70L, resumed?.length)
     }
 
     @Test
     fun anUnboundedSpecStaysUnboundedOnResume() {
-        val spec =
-            DataSpec.Builder()
-                .setUri("https://example.test/audio")
-                .setPosition(10L)
-                .setLength(C.LENGTH_UNSET.toLong())
-                .build()
-        val resumed = FastFailReadPolicy.resumeDataSpec(spec, bytesServed = 5L)
+        val resumed =
+            FastFailReadPolicy.resumeRange(
+                position = 10L,
+                length = C.LENGTH_UNSET.toLong(),
+                bytesServed = 5L,
+            )
         assertEquals(15L, resumed?.position)
         assertEquals(C.LENGTH_UNSET.toLong(), resumed?.length)
     }
@@ -67,25 +59,13 @@ class FastFailReadPolicyTest {
     fun aResumePastTheDeclaredEndReportsExhaustion() {
         // A zero-length open is rejected by Media3 — exhaustion comes back as null so the
         // caller reports end-of-input instead of opening.
-        val spec =
-            DataSpec.Builder()
-                .setUri("https://example.test/audio")
-                .setPosition(0L)
-                .setLength(20L)
-                .build()
-        assertNull(FastFailReadPolicy.resumeDataSpec(spec, bytesServed = 20L))
-        assertNull(FastFailReadPolicy.resumeDataSpec(spec, bytesServed = 40L))
+        assertNull(FastFailReadPolicy.resumeRange(position = 0L, length = 20L, bytesServed = 20L))
+        assertNull(FastFailReadPolicy.resumeRange(position = 0L, length = 20L, bytesServed = 40L))
     }
 
     @Test
     fun aResumeJustShortOfTheEndStaysOpen() {
-        val spec =
-            DataSpec.Builder()
-                .setUri("https://example.test/audio")
-                .setPosition(0L)
-                .setLength(20L)
-                .build()
-        val resumed = FastFailReadPolicy.resumeDataSpec(spec, bytesServed = 19L)
+        val resumed = FastFailReadPolicy.resumeRange(position = 0L, length = 20L, bytesServed = 19L)
         assertEquals(19L, resumed?.position)
         assertEquals(1L, resumed?.length)
     }
