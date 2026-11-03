@@ -152,6 +152,10 @@ internal class DesktopPlayerMenuState {
     var target: ContentItem? by mutableStateOf(null)
         private set
 
+    /** The song the save-canvas flow is bound to, kept through the menu's own dismissal. */
+    var canvasItem: ContentItem? by mutableStateOf(null)
+        private set
+
     /** The song the playlist picker is open for, kept across the picker's own dialog. */
     var playlistPick: PlayerQueueTrack? by mutableStateOf(null)
 
@@ -163,6 +167,7 @@ internal class DesktopPlayerMenuState {
 
     fun open(item: ContentItem) {
         target = item
+        canvasItem = item
     }
 
     fun dismiss() {
@@ -593,15 +598,24 @@ internal fun DesktopPlayerMenuDialog(
     canvas: DesktopCanvasOwner,
     navigate: (String) -> Unit = {},
 ) {
+    // The pick outlives the menu's dismiss, so the save state and its dialogs mount before the target check.
+    val canvasHost = remember(graph, canvas) { DesktopCanvasMenuHost(canvas) { menu.canvasItem } }
+    val canvasScope = rememberCoroutineScope()
+    val canvasSave = rememberCanvasSaveMenuState(menu.canvasItem?.ref?.id ?: "", canvasHost) { resource ->
+        canvasScope.launch { menu.canvasNotice = resource }
+    }
+    CanvasSourcePicker(canvasSave)
+    menu.canvasNotice?.let { resource ->
+        AlertDialog(
+            onDismissRequest = { menu.canvasNotice = null },
+            text = { Text(stringResource(resource)) },
+            confirmButton = { TextButton(onClick = { menu.canvasNotice = null }) { Text(DesktopStrings["ok"]) } },
+        )
+    }
     val item = menu.target ?: return
     val prefs by graph.settings.snapshots.collectAsState()
     val sleep by graph.sleepTimer.state.collectAsState()
     val actions = remember(graph, menu, navigate, canvas) { DesktopPlayerQueueActions(graph, menu, canvas, navigate) }
-    val canvasHost = remember(graph, canvas) { DesktopCanvasMenuHost(canvas, graph) }
-    val scope = rememberCoroutineScope()
-    val canvasSave = rememberCanvasSaveMenuState(item.ref.id, canvasHost) { resource ->
-        scope.launch { menu.canvasNotice = resource }
-    }
     val menuActions = remember(actions, canvasSave) {
         object : PlayerQueueMenuActions by actions {
             override fun saveCanvas(track: PlayerQueueTrack) = canvasSave.request()
@@ -698,14 +712,6 @@ internal fun DesktopPlayerMenuDialog(
         )
     }
 
-    CanvasSourcePicker(canvasSave)
-    menu.canvasNotice?.let { resource ->
-        AlertDialog(
-            onDismissRequest = { menu.canvasNotice = null },
-            text = { Text(stringResource(resource)) },
-            confirmButton = { TextButton(onClick = { menu.canvasNotice = null }) { Text(DesktopStrings["ok"]) } },
-        )
-    }
 }
 
 /**

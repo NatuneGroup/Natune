@@ -20,6 +20,9 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.ui.menu.CanvasSaveMenuHost
 import moe.rukamori.archivetune.shared.ui.menu.CanvasSaveSource
+import moe.rukamori.archivetune.shared.ui.resources.*
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 
 /**
  * The save-canvas host the shared menu mounts: the canvas owner resolves each provider's animation url and this host
@@ -28,33 +31,27 @@ import moe.rukamori.archivetune.shared.ui.menu.CanvasSaveSource
  */
 internal class DesktopCanvasMenuHost(
     private val canvas: DesktopCanvasOwner,
-    private val graph: DesktopSessionGraph,
+    private val item: () -> ContentItem?,
 ) : CanvasSaveMenuHost {
     override suspend fun fetchSources(songId: String): List<CanvasSaveSource> {
-        val item = resolveItem(songId) ?: return emptyList()
-        return canvas.fetchSaveSources(item).map { (provider) -> CanvasSaveSource(provider.name, provider.saveLabel()) }
+        // The menu's own item is the metadata source: a song that is not queued or stored still resolves.
+        val held = item()?.takeIf { it.ref.id == songId && it.ref.kind == ContentKind.SONG } ?: return emptyList()
+        return canvas.fetchSaveSources(held).map { (provider) ->
+            CanvasSaveSource(provider.name, getString(provider.saveLabel()))
+        }
     }
 
     override suspend fun save(songId: String, source: CanvasSaveSource): Boolean =
         canvas.saveCanvas(songId, source.key)
-
-    private suspend fun resolveItem(songId: String): ContentItem? =
-        graph.queue.state.value.entries
-            .firstOrNull { it.item.ref.id == songId && it.item.ref.kind == ContentKind.SONG }?.item
-            ?: try {
-                graph.library.findSong(songId, null)
-            } catch (_: Exception) {
-                null
-            }
 }
 
 /** The label the picker shows for a source, as the baseline dialog named its rows. */
-internal fun CanvasSource.saveLabel(): String = when (this) {
-    CanvasSource.BETTER_LYRICS -> "Better Lyrics"
-    CanvasSource.APPLE_MUSIC -> "Apple Music"
-    CanvasSource.TIDAL -> "Tidal"
-    CanvasSource.SPOTIFY -> "Spotify"
-    CanvasSource.ALL -> "All sources"
+internal fun CanvasSource.saveLabel(): StringResource = when (this) {
+    CanvasSource.BETTER_LYRICS -> Res.string.m6_canvas_better_lyrics
+    CanvasSource.APPLE_MUSIC -> Res.string.m6_canvas_apple_music
+    CanvasSource.TIDAL -> Res.string.m6_canvas_tidal
+    CanvasSource.SPOTIFY -> Res.string.m6_canvas_spotify
+    CanvasSource.ALL -> Res.string.m6_canvas_source_all
 }
 
 /** A downloaded canvas file kept in memory until the repository copies it, as a picked file is a source. */

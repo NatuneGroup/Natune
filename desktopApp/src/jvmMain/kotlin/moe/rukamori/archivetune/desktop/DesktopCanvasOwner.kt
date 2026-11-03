@@ -243,8 +243,12 @@ internal class DesktopCanvasOwner(
         if (!refetching.compareAndSet(false, true)) return PlayerQueueCanvasRefetchResult.ALREADY_RUNNING
         canvasBusy.value = true
         try {
-            val row = graph.queue.state.value.entries.firstOrNull { it.item.ref.id == item.ref.id }
-                ?: return PlayerQueueCanvasRefetchResult.FAILURE
+            // The canvas only ever paints under the playing row, so the refetch binds the current occurrence at
+            // resolve start: a queue advance or a duplicate elsewhere never takes its place.
+            val queue = graph.queue.state.value
+            val occurrenceId = queue.entries
+                .firstOrNull { it.occurrenceId == queue.currentOccurrenceId && it.item.ref.id == item.ref.id }
+                ?.occurrenceId ?: return PlayerQueueCanvasRefetchResult.FAILURE
             val canonical = item.canonicalSong()
             val artist = canonical.artists.firstOrNull()?.name ?: canonical.subtitle.takeIf(String::isNotBlank)
                 ?: return PlayerQueueCanvasRefetchResult.FAILURE
@@ -257,8 +261,13 @@ internal class DesktopCanvasOwner(
             }
             return if (result != null) {
                 val (uri, provider) = result
-                target.value = DesktopCanvasTarget(row.occurrenceId, uri, image = false, provider = provider)
-                PlayerQueueCanvasRefetchResult.SUCCESS
+                // A stale resolve must not paint over the track the queue advanced to.
+                if (graph.queue.state.value.currentOccurrenceId == occurrenceId) {
+                    target.value = DesktopCanvasTarget(occurrenceId, uri, image = false, provider = provider)
+                    PlayerQueueCanvasRefetchResult.SUCCESS
+                } else {
+                    PlayerQueueCanvasRefetchResult.FAILURE
+                }
             } else {
                 notice = "content_canvas_failed"
                 PlayerQueueCanvasRefetchResult.FAILURE

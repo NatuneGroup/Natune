@@ -12,6 +12,8 @@ import moe.rukamori.archivetune.shared.domain.library.AlbumSortType
 import moe.rukamori.archivetune.shared.domain.library.ArtistSortType
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.platform.AccountAdmission
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
+import moe.rukamori.archivetune.shared.domain.queue.IncompleteFinitePlaylistException
 import moe.rukamori.archivetune.shared.domain.repository.ContentAccountChanged
 import moe.rukamori.archivetune.shared.domain.repository.ContentAccountRequired
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
@@ -115,7 +117,11 @@ internal class DesktopYouTubeLibrarySync(
         }
     }
 
-    /** The linked remote playlist's complete song page, read to its end or not at all. */
+    /**
+     * The linked remote playlist's complete song page, read under the strict whole-list rule: a repeated or blank
+     * continuation, a mid-list page that answers empty or a request budget overrun all refuse the read, so a
+     * truncated remote can never replace the local rows.
+     */
     private suspend fun readRemotePlaylist(browseId: String): List<ContentOccurrence> {
         val request = ContentRequest(
             ContentProvider.YOUTUBE,
@@ -123,11 +129,15 @@ internal class DesktopYouTubeLibrarySync(
             parent = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PLAYLIST, browseId),
         )
         val items = mutableListOf<ContentOccurrence>()
+        val consumed = mutableSetOf<String>()
         var continuation: String? = null
-        var pages = 0
+        var requests = 0
         do {
-            if (++pages > MAX_LISTING_PAGES) throw IllegalStateException("Listing exceeded its page bound")
-            val page = content.page(request, continuation)
+            if (++requests > FinitePlaylistCompletion.MAX_REQUESTS) throw IncompleteFinitePlaylistException()
+            val token = continuation
+            if (token != null && !consumed.add(token)) throw IncompleteFinitePlaylistException()
+            val page = content.page(request, token)
+            FinitePlaylistCompletion.validateNext(page.continuation, consumed, page.items.size, initial = requests == 1)
             items += page.items
             continuation = page.continuation
         } while (continuation != null)

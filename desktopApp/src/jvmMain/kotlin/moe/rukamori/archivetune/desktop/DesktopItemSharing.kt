@@ -11,9 +11,23 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
+import moe.rukamori.archivetune.shared.ui.menu.MenuShareHandler
 import moe.rukamori.archivetune.shared.ui.menu.MenuSharing
 
-internal suspend fun shareDesktopItem(item: ContentItem, graph: DesktopSessionGraph, state: DesktopItemMenuState) {
+internal suspend fun shareDesktopItem(
+    item: ContentItem,
+    graph: DesktopSessionGraph,
+    state: DesktopItemMenuState,
+    sharing: MenuShareHandler,
+) {
+    // Telegram's link needs the signed-in client's lookup, which the shared handler owns; any other id keeps the
+    // catalog link, and a local file keeps the reveal.
+    if (item.ref.id.startsWith("telegram://")) {
+        if (!sharing.song(item.ref.id, isLocal = false)) {
+            state.unavailable("content_menu_telegram_share_unsupported")
+        }
+        return
+    }
     if (item.ref.provider == ContentProvider.LOCAL.id) {
         val file = graph.localMedia.localPathOf(item.ref.id)?.let { File(it) }
             ?: state.unavailable("content_menu_local_share_unavailable")

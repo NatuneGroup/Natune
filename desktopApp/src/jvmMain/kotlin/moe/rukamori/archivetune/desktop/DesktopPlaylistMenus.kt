@@ -47,11 +47,14 @@ import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportDesti
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportNaming
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTag
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompleteList
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
+import moe.rukamori.archivetune.shared.domain.queue.IncompleteFinitePlaylistException
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistSong
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
+import moe.rukamori.archivetune.shared.domain.repository.ContentQuery
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
@@ -133,12 +136,23 @@ internal class DesktopPlaylistMenuState(
          * unavailable; a provider page without one is reported, not silently ignored.
          */
         override suspend fun startPlaylistRadio(playlist: ContentRef) {
-            if (playlist.provider != ContentProvider.YOUTUBE.id || playlist.kind != ContentKind.PLAYLIST) {
+            // A synced local playlist radios its linked YouTube record; an unlinked one has no remote seed.
+            val resolved = if (playlist.provider == ContentProvider.LOCAL.id) {
+                val browseId = try {
+                    graph.library.observeLocalPlaylists().first()
+                        .firstOrNull { it.occurrence.item.ref.id == playlist.id }?.browseId
+                } catch (_: Exception) {
+                    null
+                }
+                browseId?.let { ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PLAYLIST, it) }
+                    ?: return unavailable()
+            } else playlist
+            if (resolved.provider != ContentProvider.YOUTUBE.id || resolved.kind != ContentKind.PLAYLIST) {
                 unavailable()
                 return
             }
             val endpoint = withContext(Dispatchers.IO) {
-                YouTube.playlist(playlist.id).getOrThrow().playlist.radioEndpoint
+                YouTube.playlist(resolved.id).getOrThrow().playlist.radioEndpoint
             }
             val radioPlaylistId = endpoint?.playlistId
             val radioVideoId = endpoint?.videoId
@@ -220,10 +234,12 @@ internal class DesktopPlaylistMenuState(
                 DesktopPlaylistSyncGate.READY -> Unit
             }
             val title = menu?.takeIf { it.item.ref == playlist }?.item?.title ?: playlist.id
-            val videoIds = menu?.takeIf { it.item.ref == playlist }?.complete?.songs.orEmpty()
-                .filter { it.item.item.ref.provider == ContentProvider.YOUTUBE.id &&
-                    it.item.item.ref.kind == ContentKind.SONG }
-                .map { it.videoId }
+            // The push reads the stored rows, not the menu's page: a filtered or partial snapshot pushed to the
+            // remote and then pulled back would drop the missing songs locally.
+            val videoIds = playlistVideoIds(playlist.id) ?: run {
+                message = DesktopStrings["playlist_action_failed"]
+                return
+            }
             graph.youtubeLibrarySync.syncPlaylist(playlist.id, title, videoIds)
             message = DesktopStrings["playlist_synced"]
         }
@@ -333,6 +349,42 @@ internal class DesktopPlaylistMenuState(
                 message = DesktopStrings["playlist_action_failed"]
             }
         }
+    }
+
+    /**
+     * The stored YouTube video ids of the local playlist, read unfiltered and in stored order under the strict
+     * whole-list rule. Null refuses the push when the complete list cannot be read.
+     */
+    private suspend fun playlistVideoIds(playlistId: String): List<String>? {
+        val query = ContentQuery(
+            RoomLibraryRepository.PLAYLIST_ITEMS,
+            parent = ContentRef(ContentProvider.LOCAL.id, ContentKind.PLAYLIST, playlistId),
+        )
+        val ids = mutableListOf<String>()
+        val consumed = mutableSetOf<String>()
+        var continuation: String? = null
+        var requests = 0
+        try {
+            do {
+                if (++requests > FinitePlaylistCompletion.MAX_REQUESTS) return null
+                val token = continuation
+                if (token != null && !consumed.add(token)) return null
+                val page = graph.library.page(query, token)
+                FinitePlaylistCompletion.validateNext(
+                    page.continuation, consumed, page.items.size, initial = requests == 1)
+                page.items.mapNotNullTo(ids) { occurrence ->
+                    occurrence.item.ref.takeIf {
+                        it.provider == ContentProvider.YOUTUBE.id && it.kind == ContentKind.SONG
+                    }?.id
+                }
+                continuation = page.continuation
+            } while (continuation != null)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return null
+        }
+        return ids
     }
 
     /** A row whose drag target is not a local playlist is refused with the notice. */

@@ -62,8 +62,8 @@ class DesktopDownloadMenuTest {
 
     @Test
     fun playlistDownloadRowAggregatesEverySongState() {
-        // An all-complete list reports complete, any in-flight row wins the progress label, and the remaining
-        // mixes count as partially downloaded, as the shared menu's states table does.
+        // An all-complete list reports complete, any in-flight row wins the progress label, and every other mix
+        // still reads as not fully downloaded.
         assertEquals(
             CollectionDownloadState.COMPLETED,
             desktopPlaylistDownloadState(listOf(CollectionDownloadState.COMPLETED, CollectionDownloadState.COMPLETED)),
@@ -73,7 +73,7 @@ class DesktopDownloadMenuTest {
             desktopPlaylistDownloadState(listOf(CollectionDownloadState.COMPLETED, CollectionDownloadState.IN_PROGRESS)),
         )
         assertEquals(
-            CollectionDownloadState.PARTIALLY,
+            CollectionDownloadState.NOT_DOWNLOADED,
             desktopPlaylistDownloadState(listOf(CollectionDownloadState.COMPLETED, CollectionDownloadState.NOT_DOWNLOADED)),
         )
         assertEquals(
