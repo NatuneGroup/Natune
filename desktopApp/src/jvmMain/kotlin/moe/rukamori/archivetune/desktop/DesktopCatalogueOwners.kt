@@ -11,7 +11,6 @@ import moe.rukamori.archivetune.shared.data.provider.JvmYouTubeCatalogueTranspor
 import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.provider.YouTubeEntry
 import moe.rukamori.archivetune.shared.data.provider.YouTubeShelfPage
-import moe.rukamori.archivetune.shared.data.provider.filterBlockedSongs
 import moe.rukamori.archivetune.shared.data.provider.selectYouTubeFeedChip
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
@@ -38,8 +37,6 @@ internal class DesktopCatalogueOwners(
     val catalogue: JvmYouTubeCatalogueTransport,
     val youtube: YouTubeContentRepository,
     val owners: LibraryPageOwners,
-    /** The stored song block list the recommendation feeds drop; read per feed request. */
-    val blockedSongRefs: () -> Set<moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef> = { emptySet() },
 ) {
     private val scope: CoroutineScope get() = owners.scope
 
@@ -180,9 +177,7 @@ internal class DesktopCatalogueOwners(
     val home = DesktopHomeFeed(this)
     val charts = DesktopShelfFeed(this) { catalogue.charts(it) }
     /** Discovery's SUGGESTIONS tab: the provider's suggestion feed, which is the un-filtered home feed read. */
-    val suggestions = DesktopShelfFeed(this) {
-        catalogue.home(it, null).filterBlockedSongs(blockedSongRefs())
-    }
+    val suggestions = DesktopShelfFeed(this) { catalogue.home(it, null) }
     val explore = DesktopExploreFeed(this)
     val releases = DesktopReleasesFeed(this)
 
@@ -276,9 +271,9 @@ internal class DesktopHomeFeed(private val owners: DesktopCatalogueOwners) {
         failed = false
         owners.launch {
             // Continuation reads send the token alone, as the Android feed does; the chip's params belong to
-            // first-page re-reads only.
+            // first-page re-reads only. The page keeps the raw shelves: the song block list filters at render in
+            // the home page, so an unblock restores the cached rows without a re-read.
             val page = owners.catalogue.home(if (first) null else continuation, if (first) params else null)
-                .filterBlockedSongs(owners.blockedSongRefs())
             if (gen != generation) return@launch
             if (first) {
                 shelves = page.shelves

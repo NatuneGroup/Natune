@@ -167,7 +167,8 @@ private class LoginCookies {
  * runs it. The session's configured proxy applies, so a user behind a proxy reaches the same servers as the rest of
  * the app; redirects are never followed, because each hop's answer is in its own headers — cookies, and the
  * authorisation code in a 302. Every hop fails closed: a null means "ask for a new code", never a half-signed-in
- * state. The derived client shares the engine and is never closed on its own; the graph owns that.
+ * state. The derived client shares the engine; the caller closes it when the attempt ends so a cancelled or
+ * abandoned sign-in leaks no client.
  */
 private class QqQrLoginChain(http: HttpClient, private val report: (String) -> Unit) {
     private val cookies = LoginCookies()
@@ -180,6 +181,9 @@ private class QqQrLoginChain(http: HttpClient, private val report: (String) -> U
             socketTimeoutMillis = 20_000L
         }
     }
+
+    /** Closes this attempt's derived client; the graph's engine outlives it. */
+    fun close() = client.close()
 
     /** Fetches a fresh QR code. The image is raw PNG bytes. */
     suspend fun requestChallenge(): QqQrChallenge? {
@@ -473,59 +477,63 @@ internal class IosQqMusicLoginOwner(
         val generation = accounts.begin(ProviderAccountLifecycle.QQ)
         while (true) {
             val chain = QqQrLoginChain(http, report)
-            val challenge = chain.requestChallenge()
-            if (challenge == null) {
-                loginState.value = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE)
-                return
-            }
-            val image = withContext(Dispatchers.Default) {
-                SkiaImage.makeFromEncoded(challenge.image)?.toComposeImageBitmap()
-            }
-            if (image == null) {
-                loginState.value = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE)
-                return
-            }
-            loginState.value = QqLoginUiState.Ready(image)
+            try {
+                val challenge = chain.requestChallenge()
+                if (challenge == null) {
+                    loginState.value = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE)
+                    return
+                }
+                val image = withContext(Dispatchers.Default) {
+                    SkiaImage.makeFromEncoded(challenge.image)?.toComposeImageBitmap()
+                }
+                if (image == null) {
+                    loginState.value = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE)
+                    return
+                }
+                loginState.value = QqLoginUiState.Ready(image)
 
-            var stale = false
-            val deadline = iosNowMillis() + CODE_LIFETIME_MS
-            while (iosNowMillis() < deadline) {
-                delay(POLL_INTERVAL_MS)
-                val callback = chain.poll(challenge) ?: continue
-                when (callback.status) {
-                    QqQrStatus.WAITING -> Unit
-                    QqQrStatus.SCANNED -> loginState.value = QqLoginUiState.Scanned
-                    // A stale code is not a failure: it is replaced and the user scans again.
-                    QqQrStatus.EXPIRED -> stale = true
-                    QqQrStatus.CONFIRMED -> {
-                        val login = chain.complete(callback)
-                        if (login == null) {
-                            loginState.value = QqLoginUiState.Failed(QqLoginFailure.INCOMPLETE)
+                var stale = false
+                val deadline = iosNowMillis() + CODE_LIFETIME_MS
+                while (iosNowMillis() < deadline) {
+                    delay(POLL_INTERVAL_MS)
+                    val callback = chain.poll(challenge) ?: continue
+                    when (callback.status) {
+                        QqQrStatus.WAITING -> Unit
+                        QqQrStatus.SCANNED -> loginState.value = QqLoginUiState.Scanned
+                        // A stale code is not a failure: it is replaced and the user scans again.
+                        QqQrStatus.EXPIRED -> stale = true
+                        QqQrStatus.CONFIRMED -> {
+                            val login = chain.complete(callback)
+                            if (login == null) {
+                                loginState.value = QqLoginUiState.Failed(QqLoginFailure.INCOMPLETE)
+                                return
+                            }
+                            val outcome = accounts.commitQqMusic(
+                                generation, login.uin, login.musicKey, login.nickname, login.refreshCredential,
+                            )
+                            if (outcome != ProviderSignInOutcome.Accepted) {
+                                report("QQ sign-in was not saved: $outcome")
+                                loginState.value = QqLoginUiState.Failed(QqLoginFailure.INCOMPLETE)
+                            }
                             return
                         }
-                        val outcome = accounts.commitQqMusic(
-                            generation, login.uin, login.musicKey, login.nickname, login.refreshCredential,
-                        )
-                        if (outcome != ProviderSignInOutcome.Accepted) {
-                            report("QQ sign-in was not saved: $outcome")
-                            loginState.value = QqLoginUiState.Failed(QqLoginFailure.INCOMPLETE)
+                        QqQrStatus.REFUSED -> {
+                            loginState.value = QqLoginUiState.Failed(QqLoginFailure.DECLINED)
+                            return
                         }
-                        return
+                        QqQrStatus.FAILED -> {
+                            loginState.value = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE)
+                            return
+                        }
                     }
-                    QqQrStatus.REFUSED -> {
-                        loginState.value = QqLoginUiState.Failed(QqLoginFailure.DECLINED)
-                        return
-                    }
-                    QqQrStatus.FAILED -> {
-                        loginState.value = QqLoginUiState.Failed(QqLoginFailure.UNAVAILABLE)
-                        return
-                    }
+                    if (stale) break
                 }
-                if (stale) break
-            }
-            if (!stale) {
-                loginState.value = QqLoginUiState.Failed(QqLoginFailure.TIMED_OUT)
-                return
+                if (!stale) {
+                    loginState.value = QqLoginUiState.Failed(QqLoginFailure.TIMED_OUT)
+                    return
+                }
+            } finally {
+                chain.close()
             }
         }
     }

@@ -18,6 +18,7 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.NSUserDomainMask
+import platform.Foundation.create
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.writeToFile
 
@@ -32,9 +33,9 @@ internal object IosCustomFont {
     private const val FONT_MAX_BYTES = 64L * 1024L * 1024L
     private val MAGIC = listOf(
         byteArrayOf(0x00, 0x01, 0x00, 0x00),
-        "true".toByteArray(Charsets.US_ASCII),
-        "ttcf".toByteArray(Charsets.US_ASCII),
-        "OTTO".toByteArray(Charsets.US_ASCII),
+        "true".encodeToByteArray(),
+        "ttcf".encodeToByteArray(),
+        "OTTO".encodeToByteArray(),
     )
 
     private fun directory(): String {

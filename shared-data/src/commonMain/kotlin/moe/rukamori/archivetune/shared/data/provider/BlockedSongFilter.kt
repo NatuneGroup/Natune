@@ -22,7 +22,10 @@ fun YouTubeShelf.filterBlockedSongs(blocked: Set<BlockedSongRef>): YouTubeShelf 
     if (blocked.isEmpty()) this else copy(entries = entries.filterBlockedSongs(blocked))
 
 /** A shelf whose every entry was blocked leaves the feed, as the Android browse result drops its empty sections. */
-fun YouTubeShelfPage.filterBlockedSongs(blocked: Set<BlockedSongRef>): YouTubeShelfPage {
+fun List<YouTubeShelf>.filterBlockedSongs(blocked: Set<BlockedSongRef>): List<YouTubeShelf> {
     if (blocked.isEmpty()) return this
-    return copy(shelves = shelves.map { it.filterBlockedSongs(blocked) }.filter { it.entries.isNotEmpty() })
+    return map { it.filterBlockedSongs(blocked) }.filter { it.entries.isNotEmpty() }
 }
+
+fun YouTubeShelfPage.filterBlockedSongs(blocked: Set<BlockedSongRef>): YouTubeShelfPage =
+    if (blocked.isEmpty()) this else copy(shelves = shelves.filterBlockedSongs(blocked))
