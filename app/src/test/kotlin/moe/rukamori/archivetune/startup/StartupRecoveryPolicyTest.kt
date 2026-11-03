@@ -212,8 +212,52 @@ class StartupRecoveryPolicyTest {
         assertEquals(1, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
     }
 
-    private fun start(timestampMs: Long, pid: Int) =
-        StartupAttempt(timestampMs, pid, "N20261101", versionCode = 100L, installedSinceMs = 1_000L)
+    @Test fun anAcknowledgedCrashLoopStaysQuietWhenClosedAndReopened() {
+        // Closing the screen acknowledges through the newest listed record; on reopen the same
+        // evidence must not re-evaluate into a loop while the new attempt is inside its window.
+        val starts = listOf(start(1_000L, 10), start(6_000L, 11), start(9_500L, 12))
+        val crashes = listOf(
+            crashRecord(timestampMs = 5_000L, versionCode = 100L, pid = 10),
+            crashRecord(timestampMs = 9_000L, versionCode = 100L, pid = 11),
+        )
+        assertEquals(2, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 10_000L))
+        assertEquals(
+            0,
+            consecutiveStartupCrashes(
+                starts, crashes, install(), nowMs = 10_000L, acknowledgedThroughMs = 9_000L,
+            ),
+        )
+    }
+
+    @Test fun aRuntimeCrashOfAJournaledHealthyStartDoesNotCount() {
+        // The first frame ended startup; a death still inside the wall-clock window is a runtime
+        // crash, so the start that journaled its frame matches nothing.
+        val starts = listOf(
+            start(1_000L, 10, healthyAtMs = 3_000L),
+            start(50_000L, 11, healthyAtMs = 52_000L),
+        )
+        val crashes = listOf(crashRecord(timestampMs = 8_000L, versionCode = 100L, pid = 10))
+        assertEquals(0, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 100_000L))
+    }
+
+    @Test fun aJournaledFirstFrameCompletesTheNewestStartInsideItsWindow() {
+        // Without the journal stamp the newest attempt would still be "inside its window" and the
+        // two older startup crashes would keep the gate armed; the stamped frame ends the streak.
+        val starts = listOf(
+            start(1_000L, 10), start(6_000L, 11), start(9_500L, 12, healthyAtMs = 9_900L),
+        )
+        val crashes = listOf(
+            crashRecord(timestampMs = 5_000L, versionCode = 100L, pid = 10),
+            crashRecord(timestampMs = 9_000L, versionCode = 100L, pid = 11),
+        )
+        assertEquals(0, consecutiveStartupCrashes(starts, crashes, install(), nowMs = 10_000L))
+    }
+
+    private fun start(timestampMs: Long, pid: Int, healthyAtMs: Long = 0L) =
+        StartupAttempt(
+            timestampMs, pid, "N20261101",
+            versionCode = 100L, installedSinceMs = 1_000L, healthyAtMs = healthyAtMs,
+        )
 
     private fun install(
         installedSinceMs: Long = 1_000L,

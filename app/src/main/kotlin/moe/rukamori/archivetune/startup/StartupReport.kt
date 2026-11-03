@@ -45,11 +45,15 @@ internal fun previousLaunchReport(context: Context): StartupReport? {
     val historyUnavailable = importCrashRecords(context, store)
     val records = store.listRecords()
     val starts = (store.recentStarts() + listOfNotNull(freshPending, last)).distinct()
+    // Records at or before the acknowledged attempt were already shown and dismissed; only newer
+    // evidence can re-arm the gate, or closing the screen would never stick across a reopen.
+    val reviewed = store.acknowledgedThrough()
     val consecutive = consecutiveStartupCrashes(
         starts = starts,
         crashes = records,
         install = install,
         nowMs = System.currentTimeMillis(),
+        acknowledgedThroughMs = reviewed,
     )
     if (consecutive < REQUIRED_CONSECUTIVE_CRASHES) {
         // A leftover marker only proves a dead process — a swipe-away, force-stop, reboot, update or
@@ -60,7 +64,6 @@ internal fun previousLaunchReport(context: Context): StartupReport? {
         return null
     }
 
-    val reviewed = store.acknowledgedThrough()
     val since = reportSince(last?.timestampMs, reviewed)
     val listed = records.filter { it.timestampMs > since }
     val text = buildString {
