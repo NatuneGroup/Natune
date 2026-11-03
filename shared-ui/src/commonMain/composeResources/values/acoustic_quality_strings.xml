@@ -43,6 +43,7 @@
     <string name="m6aq_code_current_source_unavailable">The current stream can\'t be read, and no other copy was used instead.</string>
     <string name="m6aq_code_no_safe_source">No saved copy or readable stream of this song is available.</string>
     <string name="m6aq_code_remote_unsupported">This kind of stream can\'t be checked.</string>
+    <string name="m6aq_code_remote_proxy_unsupported">Streams can\'t be checked while a proxy or IP rotation is on, because the check would connect without it. Saved copies can still be checked.</string>
     <string name="m6aq_code_codec_unknown">Unknown audio format.</string>
     <string name="m6aq_code_insufficient_pcm">Too little audio to check.</string>
 </resources>
