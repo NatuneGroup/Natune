@@ -36,6 +36,10 @@ struct at_audio_output {
     std::shared_ptr<output_gate> gate; // Asynchronous callbacks capture this gate, never the output itself.
     AVAudioEngine *__strong graph = nil;
     AVAudioSourceNode *__strong source = nil;
+    /* In-graph tone units between the source and the mixer: pitch shift, then the parametric equalizer. Tempo
+     * stays engine-side; these change only the rendered signal, never decoder position or the manual pull. */
+    AVAudioUnitTimePitch *__strong time_pitch = nil;
+    AVAudioUnitEQ *__strong equalizer = nil;
     id __strong interruption = nil;
     id __strong route = nil;
     id __strong reset = nil;
@@ -222,8 +226,22 @@ at_audio_output *at_audio_create(char *error, size_t error_len) {
         *silent = decoded == 0;
         return noErr;
     }];
+    p->time_pitch = [[AVAudioUnitTimePitch alloc] init];
+    p->time_pitch.rate = 1.0f; // Tempo stays in the portable engine; this unit shifts pitch only.
+    p->equalizer = [[AVAudioUnitEQ alloc] initWithNumberOfBands:AT_AUDIO_EQ_MAX_BANDS];
+    for (AVAudioUnitEQFilterParameters *band in p->equalizer.bands) {
+        band.filterType = AVAudioUnitEQFilterTypeParametric;
+        band.frequency = 1000.0f;
+        band.bandwidth = 1.0f;
+        band.gain = 0.0f;
+        band.bypass = YES; // No band colors the signal until at_audio_equalizer enables it.
+    }
     [p->graph attachNode:p->source];
-    [p->graph connect:p->source to:p->graph.mainMixerNode format:format];
+    [p->graph attachNode:p->time_pitch];
+    [p->graph attachNode:p->equalizer];
+    [p->graph connect:p->source to:p->time_pitch format:format];
+    [p->graph connect:p->time_pitch to:p->equalizer format:format];
+    [p->graph connect:p->equalizer to:p->graph.mainMixerNode format:format];
     [p->graph prepare];
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     p->interruption = [center addObserverForName:AVAudioSessionInterruptionNotification object:nil
@@ -303,6 +321,8 @@ void at_audio_destroy(at_audio_output *p) {
     [p->graph stop];        // Stops new render cycles; an in-flight one is drained below.
     [p->graph detachNode:p->source];
     p->source = nil;
+    p->time_pitch = nil;
+    p->equalizer = nil;
     p->graph = nil;
     // The node owns the render block that holds p, so it must deallocate as well as leave its render
     // call. Only this main-thread caller waits; the callback never blocks. A bound that is exceeded keeps
@@ -358,6 +378,44 @@ void at_audio_pause(at_audio_output *p) {
 }
 void at_audio_seek(at_audio_output *p, uint64_t position) { require_main(); ae_engine_seek(p->core, position); }
 void at_audio_speed(at_audio_output *p, float speed) { require_main(); ae_engine_set_speed(p->core, speed); }
+static float clamped(float value, float low, float high) {
+    if (!(value >= low)) return low; // Also rejects NaN, matching the volume clamp.
+    if (value > high) return high;
+    return value;
+}
+void at_audio_pitch(at_audio_output *p, float cents) {
+    require_main();
+    p->time_pitch.pitch = clamped(cents, -2400.0f, 2400.0f);
+}
+void at_audio_equalizer(at_audio_output *p, const at_eq_band *bands, uint32_t count, int enabled) {
+    require_main();
+    if (!p->equalizer) return;
+    NSArray<AVAudioUnitEQFilterParameters *> *units = p->equalizer.bands;
+    const uint32_t applied = (uint32_t)std::min((NSUInteger)count, units.count);
+    for (uint32_t i = 0; i < units.count; ++i) {
+        AVAudioUnitEQFilterParameters *unit = units[i];
+        if (i >= applied) {
+            unit.bypass = YES;
+            continue;
+        }
+        const at_eq_band band = bands[i];
+        unit.frequency = clamped(band.frequency_hz, 20.0f, 23900.0f);
+        unit.bandwidth = clamped(band.bandwidth_octaves, 0.05f, 5.0f);
+        unit.gain = clamped(band.gain_db, -24.0f, 24.0f);
+        switch (band.type) {
+            case AT_EQ_LOW_SHELF:
+                unit.filterType = AVAudioUnitEQFilterTypeLowShelf;
+                break;
+            case AT_EQ_HIGH_SHELF:
+                unit.filterType = AVAudioUnitEQFilterTypeHighShelf;
+                break;
+            default:
+                unit.filterType = AVAudioUnitEQFilterTypeParametric;
+                break;
+        }
+        unit.bypass = enabled == 0;
+    }
+}
 void at_audio_volume(at_audio_output *p, float volume) {
     require_main();
     if (!(volume >= 0.0f)) volume = 0.0f;

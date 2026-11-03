@@ -16,6 +16,8 @@ import moe.rukamori.archivetune.shared.data.playback.EnginePlaybackState
 import moe.rukamori.archivetune.shared.data.playback.PlaybackProgressWatchdog
 import moe.rukamori.archivetune.shared.data.playback.outputLatencyMillis
 import moe.rukamori.archivetune.shared.data.stream.nativePlaintext
+import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
+import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.playback.*
@@ -59,6 +61,12 @@ class IosPlaybackPort : PlaybackPort {
     // Main-queue only. The tempo every output loads with: a SetSpeed that finds no live output is held
     // here instead of being dropped, and outputForLoad applies it to whatever it creates or recreates.
     private var desiredSpeed = 1f
+
+    // Main-queue only. The pitch and equalizer tone every output loads with, applied like [desiredSpeed]. The
+    // native units keep their parameters across manual output, so the tone survives a blend and its promotion.
+    private var desiredPitchCents = 0f
+    private var equalizerEnabled = false
+    private var equalizerBands: List<IosEqBand> = emptyList()
 
     // Main-queue state for host-prepared audio. Every Load, Stop and preparation advances [ticket]. A preparation whose
     // ticket no longer matches when it returns is discarded with its transport, so a superseded occurrence never plays.
@@ -397,9 +405,14 @@ class IosPlaybackPort : PlaybackPort {
                 desiredSpeed = command.speed
                 blend?.setSpeed(command.speed) ?: output?.let { at_audio_speed(it, command.speed) }
             }
-            // ae_engine only exposes an atempo stage (tempo without pitch shift), so a pitch
-            // multiplier cannot be applied here; the command is rejected instead of no-opping.
-            is PlaybackCommand.SetPitch -> fail(PlaybackFailureReason.OUTPUT_FAILED)
+            is PlaybackCommand.SetPitch -> {
+                handoffEpoch++
+                // An invalid multiplier cannot reach the unit; it stays unshifted instead.
+                desiredPitchCents = if (command.pitch.isFinite() && command.pitch > 0f) {
+                    PitchConversion.multiplierToCents(command.pitch.toDouble()).toFloat()
+                } else 0f
+                blend?.setPitch(desiredPitchCents) ?: output?.let { at_audio_pitch(it, desiredPitchCents) }
+            }
             PlaybackCommand.Stop -> {
                 supersede()
                 stop()
@@ -680,8 +693,35 @@ class IosPlaybackPort : PlaybackPort {
             output = it
             at_audio_volume(it, volume)
             at_audio_speed(it, desiredSpeed)
+            at_audio_pitch(it, desiredPitchCents)
+            applyEqualizer(it)
         }
     }
+
+    /**
+     * Applies the shared equalizer tone on every live output and any created or recreated later, like [setVolume].
+     * iOS renders the bands through each output's in-graph unit; the shared band list is converted once per call.
+     */
+    fun setEqualizer(enabled: Boolean, bands: List<EqualizerBand>) {
+        scope.launch {
+            if (closed) return@launch
+            equalizerEnabled = enabled
+            equalizerBands = bands.toIosEqBands()
+            output?.let { applyEqualizer(it) }
+            blend?.setEqualizer(enabled, equalizerBands)
+        }
+    }
+
+    /**
+     * The request the engine currently has loaded, for bounded off-queue reads such as the acoustic audit.
+     * Null while nothing is loaded or the port is closed; the read never mutates the command loop.
+     */
+    suspend fun currentRequest(): PlaybackRequest? =
+        runCatching { withContext(scope.coroutineContext) { request.takeUnless { closed } } }.getOrNull()
+
+    /** Packs the stored equalizer bands into the native ABI and applies them to [native]. */
+    private fun applyEqualizer(native: CPointer<at_audio_output>) =
+        applyIosEqualizer(native, equalizerBands, equalizerEnabled)
 
     /** Returns true while the engine plays or buffers, the states whose position and failure reads must stay prompt. */
     private fun observe(): Boolean {
@@ -704,6 +744,8 @@ class IosPlaybackPort : PlaybackPort {
                 stallWatchdog.reset()
                 at_audio_volume(incoming.output, volume)
                 at_audio_speed(incoming.output, desiredSpeed)
+                at_audio_pitch(incoming.output, desiredPitchCents)
+                applyEqualizer(incoming.output)
                 mapper.beginRequest(incoming.request, incoming.generation)
             }
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true

@@ -46,7 +46,9 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueController
+import moe.rukamori.archivetune.desktop.playback.acousticWindow
 import moe.rukamori.archivetune.shared.domain.customartwork.CustomArtworkFiles
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
@@ -240,6 +242,15 @@ class DesktopSessionGraph internal constructor(
      * [settings].
      */
     internal val equalizer = DesktopEqualizer(scope = scope, settings = settings, playback = playback)
+
+    /**
+     * The one acoustic audit owner of this process. Its decode runs through [playback], so the audit
+     * reads the same current source the player does, and [DesktopPlayerMenuDialog] plus the developer
+     * page both show its one state.
+     */
+    internal val acoustic = AcousticAuditOwner(scope) { target, checkActive ->
+        playback.acousticWindow(target, checkActive)
+    }
 
     /**
      * The one pause-on-device-mute driver of this process: the stored option over the observed output

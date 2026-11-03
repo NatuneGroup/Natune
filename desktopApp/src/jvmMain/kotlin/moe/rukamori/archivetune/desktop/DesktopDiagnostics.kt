@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.awt.EventQueue
@@ -31,6 +34,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
+import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityPanel
 import moe.rukamori.archivetune.shared.data.diagnostics.JvmDiagnosticLogFiles
 import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
 import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogKind
@@ -341,11 +346,13 @@ internal fun DesktopDiagnosticLogPage(settings: SettingsStore, navigation: Shell
 }
 
 /**
- * Settings > Developer. The acoustic graph, the Discord debug lines and nerd stats read the Android playback service,
- * which the desktop engine does not have, so each panel says it is not available instead of showing nothing.
+ * Settings > Developer. The acoustic audit mounts the shared panel over the queue's current song, through
+ * the graph's audit owner. The Discord debug lines and nerd stats read the Android playback service, which
+ * the desktop engine does not have, so those panels say they are not available instead of showing nothing.
  */
 @Composable
 internal fun DesktopDeveloperSettingsPage(
+    graph: DesktopSessionGraph,
     controller: SettingsController,
     navigate: (String) -> Unit,
     onFailure: () -> Unit,
@@ -355,12 +362,41 @@ internal fun DesktopDeveloperSettingsPage(
         controller = controller,
         navigate = navigate,
         playerAvailable = true,
-        acousticQualitySection = { DesktopUnavailablePanel() },
+        acousticQualitySection = { active -> DesktopAcousticQualitySection(graph, active) },
         discordDebugSection = { DesktopUnavailablePanel() },
         nerdStatsSection = { DesktopUnavailablePanel() },
         resumed = true,
         onFailure = onFailure,
         scrollTo = scrollTo,
+    )
+}
+
+/**
+ * The developer-page acoustic section: the shared audit panel of the queue's current song, or the
+ * unavailable note while nothing is loaded. Leaving or hiding the section cancels a run in flight.
+ */
+@Composable
+private fun DesktopAcousticQualitySection(graph: DesktopSessionGraph, active: Boolean) {
+    val queueState by graph.queue.state.collectAsState()
+    val current = queueState.currentOccurrenceId
+        ?.let { id -> queueState.entries.firstOrNull { it.occurrenceId == id }?.item }
+    DisposableEffect(graph.acoustic, active) {
+        graph.acoustic.setActive(active)
+        onDispose { graph.acoustic.setActive(false) }
+    }
+    if (current == null) {
+        DesktopUnavailablePanel()
+        return
+    }
+    AcousticQualityPanel(
+        target = AcousticAuditTarget(
+            current.ref.id,
+            current.title,
+            current.artists.joinToString { it.name },
+        ),
+        owner = graph.acoustic,
+        active = active,
+        modifier = Modifier.padding(horizontal = 16.dp),
     )
 }
 
