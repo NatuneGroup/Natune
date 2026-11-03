@@ -20,7 +20,10 @@ concurrency:
 
 jobs:
   emulator-qa:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Public repo: fork pull requests cannot reach Blacksmith runners and must not burn the org's
+    # minutes, so they run on GitHub-hosted Ubuntu (its standard runners still expose /dev/kvm, so
+    # the KVM probe below keeps working there). Same-repo PRs and dispatches stay on Blacksmith.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 60
     env:
       ANDROID_AVD_HOME: /home/runner/.android/avd
