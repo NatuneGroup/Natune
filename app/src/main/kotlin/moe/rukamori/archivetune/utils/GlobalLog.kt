@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.utils
 
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,10 +63,12 @@ object GlobalLog {
         tag: String?,
         message: String,
     ) {
-        // In release builds verbose/debug entries are dropped at the door: R8 strips
-        // Timber.v/d and Log.v/d calls, so the only DEBUG lines arriving here come from
-        // provider logger bridges (Spotify, Paxsenix). Skipping them avoids paying the
-        // redaction regexes and buffer churn nobody can see anyway.
+        // In release builds verbose/debug entries are dropped at the door: Timber.v/d
+        // never reach this method because GlobalLogTree.isLoggable rejects them before
+        // Timber formats the message (only raw Log.v/d calls are R8-stripped), so the
+        // DEBUG lines arriving here come from provider logger bridges (Spotify,
+        // Paxsenix). Skipping them avoids paying the redaction regexes and buffer
+        // churn nobody can see anyway.
         if (!BuildConfig.DEBUG && level < Log.INFO) return
         val entry = LogEntry(System.currentTimeMillis(), level, tag, DiagnosticRedaction.redact(message))
         if (buffer.size >= MAX_ENTRIES) {
@@ -148,9 +151,9 @@ object GlobalLog {
  * Timber Tree that forwards logs to GlobalLog. In debug builds a real
  * [Timber.DebugTree] is also planted and owns logcat; this tree only feeds the
  * in-memory viewer. In release builds this is the only planted tree: isLoggable
- * drops verbose/debug lines before Timber formats the message (and R8 removes
- * untagged Timber.v/d calls entirely), while info-and-up lines are forwarded to
- * logcat so the persistent capture still records warnings for crash reports.
+ * drops verbose/debug lines before Timber formats the message, while info-and-up
+ * lines are forwarded to logcat so the persistent capture still records warnings
+ * for crash reports.
  */
 class GlobalLogTree : Timber.Tree() {
     override fun isLoggable(
@@ -165,13 +168,83 @@ class GlobalLogTree : Timber.Tree() {
         t: Throwable?,
     ) {
         try {
+            // log() only runs after Timber's isLoggable check passed, so dropped
+            // debug/verbose calls never pay for the stack walk below. One
+            // effective tag feeds both sinks so the in-app viewer and logcat
+            // agree on it (the viewer dedupes captured lines by tag): the
+            // explicit tag, else the caller class like DebugTree computes, else
+            // a fixed fallback name.
+            val effectiveTag = tag ?: inferCallerTag() ?: "ArchiveTune"
             val final = if (t != null) "$message\n$t" else message
-            GlobalLog.append(priority, tag, final)
+            GlobalLog.append(priority, effectiveTag, final)
             if (!BuildConfig.DEBUG) {
-                Log.println(priority, tag ?: "ArchiveTune", final)
+                printlnChunked(priority, effectiveTag, final)
             }
         } catch (_: Exception) {
             // swallow
         }
+    }
+
+    /**
+     * Caller tag, computed the way [Timber.DebugTree] does it: first stack frame
+     * outside Timber (and this tree), reduced to the simple class name with
+     * anonymous-class suffixes stripped and the pre-API-26 length cap applied.
+     * Scanning frames instead of DebugTree's fixed index 5 keeps working if R8
+     * inlines or merges Timber's internal frames in release builds.
+     */
+    private fun inferCallerTag(): String? {
+        val self = GlobalLogTree::class.java.name
+        for (element in Throwable().stackTrace) {
+            val className = element.className
+            if (className == self ||
+                className.startsWith("$self$") ||
+                className.startsWith("timber.log.")
+            ) {
+                continue
+            }
+            var tag = className.replace(ANONYMOUS_CLASS, "")
+            tag = tag.substring(tag.lastIndexOf('.') + 1)
+            return if (tag.length <= MAX_TAG_LENGTH || Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                tag
+            } else {
+                tag.substring(0, MAX_TAG_LENGTH)
+            }
+        }
+        return null
+    }
+
+    /**
+     * Same splitting [Timber.DebugTree] applies: logcat drops whatever exceeds
+     * ~4 KB per call, so an unchunked multi-KB stack trace would be truncated in
+     * the persistent capture. Split at newlines where possible so every emitted
+     * line stays under the limit.
+     */
+    private fun printlnChunked(
+        priority: Int,
+        tag: String,
+        message: String,
+    ) {
+        if (message.length < MAX_LOG_LENGTH) {
+            Log.println(priority, tag, message)
+            return
+        }
+        val length = message.length
+        var i = 0
+        while (i < length) {
+            var newline = message.indexOf('\n', i)
+            if (newline == -1) newline = length
+            do {
+                val end = minOf(newline, i + MAX_LOG_LENGTH)
+                Log.println(priority, tag, message.substring(i, end))
+                i = end
+            } while (end < newline)
+            i++
+        }
+    }
+
+    private companion object {
+        const val MAX_LOG_LENGTH = 4000
+        const val MAX_TAG_LENGTH = 23
+        val ANONYMOUS_CLASS = Regex("(\\$\\d+)+$")
     }
 }
