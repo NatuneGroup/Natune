@@ -111,7 +111,7 @@ internal class IosYouTubeLibrarySync(private val graph: IosSessionGraph) {
             val admission = admitted() ?: return
             step("liked songs") { syncLikedSongs(admission, authoritative) }
             step("liked albums") { syncLikedAlbums(admission, authoritative) }
-            step("artist subscriptions") { syncArtists(admission) }
+            step("artist subscriptions") { syncArtists(admission, authoritative) }
             step("saved playlists") { syncSavedPlaylists(admission) }
         } finally {
             mutex.unlock()
@@ -170,11 +170,21 @@ internal class IosYouTubeLibrarySync(private val graph: IosSessionGraph) {
                 }
             val linked = existing?.browseId
             if (linked == null) {
+                val localOccurrences = readLocalPlaylistOccurrences(playlistId)
+                val initialVideoIds = localOccurrences.mapNotNull { occ ->
+                    occ.item.ref.takeIf { it.provider == ContentProvider.YOUTUBE.id && it.kind == ContentKind.SONG }?.id
+                }.ifEmpty { addedVideoIds }
                 val browseId = transport.createPlaylist(title)
                 fence(admission)
-                transport.addSongsToPlaylist(browseId, addedVideoIds)
+                if (initialVideoIds.isNotEmpty()) {
+                    transport.addSongsToPlaylist(browseId, initialVideoIds)
+                }
                 fence(admission)
-                graph.library.setPlaylistRemote(playlistId, browseId, existing?.songCount ?: addedVideoIds.size)
+                graph.library.setPlaylistRemote(
+                    playlistId,
+                    browseId,
+                    localOccurrences.size.takeIf { it > 0 } ?: initialVideoIds.size,
+                )
             } else {
                 transport.addSongsToPlaylist(linked, addedVideoIds)
                 fence(admission)
@@ -182,6 +192,32 @@ internal class IosYouTubeLibrarySync(private val graph: IosSessionGraph) {
             }
         } finally {
             mutex.unlock()
+        }
+    }
+
+    internal suspend fun readLocalPlaylistOccurrences(playlistId: String): List<ContentOccurrence> {
+        val query = ContentQuery(
+            RoomLibraryRepository.PLAYLIST_ITEMS,
+            parent = ContentRef(ContentProvider.LOCAL.id, ContentKind.PLAYLIST, playlistId),
+        )
+        val items = mutableListOf<ContentOccurrence>()
+        val consumed = mutableSetOf<String>()
+        var token: String? = null
+        var requests = 0
+        while (true) {
+            if (++requests > FinitePlaylistCompletion.MAX_REQUESTS) throw IncompleteFinitePlaylistException()
+            if (token != null && !consumed.add(token)) throw IncompleteFinitePlaylistException()
+            val page = graph.library.page(query, token)
+            val next = page.continuation
+            FinitePlaylistCompletion.validateNext(
+                nextToken = next,
+                consumedTokens = consumed,
+                itemCount = page.items.size,
+                initial = token == null,
+            )
+            items += page.items
+            if (next == null) return items
+            token = next
         }
     }
 
@@ -252,9 +288,9 @@ internal class IosYouTubeLibrarySync(private val graph: IosSessionGraph) {
             .forEach { graph.library.mutate(LibraryMutation.LikeAlbum(it, liked = true)) }
     }
 
-    private suspend fun syncArtists(admission: AccountAdmission) {
+    private suspend fun syncArtists(admission: AccountAdmission, authoritative: Boolean) {
         val remote = readRemote(ContentSurface.LIBRARY_ARTISTS, admission).filter { it.ref.kind == ContentKind.ARTIST }
-        if (remote.isEmpty()) return
+        if (remote.isEmpty() && !authoritative) return
         val local = graph.library.observeLikedArtists(
             LibrarySortState(ArtistSortType.NAME, false),
             naturalOrder(),
@@ -450,7 +486,7 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
 
     private suspend fun syncRemotePlaylistIfEnabled(playlistId: String, title: String, songIds: List<String>) {
         val prefs = graph.settings.snapshots.value
-        if (prefs?.youTubeSignedIn() != true || prefs[YtmSyncKey] != true || songIds.isEmpty()) return
+        if (prefs?.youTubeSignedIn() != true || (prefs[YtmSyncKey] ?: true) != true || songIds.isEmpty()) return
         runCatching { graph.youtubeLibrarySync.pushImportedPlaylist(playlistId, title, songIds) }
     }
 

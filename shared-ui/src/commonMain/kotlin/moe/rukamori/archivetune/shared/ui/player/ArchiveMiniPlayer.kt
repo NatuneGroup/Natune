@@ -1,6 +1,8 @@
 package moe.rukamori.archivetune.shared.ui.player
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +56,24 @@ internal fun ArchiveMiniPlayer(
     val playing = playback?.playWhenReady == true
     val matching = nativeState.matches(playback)
     val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, playing, motion)
+    val seekInteraction = remember { PlayerInteractionState() }
+    val seekInteractionSource = remember { MutableInteractionSource() }
+    val seekState = PlayerState(
+        playback = playback,
+        title = current.item.title,
+        artist = current.item.subtitle,
+        occurrenceIds = listOf(current.occurrenceId),
+        canSeek = matching && nativeState.canSeek,
+    )
+    LaunchedEffect(playback?.occurrenceId, playback?.playbackGeneration, playback?.discontinuityGeneration) {
+        seekInteraction.reconcile(playback)
+    }
+    DisposableEffect(seekInteraction) { onDispose { seekInteraction.cancelPreview() } }
+    LaunchedEffect(seekInteractionSource) {
+        seekInteractionSource.interactions.collect { event ->
+            if (event is DragInteraction.Cancel) seekInteraction.cancelPreview()
+        }
+    }
     CompositionLocalProvider(
         LocalPlayerControlMotion provides PlayerControlMotionEnvironment(motion, nativeState.repeat),
     ) {
@@ -181,7 +204,7 @@ internal fun ArchiveMiniPlayer(
                             )
                         }
                         val duration = playback?.durationMs?.takeIf { it > 0L }
-                        val position = (playback?.positionMs ?: 0L).coerceAtLeast(0L)
+                        val position = (seekInteraction.previewMs ?: playback?.positionMs ?: 0L).coerceAtLeast(0L)
                         val seekable = duration != null && matching && nativeState.canSeek && playback.isSeekable
                         Row(
                             Modifier.fillMaxWidth().testTag("mini-player-seek"),
@@ -196,10 +219,12 @@ internal fun ArchiveMiniPlayer(
                                     0f
                                 },
                                 onValueChange = { fraction ->
-                                    if (duration != null && seekable) {
-                                        onSeekTo((duration * fraction).toLong().coerceIn(0L, duration))
-                                    }
+                                    seekInteraction.preview(fraction, seekState)
                                 },
+                                onValueChangeFinished = {
+                                    seekInteraction.commit(seekState, onSeekTo)
+                                },
+                                interactionSource = seekInteractionSource,
                                 enabled = seekable,
                                 modifier = Modifier.weight(1f).height(24.dp),
                             )
