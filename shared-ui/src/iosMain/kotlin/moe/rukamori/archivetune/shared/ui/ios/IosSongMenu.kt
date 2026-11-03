@@ -79,12 +79,17 @@ private class IosSongMenuHost(
 ) : SongMenuHost {
     /**
      * The song loads alone and the watch-next tail is appended behind it, the pair of calls `PlayerConnection.startRadio`
-     * makes on Android. A queue that could not seed the tail is a failure, not a silent solo play.
+     * makes on Android. When the seed already is the playing track it stays put and only the tail is replaced, so an
+     * in-progress song is not restarted. A queue that could not seed the tail is a failure, not a silent solo play.
      */
     override suspend fun startRadio(song: ContentRef) {
         if (song.provider != ContentProvider.YOUTUBE.id || song.kind != ContentKind.SONG) state.unavailable()
-        val entry = state.target?.queuedEntry() ?: state.unavailable()
-        graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
+        val queueState = graph.queue.state.value
+        val playing = queueState.entries.firstOrNull { it.occurrenceId == queueState.currentOccurrenceId }
+        if (playing?.item?.ref != song) {
+            val entry = state.target?.queuedEntry() ?: state.unavailable()
+            graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
+        }
         check(graph.queue.startRadioSeamlessly()) { "The radio tail could not be seeded" }
     }
 
