@@ -78,7 +78,8 @@ internal fun ArchiveMiniPlayer(
         LocalPlayerControlMotion provides PlayerControlMotionEnvironment(motion, nativeState.repeat),
     ) {
         BoxWithConstraints(modifier.fillMaxWidth()) {
-            if (!isWideTransportBar(maxWidth)) {
+            val barWidth = maxWidth
+            if (!isWideTransportBar(barWidth)) {
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -254,7 +255,7 @@ internal fun ArchiveMiniPlayer(
                             iconSize = 18.dp,
                         )
                         val volume = nativeState.volume?.takeIf { it.isFinite() }
-                        if (maxWidth >= 840.dp && volume != null) {
+                        if (barWidth >= 840.dp && volume != null) {
                             Slider(
                                 value = volume.coerceIn(0f, 1f),
                                 onValueChange = onVolumeChange,
