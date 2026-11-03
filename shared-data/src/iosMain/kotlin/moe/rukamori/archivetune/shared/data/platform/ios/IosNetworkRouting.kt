@@ -13,6 +13,8 @@ import io.ktor.client.request.get
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -219,6 +221,7 @@ class IosNetworkOwner internal constructor(
         )
         rotating = preferences()?.get(IpRotationEnabledKey) == true
         IosStreamProxyRouting.updateRotation(if (rotating) rotation else null)
+        publishBlocked()
     }
 
     fun configure(config: DarwinClientEngineConfig) = config.applyIosProxyRoute(runningRoute)
@@ -246,16 +249,24 @@ class IosNetworkOwner internal constructor(
             snapshot?.proxyRoute(),
             snapshot?.get(StreamBypassProxyKey) == true,
         )
+        publishBlocked()
     }
 
     /** The members the rotation pool currently counts live; 0 while rotation is off. */
     fun activeRotationCount(): Int = if (rotating) rotation.activeCount() else 0
 
     /**
-     * True while rotation is installed but has no member and no saved route to answer with: every stream
-     * open fails closed then, so surfaces can name the rotation state instead of a generic failure.
+     * Whether an installed rotation has no member and no saved route to answer with — every stream open
+     * then fails closed, so surfaces name the rotation state instead of a generic failure. A flow
+     * because a fetch filling the pool or a disable changes it without a recomposition of the page.
      */
-    fun rotationBlocked(): Boolean = IosStreamProxyRouting.streamBlocked()
+    val rotationBlocked: StateFlow<Boolean> get() = _rotationBlocked
+    private val _rotationBlocked = MutableStateFlow(false)
+
+    /** Republishes the routing holder's blocked state after every write that can change it. */
+    private fun publishBlocked() {
+        _rotationBlocked.value = IosStreamProxyRouting.streamBlocked()
+    }
 
     /**
      * Re-installs a rotation the user left enabled, the way the desktop owner's start does: the fetch and the
@@ -297,7 +308,9 @@ class IosNetworkOwner internal constructor(
         // disable branch above ever clears it.
         rotating = true
         IosStreamProxyRouting.updateRotation(rotation)
+        publishBlocked()
         rotation.fetchAndLoad { preferences()?.proxyRoute() }
+        publishBlocked()
         rotation.activeCount()
     }
 
@@ -305,6 +318,7 @@ class IosNetworkOwner internal constructor(
         rotating = false
         IosStreamProxyRouting.updateRotation(null)
         rotation.clear()
+        publishBlocked()
     }
 
     /**

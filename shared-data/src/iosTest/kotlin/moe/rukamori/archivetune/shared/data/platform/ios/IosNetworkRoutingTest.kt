@@ -10,6 +10,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.IntVar
+import kotlinx.cinterop.LongVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -282,7 +287,7 @@ class IosNetworkRoutingTest {
         val owner = IosNetworkOwner({ snapshot(IpRotationEnabledKey to true) }) {}
         assertTrue(IosStreamProxyRouting.streamBlocked())
         assertTrue(IosStreamProxyRouting.mustProxy())
-        assertTrue(owner.rotationBlocked())
+        assertTrue(owner.rotationBlocked.value)
         assertFailsWith<ByteSourceException> {
             IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)
         }
@@ -369,7 +374,7 @@ class IosNetworkRoutingTest {
         assertTrue(IosStreamProxyRouting.streamBlocked())
         assertEquals(0, owner.applyIpRotation(enabled = false, refresh = false))
         assertFalse(IosStreamProxyRouting.mustProxy())
-        assertFalse(owner.rotationBlocked())
+        assertFalse(owner.rotationBlocked.value)
         assertNull(IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration))
         // A saved static route still claims streams after rotation leaves — disable never touches it.
         IosStreamProxyRouting.updateStreamRoute(httpRoute(), bypass = false)
@@ -392,5 +397,51 @@ class IosNetworkRoutingTest {
             PlaybackFailure("occ-1", PlaybackFailureReason.OPEN_FAILED, STREAM_BLOCKED_MESSAGE)
                 .toPlaybackErrorInfo().kind,
         )
+    }
+
+    @Test
+    fun theBlockedFlowFlipsBackAfterASuccessfulFetchAndAfterDisable() = runBlocking {
+        val route = httpRoute(host = "pool.example", port = 8080)
+        var fetches = 0
+        val rotation = IosProxyRotation { _ ->
+            fetches++
+            if (fetches == 1) emptyList() else listOf(route)
+        }
+        val owner = IosNetworkOwner({ snapshot(IpRotationEnabledKey to true) }, {}, rotation)
+        assertTrue(owner.rotationBlocked.value)
+        // An empty answer leaves the installed pool blocking: the flow stays on.
+        assertEquals(0, owner.applyIpRotation(enabled = true, refresh = true))
+        assertTrue(owner.rotationBlocked.value)
+        // A fetch that finally answers members unblocks the very next stream.
+        assertEquals(1, owner.applyIpRotation(enabled = true, refresh = true))
+        assertFalse(owner.rotationBlocked.value)
+        // Disable is the explicit clear; the flow reads open only through the saved route afterwards.
+        assertEquals(0, owner.applyIpRotation(enabled = false, refresh = false))
+        assertFalse(owner.rotationBlocked.value)
+        assertFalse(IosStreamProxyRouting.mustProxy())
+    }
+
+    @Test
+    @OptIn(ExperimentalForeignApi::class)
+    fun aLeaseOpenRefusedByTheRotationCarriesTheSanitizedStatus() = memScoped {
+        val lease = IosStreamLease(
+            object : IosLeaseSource {
+                override fun probe(): IosHttpRangeSource.Probe =
+                    throw ByteSourceException(STREAM_BLOCKED_MESSAGE)
+
+                override fun readBlocking(position: Long, buffer: ByteArray, offset: Int, length: Int): Int = 0
+                override fun interrupt() {}
+                override fun close() {}
+            },
+        )
+        lease.engineGeneration = 7
+        IosStreamLease.register(7, lease)
+        val result = lease.openStream(alloc<LongVar>().ptr, alloc<IntVar>().ptr)
+        assertTrue(result != 0)
+        // The async error read asks by generation: the current one names the block, a stale one does not.
+        assertEquals(STREAM_BLOCKED_MESSAGE, IosStreamLease.refusalOf(7))
+        assertNull(IosStreamLease.refusalOf(8))
+        IosStreamLease.unregister(7)
+        assertNull(IosStreamLease.refusalOf(7))
     }
 }
