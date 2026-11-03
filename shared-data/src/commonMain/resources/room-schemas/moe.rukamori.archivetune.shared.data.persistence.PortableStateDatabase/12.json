@@ -211,7 +211,32 @@
       "playlistId",
       "occurrenceId"
      ]
-    }
+    },
+    "indices": [
+     {
+      "name": "index_portable_playlist_entry_playlistId_position",
+      "unique": true,
+      "columnNames": [
+       "playlistId",
+       "position"
+      ],
+      "orders": [],
+      "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_portable_playlist_entry_playlistId_position` ON `${TABLE_NAME}` (`playlistId`, `position`)"
+     }
+    ],
+    "foreignKeys": [
+     {
+      "table": "portable_playlist",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "columns": [
+       "playlistId"
+      ],
+      "referencedColumns": [
+       "id"
+      ]
+     }
+    ]
    },
    {
     "tableName": "portable_tag",
@@ -266,7 +291,42 @@
       "playlistId",
       "tagId"
      ]
-    }
+    },
+    "indices": [
+     {
+      "name": "index_portable_playlist_tag_tagId",
+      "unique": false,
+      "columnNames": [
+       "tagId"
+      ],
+      "orders": [],
+      "createSql": "CREATE INDEX IF NOT EXISTS `index_portable_playlist_tag_tagId` ON `${TABLE_NAME}` (`tagId`)"
+     }
+    ],
+    "foreignKeys": [
+     {
+      "table": "portable_playlist",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "columns": [
+       "playlistId"
+      ],
+      "referencedColumns": [
+       "id"
+      ]
+     },
+     {
+      "table": "portable_tag",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "columns": [
+       "tagId"
+      ],
+      "referencedColumns": [
+       "id"
+      ]
+     }
+    ]
    },
    {
     "tableName": "portable_listen_event",
@@ -319,7 +379,45 @@
      "columnNames": [
       "id"
      ]
-    }
+    },
+    "indices": [
+     {
+      "name": "index_portable_listen_event_timestampMs",
+      "unique": false,
+      "columnNames": [
+       "timestampMs"
+      ],
+      "orders": [],
+      "createSql": "CREATE INDEX IF NOT EXISTS `index_portable_listen_event_timestampMs` ON `${TABLE_NAME}` (`timestampMs`)"
+     },
+     {
+      "name": "index_portable_listen_event_songKey",
+      "unique": false,
+      "columnNames": [
+       "songKey"
+      ],
+      "orders": [],
+      "createSql": "CREATE INDEX IF NOT EXISTS `index_portable_listen_event_songKey` ON `${TABLE_NAME}` (`songKey`)"
+     },
+     {
+      "name": "index_portable_listen_event_artistName",
+      "unique": false,
+      "columnNames": [
+       "artistName"
+      ],
+      "orders": [],
+      "createSql": "CREATE INDEX IF NOT EXISTS `index_portable_listen_event_artistName` ON `${TABLE_NAME}` (`artistName`)"
+     },
+     {
+      "name": "index_portable_listen_event_albumName",
+      "unique": false,
+      "columnNames": [
+       "albumName"
+      ],
+      "orders": [],
+      "createSql": "CREATE INDEX IF NOT EXISTS `index_portable_listen_event_albumName` ON `${TABLE_NAME}` (`albumName`)"
+     }
+    ]
    },
    {
     "tableName": "portable_listen_entity",
@@ -368,7 +466,20 @@
       "kind",
       "position"
      ]
-    }
+    },
+    "indices": [
+     {
+      "name": "index_portable_listen_entity_kind_provider_entityId",
+      "unique": false,
+      "columnNames": [
+       "kind",
+       "provider",
+       "entityId"
+      ],
+      "orders": [],
+      "createSql": "CREATE INDEX IF NOT EXISTS `index_portable_listen_entity_kind_provider_entityId` ON `${TABLE_NAME}` (`kind`, `provider`, `entityId`)"
+     }
+    ]
    },
    {
     "tableName": "portable_artist_block",
@@ -739,7 +850,18 @@
      "columnNames": [
       "id"
      ]
-    }
+    },
+    "indices": [
+     {
+      "name": "index_portable_search_history_query",
+      "unique": true,
+      "columnNames": [
+       "query"
+      ],
+      "orders": [],
+      "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_portable_search_history_query` ON `${TABLE_NAME}` (`query`)"
+     }
+    ]
    },
    {
     "tableName": "portable_set_video_id",
