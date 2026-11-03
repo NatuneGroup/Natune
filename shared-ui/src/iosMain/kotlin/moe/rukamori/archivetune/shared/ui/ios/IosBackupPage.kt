@@ -42,8 +42,12 @@ import platform.posix.exit
 
 /**
  * Settings > Backup and restore on this host: manual archives through the document picker and the share sheet. The
- * archive is the same portable format the desktop host writes, so a file crosses platforms unchanged. The scheduled,
- * Drive and playlist rows do not appear: this host has no OAuth client and no folder picker for them.
+ * archive is the same portable format the desktop host writes, so a file crosses platforms unchanged. The Google
+ * Drive app-data section is always mounted; while the build carries no iOS OAuth client (the
+ * `ArchiveTuneGoogleDriveClientId` Info.plist key is blank) the section reports its not-configured state with the
+ * same localized string an action would surface. Its refresher and uploads use the same archive and the same
+ * staged restore as a file, so one binding consumes both prepared handles. The scheduled, Drive folder-sync and
+ * playlist rows do not appear: this host has no folder picker for them.
  */
 @Composable
 internal fun IosBackupRestorePage(
@@ -54,15 +58,17 @@ internal fun IosBackupRestorePage(
     onFailure: () -> Unit,
     scrollTo: String?,
 ) {
+    val driveBinding = graph.driveBackup.binding
     BackupAndRestoreSettings(
         controller = controller,
         createBackup = { selected -> saveIosBackup(host, graph, selected) },
         prepareRestore = { openIosBackup(host, graph) },
-        discardPreparedBackup = graph.backup::discardPrepared,
-        restoreBackup = graph.backup::restorePrepared,
+        discardPreparedBackup = driveBinding::discardPrepared,
+        restoreBackup = driveBinding::restorePrepared,
         onNotice = onNotice,
         onFailure = onFailure,
         scrollTo = scrollTo,
+        driveAppDataHost = graph.driveBackup.drive,
         modifier = Modifier.fillMaxSize(),
     )
     IosBackupRestartDialog(graph)

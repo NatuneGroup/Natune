@@ -59,6 +59,8 @@ deployment override reads `ARCHIVEPOOL_BASE_URL` when `ARCHIVETUNE_ARCHIVEPOOL_B
 | `ARCHIVETUNE_FEEDBACK_INGEST_KEY` (legacy `FEEDBACK_INGEST_KEY`) | Desktop: the write-only ingest key for the same service. It ships with the app, so the server must treat it as write-only access. | Reports are sent without the key; a service that requires it refuses them. |
 | `ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID` | Desktop only: the Google OAuth client of type "Desktop app" for Google Drive app data backup (`DesktopGoogleDriveAuthorization`, loopback sign-in with PKCE). It must belong to a Google Cloud project with the Drive API enabled and the `drive.appdata` scope on its consent screen. | The Google Drive backup rows show "Google Drive is not configured" and no sign-in starts. Manual backup files keep working. |
 | `ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET` | Desktop only: the client secret Google issues with the same desktop client. Google does not treat it as confidential for installed apps; it is sent when set. | Sign-in is tried without a secret; a client that requires one is reported as not configured. |
+| `ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID` | iOS only: the Google OAuth client of type "iOS" for Google Drive app data backup (`IosGoogleDriveAuthorization`, `ASWebAuthenticationSession` sign-in with PKCE, no client secret). Create it in a Google Cloud project that has the Drive API enabled and the `drive.appdata` scope on its consent screen, with the app's bundle id (`moe.rukamori.archivetune`) as its iOS bundle ID. Written into `Info.plist` `ArchiveTuneGoogleDriveClientId`. | The Google Drive backup section reports "Google Drive is not configured for this app installation." and no sign-in starts. Manual backup files keep working. |
+| `ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME` | iOS only: an explicit URL scheme for the consent redirect of the same sign-in, written into `Info.plist` `ArchiveTuneGoogleDriveUrlScheme`. It is only an override — `CFBundleURLTypes` always registers the bundle id (a scheme Google accepts for iOS clients) so the entry can never be empty, and the auth sheet delivers custom-scheme callbacks without registration regardless. | The sign-in uses the reversed client id (`com.googleusercontent.apps.<id>`) derived from the client id. |
 | `ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID` | Desktop only: the retained Echo/PlayPlay device-pair flow, using the separate Spotify streaming account. This is a protocol client identifier, not a subscriber credential or the catalog token. | Echo reports client configuration unavailable and the normal source chain continues. |
 | `ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID` | Optional client-token fallback for the same desktop streaming flow. Never used to mint or change a catalog session. | Only the supplied desktop client is tried. |
 | `ARCHIVETUNE_SPOTIFY_AUDIO_IV` | Desktop only: the retained Echo audio protocol's 16-byte AES-CTR initialization vector, supplied as 32 hexadecimal characters. No protocol bytes are newly embedded by the desktop adapter. | Echo reports client configuration unavailable; neither ciphertext nor a guessed progressive URL reaches the engine. |
@@ -93,8 +95,10 @@ auth, WebView or Media3 classes are included.
   packaged desktop build can be configured at launch without rebuilding.
 - **iOS** maps the Telegram pair, the TIDAL client pairs, `ARCHIVETUNE_LISTENER_PRESENCE_URL`, the Last.fm
   pair, the BotGuard PO token pair (`ARCHIVETUNE_POTOKEN_REQUEST_KEY`,
-  `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY`), the TIDAL canvas embed token and the Lyprio pair into
-  `Info.plist`. Xcode takes them from the untracked `iosApp/Configuration/Credentials.xcconfig`
+  `ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY`), the TIDAL canvas embed token, the Lyprio pair and the Google
+  iOS Drive client pair (`ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID`,
+  `ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME`) into `Info.plist`. Xcode takes them from the untracked
+  `iosApp/Configuration/Credentials.xcconfig`
   (included last by `Native.xcconfig`) or from build settings. The release workflow's iOS job writes that file from
   the same secrets before it builds (step `Write iOS provider credentials`). An xcconfig file treats `//` as a
   comment, so a value such as the presence origin is written with `/$()/` in place of `//`. The Turnstile sitekey
@@ -131,6 +135,8 @@ env:
   ARCHIVETUNE_TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
   ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_ID }}
   ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_GOOGLE_DESKTOP_CLIENT_SECRET }}
+  ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID }}
+  ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME: ${{ secrets.ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME }}
   ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_DESKTOP_CLIENT_ID }}
   ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID: ${{ secrets.ARCHIVETUNE_SPOTIFY_WEB_CLIENT_ID }}
   ARCHIVETUNE_SPOTIFY_AUDIO_IV: ${{ secrets.ARCHIVETUNE_SPOTIFY_AUDIO_IV }}
