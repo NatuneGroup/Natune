@@ -190,15 +190,20 @@ class NatuneNewsClientTest {
         val engine = MockEngine { respond(liveIndex, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
         val shared = HttpClient(engine)
         val news = NatuneNewsClient(shared, DEFAULT_NATUNE_NEWS_URL)
-        assertEquals(listOf(welcome), news.list())
-        assertTrue(news.isOpen)
+        try {
+            assertEquals(listOf(welcome), news.list())
+            assertTrue(news.isOpen)
 
-        news.close()
+            news.close()
 
-        assertFalse(news.isOpen)
-        assertTrue(engine.isActive)
-        assertEquals(liveIndex, shared.get("https://elsewhere.example/index.json").bodyAsText())
-        shared.close()
+            assertFalse(news.isOpen)
+            assertTrue(engine.isActive)
+            assertEquals(liveIndex, shared.get("https://elsewhere.example/index.json").bodyAsText())
+        } finally {
+            news.close()
+            shared.close()
+            engine.close()
+        }
     }
 
     @Test
@@ -206,12 +211,44 @@ class NatuneNewsClientTest {
         val engine = MockEngine { respond(liveIndex, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
         val shared = HttpClient(engine)
         val news = NatuneNewsClient(shared, DEFAULT_NATUNE_NEWS_URL)
-        assertEquals(listOf(welcome), news.list())
+        try {
+            assertEquals(listOf(welcome), news.list())
 
-        shared.close()
+            shared.close()
 
-        // The engine's job completes only once every client job under it has, the feed's private one included.
-        withContext(Dispatchers.Default) { withTimeout(5_000) { engine.coroutineContext[Job]!!.join() } }
-        assertFalse(news.isOpen)
+            withContext(Dispatchers.Default) { withTimeout(5_000) { shared.coroutineContext[Job]!!.join() } }
+            assertFalse(news.isOpen)
+            assertTrue(engine.isActive)
+            // An explicitly supplied engine is caller-owned; client.close() must not close it.
+            engine.close()
+            withContext(Dispatchers.Default) { withTimeout(5_000) { engine.coroutineContext[Job]!!.join() } }
+        } finally {
+            news.close()
+            shared.close()
+            engine.close()
+        }
+    }
+
+    @Test
+    fun closingAManagedClientAlsoReleasesTheFeedAndEngine() = runTest {
+        val shared = HttpClient(MockEngine) {
+            engine {
+                addHandler { respond(liveIndex, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
+            }
+        }
+        val engine = shared.engine
+        val news = NatuneNewsClient(shared, DEFAULT_NATUNE_NEWS_URL)
+        try {
+            assertEquals(listOf(welcome), news.list())
+
+            shared.close()
+
+            withContext(Dispatchers.Default) { withTimeout(5_000) { engine.coroutineContext[Job]!!.join() } }
+            assertFalse(news.isOpen)
+        } finally {
+            news.close()
+            shared.close()
+            engine.close()
+        }
     }
 }
