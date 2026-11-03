@@ -6,6 +6,7 @@ import com.metrolist.innertubex.models.Run
 import com.metrolist.innertubex.models.Runs
 import com.metrolist.innertubex.models.Thumbnails
 import com.metrolist.innertubex.models.YouTubeClient
+import com.metrolist.innertubex.models.YouTubeLocale
 import com.metrolist.innertubex.models.response.BrowseResponse
 import com.metrolist.innertubex.models.response.NextResponse
 import com.metrolist.innertubex.models.response.SearchResponse
@@ -31,9 +32,11 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentSearchFilter
 import moe.rukamori.archivetune.shared.domain.repository.UnsupportedContentOperation
 import moe.rukamori.archivetune.shared.domain.settings.DataSyncIdKey
 import moe.rukamori.archivetune.shared.domain.settings.InnerTubeCookieKey
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceDefaults
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.UseLoginForBrowse
 import moe.rukamori.archivetune.shared.domain.settings.VisitorDataKey
+import moe.rukamori.archivetune.shared.domain.settings.YouTubeMusicRegionKey
 
 /** The YouTube Music client every catalogue and player request goes through, as the Android host does. */
 private val BROWSE_CLIENT = YouTubeClient.WEB_REMIX
@@ -66,6 +69,9 @@ class IosYouTubeBrowseTransport(
      * home feed and the account listings act for the same sign-in.
      */
     internal val innerTubeSession: InnerTube get() = innerTube
+
+    // The device locale the library computed, latched before any region override so SYSTEM_DEFAULT restores it.
+    private var initialLocale: YouTubeLocale? = null
 
     private val json: Json = Json { ignoreUnknownKeys = true }
 
@@ -108,6 +114,17 @@ class IosYouTubeBrowseTransport(
             dataSyncId = preferences?.get(DataSyncIdKey),
             useLoginForBrowse = preferences?.get(UseLoginForBrowse) != false,
         )
+        // The region override rides the same refresh: a picked region forces gl on every request and drops visitor
+        // data so region-sensitive endpoints answer anonymously, which is Android's regionSpooferActive behaviour.
+        if (initialLocale == null) initialLocale = innerTube.locale
+        val region = preferences?.get(YouTubeMusicRegionKey)
+            ?.takeIf { it.isNotBlank() && it != PreferenceDefaults.youtubeMusicRegion }
+        innerTube.regionOverrideActive = region != null
+        innerTube.locale = if (region != null) {
+            (initialLocale ?: innerTube.locale).copy(gl = region)
+        } else {
+            initialLocale ?: innerTube.locale
+        }
     }
 
     /** The signed-in session the account binding reads; an anonymous session answers false. */

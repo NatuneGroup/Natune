@@ -44,6 +44,7 @@ private enum class IosArrangeDialogKind { HOME_SCREENS, LIBRARY_CHIPS, PLAYLIST_
  */
 @Composable
 internal fun IosGeneralSettingsPage(
+    host: moe.rukamori.archivetune.shared.ui.IosHost,
     path: String,
     graph: IosSessionGraph,
     controller: SettingsController,
@@ -62,9 +63,9 @@ internal fun IosGeneralSettingsPage(
             blurSupported = IosOpticalCapabilities.blur,
             navigate = navigate,
             openWallpaperSettings = { },
-            // The file picker returns a security-scoped bookmark rather than a font name the theme row needs.
-            pickCustomFont = { null },
-            customFontPickerSupported = false,
+            // The picked font is copied into the app container; the picker returns its file URI and family name.
+            pickCustomFont = { IosCustomFont.pick(host) },
+            customFontPickerSupported = true,
             chooseHomeScreens = { arrangeDialog = IosArrangeDialogKind.HOME_SCREENS },
             arrangeLibraryChips = { arrangeDialog = IosArrangeDialogKind.LIBRARY_CHIPS },
             arrangePlaylistTags = { arrangeDialog = IosArrangeDialogKind.PLAYLIST_TAGS },

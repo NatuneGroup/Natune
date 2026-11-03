@@ -12,15 +12,18 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeMoodGenre
 import moe.rukamori.archivetune.shared.data.provider.YouTubeRelease
 import moe.rukamori.archivetune.shared.data.provider.YouTubeReleaseType
 import moe.rukamori.archivetune.shared.data.provider.YouTubeShelf
+import moe.rukamori.archivetune.shared.data.provider.filterBlockedSongs
 import moe.rukamori.archivetune.shared.data.provider.stableKey
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
 import moe.rukamori.archivetune.shared.domain.settings.ActiveHomeSourcesKey
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
 import moe.rukamori.archivetune.shared.domain.settings.HomeSourceKey
 import moe.rukamori.archivetune.shared.domain.settings.HideAiMixKey
 import moe.rukamori.archivetune.shared.domain.settings.ShowHomeCategoryChipsKey
 import moe.rukamori.archivetune.shared.domain.settings.SpotifySpDcKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
@@ -104,7 +107,10 @@ internal fun desktopHomePage(
     }
     val snapshot by graph.queue.player.snapshot.collectAsState()
     val mixShelves = if (preferences?.get(HideAiMixKey) == true) emptyList() else topMixes.homeShelves()
-    val shelves = mixShelves + feed.shelves.map { shelf -> shelf.toHomeShelf(graph, HOME_REQUEST, openRoute) }
+    // The block list filters at render so blocking a visible song hides it and an unblock restores it, without a
+    // re-read — the same rule the Android home's filterBlockedSongs applies.
+    val blocked = parseBlockedSongRefs(preferences?.get(BlockedSongIdsKey).orEmpty()).toSet()
+    val shelves = mixShelves + feed.shelves.filterBlockedSongs(blocked).map { shelf -> shelf.toHomeShelf(graph, HOME_REQUEST, openRoute) }
     SideEffect { shelves.forEach { graph.catalogueOwners.recordShelf(HOME_REQUEST, it.key, it.items) } }
     val page = PagedContentState(
         request = HOME_REQUEST,
@@ -187,8 +193,10 @@ internal fun desktopDiscoveryPage(graph: DesktopSessionGraph, openRoute: (String
         rows = releaseRows,
         more = null,
     )
+    val preferences by graph.settings.snapshots.collectAsState()
+    val blocked = parseBlockedSongRefs(preferences?.get(BlockedSongIdsKey).orEmpty()).toSet()
     val suggestionShelves =
-        suggest.shelves.map { it.toBrowseShelfUi(graph, DISCOVERY_SUGGESTIONS_REQUEST, openRoute) }
+        suggest.shelves.filterBlockedSongs(blocked).map { it.toBrowseShelfUi(graph, DISCOVERY_SUGGESTIONS_REQUEST, openRoute) }
     SideEffect {
         suggestionShelves.forEach { graph.catalogueOwners.recordShelf(DISCOVERY_SUGGESTIONS_REQUEST, it.key, it.rows) }
     }
