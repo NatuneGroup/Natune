@@ -94,7 +94,7 @@ constrained-checkout instructions above, in `CLAUDE.md`, and in inherited docs
 **only for this private workspace**. Original source guidance and all application/
 fork invariants remain unchanged.
 
-- **Current:** destination **NatuneGroup/ArchiveTune-KMP** is private. Remote `main`
+- **Current:** destination **NatuneGroup/Natune** is private. Remote `main`
   and `dev` both point at the independent parentless foundation
   `c047a2002a7c35eb9ed30b6a8eec72951f7f2f48` (observed 2026-10-25). Local `dev` holds
   the port history rooted at the approved baseline (NatuneGroup/ArchiveTune `dev`
@@ -117,7 +117,7 @@ fork invariants remain unchanged.
     is an orchestrator decision; neither is silently replaced.
   - Its manual matrix readiness workflow is parked as
     `.github/inherited-workflows/foundation-readiness.yml`, not activated. Its desktop
-    `nativeDistributions` settings (Deb, Msi, Dmg; package `ArchiveTune-KMP`, version
+    `nativeDistributions` settings (Deb, Msi, Dmg; package `Natune`, version
     0.1.0) are not in the port's `desktopApp` build. M8 and M10 decide packaging.
   - Foundation CI runs (Linux `40152191476` and Windows `40152422286` passed; macOS
     `40152783751` failed) tested the foundation only. They are not port coverage.

@@ -11,7 +11,7 @@
 
 ## プロジェクト概要
 
-Natune（旧 ArchiveTune）は、Android、Windows、Linux、macOS、iOS を対象とする音楽プレイヤーです。この非公開リポジトリでは、既存の Android アプリを Kotlin Multiplatform に移植しています。移植と各プラットフォームの統合は未完了です。現在の実装状況と未接続項目は、この文書の末尾に記載しています。
+Natune（旧 ArchiveTune）は、Android、Windows、Linux、macOS、iOS を対象とする音楽プレイヤーです。このリポジトリでは、既存の Android アプリを Kotlin Multiplatform に移植しています。移植と各プラットフォームの統合は未完了です。現在の実装状況と未接続項目は、この文書の末尾に記載しています。
 
 画面上のアプリ名は Natune です。互換性のため、既存の Android アプリケーション ID、iOS bundle ID、Kotlin package 名、永続データの識別子は維持しています。
 
@@ -27,7 +27,7 @@ Natune（旧 ArchiveTune）は、Android、Windows、Linux、macOS、iOS を対�
 
 ## Android 版の配布
 
-Android の Stable / Nightly は、公開中の [Natune Android プロジェクト](https://github.com/NatuneGroup/ArchiveTune/releases)で配布されています。この非公開 KMP リポジトリには、検証済みの KMP リリースはありません。
+Android の Stable / Nightly は、公開中の [Natune Android プロジェクト](https://github.com/NatuneGroup/ArchiveTune/releases)で配布されています。この KMP リポジトリには、検証済みの KMP リリースはありません。
 
 - Android Stable は [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/NatuneGroup/ArchiveTune/)、[IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/moe.rukamori.archivetune)、[OpenAPK](https://www.openapk.net/archivetune/moe.rukamori.archivetune/)、[Unclouded](https://unclouded.app/apps/archivetune/) からも入手できます。
 - 公開 Android プロジェクトの [GitHub Stable releases](https://github.com/NatuneGroup/ArchiveTune/releases/latest) と [Nightly pre-releases](https://github.com/NatuneGroup/ArchiveTune/releases) も利用できます。
@@ -106,7 +106,7 @@ Copyright © vossgraves / Natune and contributors; earlier portions © their res
 
 ## KMP ポートの進捗（開発中）
 
-この非公開 NatuneGroup/ArchiveTune-KMP workspace は、NatuneGroup/ArchiveTune の `dev` commit `b7e4dd444fea202a5c32e96f7b1199a74fe3ae70` から始まっています。公式 Metrolist KMP release までは非公開です。復元した Metrolist build は参照資料であり、元の KMP source を完全に取得したものではありません。Metrolist と既存 contributor の credit、copyright、license は維持します。
+この NatuneGroup/Natune workspace は、NatuneGroup/ArchiveTune の `dev` commit `b7e4dd444fea202a5c32e96f7b1199a74fe3ae70` から始まっています。公式 Metrolist KMP release までは非公開です。復元した Metrolist build は参照資料であり、元の KMP source を完全に取得したものではありません。Metrolist と既存 contributor の credit、copyright、license は維持します。
 
 **現在（コード統合のみ、未検証）:** 非公開 remote の `main` と `dev` は、独立した親なし KMP foundation `c047a2002a7c35eb9ed30b6a8eec72951f7f2f48` を指しています。ローカル `dev` では port history と foundation の両方を保持する merge commit を作成しています。push はしていないため、remote `dev` と `main` は変更していません。foundation の `:shared` は `shared/` に保持していますが active build には含めず、承認済みの `:shared-domain` clock contract を有効な契約として維持しています。
 
