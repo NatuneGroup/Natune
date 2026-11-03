@@ -17,7 +17,7 @@ import json
 import sys
 from pathlib import Path
 
-OWNER = "NatuneGroup/ArchiveTune"
+OWNER = "NatuneGroup/Natune"
 DEFAULT_DOWNLOAD_URL_BASE = f"https://github.com/{OWNER}/releases/download"
 CHANNELS = ("nightly", "stable")
 SCHEMA_VERSION = 1

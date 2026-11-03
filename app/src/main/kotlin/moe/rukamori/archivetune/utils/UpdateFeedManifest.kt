@@ -105,7 +105,7 @@ internal fun selectUpdateFeedAssetUrl(
 /**
  * Maps a manifest into the updater's existing [ReleaseInfo] model, so the "(build n)" comparison
  * and the asset download/install path are unchanged. [assetUrl] is the selected asset's download
- * URL; [releasesBaseUrl] (e.g. "https://github.com/NatuneGroup/ArchiveTune/releases") fills in a
+ * URL; [releasesBaseUrl] (e.g. "https://github.com/NatuneGroup/Natune/releases") fills in a
  * release link when the manifest omits one. The manifest's [versionCode] rides on the release
  * model's build-number field, which is what the > comparison consumes.
  */

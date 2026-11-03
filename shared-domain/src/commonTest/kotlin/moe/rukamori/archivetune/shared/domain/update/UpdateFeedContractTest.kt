@@ -16,7 +16,7 @@ class UpdateFeedContractTest {
           "schema": 1, "channel": "$channel", "tag": "$tag",
           "versionName": "$tag", "versionCode": $versionCode,
           "commit": "abc123", "publishedAt": "2026-10-27T00:00:00Z",
-          "releaseUrl": "https://github.com/NatuneGroup/ArchiveTune/releases/tag/$tag",
+          "releaseUrl": "https://github.com/NatuneGroup/Natune/releases/tag/$tag",
           "notes": "nightly",
           "assets": [
             {"name": "app-gms-mobile-arm64-nightly.apk", "url": "https://example/a.apk", "size": 100, "sha256": "aa"},
@@ -67,7 +67,7 @@ class UpdateFeedContractTest {
         assertEquals("https://example/a.apk", release.downloadUrl)
         assertEquals("nightly", release.body)
         // A blank releaseUrl falls back to the canonical tag URL.
-        val noUrl = manifestJson().replace(",\n          \"releaseUrl\": \"https://github.com/NatuneGroup/ArchiveTune/releases/tag/N20261027\"", "")
+        val noUrl = manifestJson().replace(",\n          \"releaseUrl\": \"https://github.com/NatuneGroup/Natune/releases/tag/N20261027\"", "")
         val fallback = parseUpdateFeedManifest(noUrl, UpdateChannel.NIGHTLY)!!
             .toReleaseInfo("https://example/a.apk", UpdateRepository.RELEASES_BASE_URL)
         assertEquals("${UpdateRepository.RELEASES_BASE_URL}/tag/N20261027", fallback.htmlUrl)
