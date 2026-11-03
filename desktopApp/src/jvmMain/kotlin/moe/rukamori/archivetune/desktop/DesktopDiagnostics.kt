@@ -393,6 +393,7 @@ private fun DesktopAcousticQualitySection(graph: DesktopSessionGraph, active: Bo
             current.ref.id,
             current.title,
             current.artists.joinToString { it.name },
+            requestKey = queueState.currentOccurrenceId.orEmpty(),
         ),
         owner = graph.acoustic,
         active = active,

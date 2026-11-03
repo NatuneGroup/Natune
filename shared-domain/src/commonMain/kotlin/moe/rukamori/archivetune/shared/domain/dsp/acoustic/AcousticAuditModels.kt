@@ -9,7 +9,17 @@ package moe.rukamori.archivetune.shared.domain.dsp.acoustic
  * they differ per platform.
  */
 
-data class AcousticAuditTarget(val mediaId: String, val title: String, val artists: String = "")
+/**
+ * What an audit runs on. [mediaId] names the song; [requestKey] is the queue-request token (occurrence
+ * and attempt identity) when the caller knows it, so a result decoded from a different request of the
+ * same song is refused and hidden instead of shown against the wrong source.
+ */
+data class AcousticAuditTarget(
+    val mediaId: String,
+    val title: String,
+    val artists: String = "",
+    val requestKey: String = "",
+)
 
 enum class AcousticAuditStatus {
     IDLE, RESOLVING, DECODING, ANALYZING, COMPLETE, UNAVAILABLE, FAILED, CANCELLED,
@@ -34,6 +44,8 @@ data class AcousticAuditResult(
     val magnitudeDb: FloatArray,
     val assessment: AcousticAssessment,
     val limitations: List<String>,
+    /** The request token of the source this result was decoded from; surfaces bind it to the target's key. */
+    val requestKey: String = "",
 )
 
 data class AcousticAuditState(
@@ -78,6 +90,8 @@ sealed interface AcousticWindow {
         val advertisedSampleRate: Int?,
         val claimedLossless: Boolean,
         val limitations: List<String> = emptyList(),
+        /** The request token of the source the window decoded; the owner binds it to the target's key. */
+        val requestKey: String = "",
     ) : AcousticWindow
 
     /** [code] names the refusal reason for the state message; codes come from the shared string table. */

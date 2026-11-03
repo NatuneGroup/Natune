@@ -222,8 +222,13 @@ class IosPlaybackPort : PlaybackPort {
                     outcome = null
                     telegramSource = null
                     val prepared = source ?: return@withContext false
-                    val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also { blend = it }
-                        ?: return@withContext false
+                    // A blend opened under a stored pitch/equalizer tone renders the same curve the
+                    // port's outputs do: the deck units render the fade and the promoted output keeps it.
+                    val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also {
+                        blend = it
+                        it.setPitch(desiredPitchCents)
+                        it.setEqualizer(equalizerEnabled, equalizerBands)
+                    } ?: return@withContext false
                     if (!engine.arm(prepared, overlapMs)) return@withContext false
                     source = null
                     armedEpoch = issuedAt

@@ -1,7 +1,7 @@
 package moe.rukamori.archivetune.shared.data.platform.ios
 
 import cnames.structs.at_audio_output
-import cnames.structs.at_eq_band
+import moe.rukamori.archivetune.nativeaudio.at_eq_band
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray

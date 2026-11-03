@@ -67,7 +67,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
-import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityOverlay
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -665,8 +664,6 @@ internal fun DesktopPlayerMenuDialog(
             onDone = { menu.details = null },
         )
     }
-
-    AcousticQualityOverlay(graph.acoustic)
 }
 
 /**

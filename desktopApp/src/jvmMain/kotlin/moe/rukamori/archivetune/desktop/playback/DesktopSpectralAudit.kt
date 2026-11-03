@@ -40,5 +40,5 @@ internal suspend fun DesktopPlaybackPort.acousticWindow(
     checkActive()
     val request = loadedRequest() ?: return AcousticWindow.Refused("no_current_source")
     if (request.mediaId != target.mediaId) return AcousticWindow.Refused("current_source_unavailable")
-    return spectral.acousticWindow(request.locator)
+    return spectral.acousticWindow(request.locator, requestKey = request.occurrenceId)
 }

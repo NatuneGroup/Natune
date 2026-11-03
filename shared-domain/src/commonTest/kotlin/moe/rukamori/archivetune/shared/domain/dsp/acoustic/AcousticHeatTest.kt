@@ -66,7 +66,7 @@ class AcousticHeatPaletteTest {
             1.00 to 0xFFFFFF,
         )
         for ((intensity, rgb) in anchors) {
-            assertEquals("intensity $intensity", (0xFF shl 24) or rgb, AcousticHeatPalette.argb(intensity))
+            assertEquals((0xFF shl 24) or rgb, AcousticHeatPalette.argb(intensity), "intensity $intensity")
         }
     }
 
