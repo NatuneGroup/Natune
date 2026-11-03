@@ -82,7 +82,7 @@ class TypedDelegatingQueueController(
     }
 
     override suspend fun resume(): Boolean = owner.withQueueAccess {
-        val saved = checkpoints.read() ?: return@withQueueAccess false
+        val saved = checkpoints.readForRestore() ?: return@withQueueAccess false
         owner.restore(saved)
         true
     }
