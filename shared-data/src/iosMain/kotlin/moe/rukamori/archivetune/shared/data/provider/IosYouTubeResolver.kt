@@ -13,10 +13,10 @@ import com.metrolist.innertubex.models.YouTubeClient
 import com.metrolist.innertubex.models.response.PlayerResponse
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.plugins.HttpRequestException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.head
+import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -24,8 +24,6 @@ import io.ktor.utils.io.errors.IOException
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -187,31 +185,39 @@ class IosYouTubeResolver(
         val name = androidTierName(tier)
         val target = targetVideoId(request) ?: return null
         val started = TimeSource.Monotonic.markNow()
-        // The tier bounds itself the way the desktop host does, so its own timeout comes back as a
-        // null outcome and still earns its one diagnostics line; only the caller's cancellation
-        // stops the walk.
-        val audio =
-            try {
+        // The tier bounds itself the way the desktop host does, so its own timeout comes back as a null
+        // outcome; the caller's cancellation and the terminal-auth signal always propagate, and the
+        // finally block writes the tier's one diagnostics line on every exit path.
+        var resolved = false
+        var reason: String? = null
+        try {
+            var timedOut = true
+            val audio =
                 withTimeoutOrNull(tier.timeoutMs) {
-                    when (tier) {
-                        YouTubeFallbackTier.INNERTUBE_X -> resolveInnerTubeX(target)
-                        YouTubeFallbackTier.NEWPIPE -> resolveNewPipe(target, request)
-                        YouTubeFallbackTier.ECHO -> resolveEcho(target)
-                    }
+                    val result =
+                        when (tier) {
+                            YouTubeFallbackTier.INNERTUBE_X -> resolveInnerTubeX(target)
+                            YouTubeFallbackTier.NEWPIPE -> resolveNewPipe(target, request)
+                            YouTubeFallbackTier.ECHO -> resolveEcho(target)
+                        }
+                    timedOut = false
+                    result
                 }
-            } catch (cancelled: CancellationException) {
-                currentCoroutineContext().ensureActive()
-                logTier(name, false, started.elapsedNow().inWholeMilliseconds, cancelled::class.simpleName)
-                return null
-            } catch (auth: TerminalPlaybackAuthentication) {
-                logTier(name, false, started.elapsedNow().inWholeMilliseconds, auth::class.simpleName)
-                throw auth
-            } catch (failure: Throwable) {
-                logTier(name, false, started.elapsedNow().inWholeMilliseconds, failure::class.simpleName)
-                return null
-            }
-        logTier(name, audio != null, started.elapsedNow().inWholeMilliseconds, if (audio == null) "timeout" else null)
-        return audio
+            resolved = audio != null
+            if (timedOut) reason = "timeout"
+            return audio
+        } catch (auth: TerminalPlaybackAuthentication) {
+            reason = auth::class.simpleName
+            throw auth
+        } catch (cancelled: CancellationException) {
+            reason = cancelled::class.simpleName
+            throw cancelled
+        } catch (failure: Throwable) {
+            reason = failure::class.simpleName
+            return null
+        } finally {
+            logTier(name, resolved, started.elapsedNow().inWholeMilliseconds, reason)
+        }
     }
 
     /** The video id a request resolves to, marking whether the provider id itself is already authoritative. */
@@ -426,7 +432,7 @@ class IosYouTubeResolver(
             }
             val accepted =
                 index == ECHO_TIER_CLIENTS.lastIndex || privatelyOwned ||
-                    probeStreamUrl(url, format.contentLength, liveSession.sessionSnapshot().cookie)
+                    probeStreamUrl(url, format.contentLength)
             if (!accepted) continue
             lastSuccessful = null
             return PreparedAudio.Progressive(
@@ -466,9 +472,10 @@ class IosYouTubeResolver(
     /**
      * Echo's HEAD+Range probe: the last byte when the length is known, the first chunk otherwise. A
      * network-class failure proves nothing about the URL and accepts it, as Echo's IOException branch does;
-     * an answered rejection rejects the candidate.
+     * an answered rejection rejects the candidate. The probe carries no auth: a media URL must never see
+     * cookies or Authorization headers, including for signed-in clients.
      */
-    private suspend fun probeStreamUrl(url: String, contentLength: Long?, cookie: String?): Boolean =
+    private suspend fun probeStreamUrl(url: String, contentLength: Long?): Boolean =
         try {
             val range =
                 if (contentLength != null && contentLength > 0L) {
@@ -479,13 +486,12 @@ class IosYouTubeResolver(
             val response =
                 probeClient.head(url) {
                     header(HttpHeaders.Range, range)
-                    cookie?.let { header(HttpHeaders.Cookie, it) }
                 }
             response.status.value in 200..299 || response.status == HttpStatusCode.MethodNotAllowed
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            failure is IOException || failure is HttpRequestException
+            failure is IOException
         }
 
     /** A mint with the same allowance the desktop tiers grant inside their bound. */
