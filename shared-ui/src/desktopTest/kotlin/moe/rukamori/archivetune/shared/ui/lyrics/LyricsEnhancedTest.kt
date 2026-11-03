@@ -157,12 +157,12 @@ class LyricsEnhancedTest {
     }
 
     @Test
-    fun veryShortWordsStillTravelAcrossTheirGlyphs() {
+    fun veryShortWordsFillOverExactlyTheirOwnSpan() {
         val box = LyricsWordBox(startMs = 1_000, endMs = 1_050, leftPx = 0f, rightPx = 100f, line = 0)
 
-        assertEquals(0.5f, LyricsSweepGeometry.progressAt(box, 1_075, reduceMotion = false), 1e-6f)
-        assertEquals(1f, LyricsSweepGeometry.progressAt(box, 1_150, reduceMotion = false), 1e-6f)
-        assertEquals(1f, LyricsSweepGeometry.progressAt(box, 1_150, reduceMotion = false, minSweepMs = 50), 1e-6f)
+        assertEquals(0.5f, LyricsSweepGeometry.progressAt(box, 1_025, reduceMotion = false), 1e-6f)
+        assertEquals(1f, LyricsSweepGeometry.progressAt(box, 1_050, reduceMotion = false), 1e-6f)
+        assertEquals(0.5f, LyricsSweepGeometry.progressAt(box, 1_050, reduceMotion = false, minSweepMs = 100), 1e-6f)
     }
 
     @Test

@@ -691,7 +691,7 @@ private struct LyricSweepRenderer: TextRenderer {
     }
 
     /// The share of [word] that is sung, from 0 to 1 — the shared sweep share, so reduced motion jumps
-    /// between the two and a very short word still sweeps over the shared minimum.
+    /// between the two and each word fills over exactly its own timing.
     private func fraction(of word: NativeLyricsSpan) -> CGFloat {
         CGFloat(LyricsSweepGeometry.shared.progressAt(
             startMs: word.startMs,

@@ -157,6 +157,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.shared.domain.lyrics.LyricsParser
+import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -172,8 +173,7 @@ private const val LRC_LEAD_MS = 300L
 private const val TTML_LEAD_MS = 0L
 private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
 
-/** The shortest span the karaoke sweep animates for; the slowest idle re-poll below it. */
-private const val ENHANCED_SWEEP_MIN_MS = 150L
+/** The slowest idle re-poll. */
 private const val IDLE_POLL_MS = 250L
 private const val MANUAL_SCROLL_TIMEOUT_MS = 4500L
 private const val MANUAL_SCROLL_DEBOUNCE_MS = 50L
@@ -612,7 +612,7 @@ fun LyricsEnhanced(
 
     val lifecycleOwner = LocalLifecycleOwner.current
     // The word/line boundaries below which the position loop sleeps instead of frame-stepping.
-    val deadlineSchedule = remember(lyricsEntries) { LyricsDeadlineSchedule.of(lyricsEntries, ENHANCED_SWEEP_MIN_MS) }
+    val deadlineSchedule = remember(lyricsEntries) { LyricsDeadlineSchedule.of(lyricsEntries, LyricsSweepGeometry.MIN_SWEEP_MS) }
     LaunchedEffect(player, lyricsSessionKey, animationsDisabled, playbackParameters.speed, deadlineSchedule) {
         var wasSliderActive = false
         var anchorPlayerPositionMs = player.currentPosition.coerceAtLeast(0L)

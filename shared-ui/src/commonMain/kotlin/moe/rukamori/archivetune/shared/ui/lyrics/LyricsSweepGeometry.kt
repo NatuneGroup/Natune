@@ -51,8 +51,11 @@ data class LyricsClipRect(
  * resets the sweep without any cached state, and a word never lights before its start.
  */
 object LyricsSweepGeometry {
-    /** The shortest visible sweep. A very short word still travels across its glyphs. */
-    const val MIN_SWEEP_MS = 150L
+    /**
+     * About one frame. It only keeps a zero or negative provider span from dividing by zero: every
+     * other word fills over exactly its own timing, so a quick word never runs past the next one.
+     */
+    const val MIN_SWEEP_MS = 16L
 
     /** Glow rises over this share of a word, and falls back over [GLOW_RELEASE]. */
     const val GLOW_ATTACK = 0.18f
