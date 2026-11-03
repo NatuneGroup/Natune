@@ -248,6 +248,10 @@ class MediaLibrarySessionCallback
         override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
             val result = super.onPlayerCommandRequest(session, controller, playerCommand)
             if (playerCommand == Player.COMMAND_STOP && result == SessionResult.RESULT_SUCCESS) onStopCommand() // a stop() emits no listener-visible change
+            // Pause/play/setPlayWhenReady edges pass through untouched: the session-facing
+            // player (see MusicService) applies the click-free fade on the real call, where the
+            // intent is known — Media3 resolves all three into the single COMMAND_PLAY_PAUSE
+            // here, so handling them in this callback would have to guess.
             return result
         }
 
