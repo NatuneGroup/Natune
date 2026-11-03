@@ -625,6 +625,7 @@ fun LyricsEnhanced(
         var cachedCurrentLineStart = Int.MIN_VALUE
         var cachedNextLineStart = Int.MAX_VALUE
         var cachedActivationStarts: IntArray? = null
+        val interludeGate = EnhancedInterludeGate { latestSyncedLyrics.value }
         // Parks the frame loop while the screen is not resumed, so a paused or backgrounded lyrics view stops polling.
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (isActive) {
@@ -658,16 +659,15 @@ fun LyricsEnhanced(
                 // playbackPositionMs.longValue (we already have the value in
                 // `rawPosition` / `nextPosition`).
                 val effectivePositionMs: Long
-                // Between word and line boundaries the drawn state is static: sleep to the next
-                // deadline and re-read the feed, rather than frame-stepping an unmoving sweep.
+                // Between word and line boundaries the drawn state is static, so the loop sleeps to the next deadline.
                 val idleFeedEstimateMs =
                     (rawPosition + latestLyricsSyncOffset.value.toLong() +
                         latestLeadMs.value + LYRIC_VISUAL_TUNING_OFFSET_MS)
                         .coerceIn(0L, Int.MAX_VALUE.toLong())
-                // The library view lifts each syllable for 700 ms past its start and breathes its interlude dots from the
-                // position, neither of which the schedule knows about, so it gets a fresh position every frame.
-                if (!enhancedLibraryViewActive && sliderPosition == null && player.isPlaying &&
-                    !animationsDisabled && !deadlineSchedule.isLive(idleFeedEstimateMs)
+                // The library view lifts each syllable for 700 ms past its start, and both lists breathe their interlude
+                // dots from the position; the word schedule knows neither, so those get a fresh position every frame.
+                if (!enhancedLibraryViewActive && sliderPosition == null && player.isPlaying && !animationsDisabled &&
+                    !deadlineSchedule.isLive(idleFeedEstimateMs) && !interludeGate.covers(idleFeedEstimateMs)
                 ) {
                     val next = deadlineSchedule.nextChangeAfter(idleFeedEstimateMs)
                     delay(if (next == null) IDLE_POLL_MS else (next - idleFeedEstimateMs).coerceIn(16L, IDLE_POLL_MS))

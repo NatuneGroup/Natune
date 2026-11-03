@@ -117,8 +117,10 @@ internal fun BasicSyncedLyricsList(
     val starts = remember(lines) { IntArray(lines.size) { lines[it].start } }
     val ends = remember(lines) { IntArray(lines.size) { lines[it].end } }
     val interludes = remember(starts, ends) { enhancedInterludes(starts, ends) }
-    // The lit line opens its activation-lead early; the word sweep still follows the real starts.
-    val activationStarts = remember(starts, ends) { enhancedActivationStarts(starts, ends) }
+    val wordSynced = remember(lines) { BooleanArray(lines.size) { lines[it].hasWordTiming() } }
+    // The lit line opens its activation-lead early; the word sweep still follows the real starts, and
+    // a line-synced row activates at its own start — no lead on top of the LRC lead.
+    val activationStarts = remember(starts, ends, wordSynced) { enhancedActivationStarts(starts, ends, wordSynced) }
     val activeIndex by remember(activationStarts) {
         derivedStateOf { activeSyncedLineIndex(activationStarts, currentPosition()) }
     }

@@ -65,8 +65,19 @@ internal class LyricsDeadlineSchedule(
                 changes.add(row.scanStartMs - row.activationLeadMs)
                 changes.add(row.scanEndMs)
                 for (words in listOfNotNull(row.words, row.backgroundWords)) {
-                    for (word in words) {
-                        span(word.startMs, maxOf(word.endMs, word.startMs + minSweepMs))
+                    // The row sinks into its low seat over the instants before its first word.
+                    words.minOfOrNull { it.startMs }?.let { first -> span(first - LyricsSweepGeometry.SINK_MS, first) }
+                    words.forEachIndexed { index, word ->
+                        val nextStart = words.getOrNull(index + 1)?.startMs ?: Long.MAX_VALUE
+                        // The lift window outlives a short word's own span, so it belongs to the live span too.
+                        span(
+                            word.startMs,
+                            maxOf(
+                                word.endMs,
+                                word.startMs + minSweepMs,
+                                LyricsSweepGeometry.liftEndMs(word.startMs, word.endMs, nextStart),
+                            ),
+                        )
                     }
                 }
             }

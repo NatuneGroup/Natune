@@ -169,7 +169,10 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertNotIn("onChange(of: active)", swift)
         # The renderer's inout context arguments match the declaration labels.
         self.assertNotIn("context: &context", swift)
-        self.assertIn("in: &context", swift)
+        self.assertIn("in: &seat", swift)
+        # Every run reads the shared drop, so the sink and the completion lift match Compose.
+        self.assertIn("LyricsSweepGeometry.shared.dropAt(", swift)
+        self.assertIn("wordEndMs: word.endMs", swift)
 
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()
