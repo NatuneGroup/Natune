@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.shared.domain.library.LibraryDefaults
 import moe.rukamori.archivetune.shared.domain.library.LibraryFilter
 import moe.rukamori.archivetune.shared.domain.library.LibrarySortState
 import moe.rukamori.archivetune.shared.domain.library.toLibraryFilterOrder
+import moe.rukamori.archivetune.shared.domain.repository.BuiltInCollectionFinitePolicy
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
@@ -351,7 +352,12 @@ fun hostPlayOccurrence(owners: LibraryPageOwners, collection: ContentRequest?, s
                 ?: list.firstOrNull { it.item.ref == start.item }?.occurrenceId
         }
         if (entries == null || startId == null) return@launch owners.report("the list does not hold this item")
-        owners.queue.replace(entries, startId, playWhenReady = true)
+        owners.queue.replace(
+            entries,
+            startId,
+            playWhenReady = true,
+            staysFinite = BuiltInCollectionFinitePolicy.staysFinite(request),
+        )
     }
 }
 
@@ -361,7 +367,12 @@ fun hostPlayList(owners: LibraryPageOwners, collection: ContentRequest, shuffled
         val entries = owners.content.currentList(collection)?.items.orEmpty()
         if (entries.isEmpty()) return@launch owners.report("nothing to play: the list is unavailable or empty")
         val order = if (shuffled) entries.shuffled() else entries
-        owners.queue.replace(order, order.first().occurrenceId, playWhenReady = true)
+        owners.queue.replace(
+            order,
+            order.first().occurrenceId,
+            playWhenReady = true,
+            staysFinite = BuiltInCollectionFinitePolicy.staysFinite(collection),
+        )
     }
 }
 

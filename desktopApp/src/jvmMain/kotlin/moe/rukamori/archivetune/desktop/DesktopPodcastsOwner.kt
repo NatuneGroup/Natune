@@ -199,7 +199,7 @@ internal class DesktopPodcastsOwner(
         } else rows.shuffled()
         val first = if (request.shuffle) order.first() else start
         if (!ownerJob.isActive || !isCurrent()) throw CancellationException("Podcast play request superseded")
-        queue.replace(order, first.occurrenceId, request.playWhenReady)
+        queue.replace(order, first.occurrenceId, request.playWhenReady, staysFinite = true)
         if (request.positionMs > 0 && queue.state.value.currentOccurrenceId == first.occurrenceId) {
             queue.select(first.occurrenceId, request.positionMs)
         }

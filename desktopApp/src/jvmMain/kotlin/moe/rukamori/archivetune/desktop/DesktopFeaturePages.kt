@@ -184,7 +184,7 @@ internal fun desktopDownloadsPage(graph: DesktopSessionGraph): ArchiveGraphPage 
             val start = playable.firstOrNull { it.item.ref == item.ref } ?: return@DownloadActions
             graph.scope.launch {
                 try {
-                    graph.queue.replace(playable, start.occurrenceId, playWhenReady = true)
+                    graph.queue.replace(playable, start.occurrenceId, playWhenReady = true, staysFinite = true)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {

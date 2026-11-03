@@ -44,7 +44,18 @@ data class QueueTail(
 interface QueueController {
     val player: MusicPlayerController
     val state: StateFlow<QueueState>
-    suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean)
+
+    /**
+     * [staysFinite] marks entries taken from a built-in collection (library songs, liked, downloads, local files,
+     * history, statistics, podcasts) so the queue ends with them, as [QueueState.staysFinite] describes. User
+     * playlists, albums, shelves and ad-hoc picks leave it false and keep their recommendation continuation.
+     */
+    suspend fun replace(
+        entries: List<ContentOccurrence>,
+        startOccurrenceId: String,
+        playWhenReady: Boolean,
+        staysFinite: Boolean = false,
+    )
 
     /** The occurrences actually queued; duplicate prevention can refuse some or all of the batch. */
     suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind): Int

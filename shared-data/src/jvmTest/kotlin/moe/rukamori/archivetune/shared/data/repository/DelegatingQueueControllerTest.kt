@@ -48,7 +48,12 @@ class DelegatingQueueControllerTest {
             return LegacyQueueResume(state.value.revision, LegacyJavaQueueReader().read(bytes))
         }
         override suspend fun restore(value: LegacyQueueResume) { record("restore"); restored = value }
-        override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) { record("replace") }
+        override suspend fun replace(
+            entries: List<ContentOccurrence>,
+            startOccurrenceId: String,
+            playWhenReady: Boolean,
+            staysFinite: Boolean,
+        ) { record("replace") }
         override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind): Int { record(kind.name); return entries.size }
         override suspend fun remove(occurrenceIds: Set<String>) { record("remove") }
         override suspend fun move(occurrenceId: String, beforeOccurrenceId: String?) { record("move") }
