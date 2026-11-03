@@ -422,6 +422,7 @@ class DesktopSessionGraph internal constructor(
         japaneseLanguagePack?.close()
         lyrics.close()
         listenerPresence.close()
+        newsFeed.close()
         drivers.forEach { it.cancel() }
         checkpointNow(queue)
         owner.close()

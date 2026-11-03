@@ -3,10 +3,17 @@ package moe.rukamori.archivetune.shared.data.news
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import moe.rukamori.archivetune.shared.domain.repository.ContentNews
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -176,5 +183,35 @@ class NatuneNewsClientTest {
         assertTrue(hasUnreadNews(listOf(welcome), 0L))
         assertTrue(hasUnreadNews(listOf(welcome), welcome.timestamp - 1))
         assertFalse(hasUnreadNews(listOf(welcome), welcome.timestamp))
+    }
+
+    @Test
+    fun closingReleasesTheFeedClientAndLeavesTheBorrowedEngineUsable() = runTest {
+        val engine = MockEngine { respond(liveIndex, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
+        val shared = HttpClient(engine)
+        val news = NatuneNewsClient(shared, DEFAULT_NATUNE_NEWS_URL)
+        assertEquals(listOf(welcome), news.list())
+        assertTrue(news.isOpen)
+
+        news.close()
+
+        assertFalse(news.isOpen)
+        assertTrue(engine.isActive)
+        assertEquals(liveIndex, shared.get("https://elsewhere.example/index.json").bodyAsText())
+        shared.close()
+    }
+
+    @Test
+    fun closingTheBorrowedClientAlsoReleasesTheFeedSoTheEngineCanFinish() = runTest {
+        val engine = MockEngine { respond(liveIndex, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
+        val shared = HttpClient(engine)
+        val news = NatuneNewsClient(shared, DEFAULT_NATUNE_NEWS_URL)
+        assertEquals(listOf(welcome), news.list())
+
+        shared.close()
+
+        // The engine's job completes only once every client job under it has, the feed's private one included.
+        withContext(Dispatchers.Default) { withTimeout(5_000) { engine.coroutineContext[Job]!!.join() } }
+        assertFalse(news.isOpen)
     }
 }

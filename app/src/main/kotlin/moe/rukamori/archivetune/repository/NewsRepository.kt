@@ -22,6 +22,8 @@ import javax.inject.Singleton
 class NewsRepository
     @Inject
     constructor() {
+        // A process-lifetime singleton, like the original repository: its OkHttp client is never closed because the
+        // feed is read for as long as the app runs and the process exit releases the pool.
         private val feed =
             NatuneNewsClient(
                 client =
