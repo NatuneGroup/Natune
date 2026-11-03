@@ -24,7 +24,7 @@ class IosSourceContractsTest(unittest.TestCase):
                 "discord-1165706613961789445",
                 "natune",
                 "vnd.youtube",
-                "$(ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME)",
+                "$(PRODUCT_BUNDLE_IDENTIFIER)",
             ],
             info["CFBundleURLTypes"][0]["CFBundleURLSchemes"],
         )

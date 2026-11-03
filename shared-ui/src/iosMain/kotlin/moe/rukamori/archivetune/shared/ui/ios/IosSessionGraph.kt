@@ -158,8 +158,8 @@ internal class IosSessionGraph private constructor(
     val downloads: IosDownloadsOwner,
     /** Backup and restore: the portable-format gateway, the prepared-restore registry and the restart request. */
     val backup: IosBackupOwner,
-    /** The Google Drive app-data backup owners, or null while the build carries no iOS OAuth client id. */
-    val driveBackup: IosDriveBackup?,
+    /** The Google Drive app-data backup owners. Its rows report the not-configured state when the build carries no iOS OAuth client id. */
+    val driveBackup: IosDriveBackup,
     /** The imported local songs: the Files picker, the shared scan pipeline and the `local` library rows. */
     val localMedia: IosLocalMediaOwner,
     /** The Last.fm, Libre.fm and custom-endpoint scrobbler over the one player and queue, closed with the graph. */
@@ -699,22 +699,21 @@ internal class IosSessionGraph private constructor(
                 initialRestoreFailed = restoreFailed,
                 initialRecoveryMode = recoveryMode,
             )
-            // The Drive app-data backup mounts only when the build carries a Google iOS OAuth client; the same
-            // gateway and restore registry serve it, so a Drive archive is byte-identical to a file export and a
-            // cloud restore stages like a file restore. The page keeps the rows hidden without a client id.
-            val driveBackup = IosProviderCredentials.googleDriveClientId.takeIf { it.isNotBlank() }?.let {
-                IosDriveBackup(
-                    scope = scope,
-                    http = http,
-                    credentials = host.credentials,
-                    browser = host.browser,
-                    instanceDirectory = databaseDirectory,
-                    archives = backup.archives,
-                    restores = backup.restores,
-                    onRestartRequired = backup::requestRestart,
-                    report = report,
-                )
-            }
+            // The Drive app-data backup mounts on every build; its chooser reports CONFIGURATION while the build
+            // carries no Google iOS OAuth client, so the page shows the localized not-configured state rather than
+            // hiding the rows. The same gateway and restore registry serve it, so a Drive archive is byte-identical
+            // to a file export and a cloud restore stages like a file restore.
+            val driveBackup = IosDriveBackup(
+                scope = scope,
+                http = http,
+                credentials = host.credentials,
+                browser = host.browser,
+                instanceDirectory = databaseDirectory,
+                archives = backup.archives,
+                restores = backup.restores,
+                onRestartRequired = backup::requestRestart,
+                report = report,
+            )
             val locators = IosQueueLocatorResolver(
                 audio = audioResolver,
                 port = host.playbackPort,
@@ -953,7 +952,7 @@ internal class IosSessionGraph private constructor(
             downloads.start()
             localMedia.start()
             // Re-arms the Drive schedule; its uploads only live as long as this process, like the desktop host's.
-            driveBackup?.start()
+            driveBackup.start()
             return graph
         }
     }

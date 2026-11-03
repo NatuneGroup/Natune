@@ -21,6 +21,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -37,6 +41,7 @@ import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.shared.data.backup.IosRestoreFileOps
 import moe.rukamori.archivetune.shared.data.backup.KtorDriveAppDataTransport
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
+import moe.rukamori.archivetune.shared.data.platform.ios.iosBackupNetworkAllowed
 import moe.rukamori.archivetune.shared.data.platform.ios.iosNowMillis
 import moe.rukamori.archivetune.shared.data.platform.ios.iosSecureRandomBytes
 import moe.rukamori.archivetune.shared.domain.backup.BackupArchiveGateway
@@ -61,6 +66,8 @@ import moe.rukamori.archivetune.shared.domain.platform.CredentialKey
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.platform.SecureCredentialStore
 import moe.rukamori.archivetune.shared.ui.settings.DriveAppDataBackupHost
+import moe.rukamori.archivetune.shared.ui.settings.DriveAppDataFailure
+import moe.rukamori.archivetune.shared.ui.settings.DriveAppDataSnapshot
 import moe.rukamori.archivetune.shared.ui.settings.drivebackup.DriveAppDataAccountChooser
 import moe.rukamori.archivetune.shared.ui.settings.drivebackup.DriveAppDataBackupBinding
 import moe.rukamori.archivetune.shared.ui.settings.drivebackup.DriveAppDataBackupFormatter
@@ -80,8 +87,12 @@ import platform.Foundation.NSURLQueryItem
  * [IosBackupOwner]'s, so a Drive upload is the same portable archive a manual export writes and a cloud restore
  * lands on the same staged-restore path.
  *
- * Scheduled uploads only run while the process lives — iOS suspends rather than schedules — and the saved cadence
- * is re-armed at open exactly as the desktop's in-process scheduler does.
+ * The section is mounted whether or not the build carries an iOS OAuth client: without a client id the host
+ * reports CONFIGURATION so the rows show the localized not-configured state instead of looking signed out, the
+ * same surface the desktop page gives an unconfigured build. Scheduled uploads only run while the process lives —
+ * iOS suspends rather than schedules — and the saved cadence is re-armed at open exactly as the desktop's
+ * in-process scheduler does. Uploads honor the wifiOnly network rule: like the Android host's WorkManager
+ * constraint, a due upload waits for a matching route rather than running on a metered connection.
  */
 internal class IosDriveBackup(
     private val scope: CoroutineScope,
@@ -118,8 +129,24 @@ internal class IosDriveBackup(
         onRestartRequired = onRestartRequired,
     )
 
-    /** The page's Drive host. Disconnecting also forgets and revokes the stored Google grant. */
+    private val configured = IosProviderCredentials.googleDriveClientId.isNotBlank()
+
+    /**
+     * The page's Drive host. Disconnecting also forgets and revokes the stored Google grant. While the build has
+     * no iOS OAuth client id, its snapshot reports CONFIGURATION once the owner's state settles, so the page shows
+     * the localized not-configured string as the Drive sign-in's unavailable state; choosing an account still
+     * runs the chooser, which refuses with the same failure.
+     */
     val drive: DriveAppDataBackupHost = object : DriveAppDataBackupHost by binding {
+        override val snapshot: StateFlow<DriveAppDataSnapshot?> =
+            if (configured) {
+                binding.snapshot
+            } else {
+                binding.snapshot
+                    .map { state -> state?.copy(failure = state.failure ?: DriveAppDataFailure.CONFIGURATION) }
+                    .stateIn(scope, SharingStarted.Eagerly, binding.snapshot.value)
+            }
+
         override suspend fun disconnect() {
             val account = owner.state.value.settings.accountName
             binding.disconnect()
@@ -160,8 +187,10 @@ private fun DriveAppDataSettings.schedule(): DriveAppDataSchedule =
 
 /**
  * Google sign-in for Drive through the ASWebAuthenticationSession sheet and PKCE: the ephemeral browser loads
- * Google's consent page and the code returns on the URL scheme the build registered for the iOS OAuth client —
- * its reversed client id, or the bundle id Google also accepts for iOS clients. The client is a public
+ * Google's consent page and the code returns on a custom URL scheme — the explicit `ArchiveTuneGoogleDriveUrlScheme`
+ * when the build sets one, otherwise the OAuth client's reversed client id. The plist always registers the bundle
+ * id, a scheme Google also accepts for iOS clients, and the session delivers any custom-scheme callback to the
+ * waiting port regardless, so no build can produce an empty or unhandled redirect. The client is a public
  * installed-app client, so no secret is sent or stored. Only the refresh token is kept, in the Keychain vault;
  * access tokens stay in memory. Without a configured client id the chooser reports CONFIGURATION, which the page
  * shows as "not configured".
@@ -187,7 +216,7 @@ internal class IosGoogleDriveAuthorization(
         val scheme = IosProviderCredentials.googleDriveUrlScheme.ifBlank { reversedClientId(clientId) }
         val redirect = "$scheme:$CALLBACK_PATH"
         val verifier = secureUrlSafe(VERIFIER_BYTES)
-        val challenge = Base64.UrlSafe.encode(Sha256.digest(verifier.encodeToByteArray())).trimEnd('=')
+        val challenge = URL_SAFE.encode(Sha256.digest(verifier.encodeToByteArray()))
         val state = secureUrlSafe(STATE_BYTES)
         val url = URLBuilder(AUTHORIZE_URL).apply {
             parameters.append("client_id", clientId)
@@ -369,7 +398,7 @@ internal class IosGoogleDriveAuthorization(
     private fun accountOf(idToken: String?, clientId: String): String {
         val claims = try {
             val payload = requireNotNull(idToken).split('.')[1]
-            json.parseToJsonElement(Base64.UrlSafe.decode(payload.trimEnd('=')).decodeToString()) as JsonObject
+            json.parseToJsonElement(URL_SAFE.decode(payload).decodeToString()) as JsonObject
         } catch (failure: Exception) {
             throw DriveAppDataBackupException(DriveAppDataBackupFailure.AUTHORIZATION, failure)
         }
@@ -388,7 +417,7 @@ internal class IosGoogleDriveAuthorization(
     }
 
     private fun secureUrlSafe(bytes: Int): String =
-        Base64.UrlSafe.encode(iosSecureRandomBytes(bytes)).trimEnd('=')
+        URL_SAFE.encode(iosSecureRandomBytes(bytes))
 
     /** One decoded query field of the callback URL, or null when it is absent. */
     private fun queryParam(url: String, name: String): String? =
@@ -412,6 +441,9 @@ internal class IosGoogleDriveAuthorization(
         const val STATE_BYTES = 24
         const val EXPIRY_MARGIN_MS = 60_000L
         const val DEFAULT_EXPIRY_SECONDS = 3_600L
+
+        /** URL-safe Base64 that decodes padded and unpadded input alike, so an unpadded JWT segment never fails. */
+        val URL_SAFE = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL)
         val GRANT_KEY = CredentialKey("google_drive", CredentialScope.PERSONAL, "ios_grant")
     }
 }
@@ -421,6 +453,10 @@ internal class IosGoogleDriveAuthorization(
  * an upload only runs while the app is alive, and the saved cadence is re-armed at open. The periodic loop wakes at
  * least hourly and uploads once the newest backup is older than the chosen cadence; a manual request runs at once.
  * Transient network failures retry with a growing pause inside the owner's retry budget.
+ *
+ * Every run first waits for the network rule the request was made under — the periodic schedule's, or the manual
+ * request's wifiOnly setting at enqueue — held like the Android host's WorkManager constraint: a due upload waits
+ * on a matching route rather than running on a metered connection, and the wait is not a failed attempt.
  */
 internal class IosDriveScheduler(
     private val scope: CoroutineScope,
@@ -438,12 +474,20 @@ internal class IosDriveScheduler(
 
     override suspend fun apply(schedule: DriveAppDataSchedule) = lock.withLock {
         periodic?.cancel()
-        periodic = (schedule as? DriveAppDataSchedule.Periodic)?.let { rule -> scope.launch { runPeriodic(rule.days) } }
+        periodic = (schedule as? DriveAppDataSchedule.Periodic)?.let { rule -> scope.launch { runPeriodic(rule) } }
     }
 
     override suspend fun enqueueNow(accountName: String) = lock.withLock {
         if (manual?.isActive == true) return@withLock
-        manual = scope.launch { runWithRetries(accountName) }
+        // The manual request carries the wifiOnly rule current at enqueue, like the Android host baking the same
+        // constraint into its one-time work request.
+        val bound = owner ?: return@withLock
+        val network = if (bound.state.value.settings.wifiOnly) {
+            DriveAppDataNetwork.UNMETERED
+        } else {
+            DriveAppDataNetwork.CONNECTED
+        }
+        manual = scope.launch { runWithRetries(accountName, network) }
     }
 
     override suspend fun cancelAll() = lock.withLock {
@@ -453,8 +497,8 @@ internal class IosDriveScheduler(
         manual = null
     }
 
-    private suspend fun runPeriodic(days: Int) {
-        val interval = days.coerceAtLeast(1) * DAY_MS
+    private suspend fun runPeriodic(rule: DriveAppDataSchedule.Periodic) {
+        val interval = rule.days.coerceAtLeast(1) * DAY_MS
         while (currentCoroutineContext().isActive) {
             val bound = owner ?: return
             val settings = bound.state.value.settings
@@ -465,16 +509,17 @@ internal class IosDriveScheduler(
                 delay(minOf(wait, CHECK_INTERVAL_MS))
                 continue
             }
-            runWithRetries(account)
+            runWithRetries(account, rule.network)
             // A run that did not produce a newer backup waits for the next check instead of retrying at once.
             if ((bound.state.value.settings.backup?.modifiedAtMillis ?: 0L) <= last) delay(CHECK_INTERVAL_MS)
         }
     }
 
-    private suspend fun runWithRetries(accountName: String) {
+    private suspend fun runWithRetries(accountName: String, network: DriveAppDataNetwork) {
         val bound = owner ?: return
         var attempt = 0
         while (true) {
+            if (!awaitUploadNetwork(accountName, network)) return
             when (val result = bound.runUpload(accountName, attempt)) {
                 DriveAppDataJobResult.RetryLater -> {
                     attempt += 1
@@ -489,10 +534,26 @@ internal class IosDriveScheduler(
         }
     }
 
+    /**
+     * Holds the run until the default route satisfies [network]: UNMETERED waits for a non-WWAN route — cellular
+     * counts as metered — and CONNECTED waits for any online route. Returns false when the account changed
+     * mid-wait or the job was cancelled, so a stale run never starts an upload.
+     */
+    private suspend fun awaitUploadNetwork(accountName: String, network: DriveAppDataNetwork): Boolean {
+        while (currentCoroutineContext().isActive) {
+            val bound = owner ?: return false
+            if (bound.state.value.settings.accountName != accountName) return false
+            if (iosBackupNetworkAllowed(unmeteredOnly = network == DriveAppDataNetwork.UNMETERED)) return true
+            delay(NETWORK_WAIT_MS)
+        }
+        return false
+    }
+
     private companion object {
         const val DAY_MS = 24 * 60 * 60 * 1000L
         const val CHECK_INTERVAL_MS = 60 * 60 * 1000L
         const val RETRY_BASE_MS = 15_000L
+        const val NETWORK_WAIT_MS = 60_000L
     }
 }
 
