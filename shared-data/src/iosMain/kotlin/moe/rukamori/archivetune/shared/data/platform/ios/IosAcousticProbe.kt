@@ -54,6 +54,7 @@ object IosAcousticProbe {
         occurrenceKey: String = "",
     ): AcousticWindow {
         if (startPositionMs < 0L) return AcousticWindow.Refused("input_unreadable")
+        iosProbeRefusalOf(locator)?.let { return AcousticWindow.Refused(it) }
         val source = iosProbeSourceOf(locator) ?: return AcousticWindow.Refused("no_safe_source")
         val samples = FloatArray(ACOUSTIC_WINDOW_SAMPLES)
         val probe = ae_probe_create() ?: return AcousticWindow.Refused("input_unreadable")
@@ -163,6 +164,18 @@ object IosAcousticProbe {
     /** Interleaved samples the audit window is bounded by: the shared PCM budget in samples. */
     private const val ACOUSTIC_WINDOW_SAMPLES = AcousticAuditLimits.MAX_PCM_BYTES / Float.SIZE_BYTES
 }
+
+/** The refusal code of a remote probe made while playback streams must leave through the proxy route. */
+internal const val PROXIED_REMOTE_REFUSAL = "remote_proxy_unsupported"
+
+/**
+ * Why [locator] may not be probed under the current network policy, or null when it may. The probe opens a
+ * remote URL with FFmpeg's own fetcher, which ignores the proxy lease playback uses, so while a static proxy
+ * or a rotation is live (an empty rotation pool included, which playback answers by blocking the stream) a
+ * remote probe would leave on the device's own address. It is refused before anything is opened.
+ */
+internal fun iosProbeRefusalOf(locator: PlaybackLocator): String? =
+    PROXIED_REMOTE_REFUSAL.takeIf { locator is PlaybackLocator.Remote && IosStreamProxyRouting.mustProxy() }
 
 /**
  * The string the probe opens for [locator], or null when the probe cannot open it as a string, mirroring

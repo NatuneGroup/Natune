@@ -44,6 +44,7 @@ import moe.rukamori.archivetune.shared.ui.resources.m6aq_code_insufficient_pcm
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_code_no_current_source
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_code_no_safe_source
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_code_pcm_budget_shortened_excerpt
+import moe.rukamori.archivetune.shared.ui.resources.m6aq_code_remote_proxy_unsupported
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_code_remote_unsupported
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_complete
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_cutoff
@@ -276,6 +277,7 @@ internal fun acousticCodeText(code: String): String =
                 Res.string.m6aq_code_current_source_unavailable
             "no_safe_source" -> Res.string.m6aq_code_no_safe_source
             "remote_unsupported" -> Res.string.m6aq_code_remote_unsupported
+            "remote_proxy_unsupported" -> Res.string.m6aq_code_remote_proxy_unsupported
             "codec_unknown" -> Res.string.m6aq_code_codec_unknown
             "insufficient_pcm" -> Res.string.m6aq_code_insufficient_pcm
             else -> Res.string.m6aq_generic
