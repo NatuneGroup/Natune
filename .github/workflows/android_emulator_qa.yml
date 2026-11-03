@@ -116,9 +116,11 @@ jobs:
             assembleGmsMobileUniversalDebug
           find app/build/outputs/apk -name "*.apk" -print
         env:
+          # Pull request runs execute unreviewed code and publish screenshots and logcat, so the
+          # provider secrets reach only manual dispatches; the PR build is the unconfigured one.
           ARCHIVETUNE_ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL }}
-          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
-          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || (github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_URL || '') }}
+          SOURCE_PROVIDER_KEY: ${{ github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_KEY || '' }}
 
       - name: Install, launch, navigate, capture
         if: steps.kvm.outputs.kvm == 'present'

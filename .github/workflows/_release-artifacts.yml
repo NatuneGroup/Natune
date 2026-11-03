@@ -1274,6 +1274,7 @@ jobs:
           write_setting ARCHIVETUNE_POTOKEN_REQUEST_KEY "$ARCHIVETUNE_POTOKEN_REQUEST_KEY"
           write_setting ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY "$ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY"
           write_setting ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID "$ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID"
+          # Info.plist reads these two as ArchiveTuneGoogleDriveClientId and ArchiveTuneGoogleDriveUrlScheme.
           write_setting ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID "$ARCHIVETUNE_GOOGLE_DRIVE_CLIENT_ID"
           write_setting ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME "$ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME"
 
@@ -1351,9 +1352,10 @@ jobs:
 
   publish-release:
     name: Publish ${{ inputs.channel }} release
-    # The macOS and iOS legs are optional on GitHub-hosted runners — a failed or skipped leg leaves
-    # its files out of a partial release. Required results (Android plus the Windows/Linux desktop
-    # legs) and !cancelled() gate this job, so a cancelled run can never publish half-written assets.
+    # Only the required legs (Android plus the Windows/Linux desktop legs) gate this job. The macOS and
+    # iOS legs are optional on GitHub-hosted runners, so waiting for them would let an unavailable
+    # macOS runner hold the release; attach-optional-assets adds their files once the release exists.
+    # !cancelled() keeps a cancelled run from publishing half-written assets.
     if: >-
       !cancelled() &&
       inputs.publish &&
@@ -1362,8 +1364,6 @@ jobs:
     needs:
       - android
       - desktop
-      - desktop-macos
-      - ios
     runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: write
@@ -1416,17 +1416,16 @@ jobs:
           # upload hit the quota is restored from its staging release. Existing files are kept as
           # they arrived and only overwritten by an identical hand-off.
           for STAGING_TAG in "${STAGING_TAGS[@]}"; do
+            case "$STAGING_TAG" in
+              *-desktop-macos-*|*-ios)
+                echo "Skipping optional leg hand-off $STAGING_TAG; attach-optional-assets restores it after publishing."
+                continue
+                ;;
+            esac
             echo "Restoring release assets from $STAGING_TAG."
             if ! gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-artifacts --clobber; then
-              case "$STAGING_TAG" in
-                *-desktop-macos-*|*-ios)
-                  echo "::warning::Optional leg '$STAGING_TAG' could not hand its assets over; the required-file inventory below decides the release."
-                  ;;
-                *)
-                  echo "::error::Required leg '$STAGING_TAG' staging download failed."
-                  exit 1
-                  ;;
-              esac
+              echo "::error::Required leg '$STAGING_TAG' staging download failed."
+              exit 1
             fi
           done
 
@@ -1463,34 +1462,24 @@ jobs:
             APK_SUFFIX=nightly
             EXPECTED_APKS=6
           fi
-          # Asset expectations are tracked per build leg instead of one fixed total. The macOS
-          # desktop legs and the iOS IPA leg are best-effort on GitHub-hosted runners: a leg that
-          # fails or never picks up simply leaves no files, and the release still publishes what
-          # exists with the gaps noted below. Android APKs and the Windows/Linux installers stay
-          # required — a missing one means its leg failed, and that still stops the release rather
-          # than shipping a broken artifact set.
+          # Android APKs and the Windows/Linux installers are required: a missing one means its leg
+          # failed, and that stops the release rather than shipping a broken artifact set. macOS and
+          # iOS files never ship from this job, even when their legs finished first; the
+          # attach-optional-assets job adds them, so the release contents do not depend on job timing.
           EXPECTED_NAMES=()
-          OPTIONAL_NAMES=()
           MISSING_REQUIRED=()
-          MISSING_OPTIONAL=()
-          if [[ "${BUILD_DESKTOP:-true}" == "true" ]]; then
-            EXPECTED_NAMES+=(
-              "natune-desktop-windows-x64-${VERSION_NAME}.msi"
-              "natune-desktop-windows-x64-${VERSION_NAME}.exe"
-              "natune-desktop-windows-x64-${VERSION_NAME}.zip"
-              "natune-desktop-linux-x64-${VERSION_NAME}.deb"
-              "natune-desktop-linux-x64-${VERSION_NAME}.AppImage"
-              "natune-desktop-linux-arm64-${VERSION_NAME}.deb"
-              "natune-desktop-linux-arm64-${VERSION_NAME}.AppImage"
-            )
-            OPTIONAL_NAMES+=(
-              "natune-desktop-macos-x64-${VERSION_NAME}.dmg"
-              "natune-desktop-macos-arm64-${VERSION_NAME}.dmg"
-            )
-          fi
-          if [[ "${BUILD_IOS:-true}" == "true" ]]; then
-            OPTIONAL_NAMES+=("natune-ios-${VERSION_NAME}.ipa")
-          fi
+          # Manifest order matters to the desktop updater, which takes the first asset matching its
+          # platform and architecture: the launchable installer (exe, AppImage) precedes the others.
+          DESKTOP_MANIFEST_NAMES=(
+            "natune-desktop-windows-x64-${VERSION_NAME}.exe"
+            "natune-desktop-windows-x64-${VERSION_NAME}.msi"
+            "natune-desktop-windows-x64-${VERSION_NAME}.zip"
+            "natune-desktop-linux-x64-${VERSION_NAME}.AppImage"
+            "natune-desktop-linux-x64-${VERSION_NAME}.deb"
+            "natune-desktop-linux-arm64-${VERSION_NAME}.AppImage"
+            "natune-desktop-linux-arm64-${VERSION_NAME}.deb"
+          )
+          EXPECTED_NAMES+=("${DESKTOP_MANIFEST_NAMES[@]}")
 
           CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_BRANCH" --jq '.sha')"
           if [[ "$CURRENT_SHA" != "$COMMIT_SHA" ]]; then
@@ -1499,6 +1488,8 @@ jobs:
             exit 0
           fi
 
+          mkdir -p downloaded-artifacts
+          find downloaded-artifacts -type f \( -name 'natune-desktop-macos-*' -o -name 'natune-ios-*' \) -print -delete
           mapfile -d '' RELEASE_FILES < <(find downloaded-artifacts -type f -print0 | sort -z)
           mapfile -d '' APK_FILES < <(find downloaded-artifacts -type f -name "app-*-${APK_SUFFIX}.apk" -print0 | sort -z)
 
@@ -1517,13 +1508,7 @@ jobs:
               MISSING_REQUIRED+=("$NAME")
             fi
           done
-          for NAME in "${OPTIONAL_NAMES[@]}"; do
-            if [[ -f "downloaded-artifacts/$NAME" ]]; then
-              EXPECTED_TOTAL=$((EXPECTED_TOTAL + 1))
-            else
-              MISSING_OPTIONAL+=("$NAME")
-            fi
-          done
+
           if [[ "${#MISSING_REQUIRED[@]}" -gt 0 ]]; then
             echo "::error::Required release assets are missing because their build legs did not deliver:"
             printf '  %s\n' "${MISSING_REQUIRED[@]}"
@@ -1535,9 +1520,6 @@ jobs:
             find downloaded-artifacts -type f -print || true
             exit 1
           fi
-          for NAME in "${MISSING_OPTIONAL[@]}"; do
-            echo "::warning::Optional artifact '$NAME' is absent; its macOS/iOS leg failed or never picked up a runner."
-          done
 
           NOTES_FILE="$RUNNER_TEMP/release-notes.md"
           {
@@ -1572,11 +1554,8 @@ jobs:
             printf '\n> Android APKs are unsigned because one or more Android signing secrets are missing.\n' >> "$NOTES_FILE"
           fi
 
-          if [[ "${#MISSING_OPTIONAL[@]}" -gt 0 ]]; then
-            printf '\n> **Partial build:** these artifacts are missing because their macOS/iOS build legs did not complete; the rest of the release is unaffected:\n' >> "$NOTES_FILE"
-            for NAME in "${MISSING_OPTIONAL[@]}"; do
-              printf '> - `%s`\n' "$NAME" >> "$NOTES_FILE"
-            done
+          if [[ "${BUILD_DESKTOP:-true}" == "true" || "${BUILD_IOS:-true}" == "true" ]]; then
+            printf '\n> macOS and iOS packages are optional builds; they are attached to this release when their build legs finish.\n' >> "$NOTES_FILE"
           fi
 
           if [[ "$CHANNEL" == stable ]]; then
@@ -1619,6 +1598,12 @@ jobs:
             exit 0
           fi
 
+          # macOS packages are attached after this manifest is written, so it lists only the required
+          # desktop installers; a macOS host finds no matching asset and reports no installable update.
+          MANIFEST_FILES=("${APK_FILES[@]}")
+          for NAME in "${DESKTOP_MANIFEST_NAMES[@]}"; do
+            MANIFEST_FILES+=("downloaded-artifacts/$NAME")
+          done
           PUBLISHED_AT="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq '.publishedAt')"
           MANIFEST_NAME="${CHANNEL}.json"
           python3 .github/scripts/update_manifest.py \
@@ -1632,7 +1617,7 @@ jobs:
             --download-url-base "https://github.com/$GITHUB_REPOSITORY/releases/download" \
             --notes-file "$NOTES_FILE" \
             --output "$MANIFEST_NAME" \
-            "${APK_FILES[@]}"
+            "${MANIFEST_FILES[@]}"
 
       - name: Upload update-feed manifest for the next job
         id: upload-update-feed
@@ -1714,10 +1699,152 @@ jobs:
               --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' || true
           )
           for STAGING_TAG in "${STAGING_TAGS[@]}"; do
-            # publish-update-feed still reads the manifest from its own staging release.
-            if [[ "$STAGING_TAG" == *-update-feed ]]; then
-              continue
+            # publish-update-feed still reads the manifest from its own staging release, and
+            # attach-optional-assets still reads the macOS/iOS hand-offs.
+            case "$STAGING_TAG" in
+              *-update-feed|*-desktop-macos-*|*-ios)
+                continue
+                ;;
+            esac
+            if gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
+              echo "Deleted staging release $STAGING_TAG."
+            else
+              echo "::warning::Could not delete staging release $STAGING_TAG; it stays prerelease-only."
             fi
+          done
+
+  attach-optional-assets:
+    name: Attach optional macOS and iOS assets to the ${{ inputs.channel }} release
+    # Runs after the release exists, so a macOS runner that never picks up delays only these files, and
+    # cancelling the run leaves the published release as it is. A failed or skipped optional leg is
+    # reported and listed in the release notes; it never removes or blocks the published assets.
+    needs:
+      - publish-release
+      - desktop-macos
+      - ios
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      contents: write
+    steps:
+      - name: Download optional build artifacts
+        id: download-optional-artifacts
+        if: needs.publish-release.outputs.did_publish == 'true'
+        uses: actions/download-artifact@v8
+        # A full artifact quota fails this download as well; the staging releases hold the same sets.
+        continue-on-error: true
+        with:
+          pattern: "{desktop-${{ inputs.channel }}-macos-*,ios-${{ inputs.channel }}}"
+          path: optional-artifacts
+          merge-multiple: true
+
+      - name: Restore the optional staging release hand-offs
+        if: needs.publish-release.outputs.did_publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACTS_OUTCOME: ${{ steps.download-optional-artifacts.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p optional-artifacts
+          # A leg whose artifact upload failed parked its files on a staging release instead.
+          mapfile -t STAGING_TAGS < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/staging-${GITHUB_RUN_ID}-" \
+              --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' | grep -E -- '-desktop-macos-|-ios$' || true
+          )
+          if [[ "${#STAGING_TAGS[@]}" -eq 0 ]]; then
+            echo "Optional artifact download: $ARTIFACTS_OUTCOME; run $GITHUB_RUN_ID left no optional staging hand-off."
+            exit 0
+          fi
+          for STAGING_TAG in "${STAGING_TAGS[@]}"; do
+            echo "Restoring optional release assets from $STAGING_TAG."
+            if ! gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --dir optional-artifacts --clobber; then
+              echo "::warning::Optional leg '$STAGING_TAG' could not hand its assets over; its files stay off the release."
+            fi
+          done
+
+      - name: Attach optional assets to the published release
+        id: attach-optional
+        if: needs.publish-release.outputs.did_publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
+          BUILD_DESKTOP: ${{ inputs.build_desktop }}
+          BUILD_IOS: ${{ inputs.build_ios }}
+          MACOS_RESULT: ${{ needs.desktop-macos.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
+        run: |
+          set -euo pipefail
+          # The tag may have been re-cut by a newer run since publish-release; only this build's release takes the files.
+          if ! RELEASE_DATA="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json body,targetCommitish)"; then
+            echo "::warning::Release $TAG_NAME no longer exists; not attaching optional assets."
+            exit 0
+          fi
+          RELEASE_SHA="$(jq -r '.targetCommitish' <<< "$RELEASE_DATA")"
+          RELEASE_BODY="$(jq -r '.body' <<< "$RELEASE_DATA")"
+          if [[ "$RELEASE_SHA" != "$COMMIT_SHA" || "$RELEASE_BODY" != *"at-build:$VERSION_CODE"* ]]; then
+            echo "::warning::Release $TAG_NAME targets $RELEASE_SHA, not build $VERSION_CODE of $COMMIT_SHA; not attaching optional assets."
+            exit 0
+          fi
+
+          OPTIONAL_NAMES=()
+          if [[ "${BUILD_DESKTOP:-true}" == "true" ]]; then
+            OPTIONAL_NAMES+=(
+              "natune-desktop-macos-x64-${VERSION_NAME}.dmg"
+              "natune-desktop-macos-arm64-${VERSION_NAME}.dmg"
+            )
+          fi
+          if [[ "${BUILD_IOS:-true}" == "true" ]]; then
+            OPTIONAL_NAMES+=("natune-ios-${VERSION_NAME}.ipa")
+          fi
+          PRESENT=()
+          MISSING=()
+          for NAME in "${OPTIONAL_NAMES[@]}"; do
+            if [[ -f "optional-artifacts/$NAME" ]]; then
+              PRESENT+=("optional-artifacts/$NAME")
+            else
+              MISSING+=("$NAME")
+            fi
+          done
+
+          if [[ "${#PRESENT[@]}" -gt 0 ]]; then
+            gh release upload "$TAG_NAME" "${PRESENT[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            printf 'Attached %s\n' "${PRESENT[@]}"
+          fi
+          if [[ "${#MISSING[@]}" -eq 0 ]]; then
+            exit 0
+          fi
+          for NAME in "${MISSING[@]}"; do
+            echo "::warning::Optional artifact '$NAME' is absent (macOS leg: ${MACOS_RESULT:-unknown}, iOS leg: ${IOS_RESULT:-unknown}); the release ships without it."
+          done
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          {
+            printf '%s\n' "$RELEASE_BODY"
+            printf '\n> **Partial build:** these artifacts are missing because their macOS/iOS build legs did not complete; the rest of the release is unaffected:\n'
+            for NAME in "${MISSING[@]}"; do
+              printf '> - `%s`\n' "$NAME"
+            done
+          } > "$NOTES_FILE"
+          gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES_FILE"
+
+      - name: Remove the optional staging release hand-offs
+        # A failed attach keeps its hand-offs, so re-running this job can still find the files.
+        if: always() && steps.attach-optional.outcome != 'failure'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t STAGING_TAGS < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/staging-${GITHUB_RUN_ID}-" \
+              --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' | grep -E -- '-desktop-macos-|-ios$' || true
+          )
+          for STAGING_TAG in "${STAGING_TAGS[@]}"; do
             if gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
               echo "Deleted staging release $STAGING_TAG."
             else
@@ -1733,7 +1860,6 @@ jobs:
     needs:
       - android
       - desktop
-      - ios
       - publish-release
     if: always() && inputs.publish
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -1832,6 +1958,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH_RESULT: ${{ needs.publish-release.result }}
         run: |
           set -euo pipefail
           # The dash after the run ID keeps another run's hand-offs out of this prefix.
@@ -1842,6 +1969,14 @@ jobs:
           fi
           mapfile -t STAGING_TAGS < <(printf '%s\n' "$REFS" | sed -e 's|^refs/tags/||' -e '/^$/d')
           for STAGING_TAG in "${STAGING_TAGS[@]}"; do
+            # After a successful publish, attach-optional-assets reads and then removes the macOS/iOS hand-offs.
+            if [[ "$PUBLISH_RESULT" == success ]]; then
+              case "$STAGING_TAG" in
+                *-desktop-macos-*|*-ios)
+                  continue
+                  ;;
+              esac
+            fi
             # A tag goes only after its release is gone, so a release that survives a failed delete keeps its tag.
             if gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 &&
                ! gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
