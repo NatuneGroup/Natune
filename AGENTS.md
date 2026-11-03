@@ -87,26 +87,28 @@ must preserve the invariants below.
 - Never commit credentials, tokens, keystores or agent session state (`.swarm/`, `.opencode/`, `.jcode/` stay untracked).
 - Local working notes (`ARCHIVETUNE_SESSION_NOTES.md`, `ARCHIVETUNE_CODE_MAP.md`) are scratch memory — never ship them.
 
-## Private KMP workspace guidance (2026-10-24)
+## KMP workspace guidance (public NatuneGroup/Natune)
 
-These instructions supersede conflicting historical public CI/branch and
+These instructions supersede conflicting historical bootstrap CI/branch and
 constrained-checkout instructions above, in `CLAUDE.md`, and in inherited docs
-**only for this private workspace**. Original source guidance and all application/
-fork invariants remain unchanged.
+for this KMP repository. Original source guidance and all application/fork
+invariants remain unchanged.
 
-- **Current:** destination **NatuneGroup/Natune** is private. Remote `main`
-  and `dev` both point at the independent parentless foundation
-  `c047a2002a7c35eb9ed30b6a8eec72951f7f2f48` (observed 2026-10-25). Local `dev` holds
-  the port history rooted at the approved baseline (NatuneGroup/ArchiveTune `dev`
-  `b7e4dd444fea202a5c32e96f7b1199a74fe3ae70`) and merges the foundation in a local
-  merge commit that keeps both histories. Nothing from this workspace has been pushed,
-  and local `main` is unchanged. The manual-dispatch `readiness.yml` is the only active
-  workflow; the 13 inherited workflows stay quarantined. Focused local compile covers
-  the three shared modules and `:desktopApp`; local tests cover the three shared
-  modules only.
-  Earlier local checks rendered the desktop window under Xvfb `:99`. Android, iOS, CI
-  and signing/upgrade results are not validated. The full KMP port is not implemented;
-  see [baseline provenance](docs/engineering/kmp-baseline.md).
+- **Current repository:** **NatuneGroup/Natune** is public. `main` is Stable/default
+  and `dev` is integration. Work in isolated worktrees based on the orchestrator's
+  assigned `integ/*` snapshot. Push assigned feature branches only; do not open PRs,
+  dispatch workflows or push `dev`, `main` or `integ/*` without explicit authorization.
+  Heavy validation remains orchestrator-controlled, with separate exact-head BUILD
+  and TESTS. The active workflow set is in `.github/workflows/`; `readiness.yml` is
+  no longer the only active workflow.
+- **Bootstrap provenance (2026-10-25):** remote `main` and `dev` initially pointed at
+  the independent parentless foundation `c047a2002a7c35eb9ed30b6a8eec72951f7f2f48`.
+  The port history is rooted at the approved NatuneGroup/ArchiveTune `dev` baseline
+  `b7e4dd444fea202a5c32e96f7b1199a74fe3ae70` and retains both histories. Earlier
+  shared-module/desktop checks and the desktop window rendered under Xvfb `:99`
+  are historical evidence, not validation of the current candidate, Android/iOS,
+  signing, upgrades or physical audio. The full KMP port remains incomplete; see
+  [baseline provenance](docs/engineering/kmp-baseline.md).
 - **Remote foundation constraints (merged 2026-10-25):**
   - The foundation's `:shared` module is not in `settings.gradle.kts`. Its files stay
     under `shared/`, and its build script is renamed to `shared/build.gradle.kts.reference`
@@ -136,24 +138,19 @@ fork invariants remain unchanged.
     full foundation text stays in commit `c047a20`.
   - No source deletion. New Kotlin starts with the package line, without a banner. User-visible strings belong in
     Compose resource XML.
-- **Planned after legitimate gate resolution:** `main` (Stable/default) and `dev`
-  (integration). Remote `main` and `dev` already exist at the foundation commit, not at
-  the approved dev-derived snapshot, so establishing port-based branches needs separate
-  authorization. Restore/adapt the original YAML workflow set and useful coverage for the
-  private repo, including independent exact-head BUILD and TESTS. Do not import source
-  main.
-- Workflow quarantine in `.github/inherited-workflows/` is **temporary bootstrap
-  safety**, not the final CI scope. All inherited source files remain unchanged.
-  No workflow is moved/enabled/dispatched by this documentation update; do not
-  newly activate the unused Telethon deployment helper or public/external
-  notifications. Future publication/assets/feed links must be private-safe.
-- The denied import requires legitimate human/security disposition. Do not retry
-  unchanged, disable/bypass scanning, use another history/transport/upload path,
-  automatically waive findings, or remove required provider features to get past it.
-  A user merge approval is not a security waiver. The sync to private `dev` is a
-  normal fast-forward from the then-current remote head, never a force-push, and waits
-  for that disposition. Never push this work to public NatuneGroup/ArchiveTune or
-  change its protected gates.
+- **Branch/CI boundaries:** preserve the adapted active workflows and independent
+  exact-head BUILD and TESTS. Do not import source `main` or change protected gates.
+  Workflows still parked in `.github/inherited-workflows/` remain inactive; this
+  documentation update does not move, enable or dispatch them. Do not newly activate
+  the unused Telethon deployment helper or external notifications. Public artifacts,
+  logs and feed links must not expose credentials, private data or agent session state.
+- Publication and merge approval are not security waivers. The earlier denied import
+  is historical security evidence; any unresolved findings require legitimate
+  human/security disposition. Do not disable/bypass scanning, retry a denied import
+  unchanged through another history/transport/upload path, automatically waive findings
+  or remove required provider features to get past a gate. Authorized branch updates
+  are normal fast-forwards, never force-pushes. Never push this work to the separate
+  NatuneGroup/ArchiveTune repository or change its protected gates.
 - **Pending upgrade goal:** retain historical release signing material through
   authorized secret configuration using `KEYSTORE`, `KEY_ALIAS`,
   `KEYSTORE_PASSWORD`, `KEY_PASSWORD`. Presence/material/certificate are unverified;
@@ -165,7 +162,7 @@ fork invariants remain unchanged.
   floor across signed workflows, not fallback 1500, new-root count or per-workflow
   run numbers. Debug's `.debug` package cannot prove update-over-install. Verify
   release-shaped installation without uninstall, clearing or downgrade flags.
-- Authorized manual private APK download suffices for the requested upgrade test.
+- Authorized manual APK download suffices for the requested upgrade test.
   No new GitHub-token updater, embedded PAT, credential-cloud service or server is
   automatically authorized. Preserve updater/source/account/provider features and
   no-downgrade behavior; do not turn planning suggestions into new requirements.
@@ -176,7 +173,7 @@ fork invariants remain unchanged.
   Blacksmith run for each small edit. Use high/max CPU, serialized reserved free
   batches, short whole-job timeouts, headroom and actual-duration reconciliation.
   Documented maxima: Linux/Windows 32 vCPU, macOS 12 vCPU; equivalent-minute
-  multipliers: Linux x64 16x, Windows 32x, macOS 40x. Private security/compute/storage
+  multipliers: Linux x64 16x, Windows 32x, macOS 40x. Security/compute/storage
   access must not silently enable paid features or claim unavailable checks green.
 - No additional routine questions while the user sleeps. Stop at human-only gates
   and report gaps rather than inventing success or weakening approved scope.
