@@ -110,7 +110,9 @@ in flight (at least `minSweepMs`), a breathing interlude — and the discrete ed
 state changes. The clock loop requests a frame inside a live span, sleeps to the next boundary
 otherwise, and re-checks at most every 250 ms so a seek still lands promptly; paused surfaces poll
 at 100 ms. The SwiftUI view already pauses its `TimelineView` when hidden and polls a held
-position at 250 ms, matching the same budget.
+position at 250 ms, matching the same budget. The Android Enhanced pane is the exception while the
+library's `KaraokeLyricsView` draws it: that view lifts each syllable for 700 ms past its start
+and breathes its dots from the position, so the loop steps every frame while the song plays.
 
 `LyricsMode` (settings) picks between these. Do not delete `SimpMusicLyrics`
 thinking it is player-style chrome — it is a lyrics style a user can select.
@@ -147,7 +149,8 @@ them skipped under reduced motion:
   default, growing toward 750 ms when the silence before it is a tight 200–750 ms hand-off. The
   word sweep still follows the real word times; only the lit line, the deadline edges and the
   scroll target move early. Overlapping duet rows measure the silence against the furthest
-  earlier end, so they light together.
+  earlier end, so they light together. The Android library view takes no activation lead, and
+  the Enhanced line index (first focus, TikTok strip) follows it.
 - The sung edge is feathered across a fifth of the active word's width, clamped to 4–28 dp, with
   a `DstIn` mask on a layer limited to the line's band (`LyricsSweepGeometry.sweepFeatherPx`).
 - A word earns emphasis only when it is held at least 1 s, is at most 7 grapheme clusters and is
@@ -178,10 +181,13 @@ them skipped under reduced motion:
   (`LyricsParser.parseTtmlCredits`) close the list as a dim credits footer; a provider-supplied
   reading is never badged.
 
-The same changes mirror in the Android Enhanced path (`EnhancedSweptLine`, `BasicSyncedLyricsList`,
-`EnhancedInterludeDots`): activation leads, the per-letter ripple, the width-share feather, the
-uniform blur, the 15% anchor, the 4.5 s hold, the 350 ms scroll, the active-line pop, the dots and
-the credits footer.
+On Android 10 and later the Enhanced pane draws with the lyrics-ui `KaraokeLyricsView`, which
+brings its own Apple-Music-style motion: the syllable sweep, the per-letter rise, swell and glow on
+held words, the distance-staggered spring placement, the distance blur and the breathing dots. Line-synced
+rows light at their own start with no extra activation lead. Below Android 10 the in-house path
+(`EnhancedSweptLine`, `BasicSyncedLyricsList`, `EnhancedInterludeDots`) mirrors the shared
+refinements: activation leads, the per-letter ripple, the width-share feather, the uniform blur, the
+15% anchor, the 4.5 s hold, the 350 ms scroll, the active-line pop, the dots and the credits footer.
 
 The iOS 26 native Enhanced view (`iosApp/ArchiveTune/SystemLyrics.swift`) draws its own sweep. It
 takes the idle alpha and the depth values from the shared profile, but not the feather, lift,
@@ -208,19 +214,20 @@ under them, and the mask only fades the lyrics, never the glass or artwork behin
 SimpMusic card, every player style's lyrics pane) must not add a second edge mask.
 Flamingo keeps only its controls-visible mask that clears the lines from under its controls.
 
-Enhanced's synced pane (`ui/component/EnhancedKaraokePane.kt`) draws every line with
-`BasicSyncedLyricsList` on every API level. The list owns its auto-scroll to the anchor, sweeps
+Enhanced's synced pane (`ui/component/EnhancedKaraokePane.kt`) draws with the library's
+`KaraokeLyricsView` from API 29 and with `BasicSyncedLyricsList` below it. The library view owns
+its auto-scroll, sweep, spring placement, blur and dots; its line blur is off with animations
+disabled. The in-house list owns its auto-scroll to the anchor, sweeps
 the active karaoke line with `EnhancedSweptLine`, glides rows on a line change, scales and fades
 rows by their distance from the sung line, and shows interlude dots over silences of 4 s or more.
 Following pauses for 3 s after a user drag, and a tap-to-seek resumes it at once. While the user
 scrolls, every line is un-blurred. Distance blur needs Android 12+ and the line-blur setting, and
 is off under reduced motion, with animations disabled, and on low-end devices.
 
-The library's `KaraokeLyricsView` (lyrics-ui 1.0.x, which hard-codes a 20dp/100dp mask) stays
-wired behind `USE_KARAOKE_LIBRARY_VIEW`, switched off, because it cannot draw the sweep, glide,
-depth or dots. Its measure-taller-and-lift workaround and the 20dp anchor offset apply only to
-that branch; re-check those numbers when the library is upgraded. The single-active-line strip
-(TikTok main lyrics) has no list and no fade.
+The library's `KaraokeLyricsView` (lyrics-ui 1.0.x, which hard-codes a 20dp/100dp mask) is
+selected by `USE_KARAOKE_LIBRARY_VIEW`, switched on. Its measure-taller-and-lift workaround and the
+20dp anchor offset apply only to that branch; re-check those numbers when the library is upgraded.
+The single-active-line strip (TikTok main lyrics) has no list and no fade.
 
 ## Two things that were wrong, so they do not come back
 
@@ -229,6 +236,11 @@ that branch; re-check those numbers when the library is upgraded. The single-act
   `playWhenReady && state != ENDED`, which stays true right through a buffer and
   through focus suppression, so lyrics ran on while nothing was audible. `isPlaying`
   stays as it is for play/pause affordances, which should flip on tap.
+- **The in-house list on Android 10+.** From 2026-10-31 to 2026-11-03 Enhanced drew every
+  API level with `BasicSyncedLyricsList`. Its sweep clip bands sliced descenders and lifted
+  letters, and its activation lead stacked on the LRC lead and the visual tuning offset, so
+  line-synced rows lit 0.7–1.2 s before they were sung. Keep the library view on Android 10+
+  until the in-house list is verified on a device.
 - **Truncation.** A one-line strip with `TextOverflow.Ellipsis` ended most lyrics in
   a "…". The strips reserve two lines and hold that height whether they fill it or
   not; growing to fit would move the controls underneath every time the line changed.
