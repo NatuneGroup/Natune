@@ -4,6 +4,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsActivation
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsSweepGeometry
+import moe.rukamori.archivetune.shared.ui.lyrics.lyricsIdleParkMs
 
 /**
  * When the lyric feed can change what a frame shows. While the feed sits between two of these
@@ -129,24 +130,13 @@ class LyricsDeadlineSchedule(
 /**
  * Suspends until the next deadline boundary (bounded by [idlePollMs]) — the app renderers park
  * their position loop on this while the drawn state is static between a word's sweep end and the
- * next word/line edge.
+ * next word/line edge. [speed] is the playback speed: the boundary is in media time, the sleep is not.
  */
 internal suspend fun LyricsDeadlineSchedule.sleepUntilNext(
     feedMs: Long,
+    speed: Float,
     minSleepMs: Long = 1L,
     idlePollMs: Long = 250L,
 ) {
-    val next = nextChangeAfter(feedMs)
-    delay(if (next == null) idlePollMs else (next - feedMs).coerceIn(minSleepMs, idlePollMs))
-}
-
-/**
- * How long, in wall-clock ms, an idle position loop may park before the feed at [feedMs] reaches
- * [nextChangeMs]. The schedule is in media time, which runs [speed] times as fast as the wall clock,
- * so at 2x a 400 ms gap is a 200 ms wait; sleeping the media gap would skip whole word sweeps. With
- * no boundary ahead, or a stalled or invalid speed, the loop polls at [maxParkMs].
- */
-internal fun lyricsIdleParkMs(nextChangeMs: Long?, feedMs: Long, speed: Float, minParkMs: Long, maxParkMs: Long): Long {
-    if (nextChangeMs == null || !(speed > 0f)) return maxParkMs
-    return ((nextChangeMs - feedMs) / speed).toLong().coerceIn(minParkMs, maxParkMs)
+    delay(lyricsIdleParkMs(nextChangeAfter(feedMs), feedMs, speed, minSleepMs, idlePollMs))
 }

@@ -109,15 +109,16 @@ Frame requests are **deadline-gated**, not per-vsync. `LyricsDeadlineSchedule` (
 `LyricsEntry` copy in `app/lyrics`) lists the live spans where motion is continuous — a word sweep
 in flight over its exact timing, a breathing interlude — and the discrete edges where the drawn
 state changes. The clock loop requests a frame inside a live span, sleeps to the next boundary
-otherwise, and re-checks at most every 250 ms so a seek still lands promptly. The Android Enhanced
-loop publishes the position and line before it parks, and divides the media-time gap by the
-playback speed (`lyricsIdleParkMs`), so a 2× track never sleeps through a sweep; paused surfaces poll
-at 100 ms. The SwiftUI view already pauses its `TimelineView` when hidden and polls a held
-position at 250 ms, matching the same budget. A word's live span runs through its completion lift
-(`LyricsSweepGeometry.liftEndMs`), so the loop stays awake until the word is seated, and each row's
-`SINK_MS` before its first word is live too. The Android Enhanced loop also steps every frame inside
-an interlude break its dots draw over (`enhancedInterludes`), because the dots breathe from the
-position and the word schedule holds nothing there. The parked
+otherwise, and re-checks at most every 250 ms so a seek still lands promptly. Every such loop (the
+shared `rememberLyricsClock`, and Lyrics, V2, SimpMusic and Enhanced on Android) publishes the
+position and line before it parks, and divides the media-time gap by the playback speed
+(`lyricsIdleParkMs` in shared-ui; the app's `sleepUntilNext` wraps it), so a 2× track never sleeps
+through a sweep; paused surfaces poll at 100 ms. The SwiftUI view already pauses its `TimelineView`
+when hidden and polls a held position at 250 ms, matching the same budget. A word's live span runs
+through its completion lift (`LyricsSweepGeometry.liftEndMs`), so the loop stays awake until the
+word is seated, and each row's `SINK_MS` before its first word is live too. The Android Enhanced
+loop also steps every frame inside an interlude break its dots draw over (`enhancedInterludes`),
+because the dots breathe from the position and the word schedule holds nothing there. The parked
 `KaraokeLyricsView` branch is the exception: that view animates every frame while the song plays.
 
 `LyricsMode` (settings) picks between these. Do not delete `SimpMusicLyrics`

@@ -107,6 +107,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
+import moe.rukamori.archivetune.lyrics.sleepUntilNext
 import moe.rukamori.archivetune.shared.ui.lyrics.lyricsViewportFade
 import moe.rukamori.archivetune.ui.player.LocalLyricsScrollListener
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -306,8 +307,7 @@ fun SimpMusicLyrics(
                 } else if (isTtmlFormat && schedule.isLive(positionState.longValue)) {
                     delay(pollMs)
                 } else {
-                    val next = schedule.nextChangeAfter(positionState.longValue)
-                    delay(if (next == null) IDLE_POLL_MS else (next - positionState.longValue).coerceIn(pollMs, IDLE_POLL_MS))
+                    schedule.sleepUntilNext(positionState.longValue, playerConnection.playbackParameters.value.speed, pollMs, IDLE_POLL_MS)
                 }
             }
         }
