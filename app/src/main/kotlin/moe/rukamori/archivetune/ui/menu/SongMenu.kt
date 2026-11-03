@@ -106,7 +106,6 @@ import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
 import moe.rukamori.archivetune.ui.player.fetchCanvasArtworkForPlayback
 import moe.rukamori.archivetune.playback.ExoDownloadService
-import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.telegram.isTelegramMediaId
 import moe.rukamori.archivetune.ui.component.MenuHeaderCard
 import moe.rukamori.archivetune.ui.component.ListDialog
@@ -586,7 +585,7 @@ fun SongMenu(
                             text = startRadioText,
                             onClick = {
                                 onDismiss()
-                                playerConnection.playQueue(YouTubeQueue.radio(song.toMediaMetadata()))
+                                playerConnection.startRadio(song.toMediaMetadata())
                             },
                         ),
                     )

@@ -44,6 +44,7 @@ import moe.rukamori.archivetune.shared.domain.queue.UserQueuePolicy
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository
 import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
+import moe.rukamori.archivetune.shared.domain.repository.BuiltInCollectionFinitePolicy
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -301,6 +302,7 @@ class PortableQueueOwner(
             phase = if (finite) FinitePlaylistPhase.EXHAUSTED else FinitePlaylistPhase.UNKNOWN,
             shuffleEnabled = request.shuffle,
             manualKinds = emptyMap(),
+            staysFinite = finite && BuiltInCollectionFinitePolicy.staysFinite(collection),
             tail = tail,
         )
         startPrepared(playRequest, request.positionMs, request.playWhenReady)
@@ -308,7 +310,9 @@ class PortableQueueOwner(
         if (finite) infinite.replenish()
     }
 
-    override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) {
+    override suspend fun replace(
+        entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean, staysFinite: Boolean,
+    ) {
         requireInside()
         QueueEditPolicy.requireUnique(entries)
         val start = entries.firstOrNull { it.occurrenceId == startOccurrenceId }
@@ -326,6 +330,7 @@ class PortableQueueOwner(
             phase = FinitePlaylistPhase.UNKNOWN,
             shuffleEnabled = false,
             manualKinds = emptyMap(),
+            staysFinite = staysFinite,
             tail = null,
         )
         startPrepared(playRequest, 0L, playWhenReady)
@@ -536,8 +541,7 @@ class PortableQueueOwner(
         requireInside()
         val queue = currentState
         val currentId = queue.currentOccurrenceId ?: return false
-        val currentIndex =
-            queue.entries.indexOfFirst { it.occurrenceId == currentId }.takeIf { it >= 0 } ?: return false
+        val currentIndex = queue.entries.indexOfFirst { it.occurrenceId == currentId }.takeIf { it >= 0 } ?: return false
         val seed = queue.entries[currentIndex].item.ref
         if (seed.provider != ContentProvider.YOUTUBE.id || seed.kind != ContentKind.SONG) return false
         val collection = radioQueueRequest(seed)
@@ -550,14 +554,13 @@ class PortableQueueOwner(
         ) { it.item.ref }.filter { knownOccurrences.add(it.occurrenceId) }
         val tail = QueueTail(collection = collection, continuation = page.continuation, kind = QueueCollectionKind.RADIO)
         if (radioItems.isEmpty()) {
-            currentState = queue.copy(revision = queue.revision + 1, phase = FinitePlaylistPhase.UNKNOWN, tail = tail)
+            currentState = queue.copy(revision = queue.revision + 1, phase = FinitePlaylistPhase.UNKNOWN, staysFinite = false, tail = tail)
             infinite.reset(radio = true)
             removals.reset()
             source.value = collection
             return true
         }
-        val removedIds =
-            queue.entries.subList(currentIndex + 1, queue.entries.size).mapTo(HashSet()) { it.occurrenceId }
+        val removedIds = queue.entries.subList(currentIndex + 1, queue.entries.size).mapTo(HashSet()) { it.occurrenceId }
         val order = queue.playOrder.filterNot { it in removedIds }.toMutableList()
         val radioIds = radioItems.map { it.occurrenceId }
         if (queue.shuffleEnabled) {
@@ -573,7 +576,7 @@ class PortableQueueOwner(
             playOrder = order.toList(),
             phase = FinitePlaylistPhase.UNKNOWN,
             manualKinds = queue.manualKinds.filterKeys { it !in removedIds },
-            tail = tail,
+            staysFinite = false, tail = tail,
         )
         infinite.reset(radio = true)
         removals.reset()

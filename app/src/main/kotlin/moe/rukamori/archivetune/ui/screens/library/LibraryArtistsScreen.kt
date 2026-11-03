@@ -251,6 +251,7 @@ fun LibraryArtistsScreen(
                                                         ListQueue(
                                                             title = artist.artist.name,
                                                             items = songs,
+                                                            finite = true,
                                                         ),
                                                     )
                                                 }
@@ -575,6 +576,7 @@ fun LibraryArtistsScreen(
                                         ListQueue(
                                             title = artistWrapper.artist.name,
                                             items = songs,
+                                            finite = true,
                                         ),
                                     )
                                 }

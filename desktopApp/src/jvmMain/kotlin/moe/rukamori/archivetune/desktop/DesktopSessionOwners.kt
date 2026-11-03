@@ -296,7 +296,7 @@ internal suspend fun assembleDesktopSessionOwners(
         handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
         songMetadata = songMetadata,
     )
-    val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
+    val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints(), database.library()))
     try {
         queue.resume()
     } catch (cancelled: CancellationException) {

@@ -67,7 +67,7 @@ internal class DesktopYouTubeHistoryPager(
         graph.scope.launch {
             try {
                 if (!isCurrentAccount()) return@launch
-                graph.queue.replace(rows, rows.first().occurrenceId, playWhenReady = true)
+                graph.queue.replace(rows, rows.first().occurrenceId, playWhenReady = true, staysFinite = true)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {

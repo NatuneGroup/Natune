@@ -8,8 +8,8 @@ import moe.rukamori.archivetune.shared.domain.repository.*
 
 /**
  * Explicit versioning and strict decode: corrupt or unknown files are never reset or silently truncated.
- * Shuffle, manual kinds and the paging tail are optional keys inside version 1. A checkpoint written before
- * they existed has none of them and decodes to the defaults that queue always had.
+ * Shuffle, manual kinds, the finite-collection flag and the paging tail are optional keys inside version 1.
+ * A checkpoint written before they existed has none of them and decodes to the defaults that queue always had.
  */
 object QueueCheckpointJson {
     fun encode(checkpoint: QueueCheckpoint): String = buildJsonObject {
@@ -26,6 +26,7 @@ object QueueCheckpointJson {
         put("manualKinds", buildJsonObject {
             queue.manualKinds.forEach { (occurrenceId, kind) -> put(occurrenceId, kind.name) }
         })
+        put("staysFinite", queue.staysFinite)
         put("tail", queue.tail?.let { encodeTail(it) } ?: JsonNull)
     }.toString()
 
@@ -43,6 +44,7 @@ object QueueCheckpointJson {
             phase = FinitePlaylistPhase.valueOf(root.string("phase")),
             shuffleEnabled = root.optionalBoolean("shuffleEnabled"),
             manualKinds = root.manualKinds(),
+            staysFinite = root.optionalBoolean("staysFinite"),
             tail = root.optionalObject("tail")?.let { decodeTail(it) },
         )
         return QueueCheckpoint(

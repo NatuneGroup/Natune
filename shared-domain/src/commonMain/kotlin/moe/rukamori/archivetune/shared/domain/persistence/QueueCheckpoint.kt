@@ -23,6 +23,11 @@ data class QueueCheckpoint(val queue: QueueState, val positionMs: Long, val save
 
 interface QueueCheckpointStore {
     suspend fun read(): QueueCheckpoint?
+    /**
+     * The checkpoint a restore applies. A store may fill in details the capture lacked here; [read] stays the cheap
+     * form because every checkpoint write calls it only to compare revisions.
+     */
+    suspend fun readForRestore(): QueueCheckpoint? = read()
     /** Compare-and-swap. Null expectedRevision means no checkpoint may exist. */
     suspend fun write(checkpoint: QueueCheckpoint, expectedRevision: Long?): Boolean
     /** A stale position tick must not attach itself to another queue or occurrence. */

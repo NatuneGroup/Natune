@@ -118,6 +118,9 @@ abstract class PortableLibraryDao {
     abstract suspend fun nextLikedSeq(): Long
     @Query("SELECT * FROM library_item WHERE provider = :provider AND kind = :kind AND mediaId = :id")
     abstract suspend fun item(provider: String, kind: String, id: String): LibraryItemRow?
+    /** The rows of every provider and kind whose media id is in [ids]; callers match provider and kind themselves. */
+    @Query("SELECT * FROM library_item WHERE mediaId IN (:ids)")
+    abstract suspend fun itemsByMediaIds(ids: List<String>): List<LibraryItemRow>
     /**
      * A saved song by media id, or the one of [provider] when it is given. The file formats carry no provider, so an
      * unnamed lookup takes the first match in a fixed order, which keeps the answer stable.
