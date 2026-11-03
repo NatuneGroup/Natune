@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.data.repository
 
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
 
 /**
  * The hidden-content rules of `Queue.Status.filterPlaybackContent`: explicit, video and blocked
