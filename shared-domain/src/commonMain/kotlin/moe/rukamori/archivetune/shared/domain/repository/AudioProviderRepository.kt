@@ -110,6 +110,12 @@ sealed interface NativeAudioRecipe {
         val playlistText: String?,
         val audioSource: AudioSourceType,
         override val accountScope: String,
+        /**
+         * The stream's explicit authorization expiry, when the resolver stated it as metadata rather than as URL
+         * parameters. The preparation keeps the earliest of this and each resource URL's signed expiry, so the
+         * lease never outlives the window the stream was resolved under.
+         */
+        val expiresAtEpochMs: Long? = null,
     ) : NativeAudioRecipe {
         override val source get() = audioSource
     }

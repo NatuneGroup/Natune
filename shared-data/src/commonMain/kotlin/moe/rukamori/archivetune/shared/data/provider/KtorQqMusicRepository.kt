@@ -117,7 +117,8 @@ class KtorQqMusicRepository(client: HttpClient, private val access: QqMusicAcces
                     check(account.isActive())
                     return PreparedAudio.Native(manifestStream,
                         NativeAudioRecipe.SegmentedHls(playlistUrl = url, playlistText = null,
-                            audioSource = AudioSourceType.QQ, accountScope = account.scope))
+                            audioSource = AudioSourceType.QQ, accountScope = account.scope,
+                            expiresAtEpochMs = manifestStream.expiresAtEpochMs))
                 }
                 val mime = when (extension) { ".flac", ".mflac" -> "audio/flac"; ".mp3" -> "audio/mpeg"; else -> "audio/ogg" }
                 val codec = when (mime) { "audio/flac" -> "flac"; "audio/mpeg" -> "mp3"; else -> "vorbis" }
