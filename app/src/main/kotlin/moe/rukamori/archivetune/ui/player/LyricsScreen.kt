@@ -281,7 +281,7 @@ fun LyricsScreen(
 
     // Read through the preference rather than inside the effect so that flipping the toggle while
     // the panel is open re-runs the fetch instead of leaving the stored lyrics untouched.
-    val (prioritizeWordSynced) = rememberPreference(PrioritizeWordSyncedLyricsKey, defaultValue = false)
+    val (prioritizeWordSynced) = rememberPreference(PrioritizeWordSyncedLyricsKey, defaultValue = true)
 
     LaunchedEffect(
         mediaMetadata.id,
