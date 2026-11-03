@@ -1,7 +1,6 @@
 package moe.rukamori.archivetune.shared.data.platform.ios
 
 import cnames.structs.ae_probe
-import cnames.structs.ae_probe_info
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
@@ -23,6 +22,7 @@ import moe.rukamori.archivetune.nativeaudio.ae_probe_cancel
 import moe.rukamori.archivetune.nativeaudio.ae_probe_codec_name
 import moe.rukamori.archivetune.nativeaudio.ae_probe_create
 import moe.rukamori.archivetune.nativeaudio.ae_probe_destroy
+import moe.rukamori.archivetune.nativeaudio.ae_probe_info
 import moe.rukamori.archivetune.nativeaudio.ae_probe_read
 import moe.rukamori.archivetune.nativeaudio.ae_probe_status
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.ACOUSTIC_LOSSLESS_CODECS
@@ -37,14 +37,18 @@ import moe.rukamori.archivetune.shared.domain.playback.PlaybackLocator
  * decodes the first audio stream at the rate the source reports. Only a source the engine could open as a
  * plain string is auditable: ciphertext, leases and prepared views stay out, exactly like on desktop.
  */
-@OptIn(ExperimentalForeignApi::class)
-internal object IosAcousticProbe {
+object IosAcousticProbe {
     /**
      * The bounded PCM window of [locator]'s source, or the refusal reason. The blocking read runs off the
      * caller's dispatcher; a cancelled caller asks the native read to stop, then waits for it to return
      * before the probe is destroyed, because the handle must not be freed while a read still uses it.
+     * [requestKey] is stamped onto the window so the audit owner binds the result to the exact request.
      */
-    suspend fun window(locator: PlaybackLocator, startPositionMs: Long = 0L): AcousticWindow {
+    suspend fun window(
+        locator: PlaybackLocator,
+        startPositionMs: Long = 0L,
+        requestKey: String = "",
+    ): AcousticWindow {
         if (startPositionMs < 0L) return AcousticWindow.Refused("input_unreadable")
         val source = iosProbeSourceOf(locator) ?: return AcousticWindow.Refused("no_safe_source")
         val samples = FloatArray(ACOUSTIC_WINDOW_SAMPLES)
@@ -54,26 +58,35 @@ internal object IosAcousticProbe {
                 val reading = async(Dispatchers.Default) {
                     readInto(probe, source, startPositionMs * MICROS_PER_MILLI, samples)
                 }
-                val window = try {
+                val info = try {
                     reading.await()
                 } catch (cancelled: CancellationException) {
                     ae_probe_cancel(probe)
                     withContext(NonCancellable) { reading.join() }
                     throw cancelled
                 }
-                decodedOf(locator, probe, samples, window, startPositionMs)
+                decodedOf(locator, probe, samples, info, startPositionMs, requestKey)
             }
         } finally {
             ae_probe_destroy(probe)
         }
     }
 
+    /** The Kotlin-owned copy of a read's `ae_probe_info`; the C struct dies with the read's scope. */
+    private data class ProbeInfo(
+        val frames: Int,
+        val channels: Int,
+        val sampleRate: Int,
+        val advertisedSampleRate: Int,
+        val endOfSource: Boolean,
+    )
+
     private fun readInto(
         probe: CPointer<ae_probe>,
         source: String,
         startUs: Long,
         samples: FloatArray,
-    ): ae_probe_info = memScoped {
+    ): ProbeInfo = memScoped {
         val info = alloc<ae_probe_info>()
         val error = allocArray<ByteVar>(ERROR_LEN)
         val status = samples.usePinned { pinned ->
@@ -83,8 +96,16 @@ internal object IosAcousticProbe {
                 error, ERROR_LEN.toULong(),
             )
         }
+        // Copy the fields before the scope closes: the alloc'd struct is only valid inside memScoped.
+        val infoCopy = ProbeInfo(
+            frames = info.frames.toInt(),
+            channels = info.channels.toInt(),
+            sampleRate = info.sample_rate.toInt(),
+            advertisedSampleRate = info.advertised_sample_rate.toInt(),
+            endOfSource = info.end_of_source != 0u,
+        )
         when (status) {
-            ae_probe_status.AE_PROBE_OK -> return info
+            ae_probe_status.AE_PROBE_OK -> infoCopy
             ae_probe_status.AE_PROBE_CANCELLED -> throw CancellationException("the acoustic probe was cancelled")
             else -> throw IosProbeFailed()
         }
@@ -97,13 +118,13 @@ internal object IosAcousticProbe {
         locator: PlaybackLocator,
         probe: CPointer<ae_probe>,
         samples: FloatArray,
-        window: ae_probe_info,
+        info: ProbeInfo,
         startPositionMs: Long,
+        requestKey: String,
     ): AcousticWindow {
-        val frames = window.frames.toInt()
-        val channels = window.channels.toInt()
-        val rate = window.sample_rate.toInt()
-        if (frames <= 0 || channels !in 1..8 || rate <= 0) return AcousticWindow.Refused("insufficient_pcm")
+        if (info.frames <= 0 || info.channels !in 1..8 || info.sampleRate <= 0) {
+            return AcousticWindow.Refused("insufficient_pcm")
+        }
         val codec = runCatching {
             memScoped {
                 val buffer = allocArray<ByteVar>(64)
@@ -111,21 +132,22 @@ internal object IosAcousticProbe {
                 if (length > 0uL) buffer.toKString() else null
             }
         }.getOrNull()
-        AcousticWindow.Decoded(
+        return AcousticWindow.Decoded(
             pcm = AcousticPcm(
-                samples = samples.copyOf(frames * channels),
-                sampleRate = rate,
-                channelCount = channels,
+                samples = samples.copyOf(info.frames * info.channels),
+                sampleRate = info.sampleRate,
+                channelCount = info.channels,
                 startUs = startPositionMs * MICROS_PER_MILLI,
-                frames = frames,
-                truncated = window.end_of_source == 0u,
+                frames = info.frames,
+                truncated = !info.endOfSource,
             ),
             sourceLabel = if (locator is PlaybackLocator.LocalFile) "LOCAL_FILE" else "REMOTE_STREAM",
-            advertisedSampleRate = window.advertised_sample_rate.toInt().takeIf { it > 0 },
+            advertisedSampleRate = info.advertisedSampleRate.takeIf { it > 0 },
             claimedLossless = codec in ACOUSTIC_LOSSLESS_CODECS,
             limitations = buildList {
                 if (codec.isNullOrBlank()) add("codec_unknown")
             },
+            requestKey = requestKey,
         )
     }
 

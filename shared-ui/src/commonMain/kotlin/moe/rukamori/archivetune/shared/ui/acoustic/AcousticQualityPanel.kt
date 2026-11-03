@@ -67,6 +67,7 @@ import moe.rukamori.archivetune.shared.ui.resources.m6aq_retry
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_run
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_source_local_file
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_source_remote_stream
+import moe.rukamori.archivetune.shared.ui.resources.m6aq_stereo
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_suspected
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_title
 import moe.rukamori.archivetune.shared.ui.resources.m6aq_unavailable
@@ -127,7 +128,10 @@ fun AcousticQualityPanel(
         }
         state.message?.let { Text(acousticCodeText(it)) }
         state.result
-            ?.takeIf { active && it.mediaId == target.mediaId }
+            ?.takeIf {
+                active && it.mediaId == target.mediaId &&
+                    (target.requestKey.isEmpty() || it.requestKey == target.requestKey)
+            }
             ?.let { result ->
                 AcousticQualityResult(result)
             }

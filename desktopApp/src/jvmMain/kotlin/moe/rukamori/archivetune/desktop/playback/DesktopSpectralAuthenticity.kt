@@ -77,7 +77,11 @@ class DesktopSpectralAuthenticity internal constructor(
      * probe the spectral check uses: it never touches a deck, the mixer or the playback executor. A source with
      * no string form is refused, so the audit never reads ciphertext, leases or prepared views as plain audio.
      */
-    suspend fun acousticWindow(locator: PlaybackLocator, startPositionMs: Long = 0L): AcousticWindow {
+    suspend fun acousticWindow(
+        locator: PlaybackLocator,
+        startPositionMs: Long = 0L,
+        requestKey: String = "",
+    ): AcousticWindow {
         require(startPositionMs >= 0L) { "startPositionMs must not be negative, was $startPositionMs" }
         val source = engineSourceOf(locator) ?: return AcousticWindow.Refused("no_safe_source")
         val decoded = try {
@@ -110,6 +114,7 @@ class DesktopSpectralAuthenticity internal constructor(
             limitations = buildList {
                 if (codec == null) add("codec_unknown")
             },
+            requestKey = requestKey,
         )
     }
 

@@ -28,6 +28,13 @@ internal class IosBlendAudioGraph private constructor(output: CPointer<at_audio_
     private val format = AVAudioFormat(
         commonFormat = AVAudioPCMFormatFloat32, sampleRate = PCM_RATE, channels = 2u, interleaved = false,
     )
+    // The tone every deck renders: a blend pulls decoder PCM before the output graph's own units, so the
+    // shared pitch and equalizer state must reach these deck units too. A deck gets it when it is attached.
+    // These initialize before `current`, whose construction already applies them.
+    private var pitchCents = 0f
+    private var equalizerEnabled = false
+    private var equalizerBands: List<IosEqBand> = emptyList()
+
     var current = Deck(output)
         private set
     var incoming: Deck? = null
@@ -35,12 +42,6 @@ internal class IosBlendAudioGraph private constructor(output: CPointer<at_audio_
     private val observers = mutableListOf<Any>()
     private var closed = false
     private var suspended = false
-
-    // The tone every deck renders: a blend pulls decoder PCM before the output graph's own units, so the
-    // shared pitch and equalizer state must reach these deck units too. A deck gets it when it is attached.
-    private var pitchCents = 0f
-    private var equalizerEnabled = false
-    private var equalizerBands: List<IosEqBand> = emptyList()
 
     init {
         engine.mainMixerNode.outputVolume = volume

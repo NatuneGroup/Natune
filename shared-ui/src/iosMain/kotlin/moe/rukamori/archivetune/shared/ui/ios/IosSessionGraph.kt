@@ -198,7 +198,7 @@ internal class IosSessionGraph private constructor(
         when {
             request == null -> AcousticWindow.Refused("no_current_source")
             request.mediaId != target.mediaId -> AcousticWindow.Refused("current_source_unavailable")
-            else -> IosAcousticProbe.window(request.locator)
+            else -> IosAcousticProbe.window(request.locator, requestKey = request.occurrenceId)
         }
     }
 
