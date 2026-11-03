@@ -7,6 +7,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.toLong
 import moe.rukamori.archivetune.nativeaudio.*
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceAccount
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceLease
