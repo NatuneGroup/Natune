@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -60,6 +61,7 @@ internal class DesktopCanvasOwner(
     private val canvasBusy = MutableStateFlow(false)
     /** True while a refetch runs; the player menu mirrors it into its busy row. */
     internal val refetching = MutableStateFlow(false)
+    private val prefetched = DesktopCanvasPrefetchCache(RESOLVED_CAP)
     val target = MutableStateFlow<DesktopCanvasTarget?>(null)
     var notice: String? by mutableStateOf(null)
         private set
@@ -104,15 +106,27 @@ internal class DesktopCanvasOwner(
                 graph.queue.state, graph.settings.snapshots, graph.customArtwork.overrides, network.online, visible,
             ) { queue, preferences, overrides, online, showing ->
                 val row = queue.entries.firstOrNull { it.occurrenceId == queue.currentOccurrenceId }
-                CanvasInput(row, preferences, overrides.canvases, online, showing)
+                val order = queue.playOrder
+                val index = order.indexOf(queue.currentOccurrenceId)
+                val upcoming =
+                    if (index < 0) {
+                        emptyList()
+                    } else {
+                        order.subList(index + 1, minOf(order.size, index + 1 + PREFETCH_AHEAD))
+                            .mapNotNull { id -> queue.entries.firstOrNull { it.occurrenceId == id } }
+                    }
+                CanvasInput(row, upcoming, preferences, overrides.canvases, online, showing)
             }.distinctUntilChanged { old, new ->
-                old.row == new.row && old.canvases == new.canvases && old.online == new.online && old.showing == new.showing &&
+                old.row == new.row && old.upcoming == new.upcoming && old.canvases == new.canvases &&
+                    old.online == new.online && old.showing == new.showing &&
                     canvasPreferences(old.preferences) == canvasPreferences(new.preferences)
             }.collectLatest { input ->
                 target.value = null
                 notice = null
                 val row = input.row ?: return@collectLatest
                 val preferences = input.preferences ?: return@collectLatest
+                val probe = canvasPreferences(preferences)
+                prefetched.retainProbe(probe)
                 if (!input.showing || !preferences.canvasPlaybackEnabled() || row.item.ref.kind != ContentKind.SONG) {
                     return@collectLatest
                 }
@@ -125,10 +139,19 @@ internal class DesktopCanvasOwner(
                             row.occurrenceId, path.toUri().toString(),
                             CustomArtworkKeys.isImageCanvasExtension(extension) && extension != "gif",
                         )
+                        prime(input, preferences, probe)
                         return@collectLatest
                     }
                     if (!input.online || preferences[CanvasWifiOnlyKey, false] || preferences.lowDataMode()) {
                         notice = "content_canvas_network_unknown"
+                        return@collectLatest
+                    }
+                    // A canvas already resolved for this turn plays at once; the miss path resolves and
+                    // then primes the rows that follow, so the next transition shows art instead of
+                    // re-resolving after the skip.
+                    prefetched.take(row.occurrenceId, probe, ::remoteAllowed)?.let { primed ->
+                        target.value = primed
+                        prime(input, preferences, probe)
                         return@collectLatest
                     }
                     val canonical = row.item.canonicalSong()
@@ -140,6 +163,7 @@ internal class DesktopCanvasOwner(
                         DesktopCanvasTarget(row.occurrenceId, uri, image = false, provider = provider)
                     }
                     if (result == null) notice = "content_canvas_not_found"
+                    prime(input, preferences, probe)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -147,6 +171,45 @@ internal class DesktopCanvasOwner(
                     graph.report("canvas not resolved: ${failure.javaClass.simpleName}")
                 }
             }
+        }
+    }
+
+    /**
+     * Resolves the canvases of the next [PREFETCH_AHEAD] queue rows into [prefetched], so the row that
+     * becomes current finds its artwork without another provider round-trip. Rows with a local canvas
+     * are skipped (the local path wins anyway), and a cancelled prefetch leaves no entry.
+     *
+     * The lookups are children of the calling resolve generation: collectLatest cancels and joins them
+     * as soon as the queue, preferences, network or visibility move on, so a row that is no longer
+     * upcoming stops resolving and one generation never runs two lookups for the same occurrence.
+     */
+    private suspend fun prime(input: CanvasInput, preferences: PreferenceSnapshot, probe: List<Any?>) {
+        if (!input.online || preferences[CanvasWifiOnlyKey, false] || preferences.lowDataMode()) return
+        val started = HashSet<String>()
+        coroutineScope {
+            for (candidate in input.upcoming) {
+                val id = candidate.occurrenceId
+                if (candidate.item.ref.kind != ContentKind.SONG || id == input.row?.occurrenceId) continue
+                if (!started.add(id) || prefetched.contains(id)) continue
+                launch { primeOne(candidate, probe) }
+            }
+        }
+    }
+
+    private suspend fun primeOne(candidate: ContentOccurrence, probe: List<Any?>) {
+        try {
+            if (graph.customArtwork.canvasUri(candidate.item.ref.id) != null) return
+            val canonical = candidate.item.canonicalSong()
+            val artist = canonical.artists.firstOrNull()?.name ?: canonical.subtitle.takeIf(String::isNotBlank) ?: return
+            val found = withTimeoutOrNull(45_000L) { resolve(candidate.item.ref.id, canonical.title, artist) } ?: return
+            prefetched.put(
+                DesktopCanvasTarget(candidate.occurrenceId, found.first, image = false, provider = found.second),
+                probe,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // A failed lookahead is silent; the row resolves normally when its turn comes.
         }
     }
 
@@ -315,9 +378,15 @@ internal class DesktopCanvasOwner(
     }
 
     private data class CanvasInput(
-        val row: ContentOccurrence?, val preferences: PreferenceSnapshot?, val canvases: Map<String, String>,
+        val row: ContentOccurrence?, val upcoming: List<ContentOccurrence>,
+        val preferences: PreferenceSnapshot?, val canvases: Map<String, String>,
         val online: Boolean, val showing: Boolean,
     )
+
+    private companion object {
+        const val PREFETCH_AHEAD = 2
+        const val RESOLVED_CAP = 8
+    }
 }
 
 internal fun createDesktopCanvas(graph: DesktopSessionGraph, accounts: DesktopSpotifyAccounts) = DesktopCanvasOwner(graph, accounts)

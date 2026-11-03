@@ -256,6 +256,26 @@ class PortableInfiniteQueueTest {
         assertEquals(listOf("replacement"), h.ids())
     }
 
+    @Test fun aBuiltInCollectionReplacementStaysFiniteWhileAnAdHocReplacementGrowsARadioTail() = runTest {
+        val h = Harness(backgroundScope)
+        h.radioReply = { _, _ -> ContentPage((1..6).map { song("r$it") }) }
+        h.enabled.value = true
+        h.owner.withQueueAccess {
+            h.owner.replace(listOf(song("liked1"), song("liked2")), "liked1", false, staysFinite = true)
+        }
+        runCurrent()
+        h.owner.withQueueAccess { h.owner.select("liked2", 0L) }
+        runCurrent()
+        assertTrue(h.owner.state.value.staysFinite)
+        assertEquals(listOf("liked1", "liked2"), h.ids())
+        assertEquals(0, h.radioCalls.size)
+
+        h.owner.withQueueAccess { h.owner.replace(listOf(song("pick")), "pick", false) }
+        runCurrent()
+        assertFalse(h.owner.state.value.staysFinite)
+        assertEquals(listOf("pick") + (1..6).map { "r$it" }, h.ids())
+    }
+
     private class Harness(scope: CoroutineScope) {
         val enabled = MutableStateFlow(false)
         var repeat = QueueRepeatMode.OFF

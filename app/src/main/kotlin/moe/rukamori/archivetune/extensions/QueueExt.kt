@@ -38,6 +38,7 @@ fun Queue.toPersistQueue(
                 mediaItemIndex = mediaItemIndex,
                 position = position,
                 queueType = QueueType.LIST,
+                finite = finite,
             )
         }
 
@@ -125,6 +126,7 @@ fun PersistQueue.toContinuationQueue(): Queue =
                 items = items.map { it.toMediaItem() },
                 startIndex = mediaItemIndex,
                 position = position,
+                finite = finite,
             )
         }
 

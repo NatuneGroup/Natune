@@ -16,6 +16,11 @@ class ListQueue(
     val items: List<MediaItem>,
     val startIndex: Int = 0,
     val position: Long = 0L,
+    /**
+     * A built-in collection queue stays finite: no radio tail is seeded when its last song ends. Ad-hoc
+     * and user playlist queues keep the default false so auto-load-more still continues them.
+     */
+    val finite: Boolean = false,
 ) : Queue {
     override val preloadItem: MediaMetadata? = null
 

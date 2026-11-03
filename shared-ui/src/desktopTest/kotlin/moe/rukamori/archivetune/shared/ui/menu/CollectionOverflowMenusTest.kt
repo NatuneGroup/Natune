@@ -118,7 +118,12 @@ class CollectionOverflowMenusTest {
         override val state = MutableStateFlow(QueueState(0, emptyList(), null, emptyList()))
         var last = emptyList<ContentOccurrence>()
         var kind: UserQueuedKind? = null
-        override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) { last = entries }
+        override suspend fun replace(
+            entries: List<ContentOccurrence>,
+            startOccurrenceId: String,
+            playWhenReady: Boolean,
+            staysFinite: Boolean,
+        ) { last = entries }
         override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind): Int { last = entries; this.kind = kind; return entries.size }
         override suspend fun remove(occurrenceIds: Set<String>) = error("Not called")
         override suspend fun move(occurrenceId: String, beforeOccurrenceId: String?) = error("Not called")

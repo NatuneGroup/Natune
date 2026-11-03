@@ -111,9 +111,7 @@ internal class IosLastFmDashboardHost(
             return
         }
         queueCommand("the radio could not be started") {
-            val entry = song.queuedEntry()
-            graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
-            check(graph.queue.startRadioSeamlessly()) { "The radio tail could not be seeded" }
+            check(graph.queue.startRadio(song.item.ref) { song.queuedEntry() }) { "The radio tail could not be seeded" }
         }
     }
 

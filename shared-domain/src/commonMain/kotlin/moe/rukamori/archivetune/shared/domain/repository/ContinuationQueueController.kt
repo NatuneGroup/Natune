@@ -51,6 +51,38 @@ object FiniteCollectionStartPolicy {
     }
 }
 
+/**
+ * Whether a finite-loaded collection stays finite: a built-in library collection ends where the user
+ * sees it end rather than continuing into a seeded recommendation tail. User playlists and catalogue
+ * collections keep their continuation, and an explicit radio action always clears the flag on the
+ * committed [QueueState]. The flag itself lives on [QueueState.staysFinite]; this object only classifies
+ * the collection a queue is loaded from.
+ */
+object BuiltInCollectionFinitePolicy {
+    private val STAYS_FINITE_SURFACES: Set<ContentSurface> =
+        setOf(
+            ContentSurface.LIBRARY_SONGS,
+            ContentSurface.LIBRARY_LIKED,
+            ContentSurface.LIBRARY_MIX,
+            ContentSurface.LIBRARY_PODCASTS,
+            ContentSurface.DOWNLOADS,
+            ContentSurface.HISTORY,
+            ContentSurface.STATISTICS,
+            ContentSurface.RECAP,
+        )
+
+    /** Local auto playlists (liked, downloaded, cached) share the playlist-items surface with user playlists. */
+    const val AUTO_PLAYLIST_ID_PREFIX: String = "auto_playlist/"
+
+    fun staysFinite(collection: ContentRequest): Boolean =
+        collection.surface in STAYS_FINITE_SURFACES || collection.isLocalAutoPlaylist()
+
+    private fun ContentRequest.isLocalAutoPlaylist(): Boolean =
+        surface == ContentSurface.LIBRARY_PLAYLIST_ITEMS &&
+            provider == ContentProvider.LOCAL &&
+            parent?.id?.startsWith(AUTO_PLAYLIST_ID_PREFIX) == true
+}
+
 /** Full compatibility state; the original stream is never projected through ContentItem. */
 data class LegacyQueueResume(val revision: Long, val document: LegacyQueueDocument, val positionOverrideMs: Long? = null) {
     init { require(revision >= 0 && (positionOverrideMs == null || positionOverrideMs >= 0)) }

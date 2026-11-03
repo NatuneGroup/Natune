@@ -476,7 +476,8 @@ private fun HomeContent(
                         }
                     }
 
-                    if (uiState.keepListening.isNotEmpty()) {
+                    // A shelf shorter than a row reads as noise on home; Metrolist's gate is five.
+                    if (uiState.keepListening.size >= 5) {
                         item(
                             key = "home_keep_listening",
                             contentType = "media_shelf",

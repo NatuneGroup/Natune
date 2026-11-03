@@ -195,7 +195,7 @@ private fun playRanked(graph: DesktopSessionGraph, stats: ListeningStatistics, r
     val start = entries.firstOrNull { it.item.ref == rank.item.ref } ?: return
     graph.scope.launch {
         try {
-            graph.queue.replace(entries, start.occurrenceId, playWhenReady = true)
+            graph.queue.replace(entries, start.occurrenceId, playWhenReady = true, staysFinite = true)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -212,7 +212,7 @@ private fun shuffleRanked(graph: DesktopSessionGraph, stats: ListeningStatistics
     val start = entries.firstOrNull() ?: return
     graph.scope.launch {
         try {
-            graph.queue.replace(entries, start.occurrenceId, playWhenReady = true)
+            graph.queue.replace(entries, start.occurrenceId, playWhenReady = true, staysFinite = true)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {

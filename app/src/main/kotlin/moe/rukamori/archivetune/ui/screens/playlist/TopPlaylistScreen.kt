@@ -340,6 +340,7 @@ fun TopPlaylistScreen(
                                         ListQueue(
                                             title = name,
                                             items = songs!!.shuffled().map { it.toMediaItem() },
+                                            finite = true,
                                         ),
                                     )
                                 },
@@ -348,6 +349,7 @@ fun TopPlaylistScreen(
                                         ListQueue(
                                             title = name,
                                             items = songs!!.map { it.toMediaItem() },
+                                            finite = true,
                                         ),
                                     )
                                 },
@@ -494,6 +496,7 @@ fun TopPlaylistScreen(
                                                             title = name,
                                                             items = songs!!.map { it.toMediaItem() },
                                                             startIndex = songs!!.indexOfFirst { it.id == songWrapper.item.id },
+                                                            finite = true,
                                                         ),
                                                     )
                                                 }

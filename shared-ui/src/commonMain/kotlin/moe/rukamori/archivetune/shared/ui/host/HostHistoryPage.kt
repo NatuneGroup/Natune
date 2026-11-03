@@ -236,7 +236,7 @@ private class LocalHistoryPager(
             } ?: return@launch
             if (entries.isEmpty()) return@launch
             val shuffled = entries.shuffled()
-            owners.queue.replace(shuffled, shuffled.first().occurrenceId, playWhenReady = true)
+            owners.queue.replace(shuffled, shuffled.first().occurrenceId, playWhenReady = true, staysFinite = true)
         }
     }
 
@@ -276,7 +276,7 @@ private class LocalHistoryPager(
             val listenId = eventIds[event.eventId ?: return@launch]
             val start = entries.firstOrNull { it.first == listenId }?.second
                 ?: return@launch owners.report("the history section does not hold this listen")
-            owners.queue.replace(entries.map { it.second }, start.occurrenceId, playWhenReady = true)
+            owners.queue.replace(entries.map { it.second }, start.occurrenceId, playWhenReady = true, staysFinite = true)
         }
     }
 
