@@ -8,7 +8,6 @@ import com.metrolist.innertubex.extraction.AudioQuality as InnerTubeXAudioQualit
 import com.metrolist.innertubex.extraction.ContentHints
 import com.metrolist.innertubex.extraction.ExtractedStream
 import com.metrolist.innertubex.extraction.InnerTubeExtractor
-import com.metrolist.innertubex.extraction.StreamExtractor
 import com.metrolist.innertubex.extraction.YtConfigParserImpl
 import com.metrolist.innertubex.models.YouTubeClient
 import com.metrolist.innertubex.models.response.PlayerResponse
@@ -16,12 +15,20 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.head
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.errors.IOException
 import kotlin.concurrent.Volatile
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.shared.data.potoken.IosPoTokenSupport
+import moe.rukamori.archivetune.shared.data.potoken.MintedPoTokens
 import moe.rukamori.archivetune.shared.data.potoken.appendPoTokenToStreamUrl
 import moe.rukamori.archivetune.shared.data.potoken.poTokenForWebClient
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
@@ -40,6 +47,15 @@ private const val CONNECT_TIMEOUT_MS = 15_000L
 private const val REQUEST_TIMEOUT_MS = 30_000L
 private const val MAX_SEARCHED_IDS = 64
 
+/** The BotGuard mint allowance inside a tier bound, leaving the rest to extraction. */
+private const val MINT_BUDGET_MS = 3_000L
+
+/** Echo's last-byte probe stays well inside its 20 s tier bound. */
+private const val ECHO_PROBE_TIMEOUT_MS = 8_000L
+private const val ECHO_PROBE_CHUNK_BYTES = 512L * 1024L
+private const val ECHO_WEBM_BONUS = 10_240
+private const val PRIVATE_TRACK_TYPE = "MUSIC_VIDEO_TYPE_PRIVATELY_OWNED_TRACK"
+
 private val VIDEO_ID_REGEX = Regex("^[A-Za-z0-9_-]{11}$")
 
 /** The audio itags the shipped resolver prefers, best first, the same ladder the Android walk uses. */
@@ -47,6 +63,12 @@ private val PREFERRED_ITAGS = listOf(251, 140, 250, 249, 141, 139)
 
 private val LOGIN_REASONS = listOf("sign in", "sign-in", "login")
 private val BOT_REASONS = listOf("bot", "unusual traffic", "automated")
+
+/** The playability statuses Echo's main request reads as its age-gate signal. */
+private val AGE_RESTRICTED_STATUSES =
+    listOf("AGE_CHECK_REQUIRED", "AGE_VERIFICATION_REQUIRED", "LOGIN_REQUIRED", "CONTENT_CHECK_REQUIRED")
+
+private val ECHO_MAIN_CLIENT = YouTubeClient.WEB_REMIX
 
 /**
  * The iOS YouTube chain, mirroring the app's shipped `YTPlayerUtils -> InnerTubeX -> NewPipe -> Echo` tiers:
@@ -59,7 +81,19 @@ private val BOT_REASONS = listOf("bot", "unusual traffic", "automated")
  * - `fallback(INNERTUBE_X)` is the full InnerTubeX extractor: config parsing plus the pure-Kotlin cipher, asked as a
  *   visitor exactly like the Android tier, and kept off SABR/HLS/bounded-range responses because the engine takes a
  *   plain progressive resource.
- * - `fallback(NEWPIPE)` and `fallback(ECHO)` are JVM extractors upstream and honestly report unavailability here.
+ * - `fallback(NEWPIPE)` runs the NewPipe tier's mechanism directly: the `org.schabi.newpipe.extractor` artifact is
+ *   JVM-only, so the tier makes the same anonymous visitor player requests over the extractor's client set — its
+ *   ANDROID_VR pass first, then the shipped tier's ANDROID_MUSIC/IOS/WEB_REMIX walk — and deciphers
+ *   `signatureCipher`/`cipher` and the n parameter through the shared QuackJS cipher, the pure-Kotlin counterpart
+ *   of NewPipe's JavaScript-player deobfuscation that the InnerTubeX tier already runs here.
+ * - `fallback(ECHO)` runs the Echo-Music cascade over the live session: WEB_REMIX first for the age-gate and
+ *   private-track signals, then VISIONOS/ANDROID_VR 1.65/TVHTML5/ANDROID_VR 1.43/IPADOS/IOS/WEB_CREATOR with
+ *   login-required clients skipped while anonymous, the same deciphering, the HEAD+Range validation probe, and the
+ *   last client accepted unvalidated. Android's WebView-hosted meriyah/astring solver and WebView token generator
+ *   are the Echo pieces that stay JVM-only; the shared QuackJS cipher and the shipped BotGuard support stand in
+ *   for them, so the tier stays honest about what it is.
+ *
+ * Every fallback tier writes one diagnostics line with its outcome, as `PlaybackDiagnostics` does on Android.
  */
 class IosYouTubeResolver(
     private val http: HttpClient,
@@ -67,12 +101,16 @@ class IosYouTubeResolver(
     private val preferences: () -> PreferenceSnapshot?,
     private val personalScope: suspend () -> String?,
     private val poTokens: IosPoTokenSupport? = null,
+    private val report: (String) -> Unit = {},
 ) : YouTubeResolutionPort {
 
-    // A derived client shares the graph's engine and adds what InnerTubeX expects: status exceptions and JSON bodies.
-    // It is never closed on its own, because closing it would close the shared engine; the graph closes that.
+    // A derived client shares the graph's engine and adds what InnerTubeX expects: status exceptions and JSON
+    // bodies. It is never closed on its own, because closing it would close the shared engine; the graph closes that.
     private val client by lazy { createHttpClient() }
     private val extractor by lazy { createExtractor() }
+
+    // The validation probe answers with any status: a 403 is a result here, not an exception.
+    private val probeClient by lazy { createProbeClient() }
 
     @Volatile
     private var prewarmed = false
@@ -144,11 +182,41 @@ class IosYouTubeResolver(
     }
 
     override suspend fun fallback(tier: YouTubeFallbackTier, request: AudioResolveRequest): PreparedAudio? {
+        val name = androidTierName(tier)
         val target = targetVideoId(request) ?: return null
-        return when (tier) {
-            YouTubeFallbackTier.INNERTUBE_X -> resolveInnerTubeX(target)
-            // NewPipe and Echo are JVM extractors upstream; no iOS build exists, so they stay honestly silent.
-            YouTubeFallbackTier.NEWPIPE, YouTubeFallbackTier.ECHO -> null
+        val started = TimeSource.Monotonic.markNow()
+        // The tier bounds itself the way the desktop host does, so its own timeout comes back as a null
+        // outcome; the caller's cancellation and the terminal-auth signal always propagate, and the
+        // finally block writes the tier's one diagnostics line on every exit path.
+        var resolved = false
+        var reason: String? = null
+        try {
+            var timedOut = true
+            val audio =
+                withTimeoutOrNull(tier.timeoutMs) {
+                    val result =
+                        when (tier) {
+                            YouTubeFallbackTier.INNERTUBE_X -> resolveInnerTubeX(target)
+                            YouTubeFallbackTier.NEWPIPE -> resolveNewPipe(target, request)
+                            YouTubeFallbackTier.ECHO -> resolveEcho(target)
+                        }
+                    timedOut = false
+                    result
+                }
+            resolved = audio != null
+            if (timedOut) reason = "timeout"
+            return audio
+        } catch (auth: TerminalPlaybackAuthentication) {
+            reason = auth::class.simpleName
+            throw auth
+        } catch (cancelled: CancellationException) {
+            reason = cancelled::class.simpleName
+            throw cancelled
+        } catch (failure: Throwable) {
+            reason = failure::class.simpleName
+            return null
+        } finally {
+            logTier(name, resolved, started.elapsedNow().inWholeMilliseconds, reason)
         }
     }
 
@@ -214,6 +282,252 @@ class IosYouTubeResolver(
         return PreparedAudio.Progressive(stream.toDirectStream(target, accountScope(target)))
     }
 
+    /**
+     * The NewPipe tier's iOS mechanism. The extractor artifact itself is JVM-only, so the tier does what the
+     * extractor does: anonymous visitor player requests whose ciphered formats are solved by the player script.
+     * The client order mirrors it — NewPipe's own ANDROID_VR pass first, then the same visitor clients the shipped
+     * tier walks. [YouTubeCipherService.processFormats] is the QuackJS counterpart of NewPipe's
+     * YoutubeJavaScriptPlayerManager deobfuscation: the signature and the n parameter are solved by the same player
+     * script, never pattern-matched, so a rotated player keeps working the way it does upstream.
+     */
+    private suspend fun resolveNewPipe(target: IosYouTubeTarget, request: AudioResolveRequest): PreparedAudio? {
+        prewarmOnce()
+        transport.refreshSession(preferences())
+        // The anonymous visitor config is the tier's signature-timestamp, visitor and player source: NewPipe
+        // resolves as a visitor because a track the signed-in pipeline was refused is often served to one.
+        val config = ytConfigParser.fetchConfig(target.videoId, useLoginCookies = false)
+        val qualities = qualityAttempts(requestAudioQuality(request))
+        // The mint binds the visitor session, not the signed-in one the player requests deliberately leave out.
+        val visitorSession =
+            transport.innerTubeSession.sessionSnapshot().let { session ->
+                if (session.sapisid.isNullOrBlank()) {
+                    session
+                } else {
+                    session.copy(cookie = null, sapisid = null, dataSyncId = null)
+                }
+            }
+        val minted = boundedMint(target.videoId, visitorSession)
+        for (streamClient in NEWPIPE_TIER_CLIENTS) {
+            if (streamClient.loginRequired) continue
+            val response =
+                try {
+                    innerTube.player(
+                        streamClient,
+                        target.videoId,
+                        signatureTimestamp = config.signatureTimestamp.takeIf { streamClient.useSignatureTimestamp },
+                        poToken = poTokenForWebClient(streamClient.clientName, minted),
+                        requestVisitorData = config.visitorData,
+                    ).body<PlayerResponse>()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    continue
+                }
+            if (response.playabilityStatus.status != "OK") continue
+            val formats =
+                try {
+                    cipherService.processFormats(
+                        config.playerUrl,
+                        response.streamingData?.adaptiveFormats.orEmpty(),
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    continue
+                }
+            for (attempt in qualities) {
+                pickFormat(formats, attempt)?.let { format ->
+                    lastSuccessful = null
+                    return PreparedAudio.Progressive(
+                        format.toDirectStream(
+                            client = streamClient,
+                            response = response,
+                            target = target,
+                            accountScope = null,
+                            poToken = poTokenForWebClient(streamClient.clientName, minted),
+                            tierLabel = "NewPipe",
+                        ),
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * The Echo tier's iOS mechanism, the last resort: the signed-in session cascade — WEB_REMIX first for the
+     * age-gate and private-track signals, then the measured fallback clients — with the same deciphering and the
+     * HEAD+Range validation probe the Android echo resolver runs, accepting the last client unvalidated. The
+     * WebView-hosted meriyah/astring solver and the WebView token generator are the Android pieces that do not
+     * exist here; the shared QuackJS cipher and the BotGuard mint the shipped path already carries stand in.
+     */
+    private suspend fun resolveEcho(target: IosYouTubeTarget): PreparedAudio? {
+        prewarmOnce()
+        transport.refreshSession(preferences())
+        val liveSession = transport.innerTubeSession
+        val signedIn = transport.signedIn()
+        val config = ytConfigParser.fetchConfig(target.videoId, useLoginCookies = false)
+        val minted = boundedMint(target.videoId, liveSession.sessionSnapshot())
+
+        // The main client request always runs: its playability names the age gate and the track type the cascade
+        // indexes on, and its failure ends the tier the way Echo's does.
+        var main =
+            liveSession.player(
+                ECHO_MAIN_CLIENT,
+                target.videoId,
+                signatureTimestamp = config.signatureTimestamp.takeIf { ECHO_MAIN_CLIENT.useSignatureTimestamp },
+                poToken = poTokenForWebClient(ECHO_MAIN_CLIENT.clientName, minted),
+            ).body<PlayerResponse>()
+        val wasAgeRestricted = main.playabilityStatus.status in AGE_RESTRICTED_STATUSES
+        if (wasAgeRestricted && signedIn) {
+            // A logged-in age gate hands the main answer to the creator client, as Echo's does.
+            sessionPlayerOrNull(YouTubeClient.WEB_CREATOR, target.videoId, signatureTimestamp = null, poToken = null)
+                ?.takeIf { it.playabilityStatus.status == "OK" }
+                ?.let { main = it }
+        }
+        val isPrivateTrack = main.videoDetails?.musicVideoType == PRIVATE_TRACK_TYPE
+        val startIndex = if (isPrivateTrack) ECHO_PRIVATE_TRACK_START_INDEX else 0
+
+        for (index in startIndex until ECHO_TIER_CLIENTS.size) {
+            val streamClient = ECHO_TIER_CLIENTS[index]
+            if (streamClient.loginRequired && !signedIn) continue
+            val response =
+                sessionPlayerOrNull(
+                    streamClient,
+                    target.videoId,
+                    signatureTimestamp =
+                        (if (wasAgeRestricted) null else config.signatureTimestamp)
+                            .takeIf { streamClient.useSignatureTimestamp },
+                    poToken =
+                        poTokenForWebClient(streamClient.clientName, minted)
+                            .takeIf { streamClient.useWebPoTokens },
+                ) ?: continue
+            if (response.playabilityStatus.status != "OK") continue
+            val formats =
+                try {
+                    cipherService.processFormats(
+                        config.playerUrl,
+                        response.streamingData?.adaptiveFormats.orEmpty(),
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    continue
+                }
+            val format = echoPickAudio(formats) ?: continue
+            if (response.streamingData?.expiresInSeconds == null) continue
+            val privatelyOwned = response.videoDetails?.musicVideoType == PRIVATE_TRACK_TYPE
+            var url = format.url ?: continue
+            // The n parameter was already transformed with the signature. The client sets Echo names for its
+            // append are exactly the web-po clients in this catalog, so the gate reduces to them plus a
+            // privately owned track, which carries the video-bound token whatever the client.
+            if (streamClient.useWebPoTokens || privatelyOwned) {
+                val pot =
+                    if (privatelyOwned && !streamClient.useWebPoTokens) {
+                        minted?.playerToken
+                    } else {
+                        poTokenForWebClient(streamClient.clientName, minted)
+                    }
+                url = appendPoTokenToStreamUrl(url, pot)
+            }
+            val accepted =
+                index == ECHO_TIER_CLIENTS.lastIndex || privatelyOwned ||
+                    probeStreamUrl(url, format.contentLength)
+            if (!accepted) continue
+            lastSuccessful = null
+            return PreparedAudio.Progressive(
+                format.copy(url = url).toDirectStream(
+                    client = streamClient,
+                    response = response,
+                    target = target,
+                    accountScope = accountScope(target),
+                    poToken = null,
+                    tierLabel = "Echo",
+                ),
+            )
+        }
+        return null
+    }
+
+    /** One player request under the live transport session, null on failure like Echo's trapped calls. */
+    private suspend fun sessionPlayerOrNull(
+        client: YouTubeClient,
+        videoId: String,
+        signatureTimestamp: Int?,
+        poToken: String?,
+    ): PlayerResponse? =
+        try {
+            transport.innerTubeSession.player(
+                client,
+                videoId,
+                signatureTimestamp = signatureTimestamp,
+                poToken = poToken,
+            ).body<PlayerResponse>()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+
+    /**
+     * Echo's HEAD+Range probe: the last byte when the length is known, the first chunk otherwise. A
+     * network-class failure proves nothing about the URL and accepts it, as Echo's IOException branch does;
+     * an answered rejection rejects the candidate. The probe carries no auth: a media URL must never see
+     * cookies or Authorization headers, including for signed-in clients.
+     */
+    private suspend fun probeStreamUrl(url: String, contentLength: Long?): Boolean =
+        try {
+            val range =
+                if (contentLength != null && contentLength > 0L) {
+                    "bytes=${contentLength - 1}-${contentLength - 1}"
+                } else {
+                    "bytes=0-${ECHO_PROBE_CHUNK_BYTES - 1}"
+                }
+            val response =
+                probeClient.head(url) {
+                    header(HttpHeaders.Range, range)
+                }
+            response.status.value in 200..299 || response.status == HttpStatusCode.MethodNotAllowed
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            failure is IOException
+        }
+
+    /** A mint with the same allowance the desktop tiers grant inside their bound. */
+    private suspend fun boundedMint(videoId: String, session: InnerTube.SessionSnapshot): MintedPoTokens? =
+        try {
+            withTimeoutOrNull(MINT_BUDGET_MS) { poTokens?.mintForPlayback(videoId, session) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+
+    /** Echo's format pick: the highest-bitrate audio, with the webm container preference it adds. */
+    private fun echoPickAudio(
+        formats: List<PlayerResponse.StreamingData.Format>,
+    ): PlayerResponse.StreamingData.Format? =
+        formats
+            .filter { it.isAudio && !it.url.isNullOrBlank() }
+            .maxByOrNull { it.bitrate + if (it.mimeType.startsWith("audio/webm")) ECHO_WEBM_BONUS else 0 }
+
+    /** The `PlaybackDiagnostics` line Android writes once per tier, with the same tier names. */
+    private fun logTier(name: String, resolved: Boolean, elapsedMs: Long, reason: String?) {
+        report(
+            "YouTube tier=$name resolved=$resolved elapsedMs=$elapsedMs" +
+                (reason?.let { " reason=$it" } ?: ""),
+        )
+    }
+
+    /** The tier names Android's `shippedFallbackTiers` list writes, so the diagnostics read identically. */
+    private fun androidTierName(tier: YouTubeFallbackTier): String =
+        when (tier) {
+            YouTubeFallbackTier.INNERTUBE_X -> "innertubex"
+            YouTubeFallbackTier.NEWPIPE -> "newpipe"
+            YouTubeFallbackTier.ECHO -> "echo"
+        }
+
     /** Warming is an optimisation, so a failed warm never fails the tier and is retried by the next resolve. */
     private suspend fun prewarmOnce() {
         if (prewarmed) return
@@ -229,16 +543,22 @@ class IosYouTubeResolver(
 
     private val innerTube: InnerTube by lazy { InnerTube(httpClient = client) }
 
-    private fun createExtractor(): InnerTubeExtractor {
-        val playerConfigStore =
-            RemotePlayerConfigStore(httpClient = client, repository = PlayerConfigRepository.disabled())
-        return InnerTubeExtractor(
-            configParser = YtConfigParserImpl(client, innerTube, playerConfigStore),
-            cipherService = YouTubeCipherService(client, playerConfigStore),
+    private val playerConfigStore by lazy {
+        RemotePlayerConfigStore(httpClient = client, repository = PlayerConfigRepository.disabled())
+    }
+
+    // One cipher/parser pair serves the InnerTubeX extractor and the direct NewPipe/Echo tiers, so the bounded
+    // player-script and program caches are not duplicated.
+    private val cipherService by lazy { YouTubeCipherService(client, playerConfigStore) }
+    private val ytConfigParser by lazy { YtConfigParserImpl(client, innerTube, playerConfigStore) }
+
+    private fun createExtractor(): InnerTubeExtractor =
+        InnerTubeExtractor(
+            configParser = ytConfigParser,
+            cipherService = cipherService,
             innerTube = innerTube,
             tokenProvider = poTokens?.tokenProvider,
         )
-    }
 
     @OptIn(ExperimentalSerializationApi::class)
     private fun createHttpClient(): HttpClient =
@@ -257,6 +577,16 @@ class IosYouTubeResolver(
                 requestTimeoutMillis = REQUEST_TIMEOUT_MS
                 connectTimeoutMillis = CONNECT_TIMEOUT_MS
                 socketTimeoutMillis = REQUEST_TIMEOUT_MS
+            }
+        }
+
+    private fun createProbeClient(): HttpClient =
+        http.config {
+            expectSuccess = false
+            install(HttpTimeout) {
+                requestTimeoutMillis = ECHO_PROBE_TIMEOUT_MS
+                connectTimeoutMillis = CONNECT_TIMEOUT_MS
+                socketTimeoutMillis = ECHO_PROBE_TIMEOUT_MS
             }
         }
 
@@ -352,6 +682,34 @@ private val AGE_GATE_BYPASS_CLIENTS =
         YouTubeClient.WEB_EMBEDDED_PLAYER,
     )
 
+/**
+ * NewPipe's visitor client set, most likely first: its own extractor pass asks an ANDROID_VR profile, then the
+ * shipped tier walks the same anonymous clients. NewPipe's deobfuscation is what makes a cipher-only response
+ * usable here, so the walk avoids the clients that demand a login.
+ */
+private val NEWPIPE_TIER_CLIENTS =
+    listOf(
+        YouTubeClient.ANDROID_VR_1_65_10,
+        YouTubeClient.ANDROID_MUSIC,
+        YouTubeClient.IOS,
+        YouTubeClient.WEB_REMIX,
+    )
+
+/** Echo's measured fallback cascade, in order: the last client is the one accepted without a validation probe. */
+private val ECHO_TIER_CLIENTS =
+    listOf(
+        YouTubeClient.VISIONOS,
+        YouTubeClient.ANDROID_VR_1_65_10,
+        YouTubeClient.TVHTML5,
+        YouTubeClient.ANDROID_VR_1_43_32,
+        YouTubeClient.IPADOS,
+        YouTubeClient.IOS,
+        YouTubeClient.WEB_CREATOR,
+    )
+
+/** A privately owned track starts the cascade at TVHTML5, as Echo's `PRIVATE_TRACK_STREAM_START_INDEX` does. */
+private val ECHO_PRIVATE_TRACK_START_INDEX = ECHO_TIER_CLIENTS.indexOf(YouTubeClient.TVHTML5).coerceAtLeast(0)
+
 /** The best audio format for the attempt: audio-only, playable plain URL, no cipher, ranked like the shipped one. */
 private fun pickFormat(
     formats: List<PlayerResponse.StreamingData.Format>,
@@ -380,6 +738,7 @@ private fun PlayerResponse.StreamingData.Format.toDirectStream(
     target: IosYouTubeTarget,
     accountScope: String?,
     poToken: String?,
+    tierLabel: String? = null,
 ): DirectStream {
     val fullMime = mimeType
     return DirectStream(
@@ -387,7 +746,7 @@ private fun PlayerResponse.StreamingData.Format.toDirectStream(
         mimeType = mimeBase(fullMime),
         codecs = mimeCodecs(fullMime),
         contentLength = contentLength?.takeIf { it > 0L },
-        label = "YouTube ${client.friendlyName ?: client.clientName} $itag ${bitrate / 1000} kbps",
+        label = "YouTube ${tierLabel?.plus(" ") ?: ""}${client.friendlyName ?: client.clientName} $itag ${bitrate / 1000} kbps",
         source = AudioSourceType.YOUTUBE,
         matchedTitle = response.videoDetails?.title,
         matchedArtist = response.videoDetails?.author?.removeSuffix(" - Topic"),
