@@ -180,7 +180,10 @@ them skipped under reduced motion:
   the sweep never lights it at another height than its dim ink. The rise is a clip plus a translate
   in the draw pass, never a relayout. An emphasized word rides the same drop under its letter
   ripple, and a word wrapped over two visual lines stays seated on Compose. Reduced motion seats
-  every word, the same no-bounce behaviour as before.
+  every word, the same no-bounce behaviour as before. On Android a timed background voice under the
+  sung row sweeps and lifts over its own word spans the same way. A rising or emphasized word's cut
+  and repaint window reach the band's glyph overshoot plus the lift, so accents and descenders move
+  with the word on their own baseline rather than being clipped or drawn twice.
 - The sung line pops to 1.05× over 100 ms when it activates (`LyricsModeProfile.activeScale`),
   scaling from its aligned edge.
 - An instrumental break of 9 s or more shows three dots above the next line (`LyricsInterludes`,
