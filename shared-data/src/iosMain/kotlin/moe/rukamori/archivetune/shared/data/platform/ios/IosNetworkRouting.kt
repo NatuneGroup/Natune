@@ -10,7 +10,13 @@ import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import moe.rukamori.archivetune.shared.domain.settings.IpRotationEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.PROXY_LOCAL_HOST_EXCEPTIONS
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.ProxyRoute
@@ -20,6 +26,7 @@ import platform.Foundation.NSURLCredential
 import platform.Foundation.NSURLCredentialPersistence
 import platform.Foundation.NSURLSessionAuthChallengePerformDefaultHandling
 import platform.Foundation.NSURLSessionAuthChallengeUseCredential
+import platform.Foundation.NSURLSessionConfiguration
 import platform.Foundation.create
 
 /** The sanitized outcome of one proxy probe; the settings page maps it to its own result type. */
@@ -98,10 +105,64 @@ fun DarwinClientEngineConfig.applyIosProxyRoute(route: ProxyRoute?) {
 }
 
 /**
- * The iOS network owner. The Darwin engine binds its proxy when it creates its NSURLSession, so one process uses one
- * pinned route: the saved static route at launch. Rotation is therefore not offered here — it would need a route per
- * request — and an edit made while running is stored and reported as applying to the next launch, never pretended to
- * be live. Audio streams are read through the player's own session, which keeps the system route.
+ * The process-wide stream route, the iOS analog of the desktop's default ProxySelector. The Darwin engine
+ * keeps a session's route for the session's life, but every playback transfer builds its own ephemeral
+ * session, so the saved route and the rotating pool reach the next connection through this holder. It is
+ * process state because the byte sources that read it sit below the session graph's reach; a rebuilt graph
+ * writes it again, which is the same constraint the engine's pinned route has.
+ */
+internal object IosStreamProxyRouting {
+    @Volatile
+    private var savedRoute: ProxyRoute? = null
+
+    @Volatile
+    private var pool: IosProxyRotation? = null
+
+    /** The saved route the next stream honours; its bypass switch takes the stream traffic off the proxy. */
+    fun updateStreamRoute(route: ProxyRoute?) {
+        savedRoute = route
+    }
+
+    /** The pool a stream consults first, or null while rotation is off. */
+    fun updateRotation(rotation: IosProxyRotation?) {
+        pool = rotation
+    }
+
+    /**
+     * The route the next stream connection opens with. The bypass switch beats everything — the desktop
+     * selector sends bypassed streams to the system route even while it rotates — rotation beats the saved
+     * static route, and no route at all keeps the system connection.
+     */
+    fun routeForStream(): ProxyRoute? {
+        val saved = savedRoute
+        if (saved?.bypassStreams == true) return null
+        pool?.next()?.let { return it }
+        return saved
+    }
+
+    /**
+     * Applies [routeForStream] to a session configuration and answers the chosen route, so the transfer that
+     * opens it can report a broken connection back to the pool.
+     */
+    fun applyTo(configuration: NSURLSessionConfiguration): ProxyRoute? {
+        val route = routeForStream() ?: return null
+        configuration.connectionProxyDictionary = iosProxySessionDictionary(route)
+        return route
+    }
+
+    /** A broken transfer cools its pool member; a static or rotating-disabled route has no pool entry to cool. */
+    fun reportFailure(route: ProxyRoute) {
+        pool?.markFailed(route)
+    }
+}
+
+/**
+ * The iOS network owner. The Darwin engine binds its proxy when it creates its NSURLSession, so the engine's
+ * requests use one pinned route: the saved static route at launch, with an edit reported as applying to the next
+ * launch, never pretended to be live. Playback audio is different — every stream transfer builds a fresh ephemeral
+ * session, so its route comes from [IosStreamProxyRouting] at connection time: the saved route honours the bypass
+ * switch live, and an enabled rotation serves the next validated pool member to each new stream connection. The
+ * rotating pool can never take the catalogue with it, so rotation on this host moves stream traffic only.
  */
 class IosNetworkOwner(
     private val preferences: () -> PreferenceSnapshot?,
@@ -109,6 +170,19 @@ class IosNetworkOwner(
 ) {
     /** The route the running Darwin engine was built with, read once when the session opened. */
     val runningRoute: ProxyRoute? = preferences()?.proxyRoute()
+
+    private val rotationLock = Mutex()
+    private val rotation = IosProxyRotation()
+
+    @Volatile
+    private var rotating = false
+
+    init {
+        // The stream transport reads its route per connection, so it starts on the saved one and never has to
+        // wait for the first settings commit. A leftover pool from a replaced graph is dropped the same way.
+        IosStreamProxyRouting.updateStreamRoute(runningRoute)
+        IosStreamProxyRouting.updateRotation(null)
+    }
 
     fun configure(config: DarwinClientEngineConfig) = config.applyIosProxyRoute(runningRoute)
 
@@ -125,6 +199,70 @@ class IosNetworkOwner(
     /** One diagnostic line without credentials, for the session log. */
     fun describe(): String =
         runningRoute?.let { "network: pinned proxy ${it.endpointKey}" } ?: "network: system route"
+
+    /**
+     * Mirrors [snapshot]'s route into the stream transport. The next stream connection takes it — unlike the
+     * engine the stream sessions are rebuilt per request, so this is the one route an edit moves live.
+     */
+    fun applyStreamRoute(snapshot: PreferenceSnapshot?) {
+        IosStreamProxyRouting.updateStreamRoute(snapshot?.proxyRoute())
+    }
+
+    /** The members the rotation pool currently counts live; 0 while rotation is off. */
+    fun activeRotationCount(): Int = if (rotating) rotation.activeCount() else 0
+
+    /**
+     * Re-installs a rotation the user left enabled, the way the desktop owner's start does: the fetch and the
+     * validations are network-bound, so they run off the launch path, and an empty pool leaves rotation off
+     * rather than making the toggle lie.
+     */
+    fun start(scope: CoroutineScope) {
+        scope.launch {
+            if (preferences()?.get(IpRotationEnabledKey) != true) return@launch
+            try {
+                if (applyIpRotation(enabled = true, refresh = false) == 0) {
+                    report("ip rotation restore found no validated proxy routes")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report("ip rotation restore failed: ${failure::class.simpleName}")
+            }
+        }
+    }
+
+    /**
+     * Enables, refreshes or stops the rotating pool and answers its live size, for the settings page's
+     * enable/refresh contract. A refresh refetches — the refresh action exists to replace the pool. An enable
+     * that validates nothing answers 0 so the page can revert the toggle. Rotation changes which proxy the
+     * next stream connection opens with; it never re-routes the engine's pinned session.
+     */
+    suspend fun applyIpRotation(enabled: Boolean, refresh: Boolean): Int = rotationLock.withLock {
+        if (!enabled) {
+            disableRotation()
+            return@withLock 0
+        }
+        try {
+            rotation.fetchAndLoad { preferences()?.proxyRoute() }
+            val count = rotation.activeCount()
+            if (count == 0) {
+                disableRotation()
+                return@withLock 0
+            }
+            rotating = true
+            IosStreamProxyRouting.updateRotation(rotation)
+            count
+        } catch (failure: Throwable) {
+            disableRotation()
+            throw failure
+        }
+    }
+
+    private fun disableRotation() {
+        rotating = false
+        IosStreamProxyRouting.updateRotation(null)
+        rotation.clear()
+    }
 
     /**
      * Probes [snapshot]'s saved route with a one-shot client that carries it. The probe really leaves the device

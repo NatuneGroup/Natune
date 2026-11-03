@@ -129,4 +129,48 @@ class IosNetworkRoutingTest {
         assertNull(owner.runningRoute)
         assertEquals("network: system route", owner.describe())
     }
+
+    @Test
+    fun aStreamFollowsTheSavedRouteUnlessItIsBypassed() {
+        try {
+            IosStreamProxyRouting.updateStreamRoute(httpRoute())
+            assertEquals("http://proxy.example:3128", IosStreamProxyRouting.routeForStream()?.endpointKey)
+            IosStreamProxyRouting.updateStreamRoute(httpRoute().copy(bypassStreams = true))
+            assertNull(IosStreamProxyRouting.routeForStream())
+        } finally {
+            IosStreamProxyRouting.updateStreamRoute(null)
+        }
+    }
+
+    @Test
+    fun aBypassedStreamKeepsTheSystemRouteEvenWhileRotating() {
+        val rotation = IosProxyRotation()
+        rotation.loadRoutes(listOf(httpRoute(host = "pool.example", port = 8080)))
+        try {
+            IosStreamProxyRouting.updateRotation(rotation)
+            IosStreamProxyRouting.updateStreamRoute(httpRoute().copy(bypassStreams = true))
+            assertNull(IosStreamProxyRouting.routeForStream())
+            IosStreamProxyRouting.updateStreamRoute(httpRoute())
+            assertEquals("http://pool.example:8080", IosStreamProxyRouting.routeForStream()?.endpointKey)
+        } finally {
+            IosStreamProxyRouting.updateRotation(null)
+            IosStreamProxyRouting.updateStreamRoute(null)
+        }
+    }
+
+    @Test
+    fun thePoolRotatesAndCoolsAMemberItsConnectionBrokeThrough() {
+        val rotation = IosProxyRotation()
+        val first = httpRoute(host = "one.example", port = 1001)
+        val second = httpRoute(host = "two.example", port = 1002)
+        rotation.loadRoutes(listOf(first, second))
+        assertEquals("http://one.example:1001", rotation.next()?.endpointKey)
+        assertEquals("http://two.example:1002", rotation.next()?.endpointKey)
+        rotation.markFailed(first)
+        assertEquals("http://two.example:1002", rotation.next()?.endpointKey)
+        assertEquals(1, rotation.activeCount())
+        rotation.clear()
+        assertNull(rotation.next())
+        assertEquals(0, rotation.activeCount())
+    }
 }
