@@ -23,6 +23,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -42,6 +43,8 @@ import moe.rukamori.archivetune.shared.domain.library.LibraryDefaults
 import moe.rukamori.archivetune.shared.domain.library.LibraryFilter
 import moe.rukamori.archivetune.shared.domain.library.LibrarySource
 import moe.rukamori.archivetune.shared.domain.library.toLibraryFilterOrder
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
+import moe.rukamori.archivetune.shared.domain.queue.IncompleteFinitePlaylistException
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
@@ -399,8 +402,8 @@ internal fun iosSpotifyArtistPage(
     if (resolved != null) {
         val ytRoute = remember(resolved) {
             ArchiveRoute(
+                value = ArchiveRoutes.content(resolved),
                 destination = ArchiveDestination.ARTIST,
-                raw = ArchiveRoutes.artist(resolved.id),
                 arguments = mapOf("artistId" to resolved.id, "provider" to ContentProvider.YOUTUBE.id),
             )
         }
@@ -467,8 +470,8 @@ internal fun iosSpotifyAlbumPage(
     if (resolved != null) {
         val ytRoute = remember(resolved) {
             ArchiveRoute(
+                value = ArchiveRoutes.content(resolved),
                 destination = ArchiveDestination.ALBUM,
-                raw = ArchiveRoutes.album(resolved.id),
                 arguments = mapOf("albumId" to resolved.id, "provider" to ContentProvider.YOUTUBE.id),
             )
         }
@@ -524,6 +527,8 @@ internal fun iosPlaySpotifyOccurrence(
     return true
 }
 
+private var activeSpotifyPlayJob: Job? = null
+
 internal fun iosPlaySpotifyTrackList(
     graph: IosSessionGraph,
     collectionKey: String,
@@ -535,22 +540,14 @@ internal fun iosPlaySpotifyTrackList(
     val ordered = if (shuffled) tracks.shuffled() else tracks
     val safeStart = if (shuffled) 0 else startIndex.coerceIn(0, ordered.lastIndex)
     val search = YouTubePlaylistImportSearch(graph.youtubeContent)
-    graph.scope.launch {
+    activeSpotifyPlayJob?.cancel()
+    val expectedQueueRevision = graph.queue.state.value.revision
+    activeSpotifyPlayJob = graph.scope.launch {
         try {
-            val firstResolved = withContext(Dispatchers.Default) {
-                resolveOneSpotifySong(search, ordered[safeStart])
-            } ?: return@launch graph.report("spotify song could not be matched on YouTube")
-            val firstEntry = ContentOccurrence(
-                occurrenceId = "spotify:$collectionKey:$safeStart:${firstResolved.ref.id}",
-                item = firstResolved,
-            ).queuedEntry()
-            graph.queue.replace(listOf(firstEntry), firstEntry.occurrenceId, playWhenReady = true)
-            if (ordered.size <= 1) return@launch
             val resolvedAll = withContext(Dispatchers.Default) {
                 coroutineScope {
                     val out = arrayOfNulls<ContentItem>(ordered.size)
-                    out[safeStart] = firstResolved
-                    ordered.indices.filter { it != safeStart }.chunked(4).forEach { batch ->
+                    ordered.indices.chunked(4).forEach { batch ->
                         batch.map { idx ->
                             async { idx to resolveOneSpotifySong(search, ordered[idx]) }
                         }.awaitAll().forEach { (idx, item) -> out[idx] = item }
@@ -558,19 +555,27 @@ internal fun iosPlaySpotifyTrackList(
                     out.toList()
                 }
             }
-            val entries = resolvedAll.mapIndexedNotNull { idx, item ->
-                item?.let {
-                    ContentOccurrence(
-                        occurrenceId = "spotify:$collectionKey:$idx:${it.ref.id}",
-                        item = it,
+            if (graph.queue.state.value.revision != expectedQueueRevision) return@launch
+            var startOccurrenceId: String? = null
+            val entries = mutableListOf<ContentOccurrence>()
+            resolvedAll.forEachIndexed { idx, item ->
+                if (item != null) {
+                    val entry = ContentOccurrence(
+                        occurrenceId = "spotify:$collectionKey:$idx:${item.ref.id}",
+                        item = item,
                     ).queuedEntry()
+                    if (idx == safeStart || (startOccurrenceId == null && idx > safeStart)) {
+                        startOccurrenceId = entry.occurrenceId
+                    }
+                    entries += entry
                 }
             }
-            if (entries.size > 1) {
-                val startOcc = entries.firstOrNull { it.occurrenceId == firstEntry.occurrenceId }?.occurrenceId
-                    ?: entries.first().occurrenceId
-                graph.queue.replace(entries, startOcc, playWhenReady = true)
+            if (entries.isEmpty()) {
+                graph.report("spotify song could not be matched on YouTube")
+                return@launch
             }
+            val startOcc = startOccurrenceId ?: entries.first().occurrenceId
+            graph.queue.replace(entries, startOcc, playWhenReady = true)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -591,15 +596,60 @@ private suspend fun resolveOneSpotifySong(
     return runCatching { search.firstSong(query) }.getOrNull()
 }
 
+private data class SpotifyEntityLookup(
+    val title: String,
+    val artists: List<String> = emptyList(),
+)
+
+private fun normalizeSpotifyMatchText(text: String): String =
+    text.lowercase()
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        .trim()
+
 internal suspend fun iosResolveSpotifyCatalogRef(graph: IosSessionGraph, ref: ContentRef, titleHint: String?): ContentRef? =
     withContext(Dispatchers.Default) {
         val client = IosSpotifyRestClient(graph)
-        val query = titleHint?.takeIf { it.isNotBlank() } ?: client.fetchEntityTitle(ref) ?: return@withContext null
-        val filter = if (ref.kind == ContentKind.ARTIST) ContentSearchFilter.ARTISTS else ContentSearchFilter.ALBUMS
+        if (ref.kind == ContentKind.ARTIST) {
+            val query = titleHint?.takeIf { it.isNotBlank() } ?: client.fetchEntityLookup(ref)?.title ?: return@withContext null
+            val page = graph.youtubeContent.page(
+                ContentRequest(
+                    provider = ContentProvider.YOUTUBE,
+                    surface = ContentSurface.SEARCH,
+                    text = query,
+                    filter = ContentSearchFilter.ARTISTS,
+                ),
+            )
+            return@withContext page.items.firstOrNull { it.item.ref.kind == ContentKind.ARTIST }?.item?.ref
+        }
+        val lookup = client.fetchEntityLookup(ref) ?: return@withContext null
+        val albumTitle = titleHint?.takeIf { it.isNotBlank() } ?: lookup.title
+        if (albumTitle.isBlank() || lookup.artists.isEmpty()) return@withContext null
+        val query = "$albumTitle ${lookup.artists.joinToString(" ")}".trim()
         val page = graph.youtubeContent.page(
-            ContentRequest(provider = ContentProvider.YOUTUBE, surface = ContentSurface.SEARCH, text = query, filter = filter),
+            ContentRequest(
+                provider = ContentProvider.YOUTUBE,
+                surface = ContentSurface.SEARCH,
+                text = query,
+                filter = ContentSearchFilter.ALBUMS,
+            ),
         )
-        page.items.firstOrNull { it.item.ref.kind == ref.kind }?.item?.ref
+        val normalizedTitle = normalizeSpotifyMatchText(albumTitle)
+        val normalizedArtists = lookup.artists.map(::normalizeSpotifyMatchText).filter { it.isNotBlank() }
+        if (normalizedTitle.isBlank() || normalizedArtists.isEmpty()) return@withContext null
+        val matches = page.items.filter { occurrence ->
+            val candidate = occurrence.item
+            if (candidate.ref.kind != ContentKind.ALBUM) return@filter false
+            val candidateTitle = normalizeSpotifyMatchText(candidate.title)
+            if (candidateTitle != normalizedTitle) return@filter false
+            val candidateArtistSurfaces = buildList {
+                add(normalizeSpotifyMatchText(candidate.subtitle))
+                candidate.artists.forEach { add(normalizeSpotifyMatchText(it.name)) }
+            }.filter { it.isNotBlank() }
+            normalizedArtists.any { artist ->
+                candidateArtistSurfaces.any { surface -> surface == artist || surface.contains(artist) }
+            }
+        }
+        matches.singleOrNull()?.item?.ref
     }
 
 private object IosSpotifySongCache {
@@ -642,9 +692,10 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         val out = mutableListOf<ContentOccurrence>()
         var nextUrl: String? = "https://api.spotify.com/v1/me/playlists?limit=50"
         var pages = 0
-        while (nextUrl != null && pages++ < 10) {
+        while (nextUrl != null && pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
             val root = getJson(nextUrl)
-            val items = root["items"] as? JsonArray ?: break
+            val items = root["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
             items.forEach { el ->
                 val obj = el as? JsonObject ?: return@forEach
                 val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
@@ -658,7 +709,9 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
                 )
             }
             nextUrl = root["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+            if (nextUrl != null && items.isEmpty()) throw IncompleteFinitePlaylistException()
         }
+        if (nextUrl != null) throw IncompleteFinitePlaylistException()
         return out
     }
 
@@ -666,15 +719,18 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         val out = mutableListOf<ContentOccurrence>()
         var nextUrl: String? = "https://api.spotify.com/v1/me/tracks?limit=50"
         var pages = 0
-        while (nextUrl != null && pages++ < 10) {
+        while (nextUrl != null && pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
             val root = getJson(nextUrl)
-            val items = root["items"] as? JsonArray ?: break
+            val items = root["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
             items.forEach { el ->
                 val track = (el as? JsonObject)?.get("track") as? JsonObject ?: return@forEach
                 parseTrackOccurrence("spotify:library:songs:${out.size}", track)?.let { out += it }
             }
             nextUrl = root["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+            if (nextUrl != null && items.isEmpty()) throw IncompleteFinitePlaylistException()
         }
+        if (nextUrl != null) throw IncompleteFinitePlaylistException()
         return out
     }
 
@@ -682,9 +738,10 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         val out = mutableListOf<ContentOccurrence>()
         var nextUrl: String? = "https://api.spotify.com/v1/me/following?type=artist&limit=50"
         var pages = 0
-        while (nextUrl != null && pages++ < 10) {
-            val artistsObj = getJson(nextUrl)["artists"]?.jsonObject ?: break
-            val items = artistsObj["items"] as? JsonArray ?: break
+        while (nextUrl != null && pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
+            val artistsObj = getJson(nextUrl)["artists"]?.jsonObject ?: throw IncompleteFinitePlaylistException()
+            val items = artistsObj["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
             items.forEach { el ->
                 val obj = el as? JsonObject ?: return@forEach
                 val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
@@ -697,7 +754,9 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
                 )
             }
             nextUrl = artistsObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+            if (nextUrl != null && items.isEmpty()) throw IncompleteFinitePlaylistException()
         }
+        if (nextUrl != null) throw IncompleteFinitePlaylistException()
         return out
     }
 
@@ -705,9 +764,10 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         val out = mutableListOf<ContentOccurrence>()
         var nextUrl: String? = "https://api.spotify.com/v1/me/albums?limit=50"
         var pages = 0
-        while (nextUrl != null && pages++ < 10) {
+        while (nextUrl != null && pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
             val root = getJson(nextUrl)
-            val items = root["items"] as? JsonArray ?: break
+            val items = root["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
             items.forEach { el ->
                 val album = (el as? JsonObject)?.get("album") as? JsonObject ?: return@forEach
                 val id = album["id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
@@ -723,7 +783,9 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
                 )
             }
             nextUrl = root["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+            if (nextUrl != null && items.isEmpty()) throw IncompleteFinitePlaylistException()
         }
+        if (nextUrl != null) throw IncompleteFinitePlaylistException()
         return out
     }
 
@@ -733,23 +795,27 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         val owner = root["owner"]?.jsonObject?.get("display_name")?.jsonPrimitive?.contentOrNull ?: defaultSubtitle
         val img = (root["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
         val tracks = mutableListOf<ContentOccurrence>()
-        val tracksObj = root["tracks"]?.jsonObject
-        val firstItems = tracksObj?.get("items") as? JsonArray ?: JsonArray(emptyList())
+        val tracksObj = root["tracks"]?.jsonObject ?: throw IncompleteFinitePlaylistException()
+        val firstItems = tracksObj["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
         firstItems.forEach { el ->
             val track = (el as? JsonObject)?.get("track") as? JsonObject ?: return@forEach
             parseTrackOccurrence("spotify:playlist:$playlistId:${tracks.size}", track)?.let { tracks += it }
         }
-        var nextUrl = tracksObj?.get("next")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+        var nextUrl = tracksObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+        if (nextUrl != null && firstItems.isEmpty()) throw IncompleteFinitePlaylistException()
         var pages = 1
-        while (nextUrl != null && pages++ < 10) {
+        while (nextUrl != null && pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
             val pageObj = getJson(nextUrl)
-            val pageItems = pageObj["items"] as? JsonArray ?: break
+            val pageItems = pageObj["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
+            if (pageItems.isEmpty()) throw IncompleteFinitePlaylistException()
             pageItems.forEach { el ->
                 val track = (el as? JsonObject)?.get("track") as? JsonObject ?: return@forEach
                 parseTrackOccurrence("spotify:playlist:$playlistId:${tracks.size}", track)?.let { tracks += it }
             }
             nextUrl = pageObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         }
+        if (nextUrl != null) throw IncompleteFinitePlaylistException()
         return ContentItem(
             ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.PLAYLIST, playlistId),
             title = title,
@@ -766,23 +832,27 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         }?.joinToString(", ") ?: defaultSubtitle
         val img = (root["images"] as? JsonArray)?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
         val tracks = mutableListOf<ContentOccurrence>()
-        val tracksObj = root["tracks"]?.jsonObject
-        val firstItems = tracksObj?.get("items") as? JsonArray ?: JsonArray(emptyList())
+        val tracksObj = root["tracks"]?.jsonObject ?: throw IncompleteFinitePlaylistException()
+        val firstItems = tracksObj["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
         firstItems.forEach { el ->
             val track = el as? JsonObject ?: return@forEach
             parseTrackOccurrence("spotify:album:$albumId:${tracks.size}", track, img)?.let { tracks += it }
         }
-        var nextUrl = tracksObj?.get("next")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+        var nextUrl = tracksObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+        if (nextUrl != null && firstItems.isEmpty()) throw IncompleteFinitePlaylistException()
         var pages = 1
-        while (nextUrl != null && pages++ < 10) {
+        while (nextUrl != null && pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
             val pageObj = getJson(nextUrl)
-            val pageItems = pageObj["items"] as? JsonArray ?: break
+            val pageItems = pageObj["items"] as? JsonArray ?: throw IncompleteFinitePlaylistException()
+            if (pageItems.isEmpty()) throw IncompleteFinitePlaylistException()
             pageItems.forEach { el ->
                 val track = el as? JsonObject ?: return@forEach
                 parseTrackOccurrence("spotify:album:$albumId:${tracks.size}", track, img)?.let { tracks += it }
             }
             nextUrl = pageObj["next"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
         }
+        if (nextUrl != null) throw IncompleteFinitePlaylistException()
         return ContentItem(
             ref = ContentRef(ContentProvider.SPOTIFY_CATALOG.id, ContentKind.ALBUM, albumId),
             title = title,
@@ -791,9 +861,14 @@ private class IosSpotifyRestClient(private val graph: IosSessionGraph) {
         ) to tracks
     }
 
-    suspend fun fetchEntityTitle(ref: ContentRef): String? = runCatching {
+    suspend fun fetchEntityLookup(ref: ContentRef): SpotifyEntityLookup? = runCatching {
         val path = if (ref.kind == ContentKind.ARTIST) "artists/${ref.id}" else "albums/${ref.id}"
-        getJson("https://api.spotify.com/v1/$path")["name"]?.jsonPrimitive?.contentOrNull
+        val root = getJson("https://api.spotify.com/v1/$path")
+        val title = root["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@runCatching null
+        val artists = (root["artists"] as? JsonArray)?.mapNotNull {
+            it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
+        }.orEmpty()
+        SpotifyEntityLookup(title = title, artists = artists)
     }.getOrNull()
 
     private fun parseTrackOccurrence(prefix: String, track: JsonObject, fallbackArtwork: String? = null): ContentOccurrence? {

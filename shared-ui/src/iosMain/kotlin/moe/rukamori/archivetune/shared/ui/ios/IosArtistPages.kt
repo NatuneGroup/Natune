@@ -294,7 +294,7 @@ internal class IosArtistAlbumHost(
     override fun openArtistAlbums(artist: ContentRef) = openRoute(ArchiveRoutes.artistAlbums(artist))
     override fun openArtistSection(request: ContentRequest, title: String, layout: ArtistShelfLayout) =
         openRoute(ArchiveRoutes.artistItems(request, title, layout))
-    override fun openDownloads() = openRoute(ArchiveRoutes.downloads())
+    override fun openDownloads() = openRoute("auto_playlist/downloaded")
 
     override fun loadArtistPage(artist: ContentRef) {
         if (artist.provider != ContentProvider.LOCAL.id) {

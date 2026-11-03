@@ -8,14 +8,17 @@ import androidx.compose.runtime.remember
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.shared.data.download.downloadTaskId
+import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.domain.customartwork.localPlaylistCoverUri
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportDestination
 import moe.rukamori.archivetune.shared.domain.playlistexport.PlaylistExportNaming
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompleteList
+import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistCompletion
 import moe.rukamori.archivetune.shared.domain.queue.FinitePlaylistSong
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
+import moe.rukamori.archivetune.shared.domain.repository.ContentQuery
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
@@ -127,14 +130,50 @@ internal class IosPlaylistMenuHost(
 
     override suspend fun syncToYouTube(playlist: ContentRef) {
         require(playlist.provider == ContentProvider.LOCAL.id) { "Only local playlists sync to YouTube" }
-        val page = graph.libraryContent.currentList(
-            ContentRequest(ContentProvider.LOCAL, ContentSurface.LIBRARY_PLAYLIST_ITEMS, parent = playlist),
-        )
-        val videoIds = page?.items.orEmpty()
-            .filter { it.item.ref.provider == ContentProvider.YOUTUBE.id && it.item.ref.kind == ContentKind.SONG }
-            .map { it.item.ref.id }
+        val videoIds = playlistVideoIds(playlist.id)
+            ?: throw IllegalStateException("Local playlist is incomplete and cannot be synced")
         val title = menu.target?.takeIf { it.item.ref == playlist }?.item?.title ?: playlist.id
-        IosYouTubeLibrarySync(graph).syncPlaylist(playlist.id, title, videoIds)
+        graph.youtubeLibrarySync.syncPlaylist(playlist.id, title, videoIds)
+    }
+
+    /**
+     * Reads the stored YouTube video ids of the local playlist unfiltered and in stored order under the strict
+     * whole-list rule. Null refuses the push when the complete list cannot be read.
+     */
+    private suspend fun playlistVideoIds(playlistId: String): List<String>? {
+        val query = ContentQuery(
+            RoomLibraryRepository.PLAYLIST_ITEMS,
+            parent = ContentRef(ContentProvider.LOCAL.id, ContentKind.PLAYLIST, playlistId),
+        )
+        val ids = mutableListOf<String>()
+        val consumed = mutableSetOf<String>()
+        var continuation: String? = null
+        var requests = 0
+        try {
+            do {
+                if (++requests > FinitePlaylistCompletion.MAX_REQUESTS) return null
+                val token = continuation
+                if (token != null && !consumed.add(token)) return null
+                val page = graph.library.page(query, token)
+                FinitePlaylistCompletion.validateNext(
+                    page.continuation,
+                    consumed,
+                    page.items.size,
+                    initial = requests == 1,
+                )
+                page.items.mapNotNullTo(ids) { occurrence ->
+                    occurrence.item.ref.takeIf {
+                        it.provider == ContentProvider.YOUTUBE.id && it.kind == ContentKind.SONG
+                    }?.id
+                }
+                continuation = page.continuation
+            } while (continuation != null)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return null
+        }
+        return ids
     }
 
     override suspend fun setHidden(playlist: ContentRef, hidden: Boolean) {

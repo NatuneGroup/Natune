@@ -143,7 +143,7 @@ internal fun iosHostBindings(
     // The playlist overflow menu's host: pins, tags, covers and deletion run against the same owners as the page.
     val playlistMenus = IosPlaylistMenuHost(graph, host, itemMenu, playlistTags, openOwnRoute)
     graph.scope.launch {
-        runCatching { IosYouTubeLibrarySync(graph).performFullSync(authoritative = false) }
+        runCatching { graph.youtubeLibrarySync.performFullSync(authoritative = false) }
     }
     return ArchiveTuneHostBindings(
         queue = graph.queue,

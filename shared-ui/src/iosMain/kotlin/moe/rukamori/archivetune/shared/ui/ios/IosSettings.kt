@@ -518,7 +518,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                     onAuthCommitted = { scope.launch { owners.youTube.sessionChanged() } },
                     onForceSyncAfterSwitch = {
                         scope.launch {
-                            runCatching { IosYouTubeLibrarySync(owners.graph).performFullSync(authoritative = true) }
+                            runCatching { owners.graph.youtubeLibrarySync.performFullSync(authoritative = true) }
                         }
                     },
                     navigate = navigate,

@@ -228,6 +228,8 @@ internal class IosSessionGraph private constructor(
         report = ::report,
     )
 
+    internal val youtubeLibrarySync = IosYouTubeLibrarySync(this)
+
     /**
      * Next/previous enablement for the system transport: the same successors the on-screen controls compute, so the
      * lock screen offers a skip exactly when the queue reports one.
