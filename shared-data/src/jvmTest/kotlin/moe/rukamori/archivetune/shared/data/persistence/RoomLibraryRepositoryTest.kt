@@ -138,4 +138,74 @@ class RoomLibraryRepositoryTest {
             assertNotNull(repo.findSong("kept", "youtube"))
         } finally { db.close() }
     }
+
+    @Test fun playlistMovesAndRemoteLinkSurviveInStoredOrder() = runTest {
+        val db = openPortableStateDatabase(":memory:")
+        try {
+            val repo = RoomLibraryRepository(db.library())
+            repo.createPlaylist("p1", "Alpha")
+            repo.createPlaylist("p2", "Beta")
+            repo.createPlaylist("p3", "Gamma")
+
+            // Untouched rows still answer by title.
+            assertEquals(
+                listOf("p1", "p2", "p3"),
+                repo.observeLocalPlaylists().first().map { it.occurrence.item.ref.id },
+            )
+
+            repo.mutate(LibraryMutation.MovePlaylist("p3", "p1", after = false))
+            assertEquals(
+                listOf("p3", "p1", "p2"),
+                repo.observeLocalPlaylists().first().map { it.occurrence.item.ref.id },
+            )
+            repo.mutate(LibraryMutation.MovePlaylist("p3", "p2", after = true))
+            assertEquals(
+                listOf("p1", "p2", "p3"),
+                repo.observeLocalPlaylists().first().map { it.occurrence.item.ref.id },
+            )
+            assertFailsWith<IllegalArgumentException> {
+                repo.mutate(LibraryMutation.MovePlaylist("p3", "missing", after = true))
+            }
+
+            // The YouTube link rides the row, and clearing it restores the unlinked shape.
+            repo.setPlaylistRemote("p1", "PL123", 7)
+            val linked = repo.observeLocalPlaylists().first().single { it.occurrence.item.ref.id == "p1" }
+            assertEquals("PL123", linked.browseId)
+            repo.setPlaylistRemote("p1", null, null)
+            assertNull(repo.observeLocalPlaylists().first().single { it.occurrence.item.ref.id == "p1" }.browseId)
+            assertFailsWith<IllegalArgumentException> { repo.setPlaylistRemote("missing", "PL9", 1) }
+        } finally { db.close() }
+    }
+
+    @Test fun replacePlaylistEntriesReordersKeepsDuplicatesAndRejectsAmbiguity() = runTest {
+        val db = openPortableStateDatabase(":memory:")
+        try {
+            val repo = RoomLibraryRepository(db.library())
+            val song = ContentItem(ContentRef("youtube", ContentKind.SONG, "same"), "Same")
+            val other = ContentItem(ContentRef("youtube", ContentKind.SONG, "other"), "Other")
+            repo.createPlaylist("p", "Mix")
+            repo.saveItems(listOf(song, other))
+            repo.mutate(LibraryMutation.AddToPlaylist("p", listOf(
+                ContentOccurrence("a", song), ContentOccurrence("b", song), ContentOccurrence("c", other))))
+            val query = ContentQuery(RoomLibraryRepository.PLAYLIST_ITEMS, parent = ContentRef("local", ContentKind.PLAYLIST, "p"))
+
+            repo.mutate(LibraryMutation.ReplacePlaylistEntries("p", listOf(
+                ContentOccurrence("c", other), ContentOccurrence("a", song))))
+            assertEquals(listOf("c", "a"), repo.page(query).items.map { it.occurrenceId })
+
+            // A replace keeps duplicate songs when their occurrence ids differ.
+            repo.mutate(LibraryMutation.ReplacePlaylistEntries("p", listOf(
+                ContentOccurrence("b", song), ContentOccurrence("a", song))))
+            assertEquals(listOf("b", "a"), repo.page(query).items.map { it.occurrenceId })
+            assertEquals(listOf(song.ref, song.ref), repo.page(query).items.map { it.item.ref })
+
+            assertFailsWith<IllegalArgumentException> {
+                repo.mutate(LibraryMutation.ReplacePlaylistEntries("p", listOf(
+                    ContentOccurrence("a", song), ContentOccurrence("a", song))))
+            }
+            assertFailsWith<IllegalArgumentException> {
+                repo.mutate(LibraryMutation.ReplacePlaylistEntries("p", listOf(ContentOccurrence("", song))))
+            }
+        } finally { db.close() }
+    }
 }

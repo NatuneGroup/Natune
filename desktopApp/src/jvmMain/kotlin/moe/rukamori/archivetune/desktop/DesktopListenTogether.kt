@@ -61,11 +61,13 @@ import moe.rukamori.archivetune.shared.domain.repository.QueueController
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherServerOption
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsLogLevel
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsLogLine
+import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsDefaults
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSettingsRole
 import moe.rukamori.archivetune.shared.domain.settings.ListenTogetherSyncVolumeKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
+import moe.rukamori.archivetune.shared.domain.settings.commitListenTogetherAvatar
 import moe.rukamori.archivetune.shared.domain.settings.commitListenTogetherUsername
 import moe.rukamori.archivetune.shared.domain.settings.listenTogetherUsername
 import moe.rukamori.archivetune.shared.ui.screens.ListenRoomUi
@@ -98,6 +100,7 @@ internal class DesktopListenTogether(
     private val queue: QueueController,
     private val setVolume: (Float) -> Unit,
     private val content: ContentRepositoryRouter,
+    private val picture: DesktopListenTogetherPicture,
     private val report: (String) -> Unit,
 ) {
     private val job = SupervisorJob(parentScope.coroutineContext[Job])
@@ -126,11 +129,41 @@ internal class DesktopListenTogether(
         client = client,
         scope = scope,
         history = DesktopListenTogetherChatHistoryStore(settings, report),
-        localAvatarBytes = { null },
+        localAvatarBytes = { localAvatarBytes() },
         nowMs = System::currentTimeMillis,
         onDiagnostic = report,
     )
     val songPicker = ChatSongPickerOwner(content, scope, onShare = { track -> chat.shareTrack(track) })
+
+    /**
+     * The saved custom picture, only while the stored index chooses it; a preset index or a missing file publishes
+     * no local bytes, and the member art falls back to initials.
+     */
+    suspend fun localAvatarBytes(): ByteArray? =
+        if (preferences.avatarIndex() == ListenTogetherSettingsDefaults.CUSTOM_AVATAR_INDEX) picture.load() else null
+
+    /**
+     * The suggestion picker's owner, as the iOS host builds its own: sharing runs through the client only while this
+     * device is a guest in a room, and [onSent] reports whether the suggestion actually went out.
+     */
+    fun suggestionPicker(uiScope: CoroutineScope, onSent: (Boolean) -> Unit): ChatSongPickerOwner =
+        ChatSongPickerOwner(content, uiScope, onShare = { track ->
+            val guest = isGuestInRoom()
+            if (guest) client.suggestTrack(track)
+            onSent(guest)
+        })
+
+    /**
+     * The settings page's custom-picture pick. The file is stored before the index switches, so the client never
+     * announces the custom index with no bytes behind it; a live room then hears the new picture through the chat
+     * owner. True when a picture was stored.
+     */
+    suspend fun pickCustomAvatar(): Boolean {
+        if (!picture.pickAndStore()) return false
+        settings.edit { commitListenTogetherAvatar(ListenTogetherSettingsDefaults.CUSTOM_AVATAR_INDEX) }
+        chat.broadcastCustomAvatar()
+        return true
+    }
 
     /** Whether the selected server is documented to carry the chat relay; the live wire protocol is ANDed downstream. */
     val serverChatSupported: StateFlow<Boolean> = settings.snapshots
