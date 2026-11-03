@@ -144,8 +144,41 @@ internal class IosYouTubeLibrarySync(private val graph: IosSessionGraph) {
                 if (remote.isNotEmpty()) {
                     graph.library.saveItems(remote.map { it.item })
                     graph.library.mutate(LibraryMutation.ReplacePlaylistEntries(playlistId, remote))
+                    graph.library.setPlaylistRemote(playlistId, browseId, remote.size)
                 }
-                graph.library.setPlaylistRemote(playlistId, browseId, remote.size)
+            }
+        } finally {
+            mutex.unlock()
+        }
+    }
+
+    /**
+     * Pushes newly imported [addedVideoIds] for [playlistId] without pulling remote entries over local imports.
+     * Unlinked playlists are created remotely; already-linked playlists receive the imported delta.
+     */
+    suspend fun pushImportedPlaylist(playlistId: String, title: String, addedVideoIds: List<String>) {
+        if (addedVideoIds.isEmpty()) return
+        mutex.lock()
+        try {
+            refreshTransportSession()
+            val admission = admitted() ?: return
+            val transport = graph.youtubeContent.account?.transport as? IosYouTubeBrowseTransport ?: return
+            val existing = graph.library.observeLocalPlaylists().first()
+                .firstOrNull {
+                    it.occurrence.item.ref.kind == ContentKind.PLAYLIST &&
+                        it.occurrence.item.ref.id == playlistId
+                }
+            val linked = existing?.browseId
+            if (linked == null) {
+                val browseId = transport.createPlaylist(title)
+                fence(admission)
+                transport.addSongsToPlaylist(browseId, addedVideoIds)
+                fence(admission)
+                graph.library.setPlaylistRemote(playlistId, browseId, existing?.songCount ?: addedVideoIds.size)
+            } else {
+                transport.addSongsToPlaylist(linked, addedVideoIds)
+                fence(admission)
+                graph.library.setPlaylistRemote(playlistId, linked, existing.songCount)
             }
         } finally {
             mutex.unlock()
@@ -174,6 +207,7 @@ internal class IosYouTubeLibrarySync(private val graph: IosSessionGraph) {
             items += page.items
             continuation = page.continuation
         } while (continuation != null)
+        if (items.isEmpty()) throw IncompleteFinitePlaylistException("Remote playlist returned no items")
         return items
     }
 
@@ -246,12 +280,20 @@ internal class IosYouTubeLibrarySync(private val graph: IosSessionGraph) {
         for (playlist in remote) {
             val browseId = playlist.ref.id
             val localId = linkedByBrowseId[browseId] ?: ("LPyt_$browseId")
-            val remoteEntries = runCatching { readRemotePlaylist(browseId) }.getOrDefault(emptyList())
+            val remoteEntries = try {
+                readRemotePlaylist(browseId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("YouTube playlist $browseId was not synced: ${failure::class.simpleName}")
+                continue
+            }
             fence(admission)
+            if (remoteEntries.isEmpty()) continue
             if (localId !in existingIds) {
                 graph.library.createImportedPlaylist(localId, playlist.title, remoteEntries, emptySet())
                 existingIds += localId
-            } else if (remoteEntries.isNotEmpty()) {
+            } else {
                 graph.library.saveItems(remoteEntries.map { it.item })
                 graph.library.mutate(LibraryMutation.ReplacePlaylistEntries(localId, remoteEntries))
             }
@@ -302,7 +344,7 @@ private fun rawContinuationToken(wrapped: String): String =
 internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
     data class ForeignTrack(val title: String, val artist: String?, val album: String? = null, val durationMs: Long? = null)
     data class ResolvedImport(val source: ImportSource, val sourcePlaylistId: String, val title: String, val tracks: List<ForeignTrack>)
-    data class ImportResult(val playlistId: String, val total: Int, val imported: Int)
+    data class ImportResult(val playlistId: String?, val total: Int, val imported: Int)
     data class Credentials(val tidalAccessToken: String? = null, val tidalCountryCode: String = "US", val qobuzAppId: String? = null, val qobuzAuthToken: String? = null)
 
     enum class ImportSource {
@@ -339,7 +381,7 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
         val credentials = loadCredentials()
         val (playlistName, sourceId, songs, totalCount) = if (source == ImportSource.YOUTUBE_MUSIC) {
             val playlistId = extractQuery(url, "list") ?: error("Missing 'list' query parameter in YouTube URL")
-            val entries = IosYouTubeLibrarySync(graph).readRemotePlaylist(playlistId).map { it.item }
+            val entries = graph.youtubeLibrarySync.readRemotePlaylist(playlistId).map { it.item }
             Quadruple(defaultPlaylistName, playlistId, entries, entries.size)
         } else {
             val resolved = fetchPlaylist(url, source, credentials, defaultPlaylistName)
@@ -349,18 +391,21 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
             Quadruple(resolved.title.ifBlank { defaultPlaylistName }, resolved.sourcePlaylistId, matched, resolved.tracks.size)
         }
         val playlistId = deterministicPlaylistId("import:${source.name}:$sourceId")
-        val occurrences = songs.map { song ->
-            ContentOccurrence("import:" + NSUUID().UUIDString.replace("-", "").take(24), song)
-        }
         val exists = runCatching { graph.library.item(ContentRef("local", ContentKind.PLAYLIST, playlistId)) }.isSuccess
-        if (exists) {
-            graph.library.mutate(LibraryMutation.RenamePlaylist(playlistId, playlistName))
-            graph.library.appendImported(playlistId, occurrences, emptySet())
-        } else {
-            graph.library.createImportedPlaylist(playlistId, playlistName, occurrences, emptySet())
+        if (songs.isNotEmpty()) {
+            val occurrences = songs.map { song ->
+                ContentOccurrence("import:" + NSUUID().UUIDString.replace("-", "").take(24), song)
+            }
+            if (exists) {
+                graph.library.mutate(LibraryMutation.RenamePlaylist(playlistId, playlistName))
+                graph.library.appendImported(playlistId, occurrences, emptySet())
+            } else {
+                graph.library.createImportedPlaylist(playlistId, playlistName, occurrences, emptySet())
+            }
+            syncRemotePlaylistIfEnabled(playlistId, playlistName, songs.map { it.ref.id })
         }
-        syncRemotePlaylistIfEnabled(playlistId, playlistName, songs.map { it.ref.id })
-        ImportResult(playlistId, totalCount, songs.size).also { onProgress(ImportProgress.Done(it)) }
+        val targetPlaylistId = playlistId.takeIf { songs.isNotEmpty() }
+        ImportResult(targetPlaylistId, totalCount, songs.size).also { onProgress(ImportProgress.Done(it)) }
     }
 
     suspend fun importCsv(
@@ -382,7 +427,8 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
             val result = owner.importInto(parsed, PlaylistImportTarget.Created(defaultPlaylistName)) { progress ->
                 onProgress(ImportProgress.Resolving(progress.processed, progress.total))
             }
-            ImportResult(playlistId, result.total, result.imported).also { onProgress(ImportProgress.Done(it)) }
+            val createdId = playlistId.takeIf { result.imported > 0 }
+            ImportResult(createdId, result.total, result.imported).also { onProgress(ImportProgress.Done(it)) }
         }
     }
 
@@ -405,7 +451,7 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
     private suspend fun syncRemotePlaylistIfEnabled(playlistId: String, title: String, songIds: List<String>) {
         val prefs = graph.settings.snapshots.value
         if (prefs?.youTubeSignedIn() != true || prefs[YtmSyncKey] != true || songIds.isEmpty()) return
-        runCatching { IosYouTubeLibrarySync(graph).syncPlaylist(playlistId, title, songIds) }
+        runCatching { graph.youtubeLibrarySync.pushImportedPlaylist(playlistId, title, songIds) }
     }
 
     private suspend fun fetchPlaylist(
@@ -429,7 +475,16 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
             ?: error("Couldn't extract Spotify playlist id from URL")
         val token = resolveSpotifyToken()
         if (token != null) {
-            runCatching { fetchSpotifyPlaylistViaApi(id, token, defaultTitle) }.getOrNull()?.takeIf { it.tracks.isNotEmpty() }?.let { return it }
+            try {
+                val apiResult = fetchSpotifyPlaylistViaApi(id, token, defaultTitle)
+                if (apiResult.tracks.isNotEmpty()) return apiResult
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (incomplete: IncompleteFinitePlaylistException) {
+                throw incomplete
+            } catch (_: Exception) {
+                // Fall back to public embed below when API auth fails.
+            }
         }
         val html = fetchText("https://open.spotify.com/embed/playlist/$id")
         val entity = jsonObject(extractScriptJson(html, "__NEXT_DATA__")?.let(json::parseToJsonElement))
@@ -450,18 +505,31 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
         val meta = runCatching { jsonObject(json.parseToJsonElement(fetchText("https://api.spotify.com/v1/playlists/$id", headers))) }.getOrNull()
         val tracks = mutableListOf<ForeignTrack>()
         var offset = 0
-        while (tracks.size < 2000) {
-            val page = jsonObject(json.parseToJsonElement(fetchText("https://api.spotify.com/v1/playlists/$id/tracks?limit=100&offset=$offset", headers))) ?: break
-            val items = page.array("items") ?: break
-            if (items.isEmpty()) break
+        var pages = 0
+        while (pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
+            val page = jsonObject(json.parseToJsonElement(fetchText("https://api.spotify.com/v1/playlists/$id/tracks?limit=100&offset=$offset", headers)))
+                ?: throw IncompleteFinitePlaylistException()
+            val items = page.array("items") ?: throw IncompleteFinitePlaylistException()
+            val total = page.long("total")
+            if (items.isEmpty()) {
+                if (offset < total) throw IncompleteFinitePlaylistException()
+                break
+            }
             items.forEach { el ->
                 val track = (el as? JsonObject)?.obj("track") ?: return@forEach
                 val name = track.string("name") ?: return@forEach
                 val artist = track.array("artists")?.firstOrNull()?.let { (it as? JsonObject)?.string("name") }
                 tracks += ForeignTrack(name, artist, track.obj("album")?.string("name"), track.long("duration_ms").takeIf { it > 0 })
             }
-            offset += 100
-            if (offset >= page.long("total")) break
+            offset += items.size
+            val nextUrl = page.string("next")?.takeIf { it != "null" }
+            if (nextUrl == null && offset >= total) break
+            if (nextUrl == null && offset < total) throw IncompleteFinitePlaylistException()
+        }
+        if (pages >= FinitePlaylistCompletion.MAX_REQUESTS) {
+            val checkPage = jsonObject(json.parseToJsonElement(fetchText("https://api.spotify.com/v1/playlists/$id/tracks?limit=1&offset=$offset", headers)))
+            if ((checkPage?.long("total") ?: 0L) > offset) throw IncompleteFinitePlaylistException()
         }
         return ResolvedImport(ImportSource.SPOTIFY, id, meta?.string("name") ?: defaultTitle, tracks)
     }
@@ -480,14 +548,20 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
         val title = Regex("<meta[^>]+property=\"og:title\"[^>]+content=\"([^\"]+)\"").find(html)?.groupValues?.get(1)?.let(::unescapeJson)
             ?: defaultTitle
         val id = Regex("playlist/[^/]+/pl\\.([a-zA-Z0-9.\\-]+)").find(url)?.groupValues?.get(1)?.let { "pl.$it" } ?: url
-        return ResolvedImport(ImportSource.APPLE_MUSIC, id, title, tracks.distinctBy { it.title to it.artist })
+        return ResolvedImport(ImportSource.APPLE_MUSIC, id, title, tracks)
     }
 
     private fun collectAppleTracks(node: JsonElement?, into: MutableList<ForeignTrack>) {
         when (node) {
             is JsonObject -> {
-                val title = node.string("title"); val artist = node.string("artistName")
-                if (title != null && artist != null) into += ForeignTrack(title, artist, durationMs = node.long("durationInMillis").takeIf { it > 0 })
+                val title = node.string("title") ?: node.string("name")
+                val artist = node.string("artistName")
+                val duration = node.long("durationInMillis").takeIf { it > 0 }
+                val kind = node.string("kind") ?: node.string("type")
+                val isSongLike = duration != null || kind == "song" || kind == "songs" || node.containsKey("discNumber") || node.containsKey("trackNumber")
+                if (title != null && artist != null && isSongLike) {
+                    into += ForeignTrack(title, artist, durationMs = duration)
+                }
                 node.values.forEach { collectAppleTracks(it, into) }
             }
             is JsonArray -> node.forEach { collectAppleTracks(it, into) }
@@ -497,13 +571,13 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
 
     private suspend fun fetchAmazonMusicPlaylist(url: String, defaultTitle: String): ResolvedImport {
         val html = fetchText(url)
-        val tracks = (Regex("\\{\"title\":\"([^\"]{2,120})\",\"artist\":\"([^\"]+)\"").findAll(html).map {
+        val tracks = Regex("\\{\"title\":\"([^\"]{2,120})\",\"artist\":\"([^\"]+)\"").findAll(html).map {
             ForeignTrack(unescapeJson(it.groupValues[1]), unescapeJson(it.groupValues[2]))
         }.toList().ifEmpty {
             Regex("\\{\"trackName\":\"([^\"]{2,120})\",\"artistName\":\"([^\"]+)\"").findAll(html).map {
                 ForeignTrack(unescapeJson(it.groupValues[1]), unescapeJson(it.groupValues[2]))
             }.toList()
-        }).distinctBy { it.title to it.artist }
+        }
         val title = Regex("<meta[^>]+property=\"og:title\"[^>]+content=\"([^\"]+)\"").find(html)?.groupValues?.get(1)?.let(::unescapeJson)
             ?: defaultTitle
         return ResolvedImport(ImportSource.AMAZON_MUSIC, Regex("playlists/([A-Z0-9]+)").find(url)?.groupValues?.get(1) ?: url, title, tracks)
@@ -515,16 +589,25 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
         val country = credentials.tidalCountryCode.ifBlank { "US" }
         val headers = mapOf("Authorization" to "Bearer $token")
         val meta = runCatching { jsonObject(json.parseToJsonElement(fetchText("https://api.tidal.com/v1/playlists/$id?countryCode=$country", headers))) }.getOrNull()
-        val tracks = mutableListOf<ForeignTrack>(); var offset = 0
-        while (tracks.size < 2000) {
-            val root = jsonObject(json.parseToJsonElement(fetchText("https://api.tidal.com/v1/playlists/$id/items?countryCode=$country&limit=100&offset=$offset", headers))) ?: break
-            val items = root.array("items") ?: break; if (items.isEmpty()) break
+        val tracks = mutableListOf<ForeignTrack>(); var offset = 0; var pages = 0
+        while (pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
+            val root = jsonObject(json.parseToJsonElement(fetchText("https://api.tidal.com/v1/playlists/$id/items?countryCode=$country&limit=100&offset=$offset", headers)))
+                ?: throw IncompleteFinitePlaylistException()
+            val items = root.array("items") ?: throw IncompleteFinitePlaylistException()
+            val total = root.long("totalNumberOfItems")
+            if (items.isEmpty()) {
+                if (offset < total) throw IncompleteFinitePlaylistException()
+                break
+            }
             items.forEach { el ->
                 val wrapper = el as? JsonObject ?: return@forEach; val item = wrapper.obj("item") ?: wrapper
                 if (wrapper.string("type")?.let { it.isNotBlank() && it != "track" } == true) return@forEach
                 tracks += ForeignTrack(item.string("title") ?: return@forEach, item.obj("artist")?.string("name"))
             }
-            offset += 100; if (offset >= root.long("totalNumberOfItems")) break
+            offset += items.size
+            if (offset >= total) break
+            if (pages >= FinitePlaylistCompletion.MAX_REQUESTS) throw IncompleteFinitePlaylistException()
         }
         return ResolvedImport(ImportSource.TIDAL, id, meta?.string("title") ?: defaultTitle, tracks)
     }
@@ -534,16 +617,26 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
         val appId = credentials.qobuzAppId?.takeIf(String::isNotBlank); val token = credentials.qobuzAuthToken?.takeIf(String::isNotBlank)
         if (appId == null || token == null) error("Qobuz import needs a Qobuz token")
         val headers = mapOf("X-App-Id" to appId, "X-User-Auth-Token" to token)
-        val tracks = mutableListOf<ForeignTrack>(); var title = defaultTitle; var offset = 0
-        while (tracks.size < 2000) {
-            val root = jsonObject(json.parseToJsonElement(fetchText("https://www.qobuz.com/api.json/0.2/playlist/get?playlist_id=$id&extra=tracks&limit=500&offset=$offset&app_id=$appId", headers))) ?: break
+        val tracks = mutableListOf<ForeignTrack>(); var title = defaultTitle; var offset = 0; var pages = 0
+        while (pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
+            val root = jsonObject(json.parseToJsonElement(fetchText("https://www.qobuz.com/api.json/0.2/playlist/get?playlist_id=$id&extra=tracks&limit=500&offset=$offset&app_id=$appId", headers)))
+                ?: throw IncompleteFinitePlaylistException()
             if (offset == 0) title = root.string("name") ?: title
-            val trackObj = root.obj("tracks") ?: break; val items = trackObj.array("items") ?: break; if (items.isEmpty()) break
+            val trackObj = root.obj("tracks") ?: throw IncompleteFinitePlaylistException()
+            val items = trackObj.array("items") ?: throw IncompleteFinitePlaylistException()
+            val total = trackObj.long("total")
+            if (items.isEmpty()) {
+                if (offset < total) throw IncompleteFinitePlaylistException()
+                break
+            }
             items.forEach { el ->
                 val item = el as? JsonObject ?: return@forEach
                 tracks += ForeignTrack(item.string("title") ?: return@forEach, item.obj("performer")?.string("name"))
             }
-            offset += 500; if (offset >= trackObj.long("total")) break
+            offset += items.size
+            if (offset >= total) break
+            if (pages >= FinitePlaylistCompletion.MAX_REQUESTS) throw IncompleteFinitePlaylistException()
         }
         return ResolvedImport(ImportSource.QOBUZ, id, title, tracks)
     }
@@ -551,10 +644,27 @@ internal class IosCrossServiceImport(private val graph: IosSessionGraph) {
     private suspend fun fetchDeezerPlaylist(url: String, defaultTitle: String): ResolvedImport {
         val id = Regex("playlist/(\\d+)").find(url)?.groupValues?.get(1) ?: error("Couldn't extract Deezer playlist id")
         val root = jsonObject(json.parseToJsonElement(fetchText("https://api.deezer.com/playlist/$id"))) ?: error("Deezer playlist is unavailable")
-        val tracks = root.obj("tracks")?.array("data").orEmpty().mapNotNull {
-            val obj = it as? JsonObject ?: return@mapNotNull null
-            ForeignTrack(obj.string("title") ?: return@mapNotNull null, obj.obj("artist")?.string("name"))
+        val tracksObj = root.obj("tracks") ?: error("Deezer playlist tracks unavailable")
+        val tracks = mutableListOf<ForeignTrack>()
+        fun appendPage(data: JsonArray?) {
+            data.orEmpty().forEach {
+                val obj = it as? JsonObject ?: return@forEach
+                val trackTitle = obj.string("title") ?: return@forEach
+                tracks += ForeignTrack(trackTitle, obj.obj("artist")?.string("name"))
+            }
         }
+        appendPage(tracksObj.array("data"))
+        var nextUrl = tracksObj.string("next")?.takeIf { it != "null" }
+        var pages = 1
+        while (nextUrl != null && pages < FinitePlaylistCompletion.MAX_REQUESTS) {
+            pages++
+            val pageObj = jsonObject(json.parseToJsonElement(fetchText(nextUrl))) ?: throw IncompleteFinitePlaylistException()
+            val pageData = pageObj.array("data") ?: throw IncompleteFinitePlaylistException()
+            if (pageData.isEmpty()) throw IncompleteFinitePlaylistException()
+            appendPage(pageData)
+            nextUrl = pageObj.string("next")?.takeIf { it != "null" }
+        }
+        if (nextUrl != null) throw IncompleteFinitePlaylistException()
         return ResolvedImport(ImportSource.DEEZER, id, root.string("title") ?: defaultTitle, tracks)
     }
 
@@ -749,11 +859,15 @@ internal fun IosCrossServiceImportDialog(
                 ) {
                     Text(stringResource(Res.string.ios_cross_service_import_csv))
                 }
-                done?.let { result ->
+                done?.playlistId?.let { targetPlaylistId ->
                     TextButton(
                         onClick = {
                             onDismiss()
-                            onOpenRoute(ArchiveRoutes.localPlaylist(result.playlistId))
+                            onOpenRoute(
+                                ArchiveRoutes.content(
+                                    ContentRef(ContentProvider.LOCAL.id, ContentKind.PLAYLIST, targetPlaylistId),
+                                ),
+                            )
                         },
                     ) {
                         Text(stringResource(Res.string.ios_cross_service_import_open))
