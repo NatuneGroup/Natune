@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.desktop
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import moe.rukamori.archivetune.shared.data.provider.YouTubeDeviceCodeFlow
 
 class YouTubeDeviceCodeFlowTest {
     @Test fun deviceCodeNeedsBothCodesAndFillsDefaults() {
