@@ -254,6 +254,7 @@ internal class IosNativeAudioRoute(
                         playlistText = null,
                         audioSource = stream.source,
                         accountScope = scope,
+                        expiresAtEpochMs = stream.expiresAtEpochMs,
                     ),
                     host,
                     admission,

@@ -215,6 +215,44 @@ class HlsSegmentedSourceTest {
         assertContentEquals(payload, ready.plaintext.source.readUpTo(0, 120).bytes)
     }
 
+    @Test
+    fun segmentedHlsLeaseAdoptsTheEarliestOfExplicitAndSignedExpiries() = runTest {
+        // The playlist URL's `etsp` signature grants a 1_800_000 s window. When the resolver stated an earlier
+        // expiry as stream metadata, that earlier one must win: authorization ends when the stream said it ends.
+        val signed = "$base?etsp=1800000"
+        val playlistText = "#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST\n"
+        val opener = FakeOpener(
+            signed to playlistText.encodeToByteArray(),
+            "https://media.example/hls/seg.ts" to ByteArray(16),
+        )
+        val earlierExplicit = 900_000_000_000L
+        val ready = NativeRecipePreparation.prepare(
+            NativeAudioRecipe.SegmentedHls(
+                playlistUrl = signed,
+                playlistText = null,
+                audioSource = AudioSourceType.QQ,
+                accountScope = scope,
+                expiresAtEpochMs = earlierExplicit,
+            ),
+            opener,
+        )
+        assertIs<NativePreparation.Ready>(ready)
+        assertEquals(earlierExplicit, ready.plaintext.expiresAtEpochMs)
+        // A later explicit expiry must not stretch the lease past the earliest signed resource window either.
+        val laterReady = NativeRecipePreparation.prepare(
+            NativeAudioRecipe.SegmentedHls(
+                playlistUrl = signed,
+                playlistText = null,
+                audioSource = AudioSourceType.QQ,
+                accountScope = scope,
+                expiresAtEpochMs = earlierExplicit * 10,
+            ),
+            opener,
+        )
+        assertIs<NativePreparation.Ready>(laterReady)
+        assertEquals(1_800_000_000_000L, laterReady.plaintext.expiresAtEpochMs)
+    }
+
     private fun segmentedSource(
         playlistText: String,
         vararg files: Pair<String, ByteArray>,

@@ -45,6 +45,8 @@ internal object HlsSegmentedPreparation {
             providerId = recipe.source.accountProviderId(),
             admission = admission,
             opener = opener,
+            // Apple recipes state no explicit expiry; the playlist's own signatures still bound the lease.
+            explicitExpiryEpochMs = null,
         )
 
     /**
@@ -63,6 +65,7 @@ internal object HlsSegmentedPreparation {
             providerId = recipe.source.accountProviderId(),
             admission = admission,
             opener = opener,
+            explicitExpiryEpochMs = recipe.expiresAtEpochMs,
         )
 
     private suspend fun preparePlaylist(
@@ -72,6 +75,7 @@ internal object HlsSegmentedPreparation {
         providerId: String?,
         admission: AccountAdmission?,
         opener: NativeCiphertextOpener,
+        explicitExpiryEpochMs: Long?,
     ): NativePreparation {
         val playlistOrigin =
             StreamOrigin.parse(playlistUrl)
@@ -103,8 +107,9 @@ internal object HlsSegmentedPreparation {
         val resourceUrls =
             playlist.segments.map { it.uri } + playlist.initMaps.map { it.uri } +
                 playlist.keys.map { it.keyUri } + playlistUrl
-        // Every resource's own authorization window applies; the view adopts the earliest stated expiry.
-        var expiresAtEpochMs: Long? = null
+        // Every resource's own authorization window applies, and so does an expiry the resolver stated as
+        // metadata rather than as URL parameters; the view adopts the earliest stated expiry.
+        var expiresAtEpochMs: Long? = explicitExpiryEpochMs
         for (url in resourceUrls) {
             StreamUrlExpiry.fromUrl(url)?.let { resourceExpiry ->
                 expiresAtEpochMs = expiresAtEpochMs?.let { minOf(it, resourceExpiry) } ?: resourceExpiry
