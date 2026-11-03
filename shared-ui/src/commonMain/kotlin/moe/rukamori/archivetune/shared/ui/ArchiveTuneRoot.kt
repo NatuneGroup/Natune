@@ -283,20 +283,21 @@ private fun ArchiveTuneLoadedRoot(
                         television = television, contentModifier = pageSource,
                         nativeChrome = host.nativeChrome,
                         miniPlayer = {
-                            if (current != null) Row(
-                                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { expanded = true }.padding(horizontal = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                MarqueeText(current.item.title, Modifier.weight(1f))
-                                val playing = playback?.playWhenReady == true
-                                val playMotion = rememberPlayerControlMotion(PlayerControlKind.PlayPause, playing, policy.motion)
-                                TextButton(onClick = {
-                                    if (playing) host.queue.player.pause() else host.queue.player.play()
-                                }) {
-                                    Text(stringResource(if (playing) Res.string.integration_pause else Res.string.integration_play),
-                                        playMotion.modifier)
-                                }
-                            }
+                            if (current != null) ArchiveMiniPlayer(
+                                current = current,
+                                playback = playback,
+                                nativeState = nativeState,
+                                artwork = host.artwork,
+                                motion = policy.motion,
+                                onExpand = { expanded = true },
+                                onOpenPanel = { panel -> interaction.panel = panel; expanded = true },
+                                onPlayPause = {
+                                    if (playback?.playWhenReady == true) host.queue.player.pause() else host.queue.player.play()
+                                },
+                                onSeekTo = { targetMs -> host.queue.player.seekTo(targetMs) },
+                                onAction = { action -> dispatchNativePlayerAction(host.queue.player, host.playerControls, action) },
+                                onVolumeChange = { volume -> host.playerControls.setVolume(volume.coerceIn(0f, 1f)) },
+                            )
                         },
                     ) {
                         ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.queue.QueueAdvancePolicy
 import moe.rukamori.archivetune.shared.domain.queue.QueueRepeatMode
@@ -23,6 +24,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.SeekExtraSeconds
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
+import moe.rukamori.archivetune.shared.ui.player.PlayerHandoff
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeControls
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeState
 import moe.rukamori.archivetune.shared.ui.player.PlayerRepeat
@@ -62,12 +64,18 @@ internal class IosPlayerControls(
         graph.player.snapshot,
         graph.settings.snapshots,
         liked,
-    ) { queue, playback, preferences, isLiked ->
-        iosNativeState(queue, playback, preferences, isLiked)
+        graph.handoff,
+    ) { queue, playback, preferences, isLiked, handoff ->
+        iosNativeState(queue, playback, preferences, isLiked, handoff)
     }.stateIn(
         graph.scope,
         SharingStarted.WhileSubscribed(STATE_STOP_TIMEOUT_MS),
-        iosNativeState(graph.queue.state.value, graph.player.snapshot.value, graph.settings.snapshots.value),
+        iosNativeState(
+            graph.queue.state.value,
+            graph.player.snapshot.value,
+            graph.settings.snapshots.value,
+            handoff = graph.handoff.value,
+        ),
     )
 
     override fun previous() {
@@ -166,6 +174,7 @@ internal fun iosNativeState(
     playback: PlaybackSnapshot?,
     preferences: PreferenceSnapshot?,
     liked: Boolean = false,
+    handoff: QueueHandoffState? = null,
 ): PlayerNativeState {
     val mode = iosRepeatMode(preferences)
     val current = queue.currentOccurrenceId
@@ -184,6 +193,9 @@ internal fun iosNativeState(
         volume = preferences?.get(PlayerVolumeKey)?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f,
         canvasAvailable = false,
         palette = emptyList(),
+        handoff = handoff?.takeIf { it.fromOccurrenceId == playback?.occurrenceId }?.let {
+            PlayerHandoff(it.fromOccurrenceId, it.toOccurrenceId, it.fadeStartPositionMs, it.overlapMs)
+        },
     )
 }
 

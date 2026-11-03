@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
+import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.QueueStart
@@ -36,7 +37,7 @@ import moe.rukamori.archivetune.shared.ui.screens.rememberPagedContent
  */
 internal class IosCatalogOwners(graph: IosSessionGraph) {
     val pages = CatalogPageOwners(graph.youtubeContent, graph.pageOwners)
-    val lists = IosCatalogueOwners(graph.youtubeContent, graph.pageOwners)
+    val lists = IosCatalogueOwners(graph.youtubeContent, graph.youtubeCatalogue, graph.pageOwners)
 }
 
 /**
@@ -65,25 +66,40 @@ internal fun iosCatalogGraphPage(
     ArchiveDestination.SEARCH, ArchiveDestination.SEARCH_RESULTS ->
         hostSearchPage(owners.pages, route) { openRoute(ArchiveRoutes.musicRecognition()) }
     ArchiveDestination.ALBUM ->
-        hostCatalogDetailPage(owners.pages, route) { menu.open(it) }
+        if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
+            iosSpotifyAlbumPage(graph, owners, route, menu, back)
+        } else {
+            hostCatalogDetailPage(owners.pages, route) { menu.open(it) }
+        }
     ArchiveDestination.PLAYLIST ->
-        hostCatalogDetailPage(owners.pages, route) { menu.open(it) }
-            ?: hostPlaylistPage(graph.pageOwners, route) { occurrence ->
-                // Only an editable local playlist offers the row's remove-from-playlist action.
-                menu.open(
-                    occurrence,
-                    playlistId = route.arguments["playlistId"].takeIf {
-                        route.arguments["playlistType"] == "local_playlist"
-                    },
-                )
-            }
-    ArchiveDestination.ARTIST -> iosArtistPage(graph, host, route, menu, openRoute, back)
-    ArchiveDestination.ARTIST_SONGS -> iosArtistSongsPage(graph, host, route, menu, openRoute, back)
-    ArchiveDestination.ARTIST_ALBUMS -> iosArtistAlbumsPage(graph, host, route, menu, openRoute, back)
+        if (route.arguments["playlistType"] == "spotify_playlist" ||
+            route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id
+        ) {
+            iosSpotifyPlaylistPage(graph, route.arguments.getValue("playlistId"), back)
+        } else {
+            hostCatalogDetailPage(owners.pages, route) { menu.open(it) }
+                ?: hostPlaylistPage(graph.pageOwners, route) { occurrence ->
+                    // Only an editable local playlist offers the row's remove-from-playlist action.
+                    menu.open(
+                        occurrence,
+                        playlistId = route.arguments["playlistId"].takeIf {
+                            route.arguments["playlistType"] == "local_playlist"
+                        },
+                    )
+                }
+        }
+    ArchiveDestination.ARTIST ->
+        if (route.arguments["provider"] == ContentProvider.SPOTIFY_CATALOG.id) {
+            iosSpotifyArtistPage(graph, host, owners.lists, route, menu, openRoute, back)
+        } else {
+            iosArtistPage(graph, host, owners.lists, route, menu, openRoute, back)
+        }
+    ArchiveDestination.ARTIST_SONGS -> iosArtistSongsPage(graph, host, owners.lists, route, menu, openRoute, back)
+    ArchiveDestination.ARTIST_ALBUMS -> iosArtistAlbumsPage(graph, host, owners.lists, route, menu, openRoute, back)
     ArchiveDestination.ARTIST_ITEMS -> iosArtistItemsPage(graph, host, owners.lists, route, menu, openRoute, back)
     ArchiveDestination.BROWSE, ArchiveDestination.YOUTUBE_BROWSE -> iosBrowsePage(graph, owners.lists, route)
     ArchiveDestination.ACCOUNT -> iosAccountPage(graph, menu)
-    ArchiveDestination.PLAYLISTS -> iosPlaylistsPage(graph, creation, tags, menu)
+    ArchiveDestination.PLAYLISTS -> iosPlaylistsPage(graph, host, creation, tags, menu)
     ArchiveDestination.TAGS -> iosTagsPage(graph, tags)
     ArchiveDestination.NEWS -> newsFeedPage(graph.newsFeed)
     ArchiveDestination.ARTICLE -> newsArticlePage(graph.newsFeed, route.arguments.getValue("newsId"))
@@ -120,6 +136,7 @@ private fun iosBrowsePage(graph: IosSessionGraph, lists: IosCatalogueOwners, rou
  * own refusal.
  */
 internal fun iosPlayOccurrence(graph: IosSessionGraph, owners: IosCatalogOwners, collection: ContentRequest?, start: QueueStart) {
+    if (iosPlaySpotifyOccurrence(graph, collection, start)) return
     if (collection != null && owners.lists.playOccurrence(collection, start)) return
     if (collection != null && hostPlayCatalogOccurrence(owners.pages, collection, start)) return
     hostPlayOccurrence(graph.pageOwners, collection, start)

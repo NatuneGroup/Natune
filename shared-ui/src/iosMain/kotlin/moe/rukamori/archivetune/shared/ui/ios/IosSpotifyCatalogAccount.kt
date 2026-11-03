@@ -65,6 +65,41 @@ private val SPOTIFY_LOGIN_ORIGINS: Set<AuthorizedHttpsOrigin> = listOf(
 /** Why a catalog sign-in or reload failed, mapped to a lane string where the page is drawn. */
 internal enum class IosSpotifyCatalogError { SIGN_IN_FAILED, BROWSER_UNAVAILABLE }
 
+private val iosSpotifyTokenMutex = Mutex()
+
+/**
+ * Returns a valid Spotify catalog token for [graph], refreshing under [iosSpotifyTokenMutex] and fencing against
+ * concurrent sign-out or cookie replacement before persisting.
+ */
+internal suspend fun iosValidSpotifyCatalogToken(graph: IosSessionGraph, forceRefresh: Boolean = false): String =
+    iosSpotifyTokenMutex.withLock {
+        iosRefreshSpotifyTokenLocked(graph, forceRefresh)
+    }
+
+private suspend fun iosRefreshSpotifyTokenLocked(graph: IosSessionGraph, forceRefresh: Boolean = false): String {
+    val prefs = graph.settings.snapshots.value ?: PreferenceSnapshot.EMPTY
+    val spDc = prefs[SpotifySpDcKey].orEmpty()
+    check(spDc.isNotBlank()) { "spotify not connected" }
+    val stored = prefs[SpotifyAccessTokenKey].orEmpty()
+    val expiresAt = prefs[SpotifyAccessTokenExpiresAtKey] ?: 0L
+    if (!forceRefresh && stored.isNotBlank() && expiresAt > Clock.System.now().toEpochMilliseconds() + TOKEN_EXPIRY_GRACE_MS) {
+        return stored
+    }
+    val token = KtorSpotifyAuth(graph.http).fetchAccessToken(
+        spDc = spDc,
+        spKey = prefs[SpotifySpKeyKey].orEmpty(),
+        nowMs = { Clock.System.now().toEpochMilliseconds() },
+    ).getOrThrow()
+    graph.settings.edit {
+        if (get(SpotifySpDcKey) == spDc) {
+            this[SpotifyAccessTokenKey] = token.accessToken
+            this[SpotifyAccessTokenExpiresAtKey] = token.accessTokenExpirationTimestampMs
+        }
+    }
+    check(graph.settings.snapshots.value?.get(SpotifySpDcKey) == spDc) { "Spotify account changed" }
+    return token.accessToken
+}
+
 /**
  * The iOS Spotify catalog account: the same cookie-window sign-in the desktop host runs, over the in-memory
  * WKWebView sheet of [IosCookieOnlyBrowserAuth]. The sp_dc cookie mints a web-player token through
@@ -76,9 +111,8 @@ internal class IosSpotifyCatalogAccount(
     private val graph: IosSessionGraph,
     private val browser: IosCookieOnlyBrowserAuth,
 ) {
-    private val auth = KtorSpotifyAuth(graph.http)
     private val json = Json { ignoreUnknownKeys = true }
-    private val lock = Mutex()
+    private val lock = iosSpotifyTokenMutex
     private var generation = 0L
 
     private val stateFlow = MutableStateFlow(SpotifyCatalogAccountState())
@@ -262,21 +296,7 @@ internal class IosSpotifyCatalogAccount(
 
     /** Reuses a stored token that is still valid; otherwise mints one from the cookie and persists it. */
     private suspend fun refreshTokenLocked() {
-        val prefs = snapshot()
-        val spDc = prefs[SpotifySpDcKey].orEmpty()
-        check(spDc.isNotBlank()) { "spotify not connected" }
-        val stored = prefs[SpotifyAccessTokenKey].orEmpty()
-        val expiresAt = prefs[SpotifyAccessTokenExpiresAtKey] ?: 0L
-        if (stored.isNotBlank() && expiresAt > Clock.System.now().toEpochMilliseconds() + TOKEN_EXPIRY_GRACE_MS) return
-        val token = auth.fetchAccessToken(
-            spDc = spDc,
-            spKey = prefs[SpotifySpKeyKey].orEmpty(),
-            nowMs = { Clock.System.now().toEpochMilliseconds() },
-        ).getOrThrow()
-        graph.settings.edit {
-            this[SpotifyAccessTokenKey] = token.accessToken
-            this[SpotifyAccessTokenExpiresAtKey] = token.accessTokenExpirationTimestampMs
-        }
+        iosRefreshSpotifyTokenLocked(graph)
     }
 
     /** The account name and avatar as Spotify reports them; a failed read keeps the previously stored values. */
