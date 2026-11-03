@@ -71,7 +71,16 @@ object BuiltInCollectionFinitePolicy {
             ContentSurface.RECAP,
         )
 
-    fun staysFinite(collection: ContentRequest): Boolean = collection.surface in STAYS_FINITE_SURFACES
+    /** Local auto playlists (liked, downloaded, cached) share the playlist-items surface with user playlists. */
+    const val AUTO_PLAYLIST_ID_PREFIX: String = "auto_playlist/"
+
+    fun staysFinite(collection: ContentRequest): Boolean =
+        collection.surface in STAYS_FINITE_SURFACES || collection.isLocalAutoPlaylist()
+
+    private fun ContentRequest.isLocalAutoPlaylist(): Boolean =
+        surface == ContentSurface.LIBRARY_PLAYLIST_ITEMS &&
+            provider == ContentProvider.LOCAL &&
+            parent?.id?.startsWith(AUTO_PLAYLIST_ID_PREFIX) == true
 }
 
 /** Full compatibility state; the original stream is never projected through ContentItem. */

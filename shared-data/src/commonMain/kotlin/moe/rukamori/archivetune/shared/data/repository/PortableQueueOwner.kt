@@ -310,7 +310,9 @@ class PortableQueueOwner(
         if (finite) infinite.replenish()
     }
 
-    override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) {
+    override suspend fun replace(
+        entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean, staysFinite: Boolean,
+    ) {
         requireInside()
         QueueEditPolicy.requireUnique(entries)
         val start = entries.firstOrNull { it.occurrenceId == startOccurrenceId }
@@ -328,6 +330,7 @@ class PortableQueueOwner(
             phase = FinitePlaylistPhase.UNKNOWN,
             shuffleEnabled = false,
             manualKinds = emptyMap(),
+            staysFinite = staysFinite,
             tail = null,
         )
         startPrepared(playRequest, 0L, playWhenReady)

@@ -24,8 +24,12 @@ class TypedDelegatingQueueController(
     override val state get() = owner.state
 
     override suspend fun load(request: QueueLoadRequest) = owner.withQueueAccess { owner.loadCollection(request) }
-    override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) =
-        owner.withQueueAccess { owner.replace(entries, startOccurrenceId, playWhenReady) }
+    override suspend fun replace(
+        entries: List<ContentOccurrence>,
+        startOccurrenceId: String,
+        playWhenReady: Boolean,
+        staysFinite: Boolean,
+    ) = owner.withQueueAccess { owner.replace(entries, startOccurrenceId, playWhenReady, staysFinite) }
     override suspend fun insert(entries: List<ContentOccurrence>, kind: UserQueuedKind) =
         owner.withQueueAccess { owner.insert(entries, kind) }
     override suspend fun remove(occurrenceIds: Set<String>) = owner.withQueueAccess { owner.remove(occurrenceIds) }
