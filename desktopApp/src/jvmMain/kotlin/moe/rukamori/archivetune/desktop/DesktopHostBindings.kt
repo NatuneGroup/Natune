@@ -134,10 +134,10 @@ internal fun desktopHostBindings(
             DisposableEffect(podcasts, topMixes, canvas, lyricsTools) {
                 onDispose { podcasts.close(); topMixes.close(); canvas.close(); lyricsTools.close() }
             }
-            DesktopItemMenuDialog(menu, graph, route.value, sleepSheet) { target -> ownRoutes.trySend(target) }
+            DesktopItemMenuDialog(menu, graph, route.value, sleepSheet, canvas) { target -> ownRoutes.trySend(target) }
             DesktopCreatePlaylistOverlay(createPlaylist, route)
             DesktopPlaylistMenuOverlay(playlistMenus, graph, route.value)
-            DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph) { target -> ownRoutes.trySend(target) }
+            DesktopPlayerMenuDialog(playerMenu, sleepSheet, graph, canvas) { target -> ownRoutes.trySend(target) }
             DesktopSleepTimerOverlay(sleepSheet, graph.sleepTimer)
             DesktopEqualizerOverlay(graph.equalizer)
             DesktopFeedbackOverlay(feedback, graph)

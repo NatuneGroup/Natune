@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -54,6 +55,7 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPin
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
@@ -102,6 +104,8 @@ internal class DesktopPlaylistMenuState(
         val item: ContentItem,
         val complete: FinitePlaylistCompleteList<ContentOccurrence>?,
         val previewItems: List<ContentItem> = emptyList(),
+        val hidden: Boolean = false,
+        val browseId: String? = null,
     )
 
     /** The tag dialog: one playlist, or the bulk picker when [playlist] is null. */
@@ -163,8 +167,26 @@ internal class DesktopPlaylistMenuState(
                     serializeSpeedDialPins(toggleSpeedDialPin(pins, SpeedDialPin(SpeedDialPinType.PLAYLIST, playlist.id)))
             }
         }
-        override suspend fun startMissingDownloads(songs: List<ContentOccurrence>) { unavailable() }
-        override suspend fun removeDownloads(songs: List<ContentOccurrence>) { unavailable() }
+        override suspend fun startMissingDownloads(songs: List<ContentOccurrence>) {
+            val transfers = graph.downloads.observe().first()
+            for (occurrence in songs) {
+                val ref = occurrence.item.ref
+                if (!desktopDownloadSupported(ref)) continue
+                if (desktopDownloadMenuState(transfers, ref) == CollectionDownloadState.NOT_DOWNLOADED) {
+                    graph.downloads.start(occurrence.item)
+                }
+            }
+        }
+        override suspend fun removeDownloads(songs: List<ContentOccurrence>) {
+            for (occurrence in songs) {
+                val ref = occurrence.item.ref
+                if (desktopDownloadSupported(ref) ||
+                    desktopDownloadMenuState(graph.downloads.observe().first(), ref) != CollectionDownloadState.NOT_DOWNLOADED
+                ) {
+                    graph.downloads.remove(ref.desktopDownloadId())
+                }
+            }
+        }
         override fun openPlaylistTags(playlist: ContentRef) {
             menu = null
             tags = TagTarget(playlist)
@@ -182,8 +204,33 @@ internal class DesktopPlaylistMenuState(
             require(playlist.provider == ContentProvider.LOCAL.id) { "Only local playlist covers are removed here" }
             graph.customArtwork.removeCover(localPlaylistCoverUri(playlist.id))
         }
-        override suspend fun syncToYouTube(playlist: ContentRef) { unavailable() }
-        override suspend fun setHidden(playlist: ContentRef, hidden: Boolean) { unavailable() }
+        override suspend fun syncToYouTube(playlist: ContentRef) {
+            require(playlist.provider == ContentProvider.LOCAL.id && playlist.kind == ContentKind.PLAYLIST) {
+                "Only a local playlist syncs to YouTube"
+            }
+            when (graph.youtubeLibrarySync.playlistSyncGate()) {
+                DesktopPlaylistSyncGate.NOT_SIGNED_IN -> {
+                    message = DesktopStrings["playlist_sync_not_logged_in"]
+                    return
+                }
+                DesktopPlaylistSyncGate.SYNC_DISABLED -> {
+                    message = DesktopStrings["playlist_sync_disabled"]
+                    return
+                }
+                DesktopPlaylistSyncGate.READY -> Unit
+            }
+            val title = menu?.takeIf { it.item.ref == playlist }?.item?.title ?: playlist.id
+            val videoIds = menu?.takeIf { it.item.ref == playlist }?.complete?.songs.orEmpty()
+                .filter { it.item.item.ref.provider == ContentProvider.YOUTUBE.id &&
+                    it.item.item.ref.kind == ContentKind.SONG }
+                .map { it.videoId }
+            graph.youtubeLibrarySync.syncPlaylist(playlist.id, title, videoIds)
+            message = DesktopStrings["playlist_synced"]
+        }
+        override suspend fun setHidden(playlist: ContentRef, hidden: Boolean) {
+            require(playlist.provider == ContentProvider.LOCAL.id) { "Only a local playlist can be hidden" }
+            graph.library.setPlaylistHidden(playlist.id, hidden)
+        }
         override suspend fun deletePlaylist(playlist: ContentRef) {
             require(playlist.provider == ContentProvider.LOCAL.id) { "Only local playlists are deleted here" }
             graph.library.deletePlaylist(playlist.id)
@@ -220,7 +267,7 @@ internal class DesktopPlaylistMenuState(
         graph.scope.launch {
             try {
                 val row = graph.libraryContent.playlistRows().first().firstOrNull { it.item.ref == ref } ?: return@launch
-                menu = MenuTarget(row.item, null, row.previewItems)
+                menu = MenuTarget(row.item, null, row.previewItems, hidden = row.hidden, browseId = row.browseId)
                 val page = graph.libraryContent.currentList(
                     ContentRequest(ContentProvider.LOCAL, ContentSurface.LIBRARY_PLAYLIST_ITEMS, parent = ref),
                 )
@@ -232,7 +279,7 @@ internal class DesktopPlaylistMenuState(
                         },
                     )
                 }
-                if (menu?.item?.ref == ref) menu = MenuTarget(row.item, complete, row.previewItems)
+                if (menu?.item?.ref == ref) menu = MenuTarget(row.item, complete, row.previewItems, hidden = row.hidden, browseId = row.browseId)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -270,7 +317,25 @@ internal class DesktopPlaylistMenuState(
         message = null
     }
 
-    /** The custom playlist order has no store on this host, so a drag is refused with the notice. */
+    /** The playlist-list drag in custom order commits through the library mutation, as the baseline did. */
+    fun movePlaylist(ref: ContentRef, neighbour: ContentRef, after: Boolean) {
+        if (ref.provider != ContentProvider.LOCAL.id || neighbour.provider != ContentProvider.LOCAL.id) {
+            refuseMove()
+            return
+        }
+        graph.scope.launch {
+            try {
+                graph.library.mutate(LibraryMutation.MovePlaylist(ref.id, neighbour.id, after))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                graph.report("playlist move was not saved: ${failure.javaClass.simpleName}")
+                message = DesktopStrings["playlist_action_failed"]
+            }
+        }
+    }
+
+    /** A row whose drag target is not a local playlist is refused with the notice. */
     fun refuseMove() {
         message = DesktopStrings["settings_feature_unavailable"]
     }
@@ -364,6 +429,20 @@ internal fun DesktopPlaylistMenuOverlay(state: DesktopPlaylistMenuState, graph: 
         // The shared menu is a dropdown, so it is anchored at the middle of the window.
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box {
+                val download by produceState(CollectionDownloadState.NOT_DOWNLOADED, ref, target.complete) {
+                    try {
+                        graph.downloads.observe().collect { transfers ->
+                            value = target.complete?.songs
+                                ?.map { desktopDownloadMenuState(transfers, it.item.item.ref) }
+                                ?.let { states -> desktopPlaylistDownloadState(states) }
+                                ?: CollectionDownloadState.NOT_DOWNLOADED
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        value = CollectionDownloadState.NOT_DOWNLOADED
+                    }
+                }
                 PlaylistOverflowMenu(
                     identity = "desktop-playlist:${ref.provider}:${ref.id}",
                     expanded = true,
@@ -371,13 +450,13 @@ internal fun DesktopPlaylistMenuOverlay(state: DesktopPlaylistMenuState, graph: 
                         playlist = ref,
                         name = target.item.title,
                         complete = target.complete,
-                        download = CollectionDownloadState.NOT_DOWNLOADED,
-                        downloadsSupported = false,
-                        youtubeSync = false,
-                        hiding = false,
+                        download = download,
+                        downloadsSupported = true,
+                        youtubeSync = ref.provider == ContentProvider.LOCAL.id && ref.kind == ContentKind.PLAYLIST,
+                        hiding = ref.provider == ContentProvider.LOCAL.id && ref.kind == ContentKind.PLAYLIST,
                         speedDialPinned = pinned,
-                        hidden = false,
-                        browseId = null,
+                        hidden = target.hidden,
+                        browseId = target.browseId,
                         shareLink = null,
                         editable = true,
                         automatic = false,
@@ -586,3 +665,13 @@ private suspend fun chooseSaveFile(suggestedName: String): File? = suspendCancel
         if (continuation.isActive) continuation.resume(chosen)
     }
 }
+
+
+/** The playlist download row: every song done reads COMPLETED, any live transfer reads IN_PROGRESS. */
+internal fun desktopPlaylistDownloadState(states: List<CollectionDownloadState>): CollectionDownloadState =
+    when {
+        states.isEmpty() -> CollectionDownloadState.NOT_DOWNLOADED
+        states.all { it == CollectionDownloadState.COMPLETED } -> CollectionDownloadState.COMPLETED
+        states.any { it == CollectionDownloadState.IN_PROGRESS } -> CollectionDownloadState.IN_PROGRESS
+        else -> CollectionDownloadState.NOT_DOWNLOADED
+    }

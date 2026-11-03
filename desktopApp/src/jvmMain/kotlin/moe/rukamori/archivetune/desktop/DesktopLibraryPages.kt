@@ -267,8 +267,8 @@ private fun desktopPlaylistsPage(
             localRows.firstOrNull { it.item.ref == ref }?.let { row -> menus.exportFromRow(ref, row.item.title) }
                 ?: menus.refuseMove()
         },
-        // The portable file keeps no custom order for local or remote playlists, so a drag says so instead of moving nothing.
-        move = { _, _, _ -> menus.refuseMove() },
+        // The drag lands in the stored collection order; a remote or missing row is refused by the owner.
+        move = menus::movePlaylist,
         retry = { attempt += 1 },
     )
     return ArchiveGraphPage.Playlists(state, actions)

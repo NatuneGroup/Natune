@@ -59,4 +59,27 @@ class DesktopDownloadMenuTest {
         assertFalse(desktopDownloadSupported(song.copy(id = "telegram://1/2")))
         assertFalse(desktopDownloadSupported(song.copy(kind = ContentKind.EPISODE)))
     }
+
+    @Test
+    fun playlistDownloadRowAggregatesEverySongState() {
+        // An all-complete list reports complete, any in-flight row wins the progress label, and the remaining
+        // mixes count as partially downloaded, as the shared menu's states table does.
+        assertEquals(
+            CollectionDownloadState.COMPLETED,
+            desktopPlaylistDownloadState(listOf(CollectionDownloadState.COMPLETED, CollectionDownloadState.COMPLETED)),
+        )
+        assertEquals(
+            CollectionDownloadState.IN_PROGRESS,
+            desktopPlaylistDownloadState(listOf(CollectionDownloadState.COMPLETED, CollectionDownloadState.IN_PROGRESS)),
+        )
+        assertEquals(
+            CollectionDownloadState.PARTIALLY,
+            desktopPlaylistDownloadState(listOf(CollectionDownloadState.COMPLETED, CollectionDownloadState.NOT_DOWNLOADED)),
+        )
+        assertEquals(
+            CollectionDownloadState.NOT_DOWNLOADED,
+            desktopPlaylistDownloadState(listOf(CollectionDownloadState.NOT_DOWNLOADED)),
+        )
+        assertEquals(CollectionDownloadState.NOT_DOWNLOADED, desktopPlaylistDownloadState(emptyList()))
+    }
 }

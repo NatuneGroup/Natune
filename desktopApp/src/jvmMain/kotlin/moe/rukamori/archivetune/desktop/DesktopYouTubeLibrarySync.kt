@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.sync.Mutex
+import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
 import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
@@ -14,6 +15,7 @@ import moe.rukamori.archivetune.shared.domain.platform.AccountAdmission
 import moe.rukamori.archivetune.shared.domain.repository.ContentAccountChanged
 import moe.rukamori.archivetune.shared.domain.repository.ContentAccountRequired
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentQuery
@@ -64,6 +66,73 @@ internal class DesktopYouTubeLibrarySync(
         } catch (_: ContentAccountRequired) {
             null
         }
+
+    /**
+     * The gate the playlist menu checks before it offers the sync push, as the baseline read its sync and login flags:
+     * no sign-in reports the login notice, a sign-in without an admission reports the disabled one.
+     */
+    suspend fun playlistSyncGate(): DesktopPlaylistSyncGate =
+        when {
+            !account.transport.signedIn() -> DesktopPlaylistSyncGate.NOT_SIGNED_IN
+            admitted() == null -> DesktopPlaylistSyncGate.SYNC_DISABLED
+            else -> DesktopPlaylistSyncGate.READY
+        }
+
+    /**
+     * The baseline playlist push: an unlinked playlist is created remotely and filled once, and the remote record is
+     * stored. A linked one pulls the remote order into the local rows, replacing what a removal dropped. [videoIds]
+     * are the local rows' YouTube ids in stored order, as the baseline's song ids were.
+     */
+    suspend fun syncPlaylist(playlistId: String, title: String, videoIds: List<String>) {
+        mutex.lock()
+        try {
+            beforeSync()
+            val admission = admitted() ?: throw ContentAccountRequired()
+            val linked = library.observeLocalPlaylists().first()
+                .firstOrNull { it.occurrence.item.ref.kind == ContentKind.PLAYLIST &&
+                    it.occurrence.item.ref.id == playlistId }
+                ?.browseId
+            val browseId = linked ?: YouTube.createPlaylist(title).getOrThrow()
+            fence(admission)
+            if (linked == null) {
+                if (videoIds.isNotEmpty()) {
+                    YouTube.addSongsToPlaylist(playlistId = browseId, videoIds = videoIds) { _, _ -> }.getOrThrow()
+                }
+                fence(admission)
+                library.setPlaylistRemote(playlistId, browseId, videoIds.size)
+            } else {
+                val remote = readRemotePlaylist(browseId)
+                fence(admission)
+                // An empty remote page keeps the local rows, as the baseline refused to clear on an empty pull.
+                if (remote.isNotEmpty()) {
+                    library.saveItems(remote.map { it.item })
+                    library.mutate(LibraryMutation.ReplacePlaylistEntries(playlistId, remote))
+                }
+                library.setPlaylistRemote(playlistId, browseId, remote.size)
+            }
+        } finally {
+            mutex.unlock()
+        }
+    }
+
+    /** The linked remote playlist's complete song page, read to its end or not at all. */
+    private suspend fun readRemotePlaylist(browseId: String): List<ContentOccurrence> {
+        val request = ContentRequest(
+            ContentProvider.YOUTUBE,
+            ContentSurface.PLAYLIST,
+            parent = ContentRef(ContentProvider.YOUTUBE.id, ContentKind.PLAYLIST, browseId),
+        )
+        val items = mutableListOf<ContentOccurrence>()
+        var continuation: String? = null
+        var pages = 0
+        do {
+            if (++pages > MAX_LISTING_PAGES) throw IllegalStateException("Listing exceeded its page bound")
+            val page = content.page(request, continuation)
+            items += page.items
+            continuation = page.continuation
+        } while (continuation != null)
+        return items
+    }
 
     private suspend fun step(name: String, block: suspend () -> Unit) {
         try {
@@ -158,3 +227,7 @@ internal class DesktopYouTubeLibrarySync(
         const val MAX_LISTING_PAGES = 400
     }
 }
+
+
+/** The pre-check a playlist menu reads before its sync row runs. */
+enum class DesktopPlaylistSyncGate { READY, SYNC_DISABLED, NOT_SIGNED_IN }
