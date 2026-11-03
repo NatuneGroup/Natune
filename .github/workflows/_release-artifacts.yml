@@ -349,14 +349,16 @@ jobs:
             jdk_arch: aarch64
             appimage_arch: aarch64
             runner: blacksmith-8vcpu-ubuntu-2404-arm
+          # macOS legs run on the GitHub-hosted arm64 macOS 26 image (free on the public repo);
+          # the x64 leg builds under Rosetta on the same image, the path the steps below already take.
           - platform: macos
             arch: x64
             jdk_arch: x64
-            runner: blacksmith-6vcpu-macos-latest
+            runner: macos-26
           - platform: macos
             arch: arm64
             jdk_arch: aarch64
-            runner: blacksmith-6vcpu-macos-latest
+            runner: macos-26
     env:
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
       VERSION_CODE_OVERRIDE: ${{ inputs.version_code }}
@@ -486,8 +488,9 @@ jobs:
       - name: Install Rosetta 2 (macOS x64 leg)
         if: matrix.platform == 'macos' && matrix.arch == 'x64'
         shell: bash
+        # softwareupdate needs root on the GitHub-hosted image; sudo is a no-op cost elsewhere.
         run: |
-          /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+          sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
           arch -x86_64 /usr/bin/true
 
       - name: Build host native dependencies (Windows)
@@ -738,7 +741,9 @@ jobs:
 
   ios:
     name: Unsigned iOS IPA
-    runs-on: blacksmith-6vcpu-macos-latest
+    # GitHub-hosted arm64 macOS 26 image: free on the public repo and ships the Xcode 26.x
+    # releases setup-xcode resolves (26.4 -> /Applications/Xcode_26.4.app).
+    runs-on: macos-26
     if: inputs.build_ios
     permissions:
       # Write only for the staging prerelease that carries the IPA when artifact storage is full.
@@ -944,7 +949,10 @@ jobs:
 
   publish-release:
     name: Publish ${{ inputs.channel }} release
-    if: inputs.publish
+    # always(): the macOS and iOS legs are best-effort on GitHub-hosted runners — when they fail or
+    # never pick up, the Android/Windows/Linux artifacts still publish. The publish step checks each
+    # expected file for presence, so a failed required leg still stops the release.
+    if: always() && inputs.publish
     needs:
       - android
       - desktop
@@ -1016,6 +1024,9 @@ jobs:
           VERSION_CODE: ${{ inputs.version_code }}
           COMMIT_SHA: ${{ env.EFFECTIVE_COMMIT_SHA }}
           ANDROID_SIGNING_STATUS: ${{ needs.android.outputs.signing_status }}
+          BUILD_ANDROID: ${{ inputs.build_android }}
+          BUILD_DESKTOP: ${{ inputs.build_desktop }}
+          BUILD_IOS: ${{ inputs.build_ios }}
         run: |
           set -euo pipefail
 
@@ -1027,8 +1038,34 @@ jobs:
             APK_SUFFIX=nightly
             EXPECTED_APKS=6
           fi
-          # Three Windows, four Linux, two macOS installers and one IPA.
-          EXPECTED_ASSETS=$((EXPECTED_APKS + 10))
+          # Asset expectations are tracked per build leg instead of one fixed total. The macOS
+          # desktop legs and the iOS IPA leg are best-effort on GitHub-hosted runners: a leg that
+          # fails or never picks up simply leaves no files, and the release still publishes what
+          # exists with the gaps noted below. Android APKs and the Windows/Linux installers stay
+          # required — a missing one means its leg failed, and that still stops the release rather
+          # than shipping a broken artifact set.
+          EXPECTED_NAMES=()
+          OPTIONAL_NAMES=()
+          MISSING_REQUIRED=()
+          MISSING_OPTIONAL=()
+          if [[ "${BUILD_DESKTOP:-true}" == "true" ]]; then
+            EXPECTED_NAMES+=(
+              "natune-desktop-windows-x64-${VERSION_NAME}.msi"
+              "natune-desktop-windows-x64-${VERSION_NAME}.exe"
+              "natune-desktop-windows-x64-${VERSION_NAME}.zip"
+              "natune-desktop-linux-x64-${VERSION_NAME}.deb"
+              "natune-desktop-linux-x64-${VERSION_NAME}.AppImage"
+              "natune-desktop-linux-arm64-${VERSION_NAME}.deb"
+              "natune-desktop-linux-arm64-${VERSION_NAME}.AppImage"
+            )
+            OPTIONAL_NAMES+=(
+              "natune-desktop-macos-x64-${VERSION_NAME}.dmg"
+              "natune-desktop-macos-arm64-${VERSION_NAME}.dmg"
+            )
+          fi
+          if [[ "${BUILD_IOS:-true}" == "true" ]]; then
+            OPTIONAL_NAMES+=("natune-ios-${VERSION_NAME}.ipa")
+          fi
 
           CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_BRANCH" --jq '.sha')"
           if [[ "$CURRENT_SHA" != "$COMMIT_SHA" ]]; then
@@ -1039,11 +1076,43 @@ jobs:
 
           mapfile -d '' RELEASE_FILES < <(find downloaded-artifacts -type f -print0 | sort -z)
           mapfile -d '' APK_FILES < <(find downloaded-artifacts -type f -name "app-*-${APK_SUFFIX}.apk" -print0 | sort -z)
-          if [[ "${#RELEASE_FILES[@]}" -ne "$EXPECTED_ASSETS" || "${#APK_FILES[@]}" -ne "$EXPECTED_APKS" ]]; then
-            echo "::error::Expected $EXPECTED_ASSETS release assets including $EXPECTED_APKS $APK_SUFFIX APKs; found ${#RELEASE_FILES[@]} files and ${#APK_FILES[@]} APKs."
+
+          EXPECTED_TOTAL=0
+          if [[ "${BUILD_ANDROID:-true}" == "true" ]]; then
+            EXPECTED_TOTAL=$EXPECTED_APKS
+            if [[ "${#APK_FILES[@]}" -ne "$EXPECTED_APKS" ]]; then
+              echo "::error::Expected $EXPECTED_APKS $APK_SUFFIX APKs but found ${#APK_FILES[@]}; an Android leg did not deliver."
+              find downloaded-artifacts -type f -print || true
+              exit 1
+            fi
+          fi
+          for NAME in "${EXPECTED_NAMES[@]}"; do
+            EXPECTED_TOTAL=$((EXPECTED_TOTAL + 1))
+            if [[ ! -f "downloaded-artifacts/$NAME" ]]; then
+              MISSING_REQUIRED+=("$NAME")
+            fi
+          done
+          for NAME in "${OPTIONAL_NAMES[@]}"; do
+            if [[ -f "downloaded-artifacts/$NAME" ]]; then
+              EXPECTED_TOTAL=$((EXPECTED_TOTAL + 1))
+            else
+              MISSING_OPTIONAL+=("$NAME")
+            fi
+          done
+          if [[ "${#MISSING_REQUIRED[@]}" -gt 0 ]]; then
+            echo "::error::Required release assets are missing because their build legs did not deliver:"
+            printf '  %s\n' "${MISSING_REQUIRED[@]}"
             find downloaded-artifacts -type f -print || true
             exit 1
           fi
+          if [[ "${#RELEASE_FILES[@]}" -ne "$EXPECTED_TOTAL" ]]; then
+            echo "::error::Expected $EXPECTED_TOTAL release assets for the enabled legs; found ${#RELEASE_FILES[@]} files."
+            find downloaded-artifacts -type f -print || true
+            exit 1
+          fi
+          for NAME in "${MISSING_OPTIONAL[@]}"; do
+            echo "::warning::Optional artifact '$NAME' is absent; its macOS/iOS leg failed or never picked up a runner."
+          done
 
           NOTES_FILE="$RUNNER_TEMP/release-notes.md"
           {
@@ -1076,6 +1145,13 @@ jobs:
 
           if [[ "$ANDROID_SIGNING_STATUS" == unsigned ]]; then
             printf '\n> Android APKs are unsigned because one or more Android signing secrets are missing.\n' >> "$NOTES_FILE"
+          fi
+
+          if [[ "${#MISSING_OPTIONAL[@]}" -gt 0 ]]; then
+            printf '\n> **Partial build:** these artifacts are missing because their macOS/iOS build legs did not complete; the rest of the release is unaffected:\n' >> "$NOTES_FILE"
+            for NAME in "${MISSING_OPTIONAL[@]}"; do
+              printf '> - `%s`\n' "$NAME" >> "$NOTES_FILE"
+            done
           fi
 
           if [[ "$CHANNEL" == stable ]]; then

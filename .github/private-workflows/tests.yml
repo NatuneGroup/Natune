@@ -35,7 +35,7 @@ concurrency:
 jobs:
   unit-tests:
     name: Compile and run app unit tests
-    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    if: github.repository == 'NatuneGroup/Natune'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     steps:
@@ -114,7 +114,7 @@ jobs:
     name: Shared KMP module tests (JVM and desktop)
     # Serialized after the app run so one candidate never holds two high-vCPU runners at once.
     needs: unit-tests
-    if: github.repository == 'NatuneGroup/ArchiveTune-KMP'
+    if: github.repository == 'NatuneGroup/Natune'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 60
     env:
