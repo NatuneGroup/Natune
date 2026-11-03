@@ -15,6 +15,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -269,6 +270,19 @@ class DesktopSessionGraph internal constructor(
      */
     internal fun openAcousticAudit(target: AcousticAuditTarget) {
         acoustic.openDialog(target.copy(requestKey = acousticRequestKey()))
+    }
+
+    init {
+        // An open audit dialog rebinds to the live request key on every snapshot: a source fallback
+        // inside the same occurrence retires the key the dialog opened with, so a result decoded
+        // under the retired key stops matching instead of displaying as stale evidence.
+        scope.launch {
+            player.snapshot.collect {
+                if (acoustic.dialogTarget.value != null) {
+                    acoustic.rebindDialogKey(acousticRequestKey())
+                }
+            }
+        }
     }
 
     /**

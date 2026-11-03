@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
@@ -14,6 +15,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /**
@@ -54,19 +56,34 @@ class AcousticAuditOwner(
 
     private var generation = 0L
     private var job: Job? = null
+    private var closed = false
 
     init {
         scope.launch {
-            for (command in commands) {
-                try {
-                    when (command) {
-                        is Command.Start -> startRun(command.target)
-                        Command.Cancel -> cancelRun()
+            try {
+                for (command in commands) {
+                    try {
+                        when (command) {
+                            is Command.Start -> startRun(command.target)
+                            Command.Cancel -> cancelRun()
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // A failed command never kills the queue; the next one still drains.
                     }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    // A failed command never kills the queue; the next one still drains.
+                }
+            } finally {
+                // Channel close or scope teardown lands here: invalidate and cancel whatever is
+                // running or still queued so nothing publishes after the owner dies. NonCancellable
+                // keeps the teardown working even when the consumer itself was cancelled.
+                withContext(NonCancellable) {
+                    lock.withLock {
+                        closed = true
+                        ++generation
+                        job?.cancel()
+                        job = null
+                    }
                 }
             }
         }
@@ -75,6 +92,15 @@ class AcousticAuditOwner(
     /** Opens a host audit surface for [target]; the surface calls [start] itself when the user asks to run. */
     fun openDialog(target: AcousticAuditTarget) {
         mutableDialogTarget.value = target
+    }
+
+    /**
+     * Rebinds the mounted dialog target to the live request key. Hosts call it when the loaded request
+     * moves — a same-occurrence source fallback included: a result decoded under the retired key stops
+     * matching and stops displaying instead of surviving as stale evidence.
+     */
+    fun rebindDialogKey(key: String) {
+        mutableDialogTarget.value = mutableDialogTarget.value?.copy(requestKey = key)
     }
 
     /** Closes the mounted surface and cancels a run in flight: a dismissed audit never keeps decoding. */
@@ -100,7 +126,7 @@ class AcousticAuditOwner(
     /** Consumer-side start; runs only on the single draining coroutine. */
     private suspend fun startRun(target: AcousticAuditTarget) {
         lock.withLock {
-            if (job?.isActive == true) return
+            if (closed || job?.isActive == true) return
             val token = ++generation
             // The job is assigned before it starts, so a liveness check that fires first can never
             // run against a null handle; the LAZY start orders assignment before the body runs.
@@ -196,5 +222,18 @@ class AcousticAuditOwner(
     fun close() {
         commands.close()
         mutableDialogTarget.value = null
+        // Invalidate eagerly: commands still queued drain against the closed flag and dead
+        // generation, and the consumer's exit block cancels whatever is running then. When the
+        // lock is held the holder finishes first; the drain end applies the same teardown.
+        if (lock.tryLock()) {
+            try {
+                closed = true
+                ++generation
+                job?.cancel()
+                job = null
+            } finally {
+                lock.unlock()
+            }
+        }
     }
 }

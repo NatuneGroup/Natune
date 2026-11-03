@@ -48,7 +48,6 @@ import moe.rukamori.archivetune.shared.data.platform.ios.IosListenTogetherAvatar
 import moe.rukamori.archivetune.shared.data.platform.ios.IosMediaDirectories
 import moe.rukamori.archivetune.shared.data.platform.ios.IosMediaImporter
 import moe.rukamori.archivetune.shared.data.platform.ios.IosNetworkOwner
-import moe.rukamori.archivetune.shared.data.platform.ios.IosAcousticProbe
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPool
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
 import moe.rukamori.archivetune.shared.data.platform.ios.IosProviderCredentials
@@ -75,8 +74,6 @@ import moe.rukamori.archivetune.shared.data.repository.TypedDelegatingQueueContr
 import moe.rukamori.archivetune.shared.data.repository.TypedRoomLibraryRepository
 import moe.rukamori.archivetune.shared.domain.platform.CredentialScope
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
-import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
-import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticWindow
 import moe.rukamori.archivetune.shared.domain.playback.MusicPlayerController
 import moe.rukamori.archivetune.shared.domain.playlisttags.PlaylistTagsRepository
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -166,7 +163,7 @@ internal class IosSessionGraph private constructor(
     /** The Discord owner: PKCE sheet sign-in and playback-driven presence, closed with the graph. */
     val discord: IosDiscordPresence,
     private val owner: PortableQueueOwner,
-    private val playbackPort: IosPlaybackPort,
+    internal val playbackPort: IosPlaybackPort,
     private val database: PortableStateDatabase,
     private val listenDriver: ListenHistoryDriver,
     private val progressDriver: PodcastProgressDriver,
@@ -191,40 +188,15 @@ internal class IosSessionGraph private constructor(
     /**
      * The one acoustic audit owner of this process: it decodes a bounded PCM window of the current
      * occurrence's own source through the portable probe, exactly like the desktop host. A target that
-     * is not the loaded request is refused instead of auditing the wrong song.
+     * is not the loaded request is refused instead of auditing the wrong song. The request binding,
+     * key watcher and menu entry point are the extensions in IosSessionGraphAcoustic.kt.
      */
     internal val acoustic = AcousticAuditOwner(scope) { target, checkActive ->
-        checkActive()
-        val request = playbackPort.currentRequest()
-        when {
-            request == null -> AcousticWindow.Refused("no_current_source")
-            request.mediaId != target.mediaId -> AcousticWindow.Refused("current_source_unavailable")
-            else -> IosAcousticProbe.window(
-                request.locator,
-                requestKey = "${request.occurrenceId}#${request.attemptId ?: -1L}",
-                occurrenceKey = request.occurrenceId,
-            )
-        }
+        acousticWindow(target, checkActive)
     }
 
-    /**
-     * The loaded request's audit binding token: occurrenceId plus the load-attempt id, so a source
-     * fallback inside the same occurrence invalidates targets and results bound to the older attempt.
-     * Empty while nothing is loaded.
-     */
-    internal suspend fun acousticRequestKey(): String =
-        playbackPort.currentRequest()
-            ?.let { "${it.occurrenceId}#${it.attemptId ?: -1L}" }
-            .orEmpty()
-
-    /**
-     * Opens the audit surface with [target] bound to the request loaded right now — menu callers cannot
-     * read the attempt themselves because the request only exists inside the port.
-     */
-    internal fun openAcousticAudit(target: AcousticAuditTarget) {
-        scope.launch {
-            acoustic.openDialog(target.copy(requestKey = acousticRequestKey()))
-        }
+    init {
+        watchAcousticBinding()
     }
 
     /**
