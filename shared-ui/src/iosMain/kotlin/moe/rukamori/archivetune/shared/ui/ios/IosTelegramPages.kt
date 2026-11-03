@@ -40,6 +40,7 @@ import platform.Foundation.NSNumber
 import platform.Foundation.NSNumberFormatter
 import platform.Foundation.NSNumberFormatterDecimalStyle
 import platform.Foundation.NSUUID
+import platform.Foundation.numberWithInt
 
 /**
  * The Telegram channel browse page over the signed-in iOS client. Without a client the route keeps the host boundary,
