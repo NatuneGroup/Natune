@@ -210,9 +210,9 @@ internal class IosYouTubeLibrarySync(private val graph: IosSessionGraph) {
             val page = graph.library.page(query, token)
             val next = page.continuation
             FinitePlaylistCompletion.validateNext(
-                nextToken = next,
-                consumedTokens = consumed,
-                itemCount = page.items.size,
+                token = next,
+                consumed = consumed,
+                songCount = page.items.size,
                 initial = token == null,
             )
             items += page.items
