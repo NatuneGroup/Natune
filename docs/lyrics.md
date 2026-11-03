@@ -168,9 +168,10 @@ them skipped under reduced motion:
   it is held (`LyricsSweepGeometry.emphasisGain`) — rises and falls. Every other word keeps the
   plain feathered sweep, no letter ripple and no emphasis glow.
 - Every unsung word sits `LyricsSweepGeometry.WORD_LIFT_DP` (2 dp) below its seat and eases up
-  through the last half of its own span — clamped to 120–300 ms and shortened near a tight hand-off
-  (`liftDurationMs`/`liftStartMs`/`liftEndMs`) — so it is seated exactly as its sweep finishes,
-  an ease-out (`liftAt`) with no pause and no jump. Inactive rows draw seated, so a lit row sinks
+  through the last half of its own span — clamped to 120–300 ms, shortened near a tight hand-off and
+  never longer than the word itself (`liftDurationMs`/`liftStartMs`/`liftEndMs`) — so it is seated
+  exactly at its provider end, as its sweep finishes. Only a zero-length word rises past its end.
+  The rise is an ease-out (`liftAt`) with no pause and no jump. Inactive rows draw seated, so a lit row sinks
   into that low seat over the `SINK_MS` (200 ms, inside the shortest 250 ms activation lead) before
   its first word (`sinkAt`) instead of dropping in one frame; `dropAt` is the product every renderer
   reads. A started word that has not landed draws dim and lit in its own window at one offset, so
