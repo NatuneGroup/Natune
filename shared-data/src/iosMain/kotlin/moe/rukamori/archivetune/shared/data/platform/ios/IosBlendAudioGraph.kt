@@ -93,7 +93,9 @@ internal class IosBlendAudioGraph private constructor(output: CPointer<at_audio_
     private fun applyEqualizer(deck: Deck) {
         val units = deck.eqUnit.bands
         for (index in units.indices) {
-            val params = units[index]
+            // bands is an untyped List<*> on this Kotlin/Native release; AVAudioUnitEQ only ever holds
+            // AVAudioUnitEQFilterParameters elements.
+            val params = units[index] as AVAudioUnitEQFilterParameters
             val band = equalizerBands.getOrNull(index)
             if (band == null) {
                 params.bypass = true

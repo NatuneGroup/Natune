@@ -67,7 +67,7 @@ private class DesktopFileArtworkSource(private val path: Path) : CustomArtworkSo
     }
 }
 
-private class StreamArtworkReader(private val stream: InputStream) : CustomArtworkReader {
+internal class StreamArtworkReader(private val stream: InputStream) : CustomArtworkReader {
     override suspend fun read(buffer: ByteArray): Int = withContext(Dispatchers.IO) { stream.read(buffer) }
 
     override suspend fun close() {

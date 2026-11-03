@@ -18,13 +18,14 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.nativeaudio.AE_PROBE_CANCELLED
+import moe.rukamori.archivetune.nativeaudio.AE_PROBE_OK
 import moe.rukamori.archivetune.nativeaudio.ae_probe_cancel
 import moe.rukamori.archivetune.nativeaudio.ae_probe_codec_name
 import moe.rukamori.archivetune.nativeaudio.ae_probe_create
 import moe.rukamori.archivetune.nativeaudio.ae_probe_destroy
 import moe.rukamori.archivetune.nativeaudio.ae_probe_info
 import moe.rukamori.archivetune.nativeaudio.ae_probe_read
-import moe.rukamori.archivetune.nativeaudio.ae_probe_status
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.ACOUSTIC_LOSSLESS_CODECS
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditLimits
 import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticPcm
@@ -108,8 +109,8 @@ object IosAcousticProbe {
             endOfSource = info.end_of_source != 0u,
         )
         when (status) {
-            ae_probe_status.AE_PROBE_OK -> infoCopy
-            ae_probe_status.AE_PROBE_CANCELLED -> throw CancellationException("the acoustic probe was cancelled")
+            AE_PROBE_OK -> infoCopy
+            AE_PROBE_CANCELLED -> throw CancellationException("the acoustic probe was cancelled")
             else -> throw IosProbeFailed()
         }
     }

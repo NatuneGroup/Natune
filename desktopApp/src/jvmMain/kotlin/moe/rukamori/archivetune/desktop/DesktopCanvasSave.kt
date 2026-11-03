@@ -64,14 +64,6 @@ internal class DesktopBytesArtworkSource(
     override suspend fun open(): CustomArtworkReader = StreamArtworkReader(ByteArrayInputStream(bytes))
 }
 
-private class StreamArtworkReader(private val stream: InputStream) : CustomArtworkReader {
-    override suspend fun read(buffer: ByteArray): Int = stream.read(buffer)
-
-    override suspend fun close() {
-        stream.close()
-    }
-}
-
 /** The path extension of a canvas url, lowercased and query-stripped; the repository decides whether it is accepted. */
 internal fun canvasUrlExtension(url: String): String? =
     url.substringBefore('?').substringBefore('#').substringAfterLast('.', "")
