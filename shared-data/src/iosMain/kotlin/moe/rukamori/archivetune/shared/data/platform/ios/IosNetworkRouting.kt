@@ -206,12 +206,14 @@ class IosNetworkOwner(
     init {
         // The stream transport reads its route per connection, so it starts on the saved one and never has to
         // wait for the first settings commit. The bypass switch is read on its own because it outlives a
-        // disabled static route, and a leftover pool from a replaced graph is dropped the same way.
+        // disabled static route. A saved-on rotation installs its still-empty pool right away: until start()
+        // repopulates it the pool blocks every stream open rather than leaking one off the real address.
         IosStreamProxyRouting.updateStreamRoute(
             runningRoute,
             preferences()?.get(StreamBypassProxyKey) == true,
         )
-        IosStreamProxyRouting.updateRotation(null)
+        rotating = preferences()?.get(IpRotationEnabledKey) == true
+        IosStreamProxyRouting.updateRotation(if (rotating) rotation else null)
     }
 
     fun configure(config: DarwinClientEngineConfig) = config.applyIosProxyRoute(runningRoute)
@@ -246,8 +248,8 @@ class IosNetworkOwner(
 
     /**
      * Re-installs a rotation the user left enabled, the way the desktop owner's start does: the fetch and the
-     * validations are network-bound, so they run off the launch path, and an empty pool leaves rotation off
-     * rather than making the toggle lie.
+     * validations are network-bound, so they run off the launch path. The pool was already installed empty at
+     * init, so until the fetch populates it every stream open fails closed instead of leaking direct.
      */
     fun start(scope: CoroutineScope) {
         scope.launch {
@@ -266,11 +268,12 @@ class IosNetworkOwner(
 
     /**
      * Enables, refreshes or stops the rotating pool and answers its live size, for the settings page's
-     * enable/refresh contract. A refresh refetches and keeps the pool it was meant to replace when the new
-     * fetch finds nothing — stripping working members while the saved toggle stays on would send later
-     * streams out direct. An enable that still counts nothing answers 0 so the page can revert the toggle.
-     * Rotation changes which proxy the next stream connection opens with; it never re-routes the engine's
-     * pinned session.
+     * enable/refresh contract. While the setting is enabled the rotation stays installed even when a fetch
+     * finds nothing or every member sits in its failure cooldown: [IosStreamProxyRouting] then blocks or
+     * cools each open rather than leaking it direct, and only the disable branch above ever clears the pool.
+     * An enable that still counts no live member answers 0 so the page can revert the toggle — the disable
+     * that revert commits is the explicit clear. Rotation changes which proxy the next stream connection
+     * opens with; it never re-routes the engine's pinned session.
      */
     suspend fun applyIpRotation(enabled: Boolean, refresh: Boolean): Int = rotationLock.withLock {
         if (!enabled) {
@@ -279,27 +282,19 @@ class IosNetworkOwner(
         }
         try {
             rotation.fetchAndLoad { preferences()?.proxyRoute() }
-            val count = rotation.activeCount()
-            if (count == 0) {
-                disableRotation()
-                return@withLock 0
-            }
-            rotating = true
-            IosStreamProxyRouting.updateRotation(rotation)
-            count
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
-            // A failed refresh leaves a working pool in place; a failed enable keeps streams off rotation.
-            val count = rotation.activeCount()
-            if (count > 0) {
-                rotating = true
-                IosStreamProxyRouting.updateRotation(rotation)
-                return@withLock count
-            }
-            disableRotation()
+            // Rotation stays installed while the saved toggle is on — a failed fetch keeps whatever
+            // members the pool already held, cooled ones included, instead of opening a direct gap
+            // while the caller unwinds.
+            rotating = true
+            IosStreamProxyRouting.updateRotation(rotation)
             throw failure
         }
+        rotating = true
+        IosStreamProxyRouting.updateRotation(rotation)
+        rotation.activeCount()
     }
 
     private fun disableRotation() {

@@ -2,9 +2,12 @@ package moe.rukamori.archivetune.shared.data.platform.ios
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
 import moe.rukamori.archivetune.shared.domain.settings.PROXY_LOCAL_HOST_EXCEPTIONS
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
@@ -16,6 +19,7 @@ import moe.rukamori.archivetune.shared.domain.settings.ProxyRoute
 import moe.rukamori.archivetune.shared.domain.settings.ProxyRouteType
 import moe.rukamori.archivetune.shared.domain.settings.ProxyUsernameKey
 import moe.rukamori.archivetune.shared.domain.settings.StreamBypassProxyKey
+import platform.Foundation.NSURLSessionConfiguration
 
 class IosNetworkRoutingTest {
     private fun httpRoute(
@@ -191,5 +195,58 @@ class IosNetworkRoutingTest {
         rotation.clear()
         assertNull(rotation.next())
         assertEquals(0, rotation.activeCount())
+    }
+
+    @Test
+    fun aStarvedRotationRefusesTheOpenAndDefersToASavedRoute() {
+        val rotation = IosProxyRotation()
+        try {
+            IosStreamProxyRouting.updateRotation(rotation)
+            // Rotation on, nothing to route through, no static route: the open must fail, not leak direct.
+            assertFailsWith<ByteSourceException> {
+                IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)
+            }
+            // A configured static route is the acceptable fallback: the same starved pool defers to it.
+            IosStreamProxyRouting.updateStreamRoute(httpRoute(), bypass = false)
+            assertFalse(IosStreamProxyRouting.streamBlocked())
+            assertEquals(
+                "http://proxy.example:3128",
+                IosStreamProxyRouting
+                    .applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)
+                    ?.endpointKey,
+            )
+        } finally {
+            IosStreamProxyRouting.updateRotation(null)
+            IosStreamProxyRouting.updateStreamRoute(null, bypass = false)
+        }
+    }
+
+    @Test
+    fun anEmptyRefreshKeepsCooledMembersAndThePoolStillAnswers() {
+        val rotation = IosProxyRotation()
+        val first = httpRoute(host = "one.example", port = 1001)
+        val second = httpRoute(host = "two.example", port = 1002)
+        rotation.loadRoutes(listOf(first, second))
+        rotation.markFailed(first)
+        rotation.markFailed(second)
+        // Every member sits in its failure cooldown: nothing counts live, but the pool is not empty.
+        assertEquals(0, rotation.activeCount())
+        assertTrue(rotation.hasMembers())
+        // The commit an empty refresh runs keeps the pool it was meant to replace; a failed refresh
+        // never reaches the commit at all, so its members survive the same way.
+        rotation.replaceRoutes(emptyList())
+        assertTrue(rotation.hasMembers())
+        try {
+            IosStreamProxyRouting.updateRotation(rotation)
+            assertTrue(IosStreamProxyRouting.mustProxy())
+            assertFalse(IosStreamProxyRouting.streamBlocked())
+            val routed =
+                assertNotNull(
+                    IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration),
+                )
+            assertTrue(routed.endpointKey in setOf(first.endpointKey, second.endpointKey))
+        } finally {
+            IosStreamProxyRouting.updateRotation(null)
+        }
     }
 }
