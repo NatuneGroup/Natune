@@ -69,7 +69,7 @@ internal class LyricsDeadlineSchedule(
                     words.minOfOrNull { it.startMs }?.let { first -> span(first - LyricsSweepGeometry.SINK_MS, first) }
                     words.forEachIndexed { index, word ->
                         val nextStart = words.getOrNull(index + 1)?.startMs ?: Long.MAX_VALUE
-                        // The lift window outlives a short word's own span, so it belongs to the live span too.
+                        // A zero-length word's lift outlives its span, so the lift belongs to the live span too.
                         span(
                             word.startMs,
                             maxOf(

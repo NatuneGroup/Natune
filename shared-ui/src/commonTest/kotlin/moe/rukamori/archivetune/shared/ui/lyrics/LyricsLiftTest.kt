@@ -18,10 +18,11 @@ class LyricsLiftTest {
             LyricsSweepGeometry.liftDurationMs(1_000L, 2_000L, Long.MAX_VALUE),
         )
         assertEquals(200L, LyricsSweepGeometry.liftDurationMs(0L, 400L, Long.MAX_VALUE))
-        assertEquals(
-            LyricsSweepGeometry.LIFT_MIN_MS,
-            LyricsSweepGeometry.liftDurationMs(0L, 100L, Long.MAX_VALUE),
-        )
+        assertEquals(LyricsSweepGeometry.LIFT_MIN_MS, LyricsSweepGeometry.liftDurationMs(0L, 200L, Long.MAX_VALUE))
+        // A word shorter than the floor lifts over its own span instead of landing late.
+        assertEquals(100L, LyricsSweepGeometry.liftDurationMs(0L, 100L, Long.MAX_VALUE))
+        // Only a zero-length word keeps the floor, because it has no span of its own to rise in.
+        assertEquals(LyricsSweepGeometry.LIFT_MIN_MS, LyricsSweepGeometry.liftDurationMs(100L, 100L, Long.MAX_VALUE))
     }
 
     @Test
@@ -41,9 +42,19 @@ class LyricsLiftTest {
         // A one-second word rises through its last 300 ms, seated exactly at its end.
         assertEquals(1_700L, LyricsSweepGeometry.liftStartMs(1_000L, 2_000L, Long.MAX_VALUE))
         assertEquals(2_000L, LyricsSweepGeometry.liftEndMs(1_000L, 2_000L, Long.MAX_VALUE))
-        // A word shorter than the window starts lifting at its own start and settles just past its end.
+        // A word shorter than the floor lifts over its whole span and is seated exactly at its end.
         assertEquals(0L, LyricsSweepGeometry.liftStartMs(0L, 100L, Long.MAX_VALUE))
-        assertEquals(LyricsSweepGeometry.LIFT_MIN_MS, LyricsSweepGeometry.liftEndMs(0L, 100L, Long.MAX_VALUE))
+        assertEquals(100L, LyricsSweepGeometry.liftEndMs(0L, 100L, Long.MAX_VALUE))
+    }
+
+    @Test
+    fun aQuickWordIsSeatedWhenItsSweepFinishes() {
+        // A 50 ms word: the sweep fills at 1_050 and the word has landed at that same instant.
+        assertEquals(1_050L, LyricsSweepGeometry.liftEndMs(1_000L, 1_050L, Long.MAX_VALUE))
+        assertEquals(1f, LyricsSweepGeometry.progressAt(1_000L, 1_050L, 1_050L, reduceMotion = false))
+        assertEquals(1f, LyricsSweepGeometry.liftAt(1_000L, 1_050L, Long.MAX_VALUE, 1_050L, false))
+        assertTrue(LyricsSweepGeometry.liftAt(1_000L, 1_050L, Long.MAX_VALUE, 1_025L, false) < 1f)
+        assertEquals(0f, LyricsSweepGeometry.dropAt(1_000L, 1_000L, 1_050L, Long.MAX_VALUE, 1_050L, false))
     }
 
     @Test
@@ -79,13 +90,13 @@ class LyricsLiftTest {
 
     @Test
     fun theFrameDeadlineStaysAwakeThroughTheLift() {
-        // A word whose lift outlives its own span keeps the clock loop running until it settles,
-        // or the rise would freeze mid-air — here with a zero minimum sweep so the lift is binding.
-        val row = rowWithWord(startMs = 100L, endMs = 200L)
+        // A zero-length word's lift outlives its span, so the clock loop keeps running until it
+        // settles or the rise would freeze mid-air — here with a zero minimum sweep so the lift is binding.
+        val row = rowWithWord(startMs = 100L, endMs = 100L)
         val schedule = LyricsDeadlineSchedule.of(listOf(row), minSweepMs = 0L, includeInterludes = false)
         assertTrue(schedule.isLive(210L))
         assertFalse(schedule.isLive(230L))
-        assertEquals(220L, schedule.nextChangeAfter(200L))
+        assertEquals(220L, schedule.nextChangeAfter(150L))
     }
 
     @Test

@@ -90,7 +90,7 @@ class LyricsDeadlineSchedule(
                         val nextStart =
                             words.getOrNull(index + 1)?.let { (it.startTime * 1000.0).roundToLong() }
                                 ?: Long.MAX_VALUE
-                        // The completion lift can outlive a short word's own span; keep frames running through it.
+                        // A zero-length word's completion lift outlives its span; keep frames running through it.
                         val spanEnd =
                             maxOf(
                                 end,

@@ -112,7 +112,7 @@ object LyricsSweepGeometry {
     /** The longest a completion lift may run; a word never rises longer than this. */
     const val LIFT_MAX_MS = 300L
 
-    /** The shortest lift window: even a tiny word reads its landing, never a snap. */
+    /** The shortest lift window a word gets when its own span allows it, so the landing never snaps. */
     const val LIFT_MIN_MS = 120L
 
     /** How far an unstarted word sits below its seat and rises through its lift, in dp. */
@@ -122,19 +122,20 @@ object LyricsSweepGeometry {
      * The window a word's completion lift runs in: half its own span, clamped to
      * [LIFT_MIN_MS]..[LIFT_MAX_MS], and never longer than the silence to the next word past
      * [LIFT_MIN_MS] — a tight hand-off still gets the floor so the rise does not outrun the
-     * following word's own lift.
+     * following word's own lift. A word with a real span never lifts longer than itself, so it
+     * is seated exactly at its provider end; only a zero-length word rises past it, over the floor.
      */
     fun liftDurationMs(wordStartMs: Long, wordEndMs: Long, nextWordStartMs: Long): Long {
         val wordMs = (wordEndMs - wordStartMs).coerceAtLeast(0L)
         val gapMs = (nextWordStartMs - wordEndMs).coerceAtLeast(0L)
-        val base = (wordMs / 2).coerceIn(LIFT_MIN_MS, LIFT_MAX_MS)
-        return base.coerceAtMost(maxOf(gapMs, LIFT_MIN_MS))
+        val base = (wordMs / 2).coerceIn(LIFT_MIN_MS, LIFT_MAX_MS).coerceAtMost(maxOf(gapMs, LIFT_MIN_MS))
+        return if (wordMs > 0L) base.coerceAtMost(wordMs) else base
     }
 
     /**
      * The instant a word's lift begins: inside the word, never before its start, so the rise
-     * overlaps the sweep's tail instead of waiting for it. For a word at least as long as its
-     * window that is [wordEndMs] - [liftDurationMs]; a shorter word starts lifting at its start.
+     * overlaps the sweep's tail instead of waiting for it. For a word with a real span that is
+     * [wordEndMs] - [liftDurationMs]; a zero-length word starts lifting at its start.
      */
     fun liftStartMs(wordStartMs: Long, wordEndMs: Long, nextWordStartMs: Long): Long =
         wordEndMs - minOf(
