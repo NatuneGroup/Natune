@@ -40,6 +40,10 @@ internal class StartupStateStore(private val directory: File) {
     fun lastAttempt(): StartupAttempt? = readAttempt(LAST_ATTEMPT_FILE)
 
     fun begin(attempt: StartupAttempt) {
+        // Every start is journaled even while a failed attempt still owns the pending slot, so the
+        // recovery gate can tell a crash loop apart from one unlucky launch. A journaling failure
+        // must never cost the pending marker itself.
+        runCatching { recordStart(attempt) }
         // A service/provider restart must not replace the failed attempt before the launcher reads it.
         if (pendingExists()) return
         val encoded = "${attempt.timestampMs}\n${attempt.pid}\n${attempt.version.take(128)}\n" +
@@ -57,6 +61,33 @@ internal class StartupStateStore(private val directory: File) {
     }
 
     fun clearPending(): Boolean = File(directory, PENDING_FILE).let { !it.exists() || it.delete() }
+
+    /** Bounded journal of process starts, oldest first, used to correlate deaths with their launch. */
+    fun recentStarts(): List<StartupAttempt> =
+        (read(RECENT_STARTS_FILE, 4_096) ?: return emptyList())
+            .lineSequence()
+            .mapNotNull { line ->
+                val fields = line.split('|')
+                val timestamp = fields.getOrNull(0)?.toLongOrNull() ?: return@mapNotNull null
+                val pid = fields.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
+                StartupAttempt(
+                    timestampMs = timestamp,
+                    pid = pid,
+                    version = fields.getOrElse(2) { "" },
+                    versionCode = fields.getOrNull(3)?.toLongOrNull() ?: UNKNOWN_VERSION_CODE,
+                    installedSinceMs = fields.getOrNull(4)?.toLongOrNull() ?: 0L,
+                )
+            }.toList()
+
+    private fun recordStart(attempt: StartupAttempt) {
+        val kept = (recentStarts() + attempt).distinct().takeLast(MAX_RECENT_STARTS)
+        writeSync(RECENT_STARTS_FILE, kept.joinToString("\n", postfix = "\n") { startLine(it) })
+    }
+
+    private fun startLine(attempt: StartupAttempt): String =
+        "${attempt.timestampMs}|${attempt.pid}|" +
+            "${attempt.version.replace('|', ' ').replace('\n', ' ').take(128)}|" +
+            "${attempt.versionCode}|${attempt.installedSinceMs}"
 
     fun captureJava(
         timestampMs: Long,
@@ -221,7 +252,9 @@ internal class StartupStateStore(private val directory: File) {
         private const val JAVA_CRASH_FILE = "java_crash.txt"
         private const val REVIEWED_FILE = "reviewed_through"
         private const val EXITS_IMPORTED_FILE = "exits_imported_through"
+        private const val RECENT_STARTS_FILE = "recent_starts"
         private const val RECORDS_DIRECTORY = "records"
+        private const val MAX_RECENT_STARTS = 16
         internal const val MAX_JAVA_CHARS = 16_000
     }
 }
