@@ -34,28 +34,44 @@ internal fun consecutiveStartupCrashes(
     startupWindowMs: Long = STARTUP_CRASH_WINDOW_MS,
     acknowledgedThroughMs: Long = 0L,
 ): Int {
+    // The same attempt can appear twice — journaled with its first-frame stamp and again from the
+    // pending/last marker without one. Merge by identity so the stamped copy wins.
+    val orderedStarts = starts
+        .groupBy { it.timestampMs to it.pid }
+        .map { (_, copies) -> copies.maxBy { it.healthyAtMs } }
+        .sortedBy { it.timestampMs }
+
+    // Time and pid alone attribute a death to its launch, whatever the healthy stamp says.
+    fun owns(start: StartupAttempt, crash: CrashRecord): Boolean =
+        start.timestampMs <= crash.timestampMs &&
+            crash.timestampMs - start.timestampMs <= startupWindowMs &&
+            (start.pid == 0 || crash.pid == 0 || start.pid == crash.pid)
+
     val evidence = crashes
         .filter {
             it.kind.isCrashEvidence() && !it.isFromEarlierVersion(install) &&
                 it.timestampMs > acknowledgedThroughMs
         }
+        // A death of a start that journaled its first frame is a runtime crash, and a death no
+        // recorded start can own cannot be proven during startup: neither is startup evidence.
+        .filter { crash -> orderedStarts.lastOrNull { owns(it, crash) }?.healthyAtMs == 0L }
         .sortedByDescending { it.timestampMs }
     if (evidence.isEmpty()) return 0
-    val orderedStarts = starts.sortedBy { it.timestampMs }
 
     fun matches(start: StartupAttempt, crash: CrashRecord): Boolean =
-        start.healthyAtMs == 0L &&
-            start.timestampMs <= crash.timestampMs &&
-            crash.timestampMs - start.timestampMs <= startupWindowMs &&
-            (start.pid == 0 || crash.pid == 0 || start.pid == crash.pid)
+        start.healthyAtMs == 0L && owns(start, crash)
 
-    fun crashedDuringStartup(start: StartupAttempt): Boolean = evidence.any { matches(start, it) }
+    // A start that died — during startup or after its first frame — cannot prove the loop ended.
+    fun diedAfterStartup(start: StartupAttempt): Boolean =
+        crashes.any {
+            it.kind.isCrashEvidence() && !it.isFromEarlierVersion(install) && owns(start, it)
+        }
 
-    // The window must be fully over — or the first frame journaled — before a crash-free start
+    // The window must be fully over — or the first frame journaled — before a surviving start
     // counts as completed: a start still inside it has simply not crashed yet.
     fun completedStartup(start: StartupAttempt): Boolean =
-        start.healthyAtMs != 0L ||
-            (!crashedDuringStartup(start) && start.timestampMs + startupWindowMs <= nowMs)
+        !diedAfterStartup(start) &&
+            (start.healthyAtMs != 0L || start.timestampMs + startupWindowMs <= nowMs)
 
     var streak = 0
     var previousMatchMs = Long.MAX_VALUE
