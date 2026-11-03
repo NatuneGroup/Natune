@@ -69,12 +69,18 @@ internal class IosStreamLease internal constructor(
     private var cursor = 0L
     private var seekable = false
 
-    // Set when the engine closes the lease. A refusal that never reached the close path leaves the StableRef to the caller.
-    private var released = false
+    // Set under liveLeasesLock when the engine closes the lease. A refusal that never reached the close
+    // path leaves the StableRef to the caller.
+    @Volatile
+    internal var released = false
 
     /** The engine load generation [attach] put this lease under — written once, before the register entry goes in. */
     @Volatile
     internal var engineGeneration = NO_GENERATION
+
+    /** The identity of the output this lease loads into — part of its registry key, set beside [engineGeneration]. */
+    @Volatile
+    internal var outputIdentity = 0L
 
     /**
      * The sanitized refusal this lease's open carried, or null. open() writes it on the producer thread and
@@ -142,40 +148,69 @@ internal class IosStreamLease internal constructor(
         source.interrupt()
     }
 
-    /** Called once, after the engine has retracted the lease. Releases the connection. */
+    /**
+     * Called once, after the engine has retracted the lease. Releases the connection. The refusal the
+     * open carried is copied into the refusal slot first — the native side may close a failed source
+     * before it publishes the error, and the report must still find the sanitized status afterwards.
+     */
     internal fun closeStream() {
-        released = true
-        unregister(engineGeneration)
+        liveLeasesLock.locked {
+            released = true
+            if (engineGeneration != NO_GENERATION) {
+                val key = LeaseKey(outputIdentity, engineGeneration)
+                openRefusal?.let { refusals[key] = it }
+                if (liveLeases[key] === this) liveLeases.remove(key)
+            }
+        }
         source.close()
     }
 
     companion object {
         private const val NO_GENERATION = -1L
 
+        /** One engine's output and one of its load generations — generations restart per output. */
+        private data class LeaseKey(val output: Long, val generation: Long)
+
         /**
-         * Live leases by their engine load generation: an open refusal lands asynchronously on the
-         * producer thread, and the error report asks for it by generation on the command loop, so the
-         * lookup and the write it reads are both locked. An entry leaves when its lease closes.
+         * Live leases by their (output, generation) key. Closed leases drop out on close, but their
+         * sanitized refusal stays in [refusals] until the error report consumes it or a newer
+         * generation for the same output supersedes it.
          */
         private val liveLeasesLock = NSLock()
-        private val liveLeases = HashMap<Long, IosStreamLease>()
-
-        /** Registers [lease] under [generation], the moment the engine accepted the load. */
-        internal fun register(generation: Long, lease: IosStreamLease) = liveLeasesLock.locked {
-            liveLeases[generation] = lease
-        }
-
-        /** Drops the lease under [generation] when the engine retracted it. */
-        internal fun unregister(generation: Long) = liveLeasesLock.locked {
-            liveLeases.remove(generation)
-        }
+        private val liveLeases = HashMap<LeaseKey, IosStreamLease>()
+        private val refusals = HashMap<LeaseKey, String>()
 
         /**
-         * The sanitized refusal the open of [generation] carried, or null — a stale generation or a
-         * clean open both answer null, so the error report falls back to the engine's own wording.
+         * Registers [lease] under [output] and [generation], the moment the engine accepted the load.
+         * A refusal the open already carried is kept under the key even when the lease was already
+         * closed — the engine may open and retract a failed lease before attach resumes — and a newer
+         * generation supersedes older refusals of the same output.
          */
-        internal fun refusalOf(generation: Long): String? = liveLeasesLock.locked {
-            liveLeases[generation]?.openRefusal
+        internal fun register(output: Long, generation: Long, lease: IosStreamLease) =
+            liveLeasesLock.locked {
+                val key = LeaseKey(output, generation)
+                lease.openRefusal?.let { refusals[key] = it }
+                if (!lease.released) liveLeases[key] = lease
+                refusals.keys.removeAll { it.output == output && it.generation != generation }
+            }
+
+        /**
+         * Drops the entry under the key only while it still names [lease] — a newer lease may already
+         * occupy it when the old one's close finally runs.
+         */
+        internal fun unregister(output: Long, generation: Long, lease: IosStreamLease) =
+            liveLeasesLock.locked {
+                val key = LeaseKey(output, generation)
+                if (liveLeases[key] === lease) liveLeases.remove(key)
+            }
+
+        /**
+         * The sanitized refusal the open of (output, generation) carried, or null — a stale generation
+         * or a clean open both answer null, so the error report falls back to the engine's own wording.
+         */
+        internal fun refusalOf(output: Long, generation: Long): String? = liveLeasesLock.locked {
+            val key = LeaseKey(output, generation)
+            refusals.remove(key) ?: liveLeases[key]?.openRefusal
         }
 
         private inline fun <T> NSLock.locked(block: () -> T): T {
@@ -286,10 +321,11 @@ internal class IosStreamLease internal constructor(
             // before that path, and then no callback has run, so this side frees the StableRef.
             if (generation == 0uL && !lease.released) reference.dispose()
             if (generation != 0uL) {
-                // The open may run later on the producer thread — record which generation it belongs to
-                // before it does, so a refusal it writes can be found by the error report.
+                // The open may run later on the producer thread — record which output and generation it
+                // belongs to before it does, so a refusal it writes can be found by the error report.
                 lease.engineGeneration = generation.toLong()
-                register(generation.toLong(), lease)
+                lease.outputIdentity = output.toLong()
+                register(lease.outputIdentity, lease.engineGeneration, lease)
             }
             return generation
         }

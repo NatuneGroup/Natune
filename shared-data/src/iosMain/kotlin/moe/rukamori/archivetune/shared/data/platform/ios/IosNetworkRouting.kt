@@ -210,6 +210,20 @@ class IosNetworkOwner internal constructor(
     @Volatile
     private var rotating = false
 
+    private val _rotationBlocked = MutableStateFlow(false)
+
+    /**
+     * Whether an installed rotation has no member and no saved route to answer with — every stream open
+     * then fails closed, so surfaces name the rotation state instead of a generic failure. A flow
+     * because a fetch filling the pool or a disable changes it without a recomposition of the page.
+     */
+    val rotationBlocked: StateFlow<Boolean> get() = _rotationBlocked
+
+    /** Republishes the routing holder's blocked state after every write that can change it. */
+    private fun publishBlocked() {
+        _rotationBlocked.value = IosStreamProxyRouting.streamBlocked()
+    }
+
     init {
         // The stream transport reads its route per connection, so it starts on the saved one and never has to
         // wait for the first settings commit. The bypass switch is read on its own because it outlives a
@@ -255,18 +269,6 @@ class IosNetworkOwner internal constructor(
     /** The members the rotation pool currently counts live; 0 while rotation is off. */
     fun activeRotationCount(): Int = if (rotating) rotation.activeCount() else 0
 
-    /**
-     * Whether an installed rotation has no member and no saved route to answer with — every stream open
-     * then fails closed, so surfaces name the rotation state instead of a generic failure. A flow
-     * because a fetch filling the pool or a disable changes it without a recomposition of the page.
-     */
-    val rotationBlocked: StateFlow<Boolean> get() = _rotationBlocked
-    private val _rotationBlocked = MutableStateFlow(false)
-
-    /** Republishes the routing holder's blocked state after every write that can change it. */
-    private fun publishBlocked() {
-        _rotationBlocked.value = IosStreamProxyRouting.streamBlocked()
-    }
 
     /**
      * Re-installs a rotation the user left enabled, the way the desktop owner's start does: the fetch and the
