@@ -61,3 +61,11 @@ fun iosCanvasConnectivity(): CanvasConnectivity = memScoped {
         CanvasConnectivity(online = online, wifi = !wwan, metered = wwan, cellular = wwan)
     } finally { CFRelease(route) }
 }
+
+/**
+ * Whether the default route permits a backup upload under the wifiOnly rule: online, and off a WWAN (metered)
+ * interface when the upload must stay on an unmetered connection. Cellular counts as metered, the same measure
+ * the canvas gate uses, and the same caveat applies: a reachable route is only permission to try the transfer.
+ */
+fun iosBackupNetworkAllowed(unmeteredOnly: Boolean): Boolean =
+    iosCanvasConnectivity().let { it.online && (!unmeteredOnly || !it.metered) }
