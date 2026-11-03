@@ -6,6 +6,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +35,10 @@ class NewsFeedException(message: String, cause: Throwable? = null) : Exception(m
  *
  * A failed refresh keeps the last good index: [list] answers it again and throws only when no index has loaded yet.
  * Every request shares the engine of [client], so the host's proxy route and engine lifetime stay in charge.
+ *
+ * The private client's job is a child of that engine's job, so an open one keeps the engine from finishing its
+ * shutdown. [close] releases it and never the borrowed engine; closing [client] releases it too, so a host whose
+ * teardown never reaches [close] still lets its engine stop.
  */
 class NatuneNewsClient(
     client: HttpClient,
@@ -49,6 +55,10 @@ class NatuneNewsClient(
             connectTimeoutMillis = timeoutMillis
             socketTimeoutMillis = timeoutMillis
         }
+    }
+
+    init {
+        client.coroutineContext[Job]?.invokeOnCompletion { close() }
     }
 
     private val cache = MutableStateFlow<List<ContentNews>?>(null)
@@ -82,6 +92,13 @@ class NatuneNewsClient(
     }
 
     fun cachedItem(id: String): ContentNews? = cache.value?.firstOrNull { it.id == id }
+
+    internal val isOpen: Boolean get() = http.isActive
+
+    /** Releases this feed's own client; the borrowed engine and client stay open. Later requests fail. */
+    fun close() {
+        http.close()
+    }
 
     private suspend fun fetch(url: String, failure: String): String {
         val response = http.get(url) {

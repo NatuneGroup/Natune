@@ -10,6 +10,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,13 +41,18 @@ data class NewsFeedState(
  * The News owner a non-Android host shares between its pages and its entry point. It loads once when created, as the
  * Android activity's news view model does, so the unread dot can show before the page is opened. The last-read
  * timestamp is the same persisted `news_last_read_timestamp` key the Android host writes.
+ *
+ * The owner owns [client]: [close] cancels its refresh and read-mark work and then closes the client, so a host calls it
+ * before it closes the HTTP client whose engine the feed borrows.
  */
 class NewsFeedOwner(
     private val client: NatuneNewsClient,
     private val settings: SettingsStore,
-    private val scope: CoroutineScope,
+    parent: CoroutineScope,
     private val report: (String) -> Unit,
 ) {
+    private val scope = CoroutineScope(parent.coroutineContext + SupervisorJob(parent.coroutineContext[Job]))
+
     val enabled: Boolean get() = client.enabled
 
     private val mutableState = MutableStateFlow(NewsFeedState(loading = client.enabled))
@@ -61,7 +69,7 @@ class NewsFeedOwner(
     }
 
     fun refresh() {
-        if (!enabled) return
+        if (!enabled || !scope.isActive) return
         refreshing?.cancel()
         mutableState.value = mutableState.value.copy(loading = true, failed = false)
         refreshing = scope.launch {
@@ -91,6 +99,11 @@ class NewsFeedOwner(
     fun cachedItem(id: String): ContentNews? = client.cachedItem(id)
 
     suspend fun article(id: String): String = client.content(id)
+
+    fun close() {
+        scope.cancel()
+        client.close()
+    }
 }
 
 /** The `news` page over [feed]. Opening it refreshes the feed, as each Android entry builds a fresh view model. */

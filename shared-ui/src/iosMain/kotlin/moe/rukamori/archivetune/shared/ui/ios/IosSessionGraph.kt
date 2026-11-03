@@ -326,6 +326,7 @@ internal class IosSessionGraph private constructor(
         listenDriver.close()
         progressDriver.close()
         lyrics.close()
+        newsFeed.close()
         drivers.forEach { it.cancel() }
         // The download and import owners write rows and files, so both stop before the checkpoint and the database.
         downloads.close()
