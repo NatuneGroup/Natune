@@ -34,7 +34,7 @@ import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepositor
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomLocalMediaLibrary
-import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistExportSource
+import moe.rukamori.archivetune.shared.data.playlistexport.RoomPlaylistExportSource
 import moe.rukamori.archivetune.shared.data.persistence.RoomPlaylistTagsRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
 import moe.rukamori.archivetune.shared.data.persistence.RoomSongLyricsOffsetRepository

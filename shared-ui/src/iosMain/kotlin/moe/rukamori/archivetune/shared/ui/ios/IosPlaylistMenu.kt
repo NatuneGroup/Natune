@@ -259,7 +259,7 @@ internal fun IosPlaylistRowMenu(
     val hiddenPlaylists by remember { graph.library.observeHiddenPlaylists() }.collectAsState(emptyList())
     val localPlaylists by remember { graph.library.observeLocalPlaylists() }.collectAsState(emptyList())
     val downloadState = remember(complete, downloads) {
-        val songs = complete?.songs?.map { it.occurrence.item.ref }?.filter { iosDownloadRefusal(it) == null }
+        val songs = complete?.songs?.map { it.item.item.ref }?.filter { iosDownloadRefusal(it) == null }
         when {
             songs.isNullOrEmpty() -> CollectionDownloadState.NOT_DOWNLOADED
             songs.all { graph.downloads.downloadStateOf(downloads, it) == CollectionDownloadState.COMPLETED } ->
