@@ -20,6 +20,8 @@ internal data class LyricsShapeKey(
  * line's vertical extent. [letterRuns] mirrors [boxes]: for a box that earned the [LyricsEmphasis] ripple it holds
  * one shaped run per grapheme cluster, laid out once so the draw phase transforms only that grapheme's own ink —
  * redrawing the full-line layout per letter would repaint its neighbours at the wrong transform.
+ * A word whose isolated runs shaped different advances than the line gets no runs and keeps the
+ * plain feathered sweep: the glyphs changed between contexts, so moving one would tear the text.
  */
 internal class LyricsShapedRow(
     val layout: TextLayoutResult,
@@ -78,19 +80,34 @@ internal fun shapeLyricRow(
         .mapNotNull { timing -> timing.range?.let { wordBox(row.text, it, timing, layout) } }
         .sortedBy { it.first.startMs }
     val boxes = words.map { it.first }
-    val letterRuns = words.map { (_, ranges) ->
+    val letterRuns = words.map { (box, ranges) ->
         if (ranges == null) {
             null
         } else {
-            List(ranges.size / 2) { i ->
+            val runs = List(ranges.size / 2) { i ->
                 measurer.measure(
                     text = AnnotatedString(row.text.substring(ranges[i * 2], ranges[i * 2 + 1])),
                     style = key.style,
                 )
             }
+            // A cluster measured alone can shape a different glyph than the line shaped for it — a
+            // ligature broken apart or a contextual form lost — and that letter would overlap or
+            // jump under the ripple, so the word keeps the plain feathered sweep.
+            if (LyricsEmphasis.isolatedRunsMatchLine(box.letters, FloatArray(runs.size) { isolatedRunWidth(runs[it]) })) {
+                runs
+            } else {
+                null
+            }
         }
     }
     return LyricsShapedRow(layout, boxes, bands, letterRuns)
+}
+
+/** The advance an isolated run reports for its cluster, the same bounding-box metric [emphasisLetters] read in the line. */
+private fun isolatedRunWidth(run: TextLayoutResult): Float {
+    val head = run.getBoundingBox(0)
+    val tail = run.getBoundingBox(run.layoutInput.text.length - 1)
+    return maxOf(head.right, tail.right) - minOf(head.left, tail.left)
 }
 
 /**
