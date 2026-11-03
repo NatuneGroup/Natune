@@ -11,7 +11,16 @@ enum class PlaybackErrorKind {
     DECODER,
     HTTP,
     UNKNOWN,
+    /** The host's stream transport refused the open — iOS IP rotation with no usable proxy route. */
+    STREAM_BLOCKED,
 }
+
+/**
+ * The sanitized [PlaybackFailure.message] a host emits when its stream transport refused an open. It names
+ * no proxy address or credential, so the error dialog's copied details stay clean while the kind maps to
+ * localized unblocking guidance.
+ */
+const val STREAM_BLOCKED_MESSAGE = "stream blocked: no usable proxy route"
 
 /**
  * What the playback error dialog shows for one failure. Engines without numeric error codes report the failure reason
@@ -34,6 +43,7 @@ fun PlaybackFailure.toPlaybackErrorInfo(): PlaybackErrorInfo {
     val names = causes.map { it.substringBefore(':').trim() }
     val text = (listOf(message) + causes).joinToString("\n").lowercase()
     val kind = when {
+        message == STREAM_BLOCKED_MESSAGE -> PlaybackErrorKind.STREAM_BLOCKED
         names.any { it.endsWith("TimeoutException") } || TIMEOUT_TEXT.any { it in text } -> PlaybackErrorKind.TIMEOUT
         names.any { it in NETWORK_EXCEPTIONS } || NETWORK_TEXT.any { it in text } -> PlaybackErrorKind.NO_INTERNET
         status in GONE_STATUSES -> PlaybackErrorKind.NO_STREAM

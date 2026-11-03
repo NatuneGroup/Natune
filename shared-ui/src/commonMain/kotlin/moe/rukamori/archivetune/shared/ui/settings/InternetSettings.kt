@@ -36,6 +36,8 @@ fun InternetSettings(
     onFailure: () -> Unit,
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
+    /** True while an enabled rotation has nothing to route through — the row then names the block and its remedy. */
+    rotationBlocked: Boolean = false,
     /** The rows this host can apply; a host whose HTTP stack cannot change a live session's proxy leaves rotation out. */
     support: InternetSupport = InternetSupport(),
 ) {
@@ -49,7 +51,7 @@ fun InternetSettings(
             action == InternetAction.ROTATION_REFRESH && !preferences[IpRotationEnabledKey, false]) action = null
     }
     SettingsPage(internetSettingsRows(preferences, !rotating, { action = InternetAction.PROXY },
-        { action = InternetAction.ROTATION_REFRESH }, support),
+        { action = InternetAction.ROTATION_REFRESH }, support, rotationBlocked),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { change ->
             if (IpRotationEnabledKey in change.changedKeys) {
@@ -114,6 +116,7 @@ fun internetSettingsRows(
     testProxy: () -> Unit,
     refreshRotation: () -> Unit,
     support: InternetSupport = InternetSupport(),
+    rotationBlocked: Boolean = false,
 ): List<SettingsRow> = buildList {
     if (support.youtubeRegion)
         add(SettingsRow.Choice("yt_music_region", Res.string.m6_yt_region, YouTubeMusicRegionKey, "SYSTEM_DEFAULT",
@@ -146,7 +149,9 @@ fun internetSettingsRows(
         add(SettingsRow.Action("test_proxy", Res.string.m6_test_proxy, testProxy))
     }
     if (support.rotation) {
-        add(SettingsRow.Toggle("ip_rotation", Res.string.m6_ip_rotation, IpRotationEnabledKey, false, enabled = rotationIdle))
+        add(SettingsRow.Toggle("ip_rotation", Res.string.m6_ip_rotation, IpRotationEnabledKey, false,
+            enabled = rotationIdle,
+            description = Res.string.m6_rotation_blocked.takeIf { rotationBlocked }))
         if (preferences[IpRotationEnabledKey, false])
             add(SettingsRow.Action("download_speed_limit", Res.string.m6_refresh_rotation, refreshRotation, enabled = rotationIdle))
     }

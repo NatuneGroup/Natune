@@ -507,7 +507,7 @@ class IosPlaybackPort : PlaybackPort {
             // An accepted lease is closed by the engine itself, and closing again is harmless. This also covers a refusal
             // that never reached the engine, so the transport is never left open.
             transport.close()
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(PlaybackFailureReason.OPEN_FAILED, openFailureMessage(isNetworkOpen = true))
             return
         }
         liveTransport = transport
@@ -537,7 +537,7 @@ class IosPlaybackPort : PlaybackPort {
         )
         if (generation == 0uL) {
             // The engine refused the lease before any connection was opened, so there is nothing to release here.
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(PlaybackFailureReason.OPEN_FAILED, openFailureMessage(isNetworkOpen = true))
             return
         }
         mapper.beginRequest(playable, generation.toLong())
@@ -601,7 +601,12 @@ class IosPlaybackPort : PlaybackPort {
             else -> at_audio_load(native, source, startUs, play)
         }
         if (generation == 0uL) {
-            fail(PlaybackFailureReason.OPEN_FAILED)
+            fail(
+                PlaybackFailureReason.OPEN_FAILED,
+                openFailureMessage(
+                    locator is PlaybackLocator.Remote || locator is PlaybackLocator.DeezerEncrypted,
+                ),
+            )
             return
         }
         mapper.beginRequest(command.request, generation.toLong())
@@ -886,9 +891,22 @@ class IosPlaybackPort : PlaybackPort {
         blend?.cancelNext()
     }
 
-    private fun fail(reason: PlaybackFailureReason) {
-        request?.let { errors.tryEmit(PlaybackFailure(it.occurrenceId, reason, "iOS playback rejected", attemptId = it.attemptId)) }
+    private fun fail(reason: PlaybackFailureReason, message: String? = null) {
+        request?.let {
+            errors.tryEmit(
+                PlaybackFailure(it.occurrenceId, reason, message ?: "iOS playback rejected", attemptId = it.attemptId),
+            )
+        }
     }
+
+    /**
+     * The wording of a refused lease open: a starved rotation refused the transport inside it, so the
+     * sanitized status replaces the engine's generic rejection — it names no proxy address and maps to
+     * the dialog's unblocking guidance. A local path never reaches the routing layer, so [isNetworkOpen]
+     * keeps it on the ordinary wording.
+     */
+    private fun openFailureMessage(isNetworkOpen: Boolean): String? =
+        if (isNetworkOpen && IosStreamProxyRouting.streamBlocked()) STREAM_BLOCKED_MESSAGE else null
 
     private fun micros(ms: Long): ULong = ms.coerceAtMost(Long.MAX_VALUE / 1_000).toULong() * 1_000uL
 

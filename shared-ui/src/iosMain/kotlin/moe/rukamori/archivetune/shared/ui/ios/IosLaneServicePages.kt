@@ -212,6 +212,9 @@ internal fun IosLaneServiceSettingsPage(
                     controller = owners.controller,
                     // The pool's validated members, for the row's "N active proxies" line.
                     activeRotationCount = network.activeRotationCount(),
+                    // An enabled rotation with nothing to route through blocks every stream open — the
+                    // row names it and how to unblock instead of leaving a silent dead end.
+                    rotationBlocked = network.rotationBlocked(),
                     applyNetworkSettings = { snapshot ->
                         // The stream transport re-reads its route on every connection, so the saved route and
                         // its bypass switch apply live. The engine keeps the route it was built with, and that

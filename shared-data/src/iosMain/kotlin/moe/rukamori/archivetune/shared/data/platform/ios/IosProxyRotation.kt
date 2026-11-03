@@ -53,7 +53,14 @@ private fun nowNanos(): Long = SystemMonotonicClock.nowNanos()
  * already built, so the pool never feeds the pinned engine route; it answers which proxy the next fresh
  * stream session opens with through [IosStreamProxyRouting].
  */
-internal class IosProxyRotation {
+internal class IosProxyRotation(
+    /**
+     * The fetch-and-validate step a refresh awaits — bound to the public list and the probe in
+     * production, a deferred in tests, so an enable held open mid-fetch can be observed.
+     */
+    private val fetch: suspend (savedRoute: () -> ProxyRoute?) -> List<ProxyRoute> =
+        { savedRoute -> networkFetch(savedRoute) },
+) {
     private class Entry(val route: ProxyRoute, var deadUntilNanos: Long)
 
     private val lock = NSLock()
@@ -117,11 +124,24 @@ internal class IosProxyRotation {
     }
 
     /**
-     * Fetches the candidate list and keeps the first [MAX_POOL_SIZE] members that carry the probe, validating
-     * [VALIDATION_PERMITS] at a time like the desktop pool. The list fetch itself takes the saved route when
-     * there is one — a network that only reaches the web through the static proxy cannot read the list direct.
+     * Runs the bound fetch and commits what it validated, answering how many members came back. An empty
+     * answer keeps the pool it was meant to replace rather than stripping working members mid-rotation.
      */
     suspend fun fetchAndLoad(savedRoute: () -> ProxyRoute? = { null }): Int {
+        val live = fetch(savedRoute)
+        // A fetch or validation that finds nothing keeps the pool it was meant to replace: the members
+        // already validated are a better answer than an empty set while the caller's toggle stays on.
+        replaceRoutes(live)
+        return live.size
+    }
+
+    /**
+     * The production [fetch]: the candidate list plus the probe, validating [VALIDATION_PERMITS] at a time
+     * like the desktop pool, and keeping the first [MAX_POOL_SIZE] members that carry it. The list fetch
+     * itself takes the saved route when there is one — a network that only reaches the web through the
+     * static proxy cannot read the list direct.
+     */
+    private suspend fun networkFetch(savedRoute: () -> ProxyRoute?): List<ProxyRoute> {
         val candidates = fetchCandidates(savedRoute)
         val live = coroutineScope {
             val permits = Semaphore(VALIDATION_PERMITS)
@@ -129,10 +149,7 @@ internal class IosProxyRotation {
                 async { permits.withPermit { if (probeThrough(candidate)) candidate else null } }
             }.awaitAll().filterNotNull().take(MAX_POOL_SIZE)
         }
-        // A fetch or validation that finds nothing keeps the pool it was meant to replace: the members
-        // already validated are a better answer than an empty set while the caller's toggle stays on.
-        replaceRoutes(live.map { (host, port) -> ProxyRoute(ProxyRouteType.HTTP, host, port) })
-        return live.size
+        return live.map { (host, port) -> ProxyRoute(ProxyRouteType.HTTP, host, port) }
     }
 
     private suspend fun fetchCandidates(savedRoute: () -> ProxyRoute?): List<Pair<String, Int>> {
