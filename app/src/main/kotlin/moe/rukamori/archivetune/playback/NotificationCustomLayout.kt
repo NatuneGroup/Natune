@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.playback
 
 import android.content.Context
+import android.os.Bundle
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Player.REPEAT_MODE_ALL
@@ -8,7 +9,10 @@ import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.REPEAT_MODE_ONE
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
+import androidx.media3.session.MediaConstants
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackActionRestrictions
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackRestrictionPolicy
 import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandSeekBack30
 import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandSeekForward30
 import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleLike
@@ -19,6 +23,34 @@ import moe.rukamori.archivetune.constants.MediaSessionConstants.CommandToggleSta
 /** Items longer than this (podcasts, books) get -30/+30 s actions on the notification. */
 private const val LONG_CONTENT_NOTIFICATION_MS = 300_000L
 private const val SEEK_STEP_30_SECONDS = 30
+
+/** How far into a restartable item "previous" may legitimately mean "play it again". */
+private const val RESTART_PREVIOUS_POSITION_MS = 3_000L
+
+/**
+ * Session extras reserving notification slots for skip-to-previous and skip-to-next even when
+ * the action is momentarily unavailable — the parity Apple's session sets on its own session.
+ */
+internal fun slotReservationSessionExtras(): Bundle =
+    Bundle().apply {
+        putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_PREV, true)
+        putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_NEXT, true)
+    }
+
+/**
+ * The action restrictions for the current player snapshot, with the reason a control is
+ * unavailable — the same verdict model surfaces could grey controls out against.
+ */
+internal fun playbackRestrictionsOf(player: Player): PlaybackActionRestrictions =
+    PlaybackRestrictionPolicy.resolve(
+        hasCurrentItem = player.currentMediaItem != null,
+        hasSuccessor = player.hasNextMediaItem(),
+        atQueueStart = !player.hasPreviousMediaItem(),
+        canRestartCurrentItem =
+            player.isCurrentMediaItemSeekable &&
+                player.currentPosition > RESTART_PREVIOUS_POSITION_MS,
+        currentItemSeekable = player.isCurrentMediaItemSeekable,
+    )
 
 /**
  * The notification's custom action row. Past [LONG_CONTENT_NOTIFICATION_MS] the row leads with the
@@ -32,6 +64,7 @@ internal fun buildNotificationCustomLayout(
     liked: Boolean,
     hasSong: Boolean,
 ): List<CommandButton> {
+    val restrictions = playbackRestrictionsOf(player)
     val seekStepButtons =
         if (player.duration != C.TIME_UNSET && player.duration > LONG_CONTENT_NOTIFICATION_MS) {
             listOf(
@@ -40,14 +73,14 @@ internal fun buildNotificationCustomLayout(
                     .setDisplayName(context.getString(R.string.seek_backward_dynamic, SEEK_STEP_30_SECONDS))
                     .setIconResId(R.drawable.flamingo_np_rewind)
                     .setSessionCommand(CommandSeekBack30)
-                    .setEnabled(player.isCurrentMediaItemSeekable)
+                    .setEnabled(restrictions.seekWithin.allowed)
                     .build(),
                 CommandButton
                     .Builder()
                     .setDisplayName(context.getString(R.string.seek_forward_dynamic, SEEK_STEP_30_SECONDS))
                     .setIconResId(R.drawable.flamingo_np_fforward)
                     .setSessionCommand(CommandSeekForward30)
-                    .setEnabled(player.isCurrentMediaItemSeekable)
+                    .setEnabled(restrictions.seekWithin.allowed)
                     .build(),
             )
         } else {

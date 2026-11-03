@@ -72,6 +72,8 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.YouTubeLocale
 import moe.rukamori.archivetune.shared.domain.settings.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.shared.domain.settings.AutoLoadMoreKey
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.HideExplicitKey
 import moe.rukamori.archivetune.shared.domain.settings.HideVideoKey
 import moe.rukamori.archivetune.shared.domain.settings.ContentCountryKey
@@ -96,7 +98,7 @@ import moe.rukamori.archivetune.shared.ui.host.HostLyrics
 import moe.rukamori.archivetune.shared.ui.host.LibraryContentOwner
 import moe.rukamori.archivetune.shared.ui.host.ListenHistoryDriver
 import moe.rukamori.archivetune.shared.ui.host.PodcastProgressDriver
-import moe.rukamori.archivetune.shared.ui.host.PodcastSponsorBlockDriver
+import moe.rukamori.archivetune.shared.ui.host.SponsorBlockDriver
 import moe.rukamori.archivetune.shared.ui.host.TidalSessionRefresh
 import moe.rukamori.archivetune.shared.ui.session.LyricsSurfaceRuntime
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
@@ -288,10 +290,13 @@ internal suspend fun assembleDesktopSessionOwners(
         hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
         hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
         blockedArtistIds = { queueArtistBlocks.value },
+        blockedSongRefs = {
+            parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
+        },
         handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
         songMetadata = songMetadata,
     )
-    val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints()))
+    val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints(), database.library()))
     try {
         queue.resume()
     } catch (cancelled: CancellationException) {
@@ -336,12 +341,14 @@ internal suspend fun assembleDesktopSessionOwners(
         report = ::desktopDiagnostic,
     )
     // Lives for the app scope: it holds no state the graph must close and only reads published snapshots.
-    PodcastSponsorBlockDriver(
+    SponsorBlockDriver(
         scope = scope,
         player = player,
         queue = queue.state,
+        resolved = owner.loadedRequest,
         preferences = vault.snapshots,
         repository = KtorSponsorBlockRepository(http),
+        report = ::desktopDiagnostic,
     )
     val lastFm = DesktopLastFm(
         scope = scope,
@@ -405,6 +412,7 @@ internal suspend fun assembleDesktopSessionOwners(
         // A host's volume is applied to the engine only, so the user's own saved level is not overwritten.
         setVolume = { level -> if (level.isFinite()) playback.setVolume(level.coerceIn(0f, 1f)) },
         content = contentRouter,
+        picture = DesktopListenTogetherPicture(directory),
         report = ::desktopDiagnostic,
     )
     val listenerPresence = DesktopListenerPresence(
@@ -583,7 +591,6 @@ internal suspend fun assembleDesktopSessionOwners(
         localMedia = localMediaOwner,
         statistics = statisticsOwner,
         mediaInfo = mediaInfoOwner,
-        news = DesktopNewsRepository(),
         drivers = drivers,
     )
     // A TDLib database left by an earlier sign-in restores its session, so Telegram tracks in a restored queue

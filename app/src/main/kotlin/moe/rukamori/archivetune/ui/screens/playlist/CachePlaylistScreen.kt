@@ -348,6 +348,7 @@ fun CachePlaylistScreen(
                                     ListQueue(
                                         title = "Cache Songs",
                                         items = filteredSongs.shuffled().map { it.item.toMediaItem() },
+                                        finite = true,
                                     ),
                                 )
                             },
@@ -356,6 +357,7 @@ fun CachePlaylistScreen(
                                     ListQueue(
                                         title = "Cache Songs",
                                         items = filteredSongs.map { it.item.toMediaItem() },
+                                        finite = true,
                                     ),
                                 )
                             },
@@ -450,6 +452,7 @@ fun CachePlaylistScreen(
                                                         title = "Cache Songs",
                                                         items = cachedSongs.map { it.toMediaItem() },
                                                         startIndex = cachedSongs.indexOfFirst { it.id == songWrapper.item.id },
+                                                        finite = true,
                                                     ),
                                                 )
                                             }

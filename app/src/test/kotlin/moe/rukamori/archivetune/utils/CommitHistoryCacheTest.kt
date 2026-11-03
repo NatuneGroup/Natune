@@ -26,7 +26,7 @@ class CommitHistoryCacheTest {
             "message": "feat(updates): keyless update feed",
             "author": "vossgraves",
             "date": "2026-10-13T15:30:00Z",
-            "url": "https://github.com/NatuneGroup/ArchiveTune/commit/abc1234",
+            "url": "https://github.com/NatuneGroup/Natune/commit/abc1234",
             "authorAvatarUrl": "https://avatars.githubusercontent.com/u/1?v=4"
           },
           {
@@ -34,7 +34,7 @@ class CommitHistoryCacheTest {
             "message": "fix(player): something else",
             "author": "rukamori",
             "date": "2026-10-12T10:00:00Z",
-            "url": "https://github.com/NatuneGroup/ArchiveTune/commit/def5678"
+            "url": "https://github.com/NatuneGroup/Natune/commit/def5678"
           }
         ]
         """.trimIndent()
@@ -50,7 +50,7 @@ class CommitHistoryCacheTest {
                     message = "feat(updates): keyless update feed",
                     author = "vossgraves",
                     date = "2026-10-13T15:30:00Z",
-                    url = "https://github.com/NatuneGroup/ArchiveTune/commit/abc1234",
+                    url = "https://github.com/NatuneGroup/Natune/commit/abc1234",
                     authorAvatarUrl = "https://avatars.githubusercontent.com/u/1?v=4",
                 ),
                 GitCommit(
@@ -58,7 +58,7 @@ class CommitHistoryCacheTest {
                     message = "fix(player): something else",
                     author = "rukamori",
                     date = "2026-10-12T10:00:00Z",
-                    url = "https://github.com/NatuneGroup/ArchiveTune/commit/def5678",
+                    url = "https://github.com/NatuneGroup/Natune/commit/def5678",
                     authorAvatarUrl = null,
                 ),
             ),

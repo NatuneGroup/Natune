@@ -29,12 +29,12 @@ class UpdateFeedDecisionTest {
           "versionName": "${BuildConfig.VERSION_NAME}",
           "versionCode": $versionCode,
           "publishedAt": "2026-10-13T15:30:00Z",
-          "releaseUrl": "https://github.com/NatuneGroup/ArchiveTune/releases/tag/N202610131530",
+          "releaseUrl": "https://github.com/NatuneGroup/Natune/releases/tag/N202610131530",
           "notes": "Nightly build notes",
           "assets": [
             {
               "name": "app-gms-mobile-arm64-nightly.apk",
-              "url": "https://github.com/NatuneGroup/ArchiveTune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk"
+              "url": "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk"
             }
           ]
         }
@@ -44,7 +44,7 @@ class UpdateFeedDecisionTest {
         val manifest = parseUpdateFeedManifest(manifestJson(versionCode), expectedChannel = "nightly")!!
         return manifest.toReleaseInfo(
             assetUrl = selectUpdateFeedAssetUrl(manifest.assets, "app-gms-mobile-arm64-nightly.apk"),
-            releasesBaseUrl = "https://github.com/NatuneGroup/ArchiveTune/releases",
+            releasesBaseUrl = "https://github.com/NatuneGroup/Natune/releases",
         )
     }
 
@@ -91,7 +91,7 @@ class UpdateFeedDecisionTest {
             }
             """.trimIndent()
         val manifest = parseUpdateFeedManifest(json, expectedChannel = "stable")!!
-        return manifest.toReleaseInfo(assetUrl = null, releasesBaseUrl = "https://github.com/NatuneGroup/ArchiveTune/releases")
+        return manifest.toReleaseInfo(assetUrl = null, releasesBaseUrl = "https://github.com/NatuneGroup/Natune/releases")
     }
 
     @Test
@@ -144,10 +144,10 @@ class UpdateFeedDecisionTest {
         assertEquals("N202610131530", release.tagName)
         assertEquals("Nightly build notes", release.body)
         assertEquals(
-            "https://github.com/NatuneGroup/ArchiveTune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
+            "https://github.com/NatuneGroup/Natune/releases/download/N202610131530/app-gms-mobile-arm64-nightly.apk",
             release.downloadUrl,
         )
-        assertEquals("https://github.com/NatuneGroup/ArchiveTune/releases/tag/N202610131530", release.htmlUrl)
+        assertEquals("https://github.com/NatuneGroup/Natune/releases/tag/N202610131530", release.htmlUrl)
     }
 
     @Test
@@ -160,9 +160,9 @@ class UpdateFeedDecisionTest {
         val release =
             manifest.toReleaseInfo(
                 assetUrl = null,
-                releasesBaseUrl = "https://github.com/NatuneGroup/ArchiveTune/releases",
+                releasesBaseUrl = "https://github.com/NatuneGroup/Natune/releases",
             )
 
-        assertEquals("https://github.com/NatuneGroup/ArchiveTune/releases/tag/N202610131530", release.htmlUrl)
+        assertEquals("https://github.com/NatuneGroup/Natune/releases/tag/N202610131530", release.htmlUrl)
     }
 }

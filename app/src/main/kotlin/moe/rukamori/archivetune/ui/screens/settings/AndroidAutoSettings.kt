@@ -22,8 +22,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -63,6 +66,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import kotlinx.coroutines.flow.collectLatest
+import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.androidauto.AndroidAutoActionSlot
 import moe.rukamori.archivetune.androidauto.AndroidAutoConnectionStatus
@@ -141,7 +145,9 @@ private fun AndroidAutoSettingsContent(
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
-        modifier = modifier.windowInsetsPadding(WindowInsets.safeDrawing),
+        // The miniplayer bottom goes to the scroll column's padding, not the scaffold edge, so the
+        // page scrolls under it like every other settings page.
+        modifier = modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.android_auto)) },
@@ -186,7 +192,13 @@ private fun AndroidAutoSettingsBody(
             modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = SettingsDimensions.ScreenBottomPadding),
+                .padding(
+                    bottom = SettingsDimensions.ScreenBottomPadding +
+                        LocalPlayerAwareWindowInsets.current
+                            .only(WindowInsetsSides.Bottom)
+                            .asPaddingValues()
+                            .calculateBottomPadding(),
+                ),
     ) {
         AndroidAutoConnectionPreferences(snapshot = model.snapshot, onAction = onAction)
 

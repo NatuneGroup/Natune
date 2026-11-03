@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.provider.YouTubeCatalogueTransport
+import moe.rukamori.archivetune.shared.data.provider.filterBlockedSongs
 import moe.rukamori.archivetune.shared.data.provider.YouTubeEntry
 import moe.rukamori.archivetune.shared.data.provider.YouTubeExplore
 import moe.rukamori.archivetune.shared.data.provider.YouTubeFeedChip
@@ -30,7 +31,9 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentRequest
 import moe.rukamori.archivetune.shared.domain.repository.ContentSection
 import moe.rukamori.archivetune.shared.domain.repository.ContentSurface
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
 import moe.rukamori.archivetune.shared.domain.settings.ShowHomeCategoryChipsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.ui.home.HomeFeedDesign
 import moe.rukamori.archivetune.shared.ui.home.HomeShelf
 import moe.rukamori.archivetune.shared.ui.home.HomeSource
@@ -261,6 +264,8 @@ internal fun iosHomePage(
         remember(graph, scope, catalogue) {
             IosShelfFeed(scope, graph::report) { token, params ->
                 graph.youtubeTransport.refreshSession(graph.settings.snapshots.value)
+                // The feed keeps the raw shelves; the block list filters at render below so blocking a visible
+                // song hides it and an unblock restores it without a re-read, as the Android home does.
                 catalogue.home(token, params)
             }
         }
@@ -270,7 +275,9 @@ internal fun iosHomePage(
     LaunchedEffect(showChips) {
         if (!showChips && feed.selectedChip != null) feed.selectChip(null)
     }
-    val shelves = feed.shelves.map { shelf -> shelf.toHomeShelf(openRoute) }
+    val settingsSnapshot by graph.settings.snapshots.collectAsState()
+    val blocked = parseBlockedSongRefs(settingsSnapshot?.get(BlockedSongIdsKey).orEmpty()).toSet()
+    val shelves = feed.shelves.filterBlockedSongs(blocked).map { shelf -> shelf.toHomeShelf(openRoute) }
     SideEffect { shelves.forEach { lists.recordShelf(IOS_HOME_REQUEST, it.key, it.items) } }
     val snapshot by graph.player.snapshot.collectAsState()
     return ArchiveGraphPage.Home(
@@ -313,6 +320,8 @@ internal fun iosDiscoveryPage(graph: IosSessionGraph, lists: IosCatalogueOwners)
         remember(graph, scope, catalogue) {
             IosShelfFeed(scope, graph::report) { token, _ ->
                 graph.youtubeTransport.refreshSession(graph.settings.snapshots.value)
+                // The suggestion surface filters the same recommendation feed at render, as Android's suggestion
+                // list does; keeping the raw shelves lets an unblock restore them without a re-read.
                 catalogue.home(token, null)
             }
         }
@@ -331,7 +340,9 @@ internal fun iosDiscoveryPage(graph: IosSessionGraph, lists: IosCatalogueOwners)
             rows = releaseRows,
             more = null,
         )
-    val suggestionShelves = suggest.shelves.map { it.toBrowseShelf(IOS_DISCOVERY_SUGGESTIONS_REQUEST) }
+    val settingsSnapshot by graph.settings.snapshots.collectAsState()
+    val blocked = parseBlockedSongRefs(settingsSnapshot?.get(BlockedSongIdsKey).orEmpty()).toSet()
+    val suggestionShelves = suggest.shelves.filterBlockedSongs(blocked).map { it.toBrowseShelf(IOS_DISCOVERY_SUGGESTIONS_REQUEST) }
     SideEffect {
         suggestionShelves.forEach { lists.recordShelf(IOS_DISCOVERY_SUGGESTIONS_REQUEST, it.key, it.rows) }
     }

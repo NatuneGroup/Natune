@@ -22,6 +22,27 @@ int at_audio_play(at_audio_output *output);
 void at_audio_pause(at_audio_output *output);
 void at_audio_seek(at_audio_output *output, uint64_t position_us);
 void at_audio_speed(at_audio_output *output, float speed);
+/* Pitch shift in cents on the rendered output, clamped to the unit's +-2400 range; 0 is unshifted. Tempo stays in
+ * the engine, so the unit's rate never changes. A call before the first load still applies to every later load.
+ * The manual pull carries decoder PCM before this stage, so a blend applies its own pitch unit. */
+void at_audio_pitch(at_audio_output *output, float cents);
+/* One band of the output's in-graph equalizer, in the same order as the shared band layout the host passes. */
+typedef enum at_eq_filter {
+    AT_EQ_PEAKING = 0,
+    AT_EQ_LOW_SHELF = 1,
+    AT_EQ_HIGH_SHELF = 2,
+} at_eq_filter;
+typedef struct at_eq_band {
+    uint32_t type;           /* One at_eq_filter value; unknown values are treated as peaking. */
+    float frequency_hz;      /* Center or corner frequency, clamped into the rendered range. */
+    float bandwidth_octaves; /* Filter width in octaves, clamped to a safe range. */
+    float gain_db;           /* Boost or cut in decibels, clamped to the unit's range. */
+} at_eq_band;
+#define AT_AUDIO_EQ_MAX_BANDS 16
+/* Applies up to AT_AUDIO_EQ_MAX_BANDS bands; the rest stay bypassed. enabled == 0 bypasses every band while keeping
+ * the parameters, so a later enable is instant. A level that arrives before the first load still applies to every
+ * later load. The manual pull carries decoder PCM before this stage, so a blend applies its own equalizer. */
+void at_audio_equalizer(at_audio_output *output, const at_eq_band *bands, uint32_t count, int enabled);
 /* The app's output level, 0 to 1, applied by the engine's mixer node on top of decoder output. It scales what the
  * listener hears, like the desktop port's volume, while the hardware buttons keep owning the session route volume.
  * A level that arrives before the first load still applies to every later load. Values outside 0..1 are clamped. */

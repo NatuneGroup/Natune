@@ -15,6 +15,9 @@ private const val PCM_FRAMES = 1_024
 private const val MAX_PCM_BUFFERS = 8
 private const val PREBUFFER_US = 120_000L
 
+/** Band slots each deck's AVAudioUnitEQ allocates, the same bound the output graph's unit uses. */
+private const val EQ_UNIT_BANDS = 16uL
+
 /**
  * Two player nodes share one device graph. Only the main-queue pump touches Kotlin or the decoder: AVAudioPlayerNode
  * renders the bounded, already-copied PCM buffers with no Kotlin render/completion callback.
@@ -25,6 +28,13 @@ internal class IosBlendAudioGraph private constructor(output: CPointer<at_audio_
     private val format = AVAudioFormat(
         commonFormat = AVAudioPCMFormatFloat32, sampleRate = PCM_RATE, channels = 2u, interleaved = false,
     )
+    // The tone every deck renders: a blend pulls decoder PCM before the output graph's own units, so the
+    // shared pitch and equalizer state must reach these deck units too. A deck gets it when it is attached.
+    // These initialize before `current`, whose construction already applies them.
+    private var pitchCents = 0f
+    private var equalizerEnabled = false
+    private var equalizerBands: List<IosEqBand> = emptyList()
+
     var current = Deck(output)
         private set
     var incoming: Deck? = null
@@ -58,6 +68,49 @@ internal class IosBlendAudioGraph private constructor(output: CPointer<at_audio_
 
     fun setVolume(volume: Float) {
         engine.mainMixerNode.outputVolume = volume
+    }
+
+    /** The shared pitch in cents on every live deck and the ones armed later. */
+    fun setPitch(cents: Float) {
+        pitchCents = cents
+        applyPitch(current)
+        incoming?.let(::applyPitch)
+    }
+
+    /** The shared equalizer on every live deck and the ones armed later. */
+    fun setEqualizer(enabled: Boolean, bands: List<IosEqBand>) {
+        equalizerEnabled = enabled
+        equalizerBands = bands
+        applyEqualizer(current)
+        incoming?.let(::applyEqualizer)
+    }
+
+    private fun applyPitch(deck: Deck) {
+        deck.pitchUnit.rate = 1f // Tempo stays in the engine; the unit shifts pitch only.
+        deck.pitchUnit.pitch = pitchCents
+    }
+
+    private fun applyEqualizer(deck: Deck) {
+        val units = deck.eqUnit.bands
+        for (index in units.indices) {
+            // bands is an untyped List<*> on this Kotlin/Native release; AVAudioUnitEQ only ever holds
+            // AVAudioUnitEQFilterParameters elements.
+            val params = units[index] as AVAudioUnitEQFilterParameters
+            val band = equalizerBands.getOrNull(index)
+            if (band == null) {
+                params.bypass = true
+                continue
+            }
+            params.frequency = band.frequencyHz.coerceIn(20f, 23_900f)
+            params.bandwidth = band.bandwidthOctaves.coerceIn(0.05f, 5f)
+            params.gain = band.gainDb.coerceIn(-24f, 24f)
+            params.filterType = when (band.type) {
+                1 -> AVAudioUnitEQFilterTypeLowShelf
+                2 -> AVAudioUnitEQFilterTypeHighShelf
+                else -> AVAudioUnitEQFilterTypeParametric
+            }
+            params.bypass = !equalizerEnabled
+        }
     }
 
     fun play(): Boolean {
@@ -173,6 +226,8 @@ internal class IosBlendAudioGraph private constructor(output: CPointer<at_audio_
     @OptIn(ExperimentalForeignApi::class)
     inner class Deck(val output: CPointer<at_audio_output>) {
         val node = AVAudioPlayerNode()
+        val pitchUnit = AVAudioUnitTimePitch()
+        val eqUnit = AVAudioUnitEQ(numberOfBands = EQ_UNIT_BANDS)
         val mixer = AVAudioMixerNode()
         private val scratch = FloatArray(PCM_FRAMES * 2)
         private val queued = ArrayDeque<Chunk>()
@@ -188,10 +243,17 @@ internal class IosBlendAudioGraph private constructor(output: CPointer<at_audio_
             private set
 
         init {
+            // The manual pull delivers decoder PCM, so the tone chain is node -> pitch -> equalizer -> mixer.
             engine.attachNode(node)
+            engine.attachNode(pitchUnit)
+            engine.attachNode(eqUnit)
             engine.attachNode(mixer)
-            engine.connect(node, to = mixer, format = format)
+            engine.connect(node, to = pitchUnit, format = format)
+            engine.connect(pitchUnit, to = eqUnit, format = format)
+            engine.connect(eqUnit, to = mixer, format = format)
             engine.connect(mixer, to = engine.mainMixerNode, format = format)
+            applyPitch(this)
+            applyEqualizer(this)
         }
 
         fun nativeState(): EnginePlaybackState = iosNativePlaybackState(output)
@@ -329,6 +391,8 @@ internal class IosBlendAudioGraph private constructor(output: CPointer<at_audio_
         fun detach() {
             node.stop()
             engine.detachNode(node)
+            engine.detachNode(pitchUnit)
+            engine.detachNode(eqUnit)
             engine.detachNode(mixer)
             queued.clear()
             free.clear()

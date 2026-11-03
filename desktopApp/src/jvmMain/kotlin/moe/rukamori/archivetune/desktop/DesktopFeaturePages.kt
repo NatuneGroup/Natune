@@ -11,10 +11,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
-import moe.rukamori.archivetune.shared.domain.repository.ContentNews
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
-import moe.rukamori.archivetune.shared.domain.repository.NewsRepository
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
 import moe.rukamori.archivetune.shared.ui.screens.DownloadActions
@@ -27,40 +25,7 @@ import moe.rukamori.archivetune.shared.ui.screens.LocalScanUi
 import moe.rukamori.archivetune.shared.ui.screens.LocalSongSort
 import moe.rukamori.archivetune.shared.ui.screens.LocalSongsActions
 import moe.rukamori.archivetune.shared.ui.screens.LocalSongsUi
-import moe.rukamori.archivetune.shared.ui.screens.NewsArticleUi
-import moe.rukamori.archivetune.shared.ui.screens.NewsUi
 import moe.rukamori.archivetune.shared.data.persistence.storedOccurrence
-
-/**
- * The `news` source on this host, matching the Android baseline exactly: its `NewsRepository`
- * returns an empty feed and empty article bodies, because the upstream feed the interface reads
- * is inactive. [available] therefore reports false — the screen shows `m4_news_unavailable`
- * instead of an empty feed presented as one, and `markRead` never fires.
- */
-internal class DesktopNewsRepository : NewsRepository {
-    override suspend fun list(): List<ContentNews> = emptyList()
-    override suspend fun content(id: String): String = ""
-}
-
-internal fun desktopNewsPage(): ArchiveGraphPage =
-    ArchiveGraphPage.News(
-        state = NewsUi(items = emptyList(), available = false),
-        query = {},
-        refresh = {},
-        markRead = {},
-    )
-
-internal fun desktopArticlePage(newsId: String): ArchiveGraphPage =
-    ArchiveGraphPage.Article(
-        state = NewsArticleUi(
-            item = ContentNews(id = newsId, title = "", description = "", imageUrls = emptyList(), important = false, author = "", timestamp = 0L),
-            markdown = null,
-            loading = false,
-            failed = false,
-            available = false,
-        ),
-        retry = {},
-    )
 
 @Composable
 internal fun desktopLocalSongsPage(
@@ -184,7 +149,7 @@ internal fun desktopDownloadsPage(graph: DesktopSessionGraph): ArchiveGraphPage 
             val start = playable.firstOrNull { it.item.ref == item.ref } ?: return@DownloadActions
             graph.scope.launch {
                 try {
-                    graph.queue.replace(playable, start.occurrenceId, playWhenReady = true)
+                    graph.queue.replace(playable, start.occurrenceId, playWhenReady = true, staysFinite = true)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {

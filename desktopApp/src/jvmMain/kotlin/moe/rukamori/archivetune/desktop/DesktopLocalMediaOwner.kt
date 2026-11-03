@@ -206,7 +206,7 @@ internal class DesktopLocalMediaOwner(
     fun play(selected: ContentOccurrence, visibleQueue: List<ContentOccurrence>) {
         scope.launch {
             try {
-                queue.replace(visibleQueue, selected.occurrenceId, playWhenReady = true)
+                queue.replace(visibleQueue, selected.occurrenceId, playWhenReady = true, staysFinite = true)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

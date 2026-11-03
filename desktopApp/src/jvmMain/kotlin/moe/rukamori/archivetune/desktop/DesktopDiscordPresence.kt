@@ -18,11 +18,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.shared.domain.playback.PlaybackSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.*
+import moe.rukamori.archivetune.shared.ui.settings.DiscordDebugState
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.desktop.integration.DesktopDeepLinks
 
@@ -50,6 +55,14 @@ internal class DesktopDiscordPresence(
     @Volatile private var heartbeatAcked = true
     private var presenceDriver: Job? = null
     private var lastSequence: Int? = null
+
+    private val debugFlow = MutableStateFlow(DiscordDebugState())
+
+    /**
+     * Live state for the developer card: [DiscordDebugState.running] is a live identified gateway, and the
+     * timestamps are the track window the last presence update carried, the same facts Android's card reads.
+     */
+    val debug: StateFlow<DiscordDebugState> = debugFlow.asStateFlow()
 
     // ------------------------------------------------------------------ OAuth
 
@@ -170,6 +183,7 @@ internal class DesktopDiscordPresence(
     /** Playback-driven presence: starts the watcher once; it only acts on playback changes. */
     fun startPresenceDriver() {
         if (presenceDriver != null) return
+        publishRunning()
         presenceDriver = scope.launch(Dispatchers.IO) {
             graph.metadata.collectLatest { metadata ->
                 val preferences = controller.store.snapshots.value ?: return@collectLatest
@@ -196,6 +210,7 @@ internal class DesktopDiscordPresence(
     fun close() {
         presenceDriver?.cancel()
         closeGateway()
+        publishRunning()
     }
 
     private fun closeGateway() {
@@ -203,6 +218,7 @@ internal class DesktopDiscordPresence(
         runCatching { webSocket?.sendClose(WebSocket.NORMAL_CLOSURE, "") }
         webSocket = null
         lastSequence = null
+        publishRunning()
     }
 
     /** IDENTIFY stays minimal: intents=0, no capabilities, gateway v10, no compression. */
@@ -236,19 +252,20 @@ internal class DesktopDiscordPresence(
                 override fun onClose(ws: WebSocket, statusCode: Int, reason: String): CompletionStage<*> {
                     // Only this socket's heartbeat: a late close from a dropped socket must not stop a newer one.
                     if (heartbeatSocket === ws) { heartbeatJob?.cancel(); heartbeatJob = null; heartbeatSocket = null }
-                    if (webSocket === ws) webSocket = null
+                    if (webSocket === ws) { webSocket = null; publishRunning() }
                     identified.complete(false)
                     return CompletableFuture.completedFuture(null)
                 }
 
                 override fun onError(ws: WebSocket, error: Throwable) {
                     if (heartbeatSocket === ws) { heartbeatJob?.cancel(); heartbeatJob = null; heartbeatSocket = null }
-                    if (webSocket === ws) webSocket = null
+                    if (webSocket === ws) { webSocket = null; publishRunning() }
                     identified.complete(false)
                 }
             }).join()
         return if (withTimeoutOrNull(10_000) { identified.await() } == true) {
             webSocket = socket
+            publishRunning()
             socket
         } else {
             runCatching { socket.sendClose(WebSocket.NORMAL_CLOSURE, "") }
@@ -281,6 +298,7 @@ internal class DesktopDiscordPresence(
         if (webSocket === socket) {
             webSocket = null
             lastSequence = null
+            publishRunning()
         }
         runCatching { socket.sendClose(WebSocket.NORMAL_CLOSURE, "heartbeat ack missed") }
     }
@@ -289,6 +307,7 @@ internal class DesktopDiscordPresence(
     private fun sendPresence(socket: WebSocket, preferences: PreferenceSnapshot) {
         val metadata = graph.metadata.value
         val snapshot = graph.player.snapshot.value
+        val now = System.currentTimeMillis()
         val payload = buildDiscordPresenceJson(
             preferences = preferences,
             track = metadata?.let {
@@ -302,9 +321,29 @@ internal class DesktopDiscordPresence(
             positionMs = snapshot?.positionMs,
             durationMs = snapshot?.durationMs,
             paused = snapshot?.playWhenReady == false,
-            nowMillis = System.currentTimeMillis(),
+            nowMillis = now,
         )
         runCatching { socket.sendText(payload, true) }
+        publishPresenceWindow(snapshot, now)
+        publishRunning()
+    }
+
+    /**
+     * The track window the just-sent update carried, like Android's last-RPC lines: an unpaused track with a
+     * known duration has one, everything else clears the pair rather than keeping a stale window.
+     */
+    private fun publishPresenceWindow(snapshot: PlaybackSnapshot?, nowMs: Long) {
+        val paused = snapshot?.playWhenReady == false
+        val durationMs = snapshot?.durationMs?.takeIf { it > 0L }
+        val positionMs = snapshot?.positionMs
+        val start = if (paused || durationMs == null || positionMs == null) null
+        else nowMs - positionMs.coerceAtLeast(0L)
+        debugFlow.value = debugFlow.value.copy(lastStartMs = start, lastEndMs = start?.plus(durationMs ?: 0L))
+    }
+
+    /** [DiscordDebugState.running] is a live gateway under an active driver — optimistic like Android's started flag. */
+    private fun publishRunning() {
+        debugFlow.value = debugFlow.value.copy(running = presenceDriver?.isActive == true && webSocket != null)
     }
 
     // ------------------------------------------------------------------ helpers

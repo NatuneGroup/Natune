@@ -20,7 +20,10 @@ concurrency:
 
 jobs:
   emulator-qa:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Public repo: fork pull requests cannot reach Blacksmith runners and must not burn the org's
+    # minutes, so they run on GitHub-hosted Ubuntu (its standard runners still expose /dev/kvm, so
+    # the KVM probe below keeps working there). Same-repo PRs and dispatches stay on Blacksmith.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 60
     env:
       ANDROID_AVD_HOME: /home/runner/.android/avd
@@ -113,9 +116,11 @@ jobs:
             assembleGmsMobileUniversalDebug
           find app/build/outputs/apk -name "*.apk" -print
         env:
+          # Pull request runs execute unreviewed code and publish screenshots and logcat, so the
+          # provider secrets reach only manual dispatches; the PR build is the unconfigured one.
           ARCHIVETUNE_ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL }}
-          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
-          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || (github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_URL || '') }}
+          SOURCE_PROVIDER_KEY: ${{ github.event_name != 'pull_request' && secrets.SOURCE_PROVIDER_KEY || '' }}
 
       - name: Install, launch, navigate, capture
         if: steps.kvm.outputs.kvm == 'present'
@@ -123,14 +128,6 @@ jobs:
         run: |
           set -uo pipefail
           python3 scripts/emulator_qa.py || true
-          for f in qa-artifacts/*.png qa-artifacts/*.xml qa-artifacts/*.txt; do
-            [ -f "$f" ] || continue
-            url=$(curl -fsS --max-time 30 -F "file=@$f" https://0x0.st 2>/dev/null) ||
-              url=$(curl -fsS --max-time 30 -F "reqtype=fileupload" -F "fileToUpload=@$f" https://catbox.moe/user/api.php 2>/dev/null) ||
-              url=$(curl -fsS --max-time 30 -F "file=@$f" https://tmpfiles.org/api/v1/upload 2>/dev/null | grep -o 'https://tmpfiles.org[^"]*') ||
-              url="upload-failed"
-            echo "$f -> $url"
-          done
 
       - name: Upload QA artifacts
         if: always()

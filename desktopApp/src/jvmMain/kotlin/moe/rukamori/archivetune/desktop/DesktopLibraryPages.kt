@@ -46,6 +46,8 @@ import moe.rukamori.archivetune.shared.ui.navigation.ArchiveDestination
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoutes
+import moe.rukamori.archivetune.shared.ui.news.newsArticlePage
+import moe.rukamori.archivetune.shared.ui.news.newsFeedPage
 import moe.rukamori.archivetune.shared.ui.screens.ContentActions
 import moe.rukamori.archivetune.shared.ui.screens.DetailActions
 import moe.rukamori.archivetune.shared.ui.screens.DetailKind
@@ -117,8 +119,8 @@ internal fun desktopGraphPage(
         ArchiveDestination.TELEGRAM_BOT_CHAT -> desktopTelegramBotChatPage(graph, route.arguments.getValue("botId"))
         ArchiveDestination.HISTORY -> desktopHistoryPage(graph, menu, spotify)
         ArchiveDestination.ACCOUNT -> desktopAccountPage(graph)
-        ArchiveDestination.NEWS -> desktopNewsPage()
-        ArchiveDestination.ARTICLE -> desktopArticlePage(route.arguments.getValue("newsId"))
+        ArchiveDestination.NEWS -> newsFeedPage(graph.newsFeed)
+        ArchiveDestination.ARTICLE -> newsArticlePage(graph.newsFeed, route.arguments.getValue("newsId"))
         ArchiveDestination.PODCASTS -> desktopPodcastsPage(podcasts)
         ArchiveDestination.PODCAST -> desktopPodcastPage(podcasts, route.arguments.getValue("browseId"))
         ArchiveDestination.LOCAL_SONGS -> desktopLocalSongsPage(graph, menu)
@@ -267,8 +269,8 @@ private fun desktopPlaylistsPage(
             localRows.firstOrNull { it.item.ref == ref }?.let { row -> menus.exportFromRow(ref, row.item.title) }
                 ?: menus.refuseMove()
         },
-        // The portable file keeps no custom order for local or remote playlists, so a drag says so instead of moving nothing.
-        move = { _, _, _ -> menus.refuseMove() },
+        // The drag lands in the stored collection order; a remote or missing row is refused by the owner.
+        move = menus::movePlaylist,
         retry = { attempt += 1 },
     )
     return ArchiveGraphPage.Playlists(state, actions)

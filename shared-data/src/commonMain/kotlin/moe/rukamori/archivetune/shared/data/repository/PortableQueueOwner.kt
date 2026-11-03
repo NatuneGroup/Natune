@@ -44,6 +44,7 @@ import moe.rukamori.archivetune.shared.domain.queue.UserQueuePolicy
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository
 import moe.rukamori.archivetune.shared.domain.songmetadata.canonicalSong
+import moe.rukamori.archivetune.shared.domain.repository.BuiltInCollectionFinitePolicy
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -101,6 +102,7 @@ class PortableQueueOwner(
     private val hideVideo: () -> Boolean = { false },
     /** The provider artist ids the user blocked; entries carrying one never reach the queue. */
     private val blockedArtistIds: () -> Set<String> = { emptySet() },
+    private val blockedSongRefs: () -> Set<moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef> = { emptySet() },
     /** Records the complete track list of an album whose whole walk was loaded. Absent, nothing is recorded. */
     albumCompletion: AlbumCompletionIndex? = null,
     /** Blends songs into each other. Absent, every song ends before its successor loads, as before. */
@@ -127,6 +129,14 @@ class PortableQueueOwner(
     private val source = MutableStateFlow<ContentRequest?>(null)
     override val queueSource: StateFlow<ContentRequest?> = source.asStateFlow()
 
+    private val loadedRequests = MutableStateFlow<PlaybackRequest?>(null)
+
+    /**
+     * The request the engine was last told to load, handoff commits included. Consumers that gate on the
+     * resolved audio source (SponsorBlock, the acoustic check) read it; null once playback stops.
+     */
+    val loadedRequest: StateFlow<PlaybackRequest?> = loadedRequests.asStateFlow()
+
     private val advanceFailureFlow = MutableSharedFlow<Throwable>(extraBufferCapacity = 8)
 
     /** Failures of the automatic end-of-track advance, which has no caller to return them to. */
@@ -152,7 +162,7 @@ class PortableQueueOwner(
         state = state,
         commit = { currentState = it; revalidateHandoff() },
         content = content,
-        filter = { it.filterPlaybackContent() },
+        filter = { it.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds(), blockedSongRefs()) },
         enabled = autoLoadMoreEnabled,
         repeatOff = { repeatMode() == QueueRepeatMode.OFF },
         nowMs = monotonicTimeMs,
@@ -262,7 +272,7 @@ class PortableQueueOwner(
             tail = QueueTail(collection = collection, continuation = first.continuation, kind = QueueCollectionKind.RADIO)
         }
         // The hidden-content rules of `Queue.Status.filterPlaybackContent` apply to every queue load.
-        loaded = loaded.filterPlaybackContent()
+        loaded = loaded.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds(), blockedSongRefs())
         if (loaded.isEmpty()) throw IncompleteFinitePlaylistException("Collection returned no songs")
         QueueEditPolicy.requireUnique(loaded)
 
@@ -292,6 +302,7 @@ class PortableQueueOwner(
             phase = if (finite) FinitePlaylistPhase.EXHAUSTED else FinitePlaylistPhase.UNKNOWN,
             shuffleEnabled = request.shuffle,
             manualKinds = emptyMap(),
+            staysFinite = finite && BuiltInCollectionFinitePolicy.staysFinite(collection),
             tail = tail,
         )
         startPrepared(playRequest, request.positionMs, request.playWhenReady)
@@ -299,7 +310,9 @@ class PortableQueueOwner(
         if (finite) infinite.replenish()
     }
 
-    override suspend fun replace(entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean) {
+    override suspend fun replace(
+        entries: List<ContentOccurrence>, startOccurrenceId: String, playWhenReady: Boolean, staysFinite: Boolean,
+    ) {
         requireInside()
         QueueEditPolicy.requireUnique(entries)
         val start = entries.firstOrNull { it.occurrenceId == startOccurrenceId }
@@ -317,6 +330,7 @@ class PortableQueueOwner(
             phase = FinitePlaylistPhase.UNKNOWN,
             shuffleEnabled = false,
             manualKinds = emptyMap(),
+            staysFinite = staysFinite,
             tail = null,
         )
         startPrepared(playRequest, 0L, playWhenReady)
@@ -437,6 +451,7 @@ class PortableQueueOwner(
             )
             successor == null && current != null -> {
                 forgetHandoff()
+                loadedRequests.value = null
                 player.stop()
             }
             else -> revalidateHandoff()
@@ -526,8 +541,7 @@ class PortableQueueOwner(
         requireInside()
         val queue = currentState
         val currentId = queue.currentOccurrenceId ?: return false
-        val currentIndex =
-            queue.entries.indexOfFirst { it.occurrenceId == currentId }.takeIf { it >= 0 } ?: return false
+        val currentIndex = queue.entries.indexOfFirst { it.occurrenceId == currentId }.takeIf { it >= 0 } ?: return false
         val seed = queue.entries[currentIndex].item.ref
         if (seed.provider != ContentProvider.YOUTUBE.id || seed.kind != ContentKind.SONG) return false
         val collection = radioQueueRequest(seed)
@@ -535,18 +549,18 @@ class PortableQueueOwner(
         val kept = queue.entries.subList(0, currentIndex + 1)
         val knownOccurrences = kept.mapTo(HashSet()) { it.occurrenceId }
         val radioItems = moe.rukamori.archivetune.shared.domain.queue.InfiniteQueuePolicy.fresh(
-            page.items.filterPlaybackContent(), kept.map { it.item.ref },
+            page.items.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds(), blockedSongRefs()),
+            kept.map { it.item.ref },
         ) { it.item.ref }.filter { knownOccurrences.add(it.occurrenceId) }
         val tail = QueueTail(collection = collection, continuation = page.continuation, kind = QueueCollectionKind.RADIO)
         if (radioItems.isEmpty()) {
-            currentState = queue.copy(revision = queue.revision + 1, phase = FinitePlaylistPhase.UNKNOWN, tail = tail)
+            currentState = queue.copy(revision = queue.revision + 1, phase = FinitePlaylistPhase.UNKNOWN, staysFinite = false, tail = tail)
             infinite.reset(radio = true)
             removals.reset()
             source.value = collection
             return true
         }
-        val removedIds =
-            queue.entries.subList(currentIndex + 1, queue.entries.size).mapTo(HashSet()) { it.occurrenceId }
+        val removedIds = queue.entries.subList(currentIndex + 1, queue.entries.size).mapTo(HashSet()) { it.occurrenceId }
         val order = queue.playOrder.filterNot { it in removedIds }.toMutableList()
         val radioIds = radioItems.map { it.occurrenceId }
         if (queue.shuffleEnabled) {
@@ -562,7 +576,7 @@ class PortableQueueOwner(
             playOrder = order.toList(),
             phase = FinitePlaylistPhase.UNKNOWN,
             manualKinds = queue.manualKinds.filterKeys { it !in removedIds },
-            tail = tail,
+            staysFinite = false, tail = tail,
         )
         infinite.reset(radio = true)
         removals.reset()
@@ -625,6 +639,7 @@ class PortableQueueOwner(
         if (playRequest == null) {
             failureScore = 0
             forgetHandoff()
+            loadedRequests.value = null
             player.stop()
         } else {
             // The position belongs to the restored current item; a stamp older than the resume
@@ -720,6 +735,7 @@ class PortableQueueOwner(
         if (queue.entries.none { it.occurrenceId == incoming }) return
         currentState = queue.copy(revision = queue.revision + 1, currentOccurrenceId = incoming)
         streamRecovery.loaded(handoff.request, 0L, player.snapshot.value?.playWhenReady ?: true)
+        loadedRequests.value = handoff.request
     }
 
     /**
@@ -925,7 +941,7 @@ class PortableQueueOwner(
         FinitePlaylistCompletion.validateNext(page.continuation, consumed, page.items.size)
         val known = queue.entries.mapTo(HashSet()) { it.occurrenceId }
         val fresh = mutableListOf<ContentOccurrence>()
-        for (item in page.items.filterPlaybackContent()) {
+        for (item in page.items.filterPlaybackContent(hideExplicit(), hideVideo(), blockedArtistIds(), blockedSongRefs())) {
             if (known.add(item.occurrenceId)) fresh += item
         }
         currentState = queue.copy(
@@ -949,26 +965,15 @@ class PortableQueueOwner(
             is Prepared.Ready -> {
                 val attempted = streamRecovery.nextAttempt(prepared.request)
                 streamRecovery.loaded(attempted, positionMs, playWhenReady, recovering)
+                loadedRequests.value = attempted
                 player.load(attempted, positionMs, playWhenReady)
             }
             is Prepared.Unresolved -> {
                 streamRecovery.unresolved()
+                loadedRequests.value = null
                 player.stop()
                 resolutionFailureFlow.tryEmit(prepared.failure)
             }
-        }
-    }
-
-    /** The hidden-content rules of `Queue.Status.filterPlaybackContent`: explicit, video and blocked artists. */
-    private fun List<ContentOccurrence>.filterPlaybackContent(): List<ContentOccurrence> {
-        val explicit = hideExplicit()
-        val video = hideVideo()
-        val blocked = blockedArtistIds()
-        if (!explicit && !video && blocked.isEmpty()) return this
-        return filter { occurrence ->
-            (!explicit || !occurrence.item.explicit) &&
-                (!video || !occurrence.item.isVideo) &&
-                occurrence.item.canonicalSong().artists.none { it.id != null && it.id in blocked }
         }
     }
 

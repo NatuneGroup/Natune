@@ -77,6 +77,8 @@ internal class PortableInfiniteQueue(
     }
 
     private fun eligible(queue: QueueState): Boolean {
+        // A built-in collection queue never grows a recommendation tail; an explicit radio load clears the flag.
+        if (queue.staysFinite) return false
         val radioTail = queue.tail?.kind == QueueCollectionKind.RADIO
         if (queue.tail != null && !radioTail) return false
         if (!radioTail && queue.phase != FinitePlaylistPhase.EXHAUSTED && !knownStaticQueue && !radioLineage) return false

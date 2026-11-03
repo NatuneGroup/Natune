@@ -22,6 +22,8 @@ import org.jetbrains.compose.resources.stringResource
 data class PlaylistCollectionRow(
     val item: ContentItem, val songCount: Int, val createdEpochMs: Long = 0, val updatedEpochMs: Long = 0,
     val hidden: Boolean = false, val tagIds: Set<String> = emptySet(), val editable: Boolean = true,
+    /** The linked YouTube playlist id, as the menu's share and sync rows read it. */
+    val browseId: String? = null,
     val exportable: Boolean = false,
     /** The first rows' items in the stored order, drawn as the local 2x2 mosaic cover when no custom cover is set. */
     val previewItems: List<ContentItem> = emptyList(),

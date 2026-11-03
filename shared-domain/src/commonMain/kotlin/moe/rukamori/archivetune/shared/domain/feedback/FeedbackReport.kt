@@ -44,7 +44,7 @@ object FeedbackReport {
     ): String =
         buildString {
             appendLine("ArchiveTune feedback report")
-            appendLine("Fork: NatuneGroup/ArchiveTune")
+            appendLine("Fork: NatuneGroup/Natune")
             appendLine("Revision: ${app.forkRevision} (${app.forkBranch})" + if (forkDirty) " (modified)" else "")
             appendLine("Version: ${app.versionName} (${app.versionCode})")
             appendLine("Variant: ${app.variant}")

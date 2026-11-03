@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.awt.EventQueue
@@ -31,6 +34,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
+import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityPanel
 import moe.rukamori.archivetune.shared.data.diagnostics.JvmDiagnosticLogFiles
 import moe.rukamori.archivetune.shared.data.diagnostics.RotatingDiagnosticLog
 import moe.rukamori.archivetune.shared.domain.diagnostics.CrashLogKind
@@ -40,8 +45,13 @@ import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLevel
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticLogStore
 import moe.rukamori.archivetune.shared.domain.diagnostics.DiagnosticRecord
 import moe.rukamori.archivetune.shared.domain.feedback.DiagnosticRedaction
+import moe.rukamori.archivetune.shared.domain.mediainfo.MediaCodec
+import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
+import moe.rukamori.archivetune.shared.ui.settings.HostDiscordDebugSection
+import moe.rukamori.archivetune.shared.ui.settings.HostNerdStatsSection
+import moe.rukamori.archivetune.shared.ui.settings.NerdStatsFormat
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogActions
 import moe.rukamori.archivetune.shared.ui.screens.diagnostics.DiagnosticLogScreen
 import moe.rukamori.archivetune.shared.ui.settings.DeveloperSettings
@@ -341,11 +351,15 @@ internal fun DesktopDiagnosticLogPage(settings: SettingsStore, navigation: Shell
 }
 
 /**
- * Settings > Developer. The acoustic graph, the Discord debug lines and nerd stats read the Android playback service,
- * which the desktop engine does not have, so each panel says it is not available instead of showing nothing.
+ * Settings > Developer. The acoustic audit mounts the shared panel over the queue's current song, through
+ * the graph's audit owner. The Discord card reads the presence owner's live debug state, and nerd stats
+ * poll the player snapshot plus the stored-file facts the media-info owner has for the current track;
+ * fields this host cannot supply report themselves unavailable rather than hiding the panels.
  */
 @Composable
 internal fun DesktopDeveloperSettingsPage(
+    graph: DesktopSessionGraph,
+    discord: DesktopDiscordPresence,
     controller: SettingsController,
     navigate: (String) -> Unit,
     onFailure: () -> Unit,
@@ -355,12 +369,88 @@ internal fun DesktopDeveloperSettingsPage(
         controller = controller,
         navigate = navigate,
         playerAvailable = true,
-        acousticQualitySection = { DesktopUnavailablePanel() },
-        discordDebugSection = { DesktopUnavailablePanel() },
-        nerdStatsSection = { DesktopUnavailablePanel() },
+        acousticQualitySection = { active -> DesktopAcousticQualitySection(graph, active) },
+        discordDebugSection = { HostDiscordDebugSection(discord.debug, ::formatDiagnosticTime) },
+        nerdStatsSection = {
+            HostNerdStatsSection(
+                player = graph.player,
+                queue = graph.queue.state,
+                formatFor = { ref -> desktopNerdFormat(graph, ref) },
+            )
+        },
         resumed = true,
         onFailure = onFailure,
         scrollTo = scrollTo,
+    )
+}
+
+/**
+ * The stored audio file behind one media id: the local file a `local` ref names or a committed download.
+ * Null for anything the device does not hold — a streamed source is reported unmeasurable, never probed.
+ */
+private suspend fun desktopStoredAudioFile(
+    graph: DesktopSessionGraph,
+    provider: String,
+    mediaId: String,
+): File? {
+    val item = try {
+        graph.mediaInfo.itemOf(provider, mediaId)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+    return withContext(Dispatchers.IO) {
+        graph.mediaInfo.fileOf(item?.ref?.provider ?: provider, mediaId)
+    }
+}
+
+/**
+ * Stored-file format facts for the nerd card: the header's own codec/rate plus the real byte count.
+ * A header that states nothing leaves those fields null — unavailable, not estimated from a quality tier.
+ */
+private suspend fun desktopNerdFormat(graph: DesktopSessionGraph, ref: ContentRef): NerdStatsFormat? {
+    val file = desktopStoredAudioFile(graph, ref.provider, ref.id) ?: return null
+    val technical = withContext(Dispatchers.IO) { graph.mediaInfo.technicalOf(file) }
+    return NerdStatsFormat(
+        codec = technical?.codec?.takeIf { it != MediaCodec.UNKNOWN }?.name,
+        bitrateKbps = technical?.bitrateBitsPerSecond?.let { (it / 1_000L).toInt() },
+        sampleRateHz = technical?.sampleRate,
+        contentLengthBytes = file.length(),
+    )
+}
+
+/**
+ * The developer-page acoustic section: the shared audit panel of the queue's current song, or the
+ * unavailable note while nothing is loaded. Leaving or hiding the section cancels a run in flight.
+ */
+@Composable
+private fun DesktopAcousticQualitySection(graph: DesktopSessionGraph, active: Boolean) {
+    val queueState by graph.queue.state.collectAsState()
+    val current = queueState.currentOccurrenceId
+        ?.let { id -> queueState.entries.firstOrNull { it.occurrenceId == id }?.item }
+    DisposableEffect(graph.acoustic, active) {
+        graph.acoustic.setActive(active)
+        onDispose { graph.acoustic.setActive(false) }
+    }
+    if (current == null) {
+        DesktopUnavailablePanel()
+        return
+    }
+    // The snapshot collection keeps the audit key recomputing as the loaded request moves, so a
+    // source fallback inside the same occurrence retires the older attempt's binding.
+    val playbackSnapshot by graph.player.snapshot.collectAsState()
+    val requestKey = playbackSnapshot?.let { graph.acousticRequestKey() }.orEmpty()
+    AcousticQualityPanel(
+        target = AcousticAuditTarget(
+            current.ref.id,
+            current.title,
+            current.artists.joinToString { it.name },
+            requestKey = requestKey,
+        ),
+        owner = graph.acoustic,
+        active = active,
+        modifier = Modifier.padding(horizontal = 16.dp),
     )
 }
 

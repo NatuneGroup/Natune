@@ -67,6 +67,27 @@ object IosProviderCredentials {
     val jioSaavnDesKey: ByteArray?
         get() = iosBuildSetting("ArchiveTuneJioSaavnDesKey").encodeToByteArray().takeIf { it.size == 8 }
 
+    /**
+     * The YouTube device-code sign-in client pair; both values must be present for the code sign-in page to run.
+     * Blank means the page reports itself not configured. The values are never logged or written to settings.
+     */
+    val youTubeOauthClientId: String get() = iosBuildSetting("ArchiveTuneYouTubeOauthClientId")
+
+    val youTubeOauthClientSecret: String get() = iosBuildSetting("ArchiveTuneYouTubeOauthClientSecret")
+
+    /**
+     * The Google OAuth client of type "iOS" for the Drive app-data backup — a public installed-app
+     * client, never a secret. Blank keeps the Drive rows hidden: sign-in reports not configured.
+     */
+    val googleDriveClientId: String get() = iosBuildSetting("ArchiveTuneGoogleDriveClientId")
+
+    /**
+     * The URL scheme the Drive sign-in redirects with, registered in CFBundleURLTypes: the reversed
+     * client id (`com.googleusercontent.apps.<id>`) of the same OAuth client. iOS clients also accept
+     * the app's bundle id as the scheme. Blank derives the reversed id from the client id.
+     */
+    val googleDriveUrlScheme: String get() = iosBuildSetting("ArchiveTuneGoogleDriveUrlScheme")
+
     /** The Cloudflare Turnstile sitekey of the Amazon authorization challenge. Blank means not configured. */
     val amazonTurnstileSitekey: String get() = iosBuildSetting("ArchiveTuneAmazonTurnstileSitekey")
 

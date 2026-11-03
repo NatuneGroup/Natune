@@ -36,7 +36,11 @@ import moe.rukamori.archivetune.shared.ui.screens.TelegramChannelUi
 import moe.rukamori.archivetune.shared.ui.screens.telegram.TelegramBotsOwnerBinding
 import moe.rukamori.archivetune.shared.ui.screens.telegram.TelegramBrowseOwnerBinding
 import org.jetbrains.skia.Image as SkiaImage
+import platform.Foundation.NSNumber
+import platform.Foundation.NSNumberFormatter
+import platform.Foundation.NSNumberFormatterDecimalStyle
 import platform.Foundation.NSUUID
+import platform.Foundation.numberWithInt
 
 /**
  * The Telegram channel browse page over the signed-in iOS client. Without a client the route keeps the host boundary,
@@ -52,6 +56,10 @@ internal fun iosTelegramBrowsePage(graph: IosSessionGraph, host: IosHost, back: 
 private fun iosTelegramBrowseMount(graph: IosSessionGraph, client: IosTelegramClient, back: () -> Unit): ArchiveGraphPage {
     // The binding must run on the UI dispatcher, and the composition scope is that dispatcher. The graph scope is not.
     val scope = rememberCoroutineScope()
+    // The locale-aware counterpart of the desktop host's NumberFormat integer grouping.
+    val memberCountFormat = remember {
+        NSNumberFormatter().apply { numberStyle = NSNumberFormatterDecimalStyle }
+    }
     val binding = remember(client, scope, back) {
         TelegramBrowseOwnerBinding(
             owner = TelegramBrowseOwner(
@@ -61,8 +69,9 @@ private fun iosTelegramBrowseMount(graph: IosSessionGraph, client: IosTelegramCl
                 scope = scope,
             ),
             scope = scope,
-            // Plain digits until the iOS host has a locale-aware count formatter. The desktop host formats with NumberFormat.
-            formatMemberCount = { count -> count.toString() },
+            formatMemberCount = { count ->
+                memberCountFormat.stringFromNumber(NSNumber.numberWithInt(count)) ?: count.toString()
+            },
             onBack = back,
         )
     }

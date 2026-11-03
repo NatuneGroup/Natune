@@ -643,6 +643,19 @@ class MusicService :
             }.build()
     }
 
+    /** Fast-clock client whose first-attempt timeout escalates once into [mediaOkHttpClient]. */
+    private val mediaFastFailOkHttpClient: OkHttpClient by lazy {
+        mediaOkHttpClient
+            .newBuilder()
+            .connectTimeout(FastFailReadPolicy.FAST_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(FastFailReadPolicy.FAST_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .build()
+    }
+
+    private val fastFailHttpDataSourceFactory: DataSource.Factory by lazy {
+        FastFailHttpDataSource.Factory(mediaFastFailOkHttpClient, mediaOkHttpClient)
+    }
+
     private var finiteQueueJob: Job? = null
     private val finiteLoadOwner = PlaylistLoadOwner()
     private var playlistActionJob: Job? = null
@@ -873,6 +886,31 @@ class MusicService :
     private var crossfadeGapless = false
     private var crossfadeTriggerJob: Job? = null
     private var crossfadeJob: Job? = null
+
+    /** Gain shape of the running blend — equal-power for automix, exp-out/log-in for manual fades. */
+    private var crossfadeFadeCurve = CrossfadePolicy.FadeCurve.EQUAL_POWER
+    /** Stamp of the last user-initiated item/queue switch; a fresh one suppresses blend starts. */
+    private var lastBlendContextChangeAtMs = Long.MIN_VALUE
+    /** Click-free pause/resume/seek dips; skipped while a crossfade owns volumes or casting. */
+    private val outputFades by lazy {
+        PlaybackOutputFades(
+            scope = scope,
+            player = { localPlayer },
+            baseVolume = { currentEffectivePlayerVolume() },
+            allowed = {
+                ::player.isInitialized && !isCrossfading &&
+                    !crossfadeHandoffInProgress && !isCastSessionConnected()
+            },
+        )
+    }
+
+    /**
+     * Session-facing player: controller transport edges arrive as real play()/pause()/
+     * setPlayWhenReady() calls, so [OutputFadingPlayer] applies the click-free fade with the
+     * true intent while Media3 session processing stays intact. Rebuilt per promotion because
+     * the wrapped player itself is.
+     */
+    private fun sessionFacingPlayer(): Player = OutputFadingPlayer(player, outputFades)
     private var secondaryCrossfadePlayer: ExoPlayer? = null
     private var secondaryCrossfadeTarget: CrossfadeTarget? = null
     // The crossfade flag doubles as the UI's mixing signal: the flow backs the plain
@@ -1501,7 +1539,7 @@ class MusicService :
         }
         mediaSession =
             MediaLibrarySession
-                .Builder(this, player, mediaLibrarySessionCallback)
+                .Builder(this, sessionFacingPlayer(), mediaLibrarySessionCallback)
                 .setSessionActivity(
                     PendingIntent.getActivity(
                         this,
@@ -1510,6 +1548,7 @@ class MusicService :
                         PendingIntent.FLAG_IMMUTABLE,
                     ),
                 ).setBitmapLoader(CoilBitmapLoader(this, scope))
+                .setSessionExtras(slotReservationSessionExtras())
                 .build()
         setMediaNotificationProvider(
             ArchiveTuneMediaNotificationProvider(
@@ -3033,8 +3072,15 @@ class MusicService :
         outgoingPlayer: ExoPlayer,
         incomingPlayer: ExoPlayer,
     ) {
-        outgoingPlayer.volume = CrossfadePolicy.outgoingVolume(progress, outgoingBaseVolume, maxSafeGainFactor)
-        incomingPlayer.volume = CrossfadePolicy.incomingVolume(progress, incomingBaseVolume, maxSafeGainFactor)
+        outgoingPlayer.volume = CrossfadePolicy.outgoingVolume(crossfadeFadeCurve, progress, outgoingBaseVolume, maxSafeGainFactor)
+        incomingPlayer.volume = CrossfadePolicy.incomingVolume(crossfadeFadeCurve, progress, incomingBaseVolume, maxSafeGainFactor)
+    }
+
+    /** True while the guard window after a user-initiated item/queue switch is still open. */
+    private fun isBlendContextChangeRecent(): Boolean {
+        val stampedAt = lastBlendContextChangeAtMs
+        return stampedAt != Long.MIN_VALUE &&
+            android.os.SystemClock.elapsedRealtime() - stampedAt < CROSSFADE_CONTEXT_CHANGE_GUARD_MS
     }
 
     /** Crossfade is a local dual-player technique; it must not run while casting remotely. */
@@ -3049,9 +3095,11 @@ class MusicService :
         crossfadeTriggerJob = null
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "sleep_timer")
         releaseSecondaryCrossfadePlayer()
-        player.pause()
+        outputFades.fadedPause {
+            player.pause()
+            localPlayer.pause()
+        }
         player.playWhenReady = false
-        localPlayer.pause()
         localPlayer.playWhenReady = false
     }
 
@@ -3625,8 +3673,16 @@ class MusicService :
         plan: TransitionPlan? = null,
     ) {
         if (isCrossfading || (!crossfadeEnabled && !smartFadeEnabled)) return
+        // No blend starts while paused or right after a manual item/queue switch.
+        if (!CrossfadePolicy.mayStartBlend(player.playWhenReady, isBlendContextChangeRecent())) return
 
         val smart = plan != null
+        crossfadeFadeCurve =
+            if (smart) {
+                CrossfadePolicy.FadeCurve.EQUAL_POWER
+            } else {
+                CrossfadePolicy.FadeCurve.EXPONENTIAL_OUT_LOGARITHMIC_IN
+            }
         val cueTimeMs = if (smart) (plan!!.incomingCueTime * 1000).roundToLong().coerceAtLeast(0L) else 0L
         val outgoingMediaId = player.currentMediaItem?.mediaId ?: return
         if (!crossfadeFailureTracker.canAttempt(outgoingMediaId, target.mediaId)) {
@@ -3776,6 +3832,11 @@ class MusicService :
                     // snaps straight to full volume; a short ramp avoids the audible jump.
                     var earlyFinishElapsedMs = -1L
                     var earlyFinishFromProgress = 0f
+                    // ~20 gain steps per fade: positions ride every 32 ms tick, volume writes pace.
+                    val volumeStepMs = CrossfadePolicy.fadeStepIntervalMs(fadeMs)
+                    var lastVolumeApplyElapsedMs = -volumeStepMs
+                    val earlyVolumeStepMs = CrossfadePolicy.fadeStepIntervalMs(CROSSFADE_EARLY_FINISH_MS)
+                    var lastEarlyVolumeApplyElapsedMs = -earlyVolumeStepMs
                     while (isActive && elapsedMs < fadeMs) {
                         if (player.currentMediaItem?.mediaId != outgoingMediaId) {
                             cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "outgoing_media_changed")
@@ -3880,13 +3941,18 @@ class MusicService :
                                 val t = earlyFinishElapsedMs.toFloat() / CROSSFADE_EARLY_FINISH_MS.toFloat()
                                 crossfadeProgress =
                                     (earlyFinishFromProgress + (1f - earlyFinishFromProgress) * t).coerceIn(0f, 1f)
-                                applyCrossfadeVolumes(
-                                    crossfadeProgress,
-                                    crossfadeBaseVolume,
-                                    crossfadeIncomingBaseVolume,
-                                    localPlayer,
-                                    incomingPlayer,
-                                )
+                                if (earlyFinishElapsedMs - lastEarlyVolumeApplyElapsedMs >= earlyVolumeStepMs ||
+                                    crossfadeProgress >= 1f
+                                ) {
+                                    lastEarlyVolumeApplyElapsedMs = earlyFinishElapsedMs
+                                    applyCrossfadeVolumes(
+                                        crossfadeProgress,
+                                        crossfadeBaseVolume,
+                                        crossfadeIncomingBaseVolume,
+                                        localPlayer,
+                                        incomingPlayer,
+                                    )
+                                }
                                 if (smart) {
                                     rideSmartFadeFilters(plan!!, crossfadeProgress)
                                 }
@@ -3911,13 +3977,18 @@ class MusicService :
                                 )
                             lastFadeOutgoingPositionMs = outgoingPositionMs
                             crossfadeProgress = (elapsedMs.toFloat() / fadeMs.toFloat()).coerceIn(0f, 1f)
-                            applyCrossfadeVolumes(
-                                crossfadeProgress,
-                                crossfadeBaseVolume,
-                                crossfadeIncomingBaseVolume,
-                                localPlayer,
-                                incomingPlayer,
-                            )
+                            if (elapsedMs - lastVolumeApplyElapsedMs >= volumeStepMs ||
+                                crossfadeProgress >= 1f
+                            ) {
+                                lastVolumeApplyElapsedMs = elapsedMs
+                                applyCrossfadeVolumes(
+                                    crossfadeProgress,
+                                    crossfadeBaseVolume,
+                                    crossfadeIncomingBaseVolume,
+                                    localPlayer,
+                                    incomingPlayer,
+                                )
+                            }
                             if (smart) {
                                 rideSmartFadeFilters(plan!!, crossfadeProgress)
                             }
@@ -4320,7 +4391,7 @@ class MusicService :
             incomingPlayer.addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
 
             // 4. MediaSession + observable player state.
-            mediaSession.player = player
+            mediaSession.player = sessionFacingPlayer()
             _playerFlow.value = player
             pausedPlaybackGate.sync(player)
             recoveryRetry.cancelPending()
@@ -4853,7 +4924,7 @@ class MusicService :
         audioFocusVolumeFactor.value = 1f
         wasPlayingBeforeAudioFocusLoss = resumeWhenFocusReturns && player.playWhenReady
         if (player.playWhenReady) {
-            player.pause()
+            outputFades.fadedPause { player.pause() }
         }
     }
 
@@ -4871,7 +4942,7 @@ class MusicService :
                 audioFocusVolumeFactor.value = 1f
 
                 if (wasPlayingBeforeAudioFocusLoss) {
-                    player.play()
+                    outputFades.mutedPlay { player.play() }
                     wasPlayingBeforeAudioFocusLoss = false
                 }
 
@@ -4916,7 +4987,7 @@ class MusicService :
                 audioFocusVolumeFactor.value = 1f
 
                 if (wasPlayingBeforeAudioFocusLoss) {
-                    player.play()
+                    outputFades.mutedPlay { player.play() }
                     wasPlayingBeforeAudioFocusLoss = false
                 }
 
@@ -5055,7 +5126,7 @@ class MusicService :
                     player.playbackState != Player.STATE_ENDED
 
             if (canPauseNow) {
-                player.pause()
+                outputFades.fadedPause { player.pause() }
                 wasAutoPausedByDeviceMute = true
                 registerMuteRecoveryObserver()
                 if (playbackRequestedWhileMuted) {
@@ -5075,7 +5146,7 @@ class MusicService :
                 player.playbackState != Player.STATE_IDLE &&
                 player.playbackState != Player.STATE_ENDED
         if (canResumeNow) {
-            player.play()
+            outputFades.mutedPlay { player.play() }
         }
     }
 
@@ -5149,14 +5220,14 @@ class MusicService :
             player.playbackState != Player.STATE_ENDED
         ) {
             if (!player.playWhenReady) {
-                player.play()
+                outputFades.mutedPlay { player.play() }
             }
             return
         }
 
         if (player.mediaItemCount > 0) {
             player.prepare()
-            player.play()
+            outputFades.mutedPlay { player.play() }
         }
     }
 
@@ -7203,6 +7274,20 @@ class MusicService :
         ) {
             cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "seek_skip")
         }
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK ||
+            reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+        ) {
+            // A manual switch opens the context-change guard; a blend on a mutated queue dies.
+            lastBlendContextChangeAtMs = android.os.SystemClock.elapsedRealtime()
+            crossfadeTriggerJob?.cancel()
+            crossfadeTriggerJob = null
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+                isCrossfading &&
+                !crossfadeHandoffInProgress
+            ) {
+                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "context_change")
+            }
+        }
 
         if (sleepTimer.pauseWhenSongEnd) {
             pauseFromSleepTimer()
@@ -7480,7 +7565,7 @@ class MusicService :
     }
 
     private fun Queue.shouldBootstrapInfiniteQueue(): Boolean =
-        if (this is YouTubePlaylistQueue) confirmedExhausted else preloadItem != null || !hasNextPage()
+        if (this is ListQueue && finite) false else if (this is YouTubePlaylistQueue) confirmedExhausted else preloadItem != null || !hasNextPage()
 
     private fun Queue.infiniteQueueSeedMediaId(): String? =
         if (this is YouTubePlaylistQueue) null else preloadItem?.id?.trim()?.takeIf { it.isNotBlank() }
@@ -7987,6 +8072,9 @@ class MusicService :
             )
             if (!crossfadeHandoffInProgress) {
                 cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "seek")
+                // A manual seek is a context change too: without this stamp an in-item seek
+                // into the tail lets the rescheduled crossfade start inside the guard window.
+                lastBlendContextChangeAtMs = android.os.SystemClock.elapsedRealtime()
             }
             // A seek forces a re-buffer; the BUFFERING->READY transition re-fires the reactive
             // volume pipeline (playerVolume x normalize x focus), which can pin the primary
@@ -7996,6 +8084,7 @@ class MusicService :
             // for an in-buffer seek that never leaves READY, once shortly after.
             pendingSeekVolumeReassert = true
             scheduleSeekVolumeReassert()
+            outputFades.dipForSeek()
         }
         if (!isCrossfading && !crossfadeHandoffInProgress) {
             scheduleCrossfade()
@@ -8456,7 +8545,7 @@ class MusicService :
                 .Factory()
                 .setCache(playerCache)
                 .setUpstreamDataSourceFactory(
-                    DeezerDecryptingDataSource.Factory(OkHttpDataSource.Factory(mediaOkHttpClient)),
+                    DeezerDecryptingDataSource.Factory(fastFailHttpDataSourceFactory),
                 ).setCacheWriteDataSinkFactory(
                     CacheDataSink.Factory().setCache(playerCache).setFragmentSize(C.LENGTH_UNSET.toLong()),
                 ).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
@@ -8467,7 +8556,7 @@ class MusicService :
                 .Factory()
                 .setCache(playerCache)
                 .setUpstreamDataSourceFactory(
-                    EchoDecryptingDataSource.Factory(OkHttpDataSource.Factory(mediaOkHttpClient)),
+                    EchoDecryptingDataSource.Factory(fastFailHttpDataSourceFactory),
                 ).setCacheWriteDataSinkFactory(
                     CacheDataSink.Factory().setCache(playerCache).setFragmentSize(C.LENGTH_UNSET.toLong()),
                 ).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
@@ -8488,7 +8577,7 @@ class MusicService :
         val youtubeMediaFactory =
             DefaultDataSource.Factory(
                 this,
-                OkHttpDataSource.Factory(mediaOkHttpClient),
+                fastFailHttpDataSourceFactory,
             )
         // Resolved source URIs pass through this factory a second time after the outer resolver has
         // selected a provider. Route those private schemes here instead of asking DefaultDataSource
@@ -8497,9 +8586,9 @@ class MusicService :
             DataSource.Factory {
                 ResolvedSchemeRoutingDataSource(
                     defaultFactory = youtubeMediaFactory,
-                    deezerFactory = DeezerDecryptingDataSource.Factory(OkHttpDataSource.Factory(mediaOkHttpClient)),
+                    deezerFactory = DeezerDecryptingDataSource.Factory(fastFailHttpDataSourceFactory),
                     tidalProgressiveDashFactory = TidalProgressiveDashDataSource.Factory(mediaOkHttpClient),
-                    spotifyEchoFactory = EchoDecryptingDataSource.Factory(OkHttpDataSource.Factory(mediaOkHttpClient)),
+                    spotifyEchoFactory = EchoDecryptingDataSource.Factory(fastFailHttpDataSourceFactory),
                 )
             }
 
@@ -12238,105 +12327,7 @@ class MusicService :
         dbSong: Song?,
         mediaMetadata: MediaMetadata?,
         durationMs: Long,
-    ): Song? {
-        val metadataSong = mediaMetadata?.let { createTransientSongFromMedia(it) }
-        val song =
-            when {
-                dbSong == null -> metadataSong
-                metadataSong == null -> dbSong
-                else -> dbSong.withPresenceMetadata(metadataSong)
-            }
-
-        return song?.withEffectiveNames().withResolvedPresenceDuration(durationMs)
-    }
-
-    private fun Song.withPresenceMetadata(metadataSong: Song): Song {
-        val resolvedArtists =
-            metadataSong.artists.takeIf { metadataArtists ->
-                metadataArtists.any { it.hasRemotePresenceId() }
-            } ?: artists
-
-        return copy(
-            song =
-                song.copy(
-                    thumbnailUrl = song.thumbnailUrl ?: metadataSong.song.thumbnailUrl,
-                    albumId = song.albumId ?: metadataSong.song.albumId,
-                    albumName = song.albumName ?: metadataSong.song.albumName,
-                ),
-            artists = resolvedArtists,
-            album = album ?: metadataSong.album,
-        )
-    }
-
-    private fun Song?.withResolvedPresenceDuration(durationMs: Long): Song? {
-        val song = this ?: return null
-        if (song.song.duration > 0 || durationMs <= 0) return song
-        val durationSeconds =
-            (durationMs / 1000L)
-                .coerceAtLeast(1L)
-                .coerceAtMost(Int.MAX_VALUE.toLong())
-                .toInt()
-        return song.copy(song = song.song.copy(duration = durationSeconds))
-    }
-
-    private fun ArtistEntity.hasRemotePresenceId(): Boolean = channelId.isRemotePresenceId() || id.isRemotePresenceId()
-
-    private fun String?.isRemotePresenceId(): Boolean {
-        val id = this?.trim()?.takeIf { it.isNotBlank() } ?: return false
-        return !id.isLocalMediaId() &&
-            !id.isTelegramMediaId() &&
-            !id.startsWith("LOCAL_ARTIST_") &&
-            !id.startsWith("LA") &&
-            !id.contains("privately_owned_artist", ignoreCase = true)
-    }
-
-    // Create a transient Song object from current Player MediaMetadata when the DB doesn't have it.
-    private fun createTransientSongFromMedia(media: MediaMetadata): Song {
-        val songEntity =
-            SongEntity(
-                id = media.id,
-                title = media.title,
-                duration = media.duration,
-                thumbnailUrl = media.thumbnailUrl,
-                albumId = media.album?.id,
-                albumName = media.album?.title,
-                explicit = media.explicit,
-                isMusicVideo = media.isMusicVideo,
-                isLocal = media.id.isLocalMediaId(),
-            )
-
-        val artists =
-            media.artists.map { artist ->
-                ArtistEntity(
-                    id = artist.id ?: "LA_unknown_${artist.name}",
-                    name = artist.name,
-                    thumbnailUrl = if (!artist.thumbnailUrl.isNullOrBlank()) artist.thumbnailUrl else media.thumbnailUrl,
-                    isLocal = artist.id == null || artist.id.isLocalMediaId(),
-                )
-            }
-
-        val album =
-            media.album?.let { alb ->
-                AlbumEntity(
-                    id = alb.id,
-                    playlistId = null,
-                    title = alb.title,
-                    year = null,
-                    thumbnailUrl = media.thumbnailUrl,
-                    themeColor = null,
-                    songCount = 1,
-                    duration = media.duration,
-                    isLocal = media.id.isLocalMediaId(),
-                )
-            }
-
-        return Song(
-            song = songEntity,
-            artists = artists,
-            album = album,
-            format = null,
-        )
-    }
+    ): Song? = PlaybackPresenceSong.resolve(dbSong, mediaMetadata, durationMs)
 
     private inline fun <reified T> readPersistentObject(fileName: String): T? {
         val persistentFile = filesDir.resolve(fileName)
@@ -12797,7 +12788,11 @@ class MusicService :
         ensureStartedAsForeground()
         when (intent?.action) {
             "moe.rukamori.archivetune.WIDGET_PLAY_PAUSE" -> {
-                if (player.isPlaying) player.pause() else player.play()
+                if (player.isPlaying) {
+                    outputFades.fadedPause { player.pause() }
+                } else {
+                    outputFades.mutedPlay { player.play() }
+                }
             }
 
             "moe.rukamori.archivetune.WIDGET_SKIP_NEXT" -> {
@@ -12964,6 +12959,9 @@ class MusicService :
         const val MIN_CROSSFADE_DURATION_MS = 500L
         const val CROSSFADE_END_GUARD_MS = 150L
         const val CROSSFADE_EARLY_FINISH_MS = 350L
+
+        /** No blend may start within this window after a user-initiated item/queue switch. */
+        const val CROSSFADE_CONTEXT_CHANGE_GUARD_MS = 1_500L
         const val CROSSFADE_BUFFER_STALL_GRACE_MS = 250L
         const val SMART_FADE_TAIL_WAIT_MS = 2_000L
         const val SMART_FADE_TAIL_EPSILON_MS = 8L

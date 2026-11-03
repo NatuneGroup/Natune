@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.shared.data.bytesource.ScopedCookie
 import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackHeaders
 import moe.rukamori.archivetune.shared.domain.playback.SystemMonotonicClock
+import moe.rukamori.archivetune.shared.domain.settings.ProxyRoute
 import platform.Foundation.*
 import platform.darwin.NSObject
 import platform.posix.memcpy
@@ -87,6 +88,10 @@ private class RangeTransfer : NSObject(), NSURLSessionDataDelegateProtocol {
     private var broken = false
     private var cancelled = false
 
+    // The route this transfer's session opened with. Written on start before the session exists and read on
+    // the delegate queue afterwards, so a broken connection can cool the rotating member it went through.
+    private var appliedRoute: ProxyRoute? = null
+
     /** True once the connection failed rather than ended. The reader then reopens at its own position. */
     val isBroken: Boolean
         get() = lock.locked { broken }
@@ -100,6 +105,10 @@ private class RangeTransfer : NSObject(), NSURLSessionDataDelegateProtocol {
         configuration.URLCache = null
         configuration.HTTPCookieStorage = null
         configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicy.NSHTTPCookieAcceptPolicyNever
+        // The stream route is decided per connection here: the saved proxy unless its bypass switch is on, or
+        // the rotation pool's next member while rotation runs. The session binds the dictionary as it is
+        // created, which is what lets an edit or a rotation apply without restarting the process.
+        appliedRoute = IosStreamProxyRouting.applyTo(configuration)
         val queue = NSOperationQueue().apply { maxConcurrentOperationCount = 1 }
         val session = NSURLSession.sessionWithConfiguration(configuration, this, queue)
         val created = session.dataTaskWithRequest(request)
@@ -229,11 +238,56 @@ private class RangeTransfer : NSObject(), NSURLSessionDataDelegateProtocol {
         completionHandler(null)
     }
 
+    /**
+     * Answers a proxy asking for credentials, at whichever level CFNetwork raises the challenge — CONNECT
+     * auth arrives at the task, SOCKS auth is best effort at the session like the engine config's handler.
+     * Anything else keeps the platform default so a server-trust prompt still gets the standard evaluation.
+     */
+    override fun URLSession(
+        session: NSURLSession,
+        didReceiveChallenge: NSURLAuthenticationChallenge,
+        completionHandler: (NSURLSessionAuthChallengeDisposition, NSURLCredential?) -> Unit,
+    ) = answerChallenge(didReceiveChallenge, completionHandler)
+
+    override fun URLSession(
+        session: NSURLSession,
+        task: NSURLSessionTask,
+        didReceiveChallenge: NSURLAuthenticationChallenge,
+        completionHandler: (NSURLSessionAuthChallengeDisposition, NSURLCredential?) -> Unit,
+    ) = answerChallenge(didReceiveChallenge, completionHandler)
+
+    private fun answerChallenge(
+        challenge: NSURLAuthenticationChallenge,
+        completionHandler: (NSURLSessionAuthChallengeDisposition, NSURLCredential?) -> Unit,
+    ) {
+        val route = appliedRoute
+        val space = challenge.protectionSpace
+        // Two tries absorb a proxy that asks twice; a third refusal is the proxy rejecting the credentials.
+        if (route == null || !space.isProxy() || !route.hasCredentials || challenge.previousFailureCount >= 2L) {
+            completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, null)
+        } else {
+            completionHandler(
+                NSURLSessionAuthChallengeUseCredential,
+                NSURLCredential.create(
+                    user = route.username.orEmpty(),
+                    password = route.password.orEmpty(),
+                    persistence = NSURLCredentialPersistence.NSURLCredentialPersistenceNone,
+                ),
+            )
+        }
+    }
+
     override fun URLSession(session: NSURLSession, task: NSURLSessionTask, didCompleteWithError: NSError?) {
+        var failedRoute: ProxyRoute? = null
         lock.locked {
-            if (didCompleteWithError != null && !cancelled) broken = true
+            if (didCompleteWithError != null && !cancelled) {
+                broken = true
+                failedRoute = appliedRoute
+            }
             finished = true
         }
+        // A transport error through a rotating member cools it, so the next open moves past it.
+        failedRoute?.let(IosStreamProxyRouting::reportFailure)
     }
 }
 
@@ -470,7 +524,9 @@ internal class IosHttpRangeSource(
                             ?: throw ByteSourceException("the redirect target is not an HTTP(S) URL")
                         val decision = LeaseCookiePolicy.redirect(lease, origin, nextOrigin)
                         if (!decision.allowed) throw ByteSourceException("the lease refuses this redirect")
-                        credentialed = decision.carriesCredentials
+                        // Once credentials are stripped they never return: a redirect on an uncredentialed
+                        // origin stays uncredentialed even while the policy lets the hop itself proceed.
+                        credentialed = credentialed && decision.carriesCredentials
                         current = next
                         origin = nextOrigin
                     }
@@ -524,8 +580,12 @@ internal class IosHttpRangeSource(
         request.HTTPMethod = "GET"
         request.setTimeoutInterval((if (probing) PROBE_TIMEOUT_MS else BODY_TIMEOUT_MS).toDouble() / 1000.0)
         request.HTTPShouldHandleCookies = false
-        if (credentialed) {
+        // The transport's headers belong to the credential anchor alone: a credentialed hop on another
+        // origin still sends no headers, so a redirect chain can never carry them off their origin.
+        if (credentialed && origin == lease.primaryOrigin) {
             headers.reveal().forEach { (name, value) -> request.setValue(value, forHTTPHeaderField = name) }
+        }
+        if (credentialed) {
             val cookie = LeaseCookiePolicy.cookiesFor(lease, origin, stored)
                 .joinToString("; ") { "${it.name}=${it.value}" }
             if (cookie.isNotEmpty()) request.setValue(cookie, forHTTPHeaderField = "Cookie")

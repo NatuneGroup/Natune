@@ -44,7 +44,8 @@ class LyricsDeadlineScheduleTest {
         val schedule = LyricsDeadlineSchedule.of(rows, minSweepMs = 150, includeInterludes = false)
         assertEquals(1_800, schedule.nextChangeAfter(1_500)) // first word's live end is an edge
         assertEquals(2_000, schedule.nextChangeAfter(1_900))
-        assertEquals(10_000, schedule.nextChangeAfter(4_000)) // line end edge then next start
+        // After the line end the next boundary is the row's sink, SINK_MS ahead of its first word.
+        assertEquals(10_000 - LyricsSweepGeometry.SINK_MS, schedule.nextChangeAfter(4_000))
         assertEquals(10_000, schedule.nextChangeAfter(9_999))
         assertNull(schedule.nextChangeAfter(14_000))
     }

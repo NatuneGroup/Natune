@@ -71,7 +71,6 @@ class PersistedPreferenceRegistrySettingsTest {
                 PlayerDesignStyleKey,
                 LibraryStyleKey,
                 AppleMusicExperienceKey,
-                AppleMusicHeadersKey,
                 AppleMusicMenusKey,
                 AppleMusicSearchBarKey,
                 AppleMusicPaletteKey,

@@ -271,7 +271,8 @@ internal class DesktopHomeFeed(private val owners: DesktopCatalogueOwners) {
         failed = false
         owners.launch {
             // Continuation reads send the token alone, as the Android feed does; the chip's params belong to
-            // first-page re-reads only.
+            // first-page re-reads only. The page keeps the raw shelves: the song block list filters at render in
+            // the home page, so an unblock restores the cached rows without a re-read.
             val page = owners.catalogue.home(if (first) null else continuation, if (first) params else null)
             if (gen != generation) return@launch
             if (first) {

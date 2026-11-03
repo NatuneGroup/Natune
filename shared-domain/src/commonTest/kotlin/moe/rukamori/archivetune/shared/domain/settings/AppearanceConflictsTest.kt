@@ -88,10 +88,9 @@ class AppearanceConflictsTest {
 
     @Test fun mergedLegacyRestoreDoesNotInheritTheInstallationsMigrationMarker() {
         val editor = PreferenceSnapshot.of(AppleMusicSettingsMigratedKey to true, AppleMusicExperienceKey to true,
-            AppleMusicHeadersKey to false, AppleMusicMenusKey to false, AppleMusicSearchBarKey to false,
+            AppleMusicMenusKey to false, AppleMusicSearchBarKey to false,
             AppleMusicPaletteKey to false, LibraryStyleKey to "DEFAULT", PlayerDesignStyleKey to "FLAMINGO").toEditor()
         editor.normalizeRestoredSettings(setOf(AppleMusicExperienceKey.name))
-        assertEquals(true, editor[AppleMusicHeadersKey])
         assertEquals(true, editor[AppleMusicMenusKey])
         assertEquals(true, editor[AppleMusicSearchBarKey])
         assertEquals(true, editor[AppleMusicPaletteKey])
@@ -99,7 +98,7 @@ class AppearanceConflictsTest {
         // XML restore remains a merge: an explicitly saved style from this installation is retained.
         assertEquals("FLAMINGO", editor[PlayerDesignStyleKey])
         assertEquals("DEFAULT", editor[LibraryStyleKey])
-        editor[AppleMusicHeadersKey] = false
+        editor[AppleMusicSearchBarKey] = false
         val before = editor.snapshot()
         editor.normalizeRestoredSettings(setOf(AppleMusicExperienceKey.name, AppleMusicSettingsMigratedKey.name))
         assertTrue(SettingsChange(before, editor.snapshot()).changedKeys.isEmpty())

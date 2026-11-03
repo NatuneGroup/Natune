@@ -101,7 +101,7 @@ dispatched for this merge, and the foundation's CI results are not port evidence
 
 ## Privacy and attribution
 
-Destination: **NatuneGroup/ArchiveTune-KMP**, private, branch `dev`. Keep it private
+Destination: **NatuneGroup/Natune**, private, branch `dev`. Keep it private
 until the official Metrolist KMP release. Recovered Metrolist builds are references,
 not the exact original KMP source. Preserve Metrolist and inherited contributors'
 credit, all copyright banners, root/vendor licenses and notices. No license,

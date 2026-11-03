@@ -19,6 +19,21 @@ NIGHTLY_VARIANTS = (
     "gms-mobile-universal", "foss-mobile-universal", "gms-tv-universal",
 )
 SIGNING_NAMES = ("KEYSTORE", "KEY_ALIAS", "KEYSTORE_PASSWORD", "KEY_PASSWORD")
+OPTIONAL_FIXTURES = (
+    "natune-desktop-macos-x64-fixture.dmg",
+    "natune-desktop-macos-arm64-fixture.dmg",
+    "natune-ios-fixture.ipa",
+)
+# The desktop updater takes the first manifest asset for its platform and architecture.
+DESKTOP_MANIFEST_ORDER = (
+    "natune-desktop-windows-x64-fixture.exe",
+    "natune-desktop-windows-x64-fixture.msi",
+    "natune-desktop-windows-x64-fixture.zip",
+    "natune-desktop-linux-x64-fixture.AppImage",
+    "natune-desktop-linux-x64-fixture.deb",
+    "natune-desktop-linux-arm64-fixture.AppImage",
+    "natune-desktop-linux-arm64-fixture.deb",
+)
 
 
 def step_script(name, workflow=WORKFLOW):
@@ -28,6 +43,10 @@ def step_script(name, workflow=WORKFLOW):
     if run is None:
         raise AssertionError(f"No block script in step {name}")
     return textwrap.dedent(run[1])
+
+
+def job_block(text, job):
+    return re.split(r"(?m)^  [a-z][a-z-]*:", text.split(f"\n  {job}:\n", 1)[1], maxsplit=1)[0]
 
 
 def tool(directory, name, source):
@@ -246,7 +265,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
             self.assertIn("Android build-tools do not contain apksigner and zipalign.", result.stdout)
             self.assertEqual(b"unsigned APK fixture", apk.read_bytes())
 
-    def publish_fixture(self, directory, channel, *, missing=False, stale=False):
+    def publish_fixture(self, directory, channel, *, drop=(), stale=False, flags=None):
         root = Path(directory)
         assets = root / "downloaded-artifacts"
         assets.mkdir()
@@ -257,7 +276,9 @@ class ReleaseWorkflowTest(unittest.TestCase):
         names += [f"natune-desktop-linux-{arch}-fixture.{ext}" for arch in ("x64", "arm64") for ext in ("deb", "AppImage")]
         names += [f"natune-desktop-macos-{arch}-fixture.dmg" for arch in ("x64", "arm64")]
         names += ["natune-ios-fixture.ipa"]
-        for name in (names[:-1] if missing else names):
+        for name in names:
+            if name in drop:
+                continue
             (assets / name).write_bytes(b"unsigned artifact fixture")
         scripts = root / ".github/scripts"
         scripts.mkdir(parents=True)
@@ -289,9 +310,9 @@ class ReleaseWorkflowTest(unittest.TestCase):
                            CHANNEL=channel, TAG_NAME="N20300101" if channel == "nightly" else "v1.2.3",
                            VERSION_NAME="fixture", VERSION_CODE="9001", COMMIT_SHA=commit,
                            REMOTE_SHA="b" * 40 if stale else commit, ANDROID_SIGNING_STATUS="unsigned",
-                           GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP", GITHUB_OUTPUT=str(root / "output"),
+                           GITHUB_REPOSITORY="NatuneGroup/Natune", GITHUB_OUTPUT=str(root / "output"),
                            RUNNER_TEMP=str(temporary), GH_CALLS=str(root / "gh-calls"), GH_TOKEN="",
-                           PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+                           PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], **(flags or {}))
         return result, names
 
     def test_unsigned_nightly_and_stable_publish_the_channel_inventory_and_private_manifest(self):
@@ -304,21 +325,200 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
                 create = next(args for args in calls if args[:2] == ["release", "create"])
                 self.assertEqual(count, len(names))
-                self.assertEqual(set(names), {Path(arg).name for arg in create if arg.startswith("downloaded-artifacts/")})
-                self.assertIn("Android APKs are unsigned", (root / "tmp/release-notes.md").read_text())
+                # macOS and iOS files never ship from the publish job, even when they are already downloaded.
+                required = set(names) - set(OPTIONAL_FIXTURES)
+                self.assertEqual(required, {Path(arg).name for arg in create if arg.startswith("downloaded-artifacts/")})
+                notes = (root / "tmp/release-notes.md").read_text()
+                self.assertIn("Android APKs are unsigned", notes)
+                self.assertNotIn("Partial build", notes)
                 manifest = json.loads((root / f"{channel}.json").read_text())
-                self.assertEqual(count - 10, len(manifest["assets"]))
+                apks = [name for name in names if name.endswith(".apk")]
+                manifest_names = [asset["name"] for asset in manifest["assets"]]
+                self.assertEqual(set(apks), set(manifest_names[:len(apks)]))
+                self.assertEqual(list(DESKTOP_MANIFEST_ORDER), manifest_names[len(apks):])
                 for asset in manifest["assets"]:
-                    self.assertTrue(asset["url"].startswith("https://github.com/NatuneGroup/ArchiveTune-KMP/releases/download/"))
+                    self.assertTrue(asset["url"].startswith("https://github.com/NatuneGroup/Natune/releases/download/"))
                     self.assertEqual(64, len(asset["sha256"]))
 
     def test_incomplete_inventory_is_not_published(self):
+        # A required Android or Windows/Linux leg that delivered nothing still stops the release.
+        for missing_name in ("app-gms-mobile-arm64-nightly.apk", "natune-desktop-windows-x64-fixture.zip"):
+            with self.subTest(missing=missing_name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, _ = self.publish_fixture(root, "nightly", drop=(missing_name,))
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("::error::", result.stdout)
+                self.assertNotIn('"create"', (root / "gh-calls").read_text())
+
+    def test_missing_macos_and_ios_assets_do_not_change_the_published_release(self):
+        # The release contents must not depend on whether the optional legs finished before publishing.
+        with tempfile.TemporaryDirectory() as complete_dir, tempfile.TemporaryDirectory() as partial_dir:
+            created = []
+            for directory, drop in ((complete_dir, ()), (partial_dir, OPTIONAL_FIXTURES)):
+                root = Path(directory)
+                result, _ = self.publish_fixture(root, "nightly", drop=drop)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("did_publish=true\n", (root / "output").read_text())
+                calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+                create = next(args for args in calls if args[:2] == ["release", "create"])
+                created.append(sorted(Path(arg).name for arg in create if arg.startswith("downloaded-artifacts/")))
+                self.assertEqual(
+                    [asset["name"] for asset in json.loads((root / "nightly.json").read_text())["assets"]
+                     if "macos" in asset["name"] or "ios" in asset["name"]],
+                    [],
+                )
+            self.assertEqual(created[0], created[1])
+
+    def attach_fixture(self, directory, *, present=OPTIONAL_FIXTURES, release_sha="a" * 40,
+                       release_body="notes <!-- at-build:9001 -->", release_exists=True, flags=None):
+        root = Path(directory)
+        assets = root / "optional-artifacts"
+        assets.mkdir()
+        for name in present:
+            (assets / name).write_bytes(b"optional artifact fixture")
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        tool(bin_dir, "gh", """
+            #!/usr/bin/env python3
+            import json, os, sys
+            args = sys.argv[1:]
+            with open(os.environ["GH_CALLS"], "a") as output:
+                output.write(json.dumps(args) + "\\n")
+            if args[:2] == ["release", "view"]:
+                if os.environ["RELEASE_EXISTS"] != "1":
+                    sys.exit(1)
+                print(json.dumps({"body": os.environ["RELEASE_BODY"], "targetCommitish": os.environ["RELEASE_SHA"]}))
+            elif args[:2] in (["release", "upload"], ["release", "edit"]):
+                if args[:2] == ["release", "edit"]:
+                    notes = args[args.index("--notes-file") + 1]
+                    with open(os.environ["EDITED_NOTES"], "w") as copy, open(notes) as source:
+                        copy.write(source.read())
+            else:
+                sys.exit("Unexpected GitHub command: " + repr(args))
+        """)
+        temporary = root / "tmp"
+        temporary.mkdir()
+        environment = dict(
+            TAG_NAME="N20300101", VERSION_NAME="fixture", VERSION_CODE="9001", COMMIT_SHA="a" * 40,
+            BUILD_DESKTOP="true", BUILD_IOS="true", MACOS_RESULT="success", IOS_RESULT="failure",
+            GITHUB_REPOSITORY="NatuneGroup/Natune", RUNNER_TEMP=str(temporary),
+            GH_CALLS=str(root / "gh-calls"), GH_TOKEN="", RELEASE_EXISTS="1" if release_exists else "0",
+            RELEASE_SHA=release_sha, RELEASE_BODY=release_body, EDITED_NOTES=str(root / "edited-notes"),
+            PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+        )
+        environment.update(flags or {})
+        result = bash_step("Attach optional assets to the published release", root, **environment)
+        calls_path = root / "gh-calls"
+        calls = [json.loads(line) for line in calls_path.read_text().splitlines()] if calls_path.exists() else []
+        return result, calls
+
+    def test_optional_assets_are_attached_to_the_published_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, calls = self.attach_fixture(directory)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            uploads = [args for args in calls if args[:2] == ["release", "upload"]]
+            self.assertEqual(1, len(uploads))
+            self.assertEqual("N20300101", uploads[0][2])
+            self.assertIn("--clobber", uploads[0])
+            self.assertEqual(set(OPTIONAL_FIXTURES), {Path(arg).name for arg in uploads[0] if arg.startswith("optional-artifacts/")})
+            self.assertEqual([], [args for args in calls if args[:2] == ["release", "edit"]])
+            self.assertNotIn("::warning::", result.stdout)
+
+    def test_missing_optional_assets_are_listed_on_the_published_release(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            result, _ = self.publish_fixture(root, "nightly", missing=True)
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("Expected 16 release assets including 6 nightly APKs", result.stdout)
-            self.assertNotIn('"create"', (root / "gh-calls").read_text())
+            present = OPTIONAL_FIXTURES[:2]
+            result, calls = self.attach_fixture(root, present=present)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn("Optional artifact 'natune-ios-fixture.ipa' is absent", result.stdout)
+            uploads = [args for args in calls if args[:2] == ["release", "upload"]]
+            self.assertEqual(set(present), {Path(arg).name for arg in uploads[0] if arg.startswith("optional-artifacts/")})
+            edits = [args for args in calls if args[:2] == ["release", "edit"]]
+            self.assertEqual(1, len(edits))
+            notes = (root / "edited-notes").read_text()
+            self.assertIn("at-build:9001", notes)
+            self.assertIn("Partial build", notes)
+            self.assertIn("natune-ios-fixture.ipa", notes)
+            self.assertNotIn("natune-desktop-macos-x64-fixture.dmg", notes)
+
+    def test_disabled_ios_leg_is_not_reported_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, calls = self.attach_fixture(directory, present=OPTIONAL_FIXTURES[:2], flags={"BUILD_IOS": "false"})
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertNotIn("::warning::", result.stdout)
+            self.assertEqual([], [args for args in calls if args[:2] == ["release", "edit"]])
+
+    def test_optional_assets_never_reach_a_release_from_another_build(self):
+        cases = (
+            {"release_exists": False},
+            {"release_sha": "b" * 40},
+            {"release_body": "notes <!-- at-build:9002 -->"},
+        )
+        for overrides in cases:
+            with self.subTest(**overrides), tempfile.TemporaryDirectory() as directory:
+                result, calls = self.attach_fixture(directory, **overrides)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("::warning::", result.stdout)
+                self.assertEqual([], [args for args in calls if args[:2] in (["release", "upload"], ["release", "edit"])])
+
+    def test_publishing_without_a_required_build_leg_is_rejected_before_the_release_exists(self):
+        # publish: true with a required leg disabled fails before any release exists — previously the
+        # release was created and the manifest step then failed on the missing inventory.
+        for flags in (
+            {"BUILD_ANDROID": "false"},
+            {"BUILD_DESKTOP": "false"},
+            {"BUILD_ANDROID": "false", "BUILD_DESKTOP": "false"},
+        ):
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, _ = self.publish_fixture(root, "nightly", flags=flags)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("::error::", result.stdout)
+                self.assertFalse((root / "gh-calls").exists(), "no gh call may run before the rejection")
+
+    def test_publishing_with_only_the_optional_ios_leg_disabled_still_ships(self):
+        # build_ios=false drops the IPA from the optional inventory; the release still publishes.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result, _ = self.publish_fixture(
+                root, "nightly", drop=("natune-ios-fixture.ipa",), flags={"BUILD_IOS": "false"})
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("did_publish=true\n", (root / "output").read_text())
+
+    def test_publish_gate_needs_required_results_not_always(self):
+        # The publish job no longer fires under always(): it needs !cancelled() and a successful
+        # Android plus Windows/Linux result; the macOS and iOS legs stay optional.
+        text = WORKFLOW.read_text()
+        publish_block = re.split(r"(?m)^  [a-z][a-z-]*:", text.split("  publish-release:", 1)[1], maxsplit=1)[0]
+        condition = re.search(r"(?ms)^    if: (.+?)\n    [a-z]", publish_block).group(1)
+        self.assertNotIn("always()", condition)
+        self.assertIn("!cancelled()", condition)
+        self.assertIn("inputs.publish", condition)
+        self.assertIn("needs.android.result == 'success'", condition)
+        self.assertIn("needs.desktop.result == 'success'", condition)
+        self.assertNotIn("needs.desktop-macos.result", condition)
+        self.assertNotIn("needs.ios.result", condition)
+        # Waiting on the optional legs would let an unavailable macOS runner hold the release.
+        for job in ("desktop-macos", "ios"):
+            self.assertNotIn("      - " + job + "\n", publish_block)
+        attach_block = job_block(text, "attach-optional-assets")
+        for job in ("publish-release", "desktop-macos", "ios"):
+            self.assertIn("      - " + job + "\n", attach_block)
+        self.assertIn("if: ${{ !cancelled() && needs.publish-release.result == 'success' }}", attach_block)
+        self.assertIn("contents: write", attach_block)
+        feed_block = job_block(text, "publish-update-feed")
+        for job in ("desktop-macos", "ios", "attach-optional-assets"):
+            self.assertNotIn("      - " + job + "\n", feed_block)
+
+    def test_staging_restore_leaves_optional_legs_to_the_attach_job(self):
+        script = step_script("Restore the staging release hand-off")
+        self.assertIn("*-desktop-macos-*|*-ios)", script)
+        self.assertIn("::error::", script)
+        optional = step_script("Restore the optional staging release hand-offs")
+        self.assertIn("::warning::", optional)
+        self.assertNotIn("::error::", optional)
+        removal = dict(step_blocks())["Remove the optional staging release hand-offs"]
+        self.assertIn("steps.attach-optional.outcome != 'failure'", removal)
 
     def test_stale_head_is_not_published(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -330,7 +530,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
     def test_release_handoff_artifacts_expire_after_three_days(self):
         retention = re.findall(r"retention-days: (\d+)", WORKFLOW.read_text())
-        self.assertEqual(["3"] * 4, retention)
+        self.assertEqual(["3"] * 5, retention)
 
     def test_every_artifact_hand_off_has_a_staging_release_fallback(self):
         blocks = step_blocks()
@@ -338,7 +538,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
             (index, name, body) for index, (name, body) in enumerate(blocks)
             if "uses: actions/upload-artifact@" in body or "uses: actions/download-artifact@" in body
         ]
-        self.assertEqual(6, len(primaries))
+        self.assertEqual(8, len(primaries))
         for index, name, body in primaries:
             with self.subTest(step=name):
                 identifier = re.search(r"(?m)^        id: ([\w-]+)$", body)[1]
@@ -365,7 +565,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
     def test_only_the_jobs_that_write_release_assets_get_contents_write(self):
         workflow = WORKFLOW.read_text()
-        self.assertEqual(5, len(re.findall(r"(?m)^      contents: write$", workflow)))
+        self.assertEqual(7, len(re.findall(r"(?m)^      contents: write$", workflow)))
         self.assertNotIn("contents: read", workflow)
 
     def test_android_upload_failure_parks_the_apk_on_a_prerelease_hand_off(self):
@@ -377,7 +577,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 (root / "release-assets").mkdir()
                 (root / "release-assets/app-gms-mobile-arm64-nightly.apk").write_bytes(b"unsigned APK fixture")
                 result = staging_step(name, root,
-                                      GITHUB_RUN_ID="40906373528", GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP",
+                                      GITHUB_RUN_ID="40906373528", GITHUB_REPOSITORY="NatuneGroup/Natune",
                                       GH_TOKEN="", GH_CALLS=str(root / "gh-calls"),
                                       APK_NAME="app-gms-mobile-arm64-nightly.apk", VARIANT="gms-mobile-arm64",
                                       CHANNEL="nightly", COMMIT_SHA="a" * 40,
@@ -407,15 +607,16 @@ class ReleaseWorkflowTest(unittest.TestCase):
         cases = (
             ("success", (), 0, ()),
             ("failure", (), 1, ()),
-            ("failure", (android, ios), 0, ("staging-40906373528-android-gms-mobile-arm64", "staging-40906373528-ios")),
-            ("success", (ios,), 0, ("staging-40906373528-ios",)),
+            # Optional macOS/iOS hand-offs are left for attach-optional-assets.
+            ("failure", (android, ios), 0, ("staging-40906373528-android-gms-mobile-arm64",)),
+            ("success", (ios,), 0, ()),
         )
         for outcome, refs, code, expected in cases:
             with self.subTest(outcome=outcome, refs=refs), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 path = staging_tools(root)
                 result = staging_step(name, root, GITHUB_RUN_ID="40906373528",
-                                      GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP", GH_TOKEN="",
+                                      GITHUB_REPOSITORY="NatuneGroup/Natune", GH_TOKEN="",
                                       GH_CALLS=str(root / "gh-calls"), ARTIFACTS_OUTCOME=outcome,
                                       STAGING_REFS="\n".join(refs), PATH=path)
                 self.assertEqual(code, result.returncode, result.stdout + result.stderr)
@@ -428,6 +629,46 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 if code:
                     self.assertIn("::error::", result.stdout)
 
+    def test_attach_job_restores_only_the_optional_staging_hand_offs(self):
+        name = "Restore the optional staging release hand-offs"
+        refs = (
+            "refs/tags/staging-40906373528-android-gms-mobile-arm64",
+            "refs/tags/staging-40906373528-desktop-linux-x64",
+            "refs/tags/staging-40906373528-desktop-macos-arm64",
+            "refs/tags/staging-40906373528-ios",
+            "refs/tags/staging-40906373528-update-feed",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = staging_tools(root)
+            result = staging_step(name, root, GITHUB_RUN_ID="40906373528",
+                                  GITHUB_REPOSITORY="NatuneGroup/Natune", GH_TOKEN="",
+                                  GH_CALLS=str(root / "gh-calls"), ARTIFACTS_OUTCOME="failure",
+                                  STAGING_REFS="\n".join(refs), PATH=path)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
+            self.assertEqual(
+                ["staging-40906373528-desktop-macos-arm64", "staging-40906373528-ios"],
+                [args[2] for args in calls if args[:2] == ["release", "download"]],
+            )
+
+    def test_update_manifest_rejects_duplicate_asset_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for folder in ("a", "b"):
+                (root / folder).mkdir()
+                (root / folder / "natune-desktop-linux-x64-fixture.deb").write_bytes(b"fixture")
+            result = subprocess.run(
+                ["python3", str(ROOT / ".github/scripts/update_manifest.py"), "--channel", "nightly",
+                 "--tag", "N1", "--version-code", "1", "--commit", "a" * 40,
+                 "--published-at", "2030-01-01T00:00:00Z", "--release-url", "https://example.invalid",
+                 str(root / "a/natune-desktop-linux-x64-fixture.deb"),
+                 str(root / "b/natune-desktop-linux-x64-fixture.deb")],
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("asset names must be unique", result.stderr)
+
     def test_update_feed_manifest_falls_back_to_its_staging_release(self):
         name = "Restore the update-feed manifest from its staging release"
         for exists, code in ((False, 1), (True, 0)):
@@ -435,7 +676,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 root = Path(directory)
                 path = staging_tools(root)
                 result = staging_step(name, root, GITHUB_RUN_ID="40906373528",
-                                      GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP", GH_TOKEN="",
+                                      GITHUB_REPOSITORY="NatuneGroup/Natune", GH_TOKEN="",
                                       GH_CALLS=str(root / "gh-calls"), MANIFEST="nightly.json",
                                       STAGING_RELEASE_EXISTS="1" if exists else "0", PATH=path)
                 self.assertEqual(code, result.returncode, result.stdout + result.stderr)
@@ -455,13 +696,15 @@ class ReleaseWorkflowTest(unittest.TestCase):
         refs = (
             "refs/tags/staging-40906373528-android-gms-mobile-arm64",
             "refs/tags/staging-40906373528-desktop-linux-x64",
+            "refs/tags/staging-40906373528-desktop-macos-x64",
+            "refs/tags/staging-40906373528-ios",
             "refs/tags/staging-40906373528-update-feed",
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = staging_tools(root)
             result = staging_step(name, root, GITHUB_RUN_ID="40906373528",
-                                  GITHUB_REPOSITORY="NatuneGroup/ArchiveTune-KMP", GH_TOKEN="",
+                                  GITHUB_REPOSITORY="NatuneGroup/Natune", GH_TOKEN="",
                                   GH_CALLS=str(root / "gh-calls"), STAGING_REFS="\n".join(refs), PATH=path)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             calls = [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]

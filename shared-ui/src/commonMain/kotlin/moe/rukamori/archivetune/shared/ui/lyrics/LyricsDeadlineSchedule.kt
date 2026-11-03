@@ -46,9 +46,9 @@ internal class LyricsDeadlineSchedule(
 
     companion object {
         /**
-         * The schedule for [rows]: word sweeps (each running at least [minSweepMs]) and, with
-         * [includeInterludes], the breathing interludes are the live spans; row activation and every
-         * span boundary are the discrete edges.
+         * The schedule for [rows]: word sweeps (each running at least [minSweepMs], which only guards
+         * zero-length words) and, with [includeInterludes], the breathing interludes are the live
+         * spans; row activation and every span boundary are the discrete edges.
          */
         fun of(rows: List<LyricsRenderRow>, minSweepMs: Long, includeInterludes: Boolean): LyricsDeadlineSchedule {
             val starts = ArrayList<Long>()
@@ -65,8 +65,19 @@ internal class LyricsDeadlineSchedule(
                 changes.add(row.scanStartMs - row.activationLeadMs)
                 changes.add(row.scanEndMs)
                 for (words in listOfNotNull(row.words, row.backgroundWords)) {
-                    for (word in words) {
-                        span(word.startMs, maxOf(word.endMs, word.startMs + minSweepMs))
+                    // The row sinks into its low seat over the instants before its first word.
+                    words.minOfOrNull { it.startMs }?.let { first -> span(first - LyricsSweepGeometry.SINK_MS, first) }
+                    words.forEachIndexed { index, word ->
+                        val nextStart = words.getOrNull(index + 1)?.startMs ?: Long.MAX_VALUE
+                        // A zero-length word's lift outlives its span, so the lift belongs to the live span too.
+                        span(
+                            word.startMs,
+                            maxOf(
+                                word.endMs,
+                                word.startMs + minSweepMs,
+                                LyricsSweepGeometry.liftEndMs(word.startMs, word.endMs, nextStart),
+                            ),
+                        )
                     }
                 }
             }
@@ -82,4 +93,15 @@ internal class LyricsDeadlineSchedule(
             )
         }
     }
+}
+
+/**
+ * How long, in wall-clock ms, an idle position loop may park before the feed at [feedMs] reaches
+ * [nextChangeMs]. Deadline schedules are in media time, which runs [speed] times as fast as the wall
+ * clock, so at 2x a 400 ms gap is a 200 ms wait; sleeping the media gap would skip whole word sweeps.
+ * With no boundary ahead, or a stalled or invalid speed, the loop polls at [maxParkMs].
+ */
+fun lyricsIdleParkMs(nextChangeMs: Long?, feedMs: Long, speed: Float, minParkMs: Long, maxParkMs: Long): Long {
+    if (nextChangeMs == null || !(speed > 0f)) return maxParkMs
+    return ((nextChangeMs - feedMs) / speed).toLong().coerceIn(minParkMs, maxParkMs)
 }

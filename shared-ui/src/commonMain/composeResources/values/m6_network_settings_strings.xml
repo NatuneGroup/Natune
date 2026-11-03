@@ -26,6 +26,7 @@
     <string name="m6_ip_rotation">IP rotation</string>
     <string name="m6_refresh_rotation">Refresh IP rotation proxies</string>
     <string name="m6_rotation_count">%1$d active proxies</string>
+    <string name="m6_rotation_blocked">Streaming blocked — refresh the proxy list, turn IP rotation off, or set a static proxy.</string>
     <string name="m6_region_jp">Japan</string>
     <string name="m6_region_kr">South Korea</string>
     <string name="m6_region_us">United States</string>

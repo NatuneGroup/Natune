@@ -25,10 +25,15 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.HistoryOrigin
 import moe.rukamori.archivetune.shared.domain.repository.QueueController
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialPinType
 import moe.rukamori.archivetune.shared.domain.settings.SpeedDialSongIdsKey
+import moe.rukamori.archivetune.shared.domain.settings.parseBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.parseSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.serializeBlockedSongRefs
 import moe.rukamori.archivetune.shared.domain.settings.serializeSpeedDialPins
+import moe.rukamori.archivetune.shared.domain.settings.toggleBlockedSongRef
 import moe.rukamori.archivetune.shared.domain.telegram.TelegramTrackRef
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.menu.CollectionDownloadState
@@ -52,6 +57,9 @@ import moe.rukamori.archivetune.shared.ui.resources.ios_menu_action_failed
 import moe.rukamori.archivetune.shared.ui.resources.ios_ok
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_feature_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.m5pqDetailsRes
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_acoustic_quality_title
+import moe.rukamori.archivetune.shared.ui.resources.m5pq_equalizer
 import moe.rukamori.archivetune.shared.ui.resources.m5pq_tempo_and_pitch
 import org.jetbrains.compose.resources.stringResource
 
@@ -74,13 +82,14 @@ private class IosSongMenuHost(
 ) : SongMenuHost {
     /**
      * The song loads alone and the watch-next tail is appended behind it, the pair of calls `PlayerConnection.startRadio`
-     * makes on Android. A queue that could not seed the tail is a failure, not a silent solo play.
+     * makes on Android. When the seed already is the playing track it stays put and only the tail is replaced, so an
+     * in-progress song is not restarted; the queue owner makes that check under its lock. A queue that could not seed
+     * the tail is a failure, not a silent solo play.
      */
     override suspend fun startRadio(song: ContentRef) {
         if (song.provider != ContentProvider.YOUTUBE.id || song.kind != ContentKind.SONG) state.unavailable()
-        val entry = state.target?.queuedEntry() ?: state.unavailable()
-        graph.queue.replace(listOf(entry), entry.occurrenceId, playWhenReady = true)
-        check(graph.queue.startRadioSeamlessly()) { "The radio tail could not be seeded" }
+        val seeded = graph.queue.startRadio(song) { state.target?.queuedEntry() ?: state.unavailable() }
+        check(seeded) { "The radio tail could not be seeded" }
     }
 
     override suspend fun setInLibrary(song: ContentRef, inLibrary: Boolean) {
@@ -149,7 +158,22 @@ private class IosSongMenuHost(
     override fun openSleepTimer() {
         sleepSheet.open = true
     }
-    override suspend fun setRecommendationBlocked(song: ContentRef, blocked: Boolean) = state.unavailable()
+    /**
+     * The block list the baseline kept as a timestamp on the stored song row is a preference here, so it
+     * survives without a library row and exports with SETTINGS. Recommendations come from YouTube feeds,
+     * so only a provider song the feeds can return takes a block.
+     */
+    override suspend fun setRecommendationBlocked(song: ContentRef, blocked: Boolean) {
+        if (!song.iosYouTubeSong()) state.unavailable()
+        graph.settings.edit {
+            val next = toggleBlockedSongRef(
+                parseBlockedSongRefs(get(BlockedSongIdsKey).orEmpty()),
+                BlockedSongRef(song.provider, song.id),
+                blocked,
+            ) ?: state.unavailable()
+            set(BlockedSongIdsKey, serializeBlockedSongRefs(next))
+        }
+    }
 
     /**
      * The decoded cover is written as PNG and exported through the same document picker as a download,
@@ -187,8 +211,8 @@ private class IosSongMenuHost(
  * The shared song menu over the owners this host connects: queue, like and add-to-playlist, the system share sheet,
  * library add and remove, speed-dial pins, downloads and their export, cover save, the watch-next metadata refetch,
  * history and playlist-row removal, album and artist pages, YouTube radio, track and media info, the sleep timer,
- * tempo and pitch, and the custom artwork editor. Rows whose owner is not connected here (cache, external downloader,
- * recommendation blocks) are filtered off rather than appearing as dead items.
+ * tempo and pitch, recommendation blocks, and the custom artwork editor. Rows whose owner is not connected here
+ * (cache, external downloader) are filtered off rather than appearing as dead items.
  */
 @Composable
 internal fun IosSongMenu(
@@ -271,7 +295,9 @@ internal fun IosSongMenu(
         fromCache = false,
         albumId = occurrence.item.albumId,
         artworkUrl = occurrence.item.artworkUri,
-        recommendationBlocked = false,
+        recommendationBlocked = ref.iosYouTubeSong() &&
+            parseBlockedSongRefs(preferences?.get(BlockedSongIdsKey).orEmpty())
+                .any { it.provider == ref.provider && it.id == ref.id },
         externalDownloaderEnabled = false,
         externalDownloaderConfigured = false,
     )
@@ -297,6 +323,18 @@ internal fun IosSongMenu(
         add(OverflowAction("media_info", m5pqDetailsRes) { menu.dismiss(); openRoute(ArchiveRoutes.mediaInfo(ref.id)) })
         // The shared tempo/pitch dialog is owned by the session graph, so the row opens it like the timer row.
         add(OverflowAction("tempo_pitch", Res.string.m5pq_tempo_and_pitch) { menu.dismiss(); tempoSheet.open = true })
+        // The equalizer sheet and the acoustic audit dialog are owned by the session graph too.
+        add(OverflowAction("equalizer", Res.string.m5pq_equalizer) { menu.dismiss(); graph.equalizer.openSheet() })
+        add(OverflowAction("acoustic_quality", Res.string.m5pq_acoustic_quality_title) {
+            menu.dismiss()
+            graph.openAcousticAudit(
+                AcousticAuditTarget(
+                    ref.id,
+                    occurrence.item.title,
+                    occurrence.item.artists.joinToString { it.name },
+                ),
+            )
+        })
         menu.playlistId?.let { playlistId -> add(playlistOccurrenceRemoval(playlistId, occurrence, graph.library)) }
         add(customArtworkEntryAction { menu.openCustomArtwork() })
     }.filter { it.id in iosBoundSongRows(ref, facts, artistRef != null) }
@@ -359,6 +397,9 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         add("sleep_timer")
         // The shared tempo/pitch dialog is owned by the session graph too, so the row is always connected.
         add("tempo_pitch")
+        // The equalizer sheet and the acoustic audit dialog are owned by the session graph as well.
+        add("equalizer")
+        add("acoustic_quality")
         if (hasArtist) add("view_artist")
         // A provider that can only stream encrypted audio has no stored file here, so it offers no download row.
         if (iosDownloadRefusal(ref) == null) {
@@ -380,6 +421,8 @@ internal fun iosBoundSongRows(ref: ContentRef, facts: SongMenuFacts, hasArtist: 
         if (ref.provider == ContentProvider.YOUTUBE.id && ref.kind == ContentKind.SONG && !facts.isTelegram) {
             add("start_radio")
         }
+        // The block row commits through the same YouTube-song gate as pins and refetches.
+        if (ref.iosYouTubeSong()) add("recommendation_block")
         add("remove_playlist")
     }
 

@@ -13,6 +13,8 @@ data class LyricsWordBox(
     val rightPx: Float,
     val line: Int,
     val letters: FloatArray? = null,
+    /** True when the word's glyphs sit on more than one visual line; a completion lift skips it. */
+    val wrapsLines: Boolean = false,
 )
 
 /**
@@ -49,8 +51,11 @@ data class LyricsClipRect(
  * resets the sweep without any cached state, and a word never lights before its start.
  */
 object LyricsSweepGeometry {
-    /** The shortest visible sweep. A very short word still travels across its glyphs. */
-    const val MIN_SWEEP_MS = 150L
+    /**
+     * About one frame. It only keeps a zero or negative provider span from dividing by zero: every
+     * other word fills over exactly its own timing, so a quick word never runs past the next one.
+     */
+    const val MIN_SWEEP_MS = 16L
 
     /** Glow rises over this share of a word, and falls back over [GLOW_RELEASE]. */
     const val GLOW_ATTACK = 0.18f
@@ -103,6 +108,103 @@ object LyricsSweepGeometry {
 
     /** A word swept to [progress] is finished: it draws lit to its own bounds, without the feathered edge. */
     fun sweepComplete(progress: Float): Boolean = progress >= 1f
+
+    /** The longest a completion lift may run; a word never rises longer than this. */
+    const val LIFT_MAX_MS = 300L
+
+    /** The shortest lift window a word gets when its own span allows it, so the landing never snaps. */
+    const val LIFT_MIN_MS = 120L
+
+    /** How far an unstarted word sits below its seat and rises through its lift, in dp. */
+    const val WORD_LIFT_DP = 2f
+
+    /**
+     * The window a word's completion lift runs in: half its own span, clamped to
+     * [LIFT_MIN_MS]..[LIFT_MAX_MS], and never longer than the silence to the next word past
+     * [LIFT_MIN_MS] — a tight hand-off still gets the floor so the rise does not outrun the
+     * following word's own lift. A word with a real span never lifts longer than itself, so it
+     * is seated exactly at its provider end; only a zero-length word rises past it, over the floor.
+     */
+    fun liftDurationMs(wordStartMs: Long, wordEndMs: Long, nextWordStartMs: Long): Long {
+        val wordMs = (wordEndMs - wordStartMs).coerceAtLeast(0L)
+        val gapMs = (nextWordStartMs - wordEndMs).coerceAtLeast(0L)
+        val base = (wordMs / 2).coerceIn(LIFT_MIN_MS, LIFT_MAX_MS).coerceAtMost(maxOf(gapMs, LIFT_MIN_MS))
+        return if (wordMs > 0L) base.coerceAtMost(wordMs) else base
+    }
+
+    /**
+     * The instant a word's lift begins: inside the word, never before its start, so the rise
+     * overlaps the sweep's tail instead of waiting for it. For a word with a real span that is
+     * [wordEndMs] - [liftDurationMs]; a zero-length word starts lifting at its start.
+     */
+    fun liftStartMs(wordStartMs: Long, wordEndMs: Long, nextWordStartMs: Long): Long =
+        wordEndMs - minOf(
+            liftDurationMs(wordStartMs, wordEndMs, nextWordStartMs),
+            (wordEndMs - wordStartMs).coerceAtLeast(0L),
+        )
+
+    /** The instant a word's lift has fully settled — the end of its live span. */
+    fun liftEndMs(wordStartMs: Long, wordEndMs: Long, nextWordStartMs: Long): Long =
+        liftStartMs(wordStartMs, wordEndMs, nextWordStartMs) +
+            liftDurationMs(wordStartMs, wordEndMs, nextWordStartMs)
+
+    /**
+     * How far a word has risen into its seat at [positionMs], from 0 to 1: an ease-out over
+     * [liftStartMs]..[liftEndMs]. Unsung words sit at 0 — [WORD_LIFT_DP] below their seat — and
+     * each word eases up while the sweep finishes it, with no pause and no jump. Reduced motion is
+     * always settled (1), so the word sits where it is sung, the same no-bounce behaviour as before.
+     * A pure function of the position, so a seek lands on the right frame.
+     */
+    fun liftAt(
+        wordStartMs: Long,
+        wordEndMs: Long,
+        nextWordStartMs: Long,
+        positionMs: Long,
+        reduceMotion: Boolean,
+    ): Float {
+        if (reduceMotion) return 1f
+        val durationMs = liftDurationMs(wordStartMs, wordEndMs, nextWordStartMs)
+        if (durationMs <= 0L) return 1f
+        val startMs = wordEndMs - minOf(durationMs, (wordEndMs - wordStartMs).coerceAtLeast(0L))
+        val t = ((positionMs - startMs).toFloat() / durationMs).coerceIn(0f, 1f)
+        val inv = 1f - t
+        return 1f - inv * inv * inv
+    }
+
+    /**
+     * How long an active row's unsung words take to settle into their low seat, ending at the row's
+     * first word. Inactive rows draw seated, so without this the whole unsung row would drop
+     * [WORD_LIFT_DP] in one frame when it lights. It stays inside the shortest activation lead
+     * ([LyricsActivation.LEAD_DEFAULT_MS]), so a row that lights on its lead starts the sink from the seat.
+     */
+    const val SINK_MS = 200L
+
+    /**
+     * How far an active row has sunk into its low seat at [positionMs], from 0 (seated, as an inactive
+     * row draws) to 1 (every unsung word one lift low): a smoothstep over the [SINK_MS] before
+     * [firstWordStartMs]. Reduced motion never sinks.
+     */
+    fun sinkAt(firstWordStartMs: Long, positionMs: Long, reduceMotion: Boolean): Float {
+        if (reduceMotion) return 0f
+        val t = ((positionMs - (firstWordStartMs - SINK_MS)).toFloat() / SINK_MS).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+
+    /**
+     * How far below its seat a word draws at [positionMs], as a share of [WORD_LIFT_DP]: the row's
+     * [sinkAt] times what is left of the word's [liftAt] rise. Every renderer offsets a word by exactly
+     * this, so the sink, the low wait and the completion rise are one continuous curve per word.
+     */
+    fun dropAt(
+        firstWordStartMs: Long,
+        wordStartMs: Long,
+        wordEndMs: Long,
+        nextWordStartMs: Long,
+        positionMs: Long,
+        reduceMotion: Boolean,
+    ): Float =
+        sinkAt(firstWordStartMs, positionMs, reduceMotion) *
+            (1f - liftAt(wordStartMs, wordEndMs, nextWordStartMs, positionMs, reduceMotion))
 
     /** Index of the last box that has started by [positionMs], or -1 before the first word. Boxes are time ordered. */
     fun activeIndex(boxes: List<LyricsWordBox>, positionMs: Long): Int {

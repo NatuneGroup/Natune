@@ -74,6 +74,11 @@ class RoomLibraryRepository(
         require(dao.setPlaylistHidden(id, hidden) == 1) { "Unknown local playlist" }
     }
 
+    /** Records the linked YouTube playlist and its song count after a push or pull, as the baseline wrote them. */
+    suspend fun setPlaylistRemote(id: String, browseId: String?, remoteSongCount: Int?) {
+        require(dao.updatePlaylistRemote(id, browseId, remoteSongCount) == 1) { "Unknown local playlist" }
+    }
+
     suspend fun playlistTags(id: String): Set<String> {
         requireNotNull(dao.playlist(id)) { "Unknown local playlist" }
         return dao.playlistTagNames(id).toSet()
@@ -112,6 +117,7 @@ class RoomLibraryRepository(
                         createdSeq = row.createdSeq ?: 0L,
                         newestAddedSeq = entries.maxOfOrNull { it.addedSeq } ?: 0L,
                         hidden = row.isHidden,
+                        browseId = row.browseId,
                         previewItems = entries.take(PLAYLIST_MOSAIC_LIMIT).map { decode(it.json).item },
                     )
                 }
@@ -572,6 +578,8 @@ data class LocalPlaylistSummary(
     val createdSeq: Long,
     val newestAddedSeq: Long,
     val hidden: Boolean = false,
+    /** The linked YouTube playlist id once the playlist was pushed or synced. */
+    val browseId: String? = null,
     /** The first rows' items in the stored custom order, feeding the local 2x2 mosaic cover. */
     val previewItems: List<ContentItem> = emptyList(),
 )

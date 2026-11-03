@@ -11,7 +11,6 @@ import kotlinx.coroutines.CancellationException
 import moe.rukamori.archivetune.shared.domain.repository.ContentAccountRequired
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
-import moe.rukamori.archivetune.shared.domain.repository.ContentNews
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
@@ -21,8 +20,6 @@ import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveGraphPage
 import moe.rukamori.archivetune.shared.ui.screens.AccountContentType
 import moe.rukamori.archivetune.shared.ui.screens.AccountUi
-import moe.rukamori.archivetune.shared.ui.screens.NewsArticleUi
-import moe.rukamori.archivetune.shared.ui.screens.NewsUi
 import moe.rukamori.archivetune.shared.ui.screens.PagedContentState
 import moe.rukamori.archivetune.shared.ui.screens.PodcastBrowseUi
 import moe.rukamori.archivetune.shared.ui.screens.PodcastUi
@@ -30,26 +27,6 @@ import moe.rukamori.archivetune.shared.ui.screens.mediainfo.MediaInfoActions
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.MediaInfoSongUi
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.MediaInfoUi
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.TrackInfoUi
-
-/**
- * The news feed the Android baseline reads is inactive, so the screen reports `m4_news_unavailable` instead of an
- * empty feed presented as a real one, and `markRead` never fires. This is the same state the desktop host shows.
- */
-internal fun iosNewsPage(): ArchiveGraphPage =
-    ArchiveGraphPage.News(state = NewsUi(items = emptyList(), available = false), query = {}, refresh = {}, markRead = {})
-
-internal fun iosArticlePage(newsId: String): ArchiveGraphPage =
-    ArchiveGraphPage.Article(
-        state = NewsArticleUi(
-            item = ContentNews(
-                id = newsId, title = "", description = "", imageUrls = emptyList(), important = false, author = "",
-                timestamp = 0L,
-            ),
-            markdown = null,
-            available = false,
-        ),
-        retry = {},
-    )
 
 /**
  * No podcast browse transport is connected on this host, so the page mounts as an initialized, failed page with no

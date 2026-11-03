@@ -30,10 +30,8 @@ fun MenuHeaderCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    // Apple Music's action sheets do not put the track on a raised card. The header sits directly
-    // on the sheet with a hairline under it, and the actions read as a plain list below — so under
-    // the Apple Music header option the card is simply not drawn.
-    if (rememberAppleMusicHeaders()) {
+    // Menu headers follow the menu surface, independently of the album and playlist page layout.
+    if (rememberAppleMusicMenus()) {
         Column(modifier = modifier.fillMaxWidth()) {
             content()
             HorizontalDivider(

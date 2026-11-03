@@ -70,12 +70,18 @@ class ArchiveTuneHostBindings(
     val songMetadata: moe.rukamori.archivetune.shared.domain.songmetadata.SongMetadataRepository? = null,
     /** The repository-backed add-to-playlist picker; a host without one keeps the single-playlist chooser. */
     val playlistPicker: moe.rukamori.archivetune.shared.ui.menu.PlaylistPickerSource? = null,
+    /** Loads the persisted custom font file into a family; a host without one falls back to the default family. */
+    val customFontLoader: (suspend (uri: String) -> androidx.compose.ui.text.font.FontFamily?)? = null,
     /** The custom cover store; provided as overrides so playlist rows can choose cover or mosaic. */
     val customArtwork: moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository? = null,
     /** A tab bar and mini player the platform draws above the root, or null where the shell draws its own. */
     val nativeChrome: NativeShellChrome? = null,
     /** Toggles the platform window's own fullscreen; null where the host window has no fullscreen surface. */
     val toggleWindowFullscreen: (() -> Unit)? = null,
+    /** False when the build has no news feed, which hides the News entry. */
+    val newsAvailable: Boolean = true,
+    /** Whether the feed holds an item newer than the last one the user saw; drives the News unread dot. */
+    val unreadNews: Flow<Boolean> = flowOf(false),
 )
 
 /** Host lifecycle is an input: losing UI visibility never pauses background audio. */
@@ -150,6 +156,7 @@ private fun ArchiveTuneLoadedRoot(
     systemDark: Boolean,
 ) {
         val navigation = rememberShellNavigation(preferences)
+        val unreadNews by host.unreadNews.collectAsState(false)
         val interaction = remember { PlayerInteractionState() }
         var expanded by remember { mutableStateOf(false) }
         // Collapsing is the root's own action, so the native owner never receives it.
@@ -245,7 +252,23 @@ private fun ArchiveTuneLoadedRoot(
             }
             return true
         }
+        // Font choices are restart-scoped: the values latched at the first root composition are what this process
+        // runs, so a stored edit asks for a restart rather than swapping the typography live.
+        val launchSettings = remember { RestartScopedSettings.from(host.settings.snapshots.value) }
+        val customFontLoader = host.customFontLoader
+        val launchCustomFamily by produceState<androidx.compose.ui.text.font.FontFamily?>(null, launchSettings.customFontUri) {
+            value = if (customFontLoader != null && launchSettings.fontPreference == AppFontPreference.CUSTOM &&
+                launchSettings.customFontUri.isNotEmpty()
+            ) {
+                try { customFontLoader(launchSettings.customFontUri) }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            } else {
+                null
+            }
+        }
         ArchiveTuneTheme(darkTheme = darkTheme, disableAnimations = preferences[DisableAnimationsKey, false],
+            fontPreference = launchSettings.fontPreference, customFontFamily = launchCustomFamily,
             colorScheme = colorScheme) {
             ProvideBackdropSources(policy) { pageSource ->
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onKeyEvent { event ->
@@ -278,7 +301,7 @@ private fun ArchiveTuneLoadedRoot(
                     ) {
                         ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
                             host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
-                            preferences = preferences)
+                            preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews))
                     }
                     // Keep the interaction owner above style dispatch; a saved style edit cannot reset
                     // seek ownership, queue/lyrics panels or the fullscreen scroll owner.

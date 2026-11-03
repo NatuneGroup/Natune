@@ -1,0 +1,49 @@
+<resources>
+    <string name="m6aq_title">Acoustic quality graph</string>
+    <string name="m6aq_explanation">Draws the spectrum of about 20 seconds of this song to check for signs of lossy encoding. This is a heuristic check, not proof of the source. Playback is not affected.</string>
+    <string name="m6aq_idle">Not checked yet.</string>
+    <string name="m6aq_resolving">Finding the song file…</string>
+    <string name="m6aq_decoding">Reading part of the song…</string>
+    <string name="m6aq_analyzing">Measuring the sound…</string>
+    <string name="m6aq_complete">Done</string>
+    <string name="m6aq_unavailable">Can\'t check this song</string>
+    <string name="m6aq_failed">The check didn\'t finish</string>
+    <string name="m6aq_cancelled">Cancelled</string>
+    <string name="m6aq_run">Check quality</string>
+    <string name="m6aq_retry">Check again</string>
+    <string name="m6aq_cancel">Cancel</string>
+    <string name="m6aq_close">Close</string>
+    <string name="m6aq_progress">%1$d%%</string>
+    <string name="m6aq_details">Checked %1$s–%2$s · %3$.1f kHz %4$s · %5$s</string>
+    <string name="m6aq_mono">mono</string>
+    <string name="m6aq_stereo">stereo</string>
+    <string name="m6aq_channels">%1$d channels</string>
+    <string name="m6aq_cutoff">Sound reaches up to %1$.1f kHz. The top of the chart is %2$.1f kHz.</string>
+    <string name="m6aq_cutoff_unknown">Couldn\'t tell where the sound stops. The top of the chart is %1$.1f kHz.</string>
+    <string name="m6aq_cutoff_marker">sound stops · %1$.1fk</string>
+    <string name="m6aq_inconclusive">Can\'t tell from this part of the song</string>
+    <string name="m6aq_no_cutoff">No suspicious cutoff found in this part</string>
+    <string name="m6aq_suspected">The spectrum suggests a lossy copy (like MP3 or AAC), but this is not certain</string>
+    <string name="m6aq_read_title">How to read it</string>
+    <string name="m6aq_read_axes">Up = higher pitch: bass at the bottom, cymbals at the top. The top is half the sample rate, the highest pitch the file can hold (22 kHz for 44.1 kHz audio). Left to right = time.</string>
+    <string name="m6aq_read_colour">Colour = how loud that pitch is, from black (silent) through purple, red and yellow to white (loudest).</string>
+    <string name="m6aq_read_cutoff">Genuine lossless audio usually has sound almost to the top. If everything above one sharp line is dark, the file probably came from a lossy copy such as MP3 or AAC; those usually stop around 16–20 kHz. Quiet or dark parts are normal and say nothing.</string>
+    <string name="m6aq_heat_legend_low">Silent</string>
+    <string name="m6aq_heat_legend_high">Loud</string>
+    <string name="m6aq_generic">This song couldn\'t be read safely.</string>
+    <string name="m6aq_source_local_file">Local file</string>
+    <string name="m6aq_source_remote_stream">Stream</string>
+    <string name="m6aq_code_insufficient_active_evidence">This part is too quiet to judge. Try again later in the song.</string>
+    <string name="m6aq_code_pcm_budget_shortened_excerpt">Less than 20 seconds fit in memory, so a shorter part was checked.</string>
+    <string name="m6aq_code_deadline_exceeded">The check took too long. Try again.</string>
+    <string name="m6aq_code_analysis_busy">Still finishing the last check. Try again in a moment.</string>
+    <string name="m6aq_code_input_unreadable">The song couldn\'t be read.</string>
+    <string name="m6aq_code_analysis_failed">Something went wrong. Try again.</string>
+    <string name="m6aq_code_no_current_source">No song is playing. Pick a song first; opening this never starts playback.</string>
+    <string name="m6aq_code_current_source_unavailable">The current stream can\'t be read, and no other copy was used instead.</string>
+    <string name="m6aq_code_no_safe_source">No saved copy or readable stream of this song is available.</string>
+    <string name="m6aq_code_remote_unsupported">This kind of stream can\'t be checked.</string>
+    <string name="m6aq_code_remote_proxy_unsupported">Streams can\'t be checked while a proxy or IP rotation is on, because the check would connect without it. Saved copies can still be checked.</string>
+    <string name="m6aq_code_codec_unknown">Unknown audio format.</string>
+    <string name="m6aq_code_insufficient_pcm">Too little audio to check.</string>
+</resources>

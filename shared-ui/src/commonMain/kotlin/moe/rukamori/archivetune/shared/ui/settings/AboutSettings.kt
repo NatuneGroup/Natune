@@ -106,10 +106,10 @@ private class AboutCredit(
  * Fixed product destinations and credits. The people groups read in the docs/CREDITS.md
  * lineage order: InnerTune (Zion Huang) -> Metrolist (MO AGAMY) -> ArchiveTune (morie) ->
  * the Natune Kotlin Multiplatform port (vossgraves). The GitHub row points at the public
- * NatuneGroup/ArchiveTune project; the KMP port repository is private.
+ * NatuneGroup/Natune repository, the port this build ships from.
  */
 private val communityLinks = listOf(
-    AboutLink(Res.string.m6_about_github, "https://github.com/NatuneGroup/ArchiveTune"),
+    AboutLink(Res.string.m6_about_github, "https://github.com/NatuneGroup/Natune"),
     AboutLink(Res.string.m6_about_telegram, "https://t.me/ArchiveTuneGC"),
     AboutLink(Res.string.m6_about_discord, "https://discord.gg/XF2fpb9rTq"),
 )

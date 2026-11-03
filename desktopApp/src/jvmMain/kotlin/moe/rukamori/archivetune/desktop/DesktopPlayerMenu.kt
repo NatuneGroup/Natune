@@ -51,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,12 +61,15 @@ import androidx.compose.ui.window.Dialog
 import java.awt.Desktop
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.domain.queue.UserQueuedKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
@@ -75,9 +79,11 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.repository.ContentDownload
 import moe.rukamori.archivetune.shared.domain.repository.LibraryMutation
 import moe.rukamori.archivetune.shared.domain.settings.appleMusicMenus
+import moe.rukamori.archivetune.shared.domain.settings.canvasPlaybackEnabled
 import moe.rukamori.archivetune.shared.domain.settings.ArtistSeparatorsKey
 import moe.rukamori.archivetune.shared.domain.settings.encodeTempoPitchPresets
 import moe.rukamori.archivetune.shared.domain.settings.newTempoPitchPresetId
+import moe.rukamori.archivetune.shared.domain.settings.lowDataMode
 import moe.rukamori.archivetune.shared.domain.settings.parseTempoPitchPresets
 import moe.rukamori.archivetune.shared.domain.settings.PlaybackPitchKey
 import moe.rukamori.archivetune.shared.domain.settings.PlaybackSpeedKey
@@ -118,6 +124,8 @@ import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenu
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenuActions
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenuIcon
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenuState
+import moe.rukamori.archivetune.shared.ui.menu.CanvasSourcePicker
+import moe.rukamori.archivetune.shared.ui.menu.rememberCanvasSaveMenuState
 import moe.rukamori.archivetune.shared.ui.menu.shareLinkAtPosition
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueueMenuTrigger
 import moe.rukamori.archivetune.shared.ui.menu.playerqueue.PlayerQueuePlaylistLoadState
@@ -145,14 +153,22 @@ internal class DesktopPlayerMenuState {
     var target: ContentItem? by mutableStateOf(null)
         private set
 
+    /** The song the save-canvas flow is bound to, kept through the menu's own dismissal. */
+    var canvasItem: ContentItem? by mutableStateOf(null)
+        private set
+
     /** The song the playlist picker is open for, kept across the picker's own dialog. */
     var playlistPick: PlayerQueueTrack? by mutableStateOf(null)
 
     /** The song the details dialog shows. */
     var details: PlayerQueueTrack? by mutableStateOf(null)
 
+    /** The save-canvas outcome text the owner reported, resolved by the dialog. */
+    var canvasNotice: StringResource? by mutableStateOf(null)
+
     fun open(item: ContentItem) {
         target = item
+        canvasItem = item
     }
 
     fun dismiss() {
@@ -177,6 +193,7 @@ internal fun desktopPlayerMenuTrack(item: ContentItem): PlayerQueueTrack = Playe
 internal class DesktopPlayerQueueActions(
     private val graph: DesktopSessionGraph,
     private val menu: DesktopPlayerMenuState,
+    private val canvas: DesktopCanvasOwner,
     private val navigate: (String) -> Unit,
 ) : PlayerQueueMenuActions {
     // The applied tempo and pitch of this session, as the baseline's live playback parameters.
@@ -509,13 +526,21 @@ internal class DesktopPlayerQueueActions(
 
     override fun setAodMode() = unsupported("setAodMode")
     override fun openEqualizer() = graph.equalizer.openSheet()
-    override fun openAcousticQuality(track: PlayerQueueTrack) = unsupported("openAcousticQuality")
+    override fun openAcousticQuality(track: PlayerQueueTrack) {
+        graph.openAcousticAudit(
+            AcousticAuditTarget(track.mediaId, track.title, track.artists.joinToString { it.name }),
+        )
+    }
     override fun cast(track: PlayerQueueTrack) = unsupported("cast")
     override fun openWithExternalDownloader(url: String) = unsupported("openWithExternalDownloader")
+    /** The canvas owner's own resolve; a stale menu target refetches nothing. */
     override suspend fun refetchCanvas(track: PlayerQueueTrack, requireVertical: Boolean): PlayerQueueCanvasRefetchResult {
-        unsupported("refetchCanvas")
-        return PlayerQueueCanvasRefetchResult.FAILURE
+        val item = menu.target?.takeIf { it.ref.id == track.mediaId }
+            ?: return PlayerQueueCanvasRefetchResult.FAILURE
+        return canvas.refetch(item, requireVertical)
     }
+
+    /** The dialog mounts the shared picker and intercepts this row, so an owner stub stays unreachable. */
     override fun saveCanvas(track: PlayerQueueTrack) = unsupported("saveCanvas")
     override fun cancelPlaylistLoading() = unsupported("cancelPlaylistLoading")
     override fun retryPlaylistLoading() = unsupported("retryPlaylistLoading")
@@ -575,12 +600,32 @@ internal fun DesktopPlayerMenuDialog(
     menu: DesktopPlayerMenuState,
     sleepSheet: DesktopSleepTimerSheetState,
     graph: DesktopSessionGraph,
+    canvas: DesktopCanvasOwner,
     navigate: (String) -> Unit = {},
 ) {
+    // The pick outlives the menu's dismiss, so the save state and its dialogs mount before the target check.
+    val canvasHost = remember(graph, canvas) { DesktopCanvasMenuHost(canvas) { menu.canvasItem } }
+    val canvasScope = rememberCoroutineScope()
+    val canvasSave = rememberCanvasSaveMenuState(menu.canvasItem?.ref?.id ?: "", canvasHost) { resource ->
+        canvasScope.launch { menu.canvasNotice = resource }
+    }
+    CanvasSourcePicker(canvasSave)
+    menu.canvasNotice?.let { resource ->
+        AlertDialog(
+            onDismissRequest = { menu.canvasNotice = null },
+            text = { Text(stringResource(resource)) },
+            confirmButton = { TextButton(onClick = { menu.canvasNotice = null }) { Text(DesktopStrings["ok"]) } },
+        )
+    }
     val item = menu.target ?: return
     val prefs by graph.settings.snapshots.collectAsState()
     val sleep by graph.sleepTimer.state.collectAsState()
-    val actions = remember(graph, menu, navigate) { DesktopPlayerQueueActions(graph, menu, navigate) }
+    val actions = remember(graph, menu, navigate, canvas) { DesktopPlayerQueueActions(graph, menu, canvas, navigate) }
+    val menuActions = remember(actions, canvasSave) {
+        object : PlayerQueueMenuActions by actions {
+            override fun saveCanvas(track: PlayerQueueTrack) = canvasSave.request()
+        }
+    }
     val speed by actions.playbackSpeed.collectAsState()
     val pitch by actions.playbackPitch.collectAsState()
     val transfers by produceState(emptyList<ContentDownload>(), graph) {
@@ -595,6 +640,18 @@ internal fun DesktopPlayerMenuDialog(
     val download = desktopPlayerDownloadState(transfers, item.ref)
 
     val track = remember(item) { desktopPlayerMenuTrack(item) }
+    val canvasTarget by canvas.target.collectAsState()
+    val canvasRefetching by canvas.refetching.collectAsState()
+    val hasCanvasArtwork by produceState(false, item.ref.id, canvasTarget) {
+        value = try {
+            graph.customArtwork.canvasUri(item.ref.id) != null ||
+                canvasTarget?.occurrenceId?.let { shown ->
+                    graph.queue.state.value.entries.firstOrNull { it.occurrenceId == shown }?.item?.ref?.id == item.ref.id
+                } == true
+        } catch (_: Exception) {
+            false
+        }
+    }
     val snapshot = prefs
     val pin = snapshot?.get(SongSourceOverrideKey)?.let { SongSourceOverride.get(it, track.mediaId) }
     val state = PlayerQueueMenuState(
@@ -605,10 +662,10 @@ internal fun DesktopPlayerMenuDialog(
             parseSpeedDialPins(raw).any { it.type == SpeedDialPinType.SONG && it.id == track.mediaId }
         } ?: false,
         externalDownloaderEnabled = false,
-        canvasFeatureEnabled = false,
-        lowDataModeActive = false,
-        hasCanvasArtwork = false,
-        canvasRefetching = false,
+        canvasFeatureEnabled = snapshot?.canvasPlaybackEnabled() ?: false,
+        lowDataModeActive = snapshot?.lowDataMode() ?: false,
+        hasCanvasArtwork = hasCanvasArtwork,
+        canvasRefetching = canvasRefetching,
         castAvailable = false,
         castConnected = false,
         artistSeparators = snapshot?.get(ArtistSeparatorsKey) ?: "",
@@ -622,7 +679,7 @@ internal fun DesktopPlayerMenuDialog(
         searchableSources = graph.audioSources.searchableSources,
         alwaysOnDisplaySupported = false,
         radioSupported = desktopRadioSeedSupported(item.ref),
-        acousticQualitySupported = false,
+        acousticQualitySupported = true,
         equalizerSupported = true,
         downloadsSupported = desktopDownloadSupported(item.ref) || download != PlayerQueueDownloadState.NOT_DOWNLOADED,
         tempoPitchPresets = parseTempoPitchPresets(snapshot?.get(TempoPitchPresetsJsonKey)),
@@ -635,7 +692,7 @@ internal fun DesktopPlayerMenuDialog(
             trigger = PlayerQueueMenuTrigger.Player,
             track = track,
             state = state,
-            actions = actions,
+            actions = menuActions,
             clock = DesktopPlayerQueueClock,
             icon = ::desktopPlayerQueueIcon,
             artwork = { url, modifier -> DesktopRemoteArtwork(url, graph.artworkLoader, modifier) },
@@ -659,6 +716,7 @@ internal fun DesktopPlayerMenuDialog(
             onDone = { menu.details = null },
         )
     }
+
 }
 
 /**
