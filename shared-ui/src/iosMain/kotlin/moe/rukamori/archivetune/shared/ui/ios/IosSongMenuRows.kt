@@ -36,7 +36,7 @@ import platform.Foundation.writeToFile
 
 /**
  * The song rows this host gained owners for: speed-dial pins, library removal, download export, cover
- * save, metadata refetch and the Telegram message link. The download row facts read the committed
+ * save, metadata refetch, recommendation blocks and the Telegram message link. The download row facts read the committed
  * file's container, like the desktop export does, because the stored name carries no format.
  */
 
