@@ -46,9 +46,9 @@ internal class LyricsDeadlineSchedule(
 
     companion object {
         /**
-         * The schedule for [rows]: word sweeps (each running at least [minSweepMs]) and, with
-         * [includeInterludes], the breathing interludes are the live spans; row activation and every
-         * span boundary are the discrete edges.
+         * The schedule for [rows]: word sweeps (each running at least [minSweepMs], which only guards
+         * zero-length words) and, with [includeInterludes], the breathing interludes are the live
+         * spans; row activation and every span boundary are the discrete edges.
          */
         fun of(rows: List<LyricsRenderRow>, minSweepMs: Long, includeInterludes: Boolean): LyricsDeadlineSchedule {
             val starts = ArrayList<Long>()

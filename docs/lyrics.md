@@ -107,7 +107,7 @@ shape arrives from providers carrying `[translated_lyrics]`.
 
 Frame requests are **deadline-gated**, not per-vsync. `LyricsDeadlineSchedule` (shared-ui, plus the
 `LyricsEntry` copy in `app/lyrics`) lists the live spans where motion is continuous — a word sweep
-in flight (at least `minSweepMs`), a breathing interlude — and the discrete edges where the drawn
+in flight over its exact timing, a breathing interlude — and the discrete edges where the drawn
 state changes. The clock loop requests a frame inside a live span, sleeps to the next boundary
 otherwise, and re-checks at most every 250 ms so a seek still lands promptly; paused surfaces poll
 at 100 ms. The SwiftUI view already pauses its `TimelineView` when hidden and polls a held
@@ -144,7 +144,10 @@ screen to read as anything but flicker). The style's own fullscreen lyrics sheet
 `SweptLyricLine` draws a line in two layers: the whole line dim, then the sung part bright,
 clipped to however much has been sung. The clip is recomputed in the draw phase, so a frame
 costs a clip and a redraw rather than a recomposition. The glow is a tinted rounded box behind
-the word being sung, not a blurred copy of the text.
+the word being sung, not a blurred copy of the text. Each word fills over exactly its provider
+span. `LyricsSweepGeometry.MIN_SWEEP_MS` (16 ms, about one frame) only keeps a zero or negative
+span from dividing by zero, so a quick word is never stretched past the next one. The V2 profile
+keeps its own 180 ms `minSweepMs`.
 
 ENHANCED (the `refinedMotion` flag on `LyricsModeProfile`, in `shared-ui`) adds these, all of
 them skipped under reduced motion:
