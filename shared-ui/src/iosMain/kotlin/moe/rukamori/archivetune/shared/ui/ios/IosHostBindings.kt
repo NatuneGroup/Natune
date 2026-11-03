@@ -59,6 +59,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.toEnum
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneHostBindings
 import moe.rukamori.archivetune.shared.ui.IosHost
+import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityOverlay
 import moe.rukamori.archivetune.shared.ui.glass.OpticalCapabilities
 import moe.rukamori.archivetune.shared.ui.host.hostLibraryPage
 import moe.rukamori.archivetune.shared.ui.host.civilFromDays
@@ -177,6 +178,8 @@ internal fun iosHostBindings(
             IosPlaylistOverlays(playlistCreation, playlistTags, graph, route)
             IosSleepTimerOverlay(sleepSheet, graph.sleepTimer)
             IosTempoPitchOverlay(tempoSheet, graph, tempoPitchActions)
+            IosEqualizerOverlay(graph.equalizer)
+            AcousticQualityOverlay(graph.acoustic)
         },
         playerSlots = { expanded, active, _ ->
             iosPlayerSlots(host, graph, canvas, canvasFrames, expanded, active)

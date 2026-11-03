@@ -9,6 +9,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,7 +67,9 @@ import moe.rukamori.archivetune.shared.domain.settings.TidalInstanceStatus
 import moe.rukamori.archivetune.shared.domain.settings.TidalSessionFacts
 import moe.rukamori.archivetune.shared.domain.settings.tidalInstanceList
 import moe.rukamori.archivetune.shared.domain.settings.youTubeLoginBlock
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.shared.ui.IosHost
+import moe.rukamori.archivetune.shared.ui.acoustic.AcousticQualityPanel
 import moe.rukamori.archivetune.shared.ui.host.paxsenixSettingsOf
 import moe.rukamori.archivetune.shared.ui.navigation.ArchiveRoute
 import moe.rukamori.archivetune.shared.ui.navigation.LocalShellContentPadding
@@ -623,7 +626,7 @@ internal fun IosSettingsScreen(host: IosHost, owners: IosSettingsOwners, route: 
                 scrollTo = scrollTo,
                 host = host,
             )
-            "settings/misc" -> IosDeveloperSettingsPage(owners.controller, navigate, onFailure, scrollTo)
+            "settings/misc" -> IosDeveloperSettingsPage(owners.graph, owners.controller, navigate, onFailure, scrollTo)
             "settings/language_packs" -> IosLanguagePackSettingsPage(host, owners.controller, onFailure)
             "settings/lyrics/providers" -> LyricsProviderSettings(
                 controller = owners.controller,
@@ -784,11 +787,12 @@ private fun IosListenerPresenceSection(store: ListenerPresenceStore, report: (St
 }
 
 /**
- * Settings > Misc on this host. The acoustic audit, Discord debug and nerd-stats sections need owners this host does not
- * connect, so each reports itself unavailable rather than showing an empty block.
+ * Settings > Misc on this host. The acoustic audit mounts the shared panel over the queue's current song,
+ * through the session's audit owner. Discord debug and nerd-stats keep reporting themselves unavailable.
  */
 @Composable
 private fun IosDeveloperSettingsPage(
+    graph: IosSessionGraph,
     controller: SettingsController,
     navigate: (String) -> Unit,
     onFailure: () -> Unit,
@@ -798,12 +802,46 @@ private fun IosDeveloperSettingsPage(
         controller = controller,
         navigate = navigate,
         playerAvailable = true,
-        acousticQualitySection = { IosUnavailablePanel() },
+        acousticQualitySection = { active -> IosAcousticQualitySection(graph, active) },
         discordDebugSection = { IosUnavailablePanel() },
         nerdStatsSection = { IosUnavailablePanel() },
         resumed = true,
         onFailure = onFailure,
         scrollTo = scrollTo,
+    )
+}
+
+/**
+ * The developer-page acoustic section: the shared audit panel of the queue's current song, or the
+ * no-song note when nothing is loaded. Leaving or hiding the section cancels a run in flight.
+ */
+@Composable
+private fun IosAcousticQualitySection(graph: IosSessionGraph, active: Boolean) {
+    val queueState by graph.queue.state.collectAsState()
+    val current = queueState.currentOccurrenceId
+        ?.let { id -> queueState.entries.firstOrNull { it.occurrenceId == id }?.item }
+    DisposableEffect(graph.acoustic, active) {
+        graph.acoustic.setActive(active)
+        onDispose { graph.acoustic.setActive(false) }
+    }
+    if (current == null) {
+        Text(
+            stringResource(Res.string.m6aq_code_no_current_source),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        return
+    }
+    AcousticQualityPanel(
+        target = AcousticAuditTarget(
+            current.ref.id,
+            current.title,
+            current.artists.joinToString { it.name },
+        ),
+        owner = graph.acoustic,
+        active = active,
+        modifier = Modifier.padding(horizontal = 16.dp),
     )
 }
 

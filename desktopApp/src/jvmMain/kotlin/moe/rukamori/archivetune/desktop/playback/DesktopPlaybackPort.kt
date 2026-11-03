@@ -9,7 +9,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.ln
 import kotlin.math.round
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +30,7 @@ import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStageRequest
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.normalization.NormalizationGain
-import moe.rukamori.archivetune.shared.domain.dsp.spectral.SpectralVerdict
+import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.playback.MonotonicClock
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
@@ -151,8 +150,8 @@ class DesktopPlaybackPort(
      * The spectral check owns its own IO and default dispatchers and never waits on [executor], so it is driven
      * from the caller's coroutine. Only conclusive results are cached, and only under the source they measured.
      */
-    private val spectral = DesktopSpectralAuthenticity()
-    private val spectralCache = SourceBoundSpectralCache(SPECTRAL_CACHE_CAPACITY)
+    internal val spectral = DesktopSpectralAuthenticity()
+    internal val spectralCache = SourceBoundSpectralCache(SPECTRAL_CACHE_CAPACITY)
 
     /**
      * The signed-in Telegram session's TDLib calls and accepted-account store, read on the playback thread when a Telegram
@@ -303,23 +302,11 @@ class DesktopPlaybackPort(
     }
 
     /**
-     * Opt-in spectral evidence for the source at [locator], measured from that source's own decoded PCM at
-     * [startPositionMs]. It never analyses engine output, which is resampled to the device rate, and it never
-     * touches a deck, the mixer or the playback executor, so it cannot change the audible output or the bit-perfect
-     * state.
-     *
-     * A conclusive verdict is cached under the engine source and start position, so it applies only to that exact
-     * source. An inconclusive one is not cached, so a later request retries it. Cancelling the caller stops the
-     * native read, and a cancelled check caches nothing.
+     * The active deck's loaded request on the playback thread, which the spectral entry points in
+     * [DesktopSpectralAudit] bind their audit target to. A deck that is not loaded has none.
      */
-    suspend fun assessSpectrum(locator: PlaybackLocator, startPositionMs: Long = 0L): DesktopSpectralEvidence {
-        val source = engineSourceOf(locator) ?: return spectral.assess(locator, startPositionMs)
-        val key = SpectralCacheKey(source, startPositionMs)
-        spectralCache.get(key)?.let { return it }
-        val evidence = spectral.assess(locator, startPositionMs)
-        if (evidence.assessment.verdict != SpectralVerdict.UNKNOWN) spectralCache.put(key, evidence)
-        return evidence
-    }
+    internal fun loadedRequest(): PlaybackRequest? =
+        runOnPlaybackThread(fallback = null) { sessions[activeIndex()]?.request }
 
     /**
      * Binds the Telegram session the host has signed in, or unbinds it with null. The binding carries the account store and
@@ -430,7 +417,7 @@ class DesktopPlaybackPort(
             is PlaybackCommand.SetPitch -> {
                 stages = stages.copy(
                     request = stages.request.copy(
-                        pitchSemitones = 12.0 * ln(command.pitch.toDouble()) / ln(2.0)
+                        pitchSemitones = PitchConversion.multiplierToSemitones(command.pitch.toDouble())
                     )
                 )
                 applyStages()
@@ -619,7 +606,13 @@ class DesktopPlaybackPort(
         try {
             NativeTwoDeckMixer.create(backend).also {
                 mixer = it
-                committedSequence = it.snapshot().commitSequence
+                // A fresh mixer always starts on its own first deck, which a parked scheduler may not
+                // still name: adopt the mixer's deck like [resumeOutput] so [activeIndex] is its deck.
+                val timing = it.snapshot()
+                committedSequence = timing.commitSequence
+                scheduler.adoptActive(
+                    TransitionDeck.entries.getOrElse(timing.activeDeck) { TransitionDeck.FIRST },
+                )
             }
         } catch (error: IllegalStateException) {
             fail(request, PlaybackFailureReason.OUTPUT_FAILED, error.message ?: "the audio output did not start")
@@ -829,6 +822,9 @@ class DesktopPlaybackPort(
         val session = sessions[index] ?: return
         val state = mix.deck(index).snapshot()
         if (!state.hasSource || state.playWhenReady || state.isBuffering || state.isEnded || !state.isSeekable) return
+        // A prepared plaintext handle is single-use: the original load already spent it, so parking it
+        // would strand the resume on a source it cannot reopen. It keeps the device instead.
+        if (session.request.locator is PlaybackLocator.PreparedPlaintext) return
         // A transition never outlives the device that carries it; the queue arms a fresh one on resume.
         cancelArmed(mix)
         suspendedSession = session

@@ -7,9 +7,10 @@
 # been executed on the Linux code-only host.
 #
 # Per Apple platform the closure is written to shared-data/build/ios-native/<iphoneos|iphonesimulator>/lib:
-#   libarchivetune_engine.a   portable core compiled from desktopApp/native/src/archivetune_engine.c and
-#                             archivetune_device.c with miniaudio 0.11.25. The JNI bridge, desktop system code
-#                             and realtime tests are excluded, and no desktop binary is used.
+#   libarchivetune_engine.a   portable core compiled from desktopApp/native/src/archivetune_engine.c,
+#                             archivetune_device.c and archivetune_probe.c with miniaudio 0.11.25. The JNI
+#                             bridge, desktop system code and realtime tests are excluded, and no desktop
+#                             binary is used. The probe unit decodes source-rate PCM for the acoustic audit.
 #   libavfilter.a             FFmpeg 8.1.3 static libraries: avfilter, avformat, avcodec, swscale,
 #   libavformat.a             swresample and avutil. The version 3 license set is used, with no nonfree code
 #   libavcodec.a              and no programs.
@@ -90,7 +91,7 @@ TDLIGHT_COMMIT=2b51b33c8a905be96c40508e68485f8a719e26a3
 # dependency). Keep this list in step with the -l flags in that file.
 CLOSURE_ARCHIVES="libarchivetune_engine.a libarchivetune_telegram.a libavfilter.a libavformat.a libavcodec.a libswscale.a libswresample.a libavutil.a libssl.a libcrypto.a libxml2.a libz.a"
 # Entry points that iosApp/Native/ATNativeAudio.mm calls. The producer rejects a core that does not export them.
-CORE_SYMBOLS="ae_engine_create ae_engine_destroy ae_engine_load ae_engine_play ae_engine_pause ae_engine_seek ae_engine_set_speed ae_engine_stop ae_engine_snapshot ae_engine_last_error ae_engine_render_realtime"
+CORE_SYMBOLS="ae_engine_create ae_engine_destroy ae_engine_load ae_engine_play ae_engine_pause ae_engine_seek ae_engine_set_speed ae_engine_stop ae_engine_snapshot ae_engine_last_error ae_engine_render_realtime ae_probe_create ae_probe_destroy ae_probe_cancel ae_probe_read ae_probe_codec_name"
 # Entry points that iosApp/Native/ATNativeTelegram.mm calls. The producer rejects a TDLib archive without them.
 TELEGRAM_SYMBOLS="td_json_client_create td_json_client_send td_json_client_receive td_json_client_execute td_json_client_destroy"
 
@@ -410,8 +411,12 @@ build_core() {
     "$CC" -target "$TARGET_TRIPLE" -isysroot "$SDK_PATH" -O2 -x objective-c -fvisibility=hidden -Wall \
         "${include[@]}" -c "$SOURCE_ROOT/src/archivetune_device.c" -o "$OBJ/archivetune_device.o" >>"$LOGS/core.log" 2>&1 \
         || die "portable core compile failed for archivetune_device on $PLATFORM; see $LOGS/core.log"
+    # The acoustic-audit probe is plain C against FFmpeg; the iOS FFmpeg build ships the same static libraries.
+    "$CC" -target "$TARGET_TRIPLE" -isysroot "$SDK_PATH" -O2 -std=gnu11 -fvisibility=hidden -Wall -Wextra \
+        "${include[@]}" -c "$SOURCE_ROOT/src/archivetune_probe.c" -o "$OBJ/archivetune_probe.o" >>"$LOGS/core.log" 2>&1 \
+        || die "portable core compile failed for archivetune_probe on $PLATFORM; see $LOGS/core.log"
     rm -f "$PWORK/libarchivetune_engine.a"
-    "$AR" rcs "$PWORK/libarchivetune_engine.a" "$OBJ/archivetune_engine.o" "$OBJ/archivetune_device.o"
+    "$AR" rcs "$PWORK/libarchivetune_engine.a" "$OBJ/archivetune_engine.o" "$OBJ/archivetune_device.o" "$OBJ/archivetune_probe.o"
     "$RANLIB" "$PWORK/libarchivetune_engine.a"
 }
 
