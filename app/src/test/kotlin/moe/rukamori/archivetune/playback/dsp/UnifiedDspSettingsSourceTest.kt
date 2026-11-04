@@ -1,7 +1,6 @@
 package moe.rukamori.archivetune.playback.dsp
 
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.toMutablePreferences
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import moe.rukamori.archivetune.constants.EqualizerOutputGainEnabledKey
