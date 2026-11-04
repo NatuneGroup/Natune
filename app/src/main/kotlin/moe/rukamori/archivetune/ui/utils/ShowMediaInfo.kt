@@ -727,7 +727,6 @@ fun ShowMediaInfo(videoId: String) {
                                                                 factsHere?.usbExclusive == true -> "USB Exclusive (Direct DAC)"
                                                                 bitPerfectUsbStatus is BitPerfectUsbOutput.Status.Active ->
                                                                     bitPerfectUsbTitle
-                                                                EngineRuntime.tryptifyUsbPinActive -> "USB Framework (Pinned Route)"
                                                                 else -> "Default Android System Mixer"
                                                             },
                                                     ),
@@ -777,9 +776,7 @@ fun ShowMediaInfo(videoId: String) {
                                                     val outForm = when {
                                                         EngineRuntime.usbExclusiveActive -> {
                                                             val wireBits =
-                                                                EngineRuntime.lastwaveUsbBitsPerSample.takeIf { it > 0 }
-                                                                    ?: EngineRuntime.tryptifyUsbStream?.bitsPerSample?.takeIf { it > 0 }
-                                                                    ?: EngineRuntime.usbExclusiveBits.takeIf { it > 0 }
+                                                                EngineRuntime.usbExclusiveBits.takeIf { it > 0 }
                                                                     ?: bp.outputBitDepth
                                                             if (bp.outputEncoding == C.ENCODING_PCM_FLOAT) {
                                                                 "Float · ${wireBits}-bit USB out"
@@ -1470,11 +1467,10 @@ class TrackInfoViewModel @Inject constructor(
     // any change without a timer.
     private val usbRuntime = snapshotFlow {
         EngineRuntime.revision
-        val stream = EngineRuntime.tryptifyUsbStream
         UsbRuntime(
             EngineRuntime.usbExclusiveActive,
-            stream?.sampleRateHz ?: EngineRuntime.usbExclusiveRateHz,
-            stream?.bitsPerSample ?: EngineRuntime.usbExclusiveBits,
+            EngineRuntime.usbExclusiveRateHz,
+            EngineRuntime.usbExclusiveBits,
         )
     }
 

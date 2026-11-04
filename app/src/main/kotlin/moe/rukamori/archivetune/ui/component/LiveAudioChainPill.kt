@@ -117,17 +117,8 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
     val routedLabel = routedLabelValue
     // Every EngineRuntime publisher bumps [revision], so it is the only key these reads need.
     val usbExclusive = remember(revision) { runtime.usbExclusiveActive }
-    val tryptifyPinActive = remember(revision) { runtime.tryptifyUsbPinActive }
-    val usbRateHz = remember(revision) {
-        runtime.lastwaveUsbRateHz.takeIf { it > 0 }
-            ?: runtime.tryptifyUsbStream?.sampleRateHz?.takeIf { it > 0 }
-            ?: runtime.usbExclusiveRateHz.takeIf { it > 0 }
-    }
-    val usbBits = remember(revision) {
-        runtime.lastwaveUsbBitsPerSample.takeIf { it > 0 }
-            ?: runtime.tryptifyUsbStream?.bitsPerSample?.takeIf { it > 0 }
-            ?: runtime.usbExclusiveBits.takeIf { it > 0 }
-    }
+    val usbRateHz = remember(revision) { runtime.usbExclusiveRateHz.takeIf { it > 0 } }
+    val usbBits = remember(revision) { runtime.usbExclusiveBits.takeIf { it > 0 } }
     val floatRouteActive = remember(revision) { runtime.bitPerfectSinkRouteActive }
     val sinkDecodedEncoding = remember(revision) { runtime.sinkDecodedEncoding }
 
@@ -202,11 +193,7 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
         }
     }
 
-    val route = when {
-        usbExclusive -> stringResource(R.string.live_audio_chain_usb_exclusive)
-        tryptifyPinActive -> stringResource(R.string.live_audio_chain_usb_framework)
-        else -> routedLabel
-    }
+    val route = if (usbExclusive) stringResource(R.string.live_audio_chain_usb_exclusive) else routedLabel
 
     val engineNote = stringResource(R.string.live_audio_chain_engine_16bit_note)
     val sourceDepthSuffix = status.sourceBitDepth.takeIf { it > 0 }?.let { " • $it-bit" }.orEmpty()
