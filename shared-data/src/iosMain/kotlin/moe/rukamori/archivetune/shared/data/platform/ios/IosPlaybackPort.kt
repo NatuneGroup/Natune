@@ -17,7 +17,7 @@ import moe.rukamori.archivetune.shared.data.playback.PlaybackProgressWatchdog
 import moe.rukamori.archivetune.shared.data.playback.outputLatencyMillis
 import moe.rukamori.archivetune.shared.data.stream.hls.isHlsPlaylistUrl
 import moe.rukamori.archivetune.shared.data.stream.nativePlaintext
-import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
+import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.platform.ANONYMOUS_ACCOUNT_SCOPE
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
@@ -67,8 +67,10 @@ class IosPlaybackPort : PlaybackPort {
     // Main-queue only. The pitch and equalizer tone every output loads with, applied like [desiredSpeed]. The
     // native units keep their parameters across manual output, so the tone survives a blend and its promotion.
     private var desiredPitchCents = 0f
-    private var equalizerEnabled = false
-    private var equalizerBands: List<IosEqBand> = emptyList()
+
+    // Main-queue only. The shared DSP document's value, applied like [desiredSpeed]: an output created or recreated
+    // later renders the same equalizer, and the port never keeps a band list of its own.
+    private var dspSettings = DspSettings()
 
     // Main-queue state for host-prepared audio. Every Load, Stop and preparation advances [ticket]. A preparation whose
     // ticket no longer matches when it returns is discarded with its transport, so a superseded occurrence never plays.
@@ -229,7 +231,7 @@ class IosPlaybackPort : PlaybackPort {
                     val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also {
                         blend = it
                         it.setPitch(desiredPitchCents)
-                        it.setEqualizer(equalizerEnabled, equalizerBands)
+                        it.setEqualizer(dspSettings.equalizerEnabled, dspSettings.toIosEqBands())
                     } ?: return@withContext false
                     if (!engine.arm(prepared, overlapMs)) return@withContext false
                     source = null
@@ -729,16 +731,16 @@ class IosPlaybackPort : PlaybackPort {
     }
 
     /**
-     * Applies the shared equalizer tone on every live output and any created or recreated later, like [setVolume].
-     * iOS renders the bands through each output's in-graph unit; the shared band list is converted once per call.
+     * Applies the shared DSP settings on every live output and any created or recreated later, like [setVolume].
+     * iOS renders the equalizer of that one value through each output's in-graph unit; the adapter converts its
+     * band list once per call. Tempo stays with [PlaybackCommand.SetSpeed], so a settings push never moves it.
      */
-    fun setEqualizer(enabled: Boolean, bands: List<EqualizerBand>) {
+    fun applyDspSettings(settings: DspSettings) {
         scope.launch {
             if (closed) return@launch
-            equalizerEnabled = enabled
-            equalizerBands = bands.toIosEqBands()
+            dspSettings = settings
             output?.let { applyEqualizer(it) }
-            blend?.setEqualizer(enabled, equalizerBands)
+            blend?.setEqualizer(settings.equalizerEnabled, settings.toIosEqBands())
         }
     }
 
@@ -749,9 +751,9 @@ class IosPlaybackPort : PlaybackPort {
     suspend fun currentRequest(): PlaybackRequest? =
         runCatching { withContext(scope.coroutineContext) { request.takeUnless { closed } } }.getOrNull()
 
-    /** Packs the stored equalizer bands into the native ABI and applies them to [native]. */
+    /** Applies the stored DSP settings' equalizer to [native]. */
     private fun applyEqualizer(native: CPointer<at_audio_output>) =
-        applyIosEqualizer(native, equalizerBands, equalizerEnabled)
+        applyIosEqualizer(native, dspSettings)
 
     /** Returns true while the engine plays or buffers, the states whose position and failure reads must stay prompt. */
     private fun observe(): Boolean {

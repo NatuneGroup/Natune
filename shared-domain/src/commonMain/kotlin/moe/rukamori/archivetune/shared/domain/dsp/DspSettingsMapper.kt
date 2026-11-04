@@ -10,6 +10,7 @@ import kotlinx.serialization.json.doubleOrNull
 import moe.rukamori.archivetune.shared.domain.dsp.clarity.ClarityPreset
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandLevels
+import moe.rukamori.archivetune.shared.domain.dsp.eq.GraphicEqualizer
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
 import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.dsp.tempo.TempoPitchStage
@@ -69,7 +70,7 @@ object DspSettingsMapper {
     )
 
     /** One octave per band, the spacing both graphic equalizers used. */
-    const val GRAPHIC_BAND_Q = 1.4142135623730951
+    const val GRAPHIC_BAND_Q = GraphicEqualizer.BAND_Q
 
     /** The legacy parametric band model, unchanged: `{id, type, freq, gain, q, enabled}`. */
     private const val MIN_Q = 0.1
