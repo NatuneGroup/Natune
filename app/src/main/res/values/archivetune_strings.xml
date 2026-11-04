@@ -1121,7 +1121,7 @@
     <string name="bit_perfect_usb_reason_no_mode">%1$s offers no bit-perfect mode at %2$s / %3$s</string>
     <string name="bit_perfect_usb_reason_refused">Android refused bit-perfect mode for this device</string>
     <string name="audio_processing_title">Audio processing</string>
-    <string name="audio_processing_desc">Natune DSP. Normalization, the equalizer, the clarity preset, the limiter and dither run in one 32-bit float chain. Off hands the decoder\'s samples straight to the output, which is also what audio offload and bit-perfect output need.</string>
+    <string name="audio_processing_desc">Natune DSP. Normalization, the equalizer, the clarity preset, the limiter and dither run in one 32-bit float chain. Off renders the stored settings neutral on every host — flat equalizer, unity preamp, no normalization — and keeps them stored for when it is back on. Offload and bit-perfect output need it off.</string>
     <string name="audio_engines_unavailable_bit_perfect">Off while bit-perfect USB output is on</string>
     <string name="usb_exclusive_audio_title">USB exclusive output</string>
     <string name="usb_exclusive_audio_desc">Experimental. Plays to a connected USB DAC through an exclusive AAudio stream, past the Android mixer. Engines and the float DSP still apply, and the audio stays at the normal path\'s 16-bit depth (bit-perfect USB output keeps hi-res depth). Falls back to the normal output whenever the DAC refuses. Turns off crossfade, automix, offload and bit-perfect USB output.</string>

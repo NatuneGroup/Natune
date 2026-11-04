@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.shared.domain.dsp
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import moe.rukamori.archivetune.shared.domain.dsp.clarity.ClarityPreset
@@ -337,6 +338,33 @@ class DspSettingsMapperTest {
             emptyList(),
         )
         assertEquals(DspSettings.MAX_PREAMP_DB, clamped.preampDb)
+    }
+
+    @Test
+    fun thePreampSwitchKeepsTheStoredGainStored() {
+        val switchedOff = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(equalizerOutputGainMb = -350, equalizerOutputGainEnabled = false),
+            emptyList(),
+        )
+        // A switched-off preamp keeps its value and applies nothing, so flipping the switch back applies it.
+        assertEquals(-3.5, switchedOff.preampDb)
+        assertFalse(switchedOff.preampEnabled)
+        assertEquals(1f, switchedOff.preampGain)
+
+        // A retired stage applied its own preamp whenever the stage ran, so it keeps contributing even
+        // though the shared output-gain switch was off.
+        val stagePreamp = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                equalizerOutputGainEnabled = false,
+                tryptifyEqualizerEnabled = true,
+                tryptifyGraphicStageEnabled = true,
+                tryptifyGraphicBandsJson = """[{"type":"PEAKING","freq":1000,"gain":2,"q":1}]""",
+                tryptifyGraphicPreampDb = -6.0,
+            ),
+            emptyList(),
+        )
+        assertEquals(-6.0, stagePreamp.preampDb, 1e-9)
+        assertTrue(stagePreamp.preampEnabled)
     }
 
     @Test

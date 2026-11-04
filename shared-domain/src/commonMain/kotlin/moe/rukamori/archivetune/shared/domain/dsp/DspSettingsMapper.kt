@@ -28,6 +28,8 @@ data class PersistedDspValues(
     val equalizerBandLevelsMb: String? = null,
     /** `equalizerOutputGainMb` — the user preamp, in millibels. Read only while its own switch is on. */
     val equalizerOutputGainMb: Int = 0,
+    /** `equalizerOutputGainEnabled` — the user preamp's own switch. Off keeps the stored gain stored, not applied. */
+    val equalizerOutputGainEnabled: Boolean = true,
     /** `lw_eq_enabled` — the legacy 15-band equalizer switch. */
     val lastWaveEqualizerEnabled: Boolean = false,
     /** `lw_eq_gains` — fifteen comma-separated decibel levels. */
@@ -204,10 +206,14 @@ object DspSettingsMapper {
         val bands = (if (migrated.isEmpty()) levels else migrated).take(DspSettings.MAX_EQUALIZER_BANDS)
 
         val floatChain = values.floatDspEnabled
+        val stagePreampDb = migratedStagePreampDb(values, parametricStage, graphicStage)
         return DspSettings(
             linearGain = 1f,
-            preampDb = (sharedPreampDb(values) + migratedStagePreampDb(values, parametricStage, graphicStage))
+            preampDb = (sharedPreampDb(values) + stagePreampDb)
                 .coerceIn(-DspSettings.MAX_PREAMP_DB, DspSettings.MAX_PREAMP_DB),
+            // The user preamp applies while its own switch is on. A retired stage applied its own gain
+            // whenever that stage ran, so it keeps contributing after the shared preamp switch was left off.
+            preampEnabled = values.equalizerOutputGainEnabled || stagePreampDb != 0.0,
             normalizationEnabled = values.audioNormalization,
             equalizerEnabled = values.equalizerEnabled || parametricStage || graphicStage || lastWaveStage,
             equalizerBands = bands,

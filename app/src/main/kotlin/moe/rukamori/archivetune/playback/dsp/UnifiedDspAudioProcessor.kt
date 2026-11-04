@@ -219,7 +219,7 @@ class UnifiedDspAudioProcessor(
     }
 
     private fun applyRequest(graph: DspGraph, request: Snapshot, gated: Boolean) {
-        val settings = if (gated) DspSettings() else request.settings
+        val settings = if (gated) DspSettings().withoutProcessing() else request.settings
         val plan = if (gated) UnifiedDspSettingsSource.BIT_PERFECT_PLAN else request.plan
         // The graph dithers for a host that reads its float output; this adapter quantizes to 16-bit
         // itself, so the dither is applied once, at the output grid, instead of twice.
