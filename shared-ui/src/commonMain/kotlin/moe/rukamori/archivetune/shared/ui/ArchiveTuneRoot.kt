@@ -139,7 +139,7 @@ fun ArchiveTuneRoot(
                 moe.rukamori.archivetune.shared.ui.menu.LocalPlaylistPickerContext provides pickerContext,
                 moe.rukamori.archivetune.shared.ui.screens.LocalCustomArtworkOverrides provides artworkOverrides,
             ) {
-                ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television, systemDark)
+                ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea)
             }
         }
     }
@@ -154,6 +154,7 @@ private fun ArchiveTuneLoadedRoot(
     opticalCapabilities: OpticalCapabilities,
     television: Boolean,
     systemDark: Boolean,
+    safeArea: SafeAreaPadding,
 ) {
         val navigation = rememberShellNavigation(preferences)
         val unreadNews by host.unreadNews.collectAsState(false)
