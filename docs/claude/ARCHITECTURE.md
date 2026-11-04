@@ -275,8 +275,9 @@ pitch-shift, libusb or resampling target ships. Two native libraries build now:
 exclusive stream whose `FloatDsp.available` flag decides whether that route can run.
 One Audio processing switch owns processing: on, the shared chain runs as described in
 [the shared chain](../engineering/dsp.md); off, the plan bypasses and the decoder's own
-samples reach the sink. Bit-perfect USB output, the AAudio-exclusive route and their
-bypass behaviour remain separate, and the stored `lw_*`, `eq_bands_json` and
+samples reach the sink. Bit-perfect USB output is built without a processor chain, so that sink alone
+plays the decoder's output; the AAudio-exclusive route is the standard sink's output provider, so the
+shared chain and the switch still apply there. The stored `lw_*`, `eq_bands_json` and
 `param_eq_bands_json` formats stay readable as chain input.
 The removed unreachable decent USB island is not the active USB output; its
 [MIT license](../../audio/decent-usb-audio-driver/LICENSE), credit and app optional USB-host
