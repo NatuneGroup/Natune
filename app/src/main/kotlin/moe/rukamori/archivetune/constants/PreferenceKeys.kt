@@ -2329,7 +2329,13 @@ enum class VideoAspectRatio {
 
 val VideoAspectRatioKey = stringPreferencesKey("videoAspectRatio")
 
-// Tryptify/LastWave audio engine toggles and bit-perfect output (ported from upstream).
+// Bit-perfect output, and the one audio-processing switch the unified chain runs under.
+//
+// The retired Tryptify/LastWave/float-DSP switches below are still read: they are where the shared chain
+// finds its tone, clarity and dither presets, so an install that set them keeps the same sound. Nothing
+// writes them any more.
+val AudioProcessingEnabledKey = booleanPreferencesKey("audioProcessingEnabled")
+const val AUDIO_PROCESSING_ENABLED_DEFAULT = true
 val FloatDspEnabledKey = booleanPreferencesKey("floatDspEnabled")
 val UsbExclusiveAudioKey = booleanPreferencesKey("usbExclusiveAudio")
 val BitPerfectOutputKey = booleanPreferencesKey("bitPerfectOutput")

@@ -57,19 +57,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
 import moe.rukamori.archivetune.playback.dsp.BitPerfectRuntime
 import moe.rukamori.archivetune.playback.dsp.EngineRuntime
-import tf.monochrome.android.audio.dsp.oxford.CompressorEffect
 import java.util.Locale
 
 data class LiveAudioChainLabels(
@@ -90,10 +85,6 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
     val context = LocalContext.current
 
     val runtime = EngineRuntime
-    val engine = runtime.activeEngineState
-    val wantedEngine = runtime.wantedEngineState
-    val tryptifyAvailable = runtime.tryptifyAvailableState
-    val lastwaveAvailable = runtime.lastwaveAvailableState
     val revision = runtime.revision
 
     var routedLabelValue by remember { mutableStateOf("Android Mixer") }
@@ -119,8 +110,9 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
     val usbExclusive = remember(revision) { runtime.usbExclusiveActive }
     val usbRateHz = remember(revision) { runtime.usbExclusiveRateHz.takeIf { it > 0 } }
     val usbBits = remember(revision) { runtime.usbExclusiveBits.takeIf { it > 0 } }
-    val floatRouteActive = remember(revision) { runtime.bitPerfectSinkRouteActive }
-    val sinkDecodedEncoding = remember(revision) { runtime.sinkDecodedEncoding }
+    // The shared chain's own engagement: it settles at configure, and stays off on a bit-perfect route
+    // or an encoding it cannot read.
+    val dspEngaged = remember(revision) { runtime.dspActiveState }
 
     val mixerConversionPossible =
         BitPerfectRuntime.requested &&
@@ -131,8 +123,6 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
     val hasSignal = status.sourceSampleRate > 0
     val floatPcmLabel = stringResource(R.string.live_audio_chain_float_pcm)
     val lossyLabel = stringResource(R.string.live_audio_chain_lossy)
-    val floatDepth = status.sourceBitDepth.takeIf { it > 0 } ?: 32
-    val floatWithDepthLabel = stringResource(R.string.live_audio_chain_float_with_depth, floatDepth)
     val sinkOutputRateLabel = status.outputSampleRate.takeIf { it > 0 }?.let(::rateKhz)
     val inputBits =
         when {
@@ -142,18 +132,8 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
         }
     val inputRate = if (hasSignal) rateKhz(status.sourceSampleRate) else "—"
 
-    val effectiveEngine =
-        when {
-            engine != AudioEngineRouterProcessor.Engine.NONE -> engine
-            wantedEngine == AudioEngineRouterProcessor.Engine.TRYPTIFY && tryptifyAvailable ->
-                AudioEngineRouterProcessor.Engine.TRYPTIFY
-            wantedEngine == AudioEngineRouterProcessor.Engine.LASTWAVE && lastwaveAvailable ->
-                AudioEngineRouterProcessor.Engine.LASTWAVE
-            else -> AudioEngineRouterProcessor.Engine.NONE
-        }
     val stage = when {
-        effectiveEngine == AudioEngineRouterProcessor.Engine.TRYPTIFY -> "TRYPTIFY DSP"
-        effectiveEngine == AudioEngineRouterProcessor.Engine.LASTWAVE -> "LASTWAVE DSP"
+        dspEngaged -> stringResource(R.string.live_audio_chain_natune_dsp)
         usbExclusive || status.verifiedBitPerfect -> stringResource(R.string.live_audio_chain_direct_hal)
         else -> stringResource(R.string.live_audio_chain_android_mixer)
     }
@@ -174,11 +154,6 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
             outputRate =
                 if (status.outputSampleRate > 0) rateKhz(status.outputSampleRate) else inputRate
             outputIsBitPerfect = true
-        }
-
-        floatRouteActive && sinkDecodedEncoding == C.ENCODING_PCM_FLOAT -> {
-            outputBits = floatWithDepthLabel
-            outputRate = sinkOutputRateLabel ?: inputRate
         }
 
         hasSignal -> {
@@ -207,12 +182,6 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
                 "Native Rate$sourceDepthSuffix • ${rateKhz(sourceSampleRate)}"
             mixerBitPerfectActive && sourceSampleRate > 0 ->
                 "Bit-Perfect mixer • ${outputBitDepth}-bit • ${rateKhz(outputSampleRate)}"
-            floatRouteActive && sinkDecodedEncoding == C.ENCODING_PCM_FLOAT && sourceBitDepth > 16 ->
-                "Float route • ${sourceBitDepth}-bit depth into the Android mixer" +
-                    if (mixerConversionPossible) " (mixer may convert)" else ""
-            floatRouteActive && sinkDecodedEncoding == C.ENCODING_PCM_FLOAT ->
-                "Float route • ${floatDepth}-bit depth into the Android mixer" +
-                    if (mixerConversionPossible) " (mixer may convert)" else ""
             resamplerActive && sourceSampleRate > 0 && outputSampleRate > 0 ->
                 "Resampling • ${sourceBitDepth}-bit/${rateKhz(sourceSampleRate)} → ${rateKhz(outputSampleRate)}"
             dspActive && sourceBitDepth > 16 && decodedBitDepth <= 16 ->
@@ -395,53 +364,8 @@ fun LiveAudioChainPill(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            val compressor = EngineRuntime.compressorEffectState
-            if (compressor != null) CompressorGainReductionLabel(compressor)
         }
     }
-}
-
-/** Ten meter polls a second while the gain-reduction line is visible and the app is STARTED. */
-private const val COMPRESSOR_METER_POLL_INTERVAL_MS = 100L
-
-/**
- * The compressor's live gain reduction, shown only while the compressor is enabled and a track is playing. The meter
- * is read only while this line is composed and the app is STARTED, so a hidden app or an idle pill reads nothing.
- */
-@Composable
-private fun CompressorGainReductionLabel(compressor: CompressorEffect) {
-    val playerConnection = LocalPlayerConnection.current
-    val playing by remember(playerConnection) { playerConnection?.isPlaying ?: flowOf(false) }
-        .collectAsStateWithLifecycle(initialValue = false)
-    val enabled by remember(compressor) { compressor.state.map { !it.bypass } }
-        .collectAsStateWithLifecycle(initialValue = false)
-    val gainReductionDb by compressor.gainReductionDb.collectAsStateWithLifecycle(initialValue = 0f)
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val showing = enabled && playing
-    LaunchedEffect(showing, lifecycleOwner) {
-        if (!showing) return@LaunchedEffect
-        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                compressor.pollMeters()
-                delay(COMPRESSOR_METER_POLL_INTERVAL_MS)
-            }
-        }
-    }
-    if (!showing) return
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = stringResource(R.string.live_audio_chain_gain_reduction, formatGainReductionDb(gainReductionDb)),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
-
-/** The meter reports how far the level is pulled down as a positive magnitude, so it is shown with a minus sign. */
-private fun formatGainReductionDb(db: Float): String {
-    val magnitude = db.coerceAtLeast(0f)
-    return if (magnitude < 0.05f) "0.0" else "\u2212" + String.format(Locale.US, "%.1f", magnitude)
 }
 
 private fun Modifier.shimmerOverlay(

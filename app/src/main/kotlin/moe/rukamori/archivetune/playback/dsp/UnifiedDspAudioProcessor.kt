@@ -85,6 +85,7 @@ class UnifiedDspAudioProcessor(
         gateBypassed = gated
         format = target
         isEngaged = !graph.isBypassed
+        EngineRuntime.publishDspActive(isEngaged)
         return AudioProcessor.AudioFormat(target.sampleRateHz, target.channelCount, C.ENCODING_PCM_FLOAT)
     }
 
@@ -160,10 +161,12 @@ class UnifiedDspAudioProcessor(
         shortScratch = ShortArray(0)
         outputFrames = FloatArray(0)
         isEngaged = false
+        EngineRuntime.publishDspActive(false)
     }
 
     private fun inactive(): AudioProcessor.AudioFormat {
         isEngaged = false
+        EngineRuntime.publishDspActive(false)
         return AudioProcessor.AudioFormat.NOT_SET
     }
 
