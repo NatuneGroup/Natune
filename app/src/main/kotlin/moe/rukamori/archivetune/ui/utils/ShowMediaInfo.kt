@@ -728,7 +728,7 @@ fun ShowMediaInfo(videoId: String) {
                                                     ),
                                                 )
                                                 val hwClock =
-                                                    factsHere?.tryptifyUsbRateHz?.takeIf { it > 0 }
+                                                    factsHere?.usbExclusiveRateHz?.takeIf { it > 0 }
                                                         ?: factsHere?.halSampleRateHz
                                                         ?: liveSampleRateHz
                                                 add(
@@ -1452,8 +1452,8 @@ class TrackInfoViewModel @Inject constructor(
         val usbExclusive: Boolean,
         val usbVendorId: Int,
         val usbProductId: Int,
-        val tryptifyUsbRateHz: Int,
-        val tryptifyUsbBits: Int,
+        val usbExclusiveRateHz: Int,
+        val usbExclusiveBits: Int,
     )
 
     private data class UsbRuntime(val exclusive: Boolean, val rateHz: Int, val bits: Int)
@@ -1478,8 +1478,8 @@ class TrackInfoViewModel @Inject constructor(
                 usbExclusive = runtime.exclusive,
                 usbVendorId = usb.dac?.vendorId ?: -1,
                 usbProductId = usb.dac?.productId ?: -1,
-                tryptifyUsbRateHz = runtime.rateHz,
-                tryptifyUsbBits = runtime.bits,
+                usbExclusiveRateHz = runtime.rateHz,
+                usbExclusiveBits = runtime.bits,
             )
         }
 
@@ -1495,8 +1495,8 @@ class TrackInfoViewModel @Inject constructor(
         val usbExclusive: Boolean,
         val usbVendorId: Int,
         val usbProductId: Int,
-        val tryptifyUsbRateHz: Int,
-        val tryptifyUsbBits: Int,
+        val usbExclusiveRateHz: Int,
+        val usbExclusiveBits: Int,
     )
 
     private val runtimeFacts: Flow<RuntimeFacts> =
@@ -1508,8 +1508,8 @@ class TrackInfoViewModel @Inject constructor(
                 usbExclusive = poll.usbExclusive,
                 usbVendorId = poll.usbVendorId,
                 usbProductId = poll.usbProductId,
-                tryptifyUsbRateHz = poll.tryptifyUsbRateHz,
-                tryptifyUsbBits = poll.tryptifyUsbBits,
+                usbExclusiveRateHz = poll.usbExclusiveRateHz,
+                usbExclusiveBits = poll.usbExclusiveBits,
             )
         }
 
@@ -1525,8 +1525,8 @@ class TrackInfoViewModel @Inject constructor(
         val usbExclusive: Boolean,
         val usbVendorId: Int,
         val usbProductId: Int,
-        val tryptifyUsbRateHz: Int,
-        val tryptifyUsbBits: Int,
+        val usbExclusiveRateHz: Int,
+        val usbExclusiveBits: Int,
     )
 
     val facts: StateFlow<PipelineFacts?> = combine(
@@ -1546,8 +1546,8 @@ class TrackInfoViewModel @Inject constructor(
             usbExclusive = runtime.usbExclusive,
             usbVendorId = runtime.usbVendorId,
             usbProductId = runtime.usbProductId,
-            tryptifyUsbRateHz = runtime.tryptifyUsbRateHz,
-            tryptifyUsbBits = runtime.tryptifyUsbBits,
+            usbExclusiveRateHz = runtime.usbExclusiveRateHz,
+            usbExclusiveBits = runtime.usbExclusiveBits,
         )
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)

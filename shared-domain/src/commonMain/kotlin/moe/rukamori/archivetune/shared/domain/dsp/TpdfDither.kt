@@ -5,9 +5,9 @@ import kotlin.math.round
 /**
  * Triangular-PDF dither and requantization to a fixed-point grid, the last stage of the chain.
  *
- * The generator is the native chain's xorshift32 (`native/dsp/float_dsp.cpp`): two uniforms in [-0.5, 0.5)
- * from one word, their difference a triangle one LSB wide peak to peak. Seeded identically it produces an
- * identical sequence, which is what the parity test pins.
+ * The generator is the xorshift32 the retired native float chain used: two uniforms in [-0.5, 0.5) from one
+ * word, their difference a triangle one LSB wide peak to peak. Seeded identically it produces an identical
+ * sequence, which is what the parity test pins.
  *
  * Quantization uses `2^(bits-1) - 1` steps of full scale, the full scale the native float-to-int16
  * conversion uses, so a full-scale sample stays at full scale instead of overshooting it.

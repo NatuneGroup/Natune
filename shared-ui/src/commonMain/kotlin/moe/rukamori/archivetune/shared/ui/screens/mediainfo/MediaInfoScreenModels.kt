@@ -80,7 +80,7 @@ data class MediaInfoPipelineFacts(
     val usbExclusive: Boolean = false,
     val usbVendorId: Int = -1,
     val usbProductId: Int = -1,
-    val tryptifyUsbRateHz: Int = 0,
+    val usbExclusiveRateHz: Int = 0,
 )
 
 /**

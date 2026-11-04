@@ -357,7 +357,7 @@ private fun MediaInfoDacSection(state: MediaInfoUi) {
         live?.stream?.sampleRateHz?.takeIf { it > 0 }
             ?: state.format?.sampleRateHz?.takeIf { it > 0 }
     val hardwareClockHz: Int? =
-        pipeline?.tryptifyUsbRateHz?.takeIf { it > 0 }
+        pipeline?.usbExclusiveRateHz?.takeIf { it > 0 }
             ?: pipeline?.halSampleRateHz
             ?: liveSampleRateHz
     val hardwareClockValue = if (hardwareClockHz != null) formatHz(hardwareClockHz) else unknownText
