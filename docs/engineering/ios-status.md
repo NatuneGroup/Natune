@@ -67,6 +67,37 @@ This is OS-reported latency, not a physical DAC measurement or proof that AirPla
 is fully included. Pure projection/cache-key, latency conversion/clock and output-slot regressions
 are authored but unrun; Apple compilation and device sync remain unverified.
 
+### Canonical audio graph and crash containment
+
+The `-10868` (`kAudioUnitErr_FormatNotSupported`) create failure came from forcing
+interleaved 48 kHz stereo through `AVAudioUnitTimePitch`/EQ before session activation.
+`ATNativeAudio.mm` now activates the shared session first, refuses zero/nonfinite rates
+and invalid channel layouts, and uses standard Float32 **non-interleaved** audio.
+The portable decoder/manual blend ABI remains 48 kHz interleaved stereo; fixed-size native
+scratch deinterleaves it at the source, and a source mixer converts to mono/stereo at the
+current hardware rate before pitch/EQ. Asset formats are never imposed on the output node.
+
+Every playback graph mutation, start and teardown runs behind an Objective-C
+`@try`/`@catch` boundary, including the blend pump through `ATAudioGraph.{h,mm}`.
+A refused tone graph gets one plain canonical graph retry without pitch/EQ. Stored controls
+survive graph replacement, but optional tone is bypassed while using that fallback.
+No AVPlayer playback adapter exists in this port; if the plain graph is also refused,
+`IosPlaybackPort` reports occurrence/attempt-bound `OUTPUT_FAILED` to the existing queue
+error/skip policy, without bypassing account admission, source order or the skip-on-error setting.
+
+Route/configuration changes invalidate the old graph and rebuild against the new active
+route. Paused/interrupted outputs defer rebuilding until resume; headphone removal still
+pauses. Queued notifications are lifetime/generation-bound. Native rebuilds keep the decoder
+and leases, and blends retain only unplayed PCM. Callback/node retirement is drained before
+reusing scratch or freeing the decoder; a drain overrun retains memory rather than risking UAF.
+
+`ios_compile.yml` now syntax-checks the actual Objective-C++ bridges against the simulator
+SDK and runs native format/conversion and deterministic NSException-containment regressions,
+plus the iOS source contracts. Common tests cover the bounded constructor fallback. These
+checks do not prove physical audio or route recovery: verify mono/stereo, 44.1/48 kHz,
+Bluetooth/AirPlay, unplug, interruption, recognition-window changes and the original crash
+on the exact installed candidate. No device validation is claimed here.
+
 ## Host/build integration
 
 1. Present in source: `shared-ui/build.gradle.kts` declares the static `ArchiveTuneShared`
