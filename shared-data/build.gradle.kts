@@ -24,6 +24,11 @@ kotlin {
             definitionFile.set(project.file("src/nativeInterop/cinterop/archivetuneAudio.def"))
             includeDirs(rootProject.file("iosApp/Native"), rootProject.file("desktopApp/native/include"))
         }
+        target.compilations.getByName("main").cinterops.create("archivetuneGraph") {
+            // Typed Apple objects keep playback graph mutations inside the Objective-C exception boundary.
+            definitionFile.set(project.file("src/nativeInterop/cinterop/archivetuneGraph.def"))
+            includeDirs(rootProject.file("iosApp/Native"))
+        }
         target.compilations.getByName("main").cinterops.create("archivetuneTelegram") {
             // The header declares only the at_telegram_client_* wrapper, so TDLib headers are not needed here.
             definitionFile.set(project.file("src/nativeInterop/cinterop/archivetuneTelegram.def"))

@@ -6,6 +6,8 @@
  * Portions © vossgraves — github.com/vossgraves
  */
 #import "ATNativeAudio.h"
+#import "ATAudioFormat.h"
+#import "ATAudioException.h"
 #import <AVFoundation/AVFoundation.h>
 #import <QuartzCore/QuartzCore.h>
 #include <algorithm>
@@ -22,22 +24,20 @@
 
 struct at_audio_output;
 
-/* Identity of one native output lifetime, shared by the output and by every queued callback. Destroy clears `output`
- * under `mutex` before the output is freed, and a callback holds `mutex` while it uses the output, so no callback can
- * reach freed memory or a replacement output. A replacement always gets a new gate. A callback keeps its gate alive,
- * so the gate's address cannot be reused while a stale callback still exists. */
+/* A queued callback owns this lifetime, never a raw output. Destroy clears output before freeing the decoder.
+ * Gate -> session is the only lock order; notifications dispatch before taking either lock to avoid reentrancy. */
 struct output_gate {
     std::mutex mutex;
-    at_audio_output *output = nullptr; // Guarded by mutex; cleared before the output is deleted.
+    at_audio_output *output = nullptr;
 };
 
 struct at_audio_output {
     ae_engine *core = nullptr;
-    std::shared_ptr<output_gate> gate; // Asynchronous callbacks capture this gate, never the output itself.
+    std::shared_ptr<output_gate> gate;
     AVAudioEngine *__strong graph = nil;
     AVAudioSourceNode *__strong source = nil;
-    /* In-graph tone units between the source and the mixer: pitch shift, then the parametric equalizer. Tempo
-     * stays engine-side; these change only the rendered signal, never decoder position or the manual pull. */
+    AVAudioSourceNode *__weak retired_source = nil;
+    AVAudioMixerNode *__strong converter = nil;
     AVAudioUnitTimePitch *__strong time_pitch = nil;
     AVAudioUnitEQ *__strong equalizer = nil;
     id __strong interruption = nil;
@@ -52,14 +52,25 @@ struct at_audio_output {
     std::atomic<bool> manual_output{false};
     std::atomic<int> render_active{0};
     std::atomic<double> last_render{0};
+    // One serial source callback uses fixed scratch. The manual consumer starts only after that callback drains.
+    float scratch[AT_AUDIO_RENDER_CHUNK * 2] = {};
+    float volume = 1.0f;
+    float pitch_cents = 0.0f;
+    at_eq_band eq_bands[AT_AUDIO_EQ_MAX_BANDS] = {};
+    uint32_t eq_count = 0;
+    bool eq_enabled = false;
+    double graph_rate = 0.0;
+    uint64_t graph_generation = 0;
     uint64_t output_error = 0;
     bool output_failed = false;
     bool requires_recreation = false;
-    bool playback_claimed = false; // Guarded by g_session_lock: this output currently holds a playback claim.
+    bool graph_dirty = true;
+    bool rebuild_queued = false;
+    bool plain_graph = false;
+    bool playback_claimed = false; // Guarded by g_session_lock.
     char error[256] = {};
 };
 
-/* Brackets one render callback so destroy can drain it before freeing the decoder. Never allocates or waits. */
 struct render_scope {
     explicit render_scope(at_audio_output *output) : p(output) { p->render_active.fetch_add(1); }
     ~render_scope() { p->render_active.fetch_sub(1); }
@@ -69,23 +80,18 @@ struct render_scope {
 };
 static void require_main() { NSCAssert([NSThread isMainThread], @"Audio control requires main thread"); }
 
-/* One process-wide policy for the shared AVAudioSession. A playback output holds a claim while it should be audible,
- * and each microphone recording window claims the session for play-and-record. Every category or activation change
- * happens under g_session_lock, from the main thread (playback) or the recognition thread (capture). The render
- * callback never takes this lock, so a session change cannot wait inside it. An output gate is always taken before
- * g_session_lock, never after it. */
+/* Recording windows and audible playback share one session. The realtime callback never takes this lock. */
 static std::mutex g_session_lock;
-static int g_recording_windows = 0;   // Guarded by g_session_lock.
-static int g_playback_claims = 0;     // Guarded by g_session_lock.
-static bool g_snapshot_taken = false; // Guarded by g_session_lock: the category from before the first open window.
+static int g_recording_windows = 0;
+static int g_playback_claims = 0;
+static bool g_snapshot_taken = false;
 static NSString *g_snapshot_category = nil;
 static NSString *g_snapshot_mode = nil;
 static AVAudioSessionCategoryOptions g_snapshot_options = (AVAudioSessionCategoryOptions)0;
 static AVAudioSessionRouteSharingPolicy g_snapshot_policy = AVAudioSessionRouteSharingPolicyDefault;
-static std::vector<std::shared_ptr<output_gate>> g_outputs; // Guarded by g_session_lock; changed on the main thread only.
+static std::vector<std::shared_ptr<output_gate>> g_outputs;
 
 static AVAudioSessionCategoryOptions recording_options(void) {
-    // Keep external output choices during recognition; AirPlay must be opted into explicitly for play-and-record.
     return (AVAudioSessionCategoryOptions)(AVAudioSessionCategoryOptionDefaultToSpeaker |
                                            AVAudioSessionCategoryOptionAllowBluetooth |
                                            AVAudioSessionCategoryOptionAllowBluetoothA2DP |
@@ -105,32 +111,33 @@ static void release_playback(at_audio_output *p) {
     std::lock_guard<std::mutex> guard(g_session_lock);
     release_playback_locked(p);
 }
-/* Caller holds g_session_lock. A window keeps play-and-record; playback asks for Playback only when no window is open. */
-static bool configure_playback_locked(NSError **error) {
-    AVAudioSession *session = [AVAudioSession sharedInstance];
-    if (g_recording_windows == 0 &&
-        ![session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
-           routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
-                      options:(AVAudioSessionCategoryOptions)0 error:error]) {
-        return false;
-    }
-    return [session setActive:YES error:error];
+/* Caller holds g_session_lock. Activate BEFORE querying hardware or mutating the graph, including paused creation. */
+static bool configure_playback_locked(void) {
+    return audio_try(^BOOL {
+        AVAudioSession *session = [AVAudioSession sharedInstance];
+        NSError *error = nil;
+        if (g_recording_windows == 0 &&
+            ![session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
+               routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
+                          options:(AVAudioSessionCategoryOptions)0 error:&error]) return NO;
+        return [session setActive:YES error:&error];
+    });
 }
-/* Caller holds g_session_lock and has just closed the last window. Current playback intent wins over the category from
- * before the window, so a stale snapshot never replaces the category that playback started in the window needs. */
 static void settle_session_locked(void) {
-    AVAudioSession *session = [AVAudioSession sharedInstance];
-    NSError *error = nil;
-    if (g_playback_claims > 0) {
-        [session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
-          routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
-                     options:(AVAudioSessionCategoryOptions)0 error:&error];
-    } else if (g_snapshot_taken) {
-        [session setCategory:g_snapshot_category ? g_snapshot_category : AVAudioSessionCategoryPlayback
-                        mode:g_snapshot_mode ? g_snapshot_mode : AVAudioSessionModeDefault
-          routeSharingPolicy:g_snapshot_policy
-                     options:g_snapshot_options error:&error];
-    }
+    audio_try(^BOOL {
+        AVAudioSession *session = [AVAudioSession sharedInstance];
+        NSError *error = nil;
+        if (g_playback_claims > 0) {
+            [session setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
+              routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
+                         options:(AVAudioSessionCategoryOptions)0 error:&error];
+        } else if (g_snapshot_taken) {
+            [session setCategory:g_snapshot_category ? g_snapshot_category : AVAudioSessionCategoryPlayback
+                            mode:g_snapshot_mode ? g_snapshot_mode : AVAudioSessionModeDefault
+              routeSharingPolicy:g_snapshot_policy options:g_snapshot_options error:&error];
+        }
+        return YES;
+    });
     g_snapshot_taken = false;
     g_snapshot_category = nil;
     g_snapshot_mode = nil;
@@ -139,49 +146,225 @@ static void settle_session_locked(void) {
 }
 static void output_failure(at_audio_output *p) {
     p->running.store(false);
+    p->consuming.store(false);
+    if (!p->output_failed) ++p->output_error;
     p->output_failed = true;
-    ++p->output_error;
-    release_playback(p); // A failed output gives its claim back; the next start claims the session again.
-    // Deliberately do not expose decoder URLs, HTTP headers, or arbitrary NSError descriptions.
-    strlcpy(p->error, "AVAudioSession or AVAudioEngine output failed", sizeof(p->error));
+    release_playback(p);
+    strlcpy(p->error, "iOS audio session or canonical PCM graph is unavailable", sizeof(p->error));
+}
+static float clamped(float value, float low, float high) {
+    if (!(value >= low)) return low;
+    return value > high ? high : value;
+}
+/* Caller is inside audio_try. Stored controls survive graph replacement and the plain-graph fallback. */
+static void apply_tone(at_audio_output *p) {
+    p->time_pitch.rate = 1.0f; // Tempo stays in the portable core.
+    p->time_pitch.pitch = p->pitch_cents;
+    const float high = (float)std::min(23900.0, p->graph_rate * 0.49);
+    const float low = std::min(20.0f, high);
+    NSArray<AVAudioUnitEQFilterParameters *> *units = p->equalizer.bands;
+    for (NSUInteger i = 0; i < units.count; ++i) {
+        AVAudioUnitEQFilterParameters *unit = units[i];
+        if (i >= p->eq_count) { unit.bypass = YES; continue; }
+        const at_eq_band band = p->eq_bands[i];
+        unit.frequency = clamped(band.frequency_hz, low, high);
+        unit.bandwidth = clamped(band.bandwidth_octaves, 0.05f, 5.0f);
+        unit.gain = clamped(band.gain_db, -24.0f, 24.0f);
+        switch (band.type) {
+            case AT_EQ_LOW_SHELF: unit.filterType = AVAudioUnitEQFilterTypeLowShelf; break;
+            case AT_EQ_HIGH_SHELF: unit.filterType = AVAudioUnitEQFilterTypeHighShelf; break;
+            default: unit.filterType = AVAudioUnitEQFilterTypeParametric; break;
+        }
+        unit.bypass = !p->eq_enabled;
+    }
+    p->graph.mainMixerNode.outputVolume = p->volume;
+}
+
+/* A stopped graph can still own an in-flight callback. Do not replace it, reuse scratch, or free the decoder until
+ * BOTH the callback and its source node retire. If this bound expires, retain the decoder rather than cause a UAF. */
+static bool discard_graph(at_audio_output *p) {
+    p->running.store(false);
+    p->consuming.store(false);
+    @autoreleasepool {
+        if (p->configuration) {
+            [[NSNotificationCenter defaultCenter] removeObserver:p->configuration];
+            p->configuration = nil;
+        }
+        if (p->source) p->retired_source = p->source;
+        audio_try(^BOOL { [p->graph stop]; return YES; });
+        audio_try(^BOOL { if (p->source) [p->graph detachNode:p->source]; return YES; });
+        audio_try(^BOOL { if (p->time_pitch) [p->graph detachNode:p->time_pitch]; return YES; });
+        audio_try(^BOOL { if (p->equalizer) [p->graph detachNode:p->equalizer]; return YES; });
+        audio_try(^BOOL { if (p->converter) [p->graph detachNode:p->converter]; return YES; });
+        audio_try(^BOOL { p->source = nil; p->time_pitch = nil; p->equalizer = nil;
+                          p->converter = nil; p->graph = nil; return YES; });
+    }
+    for (int attempt = 0; attempt < 2000; ++attempt) {
+        if (p->render_active.load() == 0 && p->retired_source == nil) return true;
+        usleep(1000);
+    }
+    p->requires_recreation = true;
+    return false;
+}
+
+static bool start_output(at_audio_output *p);
+static void invalidate_graph(at_audio_output *p) {
+    p->graph_dirty = true;
+    // A blend's separate consumer still owns the decoder. Rebuild this dormant source graph on handback, not mid-pull.
+    if (!p->manual_output.load()) {
+        p->running.store(false);
+        p->consuming.store(false);
+    }
+    if (p->rebuild_queued) return;
+    p->rebuild_queued = true;
+    const std::shared_ptr<output_gate> gate = p->gate;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        std::lock_guard<std::mutex> guard(gate->mutex);
+        at_audio_output *output = gate->output;
+        if (!output) return;
+        output->rebuild_queued = false;
+        if (output->graph_dirty && !output->closing.load() && !output->manual_output.load() &&
+            !output->interrupted.load() && output->wants_play.load() && !output->output_failed) start_output(output);
+    });
+}
+static void observe_configuration(at_audio_output *p) {
+    const std::shared_ptr<output_gate> gate = p->gate;
+    const uint64_t generation = p->graph_generation;
+    p->configuration = [[NSNotificationCenter defaultCenter]
+        addObserverForName:AVAudioEngineConfigurationChangeNotification object:p->graph
+        queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            std::lock_guard<std::mutex> guard(gate->mutex);
+            at_audio_output *output = gate->output;
+            // A configuration notification queued by the retired graph must not invalidate its replacement.
+            if (output && output->graph_generation == generation) invalidate_graph(output);
+        });
+    }];
+}
+
+static bool build_graph(at_audio_output *p, bool plain) {
+    p->plain_graph = plain; // Even a failed plain attempt consumes this graph's single optional-unit retry.
+    bool built = false;
+    @autoreleasepool {
+        built = audio_try(^BOOL {
+            p->graph = [[AVAudioEngine alloc] init];
+            AVAudioFormat *hardware = [p->graph.outputNode outputFormatForBus:0];
+            at_audio_format target = {};
+            const uint32_t layout_channels = hardware.channelLayout ? hardware.channelLayout.channelCount : 0;
+            if (!at_audio_canonical_format(hardware.sampleRate, hardware.channelCount, layout_channels, &target)) return NO;
+            AVAudioFormat *pcm = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:AT_AUDIO_PCM_RATE channels:2];
+            AVAudioFormat *canonical = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:target.sample_rate
+                                                                                     channels:target.channels];
+            if (!pcm || !canonical || pcm.isInterleaved || canonical.isInterleaved ||
+                canonical.commonFormat != AVAudioPCMFormatFloat32) return NO;
+            p->graph_rate = target.sample_rate;
+            p->source = [[AVAudioSourceNode alloc] initWithFormat:pcm
+                renderBlock:^OSStatus(BOOL *silent, const AudioTimeStamp *, AVAudioFrameCount frames,
+                                      AudioBufferList *buffers) {
+                render_scope active(p);
+                for (UInt32 i = 0; i < buffers->mNumberBuffers; ++i) {
+                    if (buffers->mBuffers[i].mData)
+                        memset(buffers->mBuffers[i].mData, 0, buffers->mBuffers[i].mDataByteSize);
+                }
+                if (p->closing.load() || p->manual_output.load() || !p->running.load() || p->interrupted.load() ||
+                    buffers->mNumberBuffers != 2 || !buffers->mBuffers[0].mData || !buffers->mBuffers[1].mData ||
+                    buffers->mBuffers[0].mNumberChannels != 1 || buffers->mBuffers[1].mNumberChannels != 1 ||
+                    buffers->mBuffers[0].mDataByteSize < (uint64_t)frames * sizeof(float) ||
+                    buffers->mBuffers[1].mDataByteSize < (uint64_t)frames * sizeof(float)) {
+                    *silent = YES;
+                    p->consuming.store(false);
+                    return noErr;
+                }
+                float *left = static_cast<float *>(buffers->mBuffers[0].mData);
+                float *right = static_cast<float *>(buffers->mBuffers[1].mData);
+                uint32_t decoded = 0;
+                for (uint32_t offset = 0; offset < frames;) {
+                    const uint32_t count = std::min(AT_AUDIO_RENDER_CHUNK, frames - offset);
+                    const uint32_t taken = ae_engine_render_realtime(p->core, p->scratch, count);
+                    at_audio_deinterleave(p->scratch, left + offset, right + offset, count);
+                    decoded += taken;
+                    offset += count;
+                    if (taken < count) break; // The remaining buffers were already zeroed; silence never consumes media time.
+                }
+                p->last_render.store(CACurrentMediaTime());
+                p->consuming.store(decoded > 0);
+                *silent = decoded == 0;
+                return noErr;
+            }];
+            // Convert at the source boundary. The portable core and blend ABI stay 48 kHz stereo; the tone chain uses
+            // canonical planar float at the active hardware rate. Never force an asset format onto the output node.
+            p->converter = [[AVAudioMixerNode alloc] init];
+            [p->graph attachNode:p->source];
+            [p->graph attachNode:p->converter];
+            [p->graph connect:p->source to:p->converter format:pcm];
+            if (!plain) {
+                p->time_pitch = [[AVAudioUnitTimePitch alloc] init];
+                p->equalizer = [[AVAudioUnitEQ alloc] initWithNumberOfBands:AT_AUDIO_EQ_MAX_BANDS];
+                [p->graph attachNode:p->time_pitch];
+                [p->graph attachNode:p->equalizer];
+                [p->graph connect:p->converter to:p->time_pitch format:canonical];
+                [p->graph connect:p->time_pitch to:p->equalizer format:canonical];
+                [p->graph connect:p->equalizer to:p->graph.mainMixerNode format:canonical];
+            } else {
+                [p->graph connect:p->converter to:p->graph.mainMixerNode format:canonical];
+            }
+            apply_tone(p);
+            [p->graph prepare];
+            return YES;
+        });
+    }
+    if (!built) return false;
+    p->graph_dirty = false;
+    ++p->graph_generation;
+    observe_configuration(p);
+    return true;
+}
+static bool rebuild_graph(at_audio_output *p, bool plain) {
+    if (!discard_graph(p)) return false;
+    if (build_graph(p, plain)) return true;
+    // Exactly one basic-graph retry, with the same validated canonical format and no optional Audio Units.
+    if (plain || !discard_graph(p)) return false;
+    return build_graph(p, true);
+}
+static bool start_graph(at_audio_output *p) {
+    return audio_try(^BOOL {
+        NSError *error = nil;
+        return [p->graph isRunning] || [p->graph startAndReturnError:&error];
+    });
 }
 static bool start_output(at_audio_output *p) {
-    if (p->interrupted.load() || p->requires_recreation) return false;
-    NSError *error = nil;
+    if (p->interrupted.load() || p->requires_recreation || p->closing.load()) return false;
     bool started = false;
     {
-        // Claim, category and engine start form one step under the lock, so a window that closes meanwhile sees this intent.
         std::lock_guard<std::mutex> guard(g_session_lock);
         claim_playback_locked(p);
-        started = configure_playback_locked(&error);
-        if (started && !p->manual_output.load() && ![p->graph isRunning]) {
-            started = [p->graph startAndReturnError:&error];
+        started = configure_playback_locked();
+        if (started && !p->manual_output.load()) {
+            if (p->graph_dirty || !p->graph) started = rebuild_graph(p, p->plain_graph);
+            if (started) started = start_graph(p);
+            if (!started && !p->plain_graph && !p->requires_recreation) {
+                started = rebuild_graph(p, true) && start_graph(p);
+            }
         }
         if (!started) release_playback_locked(p);
     }
-    if (!started) {
-        output_failure(p);
-        return false;
-    }
+    if (!started) { output_failure(p); return false; }
     p->running.store(true);
     p->output_failed = false;
+    p->error[0] = '\0';
     return true;
 }
-/* Restarts a claimed output that the system stopped, such as after a category or hardware change. Main thread only.
- * The gate is held across the check and the restart, so a destroy that has begun cannot be raced. */
 static void resume_gate(const std::shared_ptr<output_gate> &gate) {
     std::lock_guard<std::mutex> guard(gate->mutex);
     at_audio_output *p = gate->output;
-    if (!p || !p->graph || p->closing.load() || p->interrupted.load() || p->requires_recreation) return;
+    if (!p || p->closing.load() || p->interrupted.load() || p->requires_recreation) return;
     bool claimed = false;
     {
         std::lock_guard<std::mutex> session(g_session_lock);
         claimed = p->playback_claimed;
     }
-    if (claimed && ![p->graph isRunning]) start_output(p);
+    if (claimed) invalidate_graph(p);
 }
-/* Caller holds g_session_lock. A category change can stop a running engine, and the engine is restarted on the main
- * thread. The gates are captured now, so the restart reaches only outputs that existed when the session changed. */
 static void schedule_playback_resume_locked(void) {
     std::vector<std::shared_ptr<output_gate>> gates = g_outputs;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -189,105 +372,72 @@ static void schedule_playback_resume_locked(void) {
     });
 }
 
-at_audio_output *at_audio_create(char *error, size_t error_len) {
+static at_audio_output *create_output(char *error, size_t error_len, bool plain) {
     require_main();
+    if (error && error_len) error[0] = '\0';
     auto *p = new at_audio_output();
-    ae_config config = {AE_ABI_VERSION, AE_OUTPUT_MANUAL, AE_BACKEND_DEFAULT, 48000, 2000, 120};
-    p->core = ae_engine_create(&config, error, error_len);
-    if (!p->core) { delete p; return nullptr; }
     p->gate = std::make_shared<output_gate>();
     p->gate->output = p;
-    const std::shared_ptr<output_gate> gate = p->gate; // Asynchronous callbacks capture this lifetime, never p.
-    p->graph = [[AVAudioEngine alloc] init];
-    AVAudioFormat *format = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
-                                                          sampleRate:48000 channels:2 interleaved:YES];
-    p->source = [[AVAudioSourceNode alloc] initWithFormat:format
-        renderBlock:^OSStatus(BOOL *silent, const AudioTimeStamp *, AVAudioFrameCount frames,
-                              AudioBufferList *buffers) {
-        // Entirely native callback: no Kotlin, allocation, decoder waits, network or UI work.
-        render_scope active(p); // Destroy waits for this scope before the decoder can be released.
-        for (UInt32 i = 0; i < buffers->mNumberBuffers; ++i) {
-            if (buffers->mBuffers[i].mData)
-                memset(buffers->mBuffers[i].mData, 0, buffers->mBuffers[i].mDataByteSize);
-        }
-        if (p->closing.load() || p->manual_output.load() || !p->running.load() ||
-            p->interrupted.load() || buffers->mNumberBuffers != 1 ||
-            !buffers->mBuffers[0].mData ||
-            buffers->mBuffers[0].mNumberChannels != 2 ||
-            buffers->mBuffers[0].mDataByteSize < frames * 2 * sizeof(float)) {
-            *silent = YES;
-            p->consuming.store(false);
-            return noErr;
-        }
-        uint32_t decoded = ae_engine_render_realtime(p->core,
-            static_cast<float *>(buffers->mBuffers[0].mData), frames);
-        p->last_render.store(CACurrentMediaTime());
-        p->consuming.store(decoded > 0);
-        *silent = decoded == 0;
-        return noErr;
-    }];
-    p->time_pitch = [[AVAudioUnitTimePitch alloc] init];
-    p->time_pitch.rate = 1.0f; // Tempo stays in the portable engine; this unit shifts pitch only.
-    p->equalizer = [[AVAudioUnitEQ alloc] initWithNumberOfBands:AT_AUDIO_EQ_MAX_BANDS];
-    for (AVAudioUnitEQFilterParameters *band in p->equalizer.bands) {
-        band.filterType = AVAudioUnitEQFilterTypeParametric;
-        band.frequency = 1000.0f;
-        band.bandwidth = 1.0f;
-        band.gain = 0.0f;
-        band.bypass = YES; // No band colors the signal until at_audio_equalizer enables it.
+    ae_config config = {AE_ABI_VERSION, AE_OUTPUT_MANUAL, AE_BACKEND_DEFAULT, AT_AUDIO_PCM_RATE, 2000, 120};
+    p->core = ae_engine_create(&config, error, error_len);
+    if (!p->core) { delete p; return nullptr; }
+    bool configured = false;
+    {
+        std::lock_guard<std::mutex> guard(g_session_lock);
+        configured = configure_playback_locked() && build_graph(p, plain);
     }
-    [p->graph attachNode:p->source];
-    [p->graph attachNode:p->time_pitch];
-    [p->graph attachNode:p->equalizer];
-    [p->graph connect:p->source to:p->time_pitch format:format];
-    [p->graph connect:p->time_pitch to:p->equalizer format:format];
-    [p->graph connect:p->equalizer to:p->graph.mainMixerNode format:format];
-    [p->graph prepare];
+    if (!configured) {
+        if (error && error_len) strlcpy(error, "iOS audio output rejected the canonical PCM format", error_len);
+        at_audio_destroy(p);
+        return nullptr;
+    }
+    const std::shared_ptr<output_gate> gate = p->gate;
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     p->interruption = [center addObserverForName:AVAudioSessionInterruptionNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        std::lock_guard<std::mutex> guard(gate->mutex);
-        at_audio_output *output = gate->output;
-        if (!output) return; // Destroyed after this notification was queued; it must not act on anything else.
-        NSUInteger type = [note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
-        if (type == AVAudioSessionInterruptionTypeBegan) {
-            output->interrupted.store(true);
-            output->running.store(false);
-            [output->graph pause]; // Preserve intent and decoder position, but never extrapolate.
-            release_playback(output); // An interrupted output does not hold the session; its resume claims it again.
-        } else {
-            output->interrupted.store(false);
-            NSUInteger options = [note.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
-            if (output->wants_play.load() && (options & AVAudioSessionInterruptionOptionShouldResume)) {
-                start_output(output);
+        const NSUInteger type = [note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+        const NSUInteger options = [note.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            std::lock_guard<std::mutex> guard(gate->mutex);
+            at_audio_output *output = gate->output;
+            if (!output) return;
+            if (type == AVAudioSessionInterruptionTypeBegan) {
+                output->interrupted.store(true);
+                output->running.store(false);
+                output->consuming.store(false);
+                if (!audio_try(^BOOL { [output->graph pause]; return YES; })) output_failure(output);
+                release_playback(output);
+            } else {
+                output->interrupted.store(false);
+                output->graph_dirty = true;
+                if (output->wants_play.load() && (options & AVAudioSessionInterruptionOptionShouldResume)) start_output(output);
             }
-        }
+        });
     }];
     p->route = [center addObserverForName:AVAudioSessionRouteChangeNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-        std::lock_guard<std::mutex> guard(gate->mutex);
-        at_audio_output *output = gate->output;
-        if (!output) return;
         const NSUInteger reason = [note.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue];
-        // AirPlay selection/category/configuration changes are not removal. Actual removal (e.g. unplug) pauses.
-        if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) at_audio_pause(output);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            std::lock_guard<std::mutex> guard(gate->mutex);
+            at_audio_output *output = gate->output;
+            if (!output) return;
+            // Actual removal pauses. Other changes rebuild at the new rate without changing listener intent or leases.
+            if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) at_audio_pause(output);
+            invalidate_graph(output);
+        });
     }];
     p->reset = [center addObserverForName:AVAudioSessionMediaServicesWereResetNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *) {
-        std::lock_guard<std::mutex> guard(gate->mutex);
-        at_audio_output *output = gate->output;
-        if (!output) return;
-        output->wants_play.store(false);
-        ae_engine_pause(output->core);
-        [output->graph stop];
-        output->requires_recreation = true;
-        output_failure(output); // Recreate adapter explicitly; an old graph is not a recovered route.
-    }];
-    // The engine stops itself when its configuration changes, for example when a recording window changes the session.
-    // Only a claimed output is restarted here; a paused, interrupted or failed output stays stopped.
-    p->configuration = [center addObserverForName:AVAudioEngineConfigurationChangeNotification object:p->graph
-        queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *) {
-        resume_gate(gate);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            std::lock_guard<std::mutex> guard(gate->mutex);
+            at_audio_output *output = gate->output;
+            if (!output) return;
+            output->wants_play.store(false);
+            ae_engine_pause(output->core);
+            audio_try(^BOOL { [output->graph stop]; return YES; });
+            output->requires_recreation = true;
+            output_failure(output);
+        });
     }];
     {
         std::lock_guard<std::mutex> guard(g_session_lock);
@@ -295,61 +445,42 @@ at_audio_output *at_audio_create(char *error, size_t error_len) {
     }
     return p;
 }
+at_audio_output *at_audio_create(char *error, size_t error_len) { return create_output(error, error_len, false); }
+at_audio_output *at_audio_create_plain(char *error, size_t error_len) { return create_output(error, error_len, true); }
 
 void at_audio_destroy(at_audio_output *p) {
     require_main();
     if (!p) return;
     {
-        // Invalidates this lifetime before any other teardown. A callback queued earlier still runs later, but it sees the
-        // gate cleared and returns without touching the output, even if the allocator reuses this address afterwards.
         std::lock_guard<std::mutex> guard(p->gate->mutex);
         p->gate->output = nullptr;
     }
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
-    [center removeObserver:p->interruption];
-    [center removeObserver:p->route];
-    [center removeObserver:p->reset];
-    [center removeObserver:p->configuration];
+    if (p->interruption) [center removeObserver:p->interruption];
+    if (p->route) [center removeObserver:p->route];
+    if (p->reset) [center removeObserver:p->reset];
     {
         std::lock_guard<std::mutex> guard(g_session_lock);
         release_playback_locked(p);
         g_outputs.erase(std::remove(g_outputs.begin(), g_outputs.end(), p->gate), g_outputs.end());
     }
-    p->closing.store(true); // Published before the drain: a late callback observes it and stays silent.
-    p->running.store(false);
-    __weak AVAudioSourceNode *released = p->source;
-    [p->graph stop];        // Stops new render cycles; an in-flight one is drained below.
-    [p->graph detachNode:p->source];
-    p->source = nil;
-    p->time_pitch = nil;
-    p->equalizer = nil;
-    p->graph = nil;
-    // The node owns the render block that holds p, so it must deallocate as well as leave its render
-    // call. Only this main-thread caller waits; the callback never blocks. A bound that is exceeded keeps
-    // the decoder allocated (a bounded leak) rather than freeing memory a late callback may still read.
-    bool drained = false;
-    for (int attempt = 0; attempt < 2000 && !drained; ++attempt) {
-        drained = p->render_active.load() == 0 && released == nil;
-        if (!drained) usleep(1000);
-    }
+    p->closing.store(true);
+    const bool drained = discard_graph(p);
     {
         std::lock_guard<std::mutex> guard(g_session_lock);
-        // Deactivation is the playback host's last act. It never happens while a recording window or other playback
-        // holds the shared session, because that would stop the window or the other output.
         if (g_recording_windows == 0 && g_playback_claims == 0) {
-            [[AVAudioSession sharedInstance] setActive:NO
-                withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
+            audio_try(^BOOL {
+                return [[AVAudioSession sharedInstance] setActive:NO
+                    withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
+            });
         }
     }
-    if (drained) {
-        ae_engine_destroy(p->core);
-        delete p;
-    }
+    if (drained) { ae_engine_destroy(p->core); delete p; }
 }
 uint64_t at_audio_load(at_audio_output *p, const char *source, uint64_t start, int play) {
     require_main();
     p->wants_play.store(play != 0);
-    if (!play) release_playback(p); // A paused load gives up the playback claim, as pause does.
+    if (!play) release_playback(p);
     uint64_t generation = ae_engine_load(p->core, source, start, play);
     if (generation && play) start_output(p);
     return generation;
@@ -357,7 +488,7 @@ uint64_t at_audio_load(at_audio_output *p, const char *source, uint64_t start, i
 uint64_t at_audio_load_stream(at_audio_output *p, const ae_stream_io *io, uint64_t start, int play) {
     require_main();
     p->wants_play.store(play != 0);
-    if (!play) release_playback(p); // A paused load gives up the playback claim, as pause does.
+    if (!play) release_playback(p);
     uint64_t generation = ae_engine_load_stream(p->core, io, start, play);
     if (generation && play) start_output(p);
     return generation;
@@ -373,77 +504,46 @@ void at_audio_pause(at_audio_output *p) {
     p->wants_play.store(false);
     ae_engine_pause(p->core);
     p->running.store(false);
-    [p->graph pause];
+    p->consuming.store(false);
+    if (!audio_try(^BOOL { [p->graph pause]; return YES; })) output_failure(p);
     release_playback(p);
 }
 void at_audio_seek(at_audio_output *p, uint64_t position) { require_main(); ae_engine_seek(p->core, position); }
 void at_audio_speed(at_audio_output *p, float speed) { require_main(); ae_engine_set_speed(p->core, speed); }
-static float clamped(float value, float low, float high) {
-    if (!(value >= low)) return low; // Also rejects NaN, matching the volume clamp.
-    if (value > high) return high;
-    return value;
-}
 void at_audio_pitch(at_audio_output *p, float cents) {
     require_main();
-    p->time_pitch.pitch = clamped(cents, -2400.0f, 2400.0f);
+    p->pitch_cents = clamped(cents, -2400.0f, 2400.0f);
+    if (!audio_try(^BOOL { apply_tone(p); return YES; })) { p->plain_graph = true; invalidate_graph(p); }
 }
 void at_audio_equalizer(at_audio_output *p, const at_eq_band *bands, uint32_t count, int enabled) {
     require_main();
-    if (!p->equalizer) return;
-    NSArray<AVAudioUnitEQFilterParameters *> *units = p->equalizer.bands;
-    const uint32_t applied = (uint32_t)std::min((NSUInteger)count, units.count);
-    for (uint32_t i = 0; i < units.count; ++i) {
-        AVAudioUnitEQFilterParameters *unit = units[i];
-        if (i >= applied) {
-            unit.bypass = YES;
-            continue;
-        }
-        const at_eq_band band = bands[i];
-        unit.frequency = clamped(band.frequency_hz, 20.0f, 23900.0f);
-        unit.bandwidth = clamped(band.bandwidth_octaves, 0.05f, 5.0f);
-        unit.gain = clamped(band.gain_db, -24.0f, 24.0f);
-        switch (band.type) {
-            case AT_EQ_LOW_SHELF:
-                unit.filterType = AVAudioUnitEQFilterTypeLowShelf;
-                break;
-            case AT_EQ_HIGH_SHELF:
-                unit.filterType = AVAudioUnitEQFilterTypeHighShelf;
-                break;
-            default:
-                unit.filterType = AVAudioUnitEQFilterTypeParametric;
-                break;
-        }
-        unit.bypass = enabled == 0;
-    }
+    p->eq_count = bands ? std::min(count, (uint32_t)AT_AUDIO_EQ_MAX_BANDS) : 0;
+    if (p->eq_count) memcpy(p->eq_bands, bands, p->eq_count * sizeof(at_eq_band));
+    p->eq_enabled = enabled != 0;
+    if (!audio_try(^BOOL { apply_tone(p); return YES; })) { p->plain_graph = true; invalidate_graph(p); }
 }
 void at_audio_volume(at_audio_output *p, float volume) {
     require_main();
-    if (!(volume >= 0.0f)) volume = 0.0f;
-    if (volume > 1.0f) volume = 1.0f;
-    p->graph.mainMixerNode.outputVolume = volume;
+    p->volume = clamped(volume, 0.0f, 1.0f);
+    if (!audio_try(^BOOL { p->graph.mainMixerNode.outputVolume = p->volume; return YES; })) output_failure(p);
 }
-void at_audio_stop(at_audio_output *p) {
-    at_audio_pause(p);
-    ae_engine_stop(p->core);
-}
+void at_audio_stop(at_audio_output *p) { at_audio_pause(p); ae_engine_stop(p->core); }
 void at_audio_snapshot(at_audio_output *p, ae_snapshot *snapshot) {
     require_main();
     ae_engine_snapshot(p->core, snapshot);
-    // Core counters count PCM consumed by the output callback, not a timer. A dead graph must not
-    // retain its last advancing bit. Reported route latency stays separate from these media counters.
     if (!p->running.load() || !p->consuming.load() || p->interrupted.load() ||
         CACurrentMediaTime() - p->last_render.load() > 0.15) snapshot->flags &= ~AE_FLAG_ADVANCING;
     snapshot->error_sequence += p->output_error;
-    if (p->output_failed) {
-        snapshot->error_code = AE_ERROR_OUTPUT;
-        snapshot->flags &= ~AE_FLAG_ADVANCING;
-    }
+    if (p->output_failed) { snapshot->error_code = AE_ERROR_OUTPUT; snapshot->flags &= ~AE_FLAG_ADVANCING; }
 }
 int at_audio_begin_manual_output(at_audio_output *p) {
     require_main();
     if (p->manual_output.exchange(true)) return 1;
-    [p->graph pause];
-    // Pause plus the published gate prevents another source callback from consuming PCM. Drain the one already in flight.
+    if (!audio_try(^BOOL { [p->graph pause]; return YES; })) {
+        p->manual_output.store(false);
+        output_failure(p);
+        return 0;
+    }
     for (int attempt = 0; attempt < 100 && p->render_active.load() != 0; ++attempt) usleep(1000);
     if (p->render_active.load() != 0) {
         p->manual_output.store(false);
@@ -477,11 +577,14 @@ void at_audio_manual_output_failed(at_audio_output *p) {
 double at_audio_output_latency(at_audio_output *p) {
     require_main();
     if (!p || !p->graph) return -1.0;
-    const double session = [AVAudioSession sharedInstance].outputLatency;
-    const double presentation = p->graph.outputNode.presentationLatency;
-    double latency = -1.0;
-    if (std::isfinite(session) && session >= 0.0) latency = session;
-    if (std::isfinite(presentation) && presentation >= 0.0) latency = std::max(latency, presentation);
+    __block double latency = -1.0;
+    audio_try(^BOOL {
+        const double session = [AVAudioSession sharedInstance].outputLatency;
+        const double presentation = p->graph.outputNode.presentationLatency;
+        if (std::isfinite(session) && session >= 0.0) latency = session;
+        if (std::isfinite(presentation) && presentation >= 0.0) latency = std::max(latency, presentation);
+        return YES;
+    });
     return latency;
 }
 size_t at_audio_last_error(at_audio_output *p, char *buffer, size_t length) {
@@ -491,12 +594,10 @@ size_t at_audio_last_error(at_audio_output *p, char *buffer, size_t length) {
     return strlen(p->error);
 }
 
-/* Microphone capture calls these from its own thread. The policy is described in ATNativeAudio.h. */
 int at_audio_session_begin_recording(void) {
     std::lock_guard<std::mutex> guard(g_session_lock);
     AVAudioSession *session = [AVAudioSession sharedInstance];
     if (g_recording_windows == 0) {
-        // Only the first window records the category from before recording. A later window must not replace it.
         g_snapshot_category = session.category;
         g_snapshot_mode = session.mode;
         g_snapshot_options = session.categoryOptions;
@@ -504,15 +605,19 @@ int at_audio_session_begin_recording(void) {
         g_snapshot_taken = true;
     }
     ++g_recording_windows;
-    NSError *error = nil;
-    int status = 0;
-    if (![session setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeDefault
-           routeSharingPolicy:AVAudioSessionRouteSharingPolicyDefault
-                      options:recording_options() error:&error]) {
-        status = 1;
-    } else if (![session setActive:YES error:&error]) {
-        status = 2;
-    }
+    __block int status = 1;
+    audio_try(^BOOL {
+        NSError *error = nil;
+        if (![session setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeDefault
+               routeSharingPolicy:AVAudioSessionRouteSharingPolicyDefault options:recording_options() error:&error]) {
+            status = 1;
+        } else if (![session setActive:YES error:&error]) {
+            status = 2;
+        } else {
+            status = 0;
+        }
+        return status == 0;
+    });
     if (status != 0) {
         --g_recording_windows;
         if (g_recording_windows == 0) settle_session_locked();
@@ -521,7 +626,6 @@ int at_audio_session_begin_recording(void) {
     if (g_playback_claims > 0) schedule_playback_resume_locked();
     return 0;
 }
-
 void at_audio_session_end_recording(void) {
     std::lock_guard<std::mutex> guard(g_session_lock);
     if (g_recording_windows == 0) return;

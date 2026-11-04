@@ -12,8 +12,11 @@
 extern "C" {
 #endif
 typedef struct at_audio_output at_audio_output;
-/* Owns a manual portable engine and its AVAudioSourceNode. Never opens a second audio device. */
+/* Owns one manual portable decoder and its AVAudioEngine. Activates the shared session before validating the route.
+ * All graph operations catch NSException. NULL returns a sanitized, NUL-terminated error, never an Apple exception. */
 at_audio_output *at_audio_create(char *error, size_t error_len);
+/* One bounded retry without pitch/EQ, using the same canonical non-interleaved float format and source conversion. */
+at_audio_output *at_audio_create_plain(char *error, size_t error_len);
 void at_audio_destroy(at_audio_output *output);
 uint64_t at_audio_load(at_audio_output *output, const char *source, uint64_t start_us, int play);
 /* Header-bearing progressive audio: the engine reads the host lease. It copies io, and it closes the lease exactly once. */
