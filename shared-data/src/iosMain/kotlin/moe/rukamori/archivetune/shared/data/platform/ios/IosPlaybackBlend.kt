@@ -58,7 +58,7 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
             if (overlapMs == 0L) {
                 val endTime = graph.current.endTime()
                 if (endTime != null || outgoing.isEnded) {
-                    incoming.mixer.outputVolume = 1f
+                    incoming.setGain(1f)
                     incoming.start(endTime)
                 }
             } else if (outgoing.positionUs / 1_000L >= fadeStartMs) {
@@ -76,8 +76,8 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
                 outgoing.positionUs / 1_000L, incomingState.positionUs / 1_000L, incomingState.isAdvancing,
             )
             if (gains != null) {
-                graph.current.mixer.outputVolume = gains.outgoing
-                incoming.mixer.outputVolume = gains.incoming
+                graph.current.setGain(gains.outgoing)
+                incoming.setGain(gains.incoming)
             }
             if (incomingState.isAdvancing) {
                 stalledAtNanos = null
