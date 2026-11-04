@@ -19,10 +19,18 @@ from scripts.test_release_workflow import ROOT, tool
 STAGER = ROOT / "desktopApp/native/scripts/stage-macos-package.py"
 DEPS = ROOT / "desktopApp/native/scripts/build-native-deps.sh"
 TDJNI = ROOT / "desktopApp/tdlight-jvm/native/build-tdjni.sh"
+WINDOWS_DEPS = ROOT / "desktopApp/native/scripts/windows-native-deps.py"
 
 
 def load_stager():
     spec = importlib.util.spec_from_file_location("macos_package", STAGER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_windows_deps():
+    spec = importlib.util.spec_from_file_location("windows_native_deps", WINDOWS_DEPS)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -241,6 +249,84 @@ class NativeReleasePackagingTest(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn("static linking is required", result.stderr)
             self.assertFalse((build / "stage/windows-x64/native/tdjni.dll").exists())
+
+
+    def windows_native_directory(self, directory, closure):
+        """Placeholder DLLs plus the module under test; the PE import tables stay fixtures."""
+        module = load_windows_deps()
+        for name in closure:
+            (Path(directory) / name).write_bytes(b"DLL fixture")
+        tables = {name: list(imports) for name, imports in closure.items()}
+
+        def fake_imports(path):
+            return 0x8664, {dependency: [] for dependency in tables[Path(path).name]}, {}
+
+        return module, Path(directory), fake_imports
+
+    def test_windows_manifest_lists_the_engine_closure_in_dependency_order(self):
+        closure = {
+            "archivetune_engine.dll": ["avcodec-62.dll", "kernel32.dll", "api-ms-win-crt-private-l1-1-0.dll"],
+            "avcodec-62.dll": ["avutil-60.dll", "zlib1.dll"],
+            "avutil-60.dll": ["libwinpthread-1.dll"],
+            "libwinpthread-1.dll": [],
+            "zlib1.dll": [],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            module, native, fake_imports = self.windows_native_directory(directory, closure)
+            with patch.object(module, "imports", side_effect=fake_imports):
+                order = module.write_manifest(native)
+            # Dependencies first, the engine itself last: that is what the Windows loader preloads.
+            self.assertEqual(["libwinpthread-1.dll", "avutil-60.dll", "zlib1.dll", "avcodec-62.dll"], order)
+            entries = [line for line in (native / module.MANIFEST_NAME).read_text().splitlines()
+                       if line and not line.startswith("#")]
+            self.assertEqual("avcodec-62.dll=avutil-60.dll,zlib1.dll", entries[-2])
+            self.assertEqual("archivetune_engine.dll=avcodec-62.dll", entries[-1])
+            self.assertNotIn("kernel32", "\n".join(entries))
+
+    def test_windows_audit_rejects_an_unstaged_import(self):
+        closure = {"archivetune_engine.dll": ["avcodec-62.dll", "libmissing-1.dll"]}
+        with tempfile.TemporaryDirectory() as directory:
+            module, native, fake_imports = self.windows_native_directory(directory, closure)
+            with patch.object(module, "imports", side_effect=fake_imports):
+                problems, _, machine_problems = module.audit(native)
+            self.assertTrue(any("libmissing-1.dll" in problem for problem in problems), problems)
+            self.assertEqual([], machine_problems)
+
+    def test_windows_check_rejects_a_stale_manifest(self):
+        closure = {"archivetune_engine.dll": ["avcodec-62.dll"], "avcodec-62.dll": []}
+        with tempfile.TemporaryDirectory() as directory:
+            module, native, fake_imports = self.windows_native_directory(directory, closure)
+            (native / module.MANIFEST_NAME).write_text("avcodec-62.dll=\narchivetune_engine.dll=avcodec-62.dll\n")
+            with patch.object(module, "imports", side_effect=fake_imports), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(0, module.main([str(native), "--check"]))
+            (native / module.MANIFEST_NAME).write_text("archivetune_engine.dll=avcodec-62.dll\navcodec-62.dll=\n")
+            with patch.object(module, "imports", side_effect=fake_imports), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(1, module.main([str(native), "--check"]))
+
+    def test_windows_audit_rejects_a_32_bit_dll(self):
+        module = load_windows_deps()
+        with tempfile.TemporaryDirectory() as directory:
+            native = Path(directory)
+            for name in ("archivetune_engine.dll", "avcodec-62.dll"):
+                (native / name).write_bytes(b"DLL fixture")
+
+            def fake_imports(path):
+                machine = 0x8664 if Path(path).name.startswith("archivetune") else 0x014C
+                return machine, {"avcodec-62.dll": []} if Path(path).name.startswith("archivetune") else {}, {}
+
+            with patch.object(module, "imports", side_effect=fake_imports):
+                _, _, machine_problems = module.audit(native)
+            self.assertTrue(any("avcodec-62.dll" in problem for problem in machine_problems), machine_problems)
+
+    def test_windows_api_sets_and_crt_redistributables_are_system_libraries(self):
+        module = load_windows_deps()
+        for name in ("api-ms-win-crt-private-l1-1-0.dll", "api-ms-win-core-synch-l1-2-0.dll",
+                     "ucrtbase.dll", "vcruntime140.dll", "msvcp140.dll", "kernel32.dll", "msvcrt.dll"):
+            self.assertTrue(module.is_system(name), name)
+        for name in ("avcodec-62.dll", "zlib1.dll", "tdjni.dll"):
+            self.assertFalse(module.is_system(name), name)
 
 
 if __name__ == "__main__":
