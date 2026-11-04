@@ -81,7 +81,6 @@ class UnifiedDspAudioProcessor(
     private var dither: TpdfDither? = null
 
     private var inputFrames = FloatArray(0)
-    private var shortScratch = ShortArray(0)
     private var outputFrames = FloatArray(0)
 
     /** What actually runs: false while the route bypasses or while the chain is inactive. */
@@ -137,13 +136,19 @@ class UnifiedDspAudioProcessor(
         }
         val samples = frames * channels
         ensureInput(samples)
-        val source = inputBuffer.duplicate().order(ByteOrder.nativeOrder())
+        // Absolute primitive reads keep steady-state rendering allocation-free; a duplicate or a typed view
+        // would allocate one object per block. Audio buffers are native order, which is what the views used
+        // to impose, so the order is stated once here instead of inherited.
+        if (inputBuffer.order() != ByteOrder.nativeOrder()) inputBuffer.order(ByteOrder.nativeOrder())
+        val start = inputBuffer.position()
         if (floatInput) {
-            source.asFloatBuffer().get(inputFrames, 0, samples)
+            for (index in 0 until samples) {
+                inputFrames[index] = inputBuffer.getFloat(start + index * FLOAT_BYTES)
+            }
         } else {
-            ensureShorts(samples)
-            source.asShortBuffer().get(shortScratch, 0, samples)
-            for (index in 0 until samples) inputFrames[index] = shortScratch[index] / SHORT_SCALE
+            for (index in 0 until samples) {
+                inputFrames[index] = inputBuffer.getShort(start + index * SHORT_BYTES) / SHORT_SCALE
+            }
         }
         inputBuffer.position(inputBuffer.limit())
 
@@ -188,7 +193,6 @@ class UnifiedDspAudioProcessor(
         dither = null
         gateBypassed = false
         inputFrames = FloatArray(0)
-        shortScratch = ShortArray(0)
         outputFrames = FloatArray(0)
         isEngaged = false
         EngineRuntime.publishDspActive(false)
@@ -256,10 +260,6 @@ class UnifiedDspAudioProcessor(
 
     private fun ensureInput(samples: Int) {
         if (inputFrames.size < samples) inputFrames = FloatArray(grown(inputFrames.size, samples))
-    }
-
-    private fun ensureShorts(samples: Int) {
-        if (shortScratch.size < samples) shortScratch = ShortArray(grown(shortScratch.size, samples))
     }
 
     private fun ensureOutput(samples: Int) {

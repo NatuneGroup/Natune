@@ -15,6 +15,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Test
 
 class UnifiedDspAudioProcessorTest {
@@ -265,6 +266,57 @@ class UnifiedDspAudioProcessorTest {
         )
     }
 
+    /**
+     * Steady-state rendering runs on the playback thread, so a block must not allocate. The JVM's own
+     * per-thread allocation counter is read reflectively (the API lives outside the standard
+     * `java.lang.management` view) and the test is skipped where the JVM does not account for it.
+     */
+    @Test
+    fun `a warmed steady-state block allocates nothing`() {
+        val processor = processor()
+        processor.submit(
+            DspSettings(
+                preampDb = -3.0,
+                equalizerEnabled = true,
+                equalizerBands = listOf(EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, 4.0, 1.0)),
+            ),
+            plan(),
+        )
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+
+        val block = ByteBuffer.allocateDirect(BLOCK_SAMPLES * SHORT_BYTES).order(ByteOrder.nativeOrder())
+        block.asShortBuffer().put(ShortArray(BLOCK_SAMPLES) { index -> (((index % 128) - 64) * 128).toShort() })
+        block.position(0)
+        block.limit(BLOCK_SAMPLES * SHORT_BYTES)
+
+        repeat(WARMUP_BLOCKS) { render(processor, block) }
+
+        val before = allocatedBytes()
+        Assume.assumeTrue("this JVM does not account per-thread allocation", before != null)
+        repeat(MEASURED_BLOCKS) { render(processor, block) }
+        val after = allocatedBytes()
+        Assume.assumeTrue("this JVM does not account per-thread allocation", after != null)
+
+        val allocated = after!! - before!!
+        assertTrue(
+            "steady-state rendering allocated $allocated bytes over $MEASURED_BLOCKS blocks",
+            allocated < ALLOCATION_LIMIT_BYTES,
+        )
+    }
+
+    private fun render(processor: UnifiedDspAudioProcessor, block: ByteBuffer) {
+        block.position(0)
+        processor.queueInput(block)
+        processor.getOutput()
+    }
+
+    private fun allocatedBytes(): Long? =
+        runCatching {
+            val bean = java.lang.management.ManagementFactory.getThreadMXBean()
+            val method = bean.javaClass.getMethod("getThreadAllocatedBytes", java.lang.Long.TYPE)
+            method.invoke(bean, Thread.currentThread().id) as? Long
+        }.getOrNull()
+
     private companion object {
         const val SAMPLE_RATE = 48_000
         const val SECOND_SAMPLE_RATE = 44_100
@@ -272,5 +324,9 @@ class UnifiedDspAudioProcessorTest {
         const val FLOAT_BYTES = 4
         const val SHORT_BYTES = 2
         const val SHORT_FULL_SCALE = 32_767f
+        const val BLOCK_SAMPLES = 2_048
+        const val WARMUP_BLOCKS = 64
+        const val MEASURED_BLOCKS = 512
+        const val ALLOCATION_LIMIT_BYTES = 32L * 1_024L
     }
 }
