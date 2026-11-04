@@ -57,7 +57,7 @@ internal fun playbackSettingsItem(
             SettingsChild("USB exclusive output", "usb_exclusive_audio", listOf("usb", "exclusive", "usb exclusive", "dac", "usb dac", "aaudio", "direct", "bypass mixer", "experimental audio")),
             SettingsChild("Audio processing", "audio_processing",
                 listOf("audio processing", "dsp", "dsp engine", "audio engine", "equalizer", "equaliser",
-                    "offload", "audio offload", "normalization"), { SearchResultSwitch(AudioProcessingEnabledKey, AUDIO_PROCESSING_ENABLED_DEFAULT) }),
+                    "offload", "audio offload", "normalization")) { SearchResultSwitch(AudioProcessingEnabledKey, AUDIO_PROCESSING_ENABLED_DEFAULT) },
             SettingsChild("Seek seconds add-up", "seek_seconds", listOf("seek", "skip", "forward", "rewind", "seconds")) { SearchResultSwitch(SeekExtraSeconds, false) },
             SettingsChild("Pause on device mute", "pause_mute", listOf("mute", "pause mute", "headphone", "silence detect")) { SearchResultSwitch(PauseOnDeviceMuteKey, false) },
             SettingsChild("Device mute recovery volume", "device_mute_recovery_volume", listOf("recovery volume", "mute recovery", "volume restore")),

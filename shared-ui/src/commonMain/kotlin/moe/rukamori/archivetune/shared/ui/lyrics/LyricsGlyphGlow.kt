@@ -11,8 +11,13 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.drawText
 
-/** How much larger than its own ink a glowing word or letter draws: the rim the light leaves around the glyphs. */
-internal const val GLYPH_GLOW_SCALE = 1.12f
+/**
+ * How much larger than its own ink a glowing word or letter draws: the rim the light leaves around the glyphs.
+ *
+ * Public with the two seat helpers and the bloom below because the Android host's own swept line draws
+ * the same light; the shared renderer and the host must not grow two copies of the geometry.
+ */
+const val GLYPH_GLOW_SCALE = 1.12f
 
 /**
  * The bloom behind the word being sung, drawn from the text's own ink instead of a filled box. The
@@ -25,7 +30,7 @@ internal const val GLYPH_GLOW_SCALE = 1.12f
  * as a row of boxes behind the glyphs of a wrapped or held last word. [inkTopLeft] places the layout's
  * own origin (a lifted word or letter draws above its seat), so the bloom follows the ink it belongs to.
  */
-internal fun DrawScope.drawGlyphGlow(
+fun DrawScope.drawGlyphGlow(
     layout: TextLayoutResult,
     ink: Rect,
     inkTopLeft: Offset,
@@ -52,7 +57,7 @@ internal fun DrawScope.drawGlyphGlow(
 }
 
 /** The band box of one word: the seat its glyphs sit in on their own baseline. */
-internal fun lyricsWordSeat(word: LyricsWordBox, bands: LyricsLineBands): Rect =
+fun lyricsWordSeat(word: LyricsWordBox, bands: LyricsLineBands): Rect =
     Rect(word.leftPx, bands.tops[word.line], word.rightPx, bands.bottoms[word.line])
 
 /**
@@ -61,7 +66,7 @@ internal fun lyricsWordSeat(word: LyricsWordBox, bands: LyricsLineBands): Rect =
  * of being cut at the band or drawn a second time at the seat, and dipped [dipPx] further for the
  * word's lowered ink, so no low sliver survives under a rising word or an emphasized word's letters.
  */
-internal fun lyricsWordHole(word: LyricsWordBox, bands: LyricsLineBands, dipPx: Float): Rect {
+fun lyricsWordHole(word: LyricsWordBox, bands: LyricsLineBands, dipPx: Float): Rect {
     val seat = lyricsWordSeat(word, bands)
     return Rect(seat.left, seat.top - bands.overshootPx, seat.right, seat.bottom + bands.overshootPx + dipPx)
 }
