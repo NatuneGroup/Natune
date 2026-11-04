@@ -2,8 +2,9 @@
 
 `shared-domain` owns the one software DSP chain the platforms share: the ordered graph, the settings value,
 the stored document and the readers for every equalizer format the app already wrote. The chain is
-implemented and unit-tested; no platform adapter feeds it yet. Android still runs its own native LastWave and
-Tryptify engines, the desktop engine has no software chain, and the iOS shell has none.
+implemented and unit-tested, and the desktop and iOS hosts now read their equalizer, normalization and preamp
+from that one value; Android still drives its own native LastWave and Tryptify engines and feeds no stage of
+the shared chain yet.
 
 Source: `shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/dsp/`.
 
@@ -45,6 +46,18 @@ explicit field for every setting: `version`, `linearGain`, `preampDb`, `normaliz
 `dcBlocker`, `limiter`, `limiterCeilingDb`, `speed`, `pitchSemitones`, `transitionGain`, and `dither`
 (`enabled`/`bitDepth`/`seed`).
 
+`DspSettingsDocument` is the host's one read of that value, under the key `dspSettingsJson`: it returns the
+stored document when there is one, migrates the legacy keys only while there is none, and writes the document
+back on every change. The legacy keys are never rewritten, so an older build keeps reading them. Text that is
+not one JSON object counts as absent rather than as a neutral value, so a damaged document falls back to the
+keys the host already stored instead of silently flattening the chain.
+
+`GraphicEqualizer` holds the ten-band layout a host without a device band list shows (centres 31.25 Hz..16 kHz,
+one octave of width, millibel levels), so both hosts store and apply the same bands; a document another host
+wrote with other bands shows flat until the first edit writes this layout. `DspSettingsOwner` (shared-ui) is
+the settings surface those hosts mount: it reads the document once, applies each value to the playback port and
+saves one blob per edit.
+
 Decoding is tolerant on purpose, because a stored blob must never be able to stop playback: a blank,
 unreadable or non-object document reads as `DspSettings()`; a missing, non-numeric or out-of-range field
 keeps its default; bounded values are clamped (preamp ±12 dB, limiter ceiling −24..0 dB, speed 0.5..4,
@@ -74,6 +87,12 @@ returns one `DspSettings`.
 Band precedence is parametric Tryptify bands, then Tryptify graphic bands, then the legacy fifteen gains,
 then the shared millibel levels.
 
+A desktop or iOS host does not read that table itself: `DspSettingsDocument.legacyOf(snapshot)` fills
+`PersistedDspValues` from the shared keys those hosts already wrote (`equalizerEnabled`,
+`equalizerBandLevelsMb`, `equalizerOutputGainMb` while `equalizerOutputGainEnabled` is on, and
+`audioNormalization`), and the result is used only until the document exists. A host that never wrote them
+reads the neutral value, which keeps the desktop's pre-document behaviour (no normalization, no equalizer).
+
 ## What the platform adapters do next
 
 - **Android**: wrap `:shared-domain` `DspGraph` in a Media3 `AudioProcessor` (the shape `FloatDspProcessor`
@@ -81,11 +100,17 @@ then the shared millibel levels.
   resulting `SoftwareStagePlan` into `apply`, and read settings through `DspSettingsCodec` /
   `DspSettingsMapper` instead of the per-engine preference reads. Reconfigure on format change off the audio
   thread, reset on seek and on route change.
-- **Desktop**: `NativePlaybackEngine` currently decodes and plays with no software chain and no mixer; the
-  host must push each decoded block through a `DspGraph` per stream and drain with `pull`. The transition
-  policy (`TwoDeckMixer`, `TransitionGainRamp`) already runs on the shared side.
-- **iOS**: no DSP adapter exists. `AVAudioEngine` needs one node graph: a `DspGraph`-backed tap or manual
-  render block for tone and dynamics, and semitones from `PitchConversion` for `AVAudioUnitTimePitch`.
+- **Desktop**: `DesktopPlaybackPort.applyDspSettings` takes the stored `DspSettings` and hands the mixer
+  coefficients designed only by `BiquadDesign` (`equalizerCoefficients` packs b0, b1, b2, a1, a2 per band); the
+  mixer itself is a runner, and mixing, fades, scheduling and decoding stay native. Normalization gain comes
+  from `NormalizationGain`, the preamp from `DspSettings.preampGain`, and tempo stays with the transport.
+  A decoded block still does not pass through a `DspGraph`: the stages the desktop runs are the ones its
+  mixer owns, so the remaining work is to decide whether the shared graph replaces them.
+- **iOS**: `IosPlaybackPort.applyDspSettings` takes the same value and `IosEqBands` converts its band list for
+  the `AVAudioUnitEQ` the output and the blend decks already own, with `EqualizerBandwidth` as the one
+  Q-to-octaves mapping; the host carries no band model or coefficient design of its own. Pitch stays on
+  `AVAudioUnitTimePitch` via `PitchConversion`. `AVAudioEngine` remains the I/O, so tone and dynamics are not
+  rendered by `DspGraph`.
 - **All**: keep buffer sizing from `requiredOutputCapacity`, one graph per output stream, and no allocation
   or locking on the render thread.
 
@@ -103,5 +128,8 @@ then the shared millibel levels.
 ## Checks
 
 `./gradlew :shared-domain:jvmTest` (or `:shared-domain:allTests`) covers the graph, the biquad golden
-vectors, the codec, the mapper and the clarity presets. Unit tests are not device audio evidence: no physical
-output, DAC, USB or bit-perfect route is verified by them.
+vectors, the codec, the mapper, the stored document, the graphic layout and the clarity presets.
+`:desktopApp:jvmTest` covers the coefficients and the packed layout the desktop host hands its native mixer
+(`DesktopEqualizerCoefficientsTest`). Unit tests are not device audio
+evidence: no physical output, DAC, USB or bit-perfect route is verified by them, and neither host has been
+run on a device since the adapters changed.
