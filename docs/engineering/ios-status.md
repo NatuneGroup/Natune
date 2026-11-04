@@ -98,6 +98,20 @@ checks do not prove physical audio or route recovery: verify mono/stereo, 44.1/4
 Bluetooth/AirPlay, unplug, interruption, recognition-window changes and the original crash
 on the exact installed candidate. No device validation is claimed here.
 
+The same workflow now also carries an opt-in app-target link, off by default. Its
+`ios_simulator_app` (`workflow_dispatch`) input builds the simulator closure with
+`scripts/build_ios_native_core.sh iphonesimulator` and then runs `xcodebuild` on
+`iosApp/ArchiveTune.xcodeproj` (scheme `ArchiveTune`, Debug, `iphonesimulator`, code signing
+off). That is the only path that compiles and links both Swift sources and all three ObjC++
+bridges into an `ArchiveTune.app`: it requires five object files, a defined text entry point
+per bridge and an `ArchiveTuneShared` Kotlin symbol in the executable. It is not on the
+pull-request trigger because the closure build alone measured 3 h 09 m on the device leg (run
+41735716057, job 126264425424) and an `actions/cache` entry written by one pull request is not
+readable from another, so a per-pull-request gate would need a closure cache produced on `dev`
+- a larger change than this workflow edit. The pull-request trigger therefore still stops at
+the framework link and the `swiftc -typecheck`, and the opt-in link has not run yet: the
+app-target link and the closure linkage through `Native.xcconfig` stay **UNVERIFIED**.
+
 ## Host/build integration
 
 1. Present in source: `shared-ui/build.gradle.kts` declares the static `ArchiveTuneShared`
