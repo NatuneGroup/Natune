@@ -40,6 +40,7 @@ import moe.rukamori.archivetune.shared.ui.navigation.NavigationBarHeight
 import moe.rukamori.archivetune.shared.ui.navigation.PillRole
 import moe.rukamori.archivetune.shared.ui.navigation.rememberPillStyle
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.shortcuts.shortcutTextInput
 import org.jetbrains.compose.resources.stringResource
 
 enum class SearchScope { Online, Local }
@@ -202,7 +203,8 @@ private fun SearchField(
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedTextField(query, onQuery, modifier = modifier.testTag("search-query"), singleLine = true,
+    // Typing here must never reach the transport keys, so the field reports its focus to the root's counter.
+    OutlinedTextField(query, onQuery, modifier = modifier.shortcutTextInput().testTag("search-query"), singleLine = true,
         label = { Text(stringResource(Res.string.m4_search_query)) },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { if (query.isNotBlank()) onSubmit() }))
