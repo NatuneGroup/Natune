@@ -261,6 +261,8 @@ internal fun DesktopMountedRoot(
             resumed = activity.resumed,
             opticalCapabilities = DesktopOpticalCapabilities,
             systemDark = effectiveDark,
+            // Escape and the other hardware shortcuts have no owner here until the root itself holds focus.
+            rootKeyFocus = true,
         )
     }
 }
