@@ -129,6 +129,11 @@ reads the neutral value, which keeps the desktop's pre-document behaviour (no no
   settings or a bypassed plan. Tempo and pitch stay with ExoPlayer's playback parameters and
   `SonicAudioProcessor`, so the shared chain's stretch stage is not requested and speed cannot apply twice.
   A bit-perfect route, or an encoding the adapter cannot read, leaves the processor inactive so Media3 skips it.
+  `MusicService` keeps the session `android.media.audiofx.Equalizer` disabled and gives it no band levels: the
+  graph owns `EqualizerEnabledKey` and `equalizerBandLevelsMb`, so applying them there as well would add the
+  stored curve twice, on the device's own band centres. Bass boost, the virtualizer and automatic headroom
+  still run on the session effects behind their stored switches; the output gain does not, because it is the
+  graph's preamp (`FrameworkAudioEffectPolicy` decides that split).
 - **Desktop**: `DesktopPlaybackPort.applyDspSettings` takes the stored `DspSettings` and hands the mixer
   coefficients designed only by `BiquadDesign` (`equalizerCoefficients` packs b0, b1, b2, a1, a2 per band); the
   mixer itself is a runner, and mixing, fades, scheduling and decoding stay native. Normalization gain comes
