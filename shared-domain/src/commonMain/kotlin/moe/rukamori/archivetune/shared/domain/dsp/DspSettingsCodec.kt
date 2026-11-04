@@ -36,6 +36,7 @@ object DspSettingsCodec {
         put("version", FORMAT_VERSION)
         put("linearGain", settings.linearGain.toDouble())
         put("preampDb", settings.preampDb)
+        put("preamp", settings.preampEnabled)
         put("normalization", settings.normalizationEnabled)
         put("equalizer", settings.equalizerEnabled)
         putJsonArray("bands") {
@@ -80,6 +81,8 @@ object DspSettingsCodec {
             preampDb = root.finiteDouble("preampDb")
                 ?.coerceIn(-DspSettings.MAX_PREAMP_DB, DspSettings.MAX_PREAMP_DB)
                 ?: defaults.preampDb,
+            // A document written before the preamp switch existed keeps the preamp it always had.
+            preampEnabled = root.bool("preamp") ?: defaults.preampEnabled,
             normalizationEnabled = root.bool("normalization") ?: defaults.normalizationEnabled,
             equalizerEnabled = root.bool("equalizer") ?: defaults.equalizerEnabled,
             equalizerBands = bands(root["bands"] as? JsonArray),
