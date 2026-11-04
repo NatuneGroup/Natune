@@ -13,6 +13,7 @@ package moe.rukamori.archivetune.playback.dsp
 
 import android.content.Context
 import android.util.Log
+import androidx.datastore.preferences.core.Preferences
 import com.lastwave.app.data.local.EqualizerPreferences
 import com.lastwave.app.data.local.SettingsPreferences
 import com.lastwave.app.playback.NativeAudioEngine
@@ -24,11 +25,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
-import moe.rukamori.archivetune.constants.FloatDspEnabledKey
-import moe.rukamori.archivetune.constants.LastwaveAudioProcessingKey
-import moe.rukamori.archivetune.constants.TryptifyAudioProcessingKey
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.dataStore
 import tf.monochrome.android.audio.dsp.ChannelDetectorProcessor
@@ -48,15 +45,16 @@ import tf.monochrome.android.data.preferences.PreferencesManager
 import tf.monochrome.android.performance.PerformanceProfile
 
 /**
- * Owns the Tryptify and LastWave engines for every player sink.
+ * Owns the shared DSP chain for every player sink.
  *
- * Nothing native is loaded or constructed until a switch asks for an engine, so with every switch
- * off this class only watches three preferences.
+ * The unified Media3 processor reads its settings from [unified]; this class only watches the stored
+ * preferences and publishes each new value, off the playback thread. The legacy Tryptify and LastWave
+ * switches no longer select or build an engine — the shared chain is the only one — and their stored
+ * keys stay read because they name the preset formats to prefer.
  *
- * The engines carry filter and limiter state, so only one sink may run audio through them at a
- * time. A crossfade keeps two players alive; the one that holds the lease keeps the engine and the
- * other plays through the stock path until the lease is released (on its next track boundary with
- * the engine off, or when its player is released).
+ * A chain carries filter and limiter state, so only one sink may run one at a time. A crossfade keeps
+ * two players alive; the one that holds the lease keeps the chain and the other plays through the
+ * stock path until the lease is released (on its next track boundary, or when its player is released).
  */
 @Singleton
 class AudioEngineHost @Inject constructor(
@@ -71,10 +69,21 @@ class AudioEngineHost @Inject constructor(
 
     private val lease = AtomicReference<Any?>(null)
 
-    /** Bumped on every engine-switch change so an engaged router can re-route mid-track. */
+    /** Bumped on every preference change, as the legacy router used to re-route mid-track. */
     @Volatile
     var settingsGeneration: Int = 0
         private set
+
+    /** The last preferences this host saw, so a refresh never races the shared snapshot's own collector. */
+    @Volatile
+    private var lastPreferences: Preferences? = PreferenceStore.snapshot()
+
+    /** One settings source for every sink: the chain reads it, the playback thread never loads a preference. */
+    val unified: UnifiedDspSettingsSource =
+        UnifiedDspSettingsSource(
+            readValues = { UnifiedDspSettingsSource.readPersistedDspValues(lastPreferences) },
+            bitPerfectActive = { BitPerfectRuntime.chainBypassActive },
+        )
 
     @Volatile
     private var tryptifyStackBuilt = false
@@ -139,41 +148,24 @@ class AudioEngineHost @Inject constructor(
 
     init {
         context.applicationContext.dataStore.data
-            .map {
-                Triple(
-                    it[TryptifyAudioProcessingKey] ?: false,
-                    it[LastwaveAudioProcessingKey] ?: false,
-                    it[FloatDspEnabledKey] ?: false,
-                )
-            }.distinctUntilChanged()
-            .onEach { (tryptify, lastwave, _) ->
-                runCatching { onSwitchesChanged(tryptify, lastwave) }
+            .onEach { preferences ->
+                lastPreferences = preferences
+                runCatching { unified.refresh() }
+                    .onFailure { Log.w(TAG, "Unified DSP settings refresh failed", it) }
+                runCatching { publishUnifiedEngine() }
                     .onFailure { Log.w(TAG, "Audio engine switch handling failed", it) }
             }
             .launchIn(appScope)
     }
 
-    private fun onSwitchesChanged(tryptify: Boolean, lastwave: Boolean) {
-        val wanted =
-            when {
-                tryptify -> AudioEngineRouterProcessor.Engine.TRYPTIFY
-                lastwave -> AudioEngineRouterProcessor.Engine.LASTWAVE
-                else -> AudioEngineRouterProcessor.Engine.NONE
-            }
-        EngineRuntime.publishWantedEngine(wanted)
-        // Builds the engines here, off the playback thread, so the first configure that wants
-        // one does not pay for the native load.
-        if (tryptify || tryptifyStackBuilt) {
-            val stack = tryptifyStack
-            runCatching { stack?.controller?.setEngineActive(tryptify) }
-                .onFailure { Log.w(TAG, "Tryptify engine gate failed", it) }
-        }
-        val lastwaveAvailable =
-            (wanted == AudioEngineRouterProcessor.Engine.LASTWAVE || lastwaveBuilt) && lastwaveProcessor != null
-        EngineRuntime.publishEngineAvailability(
-            tryptify = tryptifyStackBuilt && tryptifyStack != null,
-            lastwave = lastwaveAvailable,
-        )
+    /**
+     * No legacy engine is selected, built or gated any more: the shared chain is the only one, and the
+     * stored switches only choose which preset format to prefer. An engine name would misreport that, so
+     * nothing is reported as wanted or available here.
+     */
+    private fun publishUnifiedEngine() {
+        EngineRuntime.publishWantedEngine(AudioEngineRouterProcessor.Engine.NONE)
+        EngineRuntime.publishEngineAvailability(tryptify = false, lastwave = false)
         settingsGeneration++
     }
 
@@ -209,6 +201,13 @@ class AudioEngineHost @Inject constructor(
     /** Diagnostics follow the sink that holds the engines, or any sink while none does. */
     fun mayPublish(owner: Any): Boolean = lease.get().let { it == null || it === owner }
 
+    /** A fresh chain processor for one sink, already following [unified]. */
+    fun newUnifiedProcessor(): UnifiedDspAudioProcessor = UnifiedDspAudioProcessor().also(unified::attach)
+
+    /** True while the chain would alter samples, which the bit-perfect gate needs to know. */
+    fun unifiedProcessingActive(): Boolean = unified.isProcessing()
+
+    /** The legacy router factory, kept only for the engine classes it still references. */
     fun newRouter(): AudioEngineRouterProcessor = AudioEngineRouterProcessor(this, FloatDspProcessor())
 
     private companion object {
