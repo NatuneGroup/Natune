@@ -37,6 +37,7 @@ data class UnifiedDspRequest(val settings: DspSettings, val plan: SoftwareStageP
  */
 class UnifiedDspSettingsSource(
     private val readValues: () -> PersistedDspValues,
+    private val processingEnabled: () -> Boolean,
     private val bitPerfectActive: () -> Boolean,
 ) {
     private val processors = CopyOnWriteArrayList<WeakReference<UnifiedDspAudioProcessor>>()
@@ -66,6 +67,9 @@ class UnifiedDspSettingsSource(
     fun isProcessing(): Boolean = !current.plan.bypass && !current.settings.isNeutral
 
     private fun build(): UnifiedDspRequest {
+        // The one switch turns the whole chain off, not one stage: a bit-exact passthrough hands the
+        // decoder's own samples to the sink, which is also what makes the offload path legal again.
+        if (!processingEnabled()) return UnifiedDspRequest(DspSettings(), BIT_PERFECT_PLAN)
         val settings = DspSettingsMapper.fromPersisted(readValues(), BAND_CENTRES_HZ)
         return UnifiedDspRequest(settings, if (bitPerfectActive()) BIT_PERFECT_PLAN else STANDARD_PLAN)
     }

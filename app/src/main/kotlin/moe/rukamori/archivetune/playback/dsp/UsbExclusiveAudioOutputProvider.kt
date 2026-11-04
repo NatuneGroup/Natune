@@ -201,7 +201,7 @@ class UsbExclusiveAudioOutputProvider(
         Log.i(
             TAG,
             "Exclusive AAudio engaged on ${device.productName}: ${config.sampleRate}Hz/${channels}ch " +
-                "in=${AudioEngineRouterProcessor.encodingName(config.encoding)} buffer=${stream.bufferSizeFrames()}",
+                "in=${pcmEncodingName(config.encoding)} buffer=${stream.bufferSizeFrames()}",
         )
         val output =
             AaudioExclusiveAudioOutput(

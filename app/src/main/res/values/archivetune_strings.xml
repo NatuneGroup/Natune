@@ -1177,6 +1177,7 @@
     <string name="credits_written_by">Written by</string>
     <string name="live_audio_chain_android_mixer">ANDROID MIXER</string>
     <string name="live_audio_chain_direct_hal">DIRECT HAL</string>
+    <string name="live_audio_chain_natune_dsp">NATUNE DSP</string>
     <string name="live_audio_chain_engine_16bit_note">Engine route decodes 16-bit — disable engines for full-depth output</string>
     <string name="live_audio_chain_float_pcm">Float</string>
     <string name="live_audio_chain_float_with_depth">Float · %1$d-bit</string>
@@ -1201,6 +1202,7 @@
     <string name="ti_duration">Duration</string>
     <string name="ti_engine">Engine</string>
     <string name="ti_engine_off">Off (Android audio path)</string>
+    <string name="ti_engine_natune">Natune DSP</string>
     <string name="ti_engine_pending">%1$s (starts on the next song)</string>
     <string name="ti_hardware_clock">Hardware clock</string>
     <string name="ti_normalization">Normalization</string>
