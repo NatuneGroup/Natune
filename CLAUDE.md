@@ -67,13 +67,16 @@ Those changes shipped through PR #198 at `643a35fd09888769a4a2d588324398d68f0d6f
 Nightly `N202610151104` / build 6833, with separate green build/tests and 835 passed,
 0 failed, 0 skipped. Inherited permissive lint was not lint-clean; no device QA is claimed.
 
-The 2026-11 DSP dead-code pass (maintainer-approved) is local source, uncompiled and
+The 2026-11 DSP dead-code passes (maintainer-approved) are local source, uncompiled and
 unreleased: the unreachable libusb UAC driver, the Signalsmith/Stretch pitch shifter, the
 never-enabled varispeed stage, `UsbAudioRouter`, `BypassVolumeController`,
-`BitPerfectGateProcessor` and the orphan USB-pin publishers are gone, and desktop/iOS no
-longer render the three Android-only engine switches. The active bit-perfect USB sink, the
-AAudio-exclusive USB route, LastWave and the AAC/Media3 path are untouched, and no build or
-device run has validated the result yet.
+`BitPerfectGateProcessor` and the orphan USB-pin publishers are gone, and so is the whole
+engine layer the shared chain replaced — the Tryptify bus and its `monochrome_dsp` target,
+the LastWave engine with `lastwave_audio` and its vendored soxr, the float-DSP half of
+`archivetune_dsp`, and the router that chose between them. The three Android-only engine
+switches became one Audio processing switch. The active bit-perfect USB sink, the
+AAudio-exclusive USB route and the AAC/Media3 path are untouched, and no build or device run
+has validated the result yet.
 
 The current YouTube follow-up is integrated local source, uncompiled and unreleased.
 Finite browse queues preserve occurrences and paging; unknown legacy recovery is conservative.
