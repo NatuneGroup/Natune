@@ -71,8 +71,10 @@ class UnifiedDspSettingsSource(
 
     private fun build(): UnifiedDspRequest {
         // The one switch turns the whole chain off, not one stage: a bit-exact passthrough hands the
-        // decoder's own samples to the sink, which is also what makes the offload path legal again.
-        if (!processingEnabled()) return UnifiedDspRequest(DspSettings(), BIT_PERFECT_PLAN)
+        // decoder's own samples to the sink, which is also what makes the offload path legal again. The value
+        // published with it is the shared neutral rendering, the same one the other hosts apply, so a reader
+        // never sees a bypassed plan next to an enabled-looking setting.
+        if (!processingEnabled()) return UnifiedDspRequest(DspSettings().withoutProcessing(), BIT_PERFECT_PLAN)
         val settings = DspSettingsMapper.fromPersisted(readValues(), BAND_CENTRES_HZ)
         return UnifiedDspRequest(settings, if (bitPerfectActive()) BIT_PERFECT_PLAN else STANDARD_PLAN)
     }
@@ -142,9 +144,10 @@ class UnifiedDspSettingsSource(
          * cold process can publish neutral settings instead of waiting on the store.
          *
          * Each retired engine's presets carry the engine switch and the stage switch that ran them, so a
-         * stage that was off stays off instead of becoming audible under the new processing switch. The
-         * shared output gain is read only while its own switch is on, because the chain's preamp is the one
-         * place that gain is rendered now.
+         * band set the stage did not own is not promoted into the shared chain. `DspSettingsMapper` receives
+         * the preamp key's switch as well as its value: the gain is read only when the switch is on, and
+         * the chain keeps that same answer, so the graph's preamp and the old output-gain switch cannot
+         * disagree.
          */
         fun readPersistedDspValues(preferences: Preferences?): PersistedDspValues =
             if (preferences == null) {
@@ -160,6 +163,7 @@ class UnifiedDspSettingsSource(
                         } else {
                             0
                         },
+                    equalizerOutputGainEnabled = preferences[EqualizerOutputGainEnabledKey] == true,
                     lastWaveEqualizerEnabled = preferences[LastWaveEqualizerEnabledKey] == true,
                     lastWaveGainsDb = preferences[LastWaveGainsKey],
                     lastWaveEngineEnabled = preferences[LastwaveAudioProcessingKey] == true,

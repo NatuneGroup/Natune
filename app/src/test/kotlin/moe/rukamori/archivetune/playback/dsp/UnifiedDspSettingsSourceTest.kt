@@ -6,6 +6,7 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import moe.rukamori.archivetune.constants.EqualizerOutputGainEnabledKey
 import moe.rukamori.archivetune.constants.EqualizerOutputGainMbKey
+import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettingsMapper
 import moe.rukamori.archivetune.shared.domain.dsp.PersistedDspValues
 import org.junit.Assert.assertEquals
@@ -47,6 +48,9 @@ class UnifiedDspSettingsSourceTest {
 
         assertTrue(snapshot.plan.bypass)
         assertFalse(snapshot.plan.equalizer)
+        // The published value is the shared neutral rendering, not a defaulting value that still looks on.
+        assertEquals(DspSettings().withoutProcessing(), snapshot.settings)
+        assertFalse(snapshot.settings.preampEnabled)
         assertTrue("the software curve is bypassed, not flattened", snapshot.settings.equalizerBands.isEmpty())
         assertFalse(source.isProcessing())
     }
@@ -74,11 +78,15 @@ class UnifiedDspSettingsSourceTest {
             },
         )
         assertEquals(-450, on.equalizerOutputGainMb)
+        assertTrue(on.equalizerOutputGainEnabled)
         assertEquals(-4.5, DspSettingsMapper.fromPersisted(on, emptyList()).preampDb, 1e-9)
+        assertTrue(DspSettingsMapper.fromPersisted(on, emptyList()).preampEnabled)
 
         val off = UnifiedDspSettingsSource.readPersistedDspValues(
             emptyPreferences().toMutablePreferences().apply { this[EqualizerOutputGainMbKey] = -450 },
         )
         assertEquals(0, off.equalizerOutputGainMb)
+        assertFalse(off.equalizerOutputGainEnabled)
+        assertFalse(DspSettingsMapper.fromPersisted(off, emptyList()).preampEnabled)
     }
 }

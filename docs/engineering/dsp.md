@@ -12,7 +12,10 @@ Source: `shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/dom
 
 `DspGraph` processes interleaved float32 frames in this order and no other:
 
-1. Input gain: track normalization gain `×` user preamp (`DspSettings.linearInputGain`).
+1. Input gain: the track's measured normalization correction (`linearGain`, applied only while
+   normalization is on) times the user preamp (`preampDb`, applied only while its own switch
+   `preampEnabled` is on). A host that folds its preamp into its own normalization gain leaves `preampDb`
+   at 0 rather than counting the same decibels twice.
 2. Equalizer cascade: one biquad section per band (`eq/PortableEqualizer`), glided by default.
 3. Clarity contour: the fixed six-section Studio Master Clarity preset (`clarity/ClarityStage`).
 4. DC blocker (`DcBlocker`), then soft-knee limiter (`SoftKneeLimiter`).
@@ -38,10 +41,13 @@ listener asked for, and a stage runs only when both allow it. Notes that matter 
 ## Settings storage
 
 `DspSettings` is one immutable value with a neutral default (`linearGain = 1`, no bands, no clarity, no
-limiter, no dither, speed/pitch neutral); its `init` rejects anything the chain cannot run.
+limiter, no dither, speed/pitch neutral); its `init` rejects anything the chain cannot run. `linearGain` is
+the normalization correction alone: normalization being switched off must not also drop the user preamp, so
+the two factors are gated separately and `preampDb` keeps its stored value while `preampEnabled` is off.
 
 `DspSettingsCodec` stores it as one versioned JSON object under a single key (`FORMAT_VERSION = 1`), with an
-explicit field for every setting: `version`, `linearGain`, `preampDb`, `normalization`, `equalizer`, `bands`
+explicit field for every setting: `version`, `linearGain`, `preampDb`, `preamp` (the preamp switch, absent in
+an older document reads as on), `normalization`, `equalizer`, `bands`
 (`type`/`hz`/`gainDb`/`q` plus optional `rightHz`/`rightGainDb`/`rightQ`), `clarity` (preset id),
 `dcBlocker`, `limiter`, `limiterCeilingDb`, `speed`, `pitchSemitones`, `transitionGain`, and `dither`
 (`enabled`/`bitDepth`/`seed`).
@@ -56,7 +62,13 @@ keys the host already stored instead of silently flattening the chain.
 one octave of width, millibel levels), so both hosts store and apply the same bands; a document another host
 wrote with other bands shows flat until the first edit writes this layout. `DspSettingsOwner` (shared-ui) is
 the settings surface those hosts mount: it reads the document once, applies each value to the playback port and
-saves one blob per edit.
+saves one blob per edit. It publishes two things from that stored value: what the panel shows, and what the
+host's engine renders. The Playback page's one **Audio processing** switch gates the second alone — while it is
+off the owner hands the engine `DspSettings.withoutProcessing()` (flat equalizer, unity preamp, no
+normalization), while the stored document keeps the presets it will render again when the switch returns. The
+Playback page's normalization row writes its own legacy key, so the owner mirrors the one document value into
+that key on every save and adopts the row's edit as a document change; the document stays the authority, and
+the row shows the value the chain applies.
 
 Decoding is tolerant on purpose, because a stored blob must never be able to stop playback: a blank,
 unreadable or non-object document reads as `DspSettings()`; a missing, non-numeric or out-of-range field
@@ -75,6 +87,7 @@ returns one `DspSettings`.
 |---|---|---|
 | `equalizerBandLevelsMb` | `bandsFromLevelsMb` | Millibel JSON array (`EqualizerBandLevels`), resampled by index onto the caller's band centres; blank or unreadable reads flat |
 | `equalizerOutputGainMb` | `fromPersisted` | Preamp in millibels, read only while `equalizerOutputGainEnabled` is on, clamped to ±12 dB |
+| `equalizerOutputGainEnabled` | `fromPersisted` | The preamp's own switch, carried into `DspSettings.preampEnabled`; off leaves the stored gain unapplied but keeps a retired stage's own preamp, because that stage applied it whenever it ran |
 | `lw_eq_gains` | `bandsFromLastWaveGains` | Fifteen comma-separated decibels on their ISO centres (25 Hz..16 kHz); any other width is not guessed at and yields no bands; each gain clamped to ±24 dB |
 | `lw_eq_enabled`, `lastwaveAudioProcessing` | `fromPersisted` | LastWave's fifteen gains run only while both the engine and its equalizer substage were switched on |
 | `tryptifyAudioProcessing`, `eq_enabled`, `param_eq_enabled` | `fromPersisted` | A Tryptify stage runs only while the engine and that stage were switched on: `eq_enabled` is the graphic stage, `param_eq_enabled` the parametric one |
@@ -109,9 +122,9 @@ shapes therefore cannot be represented, and they are left inactive rather than a
 
 A desktop or iOS host does not read that table itself: `DspSettingsDocument.legacyOf(snapshot)` fills
 `PersistedDspValues` from the shared keys those hosts already wrote (`equalizerEnabled`,
-`equalizerBandLevelsMb`, `equalizerOutputGainMb` while `equalizerOutputGainEnabled` is on, and
-`audioNormalization`), and the result is used only until the document exists. A host that never wrote them
-reads the neutral value, which keeps the desktop's pre-document behaviour (no normalization, no equalizer).
+`equalizerBandLevelsMb`, `equalizerOutputGainMb` and `equalizerOutputGainEnabled`, and `audioNormalization`),
+and the result is used only until the document exists. A host that never wrote them reads the normalization
+default the Playback page declares, a flat equalizer and a preamp that is off.
 
 ## What the platform adapters do next
 
@@ -124,11 +137,13 @@ reads the neutral value, which keeps the desktop's pre-document behaviour (no no
   the 16-bit grid. It reconfigures on a format change off the audio thread, drains the stretch tail at end of
   stream, and resets on flush; a configure that arrives while the previous stream still drains is held until
   the sink flushes. `UnifiedDspSettingsSource` reads the stored values through `DspSettingsMapper` and
-  publishes one settings value plus its plan to every live processor, and the plan is bypassed whenever the
-  bit-perfect gate holds the route, and the single Audio processing switch either publishes the mapped
-  settings or a bypassed plan. Tempo and pitch stay with ExoPlayer's playback parameters and
-  `SonicAudioProcessor`, so the shared chain's stretch stage is not requested and speed cannot apply twice.
-  A bit-perfect route, or an encoding the adapter cannot read, leaves the processor inactive so Media3 skips it.
+  publishes one settings value plus its plan to every live processor. The plan is bypassed whenever the
+  bit-perfect gate holds the route, and the single Audio processing switch publishes
+  `DspSettings.withoutProcessing()` with that bypassed plan, the same neutral rendering the shared owner applies,
+  so no reader sees an enabled-looking setting next to a bypassed chain. Tempo and pitch stay with ExoPlayer's
+  playback parameters and `SonicAudioProcessor`, so the shared chain's stretch stage is not requested and speed
+  cannot apply twice. A bit-perfect route, or an encoding the adapter cannot read, leaves the processor
+  inactive so Media3 skips it.
   `MusicService` keeps the session `android.media.audiofx.Equalizer` disabled and gives it no band levels: the
   graph owns `EqualizerEnabledKey` and `equalizerBandLevelsMb`, so applying them there as well would add the
   stored curve twice, on the device's own band centres. Bass boost, the virtualizer and automatic headroom
