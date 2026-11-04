@@ -62,6 +62,23 @@ data class DspSettings(
     val linearInputGain: Float
         get() = linearGain * preampGain
 
+    /**
+     * The same stored value with every processing stage neutral, for a host whose one Audio processing switch
+     * is off. The stored copy keeps every preset, so this value is what an engine renders, never what is saved:
+     * turning the switch back on restores the user's curve, preamp and normalization unchanged.
+     */
+    fun withoutProcessing(): DspSettings = copy(
+        linearGain = 1f,
+        preampDb = 0.0,
+        normalizationEnabled = false,
+        equalizerEnabled = false,
+        equalizerBands = emptyList(),
+        clarity = null,
+        dcBlockerEnabled = false,
+        limiterEnabled = false,
+        dither = DspDither.OFF,
+    )
+
     /** True when no stage would change a sample: the graph can hand the caller's samples straight back. */
     val isNeutral: Boolean
         get() = linearInputGain == 1f &&
