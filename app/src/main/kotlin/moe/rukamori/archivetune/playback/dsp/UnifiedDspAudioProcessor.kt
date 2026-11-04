@@ -46,6 +46,10 @@ class UnifiedDspAudioProcessor(
     private var graph: DspGraph? = null
     private var format: DspFormat? = null
 
+    // Read with [format] rather than from [inputAudioFormat], which BaseAudioProcessor only adopts at the
+    // next flush: a block queued before that flush would otherwise be decoded with the previous encoding.
+    private var floatInput = false
+
     /** The bit-perfect gate's last known verdict, so a mid-stream change is applied once, not per block. */
     private var gateBypassed = false
 
@@ -84,6 +88,7 @@ class UnifiedDspAudioProcessor(
         applied = request
         gateBypassed = gated
         format = target
+        floatInput = encoding == C.ENCODING_PCM_FLOAT
         isEngaged = !graph.isBypassed
         EngineRuntime.publishDspActive(isEngaged)
         return AudioProcessor.AudioFormat(target.sampleRateHz, target.channelCount, C.ENCODING_PCM_FLOAT)
@@ -110,7 +115,6 @@ class UnifiedDspAudioProcessor(
             gateBypassed = gated
         }
         val channels = audioFormat.channelCount
-        val floatInput = inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
         val bytesPerSample = if (floatInput) FLOAT_BYTES else SHORT_BYTES
         val frames = inputBuffer.remaining() / (bytesPerSample * channels)
         if (frames <= 0) {
@@ -156,6 +160,7 @@ class UnifiedDspAudioProcessor(
     override fun onReset() {
         graph = null
         format = null
+        floatInput = false
         applied = null
         inputFrames = FloatArray(0)
         shortScratch = ShortArray(0)
