@@ -36,6 +36,17 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class UsbDacInfo(
+    val name: String,
+    val vendorId: Int = -1,
+    val productId: Int = -1,
+    val sampleRatesHz: List<Int> = emptyList(),
+    val channelCounts: List<Int> = emptyList(),
+    val usbPermissionGranted: Boolean = false,
+    val hasUsbPeripheral: Boolean = false,
+    val deviceId: Int = -1,
+)
+
 @Singleton
 class UsbDacMonitor @Inject constructor(
     @ApplicationContext private val context: Context,
