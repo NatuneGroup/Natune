@@ -2,7 +2,7 @@ package moe.rukamori.archivetune.shared.ui.shortcuts
 
 import androidx.compose.ui.input.key.Key
 import moe.rukamori.archivetune.shared.ui.player.KeymapAction
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
 
 /** Sections of the help overlay; the order is the order they are shown in. */
