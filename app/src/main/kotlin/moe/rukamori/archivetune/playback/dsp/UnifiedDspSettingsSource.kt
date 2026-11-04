@@ -94,7 +94,7 @@ class UnifiedDspSettingsSource(
          * A bit-perfect route allows no stage: the graph copies bit for bit and clears every history, and
          * the adapter never asks for an altering stage while the gate holds the bypass.
          */
-        private val BIT_PERFECT_PLAN = SoftwareStagePlan(
+        internal val BIT_PERFECT_PLAN = SoftwareStagePlan(
             bypass = true,
             normalization = false,
             equalizer = false,

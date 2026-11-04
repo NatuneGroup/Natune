@@ -45,6 +45,9 @@ class UnifiedDspAudioProcessor(
     private var graph: DspGraph? = null
     private var format: DspFormat? = null
 
+    /** The bit-perfect gate's last known verdict, so a mid-stream change is applied once, not per block. */
+    private var gateBypassed = false
+
     private var inputFrames = FloatArray(0)
     private var shortScratch = ShortArray(0)
     private var outputFrames = FloatArray(0)
@@ -72,8 +75,13 @@ class UnifiedDspAudioProcessor(
         // Configure allocates, and Media3 calls this off the audio thread; a changed rate also drops every
         // stage's history, which is what a new stream format needs.
         graph.configure(target)
-        graph.apply(request.settings, request.plan)
+        val gated = BitPerfectRuntime.chainBypassActive
+        graph.apply(
+            if (gated) DspSettings() else request.settings,
+            if (gated) UnifiedDspSettingsSource.BIT_PERFECT_PLAN else request.plan,
+        )
         applied = request
+        gateBypassed = gated
         format = target
         isEngaged = !graph.isBypassed
         return AudioProcessor.AudioFormat(target.sampleRateHz, target.channelCount, C.ENCODING_PCM_FLOAT)
@@ -88,11 +96,16 @@ class UnifiedDspAudioProcessor(
             return
         }
         val request = requested
-        if (request != null && request !== applied) {
-            // A gain or preset move glides on this call rather than clicking, and a bypass plan takes effect
-            // mid-block: the graph then copies input to output bit for bit.
-            graph.apply(request.settings, request.plan)
+        // The bit-perfect gate can engage or release mid-stream, after the sink was configured, and a
+        // settings move is applied once per change: the graph glides a gain or preset instead of clicking.
+        val gated = BitPerfectRuntime.chainBypassActive
+        if (request != null && (request !== applied || gated != gateBypassed)) {
+            graph.apply(
+                if (gated) DspSettings() else request.settings,
+                if (gated) UnifiedDspSettingsSource.BIT_PERFECT_PLAN else request.plan,
+            )
             applied = request
+            gateBypassed = gated
         }
         val channels = audioFormat.channelCount
         val floatInput = inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT

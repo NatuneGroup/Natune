@@ -331,7 +331,6 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.playback.artwork.ArtworkProvider
-import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
 import moe.rukamori.archivetune.playback.dsp.UsbExclusiveAudioOutputProvider
 import moe.rukamori.archivetune.playback.artwork.ArtworkRequest
 import moe.rukamori.archivetune.playback.artwork.ArtworkResolver
@@ -12181,9 +12180,9 @@ class MusicService :
                                 playbackKeyProvider = { authenticityContext.get()?.playbackKey },
                             ),
                         // After the authenticity analysis and the decoded-format observer, so both
-                        // keep seeing the decoder's own PCM. Inactive (skipped by Media3) unless an
-                        // engine or the float DSP is switched on.
-                        audioEngineHost.newRouter(),
+                        // keep seeing the decoder's own PCM. The one shared DSP chain; it stays inactive
+                        // (skipped by Media3) on every bit-perfect route and for encodings it cannot read.
+                        audioEngineHost.newUnifiedProcessor(),
                         // Automix's transition filters ride last in the chain, as in 4nx3b and
                         // BitChord. Wide open (a pass-through) whenever no smart blend runs.
                         transitionFilter,
@@ -12212,10 +12211,7 @@ class MusicService :
                 .setAudioTrackBufferSizeProvider(DefaultAudioSink.AudioTrackBufferSizeProvider.DEFAULT)
                 .build(),
         exclusiveWanted = ::usbExclusiveRouteAllowed,
-        chainProcessing = {
-            audioEngineHost.wantedEngine() != AudioEngineRouterProcessor.Engine.NONE ||
-                audioEngineHost.floatDspWanted()
-        },
+        chainProcessing = { audioEngineHost.unifiedProcessingActive() },
         decodedFormat = { decodedPcmFormatsByContext[authenticityContext] },
     )
 
