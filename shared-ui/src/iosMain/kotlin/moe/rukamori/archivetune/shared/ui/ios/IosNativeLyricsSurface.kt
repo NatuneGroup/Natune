@@ -30,10 +30,11 @@ import moe.rukamori.archivetune.shared.ui.lyrics.NativeLyricsDocument
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_auto_created
 import moe.rukamori.archivetune.shared.ui.resources.lyrics_written_by
+import moe.rukamori.archivetune.shared.ui.resources.lyrics_share
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * The Enhanced lyric look drawn by the native SwiftUI view, hosted inside the player. The rows, readings, clock and
+ * The Enhanced lyric look drawn by the native UIKit view, hosted inside the player. The rows, readings, clock and
  * seeking are the shared ones; only the drawing is native. The view takes its own touches, so its scroll never
  * waits on the player's gestures.
  */
@@ -77,7 +78,8 @@ internal fun IosNativeLyricsSurface(
             NativeLyricsDocument.from(sessionKey, rows, settings, color, glow, nativeCredits)
         }
         val latestSeek by rememberUpdatedState(onSeek)
-        SideEffect { bridge.present(document, rows, settings.syncOffsetMs, visible) { latestSeek(it) } }
+        val shareLabel = stringResource(Res.string.lyrics_share)
+        SideEffect { bridge.present(document, rows, settings.syncOffsetMs, visible, shareLabel) { latestSeek(it) } }
         LaunchedEffect(bridge, playback) {
             playback.collect { snapshot -> snapshot?.let(bridge::accept) }
         }

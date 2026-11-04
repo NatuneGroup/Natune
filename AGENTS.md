@@ -109,6 +109,13 @@ invariants remain unchanged.
   are historical evidence, not validation of the current candidate, Android/iOS,
   signing, upgrades or physical audio. The full KMP port remains incomplete; see
   [baseline provenance](docs/engineering/kmp-baseline.md).
+- **iOS presentation boundary:** SwiftUI is only the app/scene shell, Compose controller
+  representable and URL/user-activity/safe-area handling. Native chrome and Enhanced lyrics
+  use UIKit; do not add SwiftUI-rendered app content or `UIHostingController`. A future
+  WidgetKit/ActivityKit feature requires an explicit, documented system-only exception,
+  never silent deletion. Keep the shared clock, native-interface toggle, one-host lifetime,
+  adaptive layouts and MediaPlayer transport. See
+  [iOS shell comparison](docs/engineering/ios-swiftui-parity.md).
 - **Remote foundation constraints (merged 2026-10-25):**
   - The foundation's `:shared` module is not in `settings.gradle.kts`. Its files stay
     under `shared/`, and its build script is renamed to `shared/build.gradle.kts.reference`

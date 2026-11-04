@@ -64,8 +64,9 @@ review and confirmed fixes are complete; no all-language or device QA is claimed
 | `ui/player/simpmusic/SimpMusicLyrics.kt` | The SIMPMUSIC lyrics *mode* — a user-selectable style, reachable from the full-screen surface and the card |
 
 In the shared modules `LyricsFullscreenRenderer` draws every look. On iOS 26 and later, with
-the "Native iOS interface" setting on, the Enhanced look is drawn by the SwiftUI view in
-`iosApp/ArchiveTune/SystemLyrics.swift` instead. It reads the same render rows and the same
+the "Native iOS interface" setting on, the Enhanced look is drawn by the UIKit controller in
+`iosApp/ArchiveTune/SystemLyrics.swift` and the TextKit/Core Graphics renderer in
+`iosApp/ArchiveTune/SystemLyricsRendering.swift` instead. It reads the same render rows and the same
 lyric clock through `NativeLyricsDocument` and `NativeLyricsTimeline`, so seeking, sync offset
 and the tap policy match the Compose renderer. The document carries the Enhanced refinements the
 same way: emphasis letters for held words, the interlude break each row owns, the saved text size,
@@ -113,8 +114,9 @@ otherwise, and re-checks at most every 250 ms so a seek still lands promptly. Ev
 shared `rememberLyricsClock`, and Lyrics, V2, SimpMusic and Enhanced on Android) publishes the
 position and line before it parks, and divides the media-time gap by the playback speed
 (`lyricsIdleParkMs` in shared-ui; the app's `sleepUntilNext` wraps it), so a 2× track never sleeps
-through a sweep; paused surfaces poll at 100 ms. The SwiftUI view already pauses its `TimelineView`
-when hidden and polls a held position at 250 ms, matching the same budget. A word's live span runs
+through a sweep; paused surfaces poll at 100 ms. The UIKit native pane invalidates its `CADisplayLink`
+and timer when hidden or backgrounded, draws display frames only while advancing without reduced
+motion, and polls a held position at 250 ms. Neither callback advances its Kotlin clock. A word's live span runs
 through its completion lift (`LyricsSweepGeometry.liftEndMs`), so the loop stays awake until the
 word is seated, and each row's `SINK_MS` before its first word is live too. The Android Enhanced
 loop also steps every frame inside an interlude break its dots draw over (`enhancedInterludes`),
@@ -220,10 +222,13 @@ ripple, the width-share feather, the uniform blur, the
 Line-synced rows light at their own start with no activation lead — the timing the library view
 kept — and descenders keep their band overshoot.
 
-The iOS 26 native Enhanced view (`iosApp/ArchiveTune/SystemLyrics.swift`) draws its own sweep. It
-takes the idle alpha and the depth values from the shared profile and the completion lift from
-`LyricsSweepGeometry.dropAt` (sink and lift, emphasized letters included), but not the feather
-tuning, glow gating, dots, stagger or glide.
+The iOS 26 native Enhanced pane (`iosApp/ArchiveTune/SystemLyrics.swift`,
+`iosApp/ArchiveTune/SystemLyricsRendering.swift`) draws its own sweep in UIKit. TextKit caches
+bidi-shaped glyph layout; Core Graphics clips cached images with a feathered bright mask.
+The shared profile supplies idle alpha/depth/stagger and the shared `LyricsSweepGeometry` and
+`LyricsEmphasis` supply sweep, completion lift and letter ripple. The pane retains its existing
+35% anchor, 350 ms cubic follow, local feather/glow/dots tuning, reading reveals and credits;
+it does not adopt the Compose-only settle glide or selection/share-card UI.
 
 It is fed by `rememberLyricsClock`, which carries the player's twice-a-second position
 report forward on the frame clock so the sweep does not step.

@@ -15,6 +15,8 @@ typealias IosNativeLyricsViewFactory = (IosNativeLyrics) -> UIViewController
 class IosLyricsUpdate internal constructor(
     val document: NativeLyricsDocument,
     val visible: Boolean,
+    /** Localized in Compose; UIKit's context menu must not add a host-only string. */
+    val shareLabel: String,
 )
 
 /**
@@ -56,14 +58,17 @@ class IosNativeLyrics internal constructor() {
         rows: List<LyricsRenderRow>,
         syncOffsetMs: Long,
         visible: Boolean,
+        shareLabel: String,
         seek: (Long) -> Unit,
     ) {
         this.seek = seek
         timeline.setSyncOffset(syncOffsetMs)
         val current = update
-        if (current != null && current.document === document && current.visible == visible) return
+        if (current != null && current.document === document && current.visible == visible &&
+            current.shareLabel == shareLabel
+        ) return
         if (current?.document !== document) timeline.setRows(rows)
-        val next = IosLyricsUpdate(document, visible)
+        val next = IosLyricsUpdate(document, visible, shareLabel)
         update = next
         listener?.invoke(next)
     }

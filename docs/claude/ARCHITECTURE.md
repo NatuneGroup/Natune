@@ -151,22 +151,32 @@ introduce a REST/WS path to koiverse domains.
 
 ## iOS native interface (local source; validation pending)
 
-On iOS 26 and later the Swift app draws the system Liquid Glass tab bar and mini player
-(`iosApp/ArchiveTune/NativeChrome.swift`) in a SwiftUI layer above the single
-`ComposeUIViewController`, rather than splitting the app into per-tab controllers. The glass
-then samples the real Compose pages beneath it, only the bar and mini player take touches, and
-the safe areas stay with the one Compose root. Kotlin keeps ownership: `NativeShellChrome`
-(shared-ui `navigation/`) publishes tab, song and play state and receives tab, expand and
-play/pause requests, which the root applies through `ShellNavigation` and the queue player.
-While it is active the shell skips its own bottom bar and mini player in the bottom layouts and
-reserves the inset Swift reports; rail layouts keep the shared chrome. The same releases host a
-SwiftUI lyric view for the Enhanced look through `UIKitViewController`
-(`ios/IosNativeLyricsSurface.kt`): rows come from `LyricsRenderRows` and the position from the
-shared `LyricsClock` (`NativeLyricsTimeline`, read by Swift once per frame), including one
-output-latency subtraction, so neither a parser nor a clock exists in Swift. The "Native iOS interface" setting (`NativeIosInterfaceKey`,
-default on, iOS appearance page only) turns both off; iOS 16 to 25 keep the Compose shell and
-renderer unchanged. The bridges are plain Kotlin callbacks with a cancel handle
-(`IosSubscription`), without SKIE. No device QA is claimed.
+SwiftUI is limited to `App`/`WindowGroup`, a `UIViewControllerRepresentable`, safe-area handling
+and URL/browsing-activity forwarding in `iosApp/ArchiveTune/ArchiveTuneApp.swift`. The UIKit
+`ArchiveTuneSession.swift` owns one `IosHost` and re-presents the same controller; detach,
+backgrounding and SwiftUI reconstruction do not close services.
+
+On iOS 26 and later `NativeChrome.swift` contains one UIKit container above the single
+`ComposeUIViewController`, not per-tab controllers. `UIGlassEffect` and `UIGlassContainerEffect`
+sample the Compose pages underneath. Only the capsules/circle take touches; empty gaps pass
+through. The pill stays centered with a 520-point maximum width on iPad, Fold and resized
+windows, uses the bottom safe area without tracking the keyboard, and delegates status-bar
+policy to Compose. Kotlin's `NativeShellChrome` still owns tabs, song, playback, visibility,
+rail-layout fallback and the reserved inset. The Enhanced pane in `SystemLyrics.swift` and
+`SystemLyricsRendering.swift` is a UIKit table plus TextKit/Core Graphics renderer, hosted
+through `UIKitViewController` (`ios/IosNativeLyricsSurface.kt`). It keeps the shared rows,
+`NativeLyricsTimeline` clock, one latency subtraction, sweep/emphasis/drop math, readings,
+credits, seek/share policy, manual-follow hold and reduced-motion behavior. A display link
+runs only while visible and advancing; a held position polls at 250 ms. No Swift clock
+advances playback.
+
+The "Native iOS interface" setting (`NativeIosInterfaceKey`, default on, iOS appearance page
+only) still turns both native surfaces off; iOS 16 to 25 keep Compose unchanged. Callback
+subscriptions use `IosSubscription`, without SKIE. No app content uses SwiftUI or
+`UIHostingController`. There is no WidgetKit/ActivityKit target or lock-screen lyric renderer:
+existing MediaPlayer Now Playing metadata and transport remain independent and unchanged.
+See [the binary comparison and boundary](../engineering/ios-swiftui-parity.md). No device QA
+is claimed.
 
 ## Performance
 

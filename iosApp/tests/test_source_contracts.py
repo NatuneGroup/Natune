@@ -39,7 +39,8 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn(":shared-ui:embedAndSignAppleFrameworkForXcode", project)
         swift = (IOS / "ArchiveTune/ArchiveTuneApp.swift").read_text()
         self.assertIn("import ArchiveTuneShared", swift)
-        self.assertIn("host.close()", swift)
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        self.assertIn("host.close()", session)
 
     def test_release_selects_the_native_producers_exact_xcode(self):
         script = (ROOT / "scripts/build_ios_native_core.sh").read_text()
@@ -149,36 +150,79 @@ class IosSourceContractsTest(unittest.TestCase):
         bindings = (UI_IOS / "IosHostBindings.kt").read_text()
         self.assertNotIn("rememberIosLyricsSyncOffsetMs", bindings)
 
-    def test_native_swift_chrome_and_lyrics_share_the_kotlin_host(self):
-        app = (IOS / "ArchiveTune/ArchiveTuneApp.swift").read_text()
-        self.assertIn("if #available(iOS 26.0, *)", app)
-        self.assertIn("NativeChromeHost(chrome: ArchiveTuneSession.shared.nativeChrome)", app)
-        self.assertIn("host.setNativeLyricsFactory", app)
-        self.assertIn("SystemLyrics.makeController(lyrics)", app)
+    def test_swiftui_is_only_the_scene_and_compose_controller_shell(self):
+        sources = {path.name: path.read_text() for path in (IOS / "ArchiveTune").glob("*.swift")}
+        self.assertEqual(["ArchiveTuneApp.swift"], sorted(
+            name for name, source in sources.items() if re.search(r"^import SwiftUI$", source, re.MULTILINE)
+        ))
+        app = sources["ArchiveTuneApp.swift"]
+        for entry in ["WindowGroup", "UIViewControllerRepresentable", ".ignoresSafeArea()", ".onOpenURL",
+                      ".onContinueUserActivity(NSUserActivityTypeBrowsingWeb)", "activity.webpageURL"]:
+            self.assertIn(entry, app)
+        for source in sources.values():
+            self.assertNotRegex(source, r"\b(?:UIHostingController|TextRenderer|GlassEffectContainer|TimelineView)\b")
+            self.assertNotRegex(source, r"@(?:StateObject|ObservedObject|Environment|Published)\b")
+        self.assertNotRegex(app, r"\b(?:Text|Button|ZStack|HStack|VStack|NativeChromeHost)\s*[({]")
+
+    def test_native_uikit_chrome_and_lyrics_share_one_kotlin_host(self):
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        self.assertEqual(1, session.count("IosHost()"))
+        self.assertIn("if #available(iOS 26.0, *)", session)
+        self.assertIn("NativeChromeController(compose: host.viewController, chrome: host.nativeChrome)", session)
+        self.assertIn("host.setNativeLyricsFactory", session)
+        self.assertIn("SystemLyrics.makeController(lyrics)", session)
+        self.assertIn("controller.willMove(toParent: nil)", session)
+        self.assertIn("if presenter === token", session)
+        self.assertIn("host.foregrounded()", session)
+        self.assertIn("host.backgrounded()", session)
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
-        self.assertIn("NativeChrome.swift", project)
-        self.assertIn("SystemLyrics.swift", project)
+        build_files = dict(re.findall(r"(\w+) = \{isa = PBXBuildFile; fileRef = (\w+);", project))
+        sources = re.search(r"isa = PBXSourcesBuildPhase;[^\n]+files = \(([^)]+)\)", project).group(1)
+        for path in (IOS / "ArchiveTune").glob("*.swift"):
+            file_id = re.search(rf"(\w+) = \{{isa = PBXFileReference;[^\n]+path = ArchiveTune/{path.name};", project).group(1)
+            build_id = next(key for key, value in build_files.items() if value == file_id)
+            self.assertIn(build_id, sources, path.name)
+
+    def test_uikit_glass_keeps_geometry_touch_and_kotlin_command_ownership(self):
+        chrome = (IOS / "ArchiveTune/NativeChrome.swift").read_text()
+        for expected in ["UIGlassEffect(style: .regular)", "UIGlassContainerEffect()", "effect.spacing = 14",
+                         "effect.isInteractive = true", "addChild(compose)", "compose.didMove(toParent: self)",
+                         "childForStatusBarHidden", "childForStatusBarStyle", "min(520, view.bounds.width - 36)",
+                         "glass.isUserInteractionEnabled = next.visible", "override func hitTest",
+                         "chrome.setBottomInset(points:", "chrome.setSupported(value: true)",
+                         "chrome.setSupported(value: false)", "chrome.togglePlayback()", "chrome.expandPlayer()",
+                         "chrome.selectTab(index: 0)", "chrome.selectTab(index: 1)", "chrome.selectTab(index: 2)"]:
+            self.assertIn(expected, chrome)
+        self.assertIn("artwork.isUserInteractionEnabled = false", chrome)
+        self.assertIn("UIAccessibility.isReduceMotionEnabled", chrome)
 
     def test_native_lyrics_motion_dynamic_type_and_completion(self):
+        swift = (IOS / "ArchiveTune/SystemLyricsRendering.swift").read_text()
+        for expected in ["UIFontMetrics(forTextStyle:", "scaledValue(for:",
+                         "LyricsSweepGeometry.shared.progressAt(", "LyricsEmphasis.shared.bumpAt(",
+                         "LyricsSweepGeometry.shared.sweepComplete(", "LyricsSweepGeometry.shared.dropAt(",
+                         "wordEndMs: word.endMs", "reduceMotion: reduceMotion", "NSLayoutManager()",
+                         ".destinationIn", "wrappedLetters", "CIGaussianBlur", "line.secondVoice != line.rightToLeft"]:
+            self.assertIn(expected, swift)
+        self.assertIn("changed: old?.phonetic != line.phonetic", swift)
+        self.assertIn("changed: old?.translation != line.translation", swift)
+        self.assertIn("SystemLyricsMetrics.revealSeconds", swift)
+
+    def test_uikit_lyrics_lifecycles_follow_hold_seeking_sharing_and_credits(self):
         swift = (IOS / "ArchiveTune/SystemLyrics.swift").read_text()
-        # The saved point size follows Dynamic Type, as the retired @ScaledMetric did.
-        self.assertIn("UIFontMetrics(forTextStyle:", swift)
-        self.assertIn("scaledValue(for:", swift)
-        # The sweep share and the emphasis bump are the shared math, reduced motion honoured.
-        self.assertIn("LyricsSweepGeometry.shared.progressAt(", swift)
-        self.assertIn("LyricsEmphasis.shared.bumpAt(", swift)
-        self.assertIn("reduceMotion: reduceMotion", swift)
-        # A fully swept word draws lit to its bounds; the feather never leaves a dim tail.
-        self.assertIn("LyricsSweepGeometry.shared.sweepComplete(", swift)
-        # A reading or translation slides in when its text publishes, not when the row starts singing.
-        self.assertIn(".task(id: text)", swift)
-        self.assertNotIn("onChange(of: active)", swift)
-        # The renderer's inout context arguments match the declaration labels.
-        self.assertNotIn("context: &context", swift)
-        self.assertIn("in: &seat", swift)
-        # Every run reads the shared drop, so the sink and the completion lift match Compose.
-        self.assertIn("LyricsSweepGeometry.shared.dropAt(", swift)
-        self.assertIn("wordEndMs: word.endMs", swift)
+        for expected in ["CADisplayLink(target: displayTarget", "frame.advancing && !reduceMotion",
+                         "displayed && bridgeVisible", "displayLink?.invalidate()", "heldTimer?.invalidate()",
+                         "heldPollSeconds = 0.25", "lyrics.frame()", "frame.discontinuity", "frame.reanchor",
+                         "document?.manualScrollHoldMs", "resumeGeneration == generation", "lyrics.seekTo(index:",
+                         "lyrics.shareText(index:", "UIActivityViewController(activityItems: [text]",
+                         "popoverPresentationController?.sourceView", "UIAccessibilityCustomAction(name: shareLabel)",
+                         "contextMenuConfigurationForRowAt", "credits.writtenBy", "credits.autoCreatedLabel"]:
+            self.assertIn(expected, swift)
+        self.assertNotRegex(swift, r"positionMs\s*(?:\+=|=\s*.*CACurrentMediaTime)")
+        surface = (UI_IOS / "IosNativeLyricsSurface.kt").read_text()
+        self.assertIn("stringResource(Res.string.lyrics_share)", surface)
+        self.assertIn("UIKitInteropInteractionMode.NonCooperative", surface)
+        self.assertIn("isNativeAccessibilityEnabled = true", surface)
 
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()
