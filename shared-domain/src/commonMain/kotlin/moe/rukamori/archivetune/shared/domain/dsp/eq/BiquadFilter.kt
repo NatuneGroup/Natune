@@ -102,6 +102,31 @@ object BiquadDesign {
         )
     }
 
+    /**
+     * The same high shelf written with the cookbook's slope parameter instead of a Q. LastWave's clarity
+     * contour is specified as a slope (0.85), and the two shapes are not interchangeable, so the shared
+     * design keeps both forms and the clarity preset names the one it was ported with.
+     */
+    fun highShelfSlope(sampleRateHz: Int, frequencyHz: Double, gainDb: Double, slope: Double): BiquadCoefficients {
+        require(slope.isFinite() && slope > 0.0) { "slope must be positive" }
+        val frequency = clampFrequency(sampleRateHz, frequencyHz)
+        val w0 = 2 * PI * frequency / sampleRateHz
+        val cosW0 = cos(w0)
+        val sinW0 = sin(w0)
+        val a = amplitude(gainDb)
+        val safeSlope = slope.coerceIn(0.1, 1.0)
+        val alpha = (sinW0 * 0.5) * sqrt((a + 1.0 / a) * (1.0 / safeSlope - 1.0) + 2.0)
+        val beta = 2 * sqrt(a) * alpha
+        return normalized(
+            b0 = a * ((a + 1) + (a - 1) * cosW0 + beta),
+            b1 = -2 * a * ((a - 1) + (a + 1) * cosW0),
+            b2 = a * ((a + 1) + (a - 1) * cosW0 - beta),
+            a0 = (a + 1) - (a - 1) * cosW0 + beta,
+            a1 = 2 * ((a - 1) - (a + 1) * cosW0),
+            a2 = (a + 1) - (a - 1) * cosW0 - beta,
+        )
+    }
+
     /** Magnitude |H(e^jw)| at [frequencyHz]. Analysis helper for tests and diagnostics; playback never calls it. */
     fun magnitude(coefficients: BiquadCoefficients, sampleRateHz: Int, frequencyHz: Double): Double {
         val w = 2 * PI * frequencyHz / sampleRateHz
@@ -142,10 +167,14 @@ object BiquadDesign {
 /**
  * One biquad in transposed direct form II. History is kept per channel, so a stereo stream filtered
  * through one instance never leaks one channel into the other.
+ *
+ * A second coefficient set may ride along for the right channel of every stereo pair, which is what a
+ * band with a per-channel override uses; without one, every channel shares [coefficients].
  */
 class BiquadFilter(private val channels: Int) {
     private val z1: DoubleArray
     private val z2: DoubleArray
+    private var secondChannel: BiquadCoefficients? = null
 
     init {
         require(channels > 0) { "channels must be positive" }
@@ -156,18 +185,36 @@ class BiquadFilter(private val channels: Int) {
     var coefficients: BiquadCoefficients = BiquadCoefficients.IDENTITY
         private set
 
-    /** Swaps coefficients and keeps the history, so a retune in the middle of a stream does not click. */
-    fun setCoefficients(next: BiquadCoefficients) {
+    /**
+     * Swaps coefficients and keeps the history, so a retune mid-stream glides instead of restarting the
+     * filter. [rightChannel] replaces the coefficients of channel index 1, 3, … when the stream is stereo.
+     */
+    fun setCoefficients(next: BiquadCoefficients, rightChannel: BiquadCoefficients? = null) {
         coefficients = next
+        secondChannel = if (channels > 1 && rightChannel != null && rightChannel != next) rightChannel else null
     }
 
-    /** Filters [frames] interleaved frames in place. */
-    fun process(samples: FloatArray, frames: Int) {
-        require(frames >= 0 && samples.size >= frames * channels) { "samples hold fewer than $frames frames" }
-        val c = coefficients
-        var index = 0
+    /** Filters one sample of [channel] and returns it, advancing that channel's history. */
+    fun tick(input: Float, channel: Int): Float {
+        val c = if (channel and 1 == 1) secondChannel ?: coefficients else coefficients
+        val x = input.toDouble()
+        val y = c.b0 * x + z1[channel]
+        z1[channel] = c.b1 * x - c.a1 * y + z2[channel]
+        z2[channel] = c.b2 * x - c.a2 * y
+        return y.toFloat()
+    }
+
+    /** Filters [frames] interleaved frames in place, starting at [startFrame]. */
+    fun process(samples: FloatArray, frames: Int, startFrame: Int = 0) {
+        require(frames >= 0 && startFrame >= 0 && samples.size >= (startFrame + frames) * channels) {
+            "samples hold fewer than $frames frames from frame $startFrame"
+        }
+        var index = startFrame * channels
+        val primary = coefficients
+        val secondary = secondChannel
         repeat(frames) {
             for (channel in 0 until channels) {
+                val c = if (channel and 1 == 1) secondary ?: primary else primary
                 val x = samples[index].toDouble()
                 val y = c.b0 * x + z1[channel]
                 z1[channel] = c.b1 * x - c.a1 * y + z2[channel]
