@@ -47,7 +47,6 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.lyrics.effectiveLyricsSyncOffsetMs
 import moe.rukamori.archivetune.shared.domain.settings.GlobalLyricsOffsetMsKey
-import moe.rukamori.archivetune.shared.domain.settings.NativeIosInterfaceKey
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyle
 import moe.rukamori.archivetune.shared.domain.settings.PlayerDesignStyleKey
 import moe.rukamori.archivetune.shared.domain.settings.LyricsRomanizeChineseKey
@@ -70,7 +69,6 @@ import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsPhonetic
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.LyricsRomanizer
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsCompactStyle
-import moe.rukamori.archivetune.shared.ui.lyrics.LyricsMode
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationPresentation
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationSource
 import moe.rukamori.archivetune.shared.ui.lyrics.LyricsRomanizationState
@@ -202,7 +200,6 @@ internal fun iosHostBindings(
         // The iOS root has no screen beneath it, so back at the root has nothing to pop.
         onBackAtRoot = { },
         podcastProgress = graph.podcastProgress.observeAll(),
-        nativeChrome = host.nativeChrome.shell,
     )
 }
 
@@ -315,7 +312,7 @@ private fun iosPlayerSlots(
         canvas.setVisible(expanded && active && style.capabilities.artworkCanvas)
     }
     val reducedMotion = rememberIosReduceMotion()
-    // The stored per-song correction plus the global offset feeds every lyrics surface, Compose and native alike.
+    // The stored per-song correction plus the global offset feeds every lyrics surface.
     val queueState by graph.queue.state.collectAsState()
     val currentSongRef = remember(queueState, document?.occurrenceId) {
         queueState.entries.firstOrNull { it.occurrenceId == document?.occurrenceId }?.item?.ref
@@ -324,7 +321,7 @@ private fun iosPlayerSlots(
         currentSongRef?.let(graph.songLyricsOffsets::observeOffset) ?: flowOf(null)
     }.collectAsState(null)
     val lyricsSettings = preferences.playerLyricsSettings(
-        // Both renderers apply the route delay from PlaybackSnapshot through LyricsClock, not a second sync offset.
+        // The route delay comes from PlaybackSnapshot through LyricsClock, never a second sync offset.
         syncOffsetMs = effectiveLyricsSyncOffsetMs(storedSyncOffsetMs, (preferences[GlobalLyricsOffsetMsKey] ?: 0).toLong()),
         reducedMotion = reducedMotion,
         depthEffects = true,
@@ -343,28 +340,8 @@ private fun iosPlayerSlots(
         resumed = active,
         credits = document?.credits,
     )
-    // Only the Enhanced look has a native counterpart; the other looks and older systems keep the Compose renderer.
-    val registeredNativeLyrics by host.nativeLyricsFactory.collectAsState()
-    val nativeLyrics = registeredNativeLyrics
-        ?.takeIf { preferences[NativeIosInterfaceKey, true] && lyricsSettings.mode == LyricsMode.ENHANCED }
-    val fullLyrics: @Composable (Modifier) -> Unit = if (nativeLyrics == null) lyrics.full else { modifier ->
-        IosNativeLyricsSurface(
-            factory = nativeLyrics,
-            lines = document?.lines.orEmpty(),
-            sessionKey = sessionKey,
-            playback = graph.player.snapshot,
-            romanization = romanization,
-            settings = lyricsSettings,
-            onSeek = { position ->
-                actions.onSeek(position)
-                // The native surface owns no renderer to add this: a tapped line resumes a paused song.
-                if (graph.player.snapshot.value?.playWhenReady == false) actions.onResume()
-            },
-            visible = expanded && active,
-            modifier = modifier,
-            credits = document?.credits,
-        )
-    }
+    // Every lyric look is the shared Compose renderer; this host mounts no second one.
+    val fullLyrics = lyrics.full
     return PlayerSlots(
         artwork = { occurrenceId, modifier ->
             IosCanvasArtwork(occurrenceId, graph, canvas, expanded && active, modifier)

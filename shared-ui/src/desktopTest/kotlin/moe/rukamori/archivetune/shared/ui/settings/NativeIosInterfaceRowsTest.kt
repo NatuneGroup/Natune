@@ -16,23 +16,13 @@ class NativeIosInterfaceRowsTest {
         assertFalse("native_ios_interface" in anchors)
     }
 
-    @Test fun iosReplacesTheGlassRowsWithTheNativeToggleDefaultingOn() {
+    @Test fun iosShowsNeitherGlassNorADeadNativeInterfaceToggle() {
+        // The iOS host draws the app in the shared Compose tree, so it has no refraction to toggle and no second
+        // interface to switch to; the stored glass choices stay untouched for the other hosts.
         val before = PreferenceSnapshot.of(LiquidGlassEnabledKey to true)
-        val list = rows(before, native = true)
-        val anchors = list.map { it.anchor }
+        val anchors = rows(before, native = true).map { it.anchor }
         assertFalse("liquid_glass_effects" in anchors)
         assertFalse("liquid_glass_nav_bar_link" in anchors)
-        val toggle = list.single { it.anchor == "native_ios_interface" } as SettingsRow.Toggle
-        assertEquals(NativeIosInterfaceKey, toggle.key)
-        assertEquals(Res.string.ios_native_interface_desc, toggle.description)
-        assertTrue(toggle.read(before))
-        val editor = before.toEditor().apply { toggle.write(this, false) }
-        assertEquals(false, editor[NativeIosInterfaceKey])
-        assertEquals(true, editor[LiquidGlassEnabledKey])
-    }
-
-    @Test fun searchLandsOnTheAppearancePageRow() {
-        assertEquals("settings/appearance?scrollTo=native_ios_interface",
-            settingsSearchRoute("appearance", "native_ios_interface"))
+        assertFalse("native_ios_interface" in anchors)
     }
 }

@@ -16,11 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.shared.ui.SafeAreaPadding
 import moe.rukamori.archivetune.shared.ui.resources.Res
 import moe.rukamori.archivetune.shared.ui.resources.ios_restore_blocked_empty
 import moe.rukamori.archivetune.shared.ui.resources.ios_restore_blocked_message
 import moe.rukamori.archivetune.shared.ui.resources.ios_restore_blocked_previous
 import moe.rukamori.archivetune.shared.ui.resources.ios_restore_blocked_title
+import moe.rukamori.archivetune.shared.ui.safeAreaPadding
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import org.jetbrains.compose.resources.stringResource
 
@@ -30,11 +32,11 @@ import org.jetbrains.compose.resources.stringResource
  * nothing is deleted — and the restart dialog then carries the session out, since iOS cannot relaunch itself.
  */
 @Composable
-internal fun IosRestoreRecoveryScreen(graph: IosSessionGraph) {
+internal fun IosRestoreRecoveryScreen(graph: IosSessionGraph, safeArea: SafeAreaPadding) {
     val scope = rememberCoroutineScope()
     ArchiveTuneTheme {
         Box(
-            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeAreaPadding(safeArea),
             contentAlignment = Alignment.Center,
         ) {
             Column(

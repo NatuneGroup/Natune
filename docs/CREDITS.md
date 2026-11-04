@@ -155,11 +155,12 @@ their approaches were followed.
   written from the live response shape; no source was copied (the repository publishes
   no licence).
 - [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)
-  (AGPL-3.0-only): the look the iOS native lyric view (`iosApp/ArchiveTune/SystemLyrics.swift`)
-  and the shared depth and background-vocal rows aim for, distance blur and a separate
-  smaller background line. Only the behaviour was studied; no AGPL source was copied, and
-  the Swift and Kotlin are written fresh. The native pane now uses UIKit/TextKit and
-  Core Graphics rather than SwiftUI `TextRenderer`; native chrome uses UIKit Liquid Glass.
+  (AGPL-3.0-only): the look the shared lyrics renderer's depth and background-vocal rows
+  aim for, distance blur and a separate smaller background line. Only the behaviour was
+  studied; no AGPL source was copied, and the Kotlin is written fresh. The look is rendered
+  by the one shared Compose lyric surface on every platform; the earlier iOS-only UIKit
+  pane and the UIKit Liquid Glass chrome it sat in were removed, so no Swift renderer of
+  that lineage remains.
 - [NewPipe / InnerTube](https://github.com/TeamNewPipe/NewPipeExtractor): the InnerTube
   request lineage behind `core`.
 - [MetrolistGroup/innertubex](https://github.com/MetrolistGroup/innertubex) and

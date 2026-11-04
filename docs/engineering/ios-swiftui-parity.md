@@ -40,43 +40,42 @@ The plist specifies iOS **17.0**, phone/tablet family **[1, 2]**, `UILaunchScree
 
 ## Natune boundary
 
-Before this refactor, all three app Swift sources imported SwiftUI:
-`ArchiveTuneApp.swift` (142 lines), `NativeChrome.swift` (255) and `SystemLyrics.swift` (745).
-Chrome rendered stacks/buttons/artwork with SwiftUI Liquid Glass; Enhanced lyrics used
-`UIHostingController`, `TimelineView`, scrolling stacks, context/share menus, `Canvas` and
-`TextRenderer` with SwiftUI state/environment/animations. None requires SwiftUI.
+The earlier refactor went one step too far: it moved the tab bar, mini player and Enhanced
+lyrics out of Compose into UIKit, which is a second app UI. That copy is gone. The shared
+Compose tree again owns every app screen, the shell chrome, the player and every lyric look
+on iOS, exactly as on Android and desktop.
 
-After the refactor, **only** `iosApp/ArchiveTune/ArchiveTuneApp.swift` imports SwiftUI. It
-contains the App/WindowGroup entry, Compose `UIViewControllerRepresentable`, safe-area
-handling and URL/browsing-activity forwarding. Status-bar style/visibility are delegated to
-the original Compose child by the UIKit container; no fixed hidden value changes behavior.
-The shell uses no app content controls, `ObservableObject`, or `UIHostingController`.
+**Only** `iosApp/ArchiveTune/ArchiveTuneApp.swift` imports SwiftUI. It contains the
+App/WindowGroup entry, the Compose `UIViewControllerRepresentable`, and URL/browsing-activity
+forwarding. The shell uses no app content controls, `ObservableObject` or
+`UIHostingController`.
 
 - `ArchiveTuneSession.swift` retains the application-owned `IosHost`, foreground/background
   delivery, crash capture, final shutdown and identity-checked controller re-presentation.
-- `NativeChrome.swift` uses UIKit `UIGlassEffect`/`UIGlassContainerEffect`, with the same
-  home/library capsule, separate Search circle and mini-player. Kotlin still owns every
-  command and visibility gate. Only glass surfaces take touches; keyboard presentation
-  does not lift the bar. A centered **520-point** width cap and real safe-area/window geometry
-  preserve phone/iPad/Fold/resizing behavior, including the Compose rail fallback.
-- `SystemLyrics.swift` and `SystemLyricsRendering.swift` use a UIKit table, TextKit glyph
-  shaping and Core Graphics bright masks, plus public Core Image blur. They retain word
-  sweep/completion/emphasis math from Kotlin, duet/RTL alignment, interlude dots, Dynamic
-  Type, reading/translation reveals, machine-made badges, writers, reduced motion, tap-to-
-  seek, native text sharing, a **35%** anchor and **350 ms** cubic follow. The shared manual
-  scroll hold and discontinuity/reanchor rules remain distinct. Hidden/background panes
-  stop their display link/timer; held positions poll at **250 ms**, without a Swift clock.
+  Its one UIKit job is `IosRootController`: it hosts the Compose controller full-bleed and
+  reports `view.safeAreaInsets` to Kotlin. It draws no app content.
+- `IosHost.safeArea` (`shared-ui/src/iosMain/.../IosSafeArea.kt`) holds those insets as
+  physical edges, and commonMain `SafeAreaPadding` (`Modifier.safeAreaPadding`) reserves them
+  once for the whole app with `absolutePadding`, so a landscape notch stays on the side it
+  physically occupies even under RTL. The same modifier consumes `WindowInsets.systemBars`,
+  so a screen that still reads `statusBars` or `navigationBars` cannot reserve them a second
+  time. The shell measures its own bar and mini player (`LocalShellContentPadding`, from
+  `chromeHeight`), so no page sits under a control it drew.
+- The padding is applied inside `ArchiveTuneTheme`, after that theme's full-bleed background,
+  so the strips it leaves keep the app's own palette instead of the window's system colour;
+  the UIKit root view is `.clear` for the same reason.
 
-The existing native-interface toggle and iOS **26+** availability gates remain; iOS 16–25
-stay Compose-only. Natune's **iOS 16.0** deployment target, app identifier
-`moe.rukamori.archivetune`, orientations, URL schemes, single-scene plist and background-audio
-mode are unchanged. No package definition, project.yml, WidgetKit target or entitlement is
-present; the checked-in Xcode project includes both new UIKit Swift files.
+Natune's **iOS 16.0** deployment target, app identifier `moe.rukamori.archivetune`,
+orientations, URL schemes, single-scene plist and background-audio mode are unchanged. No
+package definition, project.yml, WidgetKit target or entitlement is present. The checked-in
+Xcode project compiles two app Swift sources: `ArchiveTuneApp.swift` and
+`ArchiveTuneSession.swift`.
 
 ## Lock-screen feature gap and SwiftUI exceptions
 
 **No feature must remain SwiftUI in the current tree.** The audited baseline has no
-lock-screen lyrics or Live Activity implementation: `SystemLyrics` is inside the player.
+lock-screen lyrics or Live Activity implementation: the Enhanced lyrics pane is inside the
+player and is drawn by Compose.
 The independent `IosNowPlaying` publisher supplies MediaPlayer metadata/artwork/elapsed
 rate and queue-owned remote controls, not lyrics; it is unchanged by this refactor.
 

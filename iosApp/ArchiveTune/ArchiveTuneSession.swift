@@ -9,12 +9,10 @@ final class ArchiveTuneSession {
     private var observers: [NSObjectProtocol] = []
     private var presenter: AnyObject?
     private var closed = false
-    private lazy var rootController: UIViewController = {
-        if #available(iOS 26.0, *) {
-            return NativeChromeController(compose: host.viewController, chrome: host.nativeChrome)
-        }
-        return host.viewController
-    }()
+    private lazy var rootController: UIViewController = IosRootController(
+        compose: host.viewController,
+        safeArea: host.safeArea,
+    )
 
     private init() {
         NSSetUncaughtExceptionHandler { exception in
@@ -40,9 +38,6 @@ final class ArchiveTuneSession {
         ) { [weak self] _ in
             self?.shutdown()
         })
-        if #available(iOS 26.0, *) {
-            host.setNativeLyricsFactory { lyrics in SystemLyrics.makeController(lyrics) }
-        }
     }
 
     /// Re-presents the same UIKit container and Compose child, never a second host or per-tab controller.
@@ -74,7 +69,52 @@ final class ArchiveTuneSession {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
         presenter = nil
-        if #available(iOS 26.0, *), let chrome = rootController as? NativeChromeController { chrome.close() }
         host.close()
+    }
+}
+
+/// The one OS bridge the shared app needs here: the window's safe-area insets for a full-bleed Compose controller.
+/// It draws no content of its own, so the shared Compose tree stays the only UI owner on iOS.
+final class IosRootController: UIViewController {
+    private let compose: UIViewController
+    private let safeArea: IosSafeArea
+
+    init(compose: UIViewController, safeArea: IosSafeArea) {
+        self.compose = compose
+        self.safeArea = safeArea
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var childForStatusBarStyle: UIViewController? { compose }
+    override var childForStatusBarHidden: UIViewController? { compose }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // The shared theme paints the whole window, strips included; a system colour here would show through as a
+        // white or light strip around a dark or tinted palette.
+        view.backgroundColor = .clear
+        addChild(compose)
+        compose.view.frame = view.bounds
+        compose.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(compose.view)
+        compose.didMove(toParent: self)
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        reportSafeArea()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        reportSafeArea()
+    }
+
+    private func reportSafeArea() {
+        let insets = view.safeAreaInsets
+        safeArea.update(top: Double(insets.top), bottom: Double(insets.bottom),
+                        left: Double(insets.left), right: Double(insets.right))
     }
 }

@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 IOS = ROOT / "iosApp"
 KOTLIN = ROOT / "shared-data/src/iosMain/kotlin/moe/rukamori/archivetune/shared/data/platform/ios"
+UI_ROOT = ROOT / "shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui"
 UI_IOS = ROOT / "shared-ui/src/iosMain/kotlin/moe/rukamori/archivetune/shared/ui/ios"
 UI_COMMON = ROOT / "shared-ui/src/commonMain/kotlin/moe/rukamori/archivetune/shared/ui"
 
@@ -164,17 +165,39 @@ class IosSourceContractsTest(unittest.TestCase):
             self.assertNotRegex(source, r"@(?:StateObject|ObservedObject|Environment|Published)\b")
         self.assertNotRegex(app, r"\b(?:Text|Button|ZStack|HStack|VStack|NativeChromeHost)\s*[({]")
 
-    def test_native_uikit_chrome_and_lyrics_share_one_kotlin_host(self):
+    def test_shared_compose_screens_own_the_ios_app_ui(self):
         session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
         self.assertEqual(1, session.count("IosHost()"))
-        self.assertIn("if #available(iOS 26.0, *)", session)
-        self.assertIn("NativeChromeController(compose: host.viewController, chrome: host.nativeChrome)", session)
-        self.assertIn("host.setNativeLyricsFactory", session)
-        self.assertIn("SystemLyrics.makeController(lyrics)", session)
+        self.assertIn("IosRootController(", session)
+        self.assertIn("compose: host.viewController", session)
+        self.assertIn("safeArea: host.safeArea", session)
+        self.assertIn("presenter === token", session)
         self.assertIn("controller.willMove(toParent: nil)", session)
-        self.assertIn("if presenter === token", session)
         self.assertIn("host.foregrounded()", session)
         self.assertIn("host.backgrounded()", session)
+        self.assertIn("addChild(compose)", session)
+        # No second renderer: the Swift host composes no app chrome and no lyric view.
+        for removed in ["NativeChromeController", "setNativeLyricsFactory", "SystemLyrics",
+                        "UIGlassEffect", "UIGlassContainerEffect", "UITableView", "CADisplayLink",
+                        "UIActivityViewController"]:
+            self.assertNotIn(removed, session)
+        for gone in ["ArchiveTune/NativeChrome.swift", "ArchiveTune/SystemLyrics.swift",
+                     "ArchiveTune/SystemLyricsRendering.swift"]:
+            self.assertFalse((IOS / gone).exists(), gone)
+        for gone in ["IosNativeChrome.kt", "IosNativeLyrics.kt", "ios/IosNativeLyricsSurface.kt",
+                     "navigation/NativeShellChrome.kt"]:
+            self.assertFalse((UI_ROOT / gone).exists(), gone)
+        kotlin = (UI_ROOT / "IosHost.kt").read_text()
+        self.assertNotRegex(kotlin, r"nativeChrome|IosNativeLyrics|NativeIosInterfaceKey")
+        bindings = (UI_IOS / "IosHostBindings.kt").read_text()
+        self.assertNotRegex(bindings, r"nativeChrome|IosNativeLyricsSurface|NativeIosInterfaceKey")
+        # Every lyric look and every tab bar comes from the shared shell.
+        self.assertIn("val fullLyrics = lyrics.full", bindings)
+        shell = (UI_COMMON / "navigation/ArchiveTuneShell.kt").read_text()
+        self.assertIn("FloatingNavigationToolbar(", shell)
+        self.assertNotRegex(shell, r"nativeChrome|nativeYields|bottomInsetDp")
+        self.assertNotRegex((UI_COMMON / "ArchiveTuneRoot.kt").read_text(), r"nativeChrome|NativeChromeLink")
+
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
         build_files = dict(re.findall(r"(\w+) = \{isa = PBXBuildFile; fileRef = (\w+);", project))
         sources = re.search(r"isa = PBXSourcesBuildPhase;[^\n]+files = \(([^)]+)\)", project).group(1)
@@ -182,55 +205,27 @@ class IosSourceContractsTest(unittest.TestCase):
             file_id = re.search(rf"(\w+) = \{{isa = PBXFileReference;[^\n]+path = ArchiveTune/{path.name};", project).group(1)
             build_id = next(key for key, value in build_files.items() if value == file_id)
             self.assertIn(build_id, sources, path.name)
+        # The native audio patch's graph objects keep these IDs; a second user would make the project ambiguous.
+        for reserved in ["A0000000000000000000000A", "A00000000000000000000022", "A00000000000000000000023"]:
+            self.assertNotIn(reserved, project)
 
-    def test_uikit_glass_keeps_geometry_touch_and_kotlin_command_ownership(self):
-        chrome = (IOS / "ArchiveTune/NativeChrome.swift").read_text()
-        for expected in ["UIGlassEffect(style: .regular)", "UIGlassContainerEffect()", "effect.spacing = 14",
-                         "effect.isInteractive = true", "addChild(compose)", "compose.didMove(toParent: self)",
-                         "childForStatusBarHidden", "childForStatusBarStyle", "min(520, view.bounds.width - 36)",
-                         "glass.isUserInteractionEnabled = next.visible", "override func hitTest",
-                         "chrome.setBottomInset(points:", "chrome.setSupported(value: true)",
-                         "chrome.setSupported(value: false)", "chrome.togglePlayback()", "chrome.expandPlayer()",
-                         "chrome.selectTab(index: 0)", "chrome.selectTab(index: 1)", "chrome.selectTab(index: 2)"]:
-            self.assertIn(expected, chrome)
-        self.assertIn("artwork.isUserInteractionEnabled = false", chrome)
-        self.assertIn("UIAccessibility.isReduceMotionEnabled", chrome)
-
-    def test_native_chrome_uses_unambiguous_selector_and_imageio_thumbnail_key(self):
-        chrome = (IOS / "ArchiveTune/NativeChrome.swift").read_text()
-        self.assertIn("searchButton.addTarget(self, action: #selector(selectSearchTab), for: .touchUpInside)", chrome)
-        self.assertIn("@objc private func selectSearchTab() { chrome.selectTab(index: 1) }", chrome)
-        self.assertNotIn("#selector(find)", chrome)
-        self.assertIn("kCGImageSourceThumbnailMaxPixelSize: 160", chrome)
-        self.assertNotIn("kCGImageSourceCreateThumbnailMaxPixelSize", chrome)
-
-    def test_native_lyrics_motion_dynamic_type_and_completion(self):
-        swift = (IOS / "ArchiveTune/SystemLyricsRendering.swift").read_text()
-        for expected in ["UIFontMetrics(forTextStyle:", "scaledValue(for:",
-                         "LyricsSweepGeometry.shared.progressAt(", "LyricsEmphasis.shared.bumpAt(",
-                         "LyricsSweepGeometry.shared.sweepComplete(", "LyricsSweepGeometry.shared.dropAt(",
-                         "wordEndMs: word.endMs", "reduceMotion: reduceMotion", "NSLayoutManager()",
-                         ".destinationIn", "wrappedLetters", "CIGaussianBlur", "line.secondVoice != line.rightToLeft"]:
-            self.assertIn(expected, swift)
-        self.assertIn("changed: old?.phonetic != line.phonetic", swift)
-        self.assertIn("changed: old?.translation != line.translation", swift)
-        self.assertIn("SystemLyricsMetrics.revealSeconds", swift)
-
-    def test_uikit_lyrics_lifecycles_follow_hold_seeking_sharing_and_credits(self):
-        swift = (IOS / "ArchiveTune/SystemLyrics.swift").read_text()
-        for expected in ["CADisplayLink(target: displayTarget", "frame.advancing && !reduceMotion",
-                         "displayed && bridgeVisible", "displayLink?.invalidate()", "heldTimer?.invalidate()",
-                         "heldPollSeconds = 0.25", "lyrics.frame()", "frame.discontinuity", "frame.reanchor",
-                         "document?.manualScrollHoldMs", "resumeGeneration == generation", "lyrics.seekTo(index:",
-                         "lyrics.shareText(index:", "UIActivityViewController(activityItems: [text]",
-                         "popoverPresentationController?.sourceView", "UIAccessibilityCustomAction(name: shareLabel)",
-                         "contextMenuConfigurationForRowAt", "credits.writtenBy", "credits.autoCreatedLabel"]:
-            self.assertIn(expected, swift)
-        self.assertNotRegex(swift, r"positionMs\s*(?:\+=|=\s*.*CACurrentMediaTime)")
-        surface = (UI_IOS / "IosNativeLyricsSurface.kt").read_text()
-        self.assertIn("stringResource(Res.string.lyrics_share)", surface)
-        self.assertIn("UIKitInteropInteractionMode.NonCooperative", surface)
-        self.assertIn("isNativeAccessibilityEnabled = true", surface)
+    def test_safe_area_reaches_compose_once_and_pads_the_whole_app(self):
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        self.assertIn("override func viewSafeAreaInsetsDidChange()", session)
+        self.assertIn("safeArea.update(top: Double(insets.top)", session)
+        safe_area = (UI_ROOT / "IosSafeArea.kt").read_text()
+        self.assertIn("fun update(left: Double, top: Double, right: Double, bottom: Double)", safe_area)
+        self.assertIn(".sanitized()", safe_area)
+        root = (UI_IOS / "IosMountedRoot.kt").read_text()
+        self.assertIn("host.safeArea.padding.collectAsState()", root)
+        self.assertIn("safeArea = safeArea", root)
+        owner = (UI_COMMON / "SafeAreaPadding.kt").read_text()
+        # Physical edges, and the same bar types consumed: a screen cannot reserve them twice.
+        self.assertIn("absolutePadding(", owner)
+        self.assertIn("consumeWindowInsets(WindowInsets.systemBars)", owner)
+        self.assertNotIn("start = insets.left.dp", owner)
+        self.assertIn("safeArea: SafeAreaPadding = SafeAreaPadding.None", (UI_COMMON / "ArchiveTuneRoot.kt").read_text())
+        self.assertIn(".safeAreaPadding(safeArea)", (UI_COMMON / "ArchiveTuneRoot.kt").read_text())
 
     def test_security_lifetimes_and_bounds_remain_present(self):
         auth = (KOTLIN / "IosBrowserAuth.kt").read_text()
