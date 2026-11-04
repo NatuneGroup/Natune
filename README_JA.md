@@ -50,7 +50,7 @@ PR #198 は `643a35fd09888769a4a2d588324398d68f0d6fb5` でマージされ、Nigh
 - Stable / Nightly は各ビルドでユーザーが選択するチャンネルです。ビルド種別は未設定時の既定値のみを決めます。更新候補はチャンネルと既知の新しい version code に結び付きます。
 - 表示中で長い設定説明は有限回だけ自動スクロールし、画面状態とアニメーション無効設定を尊重します。再起動が必要な変更は保存後に共通の **Restart now / Later** dialog を表示します。「後で」を選んでも自動再起動しません。
 - 音響 heat graph は Developer 設定と共通 player/song menu から利用できます。開いただけでは解析せず、Run/Cancel/Retry により時間と対象を制限した同一ソースの excerpt を処理します。seek 可能な local file/content、対応する clear stream、完全な同一ソース cache が対象です。DRM またはアクセス不能な入力は利用不可になり得ます。スペクトル上の疑いは heuristic であり、原音の lossless 性や物理 DAC 出力の証明ではありません。
-- 2026-11 の DSP dead-code 対応で、到達不能だった Tryptify stack の一部（libusb USB Audio Class driver、Signalsmith/Stretch pitch shifter、有効化されない varispeed stage、未使用の USB router helper、orphan の USB-pin diagnostics）を削除しました。残る DSP pin は Oboe 1.11.0 と soxr 0.1.3 です。新しい engine や既定の音声方針は追加していません。稼働中の bit-perfect USB 出力と AAudio exclusive USB 出力は維持し、以前削除した decent USB module の MIT license は保持しています。
+- 2026-11 の DSP 対応で、到達不能だった Tryptify stack の一部（libusb USB Audio Class driver、Signalsmith/Stretch pitch shifter、有効化されない varispeed stage、未使用の USB router helper、orphan の USB-pin diagnostics）を削除し、さらに共通 DSP chain が標準経路を担うようになった時点で engine 層そのもの（Tryptify bus と native target、LastWave engine と同梱 soxr、float-DSP stage）も削除しました。残る DSP pin は Oboe 1.11.0 のみです。新しい engine や既定の音声方針は追加していません。稼働中の bit-perfect USB 出力と AAudio exclusive USB 出力は維持し、以前削除した decent USB module の MIT license は保持しています。
 - 歌詞変更は意味を持つ Unicode を保持し、保守的な文字体系除外と metadata/kana に基づく読みを使います。SimpMusic は共通の組み込み/provider/AI 方針と、整形・source-spaced な時刻付きテキストを使います。読みと単語時刻が一致しない場合は行単位に戻し、正確な言語判定や全言語の発音を保証しません。
 - AI 翻訳は完全で検証済みの結果のみを受け入れ、失敗を再試行可能にし、設定と現在の歌詞対象に cache/result を結び付けます。DeepL は明示した翻訳先コードを使い、ローマ字変換には対応すると主張しません。翻訳画面では対象変更時に結果を無効化し、自動実行には除外条件を適用します。Downloader の一時領域を要求ごとに分離し、Listen Together の再試行を接続・要求に結び付け、Spotify の更新/ログイン/ログアウトを直列化します。
 - 日本語辞書の自動導入は端末の主システムロケールの region `JP` を使用し、IP geolocation は行いません。永続化された foreground 検討を一度だけ行い、Wi-Fi またはモバイル回線を利用できます。offline の場合も検討済みとなりますが、手動再試行は可能です。明示的な無効化・削除は自動導入を止めます。download/checksum/tokenizer 処理は startup/render thread を止めません。固定 13,343,016 byte の IPADIC pack は optional な offline-romaji データであり、UI 翻訳や全言語 engine ではありません。
@@ -85,10 +85,9 @@ KMP desktop の起動と shared module の検証コマンドは、以下のポ�
 - **ArchiveTune** — Rukamori: [ArchiveTune](https://github.com/rukamori/ArchiveTune)。元になった ArchiveTune プロジェクトです。
 - **SimpMusic** — [maxrave-dev](https://github.com/maxrave-dev/SimpMusic)。歌詞 API provider。
 - **4nx3b ArchiveTune** — upstream base、および Bini、Genius、LRCRed、Megalobiz の歌詞 provider。
-- **Tryptify** と [tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) — DSP chain、parametric/AutoEq で使用する audio engine。
-- **Clash-Projects LastWave-Native** — native audio engine、bit-perfect USB 出力、Last.fm dashboard。
+- **Clash-Projects LastWave-Native** — bit-perfect USB 出力、Last.fm dashboard。
 - **Marcelo Silva** — 以前同梱されていた decent-usb-audio-driver（MIT）。ライセンスと attribution は保持しています。
-- [SoX Resampler](https://sourceforge.net/projects/soxr/) — LastWave engine の resampling。
+- **Google Oboe**（Apache-2.0） — 1.11.0 の pin は維持しています。これを link していた LastWave engine は Tryptify / soxr と共に削除しました。
 - [echo-spotify-extension](https://github.com/brahmkshatriya/echo-spotify-extension) — Spotify の recently played list 読み取りの参考。
 - [BetterLyrics](https://better-lyrics.boidu.dev/)、[Material Color Utilities](https://github.com/material-foundation/material-color-utilities)、[Read You](https://github.com/Ashinch/ReadYou)、[Seal](https://github.com/JunkFood02/Seal)、翻訳者、beta tester、contributor、community の皆様。
 

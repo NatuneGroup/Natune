@@ -408,8 +408,8 @@ android {
         buildConfigField("boolean", "IS_NIGHTLY", "$isNightlyBuild")
         buildConfigField("String", "DISTRIBUTION", "\"gms\"")
         buildConfigField("boolean", "UPDATER_AVAILABLE", "true")
-        // The LastWave engine links Google Oboe (prefab), which requires the
-        // shared C++ STL. All native targets then build against c++_shared.
+        // Google Oboe ships as a prefab package, and prefab requires the shared
+        // C++ STL. All native targets then build against c++_shared.
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
@@ -779,7 +779,8 @@ dependencies {
 
     implementation(libs.media3)
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
-    // LastWave audio engine output backend (Oboe/AAudio, prefab)
+    // Google Oboe 1.11.0 pin, kept as approved: the LastWave engine that linked it is gone, so no
+    // native target consumes the prefab package today and nothing depends on it at runtime.
     implementation("com.google.oboe:oboe:1.11.0")
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)

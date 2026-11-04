@@ -266,13 +266,18 @@ Oboe route or native engine.
 
 ## DSP and retained native source
 
-Maintenance pins: Oboe 1.11.0 and soxr 0.1.3 remain. The vendored libusb USB Audio
-Class driver, its libusb subset and the Signalsmith/Stretch pitch shifter were removed
-in the 2026-11 DSP dead-code pass, so no native pitch-shift or libusb target ships.
-Existing Media3/AAudio/LastWave/Tryptify/float-DSP switches, defaults, presets, source
-policy and bit-perfect bypass remain separate. soxr retains Android
-runtime/header/build/license closure, not complete standalone upstream tooling/tests:
-see [soxr subset](../../third_party/soxr/README).
+Maintenance pin: Oboe 1.11.0 remains declared. The vendored libusb USB Audio Class
+driver, its libusb subset, the Signalsmith/Stretch pitch shifter, the vendored soxr
+0.1.3 subset, and the Tryptify and LastWave engine trees with their `monochrome_dsp`
+and `lastwave_audio` targets were removed in the 2026-11 DSP passes, so no native
+pitch-shift, libusb or resampling target ships. Two native libraries build now:
+`archivetune_analysis` and `archivetune_dsp`, the second holding only the AAudio
+exclusive stream whose `FloatDsp.available` flag decides whether that route can run.
+One Audio processing switch owns processing: on, the shared chain runs as described in
+[the shared chain](../engineering/dsp.md); off, the plan bypasses and the decoder's own
+samples reach the sink. Bit-perfect USB output, the AAudio-exclusive route and their
+bypass behaviour remain separate, and the stored `lw_*`, `eq_bands_json` and
+`param_eq_bands_json` formats stay readable as chain input.
 The removed unreachable decent USB island is not the active USB output; its
 [MIT license](../../audio/decent-usb-audio-driver/LICENSE), credit and app optional USB-host
 feature remain. Persisted preset/state formats are not dead with an unused builder.
