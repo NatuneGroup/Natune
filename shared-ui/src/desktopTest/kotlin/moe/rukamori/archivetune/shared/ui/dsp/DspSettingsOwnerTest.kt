@@ -36,35 +36,35 @@ import kotlin.test.assertTrue
  */
 class DspSettingsOwnerTest {
     @Test
-    fun processingSwitchOffRendersNeutralAndKeepsTheStoredPreset() = runOwner(preset()) { rig ->
-        val stored = rig.await { it.equalizerBands.any { band -> band.gainDb != 0.0 } && it.preampDb != 0.0 }
-        assertTrue(stored.normalizationEnabled)
-        rig.awaitDocument { it == stored }
+    fun processingSwitchOffRendersNeutralAndKeepsTheStoredPreset() = withSettingsDir { directory ->
+        runOwner(preset(), directory) { rig ->
+            val stored = rig.await { it.equalizerBands.any { band -> band.gainDb != 0.0 } && it.preampDb != 0.0 }
+            assertTrue(stored.normalizationEnabled)
+            rig.awaitDocument { it == stored }
 
-        rig.store.edit { this[AudioProcessingEnabledKey] = false }
-        val rendered = rig.await { it == stored.withoutProcessing() }
-        // The panel still shows the stored preset; only the rendered value is neutral.
-        assertEquals(false, rig.owner.state.value.processingEnabled)
-        assertEquals(stored, rig.owner.state.value.settings)
-        assertEquals(true, stored.equalizerEnabled)
-        assertEquals(false, rendered.equalizerEnabled)
-        assertEquals(emptyList(), rendered.equalizerBands)
-        assertEquals(false, rendered.normalizationEnabled)
-        assertEquals(0.0, rendered.preampDb)
-        assertEquals(1f, rendered.linearGain)
-        assertNull(rendered.clarity)
-        // The preset is stored, not deleted: the document keeps the curve, the preamp and the switch position.
-        assertEquals(stored, DspSettingsDocument.read(rig.store.snapshots.value?.get(DspSettingsDocumentKey)))
+            rig.store.edit { this[AudioProcessingEnabledKey] = false }
+            val rendered = rig.await { it == stored.withoutProcessing() }
+            // The panel still shows the stored preset; only the rendered value is neutral.
+            assertEquals(false, rig.owner.state.value.processingEnabled)
+            assertEquals(stored, rig.owner.state.value.settings)
+            assertEquals(true, stored.equalizerEnabled)
+            assertEquals(false, rendered.equalizerEnabled)
+            assertEquals(emptyList(), rendered.equalizerBands)
+            assertEquals(false, rendered.normalizationEnabled)
+            assertEquals(0.0, rendered.preampDb)
+            assertEquals(1f, rendered.linearGain)
+            assertNull(rendered.clarity)
+            // The preset is stored, not deleted: the document keeps the curve, the preamp and the switch position.
+            assertEquals(stored, DspSettingsDocument.read(rig.store.snapshots.value?.get(DspSettingsDocumentKey)))
 
-        rig.store.edit { this[AudioProcessingEnabledKey] = true }
-        assertEquals(stored, rig.await { it == stored })
+            rig.store.edit { this[AudioProcessingEnabledKey] = true }
+            assertEquals(stored, rig.await { it == stored })
+        }
     }
 
     @Test
-    fun normalizationRowBridgesIntoTheOneDocumentAndSurvivesReopen() {
-        var path: Path? = null
-        runOwner(preset()) { rig ->
-            path = rig.path
+    fun normalizationRowBridgesIntoTheOneDocumentAndSurvivesReopen() = withSettingsDir { directory ->
+        runOwner(preset(), directory) { rig ->
             val migrated = rig.await { it.equalizerBands.any { band -> band.gainDb != 0.0 } }
             assertTrue(migrated.normalizationEnabled)
             rig.awaitDocument { it == migrated }
@@ -78,14 +78,12 @@ class DspSettingsOwnerTest {
             assertEquals(false, rig.store.snapshots.value?.get(AudioNormalizationKey))
         }
         // Reopening the store reads the bridged document, so the toggle did not live only in this process.
-        runBlocking {
-            val reopened = DesktopSettingsStore.open(checkNotNull(path))
-            try {
-                assertEquals(false, reopened.snapshot()[AudioNormalizationKey])
-                assertEquals(false, DspSettingsDocument.read(reopened.snapshot()[DspSettingsDocumentKey])?.normalizationEnabled)
-            } finally {
-                reopened.close()
-            }
+        val reopened = DesktopSettingsStore.open(directory.resolve(SETTINGS_FILE))
+        try {
+            assertEquals(false, reopened.snapshot()[AudioNormalizationKey])
+            assertEquals(false, DspSettingsDocument.read(reopened.snapshot()[DspSettingsDocumentKey])?.normalizationEnabled)
+        } finally {
+            reopened.close()
         }
     }
 
@@ -101,12 +99,12 @@ class DspSettingsOwnerTest {
         )
     }
 
-    private fun runOwner(
-        initial: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
+    private suspend fun runOwner(
+        initial: PreferenceSnapshot,
+        directory: Path,
         block: suspend (Rig) -> Unit,
-    ) = runBlocking {
-        val directory = Files.createTempDirectory("m6-dsp-owner-")
-        val path = directory.resolve("settings.bin")
+    ) {
+        val path = directory.resolve(SETTINGS_FILE)
         val store = DesktopSettingsStore.open(path)
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val applied = CopyOnWriteArrayList<DspSettings>()
@@ -117,6 +115,15 @@ class DspSettingsOwnerTest {
         } finally {
             scope.cancel()
             store.close()
+        }
+    }
+
+    /** A store directory that outlives the owner, so a test can reopen the file the owner closed. */
+    private fun withSettingsDir(block: suspend (Path) -> Unit) = runBlocking {
+        val directory = Files.createTempDirectory("m6-dsp-owner-")
+        try {
+            block(directory)
+        } finally {
             directory.toFile().deleteRecursively()
         }
     }
@@ -152,6 +159,7 @@ class DspSettingsOwnerTest {
     }
 
     private companion object {
+        const val SETTINGS_FILE = "settings.bin"
         const val AWAIT_TIMEOUT_MS = 10_000L
         const val POLL_MS = 5L
     }
