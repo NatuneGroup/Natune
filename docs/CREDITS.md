@@ -85,17 +85,21 @@ lines in those Android sources read `Portions © <author>`.
 
 | Project | Author | Licence | What this repository carries |
 | --- | --- | --- | --- |
-| [tryptz/Tryptify](https://github.com/tryptz/Tryptify) | tryptz | none published | The `tf.monochrome.*` Kotlin layer (39 files): DSP manager, mix bus, parametric/AutoEq, USB router and driver wrapper, stretch/resample processors, `SpectrumAnalyzerTap`. |
-| [tryptz/tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) | tryptz | GPL-3.0 | The native side under `app/src/main/cpp/tryptify` (`dsp_engine`, snapins, `libusb_uac_driver`, WSOLA stretch). |
+| [tryptz/Tryptify](https://github.com/tryptz/Tryptify) | tryptz | none published | The `tf.monochrome.*` Kotlin layer (31 files): DSP manager, mix bus, parametric/AutoEq, `SpectrumAnalyzerTap`. |
+| [tryptz/tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) | tryptz | GPL-3.0 | The native side under `app/src/main/cpp/tryptify/dsp` (`dsp_engine`, snapins, WSOLA stretch). |
 | [Clash-Projects/LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) | Clash-Projects | GPL-3.0 | `com.lastwave.*` Kotlin (9 files) and `app/src/main/cpp/lastwave`. |
 | [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*`, `di/LastwaveModule.kt`, `EqModels.kt`. |
 | decent-usb-audio-driver | Marcelo Silva | MIT ([retained LICENSE](../audio/decent-usb-audio-driver/LICENSE)) | A previously vendored USB audio module; the unreachable implementation was removed and its licence and attribution are retained. |
-| [libusb](https://libusb.info) · [SoX Resampler](https://sourceforge.net/projects/soxr/) | libusb and soxr authors | LGPL-2.1 (`COPYING`, `COPYING.LGPL`) | Vendored in `third_party/` and built into the native library. |
-| [signalsmith-stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) · [linear](https://github.com/Signalsmith-Audio/linear) | Signalsmith Audio | MIT (`LICENSE-*.txt`) | Vendored headers for independent pitch shift. |
+| [SoX Resampler](https://sourceforge.net/projects/soxr/) | soxr authors | LGPL-2.1 (`COPYING.LGPL`) | Vendored at `third_party/soxr` and built into the LastWave engine library. |
 
 Licence status: `tryptz/Tryptify` had no `LICENSE` file when checked in October 2026.
-Its native code is published separately in `tryptify-audio-core` under GPL-3.0; the 39
+Its native code is published separately in `tryptify-audio-core` under GPL-3.0; the 31
 `tf.monochrome.*` Kotlin files appear only in the app repository.
+
+Removed in the 2026-11 DSP dead-code pass, so their notices went with the code: the
+vendored libusb 1.0.30 subset (`third_party/libusb`, LGPL-2.1) with its
+USB Audio Class driver, and the Signalsmith `stretch` 1.4.0 / `linear` 0.6.5 headers
+(`third_party/signalsmith-stretch`, MIT) with the pitch-shift stage that loaded them.
 
 Packaged desktop distributions carry their notice texts from
 `desktopApp/packaging/notices/` (the QuickJS notices and the Apache-2.0 licence text); the iOS

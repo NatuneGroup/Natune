@@ -90,6 +90,9 @@ internal fun DesktopGeneralSettingsPage(
             managePlaylistTags = { navigate(DesktopTagsRoute) },
             onFailure = onFailure,
             scrollTo = scrollTo,
+            // The desktop engine never reads the Tryptify/LastWave/float-DSP keys, so their
+            // switches stay hidden here.
+            audioEnginesSupported = false,
         )
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
         DiscordExperimentalRoute -> DiscordExperimentalSettings(controller, onFailure, scrollTo)

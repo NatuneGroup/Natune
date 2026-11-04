@@ -89,62 +89,6 @@ find_library(log-lib-monochrome-dsp log)
 target_link_libraries(monochrome_dsp android ${log-lib-monochrome-dsp})
 target_link_options(monochrome_dsp PRIVATE "-Wl,-z,max-page-size=16384")
 
-# Pitch shifter (signalsmith-stretch, header-only, third_party/). Loaded as
-# "monochrome_stretch" by StretchNative.
-add_library(monochrome_stretch SHARED
-    tryptify/stretch/stretch_jni.cpp
-)
-target_include_directories(monochrome_stretch PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/signalsmith-stretch
-)
-target_compile_features(monochrome_stretch PRIVATE cxx_std_17)
-target_compile_options(monochrome_stretch PRIVATE
-    -O3 -fno-exceptions -fno-rtti
-    $<$<STREQUAL:${ANDROID_ABI},arm64-v8a>:-march=armv8-a+simd>
-)
-set_target_properties(monochrome_stretch PROPERTIES DEBUG_POSTFIX "")
-target_link_libraries(monochrome_stretch log)
-target_link_options(monochrome_stretch PRIVATE "-Wl,-z,max-page-size=16384")
-
-# libusb UAC bit-perfect driver. The vendored libusb is built as a static
-# archive and linked into monochrome_usb (loaded as "monochrome_usb").
-set(LIBUSB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/libusb)
-add_library(usb1.0 STATIC
-    ${LIBUSB_DIR}/libusb/core.c
-    ${LIBUSB_DIR}/libusb/descriptor.c
-    ${LIBUSB_DIR}/libusb/hotplug.c
-    ${LIBUSB_DIR}/libusb/io.c
-    ${LIBUSB_DIR}/libusb/sync.c
-    ${LIBUSB_DIR}/libusb/strerror.c
-    ${LIBUSB_DIR}/libusb/os/linux_usbfs.c
-    ${LIBUSB_DIR}/libusb/os/events_posix.c
-    ${LIBUSB_DIR}/libusb/os/threads_posix.c
-    ${LIBUSB_DIR}/libusb/os/linux_netlink.c
-)
-target_include_directories(usb1.0 PUBLIC
-    ${LIBUSB_DIR}/libusb
-    ${LIBUSB_DIR}/libusb/os
-    ${LIBUSB_DIR}/android
-)
-target_compile_options(usb1.0 PRIVATE
-    -fvisibility=hidden -Wno-unused-parameter -Wno-unused-but-set-variable
-)
-set_target_properties(usb1.0 PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-add_library(monochrome_usb SHARED
-    tryptify/usb/usb_jni.cpp
-    tryptify/usb/libusb_uac_driver.cpp
-)
-target_include_directories(monochrome_usb PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/tryptify/usb
-    ${LIBUSB_DIR}/libusb
-)
-target_compile_features(monochrome_usb PRIVATE cxx_std_17)
-target_compile_options(monochrome_usb PRIVATE -O3 -fno-exceptions -fno-rtti)
-set_target_properties(monochrome_usb PROPERTIES DEBUG_POSTFIX "")
-target_link_libraries(monochrome_usb android log usb1.0)
-target_link_options(monochrome_usb PRIVATE "-Wl,-z,max-page-size=16384")
-
 # ---------------------------------------------------------------------------
 # LastWave audio engine (ported from https://github.com/Clash-Projects/
 # LastWave-native, vendored under lastwave/). Oboe/AAudio output + the
