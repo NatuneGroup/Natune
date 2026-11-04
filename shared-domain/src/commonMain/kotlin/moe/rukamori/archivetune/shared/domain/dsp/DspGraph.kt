@@ -121,7 +121,10 @@ class DspGraph(
         }
         val wasBypassed = isBypassed
         isBypassed = false
-        inputGain = if (plan.normalization && settings.normalizationEnabled) settings.linearInputGain else 1f
+        // Two independent factors: the measured correction runs only while normalization is on, the user
+        // preamp runs whenever its own switch is on, so a preamp cut survives normalization being turned off.
+        val normalizationGain = if (plan.normalization && settings.normalizationEnabled) settings.linearGain else 1f
+        inputGain = normalizationGain * settings.preampGain
         equalizer.setBands(
             bands = if (plan.equalizer && settings.equalizerEnabled) settings.equalizerBands else emptyList(),
             glideFrames = glideFrames(),

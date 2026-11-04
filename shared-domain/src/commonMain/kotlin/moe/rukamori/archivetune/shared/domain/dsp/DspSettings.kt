@@ -14,13 +14,16 @@ import moe.rukamori.archivetune.shared.domain.dsp.tempo.TempoPitchStage
  * when both allow it. Every default is neutral, so a graph built from `DspSettings()` is sample-transparent
  * apart from the full-scale clamp.
  *
- * Gain staging is deliberately split. [linearGain] is the normalization correction a host measured
- * (`NormalizationGain.linearGain` already folds the user preamp into it), and [preampDb] is the extra
- * preamp a host keeps separately — a host sets one of the two, never the same decibels twice.
+ * Gain staging is deliberately split. [linearGain] is the normalization correction a host measured for the
+ * track, and it applies only while normalization is on. [preampDb] is the user preamp, and it applies whenever
+ * its own switch is on, whether normalization is on or off. A host that folds its preamp into its own
+ * normalization gain leaves [preampDb] at 0 rather than counting the same decibels twice.
  */
 data class DspSettings(
     val linearGain: Float = 1f,
     val preampDb: Double = 0.0,
+    /** False while the user's preamp switch is off: [preampDb] keeps its stored value and is not applied. */
+    val preampEnabled: Boolean = true,
     val normalizationEnabled: Boolean = true,
     val equalizerEnabled: Boolean = true,
     val equalizerBands: List<EqualizerBand> = emptyList(),
@@ -54,9 +57,9 @@ data class DspSettings(
         }
     }
 
-    /** The user preamp alone as a linear factor, for a host that applies its own normalization gain. */
+    /** The user preamp alone as a linear factor, unity while its own switch is off. */
     val preampGain: Float
-        get() = if (preampDb == 0.0) 1f else 10.0.pow(preampDb / 20.0).toFloat()
+        get() = if (!preampEnabled || preampDb == 0.0) 1f else 10.0.pow(preampDb / 20.0).toFloat()
 
     /** Normalization gain and preamp multiplied into the one gain the chain applies first. */
     val linearInputGain: Float
@@ -70,6 +73,7 @@ data class DspSettings(
     fun withoutProcessing(): DspSettings = copy(
         linearGain = 1f,
         preampDb = 0.0,
+        preampEnabled = false,
         normalizationEnabled = false,
         equalizerEnabled = false,
         equalizerBands = emptyList(),

@@ -14,6 +14,7 @@ class DspSettingsCodecTest {
     private val everyField = DspSettings(
         linearGain = 0.5f,
         preampDb = -3.5,
+        preampEnabled = false,
         normalizationEnabled = false,
         equalizerEnabled = false,
         equalizerBands = listOf(
@@ -41,6 +42,18 @@ class DspSettingsCodecTest {
     @Test
     fun everyFieldSurvivesTheRoundTrip() {
         assertEquals(everyField, DspSettingsCodec.decode(DspSettingsCodec.encode(everyField)))
+    }
+
+    @Test
+    fun aDocumentWrittenBeforeThePreampSwitchKeepsThePreampItAlwaysHad() {
+        // The switch is newer than the document: an absent field must not silently drop the user's preamp.
+        val decoded = DspSettingsCodec.decode("""{"preampDb":-4.5,"normalization":true}""")
+        assertTrue(decoded.preampEnabled)
+        assertEquals(-4.5, decoded.preampDb)
+
+        val switchedOff = DspSettingsCodec.decode("""{"preampDb":-4.5,"preamp":false}""")
+        assertFalse(switchedOff.preampEnabled)
+        assertEquals(-4.5, switchedOff.preampDb)
     }
 
     @Test
