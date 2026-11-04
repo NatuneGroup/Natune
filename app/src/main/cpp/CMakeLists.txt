@@ -1,5 +1,4 @@
-# Native analysis front end for Automix (ported from BitChord, which itself
-# derives the analyzer from Orchard — see the headers in ../../../native).
+# Native analysis support for the ported audio code paths.
 #
 # Phase 1: whole-track DSP analysis (tempo/key/energy/structure via
 # autocorrelation, no ML model). Phase 2: the log-mel front end the Beat
@@ -8,6 +7,11 @@
 # reads (vocal_spectrogram.cpp / vocal_jni.cpp). Both models themselves run
 # through ONNX Runtime on the Kotlin side, not here. The shared analyzer
 # sources live under the repo's root `native/` tree.
+#
+# Two audio libraries build here as well: the AAudio exclusive output stream
+# (archivetune_dsp) and nothing else. The retired Tryptify `monochrome_dsp` and
+# LastWave `lastwave_audio` engines, with their vendored soxr resampler, are
+# gone: the shared DSP chain replaced them all in Kotlin.
 
 cmake_minimum_required(VERSION 3.22.1)
 project(archivetune_analysis LANGUAGES C CXX)
@@ -60,79 +64,15 @@ target_link_libraries(archivetune_analysis ${log-lib})
 target_link_options(archivetune_analysis PRIVATE "-Wl,-z,max-page-size=16384")
 
 # ---------------------------------------------------------------------------
-# Tryptify audio engine DSP (vendored under tryptify/dsp, ported from
-# https://github.com/tryptz/Tryptify). Loaded by DspNativeLoader as
-# "monochrome_dsp"; the Kotlin keeps the tf.monochrome.android.audio.dsp
-# package so the JNI symbols bind unchanged. Default off in the app.
+# archivetune_dsp: the AAudio exclusive output stream. Loaded by FloatDsp.kt,
+# whose `available` flag decides whether the USB-exclusive route can be
+# offered; a device without the library keeps the stock output.
+#
+# The 32-bit float DSP chain that used to live beside it (float_dsp.cpp and its
+# JNI half) went with the float-DSP processor: the shared chain does that work
+# now, and this library only opens, writes and reports the exclusive stream.
 # ---------------------------------------------------------------------------
-add_library(monochrome_dsp SHARED
-    tryptify/dsp/dsp_engine.cpp
-    tryptify/dsp/dsp_jni.cpp
-    tryptify/dsp/oxford/oxford_jni.cpp
-    tryptify/dsp/scope/wave_scope.cpp
-    tryptify/dsp/scope/spectrum_waterfall_jni.cpp
-    tryptify/dsp/meter/loudness_jni.cpp
-)
-target_include_directories(monochrome_dsp PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/tryptify/dsp
-    ${CMAKE_CURRENT_SOURCE_DIR}/tryptify/dsp/util
-    ${CMAKE_CURRENT_SOURCE_DIR}/tryptify/dsp/snapins
-    ${CMAKE_CURRENT_SOURCE_DIR}/tryptify/dsp/oxford
-)
-target_compile_features(monochrome_dsp PRIVATE cxx_std_17)
-target_compile_options(monochrome_dsp PRIVATE
-    -O3 -ffast-math -fno-exceptions -fno-rtti
-    $<$<STREQUAL:${ANDROID_ABI},arm64-v8a>:-march=armv8-a+simd>
-)
-set_target_properties(monochrome_dsp PROPERTIES DEBUG_POSTFIX "")
-find_library(log-lib-monochrome-dsp log)
-target_link_libraries(monochrome_dsp android ${log-lib-monochrome-dsp})
-target_link_options(monochrome_dsp PRIVATE "-Wl,-z,max-page-size=16384")
-
-# ---------------------------------------------------------------------------
-# LastWave audio engine (ported from https://github.com/Clash-Projects/
-# LastWave-native, vendored under lastwave/). Oboe/AAudio output + the
-# Studio Master Clarity DSP chain + libsoxr HQ resampling. Loaded by
-# NativeAudioEngine as "lastwave_audio". libsoxr 0.1.3 is vendored at
-# third_party/soxr (LGPL-2.1+), built as its own shared library.
-# ---------------------------------------------------------------------------
-set(SOXR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/soxr)
-list(APPEND CMAKE_MODULE_PATH "${SOXR_DIR}/cmake/Modules")
-set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_LSR_TESTS OFF CACHE BOOL "" FORCE)
-set(WITH_LSR_BINDINGS OFF CACHE BOOL "" FORCE)
-set(WITH_OPENMP OFF CACHE BOOL "" FORCE)
-set(WITH_CR32S OFF CACHE BOOL "" FORCE)
-set(WITH_CR64S OFF CACHE BOOL "" FORCE)
-set(WITH_PFFFT OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
-add_subdirectory("${SOXR_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/soxr" EXCLUDE_FROM_ALL)
-set_target_properties(soxr PROPERTIES VERSION "" SOVERSION "")
-
-find_package(oboe REQUIRED CONFIG)
-
-add_library(lastwave_audio SHARED
-    lastwave/AudioEngine.cpp
-    lastwave/DspProcessor.cpp
-    lastwave/NativeBridge.cpp
-)
-target_include_directories(lastwave_audio PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/lastwave
-    "${SOXR_DIR}/src"
-)
-target_link_libraries(lastwave_audio PRIVATE oboe::oboe soxr android log)
-target_link_options(lastwave_audio PRIVATE "-Wl,-z,max-page-size=16384")
-
-# ---------------------------------------------------------------------------
-# archivetune_dsp: 32-bit float DSP chain + AAudio exclusive output. Loaded by
-# FloatDsp.kt; the float path engages only when this library loads.
-# ---------------------------------------------------------------------------
-get_filename_component(ARCHIVETUNE_NATIVE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../native"
-    ABSOLUTE)
 add_library(archivetune_dsp SHARED
-    ${ARCHIVETUNE_NATIVE_DIR}/dsp/float_dsp.cpp
     ${ARCHIVETUNE_NATIVE_DIR}/dsp/aaudio_output.cpp
     jni/dsp_jni.cpp
 )
@@ -144,7 +84,7 @@ target_compile_options(archivetune_dsp PRIVATE -O3 -fvisibility=hidden -fexcepti
 find_library(log-lib-dsp log)
 # AAudio is loaded with dlopen (native/dsp/aaudio_output.cpp) rather than linked:
 # libaaudio.so does not exist below Android 8.0, so a link-time dependency would
-# stop the whole float DSP library from loading on minSdk 24-25 devices.
+# stop the whole library from loading on minSdk 24-25 devices.
 find_library(dl-lib-dsp dl)
 target_link_libraries(archivetune_dsp ${log-lib-dsp} ${dl-lib-dsp})
 target_link_options(archivetune_dsp PRIVATE "-Wl,-z,max-page-size=16384")

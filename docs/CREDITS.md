@@ -81,25 +81,29 @@ media-info glyphs). Each copied file keeps the header comment
 The October 2026 audio-engine ports were compared with the same-named files in the
 candidate upstream (line similarity: 49 of 56 matched at 0.7 or more, 36 of them at
 0.95 or more; 3 between 0.5 and 0.65 and 4 under 0.3, rewritten for this app). Per-file
-lines in those Android sources read `Portions © <author>`.
+lines in those Android sources read `Portions © <author>`. Those engine sources are
+gone as of the 2026-11 unified-DSP pass; the audio a build still ships is the shared
+`:shared-domain` chain in Kotlin.
 
 | Project | Author | Licence | What this repository carries |
 | --- | --- | --- | --- |
-| [tryptz/Tryptify](https://github.com/tryptz/Tryptify) | tryptz | none published | The `tf.monochrome.*` Kotlin layer (31 files): DSP manager, mix bus, parametric/AutoEq, `SpectrumAnalyzerTap`. |
-| [tryptz/tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) | tryptz | GPL-3.0 | The native side under `app/src/main/cpp/tryptify/dsp` (`dsp_engine`, snapins, WSOLA stretch). |
-| [Clash-Projects/LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) | Clash-Projects | GPL-3.0 | `com.lastwave.*` Kotlin (9 files) and `app/src/main/cpp/lastwave`. |
-| [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*`, `di/LastwaveModule.kt`, `EqModels.kt`. |
+| [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*` and `di/LastwaveModule.kt`. |
 | decent-usb-audio-driver | Marcelo Silva | MIT ([retained LICENSE](../audio/decent-usb-audio-driver/LICENSE)) | A previously vendored USB audio module; the unreachable implementation was removed and its licence and attribution are retained. |
-| [SoX Resampler](https://sourceforge.net/projects/soxr/) | soxr authors | LGPL-2.1 (`COPYING.LGPL`) | Vendored at `third_party/soxr` and built into the LastWave engine library. |
+| [Google Oboe](https://github.com/google/oboe) | Google | Apache-2.0 | Pinned at 1.11.0 and still declared in the app build; no native target links it since the LastWave engine went. |
+
+The `com.lastwave.*` and `tf.monochrome.*` Kotlin layers, their `app/src/main/cpp`
+engine trees and the October 2026 audio-engine ports table were removed in the 2026-11
+unified-DSP pass, so those notices went with the code: the vendored libusb 1.0.30
+subset (`third_party/libusb`, LGPL-2.1) with its USB Audio Class driver, the
+Signalsmith `stretch` 1.4.0 / `linear` 0.6.5 headers (`third_party/signalsmith-stretch`,
+MIT) with the pitch-shift stage that loaded them, the SoX Resampler 0.1.3 subset
+(`third_party/soxr`, LGPL-2.1) the LastWave engine resampled with, and the Tryptify
+DSP core (`app/src/main/cpp/tryptify/dsp`, GPL-3.0) with its snapins and WSOLA stretch.
 
 Licence status: `tryptz/Tryptify` had no `LICENSE` file when checked in October 2026.
-Its native code is published separately in `tryptify-audio-core` under GPL-3.0; the 31
-`tf.monochrome.*` Kotlin files appear only in the app repository.
-
-Removed in the 2026-11 DSP dead-code pass, so their notices went with the code: the
-vendored libusb 1.0.30 subset (`third_party/libusb`, LGPL-2.1) with its
-USB Audio Class driver, and the Signalsmith `stretch` 1.4.0 / `linear` 0.6.5 headers
-(`third_party/signalsmith-stretch`, MIT) with the pitch-shift stage that loaded them.
+Its native code was published separately in `tryptify-audio-core` under GPL-3.0; the
+`tf.monochrome.*` Kotlin files appeared only in the app repository. No part of either
+remains in this tree.
 
 Packaged desktop distributions carry their notice texts from
 `desktopApp/packaging/notices/` (the QuickJS notices and the Apache-2.0 licence text); the iOS

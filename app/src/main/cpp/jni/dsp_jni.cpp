@@ -3,10 +3,9 @@
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  *
- * JNI bridges for the 32-bit float DSP and the AAudio exclusive output.
+ * JNI bridges for the AAudio exclusive output.
  *
- * Kotlin hosts:
- *  - moe.rukamori.archivetune.playback.dsp.FloatDsp        (object, static methods)
+ * Kotlin host:
  *  - moe.rukamori.archivetune.playback.dsp.AaudioNativeStream (instance, long handle)
  *
  * Buffer convention: media3 audio processors hand out DIRECT ByteBuffers
@@ -17,52 +16,20 @@
 #include <jni.h>
 
 #include <cstdint>
-#include <cstring>
 #include <ctime>
-#include <memory>
 #include <vector>
 
-#include "dsp/float_dsp.h"
 #include "dsp/aaudio_output.h"
 
-#define JNI_FUNC_FLOATDSP(name) \
-    Java_moe_rukamori_archivetune_playback_dsp_FloatDsp_##name
 #define JNI_FUNC_AASTREAM(name) \
     Java_moe_rukamori_archivetune_playback_dsp_AaudioNativeStream_##name
 
-using archivetune::dsp::FloatDsp;
 using archivetune::dsp::AaudioExclusiveStream;
 
 namespace {
 
-inline FloatDsp* dspOf(jlong handle) {
-    return reinterpret_cast<FloatDsp*>(static_cast<intptr_t>(handle));
-}
-
 inline AaudioExclusiveStream* streamOf(jlong handle) {
     return reinterpret_cast<AaudioExclusiveStream*>(static_cast<intptr_t>(handle));
-}
-
-float* directFloats(JNIEnv* env, jobject buffer, jint samples) {
-    auto* ptr = static_cast<float*>(env->GetDirectBufferAddress(buffer));
-    if (ptr == nullptr) return nullptr;
-    if (env->GetDirectBufferCapacity(buffer) < static_cast<jlong>(samples) * 4) return nullptr;
-    return ptr;
-}
-int16_t* directShorts(JNIEnv* env, jobject buffer, jint samples) {
-    auto* ptr = static_cast<int16_t*>(env->GetDirectBufferAddress(buffer));
-    if (ptr == nullptr) return nullptr;
-    if (env->GetDirectBufferCapacity(buffer) < static_cast<jlong>(samples) * 2) return nullptr;
-    return ptr;
-}
-
-// The input window [offsetBytes, offsetBytes + bytes) of a direct buffer, or
-// null if it does not fit.
-const uint8_t* directWindow(JNIEnv* env, jobject buffer, jint offsetBytes, jlong bytes) {
-    auto* base = static_cast<const uint8_t*>(env->GetDirectBufferAddress(buffer));
-    if (base == nullptr || offsetBytes < 0) return nullptr;
-    if (env->GetDirectBufferCapacity(buffer) < static_cast<jlong>(offsetBytes) + bytes) return nullptr;
-    return base + offsetBytes;
 }
 
 // Bounds frames * channels well inside jint.
@@ -79,108 +46,6 @@ std::vector<float>& scratchFor(size_t samples) {
 }
 
 }  // namespace
-
-// ---------------------------------------------------------------------------
-// FloatDsp (Kotlin object — static natives)
-// ---------------------------------------------------------------------------
-
-extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_FLOATDSP(nativeCreate)(
-    JNIEnv* env, jclass, jint sampleRate, jint channels) {
-    try {
-        return reinterpret_cast<jlong>(new FloatDsp(sampleRate, channels));
-    } catch (...) {
-        return 0;
-    }
-}
-
-extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeRelease)(
-    JNIEnv*, jclass, jlong handle) {
-    delete dspOf(handle);
-}
-
-extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeSetEngaged)(
-    JNIEnv*, jclass, jlong handle, jboolean engaged) {
-    if (FloatDsp* dsp = dspOf(handle)) {
-        dsp->setEngaged(engaged != JNI_FALSE);
-    }
-}
-
-extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeReset)(
-    JNIEnv*, jclass, jlong handle) {
-    if (FloatDsp* dsp = dspOf(handle)) {
-        dsp->reset();
-    }
-}
-
-extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeSetLimiterCeiling)(
-    JNIEnv*, jclass, jlong handle, jfloat ceilingDb) {
-    if (FloatDsp* dsp = dspOf(handle)) {
-        dsp->setLimiterCeilingDb(ceilingDb);
-    }
-}
-
-// 16-bit in (window starts at inOffsetBytes) -> float out. frames*channels
-// samples on both sides.
-extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessShortToFloat)(
-    JNIEnv* env, jclass, jlong handle, jobject in, jint inOffsetBytes, jobject out,
-    jint frames, jint channels) {
-    try {
-        FloatDsp* dsp = dspOf(handle);
-        if (!validShape(frames, channels)) return;
-        const jint samples = frames * channels;
-        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 2);
-        auto* outPtr = directFloats(env, out, samples);
-        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
-        const auto* inPtr = reinterpret_cast<const int16_t*>(inBytes);
-        for (jint i = 0; i < samples; ++i) {
-            outPtr[i] = static_cast<float>(inPtr[i]) / 32768.0f;
-        }
-        dsp->process(outPtr, frames, channels);
-    } catch (...) {
-    }
-}
-
-// float in (window starts at inOffsetBytes) -> float out.
-extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessFloatToFloat)(
-    JNIEnv* env, jclass, jlong handle, jobject in, jint inOffsetBytes, jobject out,
-    jint frames, jint channels) {
-    try {
-        FloatDsp* dsp = dspOf(handle);
-        if (!validShape(frames, channels)) return;
-        const jint samples = frames * channels;
-        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 4);
-        auto* outPtr = directFloats(env, out, samples);
-        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
-        const auto* inPtr = reinterpret_cast<const float*>(inBytes);
-        std::memmove(outPtr, inPtr, static_cast<size_t>(samples) * sizeof(float));
-        dsp->process(outPtr, frames, channels);
-    } catch (...) {
-    }
-}
-
-// 16-bit in (window starts at inOffsetBytes) -> dithered 16-bit out (the
-// default-sink path).
-extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessShortToShort)(
-    JNIEnv* env, jclass, jlong handle, jobject in, jint inOffsetBytes, jobject out,
-    jint frames, jint channels) {
-    try {
-        FloatDsp* dsp = dspOf(handle);
-        if (!validShape(frames, channels)) return;
-        const jint samples = frames * channels;
-        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 2);
-        auto* outPtr = directShorts(env, out, samples);
-        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
-        const auto* inPtr = reinterpret_cast<const int16_t*>(inBytes);
-        // Convert up, process in 32-bit float, dither back down.
-        float* scratch = scratchFor(static_cast<size_t>(samples)).data();
-        for (jint i = 0; i < samples; ++i) {
-            scratch[i] = static_cast<float>(inPtr[i]) / 32768.0f;
-        }
-        dsp->process(scratch, frames, channels);
-        dsp->toShort(scratch, outPtr, static_cast<size_t>(samples));
-    } catch (...) {
-    }
-}
 
 // ---------------------------------------------------------------------------
 // AaudioNativeStream (Kotlin class — instance natives with a long handle)
