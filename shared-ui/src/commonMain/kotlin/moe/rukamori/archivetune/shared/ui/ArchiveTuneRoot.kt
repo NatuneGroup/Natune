@@ -94,6 +94,11 @@ fun ArchiveTuneRoot(
     systemDark: Boolean = isSystemInDarkTheme(),
     /** The host's measured safe area; reserved once inside the theme so its own background paints the strips. */
     safeArea: SafeAreaPadding = SafeAreaPadding.None,
+    /**
+     * Desktop opts in: that window has no system back gesture, so the root takes key focus to receive its keymap.
+     * Android and iOS leave it off and keep their platform back.
+     */
+    rootKeyFocus: Boolean = false,
 ) {
     key(host) {
         // A null local means this host has no edit store; leave repository-supplied effective rows intact.
@@ -139,7 +144,9 @@ fun ArchiveTuneRoot(
                 moe.rukamori.archivetune.shared.ui.menu.LocalPlaylistPickerContext provides pickerContext,
                 moe.rukamori.archivetune.shared.ui.screens.LocalCustomArtworkOverrides provides artworkOverrides,
             ) {
-                ArchiveTuneLoadedRoot(host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea)
+                ArchiveTuneLoadedRoot(
+                    host, preferences, visible, resumed, opticalCapabilities, television, systemDark, safeArea, rootKeyFocus,
+                )
             }
         }
     }
@@ -155,6 +162,7 @@ private fun ArchiveTuneLoadedRoot(
     television: Boolean,
     systemDark: Boolean,
     safeArea: SafeAreaPadding,
+    rootKeyFocus: Boolean,
 ) {
         val navigation = rememberShellNavigation(preferences)
         val unreadNews by host.unreadNews.collectAsState(false)
@@ -270,7 +278,9 @@ private fun ArchiveTuneLoadedRoot(
                 // The background is drawn before the safe-area padding, so the strips keep the app's own colour; the
                 // padding is physical and consumes the bar insets, so no screen below reserves them a second time.
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-                    .safeAreaPadding(safeArea).onKeyEvent { event ->
+                    .safeAreaPadding(safeArea)
+                    .rootKeyTarget(rootKeyFocus, navigation.route)
+                    .onKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                     val action = keymapActionOf(event.key,
                         ctrlOrMeta = event.isCtrlPressed || event.isMetaPressed,
