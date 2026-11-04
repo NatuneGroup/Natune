@@ -28,7 +28,7 @@ import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
  * describe another equalizer; the first edit writes this layout.
  */
 class DspSettingsOwner(
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     private val store: SettingsStore,
     private val onApplied: (DspSettings) -> Unit,
     private val onSaveFailure: (Exception) -> Unit = {},
