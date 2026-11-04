@@ -5,6 +5,8 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SilenceSkippingAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import moe.rukamori.archivetune.shared.domain.dsp.DspFormat
+import moe.rukamori.archivetune.shared.domain.dsp.DspGraph
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
@@ -198,8 +200,74 @@ class UnifiedDspAudioProcessorTest {
         assertEquals(CHANNELS, output.channelCount)
     }
 
+    /**
+     * Media3 configures the next stream while the previous one is still draining and commits the format at
+     * flush. The queued tail of the old stream must keep the encoding and stride it was configured with.
+     */
+    @Test
+    fun `a block queued for the draining stream keeps its encoding`() {
+        val processor = processor()
+        processor.submit(DspSettings(), plan())
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        val first = shortArrayOf(8192, -8192, 4096, -4096)
+        processor.queueInput(shortBuffer(first))
+        assertArrayEquals(first, readShorts(processor.getOutput()))
+
+        processor.configure(AudioProcessor.AudioFormat(SECOND_SAMPLE_RATE, 1, C.ENCODING_PCM_FLOAT))
+
+        val tail = shortArrayOf(2048, -2048)
+        processor.queueInput(shortBuffer(tail))
+        assertArrayEquals(tail, readShorts(processor.getOutput()))
+
+        processor.flush()
+        val floats = floatArrayOf(0.25f, -0.25f, 0.5f, -0.5f)
+        processor.queueInput(floatBuffer(floats))
+        assertArrayEquals(floats.map(::pcm16).toShortArray(), readShorts(processor.getOutput()))
+    }
+
+    @Test
+    fun `a configure for the next stream keeps the old stream's held frames`() {
+        val processor = processor()
+        processor.submit(DspSettings(speed = 2.0), plan(tempoPitch = true))
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        processor.queueInput(shortBuffer(ShortArray(4_096 * CHANNELS) { index -> (((index % 64) - 32) * 256).toShort() }))
+        readShorts(processor.getOutput())
+
+        processor.configure(AudioProcessor.AudioFormat(SECOND_SAMPLE_RATE, CHANNELS, C.ENCODING_PCM_16BIT))
+        processor.queueEndOfStream()
+
+        assertTrue("the draining stream's stretch tail survives the next configure", readShorts(processor.getOutput()).isNotEmpty())
+    }
+
+    @Test
+    fun `flush adopts the staged format for the next stream`() {
+        val formats = mutableListOf<DspFormat>()
+        val processor =
+            UnifiedDspAudioProcessor(
+                newGraph = { format ->
+                    formats += format
+                    DspGraph(format.sampleRateHz, format.channelCount)
+                },
+                bypassGate = { false },
+            )
+        processor.submit(DspSettings(), plan())
+
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        assertEquals(listOf(DspFormat(SAMPLE_RATE, CHANNELS)), formats)
+
+        processor.configure(AudioProcessor.AudioFormat(SECOND_SAMPLE_RATE, 1, C.ENCODING_PCM_16BIT))
+        assertEquals("the staged format must not touch the running graph", listOf(DspFormat(SAMPLE_RATE, CHANNELS)), formats)
+
+        processor.flush()
+        assertEquals(
+            listOf(DspFormat(SAMPLE_RATE, CHANNELS), DspFormat(SECOND_SAMPLE_RATE, 1)),
+            formats,
+        )
+    }
+
     private companion object {
         const val SAMPLE_RATE = 48_000
+        const val SECOND_SAMPLE_RATE = 44_100
         const val CHANNELS = 2
         const val FLOAT_BYTES = 4
         const val SHORT_BYTES = 2

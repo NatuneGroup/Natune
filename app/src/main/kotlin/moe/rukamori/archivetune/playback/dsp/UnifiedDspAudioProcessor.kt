@@ -196,15 +196,21 @@ class UnifiedDspAudioProcessor(
 
     /** Starts the staged stream on the graph, dropping whatever the previous stream left behind. */
     private fun adopt(next: Pending) {
-        // Configure allocates, and Media3 calls it off the audio thread; a changed rate also drops every
-        // stage's history, which is what a new stream format needs.
-        val graph = graph ?: newGraph(next.format).also { graph = it }
-        graph.configure(next.format)
-        applyRequest(graph, next.request, next.gated)
-        graph.reset()
-        format = next.format
+        val target = next.format
+        val existing = graph
+        // A new format needs every stage rebuilt, which is what a fresh graph does; the same format keeps
+        // the running graph so a flush clears its history instead of throwing its stages away.
+        val nextGraph =
+            if (existing != null && format == target) {
+                existing
+            } else {
+                newGraph(target).also { graph = it }
+            }
+        applyRequest(nextGraph, next.request, next.gated)
+        nextGraph.reset()
+        format = target
         floatInput = next.floatInput
-        isEngaged = !graph.isBypassed
+        isEngaged = !nextGraph.isBypassed
         EngineRuntime.publishDspActive(isEngaged)
     }
 
