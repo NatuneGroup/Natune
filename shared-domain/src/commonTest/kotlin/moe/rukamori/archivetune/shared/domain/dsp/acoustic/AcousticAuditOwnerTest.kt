@@ -6,7 +6,6 @@ import kotlin.test.assertNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
@@ -97,11 +96,11 @@ class AcousticAuditOwnerTest {
             decodes++
             decoded()
         }
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(AcousticAuditStatus.IDLE, owner.state.value.status)
         assertEquals(0, decodes)
         owner.start(target)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(AcousticAuditStatus.COMPLETE, owner.state.value.status)
         assertEquals(1, decodes)
         assertEquals("TEST", owner.state.value.result?.sourceLabel)
@@ -117,7 +116,7 @@ class AcousticAuditOwnerTest {
             decoded()
         }
         owner.start(target)
-        advanceUntilIdle()
+        runCurrent()
         // A blocking probe reports its decode fraction, so the surface shows decoding rather than a
         // frozen resolving state for the whole read.
         assertEquals(AcousticAuditStatus.DECODING, observed.single().status)
@@ -129,7 +128,7 @@ class AcousticAuditOwnerTest {
     fun aRefusedSourceVerdictReplacesTheFinishedResult() = runTest {
         val owner = ownerOf(backgroundScope, verifySource = { "source_changed" }) { _, _ -> decoded() }
         owner.start(target)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(AcousticAuditStatus.UNAVAILABLE, owner.state.value.status)
         assertEquals("source_changed", owner.state.value.message)
         assertNull(owner.state.value.result)
@@ -140,7 +139,7 @@ class AcousticAuditOwnerTest {
         var verified = 0
         val owner = ownerOf(backgroundScope, verifySource = { verified++; null }) { _, _ -> decoded() }
         owner.start(target)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(1, verified)
         assertEquals(AcousticAuditStatus.COMPLETE, owner.state.value.status)
         assertEquals("media-B", owner.state.value.result?.mediaId)
@@ -150,7 +149,7 @@ class AcousticAuditOwnerTest {
     fun aTargetWithoutARequestKeyNeverBindsAResult() = runTest {
         val owner = ownerOf(backgroundScope) { _, _ -> decoded() }
         owner.start(AcousticAuditTarget("media-B", "Selected"))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(AcousticAuditStatus.UNAVAILABLE, owner.state.value.status)
         assertEquals("current_source_unavailable", owner.state.value.message)
         assertNull(owner.state.value.result)
@@ -162,7 +161,7 @@ class AcousticAuditOwnerTest {
             decoded(requestKey = "media-C#4", occurrenceKey = "media-C")
         }
         owner.start(target)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(AcousticAuditStatus.UNAVAILABLE, owner.state.value.status)
         assertEquals("current_source_unavailable", owner.state.value.message)
         assertNull(owner.state.value.result)
@@ -172,10 +171,10 @@ class AcousticAuditOwnerTest {
     fun cancelDropsTheFinishedResultAndPublishesCancelled() = runTest {
         val owner = ownerOf(backgroundScope) { _, _ -> decoded() }
         owner.start(target)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(AcousticAuditStatus.COMPLETE, owner.state.value.status)
         owner.cancel()
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(AcousticAuditStatus.CANCELLED, owner.state.value.status)
         assertNull(owner.state.value.result)
     }
@@ -198,7 +197,7 @@ class AcousticAuditOwnerTest {
         owner.start(target)
         runCurrent()
         gate.complete(Unit)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(AcousticAuditStatus.COMPLETE, owner.state.value.status)
         assertEquals("CURRENT", owner.state.value.result?.sourceLabel)
     }
