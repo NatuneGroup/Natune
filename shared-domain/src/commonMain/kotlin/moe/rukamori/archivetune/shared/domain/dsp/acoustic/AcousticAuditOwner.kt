@@ -17,16 +17,44 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
+
+/**
+ * One run's handle for the host probe: the liveness gate a blocking decode loop calls at every step, and
+ * the decode-progress sink. [check] throws CancellationException once the run is cancelled and
+ * AcousticUnavailable("deadline_exceeded") once its deadline has passed, so a read that never suspends is
+ * still cancellable and still bounded — awaiting a blocking read cannot be interrupted by coroutine
+ * cancellation alone.
+ */
+class AcousticRun internal constructor(
+    private val isActive: () -> Boolean,
+    private val deadlineExceeded: () -> Boolean,
+    private val report: (Float) -> Unit,
+) {
+    /** Throws when the run may not continue: cancellation first, then the run's deadline. */
+    fun check() {
+        if (!isActive()) throw CancellationException()
+        if (deadlineExceeded()) throw AcousticUnavailable("deadline_exceeded")
+    }
+
+    /** Publishes the decode fraction in [0, 1]; a tick a newer run superseded never lands. */
+    fun progress(fraction: Float) {
+        report(fraction.coerceIn(0f, 1f))
+    }
+}
 
 /**
  * The acoustic audit state machine, shared by every host. A run decodes a bounded PCM window through the
- * host's probe — [decode] receives the target and a liveness check, and returns an [AcousticWindow] —
- * then analyzes it and publishes the result. Publishing is generation-gated, so a cancelled or superseded
- * run never overwrites newer state, and a completed result stays visible until the next start.
+ * host's probe — [decode] receives the target and the run's [AcousticRun], and returns an
+ * [AcousticWindow] — then analyzes it and publishes the result. Publishing is generation-gated, so a
+ * cancelled or superseded run never overwrites newer state, and a completed result stays visible until
+ * the next start.
  *
  * The owner never touches playback: the probe captures the source the target maps to at run start, so a
- * mid-decode track change cannot corrupt the result. [setActive] false and [closeDialog] both cancel a run
- * in flight, the same way leaving the settings page does on Android.
+ * mid-decode track change cannot corrupt the result, and [verifySource] re-checks that identity after the
+ * analysis before anything publishes. [setActive] false and [closeDialog] both cancel a run in flight, the
+ * same way leaving the settings page does on Android.
  *
  * [start] and [cancel] only enqueue; ONE consumer coroutine drains [commands] in FIFO order, so a
  * Run-then-dismiss sequence always executes as start-then-cancel, never the reverse — the host scope is
@@ -35,8 +63,24 @@ import kotlinx.coroutines.withTimeout
  */
 class AcousticAuditOwner(
     private val scope: CoroutineScope,
-    private val decode: suspend (target: AcousticAuditTarget, checkActive: () -> Unit) -> AcousticWindow,
+    /**
+     * Host re-check of the decoded source's live identity, run after the window is analyzed and before
+     * its result publishes. A returned code refuses the result as UNAVAILABLE, so a host whose source can
+     * be re-resolved mid-run rejects the finding instead of binding it to a retired rendition. Null for
+     * hosts that bind by request key alone.
+     */
+    private val verifySource: (suspend (AcousticWindow.Decoded) -> String?)?,
+    private val decode: suspend (target: AcousticAuditTarget, run: AcousticRun) -> AcousticWindow,
 ) {
+    /**
+     * A probe that needs only liveness: it reads through [AcousticRun.check] and reports no decode
+     * progress or post-analysis source verdict.
+     */
+    constructor(
+        scope: CoroutineScope,
+        decode: suspend (target: AcousticAuditTarget, checkActive: () -> Unit) -> AcousticWindow,
+    ) : this(scope, null, { target, run -> decode(target, run::check) })
+
     /** The commands the consumer drains in call order. */
     private sealed interface Command {
         class Start(val target: AcousticAuditTarget) : Command
@@ -151,11 +195,22 @@ class AcousticAuditOwner(
         // The launched job is the liveness token the non-suspend check shares: Job.isActive is atomic,
         // so the check stays true without touching locked state from an arbitrary thread.
         val self = currentCoroutineContext().job
+        val started = TimeSource.Monotonic.markNow()
+        val deadline = AcousticAuditLimits.DEADLINE_MS.milliseconds
         fun checkActive() {
             if (!self.isActive) throw CancellationException()
         }
+        // A probe that blocks without suspending cannot be interrupted by job cancellation alone; the run
+        // carries the same two limits to every step of its read loop, and its progress goes out as DECODING.
+        val run = AcousticRun(
+            isActive = { self.isActive },
+            deadlineExceeded = { started.elapsedNow() >= deadline },
+            report = { fraction ->
+                publishNow(token, AcousticAuditState(AcousticAuditStatus.DECODING, fraction))
+            },
+        )
         try {
-            val window = withTimeout(AcousticAuditLimits.DEADLINE_MS) { decode(target, ::checkActive) }
+            val window = withTimeout(deadline) { decode(target, run) }
             when (window) {
                 is AcousticWindow.Refused ->
                     publish(token, AcousticAuditState(AcousticAuditStatus.UNAVAILABLE, message = window.code))
@@ -178,6 +233,15 @@ class AcousticAuditOwner(
                     ) { progress ->
                         publishNow(token, AcousticAuditState(AcousticAuditStatus.ANALYZING, progress))
                     }
+                    // The analysis read the source the probe captured; a host whose source identity can
+                    // move while the FFT runs refuses the finding rather than binding it to what is no
+                    // longer loaded.
+                    verifySource?.invoke(window)?.let { refusal ->
+                        publish(token, AcousticAuditState(AcousticAuditStatus.UNAVAILABLE, message = refusal))
+                        return
+                    }
+                    // A cancel that landed during the analysis still wins over the finished result.
+                    checkActive()
                     publish(
                         token,
                         AcousticAuditState(
