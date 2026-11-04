@@ -1,18 +1,56 @@
 package moe.rukamori.archivetune.shared.domain.dsp.eq
 
-/** Shape of one equalizer band. Shelves tilt everything below or above their corner frequency. */
+/**
+ * Shape of one equalizer band. Shelves tilt everything below or above their corner frequency.
+ *
+ * The high-pass shape is deliberately absent: the user equalizer stays with the three shapes every host can
+ * present, and the clarity preset carries its own fixed contour.
+ */
 enum class EqualizerBandType { PEAKING, LOW_SHELF, HIGH_SHELF }
 
+/**
+ * One equalizer band. [rightFrequencyHz], [rightGainDb] and [rightQ] override the design for the right
+ * channel of each stereo pair, which is how a host corrects drivers that do not match; a band without them
+ * filters both channels identically.
+ */
 data class EqualizerBand(
     val type: EqualizerBandType,
     val frequencyHz: Double,
     val gainDb: Double,
     val q: Double = 1.0,
+    val rightFrequencyHz: Double? = null,
+    val rightGainDb: Double? = null,
+    val rightQ: Double? = null,
 ) {
     init {
         require(frequencyHz.isFinite() && frequencyHz > 0.0) { "frequency must be a positive number" }
         require(gainDb.isFinite() && gainDb in -MAX_GAIN_DB..MAX_GAIN_DB) { "gain must be within ±$MAX_GAIN_DB dB" }
         require(q.isFinite() && q > 0.0) { "q must be positive" }
+        require(rightFrequencyHz == null || (rightFrequencyHz.isFinite() && rightFrequencyHz > 0.0)) {
+            "rightFrequencyHz must be a positive number"
+        }
+        require(rightGainDb == null || (rightGainDb.isFinite() && rightGainDb in -MAX_GAIN_DB..MAX_GAIN_DB)) {
+            "rightGainDb must be within ±$MAX_GAIN_DB dB"
+        }
+        require(rightQ == null || (rightQ.isFinite() && rightQ > 0.0)) { "rightQ must be positive" }
+    }
+
+    /** True when the right channel needs its own design. */
+    val hasRightOverride: Boolean
+        get() = rightGainDb != null || rightFrequencyHz != null || rightQ != null
+
+    /** The right channel's band, or null when both channels share this one. */
+    fun rightBand(): EqualizerBand? = if (!hasRightOverride) {
+        null
+    } else {
+        copy(
+            frequencyHz = rightFrequencyHz ?: frequencyHz,
+            gainDb = rightGainDb ?: gainDb,
+            q = rightQ ?: q,
+            rightFrequencyHz = null,
+            rightGainDb = null,
+            rightQ = null,
+        )
     }
 
     companion object {
@@ -24,41 +62,136 @@ data class EqualizerBand(
  * Cascade of biquad bands, one stage per band. A band at 0 dB keeps its stage: its design is the identity,
  * so dragging a band through 0 dB retunes that stage in place instead of resetting the others. [process]
  * returns without touching the samples while every band is at 0 dB, which keeps a flat equalizer bit-exact.
+ *
+ * A retune can glide. With a glide of N frames the band gains walk from their old value to the new one over
+ * N frames of *processing*, one small gain step per [glideChunkFrames] samples, so a slider drag or a preset
+ * change never lands as a single coefficient jump. An immediate retune (a glide of zero) is what the legacy
+ * portable chain asks for; [moe.rukamori.archivetune.shared.domain.dsp.DspGraph] glides by default.
  */
-class PortableEqualizer(private val sampleRateHz: Int, private val channels: Int) {
+class PortableEqualizer(
+    private val sampleRateHz: Int,
+    private val channels: Int,
+    private val glideChunkFrames: Int = DEFAULT_GLIDE_CHUNK_FRAMES,
+) {
     private val stages = ArrayList<BiquadFilter>()
-    private var audibleBands: List<EqualizerBand> = emptyList()
+    private var bands: List<EqualizerBand> = emptyList()
+    private var targetGainsDb = DoubleArray(0)
+    private var currentGainsDb = DoubleArray(0)
+    private var appliedGainsDb = DoubleArray(0) { Double.NaN }
+    private var glideRemainingFrames = 0
+
+    init {
+        require(channels > 0) { "channels must be positive" }
+        require(glideChunkFrames > 0) { "glideChunkFrames must be positive" }
+    }
 
     val isEngaged: Boolean
-        get() = audibleBands.isNotEmpty()
+        get() {
+            if (glideRemainingFrames > 0) return true
+            for (index in currentGainsDb.indices) {
+                if (currentGainsDb[index] != 0.0 || targetGainsDb[index] != 0.0) return true
+            }
+            return false
+        }
+
+    /** True while a retune is still walking towards its target gains. */
+    val isGliding: Boolean
+        get() = glideRemainingFrames > 0
 
     /**
-     * Replaces the bands. When the band count is unchanged the existing stages keep their history and only
-     * retune, so a slider drag does not click, including a drag that crosses 0 dB. A different count starts
-     * every stage from silence.
+     * Replaces the bands. When the band count is unchanged the existing stages keep their history, so a
+     * slider drag does not click, including a drag that crosses 0 dB. A different count starts every stage
+     * from silence, because the bands no longer correspond to the same stages.
      */
-    fun setBands(bands: List<EqualizerBand>) {
-        if (bands.size != stages.size) {
+    fun setBands(bands: List<EqualizerBand>, glideFrames: Int = 0) {
+        require(glideFrames >= 0) { "glideFrames must not be negative" }
+        if (bands == this.bands) return
+        val countChanged = bands.size != this.bands.size
+        this.bands = bands
+        if (countChanged) {
             stages.clear()
             repeat(bands.size) { stages.add(BiquadFilter(channels)) }
+            targetGainsDb = DoubleArray(bands.size)
+            currentGainsDb = DoubleArray(bands.size)
+            appliedGainsDb = DoubleArray(bands.size) { Double.NaN }
         }
-        bands.forEachIndexed { index, band -> stages[index].setCoefficients(design(band)) }
-        audibleBands = bands.filter { it.gainDb != 0.0 }
+        bands.forEachIndexed { index, band -> targetGainsDb[index] = band.gainDb }
+        if (glideFrames == 0 || countChanged) {
+            currentGainsDb = targetGainsDb.copyOf()
+            glideRemainingFrames = 0
+        } else {
+            glideRemainingFrames = glideFrames
+        }
+        retune()
     }
 
     fun process(samples: FloatArray, frames: Int) {
+        require(frames >= 0 && samples.size >= frames * channels) { "samples hold fewer than $frames frames" }
         if (!isEngaged) return
-        for (stage in stages) stage.process(samples, frames)
+        var remaining = frames
+        var startFrame = 0
+        while (remaining > 0) {
+            val chunk = minOf(remaining, glideChunkFrames)
+            advanceGlide(chunk)
+            retune()
+            for (stage in stages) stage.process(samples, chunk, startFrame)
+            startFrame += chunk
+            remaining -= chunk
+        }
     }
 
     fun reset() {
         stages.forEach { it.reset() }
+        currentGainsDb = targetGainsDb.copyOf()
+        appliedGainsDb = DoubleArray(targetGainsDb.size) { Double.NaN }
+        glideRemainingFrames = 0
+        retune()
     }
 
-    private fun design(band: EqualizerBand): BiquadCoefficients =
-        when (band.type) {
-            EqualizerBandType.PEAKING -> BiquadDesign.peaking(sampleRateHz, band.frequencyHz, band.gainDb, band.q)
-            EqualizerBandType.LOW_SHELF -> BiquadDesign.lowShelf(sampleRateHz, band.frequencyHz, band.gainDb, band.q)
-            EqualizerBandType.HIGH_SHELF -> BiquadDesign.highShelf(sampleRateHz, band.frequencyHz, band.gainDb, band.q)
+    private fun advanceGlide(chunk: Int) {
+        if (glideRemainingFrames <= 0) return
+        val fraction = minOf(1.0, chunk.toDouble() / glideRemainingFrames)
+        for (index in currentGainsDb.indices) {
+            currentGainsDb[index] += (targetGainsDb[index] - currentGainsDb[index]) * fraction
         }
+        glideRemainingFrames -= chunk
+        if (glideRemainingFrames <= 0) {
+            glideRemainingFrames = 0
+            currentGainsDb = targetGainsDb.copyOf()
+        }
+    }
+
+    private fun retune() {
+        for (index in stages.indices) {
+            val gain = currentGainsDb[index]
+            if (appliedGainsDb[index] == gain) continue
+            appliedGainsDb[index] = gain
+            val band = bands[index]
+            stages[index].setCoefficients(
+                next = design(band.type, band.frequencyHz, gain, band.q),
+                rightChannel = rightCoefficients(band),
+            )
+        }
+    }
+
+    private fun rightCoefficients(band: EqualizerBand): BiquadCoefficients? {
+        val right = band.rightBand() ?: return null
+        return design(right.type, right.frequencyHz, right.gainDb, right.q)
+    }
+
+    private fun design(
+        type: EqualizerBandType,
+        frequencyHz: Double,
+        gainDb: Double,
+        q: Double,
+    ): BiquadCoefficients = when (type) {
+        EqualizerBandType.PEAKING -> BiquadDesign.peaking(sampleRateHz, frequencyHz, gainDb, q)
+        EqualizerBandType.LOW_SHELF -> BiquadDesign.lowShelf(sampleRateHz, frequencyHz, gainDb, q)
+        EqualizerBandType.HIGH_SHELF -> BiquadDesign.highShelf(sampleRateHz, frequencyHz, gainDb, q)
+    }
+
+    companion object {
+        /** The chunk a glide steps on: about 1.3 ms at 48 kHz, short enough to be inaudible, long enough to be cheap. */
+        const val DEFAULT_GLIDE_CHUNK_FRAMES = 64
+    }
 }
