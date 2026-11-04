@@ -13,8 +13,8 @@ class SettingsConflictReasonsTest {
             preferences: androidx.datastore.preferences.core.Preferences, active: Boolean = false, blur: Boolean = true) =
             settingsSwitchDisabledReason(key, preferences, active, blur)
         val bitPerfect = mutablePreferencesOf(BitPerfectUsbOutputKey to true)
-        listOf(SkipSilenceKey, AudioNormalizationKey, TryptifyAudioProcessingKey, LastwaveAudioProcessingKey,
-            FloatDspEnabledKey, RejectSuspectedUpscaledAudioKey).forEach { key ->
+        listOf(SkipSilenceKey, AudioNormalizationKey, AudioProcessingEnabledKey,
+            RejectSuspectedUpscaledAudioKey).forEach { key ->
             assertEquals(R.string.settings_processing_bypassed_bit_perfect, reason(key, bitPerfect))
             assertEquals(R.string.settings_processing_bypassed_bit_perfect, reason(key, emptyPreferences(), active = true))
         }

@@ -42,30 +42,32 @@ class PlaybackConflictsTest {
         assertEquals(false, editor[AudioOffload])
     }
 
-    @Test fun liveDspAndSilenceActionsCannotBypassTheBitPerfectSelection() {
+    @Test fun liveProcessingAndSilenceActionsCannotBypassTheBitPerfectSelection() {
         val editor = PreferenceSnapshot.of(BitPerfectUsbOutputKey to true).toEditor()
         val before = editor.snapshot()
-        audioProcessingPreferenceKeys.forEach { editor.setAudioProcessingPreference(it, true) }
+        audioProcessingPreferenceKeys.forEach { editor.setAudioProcessingPreference(true) }
         editor.setPcmProcessingPreference(SkipSilenceKey, true)
         editor.setPcmProcessingPreference(AudioNormalizationKey, true)
         assertTrue(SettingsChange(before, editor.snapshot()).changedKeys.isEmpty())
         editor.setPlaybackOutputPreference(CrossfadeEnabledKey, true)
-        editor.setAudioProcessingPreference(TryptifyAudioProcessingKey, true)
-        assertEquals(true, editor[TryptifyAudioProcessingKey])
+        editor.setAudioProcessingPreference(true)
+        assertEquals(true, editor[AudioProcessingEnabledKey])
     }
 
-    @Test fun dspEngineSelectionAndOffloadExclusionsKeepTheOtherDspPresets() {
+    @Test fun processingExcludesOffloadAndLeavesTheRetiredPresetFormatsReadable() {
         val preset = StringPreferenceKey("retained_dsp_preset_fixture")
-        val editor = PreferenceSnapshot.of(AudioOffload to true, LastwaveAudioProcessingKey to true,
-            FloatDspEnabledKey to true, preset to "saved-preset").toEditor()
-        editor.setAudioProcessingPreference(TryptifyAudioProcessingKey, true)
-        assertEquals(false, editor[LastwaveAudioProcessingKey])
+        // The three retired switches are preset-format input now, so a processing edit must not touch them.
+        val editor = PreferenceSnapshot.of(AudioOffload to true, TryptifyAudioProcessingKey to true,
+            LastwaveAudioProcessingKey to true, FloatDspEnabledKey to true, preset to "saved-preset").toEditor()
+        editor.setAudioProcessingPreference(true)
+        assertEquals(true, editor[AudioProcessingEnabledKey])
         assertEquals(false, editor[AudioOffload])
+        assertEquals(true, editor[TryptifyAudioProcessingKey])
+        assertEquals(true, editor[LastwaveAudioProcessingKey])
         assertEquals(true, editor[FloatDspEnabledKey])
-        editor.setAudioProcessingPreference(LastwaveAudioProcessingKey, true)
-        assertEquals(false, editor[TryptifyAudioProcessingKey])
         editor.setPlaybackOutputPreference(AudioOffload, true)
         audioProcessingPreferenceKeys.forEach { assertEquals(false, editor[it]) }
+        assertEquals(true, editor[TryptifyAudioProcessingKey])
         assertEquals("saved-preset", editor[preset])
     }
 

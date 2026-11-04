@@ -113,6 +113,10 @@ fun playbackSettingsRows(
         description = Res.string.m6_usb_exclusions,
         enabled = usbExclusiveSupported, read = { usbExclusiveSupported && it[UsbExclusiveAudioKey, false] },
         write = { setPlaybackOutputPreference(UsbExclusiveAudioKey, it) }))
+    // The chain's one switch. It stays enabled while offload is on because turning it on turns offload off.
+    add(SettingsRow.Toggle("audio_processing", Res.string.m6_audio_processing, AudioProcessingEnabledKey, true,
+        description = bypassReason ?: Res.string.m6_audio_processing_desc, enabled = !blocked,
+        write = { setAudioProcessingPreference(it) }))
 
     add(SettingsRow.Toggle("seek_seconds_addup", Res.string.m6_seek_extra, SeekExtraSeconds, false))
     if (deviceMuteSupported) {

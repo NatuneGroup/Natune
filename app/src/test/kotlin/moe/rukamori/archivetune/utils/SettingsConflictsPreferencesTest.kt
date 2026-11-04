@@ -21,11 +21,12 @@ class SettingsConflictsPreferencesTest {
         assertEquals(1, store.transactions)
         assertEquals(false, random.after[DynamicThemeKey])
         assertEquals(true, random.after[RandomThemeOnStartupKey])
-        val dsp = store.snapshot().editAndAwait { setConflictAwareBoolean(TryptifyAudioProcessingKey, true) }
+        val dsp = store.snapshot().editAndAwait { setConflictAwareBoolean(AudioProcessingEnabledKey, true) }
         assertEquals(2, store.transactions)
         assertEquals(false, dsp.after[AudioOffload])
-        assertEquals(false, dsp.after[LastwaveAudioProcessingKey])
-        assertEquals(true, dsp.after[TryptifyAudioProcessingKey])
+        assertEquals(true, dsp.after[AudioProcessingEnabledKey])
+        // The retired engine keys are preset-format input, so this edit must not rewrite them.
+        assertEquals(true, dsp.after[LastwaveAudioProcessingKey])
         assertEquals(setOf("preserved"), dsp.after[extra])
     }
 
@@ -52,11 +53,13 @@ class SettingsConflictsPreferencesTest {
         assertEquals(false, migrated[RandomThemeOnStartupKey])
         assertEquals(false, migrated[AudioOffload])
         assertEquals(migrated.asMap(), migrated.editSharedPreferences { normalizeSettingsConflicts() }.asMap())
-        val ordinary = mutablePreferencesOf(AudioOffload to true)
+        // A stored offload choice from before the switch existed keeps working: normalization stores it off.
+        val ordinary = mutablePreferencesOf(AudioOffload to true).editSharedPreferences { normalizeSettingsConflicts() }
+        assertEquals(false, ordinary[AudioProcessingEnabledKey])
         assertTrue(ordinary.effectiveAudioOffloadEnabled(false))
         assertFalse(ordinary.effectiveAudioOffloadEnabled(true))
-        listOf(TryptifyAudioProcessingKey, LastwaveAudioProcessingKey, FloatDspEnabledKey,
-            CrossfadeEnabledKey, AutomixEnabledKey, BitPerfectUsbOutputKey, UsbExclusiveAudioKey).forEach { key ->
+        listOf(AudioProcessingEnabledKey, CrossfadeEnabledKey, AutomixEnabledKey,
+            BitPerfectUsbOutputKey, UsbExclusiveAudioKey).forEach { key ->
             val blocked = ordinary.toMutablePreferences().apply { this[key] = true }
             assertFalse(key.name, blocked.effectiveAudioOffloadEnabled(false))
         }
