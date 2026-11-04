@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -167,10 +166,10 @@ private fun DrawScope.drawRefinedLine(
         if (word.wrapsLines || position < word.startMs || drop[i] <= 0f) continue
         if (i == index && word.letters != null) continue
         liftBoxes += word
-        liftHoles += wordHole(word, shaped.bands, liftMaxPx)
+        liftHoles += lyricsWordHole(word, shaped.bands, liftMaxPx)
         liftOffsets += drop[i]
     }
-    val hole = if (box != null && box.letters != null) wordHole(box, shaped.bands, liftMaxPx) else null
+    val hole = if (box != null && box.letters != null) lyricsWordHole(box, shaped.bands, liftMaxPx) else null
     val holes = if (hole != null) liftHoles + hole else liftHoles
 
     // The words not yet started sit one sink low. They are the tail of each visual band in sung
@@ -220,26 +219,11 @@ private fun DrawScope.drawRefinedLine(
         // the rest of the row instead of snapping up as it starts.
         withTransform({ translate(top = drop[index]) }) {
             drawEmphasizedWord(
-                layout, box, hole, wordSeat(box, shaped.bands), sweepEdge(box, position, rtl, minSweepMs), rtl,
+                layout, box, hole, lyricsWordSeat(box, shaped.bands), sweepEdge(box, position, rtl, minSweepMs), rtl,
                 position, palette, shaped.bands.overshootPx, shaped.letterRuns.getOrNull(index),
             )
         }
     }
-}
-
-/** The band box of one word: the seat its glyphs sit in on their own baseline. */
-private fun wordSeat(word: LyricsWordBox, bands: LyricsLineBands): Rect =
-    Rect(word.leftPx, bands.tops[word.line], word.rightPx, bands.bottoms[word.line])
-
-/**
- * Where the plain passes leave one word out while it draws in its own window: its [wordSeat] grown by
- * the glyph overshoot above and below, so accents and descenders move with the word instead of being
- * cut at the band or drawn a second time at the seat, and dipped [dipPx] further for the word's
- * lowered ink, so no low sliver survives under a rising word or an emphasized word's letters.
- */
-private fun wordHole(word: LyricsWordBox, bands: LyricsLineBands, dipPx: Float): Rect {
-    val seat = wordSeat(word, bands)
-    return Rect(seat.left, seat.top - bands.overshootPx, seat.right, seat.bottom + bands.overshootPx + dipPx)
 }
 
 /**
@@ -421,11 +405,15 @@ private fun DrawScope.drawEmphasizedWord(
         val centreX = (left + right) / 2f
         val centreY = (seat.top + seat.bottom) / 2f
         if (bump > 0f) {
-            drawRoundRect(
-                color = palette.glow.copy(alpha = palette.glow.alpha * GLOW_ALPHA * bump),
-                topLeft = Offset(left - vPad * 0.3f, seat.top - lift - 2f),
-                size = Size(right - left + vPad * 0.6f, seat.height + 4f),
-                cornerRadius = CornerRadius(GLOW_CORNER_DP.dp.toPx()),
+            // The bloom rides the letter's own ink — a slightly larger copy of the glyph under it —
+            // so a held letter lights up as a letter and never as a box drawn behind it.
+            drawGlyphGlow(
+                layout = letter,
+                ink = Rect(left, seat.top - lift, right, seat.bottom - lift),
+                inkTopLeft = Offset(left, seat.top - lift),
+                color = palette.glow,
+                alpha = GLOW_ALPHA * bump,
+                scale = GLYPH_GLOW_SCALE * scale,
             )
         }
         val window = Rect(left - vPad, seat.top - lift - vPad, right + vPad, seat.bottom + vPad)
@@ -483,9 +471,9 @@ private fun DrawScope.outsideOf(hole: Rect): Path {
 }
 
 /**
- * The bloom behind the word being sung. It is drawn with a colour alpha, not a layer alpha, so the text keeps its
- * own opacity while the glow rises and falls. The refined sweep scales it by how long the word is held, so quick
- * syllables stay plain.
+ * The bloom behind the word being sung: the word's own ink, enlarged and tinted, so the light keeps the letter
+ * shapes instead of painting a box on the background. It rises and falls with the word's envelope, and the refined
+ * sweep scales it by how long the word is held, so quick syllables stay plain.
  */
 private fun DrawScope.drawGlow(
     shaped: LyricsShapedRow,
@@ -506,18 +494,22 @@ private fun DrawScope.drawGlow(
     val glow = LyricsSweepGeometry.glowIntensity(box, position) * gain
     val width = box.rightPx - box.leftPx
     if (glow <= 0f || width <= 0f) return
-    val top = shaped.bands.tops[box.line]
-    val bottom = shaped.bands.bottoms[box.line]
-    drawRoundRect(
-        color = palette.glow.copy(alpha = palette.glow.alpha * GLOW_ALPHA * glow),
-        topLeft = Offset(box.leftPx, top),
-        size = Size(width, bottom - top),
-        cornerRadius = CornerRadius(GLOW_CORNER_DP.dp.toPx()),
+    val overshoot = shaped.bands.overshootPx
+    drawGlyphGlow(
+        layout = shaped.layout,
+        ink = Rect(
+            box.leftPx,
+            shaped.bands.tops[box.line] - overshoot,
+            box.rightPx,
+            shaped.bands.bottoms[box.line] + overshoot,
+        ),
+        inkTopLeft = Offset.Zero,
+        color = palette.glow,
+        alpha = GLOW_ALPHA * glow,
     )
 }
 
 private const val GLOW_ALPHA = 0.35f
-private const val GLOW_CORNER_DP = 8
 
 /** The feathered edge width for [box], a share of its own width clamped to the sweep bounds. */
 private fun DrawScope.sweepFeather(box: LyricsWordBox?): Float =
