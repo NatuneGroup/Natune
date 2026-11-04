@@ -76,6 +76,10 @@ class TempoPitchStage(
 
     /** Processes [frames] frames and returns the output ready now. Its length differs when tempo changes. */
     fun process(input: FloatArray, frames: Int): FloatArray {
+        require(frames >= 0 && input.size >= frames * channels) { "input holds fewer than $frames frames" }
+        // A passthrough stage has no stretcher to hold a block, so the one-shot form hands the caller's
+        // own samples back; pushing them would only drop them and report an empty output.
+        if (stretcher == null) return input.copyOf(frames * channels)
         push(input, frames)
         return pullAll()
     }
