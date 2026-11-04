@@ -338,6 +338,7 @@ private fun DesktopSettingsRouteBody(
                 onFailure = onFailure,
                 scrollTo = scrollTo,
                 playlistTags = graph.playlistTags,
+                openEqualizer = { graph.equalizer.openSheet() },
             )
             in DESKTOP_EXTRA_SETTINGS_ROUTES ->
                 DesktopExtraSettingsPage(path, graph, owners.controller, navigation, ::show, onFailure)
