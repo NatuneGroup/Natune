@@ -83,27 +83,31 @@ candidate upstream (line similarity: 49 of 56 matched at 0.7 or more, 36 of them
 0.95 or more; 3 between 0.5 and 0.65 and 4 under 0.3, rewritten for this app). Per-file
 lines in those Android sources read `Portions © <author>`. Those engine sources are
 gone as of the 2026-11 unified-DSP pass; the audio a build still ships is the shared
-`:shared-domain` chain in Kotlin.
+`:shared-domain` chain in Kotlin, and the parts of that lineage ported into it keep the
+credits below.
 
 | Project | Author | Licence | What this repository carries |
 | --- | --- | --- | --- |
-| [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*` and `di/LastwaveModule.kt`. |
+| [Clash-Projects/LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) | Clash-Projects | GPL-3.0 | Studio Master Clarity, adapted stage for stage from `lastwave/DspProcessor.cpp` into `:shared-domain` (`dsp/clarity/ClarityPreset.kt` and `ClarityStage.kt`: the six-section contour, the shelf slope and the named design trims), and `app/src/main/kotlin/com/lastwave/app/playback/UsbDacMonitor.kt`. |
+| [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*`, `di/LastwaveModule.kt` and the audio-output inspector (`app/src/main/kotlin/tf/monochrome/`). |
 | decent-usb-audio-driver | Marcelo Silva | MIT ([retained LICENSE](../audio/decent-usb-audio-driver/LICENSE)) | A previously vendored USB audio module; the unreachable implementation was removed and its licence and attribution are retained. |
 | [Google Oboe](https://github.com/google/oboe) | Google | Apache-2.0 | Pinned at 1.11.0 and still declared in the app build; no native target links it since the LastWave engine went. |
 
-The `com.lastwave.*` and `tf.monochrome.*` Kotlin layers, their `app/src/main/cpp`
-engine trees and the October 2026 audio-engine ports table were removed in the 2026-11
-unified-DSP pass, so those notices went with the code: the vendored libusb 1.0.30
-subset (`third_party/libusb`, LGPL-2.1) with its USB Audio Class driver, the
-Signalsmith `stretch` 1.4.0 / `linear` 0.6.5 headers (`third_party/signalsmith-stretch`,
-MIT) with the pitch-shift stage that loaded them, the SoX Resampler 0.1.3 subset
-(`third_party/soxr`, LGPL-2.1) the LastWave engine resampled with, and the Tryptify
-DSP core (`app/src/main/cpp/tryptify/dsp`, GPL-3.0) with its snapins and WSOLA stretch.
+The removed native work went with its notices: the LastWave engine library
+(`app/src/main/cpp/lastwave`) and the SoX Resampler 0.1.3 subset it vendored
+(`third_party/soxr`, LGPL-2.1), the Tryptify DSP core
+(`app/src/main/cpp/tryptify/dsp`, GPL-3.0) with its snapins and WSOLA stretch, the
+vendored libusb 1.0.30 subset (`third_party/libusb`, LGPL-2.1) with its USB Audio Class
+driver, the Signalsmith `stretch` 1.4.0 / `linear` 0.6.5 headers
+(`third_party/signalsmith-stretch`, MIT) with the pitch-shift stage that loaded them,
+their Kotlin DSP layers, and the October 2026 audio-engine ports table. What still
+ships from that lineage is the clarity contour ported into `:shared-domain`, the
+USB-DAC monitor, and the audio-output inspector whose files name 4nx3b themselves; all
+three stay credited above.
 
 Licence status: `tryptz/Tryptify` had no `LICENSE` file when checked in October 2026.
-Its native code was published separately in `tryptify-audio-core` under GPL-3.0; the
-`tf.monochrome.*` Kotlin files appeared only in the app repository. No part of either
-remains in this tree.
+Its native code was published separately in `tryptify-audio-core` under GPL-3.0; no part
+of the Tryptify native layer remains in this tree.
 
 Packaged desktop distributions carry their notice texts from
 `desktopApp/packaging/notices/` (the QuickJS notices and the Apache-2.0 licence text); the iOS
