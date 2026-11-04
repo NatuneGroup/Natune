@@ -1,7 +1,12 @@
 package moe.rukamori.archivetune.playback.dsp
 
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.toMutablePreferences
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
+import moe.rukamori.archivetune.constants.EqualizerOutputGainEnabledKey
+import moe.rukamori.archivetune.constants.EqualizerOutputGainMbKey
+import moe.rukamori.archivetune.shared.domain.dsp.DspSettingsMapper
 import moe.rukamori.archivetune.shared.domain.dsp.PersistedDspValues
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -58,5 +63,22 @@ class UnifiedDspSettingsSourceTest {
         source.refresh()
 
         assertEquals(AudioProcessor.AudioFormat.NOT_SET, processor.configure(format))
+    }
+
+    @Test
+    fun `the output gain is read only while its own switch is on`() {
+        val on = UnifiedDspSettingsSource.readPersistedDspValues(
+            emptyPreferences().toMutablePreferences().apply {
+                this[EqualizerOutputGainEnabledKey] = true
+                this[EqualizerOutputGainMbKey] = -450
+            },
+        )
+        assertEquals(-450, on.equalizerOutputGainMb)
+        assertEquals(-4.5, DspSettingsMapper.fromPersisted(on, emptyList()).preampDb, 1e-9)
+
+        val off = UnifiedDspSettingsSource.readPersistedDspValues(
+            emptyPreferences().toMutablePreferences().apply { this[EqualizerOutputGainMbKey] = -450 },
+        )
+        assertEquals(0, off.equalizerOutputGainMb)
     }
 }

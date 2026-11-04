@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
 import moe.rukamori.archivetune.constants.EqualizerBandLevelsMbKey
 import moe.rukamori.archivetune.constants.EqualizerEnabledKey
+import moe.rukamori.archivetune.constants.EqualizerOutputGainEnabledKey
 import moe.rukamori.archivetune.constants.EqualizerOutputGainMbKey
 import moe.rukamori.archivetune.constants.FloatDspEnabledKey
 import moe.rukamori.archivetune.constants.LastwaveAudioProcessingKey
@@ -141,7 +142,9 @@ class UnifiedDspSettingsSource(
          * cold process can publish neutral settings instead of waiting on the store.
          *
          * Each retired engine's presets carry the engine switch and the stage switch that ran them, so a
-         * stage that was off stays off instead of becoming audible under the new processing switch.
+         * stage that was off stays off instead of becoming audible under the new processing switch. The
+         * shared output gain is read only while its own switch is on, because the chain's preamp is the one
+         * place that gain is rendered now.
          */
         fun readPersistedDspValues(preferences: Preferences?): PersistedDspValues =
             if (preferences == null) {
@@ -151,7 +154,12 @@ class UnifiedDspSettingsSource(
                     audioNormalization = preferences[AudioNormalizationKey] == true,
                     equalizerEnabled = preferences[EqualizerEnabledKey] == true,
                     equalizerBandLevelsMb = preferences[EqualizerBandLevelsMbKey],
-                    equalizerOutputGainMb = preferences[EqualizerOutputGainMbKey] ?: 0,
+                    equalizerOutputGainMb =
+                        if (preferences[EqualizerOutputGainEnabledKey] == true) {
+                            preferences[EqualizerOutputGainMbKey] ?: 0
+                        } else {
+                            0
+                        },
                     lastWaveEqualizerEnabled = preferences[LastWaveEqualizerEnabledKey] == true,
                     lastWaveGainsDb = preferences[LastWaveGainsKey],
                     lastWaveEngineEnabled = preferences[LastwaveAudioProcessingKey] == true,
