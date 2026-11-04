@@ -67,6 +67,10 @@ data class EqualizerBand(
  * N frames of *processing*, one small gain step per [glideChunkFrames] samples, so a slider drag or a preset
  * change never lands as a single coefficient jump. An immediate retune (a glide of zero) is what the legacy
  * portable chain asks for; [moe.rukamori.archivetune.shared.domain.dsp.DspGraph] glides by default.
+ *
+ * A stage is redesigned whenever anything that defines its coefficients changes — its type, frequency, width,
+ * gain or right-channel override — not when its gain differs. The sample rate is this instance's, so a format
+ * change is a new equalizer, which is what [moe.rukamori.archivetune.shared.domain.dsp.DspGraph.configure] builds.
  */
 class PortableEqualizer(
     private val sampleRateHz: Int,
@@ -78,6 +82,9 @@ class PortableEqualizer(
     private var targetGainsDb = DoubleArray(0)
     private var currentGainsDb = DoubleArray(0)
     private var appliedGainsDb = DoubleArray(0) { Double.NaN }
+
+    /** The band each stage was last designed from, so any coefficient-defining change retunes that stage. */
+    private var appliedBands = arrayOfNulls<EqualizerBand>(0)
     private var glideRemainingFrames = 0
 
     init {
@@ -114,6 +121,7 @@ class PortableEqualizer(
             targetGainsDb = DoubleArray(bands.size)
             currentGainsDb = DoubleArray(bands.size)
             appliedGainsDb = DoubleArray(bands.size) { Double.NaN }
+            appliedBands = arrayOfNulls(bands.size)
         }
         bands.forEachIndexed { index, band -> targetGainsDb[index] = band.gainDb }
         if (glideFrames == 0 || countChanged) {
@@ -144,6 +152,7 @@ class PortableEqualizer(
         stages.forEach { it.reset() }
         currentGainsDb = targetGainsDb.copyOf()
         appliedGainsDb = DoubleArray(targetGainsDb.size) { Double.NaN }
+        appliedBands = arrayOfNulls(bands.size)
         glideRemainingFrames = 0
         retune()
     }
@@ -161,12 +170,18 @@ class PortableEqualizer(
         }
     }
 
+    /**
+     * Designs every stage whose design input changed. The gain alone is not that input: a preset can move a
+     * band's frequency, its shape, its width or its right-channel override while the gain stays the same, and a
+     * gain-only cache would keep the previous coefficients for the whole stream.
+     */
     private fun retune() {
         for (index in stages.indices) {
             val gain = currentGainsDb[index]
-            if (appliedGainsDb[index] == gain) continue
-            appliedGainsDb[index] = gain
             val band = bands[index]
+            if (appliedGainsDb[index] == gain && appliedBands[index] == band) continue
+            appliedGainsDb[index] = gain
+            appliedBands[index] = band
             stages[index].setCoefficients(
                 next = design(band.type, band.frequencyHz, gain, band.q),
                 rightChannel = rightCoefficients(band),
