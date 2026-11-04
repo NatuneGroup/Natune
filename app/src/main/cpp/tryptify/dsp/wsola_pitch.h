@@ -42,19 +42,20 @@ inline WsolaQualityConfig wsolaConfigFor(WsolaQuality q) {
 /**
  * Transposes a continuous stereo stream without moving the tempo.
  *
- * ## Why a second engine
+ * ## Why a time-domain stretcher
  *
- * The player already transposes with signalsmith-stretch, a phase vocoder
- * configured for a 0.35 s analysis block -- chosen, and measured, for pitch
- * accuracy on sustained tones. That is the right criterion for melodic
- * material and the wrong one for drums: a window that long is many kick
- * lengths, and what comes out is the smeared "wet cardboard" attack a phase
- * vocoder is known for. WSOLA has the opposite bias. It splices in the time
- * domain at waveform-similar points, so transients survive nearly intact,
- * while sustained polyphony picks up the phasiness that the vocoder avoids.
+ * The alternative transposer class is a phase vocoder configured for a long
+ * analysis block -- the right criterion, and measured as such, for pitch
+ * accuracy on sustained tones, and the wrong one for drums: a window that long
+ * is many kick lengths, and what comes out is the smeared "wet cardboard"
+ * attack a phase vocoder is known for. WSOLA has the opposite bias. It splices
+ * in the time domain at waveform-similar points, so transients survive nearly
+ * intact, while sustained polyphony picks up the phasiness that the vocoder
+ * avoids.
  *
- * Neither is better. They fail in opposite directions, so the pair covers what
- * either alone cannot, and the listener picks.
+ * Neither is better; they fail in opposite directions. This build ships the
+ * WSOLA side only, so the phase-vocoder trade-off above describes the choice
+ * this engine makes, not a second transposer linked beside it.
  *
  * ## How pitch comes out of a time stretcher
  *
