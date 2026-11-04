@@ -277,6 +277,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         EqualizerEnabledKey,
         EqualizerControlModeKey,
         EqualizerBandLevelsMbKey,
+        DspSettingsDocumentKey,
         EqualizerAutoHeadroomEnabledKey,
         EqualizerOutputGainEnabledKey,
         EqualizerOutputGainMbKey,

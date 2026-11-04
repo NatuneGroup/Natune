@@ -8,108 +8,52 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import kotlin.math.roundToInt
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.shared.data.platform.ios.IosPlaybackPort
-import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
-import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandLevels
-import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
-import moe.rukamori.archivetune.shared.domain.settings.EqualizerBandLevelsMbKey
-import moe.rukamori.archivetune.shared.domain.settings.EqualizerEnabledKey
-import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
+import moe.rukamori.archivetune.shared.ui.dsp.DspSettingsOwner
 import moe.rukamori.archivetune.shared.ui.equalizer.EqualizerPanel
-import moe.rukamori.archivetune.shared.ui.settings.VaultSettingsStore
 
 /**
- * Octave centres of the ten bands, the same fixed layout the desktop host uses, so the stored levels
- * apply identically on both hosts. Android keeps its own device band list.
- */
-private val IOS_EQUALIZER_CENTERS_HZ = listOf(
-    31.25, 62.5, 125.0, 250.0, 500.0, 1_000.0, 2_000.0, 4_000.0, 8_000.0, 16_000.0,
-)
-
-/** One octave of bandwidth per peaking band, the usual graphic-equalizer spacing. */
-private const val IOS_EQUALIZER_Q = 1.4142135623730951
-
-/** Millibels per decibel, the unit the stored levels use. */
-private const val MILLIBELS_PER_DB = 100
-
-/** The equalizer as the panel shows it: whether it is on, each band's level in millibels, and the bands they set. */
-internal data class IosEqualizerState(
-    val enabled: Boolean,
-    val levelsMb: List<Int>,
-    val bands: List<EqualizerBand>,
-)
-
-/** The two stored values the equalizer reads. Compared as a pair, so an unrelated settings change never re-applies it. */
-private data class StoredEqualizer(val enabled: Boolean, val levels: String?)
-
-/**
- * The iOS equalizer, mirroring the desktop owner: the same stored keys, the same ten-band layout and the
- * same live-preview/commit split. Its bands reach each output's in-graph equalizer unit through [playback];
- * the port holds them for outputs created later and for a blend's own decks.
+ * The one DSP settings surface of the iOS host, mirroring the desktop owner: the shared DSP document, read and
+ * written by [DspSettingsOwner], whose equalizer bands and normalization switch reach every output and blend deck
+ * through [playback].
+ *
+ * The ten-band layout, the millibel levels, the document and the band-to-unit conversion are shared with the other
+ * hosts, so this host carries no band model of its own and the equalizer it shows is the one the chain applies.
  */
 internal class IosEqualizer(
-    private val scope: CoroutineScope,
-    private val settings: VaultSettingsStore,
-    private val playback: IosPlaybackPort,
+    scope: CoroutineScope,
+    settings: SettingsStore,
+    playback: IosPlaybackPort,
 ) {
-    private val published = MutableStateFlow(stateOf(enabled = false, levelsMb = flatLevels()))
+    private val dsp = DspSettingsOwner(
+        scope = scope,
+        store = settings,
+        onApplied = playback::applyDspSettings,
+    )
     private val sheet = MutableStateFlow(false)
 
-    /** The current equalizer, read by the panel. */
-    val state: StateFlow<IosEqualizerState> = published.asStateFlow()
+    /** The current settings, read by the panel. */
+    val state: StateFlow<DspSettingsOwner.State> = dsp.state
 
     /** Whether the equalizer panel is open over the root. */
     val sheetOpen: StateFlow<Boolean> = sheet.asStateFlow()
 
-    init {
-        // The stored value is applied at once, so the engine matches the saved equalizer before the first track loads.
-        adopt(storedOf(settings.snapshots.value))
-        scope.launch {
-            settings.snapshots
-                .map { storedOf(it) }
-                .distinctUntilChanged()
-                .collect { adopt(it) }
-        }
-    }
-
-    /** Turns the equalizer on or off and saves the flag. */
-    fun setEnabled(enabled: Boolean) {
-        val current = published.value
-        publish(enabled = enabled, levelsMb = current.levelsMb)
-        save(enabled = enabled)
-    }
+    /** Turns the equalizer on or off and saves it. */
+    fun setEnabled(enabled: Boolean) = dsp.setEqualizerEnabled(enabled)
 
     /** Applies one band's gain while its handle is dragged. The engine retunes at once and nothing is saved yet. */
-    fun previewGain(index: Int, gainDb: Double) {
-        val current = published.value
-        val levelsMb = withGain(current.levelsMb, index, gainDb) ?: return
-        publish(enabled = current.enabled, levelsMb = levelsMb)
-    }
+    fun previewGain(index: Int, gainDb: Double) = dsp.previewGain(index, gainDb)
 
-    /** Keeps the last gain of a drag and saves the levels once. */
-    fun commitGain(index: Int, gainDb: Double) {
-        val current = published.value
-        val levelsMb = withGain(current.levelsMb, index, gainDb) ?: return
-        publish(enabled = current.enabled, levelsMb = levelsMb)
-        save(levelsMb = levelsMb)
-    }
+    /** Keeps the last gain of a drag and saves it once. */
+    fun commitGain(index: Int, gainDb: Double) = dsp.commitGain(index, gainDb)
 
-    /** Sets every band back to 0 dB and saves the levels. */
-    fun resetFlat() {
-        val current = published.value
-        val levelsMb = flatLevels()
-        publish(enabled = current.enabled, levelsMb = levelsMb)
-        save(levelsMb = levelsMb)
-    }
+    /** Sets every band back to 0 dB and saves it. */
+    fun resetFlat() = dsp.resetFlat()
 
     /** Opens the equalizer panel over the root. */
     fun openSheet() {
@@ -119,64 +63,6 @@ internal class IosEqualizer(
     /** Closes the equalizer panel. */
     fun closeSheet() {
         sheet.value = false
-    }
-
-    private fun storedOf(snapshot: PreferenceSnapshot?): StoredEqualizer = StoredEqualizer(
-        enabled = snapshot?.get(EqualizerEnabledKey) ?: false,
-        levels = snapshot?.get(EqualizerBandLevelsMbKey),
-    )
-
-    private fun adopt(stored: StoredEqualizer) {
-        publish(
-            enabled = stored.enabled,
-            levelsMb = EqualizerBandLevels.decode(stored.levels, IOS_EQUALIZER_CENTERS_HZ.size),
-        )
-    }
-
-    private fun publish(enabled: Boolean, levelsMb: List<Int>) {
-        val next = stateOf(enabled, levelsMb)
-        published.value = next
-        playback.setEqualizer(enabled, next.bands)
-    }
-
-    private fun withGain(levelsMb: List<Int>, index: Int, gainDb: Double): List<Int>? {
-        if (index !in levelsMb.indices || !gainDb.isFinite()) return null
-        val level = (gainDb * MILLIBELS_PER_DB).roundToInt()
-            .coerceIn(-EqualizerBandLevels.MAX_LEVEL_MB, EqualizerBandLevels.MAX_LEVEL_MB)
-        return levelsMb.toMutableList().also { it[index] = level }
-    }
-
-    /** Writes only the keys it was given, so two saves of different values never overwrite each other. */
-    private fun save(enabled: Boolean? = null, levelsMb: List<Int>? = null) {
-        scope.launch {
-            try {
-                settings.edit {
-                    if (enabled != null) set(EqualizerEnabledKey, enabled)
-                    if (levelsMb != null) set(EqualizerBandLevelsMbKey, EqualizerBandLevels.encode(levelsMb))
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                // A lost save leaves the running equalizer applied but unpersisted, as on the desktop owner.
-            }
-        }
-    }
-
-    private companion object {
-        fun flatLevels(): List<Int> = List(IOS_EQUALIZER_CENTERS_HZ.size) { 0 }
-
-        fun stateOf(enabled: Boolean, levelsMb: List<Int>): IosEqualizerState = IosEqualizerState(
-            enabled = enabled,
-            levelsMb = levelsMb,
-            bands = IOS_EQUALIZER_CENTERS_HZ.mapIndexed { index, centerHz ->
-                EqualizerBand(
-                    type = EqualizerBandType.PEAKING,
-                    frequencyHz = centerHz,
-                    gainDb = levelsMb[index].toDouble() / MILLIBELS_PER_DB,
-                    q = IOS_EQUALIZER_Q,
-                )
-            },
-        )
     }
 }
 
@@ -188,7 +74,7 @@ internal fun IosEqualizerOverlay(equalizer: IosEqualizer) {
     val state by equalizer.state.collectAsState()
     Dialog(onDismissRequest = equalizer::closeSheet) {
         EqualizerPanel(
-            enabled = state.enabled,
+            enabled = state.equalizerEnabled,
             bands = state.bands,
             onEnabledChange = equalizer::setEnabled,
             onGainChange = equalizer::previewGain,
