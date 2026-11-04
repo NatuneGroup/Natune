@@ -1,22 +1,15 @@
-/*
- * ArchiveTune (2026)
- * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-package moe.rukamori.archivetune.acoustics
+package moe.rukamori.archivetune.shared.domain.dsp.acoustic
 
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
-import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityAnalyzer
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import moe.rukamori.archivetune.shared.domain.dsp.spectral.SpectralAuthenticityAnalyzer
 
 class AcousticSpectrogramAnalyzerTest {
     private val rates = listOf(44_100, 48_000)
@@ -28,9 +21,10 @@ class AcousticSpectrogramAnalyzerTest {
         frames: Int = samples.size / channels,
         check: () -> Unit = {},
         progress: (Float) -> Unit = {},
+        isFloat: Boolean = true,
     ) = AcousticSpectrogramAnalyzer.analyze(
         "selected-B", "TIDAL", rate, true, listOf("fixture_source"),
-        AcousticPcm(samples, rate, channels, 1_234_000L, frames, true, true), check, progress,
+        AcousticPcm(samples, rate, channels, 1_234_000L, frames, true, isFloat), check, progress,
     )
 
     private fun tone(rate: Int, frames: Int, frequency: Double = 3_000.0) =
@@ -120,7 +114,7 @@ class AcousticSpectrogramAnalyzerTest {
     fun unusedCapacityCannotExtendTheMeasuredIntervalOrSupplyAssessmentEvidence() {
         for (rate in rates) {
             val populated = tone(rate, rate * 2)
-            val capacity = FloatArray(AudioAuthenticityAnalyzer.MAX_ANALYSIS_FRAMES) { Float.NaN }
+            val capacity = FloatArray(SpectralAuthenticityAnalyzer.MAX_ANALYSIS_FRAMES) { Float.NaN }
             populated.copyInto(capacity)
             val exact = analyze(populated, rate)
             val oversized = analyze(capacity, rate, frames = populated.size)
@@ -152,6 +146,17 @@ class AcousticSpectrogramAnalyzerTest {
         assertEquals(AcousticAuditLimits.MAX_HEAT_WIDTH, result.width)
         assertEquals(48_000, result.sampleRate)
         assertEquals(12_500L, result.durationMs)
+    }
+
+    @Test
+    fun decodedFormatLimitationFollowsTheProbeInsteadOfBeingAssumed() {
+        val rate = 48_000
+        val float = analyze(tone(rate, rate * 2), rate, isFloat = true)
+        val short = analyze(tone(rate, rate * 2), rate, isFloat = false)
+        assertTrue("decoded_pcm_float" in float.limitations)
+        assertTrue("decoded_pcm16" !in float.limitations)
+        assertTrue("decoded_pcm16" in short.limitations)
+        assertTrue("decoded_pcm_float" !in short.limitations)
     }
 
     @Test
@@ -209,6 +214,6 @@ class AcousticSpectrogramAnalyzerTest {
             }
             (value * scale).toFloat()
         }
-        return FloatArray(AudioAuthenticityAnalyzer.MAX_ANALYSIS_FRAMES) { block[it % size] }
+        return FloatArray(SpectralAuthenticityAnalyzer.MAX_ANALYSIS_FRAMES) { block[it % size] }
     }
 }

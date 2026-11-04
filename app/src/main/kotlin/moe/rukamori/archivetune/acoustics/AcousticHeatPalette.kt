@@ -9,6 +9,7 @@ package moe.rukamori.archivetune.acoustics
 
 import kotlin.math.round
 import kotlin.math.roundToInt
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticHeatScale
 
 /**
  * Colour map for the acoustic heat graph: FFmpeg's `showspectrumpic` INTENSITY table
@@ -16,17 +17,10 @@ import kotlin.math.roundToInt
  * Intensity 0 is black and 1 is white; heat maps linearly in dB across [FLOOR_DB, CEILING_DB].
  */
 internal object AcousticHeatPalette {
-    /** Heat at or below this is black. */
-    const val FLOOR_DB = -120f
-
-    /** Heat at full intensity, white. */
-    const val CEILING_DB = 0f
-
-    /**
-     * Added to power-derived dB so the heat domain matches SpotiFlac's window normalisation:
-     * 20 log10(sum w / sum w^2) = 20 log10(4/3) = 2.4988 dB for a Hann window.
-     */
-    const val WINDOW_OFFSET_DB = 2.4988f
+    /** The analyzer's dB domain, shared so the colormap cannot drift from the grid it renders. */
+    const val FLOOR_DB = AcousticHeatScale.FLOOR_DB
+    const val CEILING_DB = AcousticHeatScale.CEILING_DB
+    const val WINDOW_OFFSET_DB = AcousticHeatScale.WINDOW_OFFSET_DB
 
     private const val LUT_STEPS = 1023
 
