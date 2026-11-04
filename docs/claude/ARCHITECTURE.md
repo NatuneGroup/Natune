@@ -197,13 +197,25 @@ remains essential.
 
 ## Bounded acoustic graph (implemented; execution evidence in PR/Actions)
 
-`acoustics/` owns read-only input resolution, bounded decoding/FFT and memory-only results.
-`AcousticQualitySection` and `AcousticQualityDialog` share the Developer and player/song-menu
-surfaces. Opening is idle; Run/Cancel/Retry owns work. Ordinary seekable file/content and
-supported clear current-source snapshots or complete contiguous source-bound cache are usable;
-unsupported/nonseekable/DRM inputs remain honestly unavailable. Cancellation releases owned
-resources; target/generation checks reject stale results. No playback resolver, queue,
-source-rejection setting or persistent quality badge is mutated.
+`shared-domain/.../dsp/acoustic/` owns the audit state machine (`AcousticAuditOwner`), the FFT
+analyzer, the heat scale/palette and raster, and the verdict vocabulary; each host supplies only
+its reads. Android's `acoustics/` keeps source resolution, bounded decoding and memory-only
+results over that owner. `AcousticQualitySection` and `AcousticQualityDialog` share the Developer
+and player/song-menu surfaces; iOS mounts the same owner from `IosSessionGraph`.
+
+Opening is idle; Run/Cancel/Retry owns work. Ordinary seekable file/content and supported clear
+current-source snapshots or complete contiguous source-bound cache are usable;
+unsupported/nonseekable/DRM inputs remain honestly unavailable. Each run carries a monotonic
+deadline: the host closes its owned input at that bound so a read parked in a provider or socket
+unblocks, and the run reports `deadline_exceeded` rather than hanging. Two reads run at once
+across every surface; a third start is refused as `analysis_busy` instead of queueing behind a
+slow provider. Decoding publishes its fraction, so the surface shows progress while it waits.
+
+Results stay bound twice: the request/queue key rejects a result produced for another target,
+and the host re-checks the live source after analysis, so a rendition replaced mid-run reports
+`source_changed` instead of passing as the cached one. Platform read failures keep their own
+codes (`input_unreadable`, `local_unreadable`, `input_permission_denied`) instead of collapsing
+into one generic failure.
 
 Heat, cutoff and decoded format describe the sampled rendition, not studio provenance or
 physical DAC output. Silence/short/uncertain samples remain inconclusive. The graph adds no
