@@ -5,12 +5,16 @@ Walks the PE import table of every staged DLL and copies the ones this build pro
 dependency prefix. Windows system libraries are an allowlist that is never bundled; anything else
 that is neither staged nor a known system DLL fails the stage instead of shipping.
 """
+import importlib
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+# The import walk and the system-library allowlist live once, in the verifier the release workflow also runs.
+native_deps = importlib.import_module("windows-native-deps")
 
 root = pathlib.Path(__file__).resolve().parents[2]
 build = root / "build"
@@ -20,24 +24,10 @@ destination = build / "distribution-resources/windows-x64/native"
 destination.mkdir(parents=True, exist_ok=True)
 subprocess.run(["cmake", "--install", str(engine), "--prefix", str(destination)], check=True)
 
-# Windows never ships these: they are the OS. Anything else not found in the prefix fails the audit.
-SYSTEM_DLLS = {
-    "kernel32.dll", "user32.dll", "advapi32.dll", "msvcrt.dll", "ws2_32.dll", "wsock32.dll",
-    "bcrypt.dll", "ole32.dll", "oleaut32.dll", "gdi32.dll", "shell32.dll", "crypt32.dll",
-    "imm32.dll", "setupapi.dll", "winmm.dll", "version.dll", "dbghelp.dll", "comdlg32.dll",
-    "shlwapi.dll", "rpcrt4.dll", "ntdll.dll", "sechost.dll", "iphlpapi.dll", "dwmapi.dll",
-    "uxtheme.dll", "comctl32.dll", "netapi32.dll", "dnsapi.dll", "secur32.dll", "userenv.dll",
-    "avrt.dll", "winhttp.dll", "wininet.dll", "normaliz.dll", "wldap32.dll", "mpr.dll",
-    "kernel.appcore.dll", "mswsock.dll", "powrprof.dll", "cfgmgr32.dll", "propsys.dll",
-}
-# These resolve at run time from the Windows directory, never from the package.
-SYSTEM_RE = re.compile(r"^(api-ms-win-|api-ms-onecore-|ext-ms-|ucrtbase|vcruntime|msvcp)", re.IGNORECASE)
-
-
 def imports(library):
-    output = subprocess.run(["objdump", "-p", str(library)], check=True, text=True,
-                            capture_output=True).stdout
-    return re.findall(r"DLL Name:\s*(\S+)", output, flags=re.IGNORECASE)
+    machine, direct, delayed = native_deps.imports(library)
+    # A delay import is resolved on first call, but a package without it still fails at run time.
+    return list(direct) + [name for name in delayed if name not in direct]
 
 
 prefix_files = {p.name.lower(): p for p in prefix.glob("**/*.dll") if p.is_file()}
@@ -53,7 +43,7 @@ while queue:
     library = queue.pop()
     for dep in imports(library):
         key = dep.lower()
-        if key in staged or key in SYSTEM_DLLS or SYSTEM_RE.match(key):
+        if key in staged or native_deps.is_system(key):
             continue
         source = prefix_files.get(key)
         if source is None and key in mingw_files:
@@ -68,9 +58,17 @@ while queue:
 
 if not any(name.startswith("avformat") for name in staged):
     raise RuntimeError("Missing FFmpeg closure; build native dependencies first")
-for library in sorted(destination.iterdir()):
-    if library.name.lower().endswith(".dll"):
-        print(f"Staged native: {library.name}", file=sys.stderr)
+staged_libraries = sorted(library for library in destination.iterdir() if library.name.lower().endswith(".dll"))
+for library in staged_libraries:
+    print(f"Staged native: {library.name}", file=sys.stderr)
+
+# Windows has no rpath, so the engine loads this order explicitly. Writing it here keeps the manifest
+# derived from the DLLs actually staged; the audit above already rejected anything unknown.
+try:
+    order = native_deps.write_manifest(destination)
+except ValueError as error:
+    raise RuntimeError(f"The staged Windows closure is incomplete: {error}") from error
+print(f"Staged native load order: {', '.join(order)}", file=sys.stderr)
 
 notices = build / "distribution-resources/common/notices"
 notices.mkdir(parents=True, exist_ok=True)

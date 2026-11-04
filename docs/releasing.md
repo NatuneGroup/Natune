@@ -158,7 +158,12 @@ GitHub-hosted `macos-26` for the macOS and iOS legs:
 - Windows x64: `desktopApp/native/scripts/build-native-deps.sh` now also builds
   under MSYS2 MinGW-w64 (`mingw64` OpenSSL target, w32threads for FFmpeg).
   `stage-windows-package.py` walks the PE import table, stages the prefix DLLs and
-  refuses anything outside the system-DLL allowlist. The engine builds with MinGW
+  refuses anything outside the system-DLL allowlist. That walk and the allowlist live
+  in `windows-native-deps.py`, which also writes `native-dependencies.txt` from the
+  staged import tables: Windows has no rpath, so the loader preloads that order before
+  `System.load` reaches the engine. The packaging job re-runs the script in `--check`
+  mode against the packaged app image, so an unbundled import, a non-x64 DLL or a
+  missing/stale manifest fails the build instead of a user's playback. The engine builds with MinGW
   (`MinGW Makefiles` generator, statically linked libgcc/winpthreads) while
   `archivetune_system` and `archivetune_browser` stay MSVC with the static CRT, so
   no vcruntime/msvcp DLL is needed for those adapters. Release TDLight also uses

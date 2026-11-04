@@ -570,6 +570,22 @@ jobs:
             "-PdesktopDisplayVersion=$env:DISPLAY_VERSION" `
             "-PdesktopWebView2Sdk=$env:WEBVIEW2_SDK"
 
+      - name: Verify the packaged Windows native closure
+        if: matrix.platform == 'windows'
+        # Windows has no rpath: the engine loader preloads its sibling DLLs from native-dependencies.txt,
+        # so the package fails here when an import is neither bundled nor a system library, when a DLL is
+        # not x86-64, or when the manifest is missing or no longer matches the shipped import tables.
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          NATIVE_DIR="desktopApp/build/compose/binaries/main/app/Natune/app/resources/native"
+          if [[ ! -f "$NATIVE_DIR/archivetune_engine.dll" ]]; then
+            echo "::error::$NATIVE_DIR does not hold the playback engine."
+            find desktopApp/build/compose/binaries/main/app -maxdepth 3 -type d -print 2>/dev/null | sort || true
+            exit 1
+          fi
+          python desktopApp/native/scripts/windows-native-deps.py "$NATIVE_DIR" --check
+
       - name: Package Linux DEB and app image
         if: matrix.platform == 'linux'
         shell: bash

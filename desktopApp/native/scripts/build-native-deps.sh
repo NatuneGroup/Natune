@@ -37,7 +37,8 @@ case "$(uname -s)-$(uname -m)" in
     *) printf '[native-deps] unsupported host %s-%s\n' "$(uname -s)" "$(uname -m)" >&2; exit 1 ;;
 esac
 # Apple's linker has no -rpath-link; the install names already point inside the prefix there.
-# Windows DLL resolution needs no rpath at all: the staged closure sits beside the engine.
+# Windows has no rpath of any kind: sitting beside the engine is not enough, because the loader never
+# searches a library's own directory, so the packaged loader preloads native-dependencies.txt instead.
 if [ "$(uname -s)" = "Linux" ]; then
     FFMPEG_EXTRA_LDFLAGS="-L$PREFIX/lib -Wl,-rpath-link,$PREFIX/lib"
 else
