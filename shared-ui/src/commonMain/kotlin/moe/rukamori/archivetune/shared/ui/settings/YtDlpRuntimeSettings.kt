@@ -29,6 +29,8 @@ fun YtDlpRuntimeSettings(readRuntime: suspend () -> YtDlpRuntimeStatus) {
     }
     LaunchedEffect(readRuntime) { refresh() }
     Column {
+        val back = LocalSettingsBack.current
+        if (back != null) SettingsBackHeader(back)
         Text(stringResource(Res.string.m6_ytdlp), style = MaterialTheme.typography.headlineSmall)
         Text(stringResource(Res.string.m6_ytdlp_description))
         status?.let {

@@ -52,12 +52,26 @@ fun ChangelogSettings(
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val back = LocalSettingsBack.current
+    Column(modifier.fillMaxSize()) {
+        if (back != null) SettingsBackHeader(back)
+        Box(Modifier.fillMaxWidth().weight(1f)) { ChangelogBody(channel, state, onRetry, onOpenUrl) }
+    }
+}
+
+@Composable
+private fun ChangelogBody(
+    channel: UpdateChannel,
+    state: ChangelogState,
+    onRetry: () -> Unit,
+    onOpenUrl: (String) -> Unit,
+) {
     when (state) {
-        ChangelogState.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        ChangelogState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         ChangelogState.Failed -> Column(
-            modifier.fillMaxSize().padding(16.dp),
+            Modifier.fillMaxSize().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -65,12 +79,12 @@ fun ChangelogSettings(
             TextButton(onClick = onRetry) { Text(stringResource(Res.string.m6_retry)) }
         }
         is ChangelogState.Loaded -> if (state.releases.isEmpty()) {
-            Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(stringResource(Res.string.m6_changelog_empty))
             }
         } else {
             LazyColumn(
-                modifier = modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
