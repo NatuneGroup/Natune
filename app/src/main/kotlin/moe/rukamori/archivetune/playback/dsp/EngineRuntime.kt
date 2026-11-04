@@ -14,7 +14,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.media3.common.C
 import tf.monochrome.android.audio.dsp.oxford.CompressorEffect
-import tf.monochrome.android.audio.usb.BypassDiagnostics
 
 object EngineRuntime {
     @Volatile
@@ -32,21 +31,6 @@ object EngineRuntime {
 
     @Volatile
     var usbExclusiveBits: Int = 0
-
-    @Volatile
-    var tryptifyUsbStream: BypassDiagnostics? = null
-
-    @Volatile
-    var lastwaveUsbRateHz: Int = 0
-
-    @Volatile
-    var lastwaveUsbBitsPerSample: Int = 0
-
-    @Volatile
-    var tryptifyUsbPinActive: Boolean = false
-
-    @Volatile
-    var lastwaveMixerBitPerfectActive: Boolean = false
 
     @Volatile
     var bitPerfectSinkRouteActive: Boolean = false
@@ -114,25 +98,9 @@ object EngineRuntime {
         revision++
     }
 
-    fun publishTryptifyUsbPin(active: Boolean) {
-        tryptifyUsbPinActive = active
-        revision++
-    }
-
-    fun publishLastwaveMixerBitPerfect(active: Boolean) {
-        lastwaveMixerBitPerfectActive = active
-        revision++
-    }
-
     fun publishSinkRoute(floatRoute: Boolean, decodedEncoding: Int) {
         bitPerfectSinkRouteActive = floatRoute
         sinkDecodedEncoding = decodedEncoding
-        revision++
-    }
-
-    fun publishUsbWire(rateHz: Int, bits: Int) {
-        lastwaveUsbRateHz = rateHz
-        lastwaveUsbBitsPerSample = bits
         revision++
     }
 }
