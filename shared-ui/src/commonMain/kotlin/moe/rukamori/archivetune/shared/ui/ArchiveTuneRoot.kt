@@ -173,6 +173,9 @@ private fun ArchiveTuneLoadedRoot(
         val interaction = remember { PlayerInteractionState() }
         var expanded by remember { mutableStateOf(false) }
         var shortcutsVisible by remember { mutableStateOf(false) }
+        // A search shortcut navigates and asks the Search screen for the field once; the screen reports the request
+        // consumed, so returning to the tab later does not take focus from the user.
+        var searchFocusRequested by remember { mutableStateOf(false) }
         // Handed to the page content, so a focused search field silences the unmodified shortcuts while typing.
         val textInputs = remember { ShortcutTextInputState() }
         // Collapsing is the root's own action, so the native owner never receives it.
@@ -257,7 +260,10 @@ private fun ArchiveTuneLoadedRoot(
                     player.seekTo(target)
                 }
                 KeymapAction.Back -> goBack()
-                KeymapAction.Search -> navigation.select(ShellTab.Search, toRoot = true)
+                KeymapAction.Search -> {
+                    navigation.select(ShellTab.Search, toRoot = true)
+                    searchFocusRequested = true
+                }
                 KeymapAction.Home -> navigation.select(ShellTab.Home, toRoot = true)
                 KeymapAction.Library -> navigation.select(ShellTab.Library, toRoot = true)
                 KeymapAction.Playlists -> {
@@ -340,7 +346,9 @@ private fun ArchiveTuneLoadedRoot(
                         CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
                             ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
                                 host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
-                                preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews))
+                                preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews),
+                                searchFocusRequested = searchFocusRequested,
+                                onSearchFocusConsumed = { searchFocusRequested = false })
                         }
                     }
                     // Keep the interaction owner above style dispatch; a saved style edit cannot reset
