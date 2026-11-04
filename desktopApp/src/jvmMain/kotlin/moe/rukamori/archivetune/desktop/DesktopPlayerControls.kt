@@ -139,6 +139,7 @@ internal class DesktopPlayerControls(
             // actions arrive here.
             PlayerAction.COLLAPSE -> Unit
             PlayerAction.LIKE -> toggleLike(occurrenceId)
+            PlayerAction.SHARE -> share(occurrenceId)
             PlayerAction.SLEEP -> sleepSheet.open = true
             PlayerAction.MORE -> openMenu(occurrenceId)
             else -> graph.report("player action ${action.name} is not connected on the desktop host")
@@ -149,6 +150,15 @@ internal class DesktopPlayerControls(
     private fun openMenu(occurrenceId: String?) {
         val item = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return
         playerMenu.open(item)
+    }
+
+    /**
+     * The Now Playing sheet's Share: copies the playing song's catalogue link, as the mobile hosts' share sheet does,
+     * and says what happened over the window. A local file or a provider catalog with no public link copies nothing.
+     */
+    private fun share(occurrenceId: String?) {
+        val item = graph.queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item ?: return
+        shareDesktopSong(item.ref, graph::notify)
     }
 
     /**
