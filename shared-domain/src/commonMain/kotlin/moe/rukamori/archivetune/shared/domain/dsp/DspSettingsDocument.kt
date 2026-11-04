@@ -1,5 +1,8 @@
 package moe.rukamori.archivetune.shared.domain.dsp
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.parseToJsonElement
 import moe.rukamori.archivetune.shared.domain.dsp.eq.GraphicEqualizer
 import moe.rukamori.archivetune.shared.domain.settings.AudioNormalizationKey
 import moe.rukamori.archivetune.shared.domain.settings.DspSettingsDocumentKey
@@ -18,8 +21,17 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
  * normalization and preamp it shows are the ones the chain applies.
  */
 object DspSettingsDocument {
-    /** The document [raw] holds. Null means this host has not written one yet and its legacy keys must be read. */
-    fun read(raw: String?): DspSettings? = if (raw.isNullOrBlank()) null else DspSettingsCodec.decode(raw)
+    /**
+     * The document [raw] holds. Null means this host has not written one yet and its legacy keys must be read.
+     *
+     * A document is one JSON object. Anything else is treated as absent rather than as a neutral value, so a
+     * damaged document falls back to the keys the host already stored instead of silently flattening the chain.
+     */
+    fun read(raw: String?): DspSettings? {
+        if (raw.isNullOrBlank()) return null
+        val parsed = runCatching { Json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+        return if (parsed == null) null else DspSettingsCodec.decode(raw)
+    }
 
     /** The value to use: the stored document, or the legacy keys migrated once when there is none. */
     fun of(
