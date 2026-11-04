@@ -293,6 +293,12 @@ val MinimalHomeModeKey = BooleanPreferenceKey("minimalHomeMode")
 val EqualizerEnabledKey = BooleanPreferenceKey("equalizerEnabled")
 val EqualizerControlModeKey = StringPreferenceKey("equalizerControlMode")
 val EqualizerBandLevelsMbKey = StringPreferenceKey("equalizerBandLevelsMb")
+
+/**
+ * The one versioned DSP settings document: a DspSettings value under a single key, which replaces the
+ * per-engine DSP keys a host wrote. The legacy keys stay stored and readable.
+ */
+val DspSettingsDocumentKey = StringPreferenceKey("dspSettingsJson")
 val EqualizerAutoHeadroomEnabledKey = BooleanPreferenceKey("equalizerAutoHeadroomEnabled")
 val EqualizerOutputGainEnabledKey = BooleanPreferenceKey("equalizerOutputGainEnabled")
 val EqualizerOutputGainMbKey = IntPreferenceKey("equalizerOutputGainMb")
