@@ -129,7 +129,7 @@ object AcousticSpectrogramAnalyzer {
                 add("normalized_window_power")
                 add("time_windows_may_be_thinned")
                 add("assessment_uses_bounded_prefix")
-                add("decoded_pcm_float")
+                add(if (pcm.isFloat) "decoded_pcm_float" else "decoded_pcm16")
                 if (!adequate) add("insufficient_active_evidence")
                 if (assessment == AcousticAssessment.INCONCLUSIVE) add("unknown")
                 if (pcm.truncated) add("pcm_budget_shortened_excerpt")
