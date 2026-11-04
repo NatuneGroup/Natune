@@ -196,6 +196,14 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("artwork.isUserInteractionEnabled = false", chrome)
         self.assertIn("UIAccessibility.isReduceMotionEnabled", chrome)
 
+    def test_native_chrome_uses_unambiguous_selector_and_imageio_thumbnail_key(self):
+        chrome = (IOS / "ArchiveTune/NativeChrome.swift").read_text()
+        self.assertIn("searchButton.addTarget(self, action: #selector(selectSearchTab), for: .touchUpInside)", chrome)
+        self.assertIn("@objc private func selectSearchTab() { chrome.selectTab(index: 1) }", chrome)
+        self.assertNotIn("#selector(find)", chrome)
+        self.assertIn("kCGImageSourceThumbnailMaxPixelSize: 160", chrome)
+        self.assertNotIn("kCGImageSourceCreateThumbnailMaxPixelSize", chrome)
+
     def test_native_lyrics_motion_dynamic_type_and_completion(self):
         swift = (IOS / "ArchiveTune/SystemLyricsRendering.swift").read_text()
         for expected in ["UIFontMetrics(forTextStyle:", "scaledValue(for:",
