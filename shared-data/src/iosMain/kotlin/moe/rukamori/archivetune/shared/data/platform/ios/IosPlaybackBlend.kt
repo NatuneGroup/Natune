@@ -97,7 +97,10 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
         }
         val finished = outgoing.isEnded || (overlapMs > 0L && progress?.complete == true)
         if (!finished || !incomingState.isAdvancing) return Read(outgoing)
-        graph.promote()
+        if (!graph.promote()) {
+            cancelNext()
+            return Read(graph.current.observation())
+        }
         next = null
         progress = null
         stalledAtNanos = null

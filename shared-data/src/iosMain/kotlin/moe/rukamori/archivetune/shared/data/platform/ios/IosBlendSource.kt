@@ -4,9 +4,6 @@ import cnames.structs.at_audio_output
 import kotlin.time.Clock
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ByteVar
-import kotlinx.cinterop.allocArray
-import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toLong
 import moe.rukamori.archivetune.nativeaudio.*
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceAccount
