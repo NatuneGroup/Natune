@@ -36,8 +36,8 @@ internal class AcousticAuditProbe(
 ) {
     private val resolver = AcousticAuditSourceResolver(context, caches, snapshot)
 
-    /** The snapshot the last completed read decoded from, for the owner's post-analysis re-check. */
-    private val decoded = AtomicReference<AcousticSourceSnapshot?>(null)
+    /** The input the last completed read decoded from, for the owner's post-analysis re-check. */
+    private val decoded = AtomicReference<AcousticInput?>(null)
 
     /**
      * The refusal code of the live source re-check, or null while the decoded rendition is still the
@@ -45,7 +45,8 @@ internal class AcousticAuditProbe(
      * was re-resolved, expired or replaced reports `source_changed` instead of stale evidence.
      */
     suspend fun verifySource(): String? = withContext(Dispatchers.Main.immediate) {
-        if (resolver.isCurrent(decoded.get())) null else "source_changed"
+        val input = decoded.get() ?: return@withContext null
+        if (resolver.isCurrent(input)) null else "source_changed"
     }
 
     suspend fun window(target: AcousticAuditTarget, run: AcousticRun): AcousticWindow {
@@ -70,8 +71,8 @@ internal class AcousticAuditProbe(
     private suspend fun read(target: AcousticAuditTarget, run: AcousticRun): AcousticWindow {
         val work = AcousticWork(run = run::check)
         try {
-            val input = resolver.resolve(target, work).also(work::own)
-            decoded.set(input.snapshot)
+            val input = resolver.resolve(target, work).also { work.own(it) }
+            decoded.set(input)
             return coroutineScope {
                 val reading = async(AcousticWorkers.dispatcher) { decode(input, target, run, work) }
                 try {
