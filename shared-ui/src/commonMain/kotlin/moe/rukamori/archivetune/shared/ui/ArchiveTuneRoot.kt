@@ -33,6 +33,10 @@ import moe.rukamori.archivetune.shared.ui.player.*
 import moe.rukamori.archivetune.shared.ui.screens.*
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
+import moe.rukamori.archivetune.shared.ui.shortcuts.KeyboardShortcuts
+import moe.rukamori.archivetune.shared.ui.shortcuts.KeyboardShortcutsDialog
+import moe.rukamori.archivetune.shared.ui.shortcuts.LocalShortcutTextInput
+import moe.rukamori.archivetune.shared.ui.shortcuts.ShortcutTextInputState
 import moe.rukamori.archivetune.shared.ui.theme.ArchiveTuneTheme
 import moe.rukamori.archivetune.shared.ui.theme.archiveTuneDefaultColorScheme
 import moe.rukamori.archivetune.shared.ui.theme.paletteColorScheme
@@ -168,6 +172,9 @@ private fun ArchiveTuneLoadedRoot(
         val unreadNews by host.unreadNews.collectAsState(false)
         val interaction = remember { PlayerInteractionState() }
         var expanded by remember { mutableStateOf(false) }
+        var shortcutsVisible by remember { mutableStateOf(false) }
+        // Handed to the page content, so a focused search field silences the unmodified shortcuts while typing.
+        val textInputs = remember { ShortcutTextInputState() }
         // Collapsing is the root's own action, so the native owner never receives it.
         val sheetControls = remember(host.playerControls, interaction) {
             CollapsingPlayerControls(host.playerControls) { if (!interaction.back()) expanded = false }
@@ -232,6 +239,7 @@ private fun ArchiveTuneLoadedRoot(
                 KeymapAction.Previous -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.PREVIOUS)
                 KeymapAction.Shuffle -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.SHUFFLE)
                 KeymapAction.Repeat -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.REPEAT)
+                KeymapAction.Like -> dispatchNativePlayerAction(player, host.playerControls, PlayerAction.LIKE)
                 KeymapAction.VolumeUp, KeymapAction.VolumeDown -> {
                     val level = nativeState.volume ?: return false
                     val delta = if (action == KeymapAction.VolumeUp) KEYMAP_VOLUME_STEP else -KEYMAP_VOLUME_STEP
@@ -250,9 +258,25 @@ private fun ArchiveTuneLoadedRoot(
                 }
                 KeymapAction.Back -> goBack()
                 KeymapAction.Search -> navigation.select(ShellTab.Search, toRoot = true)
-                KeymapAction.ExpandPlayer -> expanded = !expanded
+                KeymapAction.Home -> navigation.select(ShellTab.Home, toRoot = true)
+                KeymapAction.Library -> navigation.select(ShellTab.Library, toRoot = true)
+                KeymapAction.Playlists -> {
+                    navigation.select(ShellTab.Library, toRoot = true)
+                    navigation.open("library/playlists")
+                }
+                KeymapAction.Podcasts -> navigation.open("podcasts")
+                KeymapAction.NewReleases -> navigation.open("new_release")
+                KeymapAction.Charts -> navigation.open("charts_screen")
+                KeymapAction.Settings -> navigation.open("settings")
+                KeymapAction.NowPlaying -> expanded = true
+                KeymapAction.Queue -> {
+                    expanded = true
+                    interaction.panel = PlayerPanel.QUEUE
+                }
+                KeymapAction.TogglePlayer -> expanded = !expanded
                 KeymapAction.FullscreenLyrics -> { expanded = true; interaction.fullscreenLyrics = !interaction.fullscreenLyrics }
                 KeymapAction.ToggleFullscreen -> host.toggleWindowFullscreen?.invoke() ?: return false
+                KeymapAction.Help -> shortcutsVisible = true
             }
             return true
         }
@@ -282,9 +306,14 @@ private fun ArchiveTuneLoadedRoot(
                     .rootKeyTarget(rootKeyFocus, navigation.route)
                     .onKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                    val action = keymapActionOf(event.key,
-                        ctrlOrMeta = event.isCtrlPressed || event.isMetaPressed,
-                        alt = event.isAltPressed, shift = event.isShiftPressed) ?: return@onKeyEvent false
+                    val action = KeyboardShortcuts.actionFor(
+                        key = event.key,
+                        ctrl = event.isCtrlPressed,
+                        meta = event.isMetaPressed,
+                        alt = event.isAltPressed,
+                        shift = event.isShiftPressed,
+                        textInputFocused = textInputs.active,
+                    ) ?: return@onKeyEvent false
                     handleKeymap(action)
                 }) {
                     ArchiveTuneShell(navigation, preferences,
@@ -308,9 +337,11 @@ private fun ArchiveTuneLoadedRoot(
                             )
                         },
                     ) {
-                        ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
-                            host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
-                            preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews))
+                        CompositionLocalProvider(LocalShortcutTextInput provides textInputs) {
+                            ArchiveNavigationHost(navigation, host.page, graphActions, host.artwork, host.newsImage,
+                                host.formatNewsDate, host.librarySourceSelector, host.hostScreen, host.overlays,
+                                preferences = preferences, newsEntry = NewsEntry(host.newsAvailable, unreadNews))
+                        }
                     }
                     // Keep the interaction owner above style dispatch; a saved style edit cannot reset
                     // seek ownership, queue/lyrics panels or the fullscreen scroll owner.
@@ -329,6 +360,7 @@ private fun ArchiveTuneLoadedRoot(
                         modifier = Modifier.fillMaxSize(),
                         interaction = interaction,
                     )
+                    if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
                 }
             }
         }
