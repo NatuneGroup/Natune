@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,7 +40,9 @@ class MiniPlayerStripTest {
                         preferences = PreferenceSnapshot.EMPTY,
                         onSearch = {},
                         miniPlayer = {
-                            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                            // A mini player is a bar: its own content sets the slot height, so the fixture must not
+                            // fill the page area that the strip sits in front of.
+                            Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                                 TextButton(
                                     onClick = { buttonClicks++ },
                                     modifier = Modifier.testTag("strip-button"),

@@ -24,7 +24,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
@@ -164,14 +164,14 @@ fun ArchiveTuneShell(
                             ) {
                                 val left = if (apple || compactLeftIsLibrary(navigation.route)) ShellTab.Library else ShellTab.Home
                                 CompactCircleTab(left, navigation.selectedTab == left, pill, glowStrength) { navigation.select(left, toRoot = true) }
-                                Box(Modifier.weight(1f).heightIn(min = 48.dp).miniPlayerStrip(preferences)
+                                Box(Modifier.weight(1f).heightIn(min = 48.dp).miniPlayerStrip()
                                     .testTag("shell-mini-player")) { miniPlayer() }
                                 if (apple || compactSearchVisible(navigation.route)) {
                                     CompactCircleTab(ShellTab.Search, navigation.selectedTab == ShellTab.Search, pill, glowStrength, onSearch)
                                 }
                             }
                             else -> {
-                                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).miniPlayerStrip(preferences)
+                                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).miniPlayerStrip()
                                     .testTag("shell-mini-player")) { miniPlayer() }
                                 if (layout == ShellLayout.BottomBar && preferences.usesSukisuNavigationBar()) {
                                     // The SukiSU bar takes the same bottom slot and the same selection path as the default bar.
@@ -268,21 +268,22 @@ private fun Modifier.navigationMaterial(
 }
 
 /**
- * The mini-player slot is chrome, so it paints the bar's own material and owns its hit region: a press its controls did
- * not take is consumed here instead of reaching the page card painted beneath. Descendants dispatch first, so the
- * transport controls keep their clicks, and nothing here adds semantics or focus to the empty area.
+ * The mini-player slot is chrome, so it paints an opaque surface: the page cards behind it cannot show through. It is
+ * also a hit target of its own, so a press its controls did not take stops here instead of reaching the page card
+ * painted beneath. Hit testing already stops at the topmost sibling under the pointer, so this handler only has to
+ * exist, and it must never consume: a consumed event cancels the wait-for-up of a control inside the strip. Nothing
+ * here adds semantics, focus or a click action to the empty area.
  */
 @Composable
-private fun Modifier.miniPlayerStrip(preferences: PreferenceSnapshot): Modifier =
-    navigationMaterial(preferences).pointerInput(Unit) {
-        awaitPointerEventScope {
-            while (true) {
-                awaitPointerEvent(PointerEventPass.Main).changes.forEach { change ->
-                    if (change.pressed) change.consume()
-                }
-            }
-        }
+private fun Modifier.miniPlayerStrip(): Modifier =
+    background(MaterialTheme.colorScheme.surfaceContainer).pointerInput(Unit, MiniPlayerStripHitTarget)
+
+/** Watches the strip's pointer events without consuming, so presence in the chain claims the region and nothing else. */
+private val MiniPlayerStripHitTarget: suspend PointerInputScope.() -> Unit = {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent()
     }
+}
 
 /** Resource labels remain accessible even when a compact circle has no visible caption. */
 @Composable
