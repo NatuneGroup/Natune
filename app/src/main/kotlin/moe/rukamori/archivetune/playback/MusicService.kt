@@ -138,6 +138,7 @@ import moe.rukamori.archivetune.cast.CastPlaybackRepository
 import moe.rukamori.archivetune.cast.CastPlaybackRepositoryLocator
 import moe.rukamori.archivetune.cast.CastScreenState
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
+import moe.rukamori.archivetune.constants.AudioProcessingEnabledKey
 import moe.rukamori.archivetune.constants.DefaultMetadataSourceKey
 import moe.rukamori.archivetune.constants.MetadataSource
 import moe.rukamori.archivetune.constants.AudioOffload
@@ -1861,10 +1862,15 @@ class MusicService :
                 .distinctUntilChanged(),
             currentFormat,
             dataStore.data
-                // Bit-perfect output hands volume to the DAC path; a per-track gain there would
-                // just move the user's volume around, so normalization sits out.
-                .map { moe.rukamori.archivetune.shared.domain.settings.audioNormalizationApplies(
-                    it[AudioNormalizationKey] ?: true, bitPerfectOutputActive) }
+                // Bit-perfect output hands volume to the DAC path, and the Audio processing switch covers the
+                // normalization gain as one of the stages the software chain renders.
+                .map {
+                    NormalizationGainPolicy.applies(
+                        requested = it[AudioNormalizationKey] ?: true,
+                        bitPerfectSinkActive = bitPerfectOutputActive,
+                        processingEnabled = audioProcessingEnabled(it),
+                    )
+                }
                 .distinctUntilChanged(),
         ) { mediaId, format, normalizeAudio ->
             normalizeAudio to resolveAudioNormalizationFactor(mediaId, format, normalizeAudio)
@@ -6411,6 +6417,9 @@ class MusicService :
             autoHeadroomEnabled = prefs[EqualizerAutoHeadroomEnabledKey] ?: false,
         )
     }
+
+    /** The one Audio processing switch; unset reads as on, the same default the DSP host publishes with. */
+    private fun audioProcessingEnabled(prefs: Preferences): Boolean = prefs[AudioProcessingEnabledKey] != false
 
     fun applyEqFlatPreset() {
         ioScope.launch {
@@ -11145,8 +11154,11 @@ class MusicService :
         audioNormalizationFactorCache[mediaId] = resolvedNormalizationFactor
         scope.launch {
             if (currentMediaMetadata.value?.id == mediaId &&
-                moe.rukamori.archivetune.shared.domain.settings.audioNormalizationApplies(
-                    dataStore.get(AudioNormalizationKey, true), bitPerfectOutputActive)
+                NormalizationGainPolicy.applies(
+                    requested = dataStore.get(AudioNormalizationKey, true),
+                    bitPerfectSinkActive = bitPerfectOutputActive,
+                    processingEnabled = dataStore.get(AudioProcessingEnabledKey, true),
+                )
             ) {
                 normalizeFactor.value = resolvedNormalizationFactor
             }
