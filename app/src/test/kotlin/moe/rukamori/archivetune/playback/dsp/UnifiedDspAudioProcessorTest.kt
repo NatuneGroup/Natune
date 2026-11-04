@@ -2,9 +2,10 @@ package moe.rukamori.archivetune.playback.dsp
 
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.SilenceSkippingAudioProcessor
+import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import moe.rukamori.archivetune.playback.TransitionFilterProcessor
 import moe.rukamori.archivetune.shared.domain.dsp.DspFormat
 import moe.rukamori.archivetune.shared.domain.dsp.DspGraph
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
