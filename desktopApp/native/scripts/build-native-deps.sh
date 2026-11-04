@@ -97,12 +97,27 @@ fail_log() {
 }
 
 fetch() {
-    local url="$1" dest="$2" sha="$3"
+    local url="$1" dest="$2" sha="$3" attempt status
     if [ ! -f "$dest" ]; then
         log "downloading $(basename "$dest")"
-        curl --fail --silent --show-error --location \
-            --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 300 \
-            --connect-timeout 30 --max-time 180 -o "$dest.part" "$url"
+        # ffmpeg.org has stalled mid-transfer on CI runners for minutes at a time, and curl's own --retry
+        # restarts from byte zero. Each attempt resumes the partial file instead, and a transfer that drops
+        # below 1 KiB/s for 30 s is cut so the next attempt can reconnect.
+        for attempt in 1 2 3 4 5 6 7 8; do
+            status=0
+            curl --fail --silent --show-error --location \
+                --connect-timeout 30 --speed-limit 1024 --speed-time 30 --max-time 600 \
+                --continue-at - -o "$dest.part" "$url" || status=$?
+            [ "$status" -eq 0 ] && break
+            # 33: the server refused the byte range, so the partial file cannot be resumed.
+            [ "$status" -eq 33 ] && rm -f "$dest.part"
+            if [ "$attempt" -eq 8 ]; then
+                log "giving up on $(basename "$dest") after $attempt attempts (curl exit $status)"
+                exit 1
+            fi
+            log "attempt $attempt for $(basename "$dest") failed (curl exit $status); resuming"
+            sleep $((attempt * 5))
+        done
         mv "$dest.part" "$dest"
     fi
     if ! sha256_check "$sha" "$dest"; then
