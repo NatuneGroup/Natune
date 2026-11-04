@@ -172,6 +172,49 @@ existing MediaPlayer Now Playing metadata and transport remain independent and u
 See [the binary comparison and boundary](../engineering/ios-swiftui-parity.md). No device QA
 is claimed.
 
+## Keyboard shortcuts (local source; validation pending)
+
+One table owns every shortcut: `shared-ui/.../ui/shortcuts/KeyboardShortcuts.kt`. A `ShortcutEntry` pairs a
+`KeymapAction` with a help group, a resource label and its chords, and the root OS key handler, the help overlay and
+the settings row all read that same list, so a binding cannot exist in one surface and be missing from another. The
+matcher is pure (`KeyboardShortcuts.actionFor`) and the overlay is only rendering, so both are testable without a
+window.
+
+`primary` is the platform's shortcut modifier — Cmd on Apple hardware (`ShortcutPlatform.MAC`, from
+`currentShortcutPlatform`: iOS actual is always MAC, the JVM actual reads `os.name`) and Ctrl everywhere else
+(`WINDOWS_LINUX`: Android, Windows, Linux). Display follows the same split: `⌘K` on Mac, `Ctrl + K` elsewhere.
+
+| Action | Chord |
+|---|---|
+| Play or pause | Space |
+| Next / previous song | Shift+N / Shift+P, Ctrl/Cmd + → / ← |
+| Seek back / forward | ← / → |
+| Volume up / down | ↑, =, + (and Shift+= where + needs Shift); ↓, - and numpad -; Ctrl/Cmd + ↑ / ↓ |
+| Mute | M |
+| Shuffle / repeat | S, Alt+S, Ctrl/Cmd+S; R, Alt+R, Ctrl/Cmd+R |
+| Like | Alt+Shift+B |
+| Seek to a part | 0-9 and numpad 0-9, to tenths of the duration |
+| Search | Ctrl/Cmd+K, +F, +L, +Shift+L |
+| Home / Library | Alt+Shift+H; Alt+Shift+0 |
+| Playlists / podcasts / new releases / charts | Alt+Shift+1 / 2 / N / C |
+| Settings | Ctrl/Cmd+, |
+| Back | Esc |
+| Now playing / queue | Alt+Shift+J / Alt+Shift+Q |
+| Show or hide the player | T, Alt+Shift+R |
+| Fullscreen lyrics / window fullscreen | L; F |
+| This shortcut list | Ctrl/Cmd+/ and Ctrl/Cmd+? |
+
+Modifiers must match exactly: an Alt+Shift chord never answers a press that also holds Ctrl, and Shift alone is not a
+modifier for this purpose, so typing a capital letter never fires a transport action. While a tracked text field holds
+focus (`Modifier.shortcutTextInput()` into `ShortcutTextInputState` through `LocalShortcutTextInput`) every chord
+without Ctrl/Cmd/Alt is dropped — Space, letters, arrows and digits reach the field — and Escape and the modifier
+chords stay live. Today the shared search field is the instrumented input; other fields still let an unmodified
+letter shortcut through, which the shortcut table must not be extended into until they report focus too.
+
+Settings → Keyboard → Keyboard shortcuts opens the same overlay as the Help chord. The desktop host keeps its own
+window accelerators and the Alt+Back navigation gesture; whether any of them claim a chord here has no local
+evidence, because this source is uncompiled and unexecuted and no device or keyboard-layout QA is claimed.
+
 ## Performance
 
 SpatialFlow's player (a second Media3 player, 50–60 s buffering, a 250 ms progress loop and a simpler linear crossfade handoff) is a useful comparison, not a source to copy wholesale: this fork already has stronger readiness, generation, cache, codec, audio-route and promotion safeguards, so measure before borrowing anything. Before changing buffer sizes or adding audio processors, measure transition latency, resolver calls, cache hit rate, decoder state, dropped frames, CPU, radio use, and thermal status. Low-end validation must cover crossfade, canvas/artwork, lyrics, and audio offload independently.
