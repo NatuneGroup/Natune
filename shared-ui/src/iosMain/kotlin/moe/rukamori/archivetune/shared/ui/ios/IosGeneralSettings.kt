@@ -87,6 +87,9 @@ internal fun IosGeneralSettingsPage(
             managePlaylistTags = { navigate("library/tags") },
             onFailure = onFailure,
             scrollTo = scrollTo,
+            // The iOS graph never reads the Tryptify/LastWave/float-DSP keys, so their switches
+            // stay hidden here.
+            audioEnginesSupported = false,
         )
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
         DiscordExperimentalRoute -> DiscordExperimentalSettings(controller, onFailure, scrollTo)
