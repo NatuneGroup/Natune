@@ -2,8 +2,8 @@
 
 `shared-domain` owns the one software DSP chain the platforms share: the ordered graph, the settings value,
 the stored document and the readers for every equalizer format the app already wrote. The chain is
-implemented and unit-tested; no platform adapter feeds it yet. Android still runs its own native LastWave and
-Tryptify engines, the desktop engine has no software chain, and the iOS shell has none.
+implemented and unit-tested. Android feeds it through one Media3 processor on the standard route; the desktop
+engine and the iOS shell still have no software chain.
 
 Source: `shared-domain/src/commonMain/kotlin/moe/rukamori/archivetune/shared/domain/dsp/`.
 
@@ -76,11 +76,14 @@ then the shared millibel levels.
 
 ## What the platform adapters do next
 
-- **Android**: wrap `:shared-domain` `DspGraph` in a Media3 `AudioProcessor` (the shape `FloatDspProcessor`
-  already has) and feed it interleaved float32 blocks. Report route facts to `BitPerfectGate`, pass the
-  resulting `SoftwareStagePlan` into `apply`, and read settings through `DspSettingsCodec` /
-  `DspSettingsMapper` instead of the per-engine preference reads. Reconfigure on format change off the audio
-  thread, reset on seek and on route change.
+- **Android**: `UnifiedDspAudioProcessor` wraps `DspGraph` in one Media3 `AudioProcessor` and replaces the
+  Tryptify, LastWave and float-DSP engines on the standard route. It takes 16-bit or float input and writes
+  float, reconfigures on a format change off the audio thread, drains the stretch tail at end of stream, and
+  resets on flush. `UnifiedDspSettingsSource` reads the stored values through `DspSettingsMapper` and
+  publishes one settings value plus its plan to every live processor; the plan is bypassed whenever the
+  bit-perfect gate holds the route. Tempo and pitch stay with ExoPlayer's playback parameters and
+  `SonicAudioProcessor`, so the graph's stretch stage is not requested there and speed cannot apply twice.
+  A bit-perfect or encodings this adapter cannot read leave the processor inactive, so Media3 skips it.
 - **Desktop**: `NativePlaybackEngine` currently decodes and plays with no software chain and no mixer; the
   host must push each decoded block through a `DspGraph` per stream and drain with `pull`. The transition
   policy (`TwoDeckMixer`, `TransitionGainRamp`) already runs on the shared side.
@@ -96,9 +99,10 @@ then the shared millibel levels.
   adapters report facts, never bypass.
 - **AAudio / USB exclusive output**: `UsbExclusiveAudioOutputProvider` and `AaudioExclusiveAudioOutput` keep
   their own stream, fallback and session reporting. The shared chain does not open, configure or replace them.
-- **LastWave / Tryptify native engines**: `AudioEngineHost` and `AudioEngineRouterProcessor` keep selecting
-  and driving the native engines, and their `lw_*` keys stay written and readable. `dsp_state_json` stays on
-  disk even though the unified chain does not read it.
+- **LastWave / Tryptify native engines**: their stored `lw_*`, `eq_bands_json` and `param_eq_bands_json`
+  keys stay readable and are what the unified chain reads for tone and clarity, and `dsp_state_json` stays on
+  disk even though nothing reads its bus graph. The engine classes and their native targets remain in the
+  tree, but `AudioEngineHost` no longer builds, gates or routes audio through them.
 
 ## Checks
 
