@@ -3,6 +3,7 @@ package moe.rukamori.archivetune.shared.ui.shortcuts
 import androidx.compose.ui.input.key.Key
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import moe.rukamori.archivetune.shared.ui.player.KeymapAction
@@ -17,6 +18,23 @@ class KeyboardShortcutsTest {
         platform: ShortcutPlatform = ShortcutPlatform.WINDOWS_LINUX,
         typing: Boolean = false,
     ) = KeyboardShortcuts.actionFor(key, ctrl, meta, alt, shift, platform, typing)
+
+    /** One physical press, with the platform's primary modifier already resolved to Ctrl or Cmd. */
+    private data class ChordPress(
+        val keyCode: Long,
+        val ctrl: Boolean,
+        val meta: Boolean,
+        val alt: Boolean,
+        val shift: Boolean,
+    )
+
+    private fun ShortcutChord.press(platform: ShortcutPlatform) = ChordPress(
+        keyCode = key.keyCode,
+        ctrl = ctrl || (primary && platform == ShortcutPlatform.WINDOWS_LINUX),
+        meta = meta || (primary && platform == ShortcutPlatform.MAC),
+        alt = alt,
+        shift = shift,
+    )
 
     @Test fun transportKeysAnswer() {
         assertEquals(KeymapAction.TogglePlayback, action(Key.Spacebar))
@@ -122,14 +140,52 @@ class KeyboardShortcutsTest {
         assertEquals(KeymapAction.Shuffle, action(Key.S, ctrl = true, typing = true))
     }
 
+    @Test fun everyChordResolvesToItsOwnAction() {
+        for (platform in ShortcutPlatform.entries) {
+            for (entry in KeyboardShortcuts.entries) {
+                for (chord in entry.chords) {
+                    val press = chord.press(platform)
+                    assertEquals(
+                        entry.action,
+                        action(chord.key, press.ctrl, press.meta, press.alt, press.shift, platform),
+                        "${entry.action} lost its press on $platform",
+                    )
+                }
+            }
+        }
+    }
+
+    @Test fun everyEntryCarriesAChord() {
+        assertTrue(KeyboardShortcuts.entries.isNotEmpty())
+        for (entry in KeyboardShortcuts.entries) {
+            assertTrue(entry.chords.isNotEmpty(), "${entry.action} has no key")
+        }
+    }
+
     @Test fun noTwoChordsClaimTheSamePress() {
+        // Minus and the numpad's subtract are different keys that print the same label, so a press is the key plus the
+        // resolved modifiers, never the rendered text.
+        for (platform in ShortcutPlatform.entries) {
+            val seen = mutableMapOf<ChordPress, KeymapAction>()
+            for (entry in KeyboardShortcuts.entries) {
+                for (chord in entry.chords) {
+                    val press = chord.press(platform)
+                    val previous = seen.put(press, entry.action)
+                    assertNull(previous, "two shortcuts claim $press on $platform")
+                }
+            }
+        }
+    }
+
+    @Test fun oneRenderedChordBelongsToOneAction() {
+        // Two rows that show the same chord would tell the user one press does two things.
         for (platform in ShortcutPlatform.entries) {
             val seen = mutableMapOf<String, KeymapAction>()
             for (entry in KeyboardShortcuts.entries) {
                 for (chord in entry.chords) {
-                    val resolved = chord.displayText(platform)
-                    val previous = seen.put(resolved, entry.action)
-                    assertNull(previous, "two shortcuts claim $resolved on $platform")
+                    val text = chord.displayText(platform)
+                    val previous = seen.put(text, entry.action)
+                    assertTrue(previous == null || previous == entry.action, "two actions show $text on $platform")
                 }
             }
         }
@@ -153,5 +209,20 @@ class KeyboardShortcutsTest {
         assertEquals("⌥⇧Q", ShortcutChord(Key.Q, "Q", alt = true, shift = true).displayText(ShortcutPlatform.MAC))
         assertEquals("Alt + Shift + Q", ShortcutChord(Key.Q, "Q", alt = true, shift = true).displayText(ShortcutPlatform.WINDOWS_LINUX))
         assertEquals("Esc", ShortcutChord(Key.Escape, "Esc").displayText(ShortcutPlatform.MAC))
+    }
+
+    @Test fun theTypingCounterTracksEveryAttachedField() {
+        val state = ShortcutTextInputState()
+        assertFalse(state.active)
+        state.attach()
+        state.attach()
+        assertTrue(state.active, "two focused fields keep the counter on")
+        state.detach()
+        assertTrue(state.active, "one field still holds focus")
+        state.detach()
+        assertFalse(state.active)
+        // A late detach after the counter already reached zero must not make it negative.
+        state.detach()
+        assertFalse(state.active)
     }
 }
