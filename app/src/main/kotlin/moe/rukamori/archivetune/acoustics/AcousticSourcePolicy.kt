@@ -9,6 +9,24 @@ package moe.rukamori.archivetune.acoustics
 
 import moe.rukamori.archivetune.constants.AudioSourceType
 
+// Internal source identity may contain a signed URI. Never put it in state, logs or exceptions.
+internal class AcousticSourceSnapshot(
+    val mediaId: String,
+    val source: AudioSourceType,
+    val cacheKey: String,
+    val uri: String?,
+    val expiresAtMs: Long,
+    val contentLength: Long?,
+    val advertisedSampleRate: Int?,
+    val claimedLossless: Boolean,
+) {
+    fun matches(other: AcousticSourceSnapshot?): Boolean =
+        other != null && mediaId == other.mediaId && source == other.source &&
+            cacheKey == other.cacheKey && uri == other.uri && expiresAtMs == other.expiresAtMs &&
+            contentLength == other.contentLength && advertisedSampleRate == other.advertisedSampleRate &&
+            claimedLossless == other.claimedLossless
+}
+
 internal data class AcousticCacheExtent(
     val position: Long,
     val length: Long,

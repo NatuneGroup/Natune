@@ -34,7 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.acoustics.AcousticAuditResult
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditResult
 import moe.rukamori.archivetune.acoustics.AcousticHeatAxis
 import moe.rukamori.archivetune.acoustics.AcousticSpectrum
 
