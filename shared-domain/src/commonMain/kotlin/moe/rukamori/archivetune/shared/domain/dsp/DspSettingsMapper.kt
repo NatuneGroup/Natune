@@ -26,16 +26,32 @@ data class PersistedDspValues(
     val equalizerEnabled: Boolean = false,
     /** `equalizerBandLevelsMb` — a JSON array of millibel levels, one per band of the writing host. */
     val equalizerBandLevelsMb: String? = null,
-    /** `equalizerOutputGainMb` — the user preamp, in millibels. */
+    /** `equalizerOutputGainMb` — the user preamp, in millibels. Read only while its own switch is on. */
     val equalizerOutputGainMb: Int = 0,
     /** `lw_eq_enabled` — the legacy 15-band equalizer switch. */
     val lastWaveEqualizerEnabled: Boolean = false,
     /** `lw_eq_gains` — fifteen comma-separated decibel levels. */
     val lastWaveGainsDb: String? = null,
-    /** `eq_bands_json` / `param_eq_bands_json` — parametric bands, and their enabled flags. */
+    /**
+     * `tryptifyAudioProcessing` — the retired Tryptify engine switch. A stage is only migrated while the
+     * engine that ran it was on, so a preset left behind by a dormant engine stays dormant.
+     */
     val tryptifyEqualizerEnabled: Boolean = false,
+    /** `eq_enabled` — the Tryptify graphic stage's own switch. */
+    val tryptifyGraphicStageEnabled: Boolean = false,
+    /** `param_eq_enabled` — the Tryptify parametric stage's own switch. */
+    val tryptifyParametricStageEnabled: Boolean = false,
+    /** `eq_bands_json` / `param_eq_bands_json` — the two stages' stored band lists. */
     val tryptifyGraphicBandsJson: String? = null,
     val tryptifyParametricBandsJson: String? = null,
+    /** `eq_stereo_mode` and `eq_bands_r_json` — the graphic stage's independent right-channel graph. */
+    val tryptifyStereoMode: Boolean = false,
+    val tryptifyRightGraphicBandsJson: String? = null,
+    /** `eq_preamp` / `param_eq_preamp` — each stage's own preamp, in decibels. */
+    val tryptifyGraphicPreampDb: Double? = null,
+    val tryptifyParametricPreampDb: Double? = null,
+    /** `lastwaveAudioProcessing` — the retired LastWave engine switch, gating both of its substages. */
+    val lastWaveEngineEnabled: Boolean = false,
     /** `lw_music_enhancer` and `lw_clarity_preset` — the Studio Master Clarity switch and preset index. */
     val clarityEnabled: Boolean = false,
     val clarityPresetIndex: Int = 0,
@@ -51,10 +67,15 @@ data class PersistedDspValues(
 /**
  * Reads the settings the app already stores into one [DspSettings].
  *
- * Every stored equalizer format the app has written is understood, in this precedence: Tryptify's parametric
- * bands, then its graphic bands, then the legacy fifteen-band gains, then the shared millibel levels. A band
- * list survives as the same shapes through [EqualizerBand], so a host that only ever knew millibels still
- * arrives at the same gains.
+ * Every stored equalizer format the app has written is understood. A retired engine's stage is migrated only
+ * while that engine and that stage were switched on, in this precedence: Tryptify's parametric stage, its
+ * graphic stage, the legacy fifteen-band gains, and finally the shared millibel levels. A band list survives
+ * as the same shapes through [EqualizerBand], so a host that only ever knew millibels still arrives at the
+ * same gains.
+ *
+ * `docs/engineering/dsp.md` records what one band list and one preamp cannot represent: both Tryptify stages
+ * enabled at once, a right-channel graph of another width, and a right-channel band type. Those stored values
+ * stay untouched and inactive rather than being approximated.
  *
  * `dsp_state_json` (the Tryptify multi-bus preset graph) is deliberately not mapped: it describes a plugin
  * graph, not an equalizer, and the unified chain has no bus to restore. A host that used to read it drops it.
@@ -154,29 +175,46 @@ object DspSettingsMapper {
     fun clarityFromStored(enabled: Boolean, presetIndex: Int): ClarityPreset? =
         if (enabled) ClarityPreset.fromIndex(presetIndex) else null
 
-    /** Everything a host stores, read into the one settings model. */
+    /**
+     * Everything a host stores, read into the one settings model.
+     *
+     * A retired engine's presets are migrated only while the engine and that stage were switched on, so a
+     * preset a dormant engine left on disk stays dormant instead of becoming audible under the new
+     * processing switch. The stages migrate in this order: Tryptify's parametric stage, then its graphic
+     * stage (with `eq_stereo_mode`'s right-channel graph when it lines up band for band), then LastWave's
+     * fifteen gains, and only then the shared millibel levels.
+     */
     fun fromPersisted(values: PersistedDspValues, bandCentresHz: List<Double>): DspSettings {
         val parametric = bandsFromTryptifyJson(values.tryptifyParametricBandsJson)
         val graphic = bandsFromTryptifyJson(values.tryptifyGraphicBandsJson)
         val legacy = bandsFromLastWaveGains(values.lastWaveGainsDb)
         val levels = bandsFromLevelsMb(values.equalizerBandLevelsMb, bandCentresHz)
-        val bands = when {
-            values.tryptifyEqualizerEnabled && parametric.isNotEmpty() -> parametric
-            values.tryptifyEqualizerEnabled && graphic.isNotEmpty() -> graphic
-            values.lastWaveEqualizerEnabled && legacy.isNotEmpty() -> legacy
-            else -> levels
-        }.take(DspSettings.MAX_EQUALIZER_BANDS)
+        val parametricStage =
+            values.tryptifyEqualizerEnabled && values.tryptifyParametricStageEnabled && parametric.isNotEmpty()
+        val graphicStage =
+            values.tryptifyEqualizerEnabled && values.tryptifyGraphicStageEnabled && graphic.isNotEmpty()
+        val lastWaveStage =
+            values.lastWaveEngineEnabled && values.lastWaveEqualizerEnabled && legacy.isNotEmpty()
+        val migrated = when {
+            parametricStage -> parametric
+            graphicStage -> withRightOverrides(graphic, values)
+            lastWaveStage -> legacy
+            else -> emptyList()
+        }
+        val bands = (if (migrated.isEmpty()) levels else migrated).take(DspSettings.MAX_EQUALIZER_BANDS)
 
         val floatChain = values.floatDspEnabled
         return DspSettings(
             linearGain = 1f,
-            preampDb = (values.equalizerOutputGainMb / MILLIBELS_PER_DB)
+            preampDb = (sharedPreampDb(values) + migratedStagePreampDb(values, parametricStage, graphicStage))
                 .coerceIn(-DspSettings.MAX_PREAMP_DB, DspSettings.MAX_PREAMP_DB),
             normalizationEnabled = values.audioNormalization,
-            equalizerEnabled = values.equalizerEnabled || values.lastWaveEqualizerEnabled ||
-                values.tryptifyEqualizerEnabled,
+            equalizerEnabled = values.equalizerEnabled || parametricStage || graphicStage || lastWaveStage,
             equalizerBands = bands,
-            clarity = clarityFromStored(values.clarityEnabled, values.clarityPresetIndex),
+            clarity = clarityFromStored(
+                enabled = values.lastWaveEngineEnabled && values.clarityEnabled,
+                presetIndex = values.clarityPresetIndex,
+            ),
             dcBlockerEnabled = floatChain,
             limiterEnabled = floatChain,
             speed = tempoOf(values.playbackSpeed),
@@ -184,6 +222,48 @@ object DspSettingsMapper {
             transitionGain = values.transitionGain.coerceIn(0f, DspSettings.MAX_TRANSITION_GAIN),
             dither = if (floatChain) DspDither(enabled = true) else DspDither.OFF,
         )
+    }
+
+    /** The shared equalizer's output gain, already gated by its own switch at the host's read boundary. */
+    private fun sharedPreampDb(values: PersistedDspValues): Double = values.equalizerOutputGainMb / MILLIBELS_PER_DB
+
+    /**
+     * The preamp the migrated stage carried. Both were applied by their own stage in the old engine, so the
+     * one that supplies the band curve contributes its gain, and a stage that supplies nothing contributes
+     * nothing.
+     */
+    private fun stagePreampDb(preampDb: Double?): Double =
+        if (preampDb != null && preampDb.isFinite()) preampDb else 0.0
+
+    private fun migratedStagePreampDb(
+        values: PersistedDspValues,
+        parametricStage: Boolean,
+        graphicStage: Boolean,
+    ): Double =
+        when {
+            parametricStage -> stagePreampDb(values.tryptifyParametricPreampDb)
+            graphicStage -> stagePreampDb(values.tryptifyGraphicPreampDb)
+            else -> 0.0
+        }
+
+    /**
+     * Carries `eq_stereo_mode` into the band list when the stored right-channel graph has the same shape as
+     * the left one, so each band keeps its own right-channel design. A right graph of another width cannot be
+     * paired band for band, and the shared band model carries no right-channel band type, so those are not
+     * guessed at: the bands then run linked and the stored value stays untouched.
+     */
+    private fun withRightOverrides(bands: List<EqualizerBand>, values: PersistedDspValues): List<EqualizerBand> {
+        if (!values.tryptifyStereoMode) return bands
+        val right = bandsFromTryptifyJson(values.tryptifyRightGraphicBandsJson)
+        if (right.size != bands.size) return bands
+        return bands.mapIndexed { index, band ->
+            val rightBand = right[index]
+            band.copy(
+                rightFrequencyHz = rightBand.frequencyHz.takeIf { it != band.frequencyHz },
+                rightGainDb = rightBand.gainDb.takeIf { it != band.gainDb },
+                rightQ = rightBand.q.takeIf { it != band.q },
+            )
+        }
     }
 
     private fun tempoOf(speed: Float): Double =

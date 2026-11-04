@@ -138,6 +138,7 @@ import moe.rukamori.archivetune.cast.CastPlaybackRepository
 import moe.rukamori.archivetune.cast.CastPlaybackRepositoryLocator
 import moe.rukamori.archivetune.cast.CastScreenState
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
+import moe.rukamori.archivetune.constants.AudioProcessingEnabledKey
 import moe.rukamori.archivetune.constants.DefaultMetadataSourceKey
 import moe.rukamori.archivetune.constants.MetadataSource
 import moe.rukamori.archivetune.constants.AudioOffload
@@ -1861,10 +1862,15 @@ class MusicService :
                 .distinctUntilChanged(),
             currentFormat,
             dataStore.data
-                // Bit-perfect output hands volume to the DAC path; a per-track gain there would
-                // just move the user's volume around, so normalization sits out.
-                .map { moe.rukamori.archivetune.shared.domain.settings.audioNormalizationApplies(
-                    it[AudioNormalizationKey] ?: true, bitPerfectOutputActive) }
+                // Bit-perfect output hands volume to the DAC path, and the Audio processing switch covers the
+                // normalization gain as one of the stages the software chain renders.
+                .map {
+                    NormalizationGainPolicy.applies(
+                        requested = it[AudioNormalizationKey] ?: true,
+                        bitPerfectSinkActive = bitPerfectOutputActive,
+                        processingEnabled = audioProcessingEnabled(it),
+                    )
+                }
                 .distinctUntilChanged(),
         ) { mediaId, format, normalizeAudio ->
             normalizeAudio to resolveAudioNormalizationFactor(mediaId, format, normalizeAudio)
@@ -6412,6 +6418,9 @@ class MusicService :
         )
     }
 
+    /** The one Audio processing switch; unset reads as on, the same default the DSP host publishes with. */
+    private fun audioProcessingEnabled(prefs: Preferences): Boolean = prefs[AudioProcessingEnabledKey] != false
+
     fun applyEqFlatPreset() {
         ioScope.launch {
             val caps = eqCapabilities.value
@@ -6453,35 +6462,6 @@ class MusicService :
                     prefs[EqualizerSelectedProfileIdKey] = "system:$presetIndex"
                 }
             }
-        }
-    }
-
-    private fun resampleLevelsByIndex(
-        levelsMb: List<Int>,
-        targetCount: Int,
-    ): List<Int> {
-        if (targetCount <= 0) return emptyList()
-        if (levelsMb.isEmpty()) return List(targetCount) { 0 }
-        if (levelsMb.size == targetCount) return levelsMb
-        if (targetCount == 1) return listOf(levelsMb.sum() / levelsMb.size)
-
-        val lastIndex = levelsMb.lastIndex.toFloat().coerceAtLeast(1f)
-        return List(targetCount) { i ->
-            val pos = i.toFloat() * lastIndex / (targetCount - 1).toFloat()
-            val lo =
-                kotlin.math
-                    .floor(pos)
-                    .toInt()
-                    .coerceIn(0, levelsMb.lastIndex)
-            val hi =
-                kotlin.math
-                    .ceil(pos)
-                    .toInt()
-                    .coerceIn(0, levelsMb.lastIndex)
-            val t = (pos - lo.toFloat()).coerceIn(0f, 1f)
-            val a = levelsMb[lo]
-            val b = levelsMb[hi]
-            (a + ((b - a) * t)).toInt()
         }
     }
 
@@ -6634,42 +6614,31 @@ class MusicService :
 
     private fun applyEqSettingsToEffects(settings: EqSettings) {
         val eq = equalizer ?: return
-        val caps = eqCapabilities.value
-        val bandCount = caps?.bandCount ?: readAudioEffectValue("equalizer band count") { eq.numberOfBands.toInt() } ?: 0
-        val minMb =
-            caps?.minBandLevelMb ?: readAudioEffectValue("equalizer minimum band level") { eq.bandLevelRange.getOrNull(0)?.toInt() }
-                ?: -1500
-        val maxMb =
-            caps?.maxBandLevelMb ?: readAudioEffectValue("equalizer maximum band level") { eq.bandLevelRange.getOrNull(1)?.toInt() } ?: 1500
-
-        val levels = resampleLevelsByIndex(settings.bandLevelsMb, bandCount)
-        runCatching { eq.enabled = settings.enabled }
-
-        for (band in 0 until bandCount) {
-            val levelMb = levels.getOrNull(band)?.coerceIn(minMb, maxMb) ?: 0
-            runCatching { eq.setBandLevel(band.toShort(), levelMb.toShort()) }
+        val plan = FrameworkAudioEffectPolicy.plan(settings)
+        // The software chain owns the graphic equalizer: it reads EqualizerEnabledKey and
+        // equalizerBandLevelsMb and renders them itself, so the session equalizer stays off and its bands
+        // are left alone. Applying the same curve here as well would add it twice, on this device's own band
+        // centres, and a restored preset would no longer produce the response it names.
+        runCatching { eq.enabled = plan.equalizerEnabled }
+        for (band in plan.bandLevelsMb.indices) {
+            runCatching { eq.setBandLevel(band.toShort(), plan.bandLevelsMb[band].toShort()) }
         }
 
         bassBoost?.let { bb ->
-            runCatching { bb.enabled = settings.enabled && settings.bassBoostEnabled }
-            runCatching { bb.setStrength(settings.bassBoostStrength.toShort()) }
+            runCatching { bb.enabled = plan.bassBoostEnabled }
+            runCatching { bb.setStrength(plan.bassBoostStrength.toShort()) }
         }
 
         virtualizer?.let { v ->
-            runCatching { v.enabled = settings.enabled && settings.virtualizerEnabled }
-            runCatching { v.setStrength(settings.virtualizerStrength.toShort()) }
+            runCatching { v.enabled = plan.virtualizerEnabled }
+            runCatching { v.setStrength(plan.virtualizerStrength.toShort()) }
         }
 
         loudnessEnhancer?.let { le ->
-            val automaticHeadroomMb = -(levels.maxOrNull()?.coerceAtLeast(0) ?: 0)
-            val gainMb =
-                when {
-                    settings.autoHeadroomEnabled -> automaticHeadroomMb
-                    settings.outputGainEnabled -> settings.outputGainMb.coerceIn(-1500, 1500)
-                    else -> 0
-                }
-            runCatching { le.setTargetGain(gainMb) }
-            runCatching { le.enabled = settings.enabled && (settings.autoHeadroomEnabled || settings.outputGainEnabled) }
+            // The output gain is the chain's preamp now; the session effect keeps automatic headroom only,
+            // because the chain has no headroom stage.
+            runCatching { le.setTargetGain(plan.loudnessTargetGainMb) }
+            runCatching { le.enabled = plan.loudnessEnabled }
         }
     }
 
@@ -11185,8 +11154,11 @@ class MusicService :
         audioNormalizationFactorCache[mediaId] = resolvedNormalizationFactor
         scope.launch {
             if (currentMediaMetadata.value?.id == mediaId &&
-                moe.rukamori.archivetune.shared.domain.settings.audioNormalizationApplies(
-                    dataStore.get(AudioNormalizationKey, true), bitPerfectOutputActive)
+                NormalizationGainPolicy.applies(
+                    requested = dataStore.get(AudioNormalizationKey, true),
+                    bitPerfectSinkActive = bitPerfectOutputActive,
+                    processingEnabled = dataStore.get(AudioProcessingEnabledKey, true),
+                )
             ) {
                 normalizeFactor.value = resolvedNormalizationFactor
             }
