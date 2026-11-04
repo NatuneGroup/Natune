@@ -4,7 +4,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import moe.rukamori.archivetune.shared.ui.shortcuts.KeyboardShortcutsDialog
 import moe.rukamori.archivetune.shared.domain.settings.BooleanPreferenceKey
 import moe.rukamori.archivetune.shared.ui.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -30,6 +34,7 @@ fun SettingsHomePage(
     modifier: Modifier = Modifier,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
+    var shortcutsVisible by remember { mutableStateOf(false) }
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
     fun entry(anchor: String, title: StringResource, description: StringResource, route: String) =
@@ -95,6 +100,16 @@ fun SettingsHomePage(
                 description = Res.string.m6_settings_home_close_to_tray_desc,
             ))
         }
+        // The shortcut table belongs next to the other reference entries, and it opens the same overlay the
+        // Ctrl/Cmd + / key does, so the two can never disagree.
+        add(SettingsRow.Header("shortcut_group", Res.string.shortcut_settings_group))
+        add(
+            SettingsRow.Action(
+                "keyboard_shortcuts", Res.string.shortcut_settings_title,
+                run = { shortcutsVisible = true },
+                description = Res.string.shortcut_settings_description,
+            ),
+        )
         add(SettingsRow.Header("group_about", Res.string.m6_settings_home_group_about))
         add(entry("developer_options", Res.string.m6_settings_home_developer_options,
             Res.string.m6_settings_home_developer_options_desc, "settings/misc"))
@@ -111,4 +126,5 @@ fun SettingsHomePage(
         onFailure = onFailure,
         modifier = modifier,
     )
+    if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
 }
