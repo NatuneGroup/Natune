@@ -581,6 +581,7 @@ val PersistedPreferenceKeys: List<PreferenceKey<*>> =
         PlaybackPitchKey,
         TempoPitchRememberedKey,
         TempoPitchPresetsJsonKey,
+        AudioProcessingEnabledKey,
         FloatDspEnabledKey,
         UsbExclusiveAudioKey,
         BitPerfectOutputKey,

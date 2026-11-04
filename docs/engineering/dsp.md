@@ -100,7 +100,8 @@ reads the neutral value, which keeps the desktop's pre-document behaviour (no no
   float, reconfigures on a format change off the audio thread, drains the stretch tail at end of stream, and
   resets on flush. `UnifiedDspSettingsSource` reads the stored values through `DspSettingsMapper` and
   publishes one settings value plus its plan to every live processor, and the plan is bypassed whenever the
-  bit-perfect gate holds the route. Tempo and pitch stay with ExoPlayer's playback parameters and
+  bit-perfect gate holds the route, and the single Audio processing switch either publishes the mapped
+  settings or a bypassed plan. Tempo and pitch stay with ExoPlayer's playback parameters and
   `SonicAudioProcessor`, so the shared chain's stretch stage is not requested and speed cannot apply twice.
   A bit-perfect route, or an encoding the adapter cannot read, leaves the processor inactive so Media3 skips it.
 - **Desktop**: `DesktopPlaybackPort.applyDspSettings` takes the stored `DspSettings` and hands the mixer
@@ -124,10 +125,10 @@ reads the neutral value, which keeps the desktop's pre-document behaviour (no no
   adapters report facts, never bypass.
 - **AAudio / USB exclusive output**: `UsbExclusiveAudioOutputProvider` and `AaudioExclusiveAudioOutput` keep
   their own stream, fallback and session reporting. The shared chain does not open, configure or replace them.
-- **LastWave / Tryptify native engines**: their stored `lw_*`, `eq_bands_json` and `param_eq_bands_json`
+- **Retired LastWave / Tryptify engines**: their stored `lw_*`, `eq_bands_json` and `param_eq_bands_json`
   keys stay readable and are what the unified chain reads for tone and clarity, and `dsp_state_json` stays on
-  disk even though nothing reads its bus graph. The engine classes and their native targets remain in the
-  tree, but `AudioEngineHost` no longer builds, gates or routes audio through them.
+  disk even though nothing reads its bus graph. The engine classes, their native targets and the vendored soxr
+  are gone; `archivetune_dsp` keeps only the AAudio exclusive stream.
 
 ## Checks
 

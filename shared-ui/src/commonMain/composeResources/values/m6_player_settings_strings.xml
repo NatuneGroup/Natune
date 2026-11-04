@@ -87,9 +87,6 @@
     <string name="m6_audio_offload">Audio offload</string>
     <string name="m6_bit_perfect_usb">Bit-perfect USB output</string>
     <string name="m6_usb_exclusive">Exclusive USB audio</string>
-    <string name="m6_tryptify">Tryptify audio processing</string>
-    <string name="m6_lastwave">LastWave audio processing</string>
-    <string name="m6_float_dsp">Float DSP</string>
     <string name="m6_seek_extra">Add extra seek seconds</string>
     <string name="m6_pause_mute">Pause on device mute</string>
     <string name="m6_mute_recovery">Device-mute recovery volume</string>

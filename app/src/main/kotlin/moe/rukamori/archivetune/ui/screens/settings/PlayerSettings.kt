@@ -109,9 +109,8 @@ import moe.rukamori.archivetune.ui.component.ArtistSeparatorsDialog
 import moe.rukamori.archivetune.ui.component.CrossfadeSliderPreference
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.constants.BitPerfectUsbOutputKey
-import moe.rukamori.archivetune.constants.FloatDspEnabledKey
-import moe.rukamori.archivetune.constants.LastwaveAudioProcessingKey
-import moe.rukamori.archivetune.constants.TryptifyAudioProcessingKey
+import moe.rukamori.archivetune.constants.AUDIO_PROCESSING_ENABLED_DEFAULT
+import moe.rukamori.archivetune.constants.AudioProcessingEnabledKey
 import moe.rukamori.archivetune.constants.UsbExclusiveAudioKey
 import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
@@ -196,14 +195,10 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         )
     val bitPerfectStatus by BitPerfectUsbOutput.status.collectAsState()
     val bitPerfectContext = LocalContext.current
-    val (tryptifyEngine, onTryptifyEngineChange) =
-        prefs.conflictAwareState(TryptifyAudioProcessingKey, defaultValue = false)
-    val (lastwaveEngine, onLastwaveEngineChange) =
-        prefs.conflictAwareState(LastwaveAudioProcessingKey, defaultValue = false)
-    val (floatDsp, onFloatDspChange) =
-        prefs.conflictAwareState(FloatDspEnabledKey, defaultValue = false)
-    // The engines ride the standard sink only; the bit-perfect sink skips every processor.
-    val audioEnginesBlocked = prefs.current.sharedSnapshot().bitPerfectOutputSelected() || BitPerfectUsbOutput.sinkActive
+    val (audioProcessing, onAudioProcessingChange) =
+        prefs.conflictAwareState(AudioProcessingEnabledKey, defaultValue = AUDIO_PROCESSING_ENABLED_DEFAULT)
+    // The chain rides the standard sink only; the bit-perfect sink skips every processor.
+    val audioProcessingBlocked = prefs.current.sharedSnapshot().bitPerfectOutputSelected() || BitPerfectUsbOutput.sinkActive
     val (usbExclusive) =
         prefs.state(UsbExclusiveAudioKey, defaultValue = false)
     // FloatDsp.available loads libarchivetune_dsp on first touch; never on the main thread.
@@ -595,14 +590,14 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                         SwitchPreference(
                             title = { Text(stringResource(R.string.skip_silence)) },
                             description = when {
-                                audioEnginesBlocked -> stringResource(R.string.settings_processing_bypassed_bit_perfect)
+                                audioProcessingBlocked -> stringResource(R.string.settings_processing_bypassed_bit_perfect)
                                 audioOffload -> stringResource(R.string.settings_processing_unavailable_offload)
                                 else -> null
                             },
                             icon = { Icon(painterResource(R.drawable.fast_forward), null) },
                             checked = skipSilence,
                             onCheckedChange = onSkipSilenceChange,
-                            isEnabled = !audioOffload && !audioEnginesBlocked,
+                            isEnabled = !audioOffload && !audioProcessingBlocked,
                         )
                     }
                 }
@@ -611,12 +606,12 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                     Column(modifier = positions.modifierFor("audio_normalization")) {
                         SwitchPreference(
                             title = { Text(stringResource(R.string.audio_normalization)) },
-                            description = if (audioEnginesBlocked)
+                            description = if (audioProcessingBlocked)
                                 stringResource(R.string.settings_processing_bypassed_bit_perfect) else null,
                             icon = { Icon(painterResource(R.drawable.volume_up), null) },
                             checked = audioNormalization,
                             onCheckedChange = onAudioNormalizationChange,
-                            isEnabled = !audioEnginesBlocked,
+                            isEnabled = !audioProcessingBlocked,
                         )
                     }
                 }
@@ -692,12 +687,12 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 item {
                     SwitchPreference(
                         title = { Text(stringResource(R.string.audio_authenticity_skip_upscaled_title)) },
-                        description = stringResource(if (audioEnginesBlocked) R.string.settings_processing_bypassed_bit_perfect
+                        description = stringResource(if (audioProcessingBlocked) R.string.settings_processing_bypassed_bit_perfect
                             else R.string.audio_authenticity_skip_upscaled_description),
                         icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
                         checked = rejectSuspectedUpscaledAudio,
                         onCheckedChange = onRejectSuspectedUpscaledAudioChange,
-                        isEnabled = !audioEnginesBlocked,
+                        isEnabled = !audioProcessingBlocked,
                     )
                 }
 
@@ -767,55 +762,19 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 }
 
                 item {
-                    Column(modifier = positions.modifierFor("tryptify_engine")) {
+                    Column(modifier = positions.modifierFor("audio_processing")) {
                         SwitchPreference(
-                            title = { Text(stringResource(R.string.tryptify_audio_processing_title)) },
+                            title = { Text(stringResource(R.string.audio_processing_title)) },
                             description =
-                                if (audioEnginesBlocked) {
+                                if (audioProcessingBlocked) {
                                     stringResource(R.string.settings_processing_bypassed_bit_perfect)
                                 } else {
-                                    stringResource(R.string.tryptify_audio_processing_desc)
+                                    stringResource(R.string.audio_processing_desc)
                                 },
                             icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                            checked = tryptifyEngine,
-                            isEnabled = !audioEnginesBlocked,
-                            onCheckedChange = onTryptifyEngineChange,
-                        )
-                    }
-                }
-
-                item {
-                    Column(modifier = positions.modifierFor("lastwave_engine")) {
-                        SwitchPreference(
-                            title = { Text(stringResource(R.string.lastwave_audio_processing_title)) },
-                            description =
-                                if (audioEnginesBlocked) {
-                                    stringResource(R.string.settings_processing_bypassed_bit_perfect)
-                                } else {
-                                    stringResource(R.string.lastwave_audio_processing_desc)
-                                },
-                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                            checked = lastwaveEngine && !tryptifyEngine,
-                            isEnabled = !audioEnginesBlocked,
-                            onCheckedChange = onLastwaveEngineChange,
-                        )
-                    }
-                }
-
-                item {
-                    Column(modifier = positions.modifierFor("float_dsp")) {
-                        SwitchPreference(
-                            title = { Text(stringResource(R.string.float_dsp_title)) },
-                            description =
-                                if (audioEnginesBlocked) {
-                                    stringResource(R.string.settings_processing_bypassed_bit_perfect)
-                                } else {
-                                    stringResource(R.string.float_dsp_desc)
-                                },
-                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
-                            checked = floatDsp,
-                            isEnabled = !audioEnginesBlocked,
-                            onCheckedChange = onFloatDspChange,
+                            checked = audioProcessing,
+                            isEnabled = !audioProcessingBlocked,
+                            onCheckedChange = onAudioProcessingChange,
                         )
                     }
                 }

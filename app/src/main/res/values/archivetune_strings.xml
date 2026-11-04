@@ -1120,12 +1120,8 @@
     <string name="bit_perfect_usb_default_device">USB DAC</string>
     <string name="bit_perfect_usb_reason_no_mode">%1$s offers no bit-perfect mode at %2$s / %3$s</string>
     <string name="bit_perfect_usb_reason_refused">Android refused bit-perfect mode for this device</string>
-    <string name="tryptify_audio_processing_title">Tryptify DSP engine</string>
-    <string name="tryptify_audio_processing_desc">Experimental. Runs playback through Tryptify\'s 32-bit float chain (mix bus, AutoEQ, parametric EQ). Starts on the next song. Turns off LastWave.</string>
-    <string name="lastwave_audio_processing_title">LastWave DSP engine</string>
-    <string name="lastwave_audio_processing_desc">Experimental. Runs stereo playback through LastWave\'s native processor (clarity, equalizer). Starts on the next song. Turns off Tryptify.</string>
-    <string name="float_dsp_title">Float DSP stage</string>
-    <string name="float_dsp_desc">Experimental. Processes the decoded audio in 32-bit float and dithers it back. Used only when no engine is on. Starts on the next song.</string>
+    <string name="audio_processing_title">Audio processing</string>
+    <string name="audio_processing_desc">Natune DSP. Normalization, the equalizer, the clarity preset, the limiter and dither run in one 32-bit float chain. Off hands the decoder\'s samples straight to the output, which is also what audio offload and bit-perfect output need.</string>
     <string name="audio_engines_unavailable_bit_perfect">Off while bit-perfect USB output is on</string>
     <string name="usb_exclusive_audio_title">USB exclusive output</string>
     <string name="usb_exclusive_audio_desc">Experimental. Plays to a connected USB DAC through an exclusive AAudio stream, past the Android mixer. Engines and the float DSP still apply, and the audio stays at the normal path\'s 16-bit depth (bit-perfect USB output keeps hi-res depth). Falls back to the normal output whenever the DAC refuses. Turns off crossfade, automix, offload and bit-perfect USB output.</string>
@@ -1180,8 +1176,6 @@
     <string name="live_audio_chain_natune_dsp">NATUNE DSP</string>
     <string name="live_audio_chain_engine_16bit_note">Engine route decodes 16-bit — disable engines for full-depth output</string>
     <string name="live_audio_chain_float_pcm">Float</string>
-    <string name="live_audio_chain_float_with_depth">Float · %1$d-bit</string>
-    <string name="live_audio_chain_gain_reduction">Gain reduction: %1$s dB</string>
     <string name="live_audio_chain_idle">Idle — play something to trace the live chain</string>
     <string name="live_audio_chain_input">INPUT</string>
     <string name="live_audio_chain_lossy">Lossy</string>
@@ -1203,7 +1197,6 @@
     <string name="ti_engine">Engine</string>
     <string name="ti_engine_off">Off (Android audio path)</string>
     <string name="ti_engine_natune">Natune DSP</string>
-    <string name="ti_engine_pending">%1$s (starts on the next song)</string>
     <string name="ti_hardware_clock">Hardware clock</string>
     <string name="ti_normalization">Normalization</string>
     <string name="ti_pipeline_state">Pipeline state</string>
