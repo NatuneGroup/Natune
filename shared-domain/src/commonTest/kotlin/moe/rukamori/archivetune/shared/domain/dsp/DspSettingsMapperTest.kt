@@ -230,7 +230,7 @@ class DspSettingsMapperTest {
             listOf(100.0),
         )
         assertNull(lastWaveEngineOff.clarity)
-        assertTrue("the dormant curve contributes no bands", lastWaveEngineOff.equalizerBands.isEmpty())
+        assertTrue(lastWaveEngineOff.equalizerBands.isEmpty(), "the dormant curve contributes no bands")
 
         val lastWaveEngineOn = DspSettingsMapper.fromPersisted(
             PersistedDspValues(lastWaveEngineEnabled = true, clarityEnabled = true, clarityPresetIndex = 3),
