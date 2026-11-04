@@ -1,6 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.dsp
 
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,7 @@ import moe.rukamori.archivetune.shared.domain.settings.EqualizerEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.EqualizerOutputGainEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.EqualizerOutputGainMbKey
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.setPcmProcessingPreference
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,7 +31,8 @@ import kotlin.test.assertTrue
 
 /**
  * The owner publishes what the engine renders, not merely what is stored: the one Audio processing switch
- * gates the rendered value while the document keeps every preset for when it is back on.
+ * gates the rendered value while the document keeps every preset for when it is back on, and the Playback
+ * settings row's normalization key and the document stay one value.
  */
 class DspSettingsOwnerTest {
     @Test
@@ -57,6 +60,35 @@ class DspSettingsOwnerTest {
         assertEquals(stored, rig.await { it == stored })
     }
 
+    @Test
+    fun normalizationRowBridgesIntoTheOneDocumentAndSurvivesReopen() {
+        var path: Path? = null
+        runOwner(preset()) { rig ->
+            path = rig.path
+            val migrated = rig.await { it.equalizerBands.any { band -> band.gainDb != 0.0 } }
+            assertTrue(migrated.normalizationEnabled)
+            rig.awaitDocument { it == migrated }
+
+            // The Playback settings row writes the legacy key, exactly as playbackSettingsRows does.
+            rig.store.edit { setPcmProcessingPreference(AudioNormalizationKey, false) }
+            val bridged = rig.await { !it.normalizationEnabled }
+            assertEquals(migrated.equalizerBands, bridged.equalizerBands)
+            // The document is the one authority, and the row follows it rather than keeping its own value.
+            assertEquals(false, rig.awaitDocument { it?.normalizationEnabled == false }.normalizationEnabled)
+            assertEquals(false, rig.store.snapshots.value?.get(AudioNormalizationKey))
+        }
+        // Reopening the store reads the bridged document, so the toggle did not live only in this process.
+        runBlocking {
+            val reopened = DesktopSettingsStore.open(checkNotNull(path))
+            try {
+                assertEquals(false, reopened.snapshot()[AudioNormalizationKey])
+                assertEquals(false, DspSettingsDocument.read(reopened.snapshot()[DspSettingsDocumentKey])?.normalizationEnabled)
+            } finally {
+                reopened.close()
+            }
+        }
+    }
+
     private fun preset(): PreferenceSnapshot {
         val levels = GraphicEqualizer.flatLevelsMb().toMutableList().also { it[2] = 600 }
         return PreferenceSnapshot.of(
@@ -81,7 +113,7 @@ class DspSettingsOwnerTest {
         try {
             if (initial.keys.isNotEmpty()) store.replaceAll(initial)
             val owner = DspSettingsOwner(scope, store, onApplied = { applied += it })
-            block(Rig(store, applied, owner))
+            block(Rig(path, store, applied, owner))
         } finally {
             scope.cancel()
             store.close()
@@ -90,6 +122,7 @@ class DspSettingsOwnerTest {
     }
 
     private class Rig(
+        val path: Path,
         val store: DesktopSettingsStore,
         val applied: CopyOnWriteArrayList<DspSettings>,
         val owner: DspSettingsOwner,
