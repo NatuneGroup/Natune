@@ -90,6 +90,18 @@ class PlayerSettingsFamilyTest {
         assertFalse(rows.single { it.anchor == "bit_perfect_usb" }.enabled)
     }
 
+    @Test fun engineSwitchesExistOnlyWhereTheHostReadsThem() {
+        val stored = PreferenceSnapshot.of(TryptifyAudioProcessingKey to true)
+        val hidden = playbackSettingsRows(stored, false, false, false, {}, {}, {},
+            audioEnginesSupported = false)
+        listOf("tryptify_engine", "lastwave_engine", "float_dsp").forEach { anchor ->
+            assertFalse(hidden.any { it.anchor == anchor }, anchor)
+        }
+        assertTrue(playbackSettingsRows(stored, false, false, false, {}, {}, {})
+            .any { it.anchor == "tryptify_engine" })
+        assertEquals(true, stored[TryptifyAudioProcessingKey])
+    }
+
     @Test fun realActionsUseActualRoutesAndRequiredEditors() {
         val destinations = mutableListOf<String>()
         var home = 0; var artwork = 0; var tags = 0

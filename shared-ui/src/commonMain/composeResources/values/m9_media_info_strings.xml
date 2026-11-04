@@ -134,7 +134,6 @@
     <string name="m9_media_info_ti_signal_path">Signal path</string>
     <string name="m9_media_info_usb_exclusive_direct">USB Exclusive (Direct DAC)</string>
     <string name="m9_media_info_bit_perfect_usb_title">Bit-perfect USB output</string>
-    <string name="m9_media_info_usb_framework_pinned">USB Framework (Pinned Route)</string>
     <string name="m9_media_info_default_mixer">Default Android System Mixer</string>
     <string name="m9_media_info_ti_hardware_clock">Hardware clock</string>
     <string name="m9_media_info_ti_usb_id">USB hardware ID</string>

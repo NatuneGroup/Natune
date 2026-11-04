@@ -58,7 +58,7 @@ enum class OutputPath(val api: String) {
 
     USB_FRAMEWORK("AudioTrack (USB pinned)"),
 
-    USB_EXCLUSIVE("libusb (UAC exclusive)"),
+    USB_EXCLUSIVE("AAudio (UAC exclusive)"),
 }
 
 data class UsbStream(

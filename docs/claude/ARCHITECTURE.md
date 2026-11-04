@@ -254,11 +254,13 @@ Oboe route or native engine.
 
 ## DSP and retained native source
 
-Maintenance pins: Oboe 1.11.0, Signalsmith Linear 0.6.5, libusb 1.0.30; Stretch 1.4.0
-and soxr 0.1.3 remain. Existing Media3/AAudio/LastWave/Tryptify/float-DSP switches,
-defaults, presets, source policy and bit-perfect bypass remain separate. libusb/soxr retain
-Android runtime/header/build/license closure, not complete standalone upstream tooling/tests:
-see [libusb subset](../../third_party/libusb/README) and [soxr subset](../../third_party/soxr/README).
+Maintenance pins: Oboe 1.11.0 and soxr 0.1.3 remain. The vendored libusb USB Audio
+Class driver, its libusb subset and the Signalsmith/Stretch pitch shifter were removed
+in the 2026-11 DSP dead-code pass, so no native pitch-shift or libusb target ships.
+Existing Media3/AAudio/LastWave/Tryptify/float-DSP switches, defaults, presets, source
+policy and bit-perfect bypass remain separate. soxr retains Android
+runtime/header/build/license closure, not complete standalone upstream tooling/tests:
+see [soxr subset](../../third_party/soxr/README).
 The removed unreachable decent USB island is not the active USB output; its
 [MIT license](../../audio/decent-usb-audio-driver/LICENSE), credit and app optional USB-host
 feature remain. Persisted preset/state formats are not dead with an unused builder.

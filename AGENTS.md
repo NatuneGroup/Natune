@@ -61,8 +61,8 @@ must preserve the invariants below.
 - Stable/Nightly are explicit choices on every build; build identity supplies only the unset default. Migrate stored Canary once without overriding a later Stable choice. Keep channel-bound candidates and no-downgrade checks.
 - Settings descriptions use finite automatic marquee only for visible/resumed overflowing text with motion enabled. Keep page snapshots and running startup latches; one shared post-commit Restart now/Later modal owns restart actions, not per-row effects or timers.
 - The acoustic graph in Developer (`settings/misc`, `acoustic_quality`) and shared player/song menus runs only after Run. Keep bounded, cancellable, source-bound memory-only results, ordinary seekable file/content and clear current-source support, stale-result rejection and heuristic/unknown language. Never mutate playback resolution, queue or source rejection settings for an audit.
-- Existing DSP maintenance pins are Oboe 1.11.0, Signalsmith Linear 0.6.5 and retained libusb 1.0.30; Stretch remains 1.4.0 and soxr 0.1.3. No new output engine/default/preset policy. libusb/soxr are documented Android subsets; retained licenses/headers and Android build closure matter more than standalone upstream tooling.
-- The unreachable decent USB module is removed, not the active bit-perfect/AAudio/LastWave routes. Keep its MIT license/credit, optional app USB-host feature and persisted DSP/preset formats.
+- Existing DSP pins are Oboe 1.11.0 and soxr 0.1.3. The maintainer approved one dead-code pass (2026-11): it removed the unreachable libusb 1.0.30 USB Audio Class driver (`monochrome_usb`, `usb1.0`), the Signalsmith Linear 0.6.5 / Stretch 1.4.0 pitch shifter (`monochrome_stretch`), the never-enabled sinc-varispeed and pitch stages, `UsbAudioRouter`, `BypassVolumeController`, `BitPerfectGateProcessor` and the orphan USB-pin/wire publishers with the rows that read them. No new output engine/default/preset policy. soxr is a documented Android subset; retained licenses/headers and Android build closure matter more than standalone upstream tooling.
+- The unreachable decent USB module is removed, not the active bit-perfect/AAudio/LastWave routes; the same rule kept both USB output routes through the 2026-11 dead-code pass, which touched the unreachable Tryptify USB island, not them. Keep the decent module's MIT license/credit, optional app USB-host feature and persisted DSP/preset formats.
 - Unicode/phonetics, SimpMusic parity, AI/cache and lifecycle corrections are locally integrated. Preserve semantic joiners/raw text, conservative script-family exclusions, aligned provider words or honest line fallback, full-settings AI eligibility and changed-target invalidation on every translation surface. DeepL is translation-only; failed/partial AI responses are not success caches. Downloader staging is request-owned, delayed room retries are generation-bound, and Spotify account mutations share the refresh lock.
 - Japanese data uses one persisted best-effort foreground consideration for primary system-device locale region JP. Wi-Fi/cellular are allowed; offline consumes the consideration but manual retry remains. Explicit off/removal prevents automatic reinstall; no IP lookup, continuous watcher or startup wait. Keep pinned data/digest, IO validation and manual install/cancel/remove.
 - The earlier release is complete: PR #198 merged at `643a35fd09888769a4a2d588324398d68f0d6fb5` and published Nightly `N202610151104` / build 6833 after separate green build/tests (835 passed, 0 failed, 0 skipped). Inherited permissive lint was not lint-clean. No device QA is claimed; Canary stays frozen.
@@ -138,16 +138,18 @@ invariants remain unchanged.
     merge is a policy conflict for the owner and security reviewer, not a waiver.
   - Foundation rules still in force: no fake clocks, no-op parity or advancing synthetic
     engine stand-ins; native-host builds are not physical audio, peripheral, account,
-    signing or upgrade QA; no dead code is confirmed, and characterization stays distinct
-    from bug fixes; do not suppress Kotlin metadata checks.
+    signing or upgrade QA; dead code is removed only with recorded maintainer sign-off
+    (the 2026-11 DSP pass carries it), and characterization stays distinct from bug
+    fixes; do not suppress Kotlin metadata checks.
   - Superseded foundation settings: its 768 MiB Kotlin daemon ceiling and daemon-off,
     one-worker properties give way to the mission's 1536 MiB caps and the command-line
     `--max-workers=1 --no-daemon` flags. Its product invariants still apply: providers,
     library, downloads, podcasts, Telegram, DSP, USB, bit-perfect, transitions, social
     features, Listen Together, scrobbling, backup and Android system integrations. The
     full foundation text stays in commit `c047a20`.
-  - No source deletion. New Kotlin starts with the package line, without a banner. User-visible strings belong in
-    Compose resource XML.
+  - No source deletion outside a recorded maintainer sign-off (the 2026-11 DSP dead-code
+    pass is one). New Kotlin starts with the package line, without a banner. User-visible
+    strings belong in Compose resource XML.
 - **Branch/CI boundaries:** preserve the adapted active workflows and independent
   exact-head BUILD and TESTS. Do not import source `main` or change protected gates.
   Workflows still parked in `.github/inherited-workflows/` remain inactive; this
@@ -199,8 +201,10 @@ invariants remain unchanged.
   catalog/streaming accounts, source gates, database/schema/legacy readers, storage
   formats, all settings and menus, all 17 saved player-style meanings/order/selections,
   V4 player default, Material 3 Expressive interface default and liquid glass.
-  Licenses and third-party credits remain intact; KMP-module banners are replaced by
-  the lineage in `docs/CREDITS.md`, and banners outside the KMP modules stay.
+  Licenses and third-party credits stay for everything that still ships; when a vendored
+  third-party component is removed with sign-off, its notice, license text and credit go
+  with it in the same change. KMP-module banners are replaced by the lineage in
+  `docs/CREDITS.md`, and banners outside the KMP modules stay.
 - The approved full feature-preserving shared domain/data/UI and native-adapter
   port retains the Android host, adds Metrolist as another style and improves
   Enhanced lyrics. These are future deliverables, not completed setup outcomes.

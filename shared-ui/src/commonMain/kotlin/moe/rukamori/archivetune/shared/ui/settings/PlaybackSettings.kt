@@ -23,12 +23,14 @@ fun PlaybackSettings(
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
     deviceMuteSupported: Boolean = true,
+    audioEnginesSupported: Boolean = true,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
     SettingsPage(playbackSettingsRows(preferences, bitPerfectSupported, bitPerfectSinkActive,
-        usbExclusiveSupported, navigate, arrangeArtworkProviders, managePlaylistTags, deviceMuteSupported),
+        usbExclusiveSupported, navigate, arrangeArtworkProviders, managePlaylistTags, deviceMuteSupported,
+        audioEnginesSupported),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { if (bitPerfectSinkActive && it.needsBitPerfectSinkRelease()) releaseBitPerfectSink() })
 }
@@ -43,6 +45,9 @@ fun playbackSettingsRows(
     managePlaylistTags: () -> Unit,
     // Hosts without a pause-on-mute watch hide both rows; a dead toggle would only write the key.
     deviceMuteSupported: Boolean = true,
+    // Only the Android host reads the three engine keys, so only it shows their switches. Others
+    // hide the rows and leave the stored values readable.
+    audioEnginesSupported: Boolean = true,
 ): List<SettingsRow> = buildList {
     val crossfade = preferences[CrossfadeEnabledKey, false]
     val offload = preferences[AudioOffload, false]
@@ -111,14 +116,16 @@ fun playbackSettingsRows(
         description = Res.string.m6_usb_exclusions,
         enabled = usbExclusiveSupported, read = { usbExclusiveSupported && it[UsbExclusiveAudioKey, false] },
         write = { setPlaybackOutputPreference(UsbExclusiveAudioKey, it) }))
-    add(SettingsRow.Toggle("tryptify_engine", Res.string.m6_tryptify, TryptifyAudioProcessingKey, false,
-        enabled = !blocked, description = bypassReason, write = { setAudioProcessingPreference(TryptifyAudioProcessingKey, it) }))
-    add(SettingsRow.Toggle("lastwave_engine", Res.string.m6_lastwave, LastwaveAudioProcessingKey, false,
-        enabled = !blocked, description = bypassReason,
-        read = { !it[TryptifyAudioProcessingKey, false] && it[LastwaveAudioProcessingKey, false] },
-        write = { setAudioProcessingPreference(LastwaveAudioProcessingKey, it) }))
-    add(SettingsRow.Toggle("float_dsp", Res.string.m6_float_dsp, FloatDspEnabledKey, false,
-        enabled = !blocked, description = bypassReason, write = { setAudioProcessingPreference(FloatDspEnabledKey, it) }))
+    if (audioEnginesSupported) {
+        add(SettingsRow.Toggle("tryptify_engine", Res.string.m6_tryptify, TryptifyAudioProcessingKey, false,
+            enabled = !blocked, description = bypassReason, write = { setAudioProcessingPreference(TryptifyAudioProcessingKey, it) }))
+        add(SettingsRow.Toggle("lastwave_engine", Res.string.m6_lastwave, LastwaveAudioProcessingKey, false,
+            enabled = !blocked, description = bypassReason,
+            read = { !it[TryptifyAudioProcessingKey, false] && it[LastwaveAudioProcessingKey, false] },
+            write = { setAudioProcessingPreference(LastwaveAudioProcessingKey, it) }))
+        add(SettingsRow.Toggle("float_dsp", Res.string.m6_float_dsp, FloatDspEnabledKey, false,
+            enabled = !blocked, description = bypassReason, write = { setAudioProcessingPreference(FloatDspEnabledKey, it) }))
+    }
     add(SettingsRow.Toggle("seek_seconds_addup", Res.string.m6_seek_extra, SeekExtraSeconds, false))
     if (deviceMuteSupported) {
         add(SettingsRow.Toggle("pause_mute", Res.string.m6_pause_mute, PauseOnDeviceMuteKey, false))
