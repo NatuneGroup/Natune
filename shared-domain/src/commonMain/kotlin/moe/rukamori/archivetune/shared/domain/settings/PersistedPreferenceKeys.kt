@@ -607,6 +607,9 @@ val PlaybackSpeedKey = FloatPreferenceKey("playbackSpeed")
 val PlaybackPitchKey = FloatPreferenceKey("playbackPitch")
 val TempoPitchRememberedKey = BooleanPreferenceKey("tempoPitchRemembered")
 val TempoPitchPresetsJsonKey = StringPreferenceKey("tempoPitchPresetsJson")
+// The one audio-processing switch. The retired engine switches below stay listed because their
+// stored keys are still read as preset-format input by the unified chain.
+val AudioProcessingEnabledKey = BooleanPreferenceKey("audioProcessingEnabled")
 val FloatDspEnabledKey = BooleanPreferenceKey("floatDspEnabled")
 val UsbExclusiveAudioKey = BooleanPreferenceKey("usbExclusiveAudio")
 val BitPerfectOutputKey = BooleanPreferenceKey("bitPerfectOutput")

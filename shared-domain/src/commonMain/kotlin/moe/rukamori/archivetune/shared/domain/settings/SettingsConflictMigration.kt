@@ -25,9 +25,7 @@ fun PreferenceEditor.normalizeSettingsConflicts() {
     }
     // Rejection already requires decoded PCM at runtime, so a restored offload flag cannot win.
     if (this[RejectSuspectedUpscaledAudioKey] == true) clearEnabled(AudioOffload)
-    if (this[AudioOffload] == true)
-        clearEnabled(SkipSilenceKey, TryptifyAudioProcessingKey, LastwaveAudioProcessingKey, FloatDspEnabledKey)
-    if (this[TryptifyAudioProcessingKey] == true) clearEnabled(LastwaveAudioProcessingKey)
+    if (this[AudioOffload] == true) clearEnabled(SkipSilenceKey, AudioProcessingEnabledKey)
     if (this[LyricsBackgroundStyleKey] == "CUSTOM" && this[PlayerBackgroundStyleKey] != "CUSTOM")
         this[LyricsBackgroundStyleKey] = "DEFAULT"
     if (!snapshot().smartTrimmerAvailable()) clearEnabled(SmartTrimmerKey)
