@@ -12,11 +12,11 @@ package moe.rukamori.archivetune.shared.domain.settings
  * policy-owned ones).
  */
 
-// com/lastwave/app/data/local/EqualizerPreferences.kt
+// Retired LastWave equalizer preferences; the keys stay because presets restore through them.
 val ENABLED = BooleanPreferenceKey("lw_eq_enabled")
 val PRESET_NAME = StringPreferenceKey("lw_eq_preset")
 val GAINS_DB = StringPreferenceKey("lw_eq_gains")
-// com/lastwave/app/data/local/SettingsPreferences.kt
+// The retired LastWave settings file; the stored clarity values are preset-format input now.
 val MUSIC_ENHANCER = BooleanPreferenceKey("lw_music_enhancer")
 val CLARITY_PRESET = IntPreferenceKey("lw_clarity_preset")
 val CLARITY_ATMOS_BYPASS = BooleanPreferenceKey("lw_clarity_atmos_bypass")
@@ -663,7 +663,7 @@ val RECENT_SONGS = StringPreferenceKey("widget_recent_songs")
 val GENRES = StringPreferenceKey("widget_genres")
 val RECOMMENDATIONS = StringPreferenceKey("widget_recommendations")
 val TOP_SONG_SUMMARY = StringPreferenceKey("widget_top_song_summary")
-// tf/monochrome/android/data/preferences/PreferencesManager.kt
+// The retired Tryptify preference owner; its stored EQ preset ids stay readable.
 val EQ_TUTORIAL_SEEN = BooleanPreferenceKey("eq_tutorial_seen")
 val EQ_ENABLED = BooleanPreferenceKey("eq_enabled")
 val EQ_ACTIVE_PRESET_ID = StringPreferenceKey("eq_active_preset_id")
@@ -710,7 +710,7 @@ val InlineCanaryReleasesEtagKey = StringPreferenceKey("canary_releases_etag")
 val InlineCanaryReleasesJsonKey = StringPreferenceKey("canary_releases_json")
 val InlineCanaryReleasesLastCheckedAtKey = LongPreferenceKey("canary_releases_last_checked_at")
 val InlineCanaryReleasesFingerprintKey = StringPreferenceKey("canary_releases_fingerprint")
-// tf/monochrome/android/data/preferences/PreferencesManager.kt
+// The same retired owner; these two remain listed so an old backup restores without dropping them.
 val InlineUsbExclusiveBitPerfectEnabledKey = BooleanPreferenceKey("usb_exclusive_bit_perfect_enabled")
 val InlineMultichannelDownmixEnabledKey = BooleanPreferenceKey("multichannel_downmix_enabled")
 // iOS host only: the system tab bar, mini player and lyrics on iOS 26 and later. Android never reads it.
