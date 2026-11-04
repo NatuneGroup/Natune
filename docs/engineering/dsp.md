@@ -149,7 +149,10 @@ reads the neutral value, which keeps the desktop's pre-document behaviour (no no
   direct route that plays the format, matching output rate). `SoftwareStagePlan.resolve` narrows the request;
   adapters report facts, never bypass.
 - **AAudio / USB exclusive output**: `UsbExclusiveAudioOutputProvider` and `AaudioExclusiveAudioOutput` keep
-  their own stream, fallback and session reporting. The shared chain does not open, configure or replace them.
+  their own stream, fallback and session reporting. Being exclusive is about who owns the DAC, not about the
+  samples: this route is the standard sink's output provider, so the standard processor chain — and therefore
+  the shared graph and the Audio processing switch — still runs ahead of it. Only the bit-perfect USB sink is
+  built without a processor chain, and that is the one route where nothing touches the decoder's samples.
 - **Retired LastWave / Tryptify engines**: their stored `lw_*`, `eq_bands_json` and `param_eq_bands_json`
   keys stay readable and are what the unified chain reads for tone and clarity, and `dsp_state_json` stays on
   disk even though nothing reads its bus graph. The engine classes, their native targets and the vendored soxr
