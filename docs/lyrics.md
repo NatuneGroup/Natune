@@ -76,6 +76,15 @@ is the line-change settle glide and selection/share-card UI. Every surface uses
 `LyricsClock`, which subtracts the snapshot's output-latency estimate once at the playback speed,
 separately from the user offset; the iOS host does not add a second route-latency offset.
 
+The renderer draws no top bar, so each host owns its own chrome. Android's lyrics sheet header
+(`ui/player/LyricsTrackHeader.kt`) is the one that carries real chrome: artwork, the title and
+artist, and the close, favourite and overflow buttons on a single row. Its sizes come from the row
+it is given (`LyricsHeaderMetrics`): the artwork takes a clamped share of it, the three 48 dp tap
+targets stay 48 dp, and the title and artist keep every remaining dp, so the marquee viewport is
+the row's remainder and the text can never extend under the buttons. Fixed artwork and targets on a
+360 dp phone leave about six characters for the title, which is what a clipped "São Pau" under the
+close button was.
+
 ## Sync offsets, romanization and frame scheduling
 
 The lyrics offset is two parts that add: a **global** preference (`GlobalLyricsOffsetMsKey`,
@@ -143,11 +152,13 @@ screen to read as anything but flicker). The style's own fullscreen lyrics sheet
 
 `SweptLyricLine` draws a line in two layers: the whole line dim, then the sung part bright,
 clipped to however much has been sung. The clip is recomputed in the draw phase, so a frame
-costs a clip and a redraw rather than a recomposition. The glow is a tinted rounded box behind
-the word being sung, not a blurred copy of the text. Each word fills over exactly its provider
-span. `LyricsSweepGeometry.MIN_SWEEP_MS` (16 ms, about one frame) only keeps a zero or negative
-span from dividing by zero, so a quick word is never stretched past the next one. The V2 profile
-keeps its own 180 ms `minSweepMs`.
+costs a clip and a redraw rather than a recomposition. The glow is the sung word's own ink drawn
+again, a little larger and tinted, inside a layer masked to that ink's box (`drawGlyphGlow`): the
+light keeps the letter shapes, so a word never shows as a filled tile on the background, and a held
+last word — including one the row wrapped onto its own line — never as a box behind each grapheme.
+Each word fills over exactly its provider span. `LyricsSweepGeometry.MIN_SWEEP_MS` (16 ms, about
+one frame) only keeps a zero or negative span from dividing by zero, so a quick word is never
+stretched past the next one. The V2 profile keeps its own 180 ms `minSweepMs`.
 
 ENHANCED (the `refinedMotion` flag on `LyricsModeProfile`, in `shared-ui`) adds these, all of
 them skipped under reduced motion:
@@ -164,9 +175,10 @@ them skipped under reduced motion:
   a `DstIn` mask on a layer limited to the line's band (`LyricsSweepGeometry.sweepFeatherPx`).
 - A word earns emphasis only when it is held at least 1 s, is at most 7 grapheme clusters and is
   written in an unjoined safe script (`LyricsEmphasis`). Its letters ripple a couple of dp and a
-  few percent of scale one at a time as the sweep crosses them, and its glow — scaled by how long
-  it is held (`LyricsSweepGeometry.emphasisGain`) — rises and falls. Every other word keeps the
-  plain feathered sweep, no letter ripple and no emphasis glow.
+  few percent of scale one at a time as the sweep crosses them, each riding the same glyph bloom
+  as the word, and its glow — scaled by how long it is held (`LyricsSweepGeometry.emphasisGain`) —
+  rises and falls. Every other word keeps the plain feathered sweep, no letter ripple and no
+  emphasis glow.
 - Every unsung word sits `LyricsSweepGeometry.WORD_LIFT_DP` (2 dp) below its seat and eases up
   through the last half of its own span — clamped to 120–300 ms, shortened near a tight hand-off and
   never longer than the word itself (`liftDurationMs`/`liftStartMs`/`liftEndMs`) — so it is seated
