@@ -240,6 +240,11 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("current.reschedule()", blend)
         self.assertIn("canonical = checkNotNull(at_graph_output_format(engine))", blend)
         self.assertIn("chunk.span.positionUs(chunk.span.startFrame + skip)", blend)
+        reschedule = blend.split("fun reschedule(): Boolean {", 1)[1].split("fun detachNodes()", 1)[0]
+        self.assertIn("val replacements = ArrayDeque<Chunk>()", reschedule)
+        self.assertIn("queued.addAll(replacements)", reschedule)
+        self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
+        self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
 
     def test_native_bridge_is_built_and_tested_not_only_header_parsed(self):
         project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
@@ -256,6 +261,20 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("iosApp/tests/audio_format_test.c", workflow)
         self.assertIn("iosApp/tests/audio_exception_test.mm", workflow)
         self.assertIn("python3 -m unittest discover -s iosApp/tests", workflow)
+
+    def test_blend_failed_attachment_and_queued_resume_are_contained(self):
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("Deck(output, 0f)", blend)
+        self.assertIn("if (suspended) { dropIncoming(); return false }", blend)
+        self.assertIn("epoch == resumeEpoch && current.nativeState().playWhenReady", blend)
+        self.assertIn("if (graphDirty && !rebuildWithFallback())", blend)
+        self.assertIn("if (!stopped || !currentDetached || !incomingDetached) return false", blend)
+        self.assertIn("if (!stopped || !incomingDetached || !currentDetached) at_audio_manual_output_failed", blend)
+        self.assertIn("incoming?.let { if (at_audio_play(it.output) == 0)", blend)
+        self.assertIn("graph.suspended = false", blend)
+        self.assertNotIn("if (deck.gainIsAudible) deck.start()", blend)
+        downstream = (KOTLIN / "IosPlaybackBlend.kt").read_text()
+        self.assertIn("if (!graph.promote())", downstream)
 
     def test_ledger_does_not_turn_source_into_an_apple_pass(self):
         status = (ROOT / "docs/engineering/ios-status.md").read_text()

@@ -80,7 +80,6 @@ struct render_scope {
 };
 static void require_main() { NSCAssert([NSThread isMainThread], @"Audio control requires main thread"); }
 
-
 /* Recording windows and audible playback share one session. The realtime callback never takes this lock. */
 static std::mutex g_session_lock;
 static int g_recording_windows = 0;
@@ -247,72 +246,72 @@ static bool build_graph(at_audio_output *p, bool plain) {
     p->plain_graph = plain; // Even a failed plain attempt consumes this graph's single optional-unit retry.
     bool built = false;
     @autoreleasepool {
-    built = audio_try(^BOOL {
-        p->graph = [[AVAudioEngine alloc] init];
-        AVAudioFormat *hardware = [p->graph.outputNode outputFormatForBus:0];
-        at_audio_format target = {};
-        const uint32_t layout_channels = hardware.channelLayout ? hardware.channelLayout.channelCount : 0;
-        if (!at_audio_canonical_format(hardware.sampleRate, hardware.channelCount, layout_channels, &target)) return NO;
-        AVAudioFormat *pcm = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:AT_AUDIO_PCM_RATE channels:2];
-        AVAudioFormat *canonical = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:target.sample_rate
-                                                                                 channels:target.channels];
-        if (!pcm || !canonical || pcm.isInterleaved || canonical.isInterleaved ||
-            canonical.commonFormat != AVAudioPCMFormatFloat32) return NO;
-        p->graph_rate = target.sample_rate;
-        p->source = [[AVAudioSourceNode alloc] initWithFormat:pcm
-            renderBlock:^OSStatus(BOOL *silent, const AudioTimeStamp *, AVAudioFrameCount frames,
-                                  AudioBufferList *buffers) {
-            render_scope active(p);
-            for (UInt32 i = 0; i < buffers->mNumberBuffers; ++i) {
-                if (buffers->mBuffers[i].mData)
-                    memset(buffers->mBuffers[i].mData, 0, buffers->mBuffers[i].mDataByteSize);
-            }
-            if (p->closing.load() || p->manual_output.load() || !p->running.load() || p->interrupted.load() ||
-                buffers->mNumberBuffers != 2 || !buffers->mBuffers[0].mData || !buffers->mBuffers[1].mData ||
-                buffers->mBuffers[0].mNumberChannels != 1 || buffers->mBuffers[1].mNumberChannels != 1 ||
-                buffers->mBuffers[0].mDataByteSize < (uint64_t)frames * sizeof(float) ||
-                buffers->mBuffers[1].mDataByteSize < (uint64_t)frames * sizeof(float)) {
-                *silent = YES;
-                p->consuming.store(false);
+        built = audio_try(^BOOL {
+            p->graph = [[AVAudioEngine alloc] init];
+            AVAudioFormat *hardware = [p->graph.outputNode outputFormatForBus:0];
+            at_audio_format target = {};
+            const uint32_t layout_channels = hardware.channelLayout ? hardware.channelLayout.channelCount : 0;
+            if (!at_audio_canonical_format(hardware.sampleRate, hardware.channelCount, layout_channels, &target)) return NO;
+            AVAudioFormat *pcm = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:AT_AUDIO_PCM_RATE channels:2];
+            AVAudioFormat *canonical = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:target.sample_rate
+                                                                                     channels:target.channels];
+            if (!pcm || !canonical || pcm.isInterleaved || canonical.isInterleaved ||
+                canonical.commonFormat != AVAudioPCMFormatFloat32) return NO;
+            p->graph_rate = target.sample_rate;
+            p->source = [[AVAudioSourceNode alloc] initWithFormat:pcm
+                renderBlock:^OSStatus(BOOL *silent, const AudioTimeStamp *, AVAudioFrameCount frames,
+                                      AudioBufferList *buffers) {
+                render_scope active(p);
+                for (UInt32 i = 0; i < buffers->mNumberBuffers; ++i) {
+                    if (buffers->mBuffers[i].mData)
+                        memset(buffers->mBuffers[i].mData, 0, buffers->mBuffers[i].mDataByteSize);
+                }
+                if (p->closing.load() || p->manual_output.load() || !p->running.load() || p->interrupted.load() ||
+                    buffers->mNumberBuffers != 2 || !buffers->mBuffers[0].mData || !buffers->mBuffers[1].mData ||
+                    buffers->mBuffers[0].mNumberChannels != 1 || buffers->mBuffers[1].mNumberChannels != 1 ||
+                    buffers->mBuffers[0].mDataByteSize < (uint64_t)frames * sizeof(float) ||
+                    buffers->mBuffers[1].mDataByteSize < (uint64_t)frames * sizeof(float)) {
+                    *silent = YES;
+                    p->consuming.store(false);
+                    return noErr;
+                }
+                float *left = static_cast<float *>(buffers->mBuffers[0].mData);
+                float *right = static_cast<float *>(buffers->mBuffers[1].mData);
+                uint32_t decoded = 0;
+                for (uint32_t offset = 0; offset < frames;) {
+                    const uint32_t count = std::min(AT_AUDIO_RENDER_CHUNK, frames - offset);
+                    const uint32_t taken = ae_engine_render_realtime(p->core, p->scratch, count);
+                    at_audio_deinterleave(p->scratch, left + offset, right + offset, count);
+                    decoded += taken;
+                    offset += count;
+                    if (taken < count) break; // The remaining buffers were already zeroed; silence never consumes media time.
+                }
+                p->last_render.store(CACurrentMediaTime());
+                p->consuming.store(decoded > 0);
+                *silent = decoded == 0;
                 return noErr;
+            }];
+            // Convert at the source boundary. The portable core and blend ABI stay 48 kHz stereo; the tone chain uses
+            // canonical planar float at the active hardware rate. Never force an asset format onto the output node.
+            p->converter = [[AVAudioMixerNode alloc] init];
+            [p->graph attachNode:p->source];
+            [p->graph attachNode:p->converter];
+            [p->graph connect:p->source to:p->converter format:pcm];
+            if (!plain) {
+                p->time_pitch = [[AVAudioUnitTimePitch alloc] init];
+                p->equalizer = [[AVAudioUnitEQ alloc] initWithNumberOfBands:AT_AUDIO_EQ_MAX_BANDS];
+                [p->graph attachNode:p->time_pitch];
+                [p->graph attachNode:p->equalizer];
+                [p->graph connect:p->converter to:p->time_pitch format:canonical];
+                [p->graph connect:p->time_pitch to:p->equalizer format:canonical];
+                [p->graph connect:p->equalizer to:p->graph.mainMixerNode format:canonical];
+            } else {
+                [p->graph connect:p->converter to:p->graph.mainMixerNode format:canonical];
             }
-            float *left = static_cast<float *>(buffers->mBuffers[0].mData);
-            float *right = static_cast<float *>(buffers->mBuffers[1].mData);
-            uint32_t decoded = 0;
-            for (uint32_t offset = 0; offset < frames;) {
-                const uint32_t count = std::min(AT_AUDIO_RENDER_CHUNK, frames - offset);
-                const uint32_t taken = ae_engine_render_realtime(p->core, p->scratch, count);
-                at_audio_deinterleave(p->scratch, left + offset, right + offset, count);
-                decoded += taken;
-                offset += count;
-                if (taken < count) break; // The remaining buffers were already zeroed; silence never consumes media time.
-            }
-            p->last_render.store(CACurrentMediaTime());
-            p->consuming.store(decoded > 0);
-            *silent = decoded == 0;
-            return noErr;
-        }];
-        // Convert at the source boundary. The portable core and blend ABI stay 48 kHz stereo; the tone chain uses
-        // canonical planar float at the active hardware rate. Never force an asset format onto the output node.
-        p->converter = [[AVAudioMixerNode alloc] init];
-        [p->graph attachNode:p->source];
-        [p->graph attachNode:p->converter];
-        [p->graph connect:p->source to:p->converter format:pcm];
-        if (!plain) {
-            p->time_pitch = [[AVAudioUnitTimePitch alloc] init];
-            p->equalizer = [[AVAudioUnitEQ alloc] initWithNumberOfBands:AT_AUDIO_EQ_MAX_BANDS];
-            [p->graph attachNode:p->time_pitch];
-            [p->graph attachNode:p->equalizer];
-            [p->graph connect:p->converter to:p->time_pitch format:canonical];
-            [p->graph connect:p->time_pitch to:p->equalizer format:canonical];
-            [p->graph connect:p->equalizer to:p->graph.mainMixerNode format:canonical];
-        } else {
-            [p->graph connect:p->converter to:p->graph.mainMixerNode format:canonical];
-        }
-        apply_tone(p);
-        [p->graph prepare];
-        return YES;
-    });
+            apply_tone(p);
+            [p->graph prepare];
+            return YES;
+        });
     }
     if (!built) return false;
     p->graph_dirty = false;
@@ -364,7 +363,7 @@ static void resume_gate(const std::shared_ptr<output_gate> &gate) {
         std::lock_guard<std::mutex> session(g_session_lock);
         claimed = p->playback_claimed;
     }
-    if (claimed) { invalidate_graph(p); }
+    if (claimed) invalidate_graph(p);
 }
 static void schedule_playback_resume_locked(void) {
     std::vector<std::shared_ptr<output_gate>> gates = g_outputs;

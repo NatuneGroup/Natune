@@ -38,6 +38,7 @@ internal class IosBlendAudioGraph private constructor(
     private var graphDirty = false
     private var rebuildQueued = false
     private var plainGraph = false
+    private var resumeEpoch = 0L
 
     var current = Deck(output)
         private set
@@ -50,15 +51,15 @@ internal class IosBlendAudioGraph private constructor(
 
     fun arm(output: CPointer<at_audio_output>): Boolean {
         if (closed || incoming != null) return false
-        val deck = try { Deck(output) } catch (_: Exception) { return false }
+        val deck = try { Deck(output, 0f) } catch (_: Exception) { return false }
         incoming = deck
-        deck.setGain(0f)
         if (at_audio_play(output) == 0) {
             dropIncoming()
             return false
         }
         deck.pump()
-        return !suspended
+        if (suspended) { dropIncoming(); return false }
+        return true
     }
 
     fun poll(): EnginePlaybackState {
@@ -74,22 +75,24 @@ internal class IosBlendAudioGraph private constructor(
 
     fun setPitch(cents: Float) {
         pitchCents = cents
-        if (!current.applyTone() || incoming?.applyTone() == false) failOutput()
+        if (!current.applyTone() || incoming?.applyTone() == false) { plainGraph = true; invalidateGraph() }
     }
 
     fun setEqualizer(enabled: Boolean, bands: List<IosEqBand>) {
         equalizerEnabled = enabled
         equalizerBands = bands
-        if (!current.applyTone() || incoming?.applyTone() == false) failOutput()
+        if (!current.applyTone() || incoming?.applyTone() == false) { plainGraph = true; invalidateGraph() }
     }
 
     fun play(): Boolean {
         if (closed || at_audio_play(current.output) == 0) return false
-        if (graphDirty && !rebuildPreservingPcm()) { failOutput(); return false }
+        if (graphDirty && !rebuildWithFallback()) { failOutput(); return false }
         if (!startEngine()) { failOutput(); return false }
         suspended = false
+        incoming?.let { if (at_audio_play(it.output) == 0) { failOutput(); return false } }
         current.pump()
         current.start()
+        incoming?.pump() // The handoff owner reschedules fade/gapless starts, never start a future deck eagerly.
         return !suspended
     }
 
@@ -102,6 +105,7 @@ internal class IosBlendAudioGraph private constructor(
     }
 
     fun pause() {
+        resumeEpoch++ // A queued automatic rebuild must never override this listener pause.
         current.observation(commit = false)
         incoming?.observation(commit = false)
         suspended = true
@@ -118,17 +122,19 @@ internal class IosBlendAudioGraph private constructor(
         at_audio_seek(current.output, positionUs)
     }
 
-    fun promote() {
-        val next = incoming ?: return
-        current.detach()
+    fun promote(): Boolean {
+        val next = incoming ?: return false
+        next.setGain(1f)
+        if (suspended || !current.detach()) { failOutput(); return false }
         current = next
-        current.setGain(1f)
         incoming = null
+        return true
     }
 
     fun dropIncoming() {
-        incoming?.detach()
+        val detached = incoming?.detach() ?: true
         incoming = null
+        if (!detached) failOutput()
         current.setGain(1f)
     }
 
@@ -143,9 +149,11 @@ internal class IosBlendAudioGraph private constructor(
         observers.clear()
         configurationObserver?.let { center.removeObserver(it) }
         configurationObserver = null
-        at_graph_stop(engine)
-        dropIncoming()
-        current.detach()
+        val stopped = at_graph_stop(engine) != 0
+        val incomingDetached = incoming?.detach() ?: true
+        incoming = null
+        val currentDetached = current.detach()
+        if (!stopped || !incomingDetached || !currentDetached) at_audio_manual_output_failed(current.output)
         at_audio_end_manual_output(current.output)
     }
 
@@ -156,6 +164,7 @@ internal class IosBlendAudioGraph private constructor(
             if (closed) return@addObserverForName
             val type = (note?.userInfo?.get(AVAudioSessionInterruptionTypeKey) as? NSNumber)?.unsignedLongLongValue
             if (type == AVAudioSessionInterruptionTypeBegan) {
+                resumeEpoch++
                 current.observation(commit = false)
                 incoming?.observation(commit = false)
                 suspended = true
@@ -166,7 +175,10 @@ internal class IosBlendAudioGraph private constructor(
                 graphDirty = true
                 val options = (note?.userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)?.unsignedLongLongValue ?: 0uL
                 if (options and AVAudioSessionInterruptionOptionShouldResume != 0uL && current.nativeState().playWhenReady) {
-                    dispatch_async(dispatch_get_main_queue()) { if (!closed && !play()) failOutput() }
+                    val epoch = resumeEpoch
+                    dispatch_async(dispatch_get_main_queue()) {
+                        if (!closed && epoch == resumeEpoch && current.nativeState().playWhenReady && !play()) failOutput()
+                    }
                 }
             }
         }
@@ -198,12 +210,22 @@ internal class IosBlendAudioGraph private constructor(
     private fun invalidateGraph() {
         graphDirty = true
         if (closed || rebuildQueued || suspended || !current.nativeState().playWhenReady) return
+        current.observation(commit = false)
+        incoming?.observation(commit = false)
         suspended = true // Freeze the PCM spans before another pump can consume the decoder.
         rebuildQueued = true
+        val epoch = resumeEpoch
         dispatch_async(dispatch_get_main_queue()) {
             rebuildQueued = false
-            if (!closed && current.nativeState().playWhenReady && !play()) failOutput()
+            if (!closed && epoch == resumeEpoch && current.nativeState().playWhenReady && !play()) failOutput()
         }
+    }
+
+    private fun rebuildWithFallback(): Boolean {
+        if (rebuildPreservingPcm()) return true
+        if (plainGraph) return false
+        plainGraph = true
+        return rebuildPreservingPcm()
     }
 
     /** Replace the graph, not just start an engine whose Audio Unit formats belong to the previous route.
@@ -212,9 +234,10 @@ internal class IosBlendAudioGraph private constructor(
         suspended = true
         configurationObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         configurationObserver = null
-        at_graph_stop(engine)
-        current.detachNodes()
-        incoming?.detachNodes()
+        val stopped = at_graph_stop(engine) != 0
+        val currentDetached = current.detachNodes()
+        val incomingDetached = incoming?.detachNodes() ?: true
+        if (!stopped || !currentDetached || !incomingDetached) return false
         return try {
             engine = checkNotNull(at_graph_create())
             canonical = checkNotNull(at_graph_output_format(engine))
@@ -234,12 +257,13 @@ internal class IosBlendAudioGraph private constructor(
 
     private fun failOutput() {
         if (closed) return
+        resumeEpoch++
         suspended = true
         at_graph_stop(engine)
         at_audio_manual_output_failed(current.output)
     }
 
-    inner class Deck(val output: CPointer<at_audio_output>) {
+    inner class Deck(val output: CPointer<at_audio_output>, private var gain: Float = 1f) {
         val node = checkNotNull(at_graph_player_create())
         private val converter = checkNotNull(at_graph_mixer_create())
         private val pitchUnit = at_graph_pitch_create()
@@ -247,7 +271,6 @@ internal class IosBlendAudioGraph private constructor(
         private val mixer = checkNotNull(at_graph_mixer_create())
         private val attached = mutableListOf<AVAudioNode>()
         private var toneActive = false
-        private var gain = 1f
         private val scratch = FloatArray(PCM_FRAMES * 2)
         private val queued = ArrayDeque<Chunk>()
         private val free = ArrayDeque<AVAudioPCMBuffer>()
@@ -287,8 +310,8 @@ internal class IosBlendAudioGraph private constructor(
                     check(applyTone())
                 } catch (_: Exception) {
                     // Optional Audio Units cannot make a successor crash or silence its outgoing deck.
-                    if (attached.remove(eq)) at_graph_detach_node(engine, eq)
-                    if (attached.remove(pitch)) at_graph_detach_node(engine, pitch)
+                    if (eq in attached) { check(at_graph_detach_node(engine, eq) != 0); attached.remove(eq) }
+                    if (pitch in attached) { check(at_graph_detach_node(engine, pitch) != 0); attached.remove(pitch) }
                     toneActive = false
                 }
             }
@@ -429,15 +452,11 @@ internal class IosBlendAudioGraph private constructor(
 
         /** Reschedule only unplayed PCM at its original rate; the new converter owns the route-rate conversion. */
         fun reschedule(): Boolean {
-            val old = queued.toList()
             val lastFrame = playedFrame
             if (at_graph_player_stop(node) == 0) return false
-            queued.clear()
-            free.clear()
-            nextFrame = 0L
-            playedFrame = 0L
-            started = false
-            old.forEach { chunk ->
+            val replacements = ArrayDeque<Chunk>()
+            var replacementFrame = 0L
+            queued.forEach { chunk ->
                 val skip = (lastFrame - chunk.span.startFrame).coerceIn(0L, chunk.span.endFrame - chunk.span.startFrame).toInt()
                 val count = chunk.buffer.frameLength.toInt() - skip
                 if (count <= 0) return@forEach
@@ -446,24 +465,34 @@ internal class IosBlendAudioGraph private constructor(
                 val target = replacement.floatChannelData ?: return false
                 for (channel in 0..1) for (frame in 0 until count) target[channel]!![frame] = source[channel]!![frame + skip]
                 replacement.frameLength = count.toUInt()
-                val span = IosPcmSpan(nextFrame, nextFrame + count, chunk.span.positionUs(chunk.span.startFrame + skip), chunk.span.endUs)
-                if (at_graph_schedule(node, replacement, AVAudioTime(sampleTime = nextFrame, atRate = PCM_RATE)) == 0) return false
-                queued.addLast(Chunk(replacement, span, chunk.speed))
-                nextFrame = span.endFrame
+                val span = IosPcmSpan(replacementFrame, replacementFrame + count, chunk.span.positionUs(chunk.span.startFrame + skip), chunk.span.endUs)
+                if (at_graph_schedule(node, replacement, AVAudioTime(sampleTime = replacementFrame, atRate = PCM_RATE)) == 0) return false
+                replacements.addLast(Chunk(replacement, span, chunk.speed))
+                replacementFrame = span.endFrame
             }
+            // A rejected schedule must leave all decoded PCM available for the plain-graph retry.
+            queued.clear()
+            queued.addAll(replacements)
+            free.clear()
+            nextFrame = replacementFrame
+            playedFrame = 0L
+            started = false
             return true
         }
 
-        fun detachNodes() {
-            at_graph_player_stop(node)
-            attached.asReversed().forEach { at_graph_detach_node(engine, it) }
-            attached.clear()
+        fun detachNodes(): Boolean {
+            var detached = at_graph_player_stop(node) != 0
+            attached.asReversed().toList().forEach { unit ->
+                if (at_graph_detach_node(engine, unit) != 0) attached.remove(unit) else detached = false
+            }
+            return detached
         }
 
-        fun detach() {
-            detachNodes()
+        fun detach(): Boolean {
+            val detached = detachNodes()
             queued.clear()
             free.clear()
+            return detached
         }
 
         private fun renderedFrame(): Long {
@@ -490,6 +519,7 @@ internal class IosBlendAudioGraph private constructor(
                     checkNotNull(at_graph_pcm_format(PCM_RATE, 2u)), checkNotNull(at_graph_output_format(device)),
                 )
                 if (!graph.startEngine()) { graph.close(); return null }
+                graph.suspended = false
                 graph.observeSystem()
                 graph.current.pump()
                 return graph
