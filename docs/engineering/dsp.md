@@ -74,18 +74,38 @@ returns one `DspSettings`.
 | Stored key | Reader | Behaviour |
 |---|---|---|
 | `equalizerBandLevelsMb` | `bandsFromLevelsMb` | Millibel JSON array (`EqualizerBandLevels`), resampled by index onto the caller's band centres; blank or unreadable reads flat |
-| `equalizerOutputGainMb` | `fromPersisted` | Preamp in millibels, clamped to ±12 dB |
+| `equalizerOutputGainMb` | `fromPersisted` | Preamp in millibels, read only while `equalizerOutputGainEnabled` is on, clamped to ±12 dB |
 | `lw_eq_gains` | `bandsFromLastWaveGains` | Fifteen comma-separated decibels on their ISO centres (25 Hz..16 kHz); any other width is not guessed at and yields no bands; each gain clamped to ±24 dB |
-| `lw_eq_enabled`, `equalizerEnabled`, Tryptify switches | `fromPersisted` | The model's equalizer switch is the OR of them |
+| `lw_eq_enabled`, `lastwaveAudioProcessing` | `fromPersisted` | LastWave's fifteen gains run only while both the engine and its equalizer substage were switched on |
+| `tryptifyAudioProcessing`, `eq_enabled`, `param_eq_enabled` | `fromPersisted` | A Tryptify stage runs only while the engine and that stage were switched on: `eq_enabled` is the graphic stage, `param_eq_enabled` the parametric one |
 | `param_eq_bands_json`, `eq_bands_json` | `bandsFromTryptifyJson` | `{type, freq, gain, q, enabled}`; `LOWSHELF`/`HIGHSHELF` map to the shared shelf shapes, a missing or `PEAKING` type stays peaking, anything else, a disabled band or an invalid entry is dropped, gain clamped and Q floored at 0.1, capped at 16 |
-| `lw_music_enhancer`, `lw_clarity_preset` | `clarityFromStored` | The preset index (out of range reads as Reference) only while the switch is on; off means no contour |
+| `eq_stereo_mode`, `eq_bands_r_json` | `withRightOverrides` | The graphic stage's right-channel graph becomes each band's `rightHz`/`rightGainDb`/`rightQ` override when it has the same shape as the left one; a linked (identical) band keeps no override |
+| `eq_preamp`, `param_eq_preamp` | `migratedStagePreampDb` | The preamp of the stage that supplies the bands is added to the shared output gain, then clamped to ±12 dB |
+| `lw_music_enhancer`, `lw_clarity_preset` | `clarityFromStored` | The preset index (out of range reads as Reference) only while the LastWave engine and the switch are both on; off means no contour |
 | `floatDspEnabled` | `fromPersisted` | The native float chain owned the DC blocker, limiter and TPDF dither, so the model enables exactly those three |
 | `playbackSpeed`, `playbackPitch` | `fromPersisted` | Multipliers bounded to 0.5..4 speed and 0.25..2 pitch (converted to semitones by `PitchConversion`); a non-positive pitch multiplier is neutral |
 | `audioNormalization` | `fromPersisted` | The normalization switch |
 | `dsp_state_json` | none | Tryptify's multi-bus preset graph is deliberately not mapped: it describes a plugin bus graph the unified chain has no place for |
 
-Band precedence is parametric Tryptify bands, then Tryptify graphic bands, then the legacy fifteen gains,
-then the shared millibel levels.
+Band precedence is the parametric Tryptify stage, then the graphic Tryptify stage, then the legacy fifteen
+gains, then the shared millibel levels — but only over the stages that were switched on. A stage that was off
+keeps its stored curve on disk and contributes nothing, so switching it on again in an older build still
+restores it.
+
+### Known migration limitations
+
+The shared model carries one band list, one preamp and one right-channel override per band. Three stored
+shapes therefore cannot be represented, and they are left inactive rather than approximated:
+
+- **Both Tryptify stages enabled at once.** The parametric stage is migrated, because it is the more specific
+  curve, and the graphic curve stays stored but inactive. A user who then disables the parametric stage gets
+  the graphic curve back.
+- **A right-channel graph of another width.** `eq_stereo_mode`'s `eq_bands_r_json` is paired band for band
+  only when both lists decode to the same count; otherwise the bands run linked and the stored right graph
+  stays untouched.
+- **A right-channel band of another type.** The shared override carries frequency, gain and Q, not a second
+  band type, so a stereo pair whose right band is a shelf while the left is peaking migrates with the left
+  channel's type on both channels.
 
 A desktop or iOS host does not read that table itself: `DspSettingsDocument.legacyOf(snapshot)` fills
 `PersistedDspValues` from the shared keys those hosts already wrote (`equalizerEnabled`,

@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.playback.dsp
 
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.lang.ref.WeakReference
@@ -11,6 +12,7 @@ import moe.rukamori.archivetune.constants.EqualizerBandLevelsMbKey
 import moe.rukamori.archivetune.constants.EqualizerEnabledKey
 import moe.rukamori.archivetune.constants.EqualizerOutputGainMbKey
 import moe.rukamori.archivetune.constants.FloatDspEnabledKey
+import moe.rukamori.archivetune.constants.LastwaveAudioProcessingKey
 import moe.rukamori.archivetune.constants.PlaybackPitchKey
 import moe.rukamori.archivetune.constants.PlaybackSpeedKey
 import moe.rukamori.archivetune.constants.TryptifyAudioProcessingKey
@@ -90,9 +92,15 @@ class UnifiedDspSettingsSource(
         private val LastWaveClarityEnabledKey = booleanPreferencesKey("lw_music_enhancer")
         private val LastWaveClarityPresetKey = intPreferencesKey("lw_clarity_preset")
 
-        /** Tryptify's stored band graphs, read for the presets they hold, not for its bus routing. */
+        /** Tryptify's stored band graphs and stage switches, read for the presets they hold, not for its bus routing. */
+        private val TryptifyGraphicEnabledKey = booleanPreferencesKey("eq_enabled")
+        private val TryptifyParametricEnabledKey = booleanPreferencesKey("param_eq_enabled")
         private val TryptifyGraphicBandsKey = stringPreferencesKey("eq_bands_json")
         private val TryptifyParametricBandsKey = stringPreferencesKey("param_eq_bands_json")
+        private val TryptifyStereoModeKey = booleanPreferencesKey("eq_stereo_mode")
+        private val TryptifyRightGraphicBandsKey = stringPreferencesKey("eq_bands_r_json")
+        private val TryptifyGraphicPreampKey = doublePreferencesKey("eq_preamp")
+        private val TryptifyParametricPreampKey = doublePreferencesKey("param_eq_preamp")
 
         /**
          * A bit-perfect route allows no stage: the graph copies bit for bit and clears every history, and
@@ -131,6 +139,9 @@ class UnifiedDspSettingsSource(
         /**
          * The stored DSP values, read from one preferences snapshot. A null snapshot reads as defaults, so a
          * cold process can publish neutral settings instead of waiting on the store.
+         *
+         * Each retired engine's presets carry the engine switch and the stage switch that ran them, so a
+         * stage that was off stays off instead of becoming audible under the new processing switch.
          */
         fun readPersistedDspValues(preferences: Preferences?): PersistedDspValues =
             if (preferences == null) {
@@ -143,9 +154,16 @@ class UnifiedDspSettingsSource(
                     equalizerOutputGainMb = preferences[EqualizerOutputGainMbKey] ?: 0,
                     lastWaveEqualizerEnabled = preferences[LastWaveEqualizerEnabledKey] == true,
                     lastWaveGainsDb = preferences[LastWaveGainsKey],
+                    lastWaveEngineEnabled = preferences[LastwaveAudioProcessingKey] == true,
                     tryptifyEqualizerEnabled = preferences[TryptifyAudioProcessingKey] == true,
+                    tryptifyGraphicStageEnabled = preferences[TryptifyGraphicEnabledKey] == true,
+                    tryptifyParametricStageEnabled = preferences[TryptifyParametricEnabledKey] == true,
                     tryptifyGraphicBandsJson = preferences[TryptifyGraphicBandsKey],
                     tryptifyParametricBandsJson = preferences[TryptifyParametricBandsKey],
+                    tryptifyStereoMode = preferences[TryptifyStereoModeKey] == true,
+                    tryptifyRightGraphicBandsJson = preferences[TryptifyRightGraphicBandsKey],
+                    tryptifyGraphicPreampDb = preferences[TryptifyGraphicPreampKey],
+                    tryptifyParametricPreampDb = preferences[TryptifyParametricPreampKey],
                     clarityEnabled = preferences[LastWaveClarityEnabledKey] == true,
                     clarityPresetIndex = preferences[LastWaveClarityPresetKey] ?: 0,
                     floatDspEnabled = preferences[FloatDspEnabledKey] == true,

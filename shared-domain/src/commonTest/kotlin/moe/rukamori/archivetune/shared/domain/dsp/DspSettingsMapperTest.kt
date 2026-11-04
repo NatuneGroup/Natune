@@ -133,8 +133,11 @@ class DspSettingsMapperTest {
         val both = DspSettingsMapper.fromPersisted(
             PersistedDspValues(
                 tryptifyEqualizerEnabled = true,
+                tryptifyParametricStageEnabled = true,
+                tryptifyGraphicStageEnabled = true,
                 tryptifyParametricBandsJson = parametric,
                 tryptifyGraphicBandsJson = graphic,
+                lastWaveEngineEnabled = true,
                 lastWaveEqualizerEnabled = true,
                 lastWaveGainsDb = legacy,
             ),
@@ -145,20 +148,166 @@ class DspSettingsMapperTest {
         val graphicOnly = DspSettingsMapper.fromPersisted(
             PersistedDspValues(
                 tryptifyEqualizerEnabled = true,
+                tryptifyGraphicStageEnabled = true,
                 tryptifyGraphicBandsJson = graphic,
+                lastWaveEngineEnabled = true,
                 lastWaveEqualizerEnabled = true,
                 lastWaveGainsDb = legacy,
             ),
             listOf(100.0, 1_000.0),
         )
         assertEquals(listOf(1_000.0), graphicOnly.equalizerBands.map { it.frequencyHz })
+        assertEquals(listOf(2.0), graphicOnly.equalizerBands.map { it.gainDb })
 
         val legacyOnly = DspSettingsMapper.fromPersisted(
-            PersistedDspValues(lastWaveEqualizerEnabled = true, lastWaveGainsDb = legacy),
+            PersistedDspValues(lastWaveEngineEnabled = true, lastWaveEqualizerEnabled = true, lastWaveGainsDb = legacy),
             listOf(100.0, 1_000.0),
         )
         assertEquals(DspSettingsMapper.LAST_WAVE_BAND_FREQUENCIES_HZ, legacyOnly.equalizerBands.map { it.frequencyHz })
         assertTrue(legacyOnly.equalizerEnabled)
+    }
+
+    @Test
+    fun onlyTheStagesThatWereSwitchedOnMigrate() {
+        val parametric = """[{"type":"PEAKING","freq":500,"gain":4,"q":1}]"""
+        val graphic = """[{"type":"PEAKING","freq":1000,"gain":2,"q":1}]"""
+        val levels = EqualizerBandLevels.encode(listOf(-600, 600))
+
+        // A stage that was switched off keeps its stored curve, and the shared levels answer instead.
+        val parametricOff = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = true,
+                tryptifyParametricStageEnabled = false,
+                tryptifyGraphicStageEnabled = true,
+                tryptifyParametricBandsJson = parametric,
+                tryptifyGraphicBandsJson = graphic,
+                equalizerBandLevelsMb = levels,
+                equalizerEnabled = true,
+            ),
+            listOf(100.0, 1_000.0),
+        )
+        assertEquals(listOf(1_000.0), parametricOff.equalizerBands.map { it.frequencyHz })
+
+        // Both stages off: neither stored curve runs, even with the engine still switched on.
+        val stageOff = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = true,
+                tryptifyParametricBandsJson = parametric,
+                tryptifyGraphicBandsJson = graphic,
+                equalizerBandLevelsMb = levels,
+                equalizerEnabled = true,
+            ),
+            listOf(100.0, 1_000.0),
+        )
+        assertEquals(listOf(-6.0, 6.0), stageOff.equalizerBands.map { it.gainDb })
+    }
+
+    @Test
+    fun aDormantEnginesPresetsStayInactive() {
+        val parametric = """[{"type":"PEAKING","freq":500,"gain":4,"q":1}]"""
+        val levels = EqualizerBandLevels.encode(listOf(-600, 600))
+
+        val engineOff = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = false,
+                tryptifyParametricStageEnabled = true,
+                tryptifyParametricBandsJson = parametric,
+                equalizerBandLevelsMb = levels,
+            ),
+            listOf(100.0, 1_000.0),
+        )
+        assertEquals(listOf(-6.0, 6.0), engineOff.equalizerBands.map { it.gainDb })
+
+        val lastWaveEngineOff = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                lastWaveEngineEnabled = false,
+                lastWaveEqualizerEnabled = true,
+                lastWaveGainsDb = (1..15).joinToString(",") { "3" },
+                clarityEnabled = true,
+                clarityPresetIndex = 3,
+            ),
+            listOf(100.0),
+        )
+        assertNull(lastWaveEngineOff.clarity)
+        assertEquals(listOf(0.0), lastWaveEngineOff.equalizerBands.map { it.gainDb })
+
+        val lastWaveEngineOn = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(lastWaveEngineEnabled = true, clarityEnabled = true, clarityPresetIndex = 3),
+            emptyList(),
+        )
+        assertEquals(ClarityPreset.DAC, lastWaveEngineOn.clarity)
+    }
+
+    @Test
+    fun aStagesPreampMigratesWithTheStage() {
+        val parametric = """[{"type":"PEAKING","freq":500,"gain":4,"q":1}]"""
+        val graphic = """[{"type":"PEAKING","freq":1000,"gain":2,"q":1}]"""
+
+        val parametricStage = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = true,
+                tryptifyParametricStageEnabled = true,
+                tryptifyParametricBandsJson = parametric,
+                tryptifyParametricPreampDb = -2.5,
+                tryptifyGraphicPreampDb = -6.0,
+                equalizerOutputGainMb = -100,
+            ),
+            emptyList(),
+        )
+        assertEquals(-3.5, parametricStage.preampDb, 1e-9)
+
+        val graphicStage = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = true,
+                tryptifyGraphicStageEnabled = true,
+                tryptifyGraphicBandsJson = graphic,
+                tryptifyParametricPreampDb = -2.5,
+                tryptifyGraphicPreampDb = -6.0,
+                equalizerOutputGainMb = -100,
+            ),
+            emptyList(),
+        )
+        assertEquals(-7.0, graphicStage.preampDb, 1e-9)
+    }
+
+    @Test
+    fun aStereoGraphicCurveKeepsItsRightChannelOverrides() {
+        val left = """[{"type":"PEAKING","freq":1000,"gain":2,"q":1},{"type":"PEAKING","freq":2000,"gain":3,"q":1}]"""
+        val right = """[{"type":"PEAKING","freq":1000,"gain":2,"q":1},{"type":"PEAKING","freq":2500,"gain":5,"q":1}]"""
+
+        val stereo = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = true,
+                tryptifyGraphicStageEnabled = true,
+                tryptifyGraphicBandsJson = left,
+                tryptifyStereoMode = true,
+                tryptifyRightGraphicBandsJson = right,
+            ),
+            emptyList(),
+        )
+        assertEquals(2, stereo.equalizerBands.size)
+        // The first band matches on both channels, so it stays linked; the second carries its own design.
+        assertNull(stereo.equalizerBands[0].rightBand())
+        assertEquals(2_500.0, stereo.equalizerBands[1].rightFrequencyHz)
+        assertEquals(5.0, stereo.equalizerBands[1].rightGainDb)
+    }
+
+    @Test
+    fun aRightGraphOfAnotherWidthIsNotGuessedAt() {
+        val left = """[{"type":"PEAKING","freq":1000,"gain":2,"q":1},{"type":"PEAKING","freq":2000,"gain":3,"q":1}]"""
+        val right = """[{"type":"PEAKING","freq":2500,"gain":5,"q":1}]"""
+
+        val linked = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = true,
+                tryptifyGraphicStageEnabled = true,
+                tryptifyGraphicBandsJson = left,
+                tryptifyStereoMode = true,
+                tryptifyRightGraphicBandsJson = right,
+            ),
+            emptyList(),
+        )
+        assertTrue(linked.equalizerBands.none { it.hasRightOverride })
     }
 
     @Test
