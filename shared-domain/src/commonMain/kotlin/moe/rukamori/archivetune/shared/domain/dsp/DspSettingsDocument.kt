@@ -48,10 +48,11 @@ object DspSettingsDocument {
     /**
      * What a host stored before the document existed, read from the shared keys the equalizer panel already
      * wrote: the switch, the millibel levels, the normalization switch and the user preamp while its own
-     * switch is on. A host that never wrote them reads the neutral value, which keeps today's behaviour.
+     * switch is on. The normalization default is the one the Playback settings row declares, so a host that
+     * never wrote the key shows the value the chain applies instead of a second opinion.
      */
     fun legacyOf(snapshot: PreferenceSnapshot?): PersistedDspValues = PersistedDspValues(
-        audioNormalization = snapshot?.get(AudioNormalizationKey) ?: false,
+        audioNormalization = snapshot?.get(AudioNormalizationKey) ?: true,
         equalizerEnabled = snapshot?.get(EqualizerEnabledKey) ?: false,
         equalizerBandLevelsMb = snapshot?.get(EqualizerBandLevelsMbKey),
         equalizerOutputGainMb = if (snapshot?.get(EqualizerOutputGainEnabledKey) == true) {
