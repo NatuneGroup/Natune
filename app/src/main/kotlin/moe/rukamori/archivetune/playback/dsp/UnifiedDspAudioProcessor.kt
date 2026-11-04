@@ -7,9 +7,12 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.round
+import moe.rukamori.archivetune.shared.domain.dsp.DspDither
 import moe.rukamori.archivetune.shared.domain.dsp.DspFormat
 import moe.rukamori.archivetune.shared.domain.dsp.DspGraph
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
+import moe.rukamori.archivetune.shared.domain.dsp.TpdfDither
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 
 /**
@@ -20,15 +23,20 @@ import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
  * Settings arrive as one immutable snapshot from any thread ([submit]) and the playback thread only ever
  * reads the latest one, so a settings change never blocks the render path and no lock is taken on it.
  *
- * Input is 16-bit or float PCM; output is always float, which the sink either plays as float PCM or
- * converts once. Anything else — and every bit-perfect route, whose plan arrives bypassed — leaves this
- * processor inactive, which is [AudioProcessor.AudioFormat.NOT_SET] and makes Media3 skip it, so those
- * samples never enter the chain.
+ * Input is 16-bit or float PCM; the graph runs in float and the output is always 16-bit PCM. That is a
+ * contract, not a preference: the standard sink appends Media3's silence skipper and this project's
+ * transition filter after the supplied processors, both of which reject anything but 16-bit PCM in
+ * `onConfigure` — even when silence skipping is switched off, because the sink configures every processor
+ * in its chain. The graph's clamp runs before the reduction and its TPDF dither runs on the way out when a
+ * host asked for it, so the 16-bit output is the same samples the retired float chain produced.
+ *
+ * Anything else — and every bit-perfect route, whose plan arrives bypassed — leaves this processor
+ * inactive, which is [AudioProcessor.AudioFormat.NOT_SET] and makes Media3 skip it, so those samples never
+ * enter the chain.
  *
  * A neutral but non-bypassed plan stays active on purpose: [BaseAudioProcessor] settles [isActive] at
  * configure time, so going inactive for "no stage engaged" would need a sink rebuild before an equalizer
- * switch could take effect. The graph hands a neutral block through bit-exactly instead, and
- * [isEngaged] reports what actually runs.
+ * switch could take effect. The graph hands a neutral block through, and [isEngaged] reports what runs.
  */
 class UnifiedDspAudioProcessor(
     private val newGraph: (DspFormat) -> DspGraph = { DspGraph(it.sampleRateHz, it.channelCount) },
@@ -37,21 +45,40 @@ class UnifiedDspAudioProcessor(
 
     private class Snapshot(val settings: DspSettings, val plan: SoftwareStagePlan)
 
+    /**
+     * One `configure` for the next stream, held until Media3 flushes. Configure may arrive while the
+     * previous stream is still draining, and Media3 commits the new format at flush; rebuilding the graph
+     * here would drop the old stream's stage history and read its remaining buffers with the new stride.
+     */
+    private class Pending(
+        val format: DspFormat,
+        val floatInput: Boolean,
+        val request: Snapshot,
+        val gated: Boolean,
+    )
+
     @Volatile
     private var requested: Snapshot? = null
 
-    /** The snapshot the graph was last given; touched only from the playback thread. */
+    /** The snapshot and stream the graph is running; touched only from the playback thread. */
     private var applied: Snapshot? = null
 
     private var graph: DspGraph? = null
     private var format: DspFormat? = null
 
     // Read with [format] rather than from [inputAudioFormat], which BaseAudioProcessor only adopts at the
-    // next flush: a block queued before that flush would otherwise be decoded with the previous encoding.
+    // next flush: a block queued for the draining stream must keep the encoding that stream was configured
+    // with, even after a configure for the next one arrived.
     private var floatInput = false
 
     /** The bit-perfect gate's last known verdict, so a mid-stream change is applied once, not per block. */
     private var gateBypassed = false
+
+    /** The stream's staged configure, or null while no new stream is waiting for its flush. */
+    private var pending: Pending? = null
+
+    /** The output quantizer, present only while a host asked for dither. */
+    private var dither: TpdfDither? = null
 
     private var inputFrames = FloatArray(0)
     private var shortScratch = ShortArray(0)
@@ -76,22 +103,14 @@ class UnifiedDspAudioProcessor(
         val target =
             runCatching { DspFormat(inputAudioFormat.sampleRate, inputAudioFormat.channelCount) }
                 .getOrNull() ?: return inactive()
-        val graph = graph ?: newGraph(target).also { graph = it }
-        // Configure allocates, and Media3 calls this off the audio thread; a changed rate also drops every
-        // stage's history, which is what a new stream format needs.
-        graph.configure(target)
-        val gated = bypassGate()
-        graph.apply(
-            if (gated) DspSettings() else request.settings,
-            if (gated) UnifiedDspSettingsSource.BIT_PERFECT_PLAN else request.plan,
-        )
-        applied = request
-        gateBypassed = gated
-        format = target
-        floatInput = encoding == C.ENCODING_PCM_FLOAT
-        isEngaged = !graph.isBypassed
-        EngineRuntime.publishDspActive(isEngaged)
-        return AudioProcessor.AudioFormat(target.sampleRateHz, target.channelCount, C.ENCODING_PCM_FLOAT)
+        val next = Pending(target, floatInput = encoding == C.ENCODING_PCM_FLOAT, request = request, gated = bypassGate())
+        if (format == null) {
+            // The first stream has nothing to drain, so there is nothing to wait for.
+            adopt(next)
+        } else {
+            pending = next
+        }
+        return AudioProcessor.AudioFormat(target.sampleRateHz, target.channelCount, C.ENCODING_PCM_16BIT)
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -107,12 +126,7 @@ class UnifiedDspAudioProcessor(
         // settings move is applied once per change: the graph glides a gain or preset instead of clicking.
         val gated = bypassGate()
         if (request != null && (request !== applied || gated != gateBypassed)) {
-            graph.apply(
-                if (gated) DspSettings() else request.settings,
-                if (gated) UnifiedDspSettingsSource.BIT_PERFECT_PLAN else request.plan,
-            )
-            applied = request
-            gateBypassed = gated
+            applyRequest(graph, request, gated)
         }
         val channels = audioFormat.channelCount
         val bytesPerSample = if (floatInput) FLOAT_BYTES else SHORT_BYTES
@@ -137,7 +151,7 @@ class UnifiedDspAudioProcessor(
         val capacity = graph.requiredOutputCapacity(frames)
         ensureOutput(capacity * channels)
         val produced = graph.pull(outputFrames, capacity)
-        writeFloat(produced * channels)
+        writePcm16(produced * channels, channels)
     }
 
     override fun onQueueEndOfStream() {
@@ -145,15 +159,23 @@ class UnifiedDspAudioProcessor(
         val channels = format?.channelCount ?: return
         // The tempo stage may still hold frames; finish releases them and the drain hands them to the sink.
         graph.finish()
-        val pending = graph.pendingFrames
-        if (pending <= 0) return
-        ensureOutput(pending * channels)
-        val produced = graph.pull(outputFrames, pending)
+        val pendingFrames = graph.pendingFrames
+        if (pendingFrames <= 0) return
+        ensureOutput(pendingFrames * channels)
+        val produced = graph.pull(outputFrames, pendingFrames)
         if (produced <= 0) return
-        writeFloat(produced * channels)
+        writePcm16(produced * channels, channels)
     }
 
     override fun onFlush() {
+        val next = pending
+        pending = null
+        val graph = graph
+        if (next != null) {
+            // The old stream has drained; this is where Media3 commits the new format.
+            adopt(next)
+            return
+        }
         graph?.reset()
     }
 
@@ -162,6 +184,9 @@ class UnifiedDspAudioProcessor(
         format = null
         floatInput = false
         applied = null
+        pending = null
+        dither = null
+        gateBypassed = false
         inputFrames = FloatArray(0)
         shortScratch = ShortArray(0)
         outputFrames = FloatArray(0)
@@ -169,16 +194,52 @@ class UnifiedDspAudioProcessor(
         EngineRuntime.publishDspActive(false)
     }
 
+    /** Starts the staged stream on the graph, dropping whatever the previous stream left behind. */
+    private fun adopt(next: Pending) {
+        // Configure allocates, and Media3 calls it off the audio thread; a changed rate also drops every
+        // stage's history, which is what a new stream format needs.
+        val graph = graph ?: newGraph(next.format).also { graph = it }
+        graph.configure(next.format)
+        applyRequest(graph, next.request, next.gated)
+        graph.reset()
+        format = next.format
+        floatInput = next.floatInput
+        isEngaged = !graph.isBypassed
+        EngineRuntime.publishDspActive(isEngaged)
+    }
+
+    private fun applyRequest(graph: DspGraph, request: Snapshot, gated: Boolean) {
+        val settings = if (gated) DspSettings() else request.settings
+        val plan = if (gated) UnifiedDspSettingsSource.BIT_PERFECT_PLAN else request.plan
+        // The graph dithers for a host that reads its float output; this adapter quantizes to 16-bit
+        // itself, so the dither is applied once, at the output grid, instead of twice.
+        graph.apply(settings.copy(dither = DspDither.OFF), plan)
+        dither =
+            if (settings.dither.enabled) {
+                dither ?: TpdfDither(OUTPUT_BIT_DEPTH, settings.dither.seed)
+            } else {
+                null
+            }
+        applied = request
+        gateBypassed = gated
+    }
+
     private fun inactive(): AudioProcessor.AudioFormat {
+        pending = null
         isEngaged = false
         EngineRuntime.publishDspActive(false)
         return AudioProcessor.AudioFormat.NOT_SET
     }
 
-    private fun writeFloat(samples: Int) {
-        val bytes = samples * FLOAT_BYTES
-        val output = replaceOutputBuffer(bytes)
-        output.order(ByteOrder.nativeOrder()).asFloatBuffer().put(outputFrames, 0, samples)
+    /** The graph already clamped; the reduction rounds to the 16-bit grid, dithered when it was asked for. */
+    private fun writePcm16(samples: Int, channels: Int) {
+        val bytes = samples * SHORT_BYTES
+        val output = replaceOutputBuffer(bytes).order(ByteOrder.nativeOrder())
+        dither?.process(outputFrames, samples / channels, channels)
+        for (index in 0 until samples) {
+            val scaled = outputFrames[index].coerceIn(-1f, 1f) * SHORT_FULL_SCALE
+            output.putShort(index * SHORT_BYTES, round(scaled).toInt().coerceIn(-MAX_SHORT, MAX_SHORT).toShort())
+        }
         output.position(0)
         output.limit(bytes)
     }
@@ -205,5 +266,10 @@ class UnifiedDspAudioProcessor(
         const val FLOAT_BYTES = 4
         const val SHORT_BYTES = 2
         const val SHORT_SCALE = 32_768f
+
+        /** `2^(bits-1) - 1` full-scale steps: a full-scale sample stays at full scale, as the native chain did. */
+        const val SHORT_FULL_SCALE = 32_767f
+        const val MAX_SHORT = 32_767
+        const val OUTPUT_BIT_DEPTH = 16
     }
 }

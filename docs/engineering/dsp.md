@@ -96,9 +96,14 @@ reads the neutral value, which keeps the desktop's pre-document behaviour (no no
 ## What the platform adapters do next
 
 - **Android**: `UnifiedDspAudioProcessor` wraps `DspGraph` in one Media3 `AudioProcessor` and replaces the
-  Tryptify, LastWave and float-DSP engines on the standard route. It takes 16-bit or float input and writes
-  float, reconfigures on a format change off the audio thread, drains the stretch tail at end of stream, and
-  resets on flush. `UnifiedDspSettingsSource` reads the stored values through `DspSettingsMapper` and
+  Tryptify, LastWave and float-DSP engines on the standard route. It takes 16-bit or float input and always
+  writes 16-bit PCM, because `DefaultAudioSink` appends Media3's `SilenceSkippingAudioProcessor` and the
+  project's `TransitionFilterProcessor` after the supplied processors and both reject every other encoding in
+  `onConfigure` — including while silence skipping is switched off, since the sink configures the whole chain.
+  The reduction applies the graph's full-scale clamp and, when the settings ask for it, its TPDF dither once at
+  the 16-bit grid. It reconfigures on a format change off the audio thread, drains the stretch tail at end of
+  stream, and resets on flush; a configure that arrives while the previous stream still drains is held until
+  the sink flushes. `UnifiedDspSettingsSource` reads the stored values through `DspSettingsMapper` and
   publishes one settings value plus its plan to every live processor, and the plan is bypassed whenever the
   bit-perfect gate holds the route, and the single Audio processing switch either publishes the mapped
   settings or a bypassed plan. Tempo and pitch stay with ExoPlayer's playback parameters and

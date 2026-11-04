@@ -2,10 +2,13 @@ package moe.rukamori.archivetune.playback.dsp
 
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.SilenceSkippingAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
+import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
+import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -46,42 +49,51 @@ class UnifiedDspAudioProcessorTest {
         return buffer
     }
 
-    private fun readFloats(buffer: ByteBuffer): FloatArray {
+    private fun readShorts(buffer: ByteBuffer): ShortArray {
         val copy = buffer.duplicate().order(ByteOrder.nativeOrder())
-        val values = FloatArray(copy.remaining() / FLOAT_BYTES)
-        copy.asFloatBuffer().get(values)
+        val values = ShortArray(copy.remaining() / SHORT_BYTES)
+        copy.asShortBuffer().get(values)
         return values
     }
 
     private fun format(encoding: Int) = AudioProcessor.AudioFormat(SAMPLE_RATE, CHANNELS, encoding)
 
+    /** A float sample as this adapter writes it: the full-scale grid the shared TPDF dither uses. */
+    private fun pcm16(value: Float): Short =
+        kotlin.math.round(value.coerceIn(-1f, 1f) * SHORT_FULL_SCALE).toInt().toShort()
+
     @Test
-    fun `a neutral plan hands float samples back bit for bit`() {
+    fun `the chain always publishes 16-bit PCM`() {
         val processor = processor()
         processor.submit(DspSettings(), plan())
-        assertEquals(format(C.ENCODING_PCM_FLOAT), processor.configure(format(C.ENCODING_PCM_FLOAT)))
 
-        val input = floatArrayOf(0.25f, -0.5f, 1e-7f, 0.999f, -1f, 0f)
-        processor.queueInput(floatBuffer(input))
-
-        assertArrayEquals(input, readFloats(processor.getOutput()), 0f)
+        assertEquals(C.ENCODING_PCM_16BIT, processor.configure(format(C.ENCODING_PCM_16BIT)).encoding)
+        assertEquals(C.ENCODING_PCM_16BIT, processor.configure(format(C.ENCODING_PCM_FLOAT)).encoding)
     }
 
     @Test
-    fun `16-bit input is read as float at the same level`() {
+    fun `a neutral plan renders the input at the same level`() {
         val processor = processor()
         processor.submit(DspSettings(), plan())
-        val output = processor.configure(format(C.ENCODING_PCM_16BIT))
+        processor.configure(format(C.ENCODING_PCM_16BIT))
 
-        assertEquals(C.ENCODING_PCM_FLOAT, output.encoding)
-        assertEquals(SAMPLE_RATE, output.sampleRate)
-        assertEquals(CHANNELS, output.channelCount)
-
-        val input = shortArrayOf(0, 8192, -16384, 32767)
+        // Levels whose 16-bit round trip is exact on the full-scale grid the adapter quantizes to.
+        val input = shortArrayOf(0, 8192, -8192, 16384, 16_000, -16_000)
         processor.queueInput(shortBuffer(input))
-        val floats = readFloats(processor.getOutput())
-        assertEquals(input.size, floats.size)
-        input.forEachIndexed { index, sample -> assertEquals(sample / SHORT_SCALE, floats[index], 0f) }
+
+        assertArrayEquals(input, readShorts(processor.getOutput()))
+    }
+
+    @Test
+    fun `float input is reduced onto the 16-bit grid`() {
+        val processor = processor()
+        processor.submit(DspSettings(), plan())
+        processor.configure(format(C.ENCODING_PCM_FLOAT))
+
+        val input = floatArrayOf(0.25f, -0.25f, 0.5f, -0.5f)
+        processor.queueInput(floatBuffer(input))
+
+        assertArrayEquals(input.map(::pcm16).toShortArray(), readShorts(processor.getOutput()))
     }
 
     @Test
@@ -94,7 +106,7 @@ class UnifiedDspAudioProcessorTest {
     }
 
     @Test
-    fun `the bit-perfect gate hands samples through byte for byte`() {
+    fun `the bit-perfect gate keeps the chain engaged and transparent`() {
         val processor = processor(bypassGate = { true })
         processor.submit(DspSettings(preampDb = -6.0), plan())
         processor.configure(format(C.ENCODING_PCM_FLOAT))
@@ -102,8 +114,8 @@ class UnifiedDspAudioProcessorTest {
         val input = floatArrayOf(0.5f, -0.25f, 0.125f, -0.0625f)
         processor.queueInput(floatBuffer(input))
 
-        // The plan allows the chain and the settings ask for a 6 dB cut; only the gate keeps it exact.
-        assertArrayEquals(input, readFloats(processor.getOutput()), 0f)
+        // The plan allows the chain and the settings ask for a 6 dB cut; only the gate keeps it at level.
+        assertArrayEquals(input.map(::pcm16).toShortArray(), readShorts(processor.getOutput()))
         assertFalse(processor.isEngaged)
     }
 
@@ -111,15 +123,15 @@ class UnifiedDspAudioProcessorTest {
     fun `end of stream releases the frames the stretch stage holds back`() {
         val processor = processor()
         processor.submit(DspSettings(speed = 2.0), plan(tempoPitch = true))
-        processor.configure(format(C.ENCODING_PCM_FLOAT))
+        processor.configure(format(C.ENCODING_PCM_16BIT))
 
         val frames = 4_096
-        val input = FloatArray(frames * CHANNELS) { index -> ((index % 64) - 32) / 64f }
-        processor.queueInput(floatBuffer(input))
-        val first = readFloats(processor.getOutput()).size
+        val input = ShortArray(frames * CHANNELS) { index -> (((index % 64) - 32) * 256).toShort() }
+        processor.queueInput(shortBuffer(input))
+        val first = readShorts(processor.getOutput()).size
 
         processor.queueEndOfStream()
-        val tail = readFloats(processor.getOutput())
+        val tail = readShorts(processor.getOutput())
 
         assertTrue("the stretch stage held frames back", first < frames * CHANNELS * 2)
         assertTrue("end of stream drains the tail", tail.isNotEmpty())
@@ -129,19 +141,61 @@ class UnifiedDspAudioProcessorTest {
     fun `flush clears the stage history before the next block`() {
         val processor = processor()
         processor.submit(DspSettings(speed = 2.0), plan(tempoPitch = true))
-        processor.configure(format(C.ENCODING_PCM_FLOAT))
-        processor.queueInput(floatBuffer(FloatArray(1_024 * CHANNELS) { 0.5f }))
-        readFloats(processor.getOutput())
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        processor.queueInput(shortBuffer(ShortArray(1_024 * CHANNELS) { 16_384 }))
+        readShorts(processor.getOutput())
 
         processor.flush()
         processor.submit(DspSettings(), plan())
-        val input = floatArrayOf(0.125f, -0.125f, 0.25f, -0.25f)
-        processor.queueInput(floatBuffer(input))
+        val input = shortArrayOf(1024, -1024, 2048, -2048)
+        processor.queueInput(shortBuffer(input))
 
-        assertArrayEquals(input, readFloats(processor.getOutput()), 0f)
+        assertArrayEquals(input, readShorts(processor.getOutput()))
 
         processor.reset()
         assertFalse(processor.isEngaged)
+    }
+
+    /**
+     * The order `MusicService.buildStandardAudioSink` installs: `DefaultAudioSink` appends Media3's silence
+     * skipper after the supplied processors, and the transition filter is the last supplied one. Both reject
+     * anything but 16-bit PCM, and the skipper rejects it even while disabled — the sink configures every
+     * processor in the chain.
+     */
+    @Test
+    fun `the standard chain configures with silence skipping off`() = assertStandardChainConfigures(skipSilence = false)
+
+    @Test
+    fun `the standard chain configures with silence skipping on`() = assertStandardChainConfigures(skipSilence = true)
+
+    private fun assertStandardChainConfigures(skipSilence: Boolean) {
+        val dsp = processor()
+        dsp.submit(
+            DspSettings(
+                preampDb = -3.0,
+                equalizerEnabled = true,
+                equalizerBands = listOf(
+                    EqualizerBand(
+                        type = EqualizerBandType.PEAKING,
+                        frequencyHz = 1_000.0,
+                        gainDb = 6.0,
+                        q = 1.0,
+                    ),
+                ),
+            ),
+            plan(),
+        )
+        val transitionFilter = TransitionFilterProcessor()
+        val silenceSkipper = SilenceSkippingAudioProcessor().apply { setEnabled(skipSilence) }
+
+        var output = AudioProcessor.AudioFormat(SAMPLE_RATE, CHANNELS, C.ENCODING_PCM_16BIT)
+        for (audioProcessor in listOf(dsp, transitionFilter, silenceSkipper)) {
+            output = audioProcessor.configure(output)
+        }
+
+        assertEquals(C.ENCODING_PCM_16BIT, output.encoding)
+        assertEquals(SAMPLE_RATE, output.sampleRate)
+        assertEquals(CHANNELS, output.channelCount)
     }
 
     private companion object {
@@ -149,6 +203,6 @@ class UnifiedDspAudioProcessorTest {
         const val CHANNELS = 2
         const val FLOAT_BYTES = 4
         const val SHORT_BYTES = 2
-        const val SHORT_SCALE = 32_768f
+        const val SHORT_FULL_SCALE = 32_767f
     }
 }
