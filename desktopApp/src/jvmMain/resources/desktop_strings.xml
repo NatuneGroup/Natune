@@ -156,6 +156,9 @@
     <string name="feedback_send">Send feedback</string>
     <string name="crash_prompt_text">Last time the app crashed. You can review a redacted crash report and decide whether to send it. Nothing is sent without your approval.</string>
     <string name="logs_copied">Copied log to clipboard</string>
+    <string name="link_copied">Link copied to clipboard</string>
+    <string name="share_link_unavailable">This song has no public link to copy. Local files and providers without a catalogue link keep the file on this device.</string>
+    <string name="clipboard_unavailable">The clipboard is unavailable, so the link could not be copied.</string>
     <string name="logs_export_pick">Export</string>
     <string name="backup_save_pick">Save backup</string>
     <string name="backup_open_pick">Choose a backup</string>

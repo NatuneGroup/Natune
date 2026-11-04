@@ -14,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -362,6 +363,16 @@ class DesktopSessionGraph internal constructor(
 
     /** Writes one sanitized diagnostic line to the local log. Host diagnostics are not telemetry. */
     fun report(message: String) = desktopDiagnostic(message)
+
+    /**
+     * One-line notices a host action leaves for the user (a copied link, a refusal with a reason). The window drains
+     * this channel into its snackbar, so the action itself has no UI dependency.
+     */
+    internal val notices = Channel<String>(Channel.BUFFERED)
+
+    fun notify(message: String) {
+        notices.trySend(message)
+    }
 
     /**
      * The playback error dialog's Retry: loads the failed occurrence again at the position the player kept for it, as
