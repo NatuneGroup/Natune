@@ -17,6 +17,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
@@ -24,15 +25,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
-import moe.rukamori.archivetune.acoustics.rememberAcousticAuditController
+import moe.rukamori.archivetune.acoustics.auditKey
+import moe.rukamori.archivetune.acoustics.rememberAcousticAuditOwner
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 
 @Composable
 fun AcousticQualityDialog(target: AcousticAuditTarget, onDismiss: () -> Unit) {
-    val controller = rememberAcousticAuditController(target)
-    val dismiss = { controller.close(); onDismiss() }
+    val bound = remember(target) { target.auditKey() }
+    val owner = rememberAcousticAuditOwner(bound)
+    val dismiss = { owner.close(); onDismiss() }
     DefaultDialog(
         onDismiss = dismiss,
         modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
@@ -43,7 +46,7 @@ fun AcousticQualityDialog(target: AcousticAuditTarget, onDismiss: () -> Unit) {
             TextButton(onClick = dismiss) { Text(stringResource(R.string.acoustic_quality_close)) }
         },
     ) {
-        AcousticQualityContent(target, controller)
+        AcousticQualityContent(bound, owner)
     }
 }
 

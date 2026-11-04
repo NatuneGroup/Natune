@@ -29,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,13 +45,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.acoustics.AcousticAssessment
-import moe.rukamori.archivetune.acoustics.AcousticAuditController
-import moe.rukamori.archivetune.acoustics.AcousticAuditResult
-import moe.rukamori.archivetune.acoustics.AcousticAuditStatus
-import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
 import moe.rukamori.archivetune.acoustics.AcousticHeatAxis
-import moe.rukamori.archivetune.acoustics.rememberAcousticAuditController
+import moe.rukamori.archivetune.acoustics.auditKey
+import moe.rukamori.archivetune.acoustics.rememberAcousticAuditOwner
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAssessment
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditOwner
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditResult
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditStatus
+import moe.rukamori.archivetune.shared.domain.dsp.acoustic.AcousticAuditTarget
 
 @Composable
 fun AcousticQualitySection(
@@ -58,18 +60,19 @@ fun AcousticQualitySection(
     modifier: Modifier = Modifier,
     active: Boolean = true,
 ) {
-    val controller = rememberAcousticAuditController(target, active)
-    AcousticQualityContent(target, controller, modifier, active)
+    val bound = remember(target) { target.auditKey() }
+    val owner = rememberAcousticAuditOwner(bound, active)
+    AcousticQualityContent(bound, owner, modifier, active)
 }
 
 @Composable
 internal fun AcousticQualityContent(
     target: AcousticAuditTarget,
-    controller: AcousticAuditController,
+    owner: AcousticAuditOwner,
     modifier: Modifier = Modifier,
     active: Boolean = true,
 ) {
-    val state by controller.state.collectAsStateWithLifecycle()
+    val state by owner.state.collectAsStateWithLifecycle()
     val running =
         state.status == AcousticAuditStatus.RESOLVING ||
             state.status == AcousticAuditStatus.DECODING ||
@@ -125,11 +128,11 @@ internal fun AcousticQualityContent(
             }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (running) {
-                TextButton(onClick = controller::cancel) {
+                TextButton(onClick = owner::cancel) {
                     Text(stringResource(R.string.acoustic_quality_cancel))
                 }
             } else {
-                Button(onClick = controller::start, enabled = active) {
+                Button(onClick = { owner.start(target) }, enabled = active) {
                     Text(
                         stringResource(
                             if (state.status == AcousticAuditStatus.IDLE) {
