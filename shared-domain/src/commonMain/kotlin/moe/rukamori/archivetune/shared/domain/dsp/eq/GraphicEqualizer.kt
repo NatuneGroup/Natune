@@ -36,7 +36,7 @@ object GraphicEqualizer {
             EqualizerBand(
                 type = EqualizerBandType.PEAKING,
                 frequencyHz = centreHz,
-                gainDb = levelMbOf(levelsMb.getOrNull(index) ?: 0) / MILLIBELS_PER_DB,
+                gainDb = (levelsMb.getOrNull(index) ?: 0).coerceIn(-MAX_LEVEL_MB, MAX_LEVEL_MB) / MILLIBELS_PER_DB,
                 q = BAND_Q,
             )
         }
