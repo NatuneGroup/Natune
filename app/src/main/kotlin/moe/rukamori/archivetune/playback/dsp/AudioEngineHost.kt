@@ -43,7 +43,6 @@ import tf.monochrome.android.audio.eq.ParametricEqProcessor
 import tf.monochrome.android.audio.eq.SpectrumAnalyzerTap
 import tf.monochrome.android.audio.eq.SystemAudioEqController
 import tf.monochrome.android.audio.resample.VariRateAudioProcessor
-import tf.monochrome.android.audio.stretch.StretchAudioProcessor
 import tf.monochrome.android.audio.usb.AudioProcessorChain
 import tf.monochrome.android.audio.usb.ToFloatPcmAudioProcessor
 import tf.monochrome.android.data.preferences.PreferencesManager
@@ -120,7 +119,6 @@ class AudioEngineHost @Inject constructor(
                         paramEq,
                         SpectrumAnalyzerTap(PerformanceProfile.HIGH),
                         VariRateAudioProcessor(),
-                        StretchAudioProcessor(),
                     ),
                 )
             EngineRuntime.publishCompressorEffect(compressor)

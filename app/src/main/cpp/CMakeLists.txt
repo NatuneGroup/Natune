@@ -89,23 +89,6 @@ find_library(log-lib-monochrome-dsp log)
 target_link_libraries(monochrome_dsp android ${log-lib-monochrome-dsp})
 target_link_options(monochrome_dsp PRIVATE "-Wl,-z,max-page-size=16384")
 
-# Pitch shifter (signalsmith-stretch, header-only, third_party/). Loaded as
-# "monochrome_stretch" by StretchNative.
-add_library(monochrome_stretch SHARED
-    tryptify/stretch/stretch_jni.cpp
-)
-target_include_directories(monochrome_stretch PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/signalsmith-stretch
-)
-target_compile_features(monochrome_stretch PRIVATE cxx_std_17)
-target_compile_options(monochrome_stretch PRIVATE
-    -O3 -fno-exceptions -fno-rtti
-    $<$<STREQUAL:${ANDROID_ABI},arm64-v8a>:-march=armv8-a+simd>
-)
-set_target_properties(monochrome_stretch PROPERTIES DEBUG_POSTFIX "")
-target_link_libraries(monochrome_stretch log)
-target_link_options(monochrome_stretch PRIVATE "-Wl,-z,max-page-size=16384")
-
 # libusb UAC bit-perfect driver. The vendored libusb is built as a static
 # archive and linked into monochrome_usb (loaded as "monochrome_usb").
 set(LIBUSB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/libusb)
