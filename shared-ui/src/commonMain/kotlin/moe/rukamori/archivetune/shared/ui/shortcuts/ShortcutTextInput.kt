@@ -1,7 +1,7 @@
 package moe.rukamori.archivetune.shared.ui.shortcuts
 
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.composed
+import androidx.compose.ui.composed
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
