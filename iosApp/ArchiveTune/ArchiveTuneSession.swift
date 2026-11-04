@@ -114,7 +114,8 @@ final class IosRootController: UIViewController {
 
     private func reportSafeArea() {
         let insets = view.safeAreaInsets
-        safeArea.update(top: Double(insets.top), bottom: Double(insets.bottom),
-                        left: Double(insets.left), right: Double(insets.right))
+        // Kotlin exports the parameters in declaration order, and Swift passes labelled arguments in that order.
+        safeArea.update(left: Double(insets.left), top: Double(insets.top),
+                        right: Double(insets.right), bottom: Double(insets.bottom))
     }
 }

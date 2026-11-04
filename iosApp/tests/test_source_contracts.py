@@ -205,14 +205,30 @@ class IosSourceContractsTest(unittest.TestCase):
             file_id = re.search(rf"(\w+) = \{{isa = PBXFileReference;[^\n]+path = ArchiveTune/{path.name};", project).group(1)
             build_id = next(key for key, value in build_files.items() if value == file_id)
             self.assertIn(build_id, sources, path.name)
-        # The native audio patch's graph objects keep these IDs; a second user would make the project ambiguous.
-        for reserved in ["A0000000000000000000000A", "A00000000000000000000022", "A00000000000000000000023"]:
-            self.assertNotIn(reserved, project)
+        # One object graph, one owner per ID: the audio bridge owns 0A/22/23, the app session owns 0C/24, and the
+        # audio headers own 25/26. A copy-paste of either patch reusing one of these IDs fails here.
+        for build_id, file_id in [
+            ("A0000000000000000000000A", "A00000000000000000000022"),
+            ("A0000000000000000000000C", "A00000000000000000000024"),
+        ]:
+            self.assertEqual(1, project.count(f"{build_id} = {{isa = PBXBuildFile; fileRef = {file_id}; }}"))
+            self.assertIn(build_id, sources)
+        for file_id, path in [
+            ("A00000000000000000000022", "Native/ATAudioGraph.mm"),
+            ("A00000000000000000000023", "Native/ATAudioGraph.h"),
+            ("A00000000000000000000024", "ArchiveTune/ArchiveTuneSession.swift"),
+            ("A00000000000000000000025", "Native/ATAudioException.h"),
+            ("A00000000000000000000026", "Native/ATAudioFormat.h"),
+        ]:
+            self.assertEqual(1, project.count(f"path = {path};"))
+            self.assertRegex(project, rf"{file_id} = {{isa = PBXFileReference;[^\n]*path = {path};")
+        defined = re.findall(r"^        (A[0-9A-F]{23}) = {", project, re.M)
+        self.assertEqual(sorted(defined), sorted(set(defined)))
 
     def test_safe_area_reaches_compose_once_and_pads_the_whole_app(self):
         session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
         self.assertIn("override func viewSafeAreaInsetsDidChange()", session)
-        self.assertIn("safeArea.update(top: Double(insets.top)", session)
+        self.assertIn("safeArea.update(left: Double(insets.left), top: Double(insets.top)", session)
         safe_area = (UI_ROOT / "IosSafeArea.kt").read_text()
         self.assertIn("fun update(left: Double, top: Double, right: Double, bottom: Double)", safe_area)
         self.assertIn(".sanitized()", safe_area)
@@ -224,6 +240,9 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("absolutePadding(", owner)
         self.assertIn("consumeWindowInsets(WindowInsets.systemBars)", owner)
         self.assertNotIn("start = insets.left.dp", owner)
+        # The zero path must stay a real no-op for the hosts that own their own bar insets.
+        self.assertIn("@Composable\nfun Modifier.safeAreaPadding(insets: SafeAreaPadding): Modifier =\n    if (!insets.needsRootPadding()) this", owner)
+        self.assertIn("internal fun SafeAreaPadding.needsRootPadding(): Boolean = hasInsets", owner)
         self.assertIn("safeArea: SafeAreaPadding = SafeAreaPadding.None", (UI_COMMON / "ArchiveTuneRoot.kt").read_text())
         self.assertIn(".safeAreaPadding(safeArea)", (UI_COMMON / "ArchiveTuneRoot.kt").read_text())
 
@@ -240,6 +259,88 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("NSDataWritingAtomic", files)
         self.assertIn("NSFileCoordinator", files)
         self.assertNotIn("NSURLBookmarkCreationWithSecurityScope", files)
+
+    def test_audio_graph_canonical_source_and_hardware_boundary(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        self.assertNotIn("interleaved:YES", audio)
+        self.assertIn("initStandardFormatWithSampleRate:AT_AUDIO_PCM_RATE channels:2", audio)
+        self.assertIn("at_audio_canonical_format(hardware.sampleRate, hardware.channelCount", audio)
+        self.assertIn("buffers->mNumberBuffers != 2", audio)
+        self.assertIn("at_audio_deinterleave(p->scratch", audio)
+        self.assertIn("connect:p->source to:p->converter format:pcm", audio)
+        self.assertIn("connect:p->converter to:p->time_pitch format:canonical", audio)
+        create = audio.split("static at_audio_output *create_output(", 1)[1].split("at_audio_output *at_audio_create(", 1)[0]
+        self.assertIn("configure_playback_locked() && build_graph(p, plain)", create)
+        self.assertIn("at_audio_destroy(p)", create)
+
+    def test_apple_exception_boundary_and_fallback_are_shared_by_both_consumers(self):
+        boundary = (IOS / "Native/ATAudioException.h").read_text()
+        self.assertIn("@try", boundary)
+        self.assertIn("@catch (NSException *exception)", boundary)
+        self.assertNotIn("exception.reason", boundary)
+        graph = (IOS / "Native/ATAudioGraph.mm").read_text()
+        self.assertIn("audio_try(^BOOL", graph)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertNotRegex(blend, r"engine\.(?:attachNode|connect|detachNode|prepare|startAndReturnError|pause|stop)\(")
+        self.assertNotRegex(blend, r"node\.(?:scheduleBuffer|play|playAtTime|pause|stop)\(")
+        self.assertIn("at_graph_connect(engine, node, converter, format)", blend)
+        self.assertIn("at_graph_connect(engine, converter, pitch, canonical)", blend)
+        factory = (KOTLIN / "IosAudioOutputFactory.kt").read_text()
+        self.assertIn("primary = { at_audio_create(error, 256uL) }", factory)
+        self.assertIn("plain = { at_audio_create_plain(error, 256uL) }", factory)
+        self.assertIn("createIosAudioOutput", (KOTLIN / "IosBlendSource.kt").read_text())
+        port = (KOTLIN / "IosPlaybackPort.kt").read_text()
+        self.assertIn("createIosAudioOutput { outputCreationError = it }", port)
+        self.assertIn("reason == PlaybackFailureReason.OUTPUT_FAILED", port)
+
+    def test_route_rebuild_retires_native_callbacks_and_keeps_unplayed_blend_pcm(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        self.assertIn("output->graph_generation == generation", audio)
+        self.assertIn("invalidate_graph(output)", audio)
+        self.assertIn("p->render_active.load() == 0 && p->retired_source == nil", audio)
+        self.assertIn("p->requires_recreation = true", audio)
+        self.assertIn("rebuild_graph(p, true)", audio)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("engine === observedEngine", blend)
+        self.assertIn("rebuildPreservingPcm()", blend)
+        self.assertIn("current.reschedule()", blend)
+        self.assertIn("canonical = checkNotNull(at_graph_output_format(engine))", blend)
+        self.assertIn("chunk.span.positionUs(chunk.span.startFrame + skip)", blend)
+        reschedule = blend.split("fun reschedule(): Boolean {", 1)[1].split("fun detachNodes()", 1)[0]
+        self.assertIn("val replacements = ArrayDeque<Chunk>()", reschedule)
+        self.assertIn("queued.addAll(replacements)", reschedule)
+        self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("queued.clear()"))
+        self.assertLess(reschedule.index("at_graph_schedule(node"), reschedule.index("playedFrame = 0L"))
+
+    def test_native_bridge_is_built_and_tested_not_only_header_parsed(self):
+        project = (IOS / "ArchiveTune.xcodeproj/project.pbxproj").read_text()
+        self.assertIn("path = Native/ATAudioGraph.mm", project)
+        self.assertIn("A0000000000000000000000A = {isa = PBXBuildFile;", project)
+        sources = project.split("isa = PBXSourcesBuildPhase", 1)[1].split("};", 1)[0]
+        self.assertIn("A0000000000000000000000A", sources)
+        build = (ROOT / "shared-data/build.gradle.kts").read_text()
+        self.assertIn('cinterops.create("archivetuneGraph")', build)
+        self.assertIn("archivetuneGraph.def", build)
+        workflow = (ROOT / ".github/workflows/ios_compile.yml").read_text()
+        self.assertIn("iosApp/Native/ATNativeAudio.mm iosApp/Native/ATAudioGraph.mm", workflow)
+        self.assertIn("-fsyntax-only", workflow)
+        self.assertIn("iosApp/tests/audio_format_test.c", workflow)
+        self.assertIn("iosApp/tests/audio_exception_test.mm", workflow)
+        self.assertIn("python3 -m unittest discover -s iosApp/tests", workflow)
+
+    def test_blend_failed_attachment_and_queued_resume_are_contained(self):
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("Deck(output, 0f)", blend)
+        self.assertIn("if (suspended) { dropIncoming(); return false }", blend)
+        self.assertIn("epoch == resumeEpoch && current.nativeState().playWhenReady", blend)
+        self.assertIn("if (graphDirty && !rebuildWithFallback())", blend)
+        self.assertIn("if (!stopped || !currentDetached || !incomingDetached) return false", blend)
+        self.assertIn("if (!stopped || !incomingDetached || !currentDetached) at_audio_manual_output_failed", blend)
+        self.assertIn("incoming?.let { if (at_audio_play(it.output) == 0)", blend)
+        self.assertIn("graph.suspended = false", blend)
+        self.assertNotIn("if (deck.gainIsAudible) deck.start()", blend)
+        downstream = (KOTLIN / "IosPlaybackBlend.kt").read_text()
+        self.assertIn("if (!graph.promote())", downstream)
 
     def test_ledger_does_not_turn_source_into_an_apple_pass(self):
         status = (ROOT / "docs/engineering/ios-status.md").read_text()
