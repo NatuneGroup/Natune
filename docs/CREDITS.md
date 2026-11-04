@@ -158,8 +158,8 @@ their approaches were followed.
   (AGPL-3.0-only): the look the iOS native lyric view (`iosApp/ArchiveTune/SystemLyrics.swift`)
   and the shared depth and background-vocal rows aim for, distance blur and a separate
   smaller background line. Only the behaviour was studied; no AGPL source was copied, and
-  the Swift and Kotlin are written fresh on Apple's SwiftUI `TextRenderer` and Liquid
-  Glass APIs.
+  the Swift and Kotlin are written fresh. The native pane now uses UIKit/TextKit and
+  Core Graphics rather than SwiftUI `TextRenderer`; native chrome uses UIKit Liquid Glass.
 - [NewPipe / InnerTube](https://github.com/TeamNewPipe/NewPipeExtractor): the InnerTube
   request lineage behind `core`.
 - [MetrolistGroup/innertubex](https://github.com/MetrolistGroup/innertubex) and
