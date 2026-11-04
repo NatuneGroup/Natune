@@ -54,9 +54,13 @@ data class DspSettings(
         }
     }
 
+    /** The user preamp alone as a linear factor, for a host that applies its own normalization gain. */
+    val preampGain: Float
+        get() = if (preampDb == 0.0) 1f else 10.0.pow(preampDb / 20.0).toFloat()
+
     /** Normalization gain and preamp multiplied into the one gain the chain applies first. */
     val linearInputGain: Float
-        get() = if (preampDb == 0.0) linearGain else (linearGain * 10.0.pow(preampDb / 20.0)).toFloat()
+        get() = linearGain * preampGain
 
     /** True when no stage would change a sample: the graph can hand the caller's samples straight back. */
     val isNeutral: Boolean

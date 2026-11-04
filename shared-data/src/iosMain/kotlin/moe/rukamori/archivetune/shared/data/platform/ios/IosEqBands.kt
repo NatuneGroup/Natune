@@ -9,6 +9,7 @@ import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import moe.rukamori.archivetune.nativeaudio.AT_AUDIO_EQ_MAX_BANDS
 import moe.rukamori.archivetune.nativeaudio.at_audio_equalizer
+import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandwidth
@@ -24,6 +25,13 @@ internal data class IosEqBand(
     val bandwidthOctaves: Float,
     val gainDb: Float,
 )
+
+/**
+ * The shared settings value's band list converted once, for both the native output and the blend decks. The
+ * bands are the shared model's, so this adapter carries no layout, no gain conversion and no coefficient design;
+ * AVAudioUnitEQ renders the parameters the core describes.
+ */
+internal fun DspSettings.toIosEqBands(): List<IosEqBand> = equalizerBands.toIosEqBands()
 
 /** The shared band list converted once, for both the native output and the blend decks. */
 internal fun List<EqualizerBand>.toIosEqBands(): List<IosEqBand> = map { band ->
@@ -42,6 +50,15 @@ internal val EqualizerBandType.iosEqType: Int
         EqualizerBandType.LOW_SHELF -> 1
         EqualizerBandType.HIGH_SHELF -> 2
     }
+
+/**
+ * Applies the shared settings' equalizer to [output]: the one value the desktop and iOS ports both take, so the
+ * host never passes a band list of its own.
+ */
+@OptIn(ExperimentalForeignApi::class)
+internal fun applyIosEqualizer(output: CPointer<at_audio_output>, settings: DspSettings) {
+    applyIosEqualizer(output, settings.toIosEqBands(), settings.equalizerEnabled)
+}
 
 /**
  * Packs [bands] into the native ABI and applies them to [output], capped at the unit's band count. Both the
