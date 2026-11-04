@@ -74,8 +74,6 @@ class ArchiveTuneHostBindings(
     val customFontLoader: (suspend (uri: String) -> androidx.compose.ui.text.font.FontFamily?)? = null,
     /** The custom cover store; provided as overrides so playlist rows can choose cover or mosaic. */
     val customArtwork: moe.rukamori.archivetune.shared.domain.repository.CustomArtworkRepository? = null,
-    /** A tab bar and mini player the platform draws above the root, or null where the shell draws its own. */
-    val nativeChrome: NativeShellChrome? = null,
     /** Toggles the platform window's own fullscreen; null where the host window has no fullscreen surface. */
     val toggleWindowFullscreen: (() -> Unit)? = null,
     /** False when the build has no news feed, which hides the News entry. */
@@ -94,6 +92,8 @@ fun ArchiveTuneRoot(
     television: Boolean = false,
     /** The OS light/dark answer as the host observes it; the default asks Compose, which may not see OS changes. */
     systemDark: Boolean = isSystemInDarkTheme(),
+    /** The host's measured safe area; reserved once inside the theme so its own background paints the strips. */
+    safeArea: SafeAreaPadding = SafeAreaPadding.None,
 ) {
     key(host) {
         // A null local means this host has no edit store; leave repository-supplied effective rows intact.
@@ -171,11 +171,6 @@ private fun ArchiveTuneLoadedRoot(
             host.routes.collect { route ->
                 if (ArchiveRoutes.resolve(route) != null) navigation.open(route) else host.onFailure()
             }
-        }
-        host.nativeChrome?.let { chrome ->
-            NativeChromeLink(chrome, navigation, current, playback?.playWhenReady == true, expanded,
-                expand = { expanded = true },
-                togglePlayback = { playing -> if (playing) host.queue.player.pause() else host.queue.player.play() })
         }
         val goBack = {
             when {
@@ -271,7 +266,10 @@ private fun ArchiveTuneLoadedRoot(
             fontPreference = launchSettings.fontPreference, customFontFamily = launchCustomFamily,
             colorScheme = colorScheme) {
             ProvideBackdropSources(policy) { pageSource ->
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onKeyEvent { event ->
+                // The background is drawn before the safe-area padding, so the strips keep the app's own colour; the
+                // padding is physical and consumes the bar insets, so no screen below reserves them a second time.
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+                    .safeAreaPadding(safeArea).onKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                     val action = keymapActionOf(event.key,
                         ctrlOrMeta = event.isCtrlPressed || event.isMetaPressed,
@@ -281,7 +279,6 @@ private fun ArchiveTuneLoadedRoot(
                     ArchiveTuneShell(navigation, preferences,
                         onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
                         television = television, contentModifier = pageSource,
-                        nativeChrome = host.nativeChrome,
                         miniPlayer = {
                             if (current != null) ArchiveMiniPlayer(
                                 current = current,
@@ -324,51 +321,6 @@ private fun ArchiveTuneLoadedRoot(
                 }
             }
         }
-}
-
-/**
- * Mirrors the root's tab, song and player state to the platform chrome and applies its requests here, so
- * [ShellNavigation] and the root's expanded state keep their single owners. The chrome hides while the player is open.
- */
-@Composable
-private fun NativeChromeLink(
-    chrome: NativeShellChrome,
-    navigation: ShellNavigation,
-    current: ContentOccurrence?,
-    playing: Boolean,
-    expanded: Boolean,
-    expand: () -> Unit,
-    togglePlayback: (playing: Boolean) -> Unit,
-) {
-    val labels = NativeShellLabels(
-        home = stringResource(Res.string.m4_home),
-        search = stringResource(Res.string.m4_search),
-        library = stringResource(Res.string.m4_library),
-        play = stringResource(Res.string.integration_play),
-        pause = stringResource(Res.string.integration_pause),
-        expand = stringResource(Res.string.native_chrome_open_player),
-    )
-    val nowPlaying = current?.let {
-        NativeNowPlaying(it.occurrenceId, it.item.title, it.item.subtitle, it.item.artworkUri, playing)
-    }
-    // Settings pages draw no shell chrome, so the platform tab bar and mini player step aside there as well.
-    val state = NativeShellState(visible = !expanded && !isSettingsRoute(navigation.route),
-        selectedTab = navigation.selectedTab, nowPlaying = nowPlaying, labels = labels)
-    SideEffect { chrome.publish(state) }
-    DisposableEffect(chrome) { onDispose { chrome.publish(NativeShellState()) } }
-    val latestCurrent by rememberUpdatedState(current)
-    val latestPlaying by rememberUpdatedState(playing)
-    val latestExpand by rememberUpdatedState(expand)
-    val latestToggle by rememberUpdatedState(togglePlayback)
-    LaunchedEffect(chrome, navigation) {
-        chrome.commands.collect { command ->
-            when (command) {
-                is NativeShellCommand.SelectTab -> navigation.select(command.tab)
-                NativeShellCommand.ExpandPlayer -> if (latestCurrent != null) latestExpand()
-                NativeShellCommand.TogglePlayback -> if (latestCurrent != null) latestToggle(latestPlaying)
-            }
-        }
-    }
 }
 
 /**

@@ -109,12 +109,15 @@ invariants remain unchanged.
   are historical evidence, not validation of the current candidate, Android/iOS,
   signing, upgrades or physical audio. The full KMP port remains incomplete; see
   [baseline provenance](docs/engineering/kmp-baseline.md).
-- **iOS presentation boundary:** SwiftUI is only the app/scene shell, Compose controller
-  representable and URL/user-activity/safe-area handling. Native chrome and Enhanced lyrics
-  use UIKit; do not add SwiftUI-rendered app content or `UIHostingController`. A future
-  WidgetKit/ActivityKit feature requires an explicit, documented system-only exception,
-  never silent deletion. Keep the shared clock, native-interface toggle, one-host lifetime,
-  adaptive layouts and MediaPlayer transport. See
+- **iOS presentation boundary:** one shared Compose UI owns every screen, the shell chrome,
+  the player and the lyrics on Android, iOS and desktop. SwiftUI is only the iOS app/scene
+  shell, the Compose controller representable and URL/user-activity handling; the one UIKit
+  job is the root controller that reports the window's safe area to Compose, which reserves
+  it once inside the app theme. Do not add a second renderer: no SwiftUI-rendered app content,
+  no `UIHostingController`, no parallel UIKit screens, chrome or lyric surface. A future
+  WidgetKit/ActivityKit feature requires an explicit, documented system-only exception, never
+  silent deletion. Keep the shared clock, one-host lifetime, adaptive layouts and MediaPlayer
+  transport; the `native_ios_interface` preference stays stored but inert. See
   [iOS shell comparison](docs/engineering/ios-swiftui-parity.md).
 - **Remote foundation constraints (merged 2026-10-25):**
   - The foundation's `:shared` module is not in `settings.gradle.kts`. Its files stay

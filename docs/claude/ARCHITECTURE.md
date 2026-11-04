@@ -156,23 +156,17 @@ and URL/browsing-activity forwarding in `iosApp/ArchiveTune/ArchiveTuneApp.swift
 `ArchiveTuneSession.swift` owns one `IosHost` and re-presents the same controller; detach,
 backgrounding and SwiftUI reconstruction do not close services.
 
-On iOS 26 and later `NativeChrome.swift` contains one UIKit container above the single
-`ComposeUIViewController`, not per-tab controllers. `UIGlassEffect` and `UIGlassContainerEffect`
-sample the Compose pages underneath. Only the capsules/circle take touches; empty gaps pass
-through. The pill stays centered with a 520-point maximum width on iPad, Fold and resized
-windows, uses the bottom safe area without tracking the keyboard, and delegates status-bar
-policy to Compose. Kotlin's `NativeShellChrome` still owns tabs, song, playback, visibility,
-rail-layout fallback and the reserved inset. The Enhanced pane in `SystemLyrics.swift` and
-`SystemLyricsRendering.swift` is a UIKit table plus TextKit/Core Graphics renderer, hosted
-through `UIKitViewController` (`ios/IosNativeLyricsSurface.kt`). It keeps the shared rows,
-`NativeLyricsTimeline` clock, one latency subtraction, sweep/emphasis/drop math, readings,
-credits, seek/share policy, manual-follow hold and reduced-motion behavior. A display link
-runs only while visible and advancing; a held position polls at 250 ms. No Swift clock
-advances playback.
+The shared Compose tree is the only app UI on every platform: screens, navigation shell,
+tab bar, mini player, player sheet and all three lyric looks. `ArchiveTuneSession.swift`
+hosts one `ComposeUIViewController` full-bleed through `IosRootController`, which exists only
+to report `view.safeAreaInsets`. `IosHost.safeArea` carries those points and
+`IosMountedRoot` pads the whole mounted app with them once; the shell reserves its own
+measured chrome height beneath the pages (`LocalShellContentPadding`), so the status bar and
+home indicator are reserved in exactly one place. Instants outside that padding are painted
+by the host window.
 
-The "Native iOS interface" setting (`NativeIosInterfaceKey`, default on, iOS appearance page
-only) still turns both native surfaces off; iOS 16 to 25 keep Compose unchanged. Callback
-subscriptions use `IosSubscription`, without SKIE. No app content uses SwiftUI or
+The `NativeIosInterfaceKey` toggle and the UIKit chrome/lyric copies it switched to are
+removed; a stored value simply has no surface left to gate. No app content uses SwiftUI or
 `UIHostingController`. There is no WidgetKit/ActivityKit target or lock-screen lyric renderer:
 existing MediaPlayer Now Playing metadata and transport remain independent and unchanged.
 See [the binary comparison and boundary](../engineering/ios-swiftui-parity.md). No device QA

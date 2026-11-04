@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneRoot
 import moe.rukamori.archivetune.shared.ui.IosHost
 import moe.rukamori.archivetune.shared.ui.IosSessionState
+import moe.rukamori.archivetune.shared.ui.SafeAreaPadding
+import moe.rukamori.archivetune.shared.ui.safeAreaPadding
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.resources.ios_host_graph_unavailable
 import moe.rukamori.archivetune.shared.ui.resources.ios_settings_unavailable
@@ -39,16 +41,25 @@ import org.jetbrains.compose.resources.stringResource
 internal fun IosMountedRoot(host: IosHost) {
     val session by host.session.collectAsState()
     val active by host.appActive.collectAsState()
+    val measured by host.safeArea.padding.collectAsState()
+    // UIKit is the only inset source: the ready root reserves the window's safe area inside its own theme, and the
+    // boundary states reserve it the same physical way, so no screen sits under the status bar or home indicator.
+    IosMountedState(host, session, active, measured)
+    IosCrashOverlay(host, measured)
+}
+
+@Composable
+private fun IosMountedState(host: IosHost, session: IosSessionState, active: Boolean, safeArea: SafeAreaPadding) {
     when (val state = session) {
-        IosSessionState.Opening -> IosBoundary { CircularProgressIndicator() }
-        IosSessionState.SettingsUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_settings_unavailable)) }
-        IosSessionState.GraphUnavailable -> IosBoundary { IosBoundaryText(stringResource(Res.string.ios_host_graph_unavailable)) }
+        IosSessionState.Opening -> IosBoundary(safeArea) { CircularProgressIndicator() }
+        IosSessionState.SettingsUnavailable -> IosBoundary(safeArea) { IosBoundaryText(stringResource(Res.string.ios_settings_unavailable)) }
+        IosSessionState.GraphUnavailable -> IosBoundary(safeArea) { IosBoundaryText(stringResource(Res.string.ios_host_graph_unavailable)) }
         is IosSessionState.Ready -> {
             // A blocked restore runs on a throwaway database: the whole shell stays unmounted until the
             // recovery screen resolves it, so no ordinary write can reach the stand-in.
             val recovering by state.graph.backup.recoveryMode.collectAsState()
             if (recovering) {
-                IosRestoreRecoveryScreen(state.graph)
+                IosRestoreRecoveryScreen(state.graph, safeArea)
             } else {
                 val uiScope = rememberCoroutineScope()
                 val recognition = remember(state.graph) { IosRecognitionMount(state.graph, uiScope) }
@@ -59,11 +70,11 @@ internal fun IosMountedRoot(host: IosHost) {
                     visible = active,
                     resumed = active,
                     opticalCapabilities = IosOpticalCapabilities,
+                    safeArea = safeArea,
                 )
             }
         }
     }
-    IosCrashOverlay(host)
 }
 
 /**
@@ -71,28 +82,35 @@ internal fun IosMountedRoot(host: IosHost) {
  * it; Close keeps it, so it is offered again. Share Logs opens the iOS share sheet with the report text.
  */
 @Composable
-private fun IosCrashOverlay(host: IosHost) {
+private fun IosCrashOverlay(host: IosHost, safeArea: SafeAreaPadding) {
     var report by remember { mutableStateOf(host.storedCrash()) }
     val current = report ?: return
     ArchiveTuneTheme {
-        CrashReportDialog(
-            report = current,
-            appName = "Natune",
-            actions = CrashReportActions(
-                copyToClipboard = ::copyToIosClipboard,
-                shareLogs = { iosShareText(host, it) },
-                report = null,
-                delete = { if (host.clearCrash()) report = null },
-                close = { report = null },
-            ),
-        )
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeAreaPadding(safeArea)) {
+            CrashReportDialog(
+                report = current,
+                appName = "Natune",
+                actions = CrashReportActions(
+                    copyToClipboard = ::copyToIosClipboard,
+                    shareLogs = { iosShareText(host, it) },
+                    report = null,
+                    delete = { if (host.clearCrash()) report = null },
+                    close = { report = null },
+                ),
+            )
+        }
     }
 }
 
 @Composable
-private fun IosBoundary(content: @Composable () -> Unit) {
+private fun IosBoundary(safeArea: SafeAreaPadding, content: @Composable () -> Unit) {
     ArchiveTuneTheme {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+        // Same ownership as the ready root: the theme's background covers the screen and the safe area is reserved
+        // inside it, so the strips keep the app's colour instead of the window's.
+        Box(
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeAreaPadding(safeArea),
+            contentAlignment = Alignment.Center,
+        ) {
             content()
         }
     }

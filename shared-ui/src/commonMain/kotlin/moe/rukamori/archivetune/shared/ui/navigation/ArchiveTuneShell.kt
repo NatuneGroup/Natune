@@ -29,8 +29,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.glass.*
 import moe.rukamori.archivetune.shared.ui.resources.*
@@ -45,8 +43,8 @@ val LocalShellContentPadding = staticCompositionLocalOf<PaddingValues> { Padding
 /**
  * Slots share one root owner. [content] excludes the mini-player/navigation.
  * Use ProvideBackdropSources and pass its page-only source modifier as [contentModifier].
- * While [nativeChrome] is active the platform draws the tab bar and mini player in the bottom layouts, and the shell
- * only reserves their height; rail layouts keep the shared chrome.
+ * This shell is the only bottom chrome on every platform: it measures its own bar and mini player and reserves
+ * exactly that height beneath the pages.
  */
 @Composable
 fun ArchiveTuneShell(
@@ -59,7 +57,6 @@ fun ArchiveTuneShell(
     searchActive: Boolean = false,
     onSearchItemDoubleClick: (() -> Unit)? = null,
     contentModifier: Modifier = Modifier,
-    nativeChrome: NativeShellChrome? = null,
     miniPlayer: @Composable () -> Unit,
     content: @Composable (route: String) -> Unit,
 ) {
@@ -100,11 +97,6 @@ fun ArchiveTuneShell(
             }
         val layout = shellLayout(maxWidth.value, television, preferences, effectiveScrolledDown, searchActive,
             navigation.route == navigation.selectedTab.route, isSettingsRoute(navigation.route))
-        val nativeActive by (nativeChrome?.active ?: InactiveNativeChrome).collectAsState()
-        val nativeInsetDp by (nativeChrome?.bottomInsetDp ?: NoNativeInset).collectAsState()
-        val nativeYields = nativeActive && layout.nativeChromeReplaces()
-        SideEffect { nativeChrome?.reportShellYields(nativeYields) }
-        DisposableEffect(nativeChrome) { onDispose { nativeChrome?.reportShellYields(false) } }
         val hiddenByScroll =
             layout == ShellLayout.MiniPlayerOnly && effectiveScrolledDown && hideOnScroll &&
                 compactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED
@@ -121,17 +113,14 @@ fun ArchiveTuneShell(
         )
         // The page is recorded for frosted navigation only while a frosted bar, rail or compact row is composed on screen.
         val frostedGate = LocalFrostedNavigationGate.current
-        val frostedOnScreen = frostedNavigationOnScreen(layout, preferences) && !nativeYields
+        val frostedOnScreen = frostedNavigationOnScreen(layout, preferences)
         SideEffect { frostedGate?.onScreen = frostedOnScreen }
         val apple = preferences.navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC
         val pill = rememberPillStyle(preferences)
         val glowStrength = preferences.navigationBarGlowStrength()
         var chromeHeight by remember(layout) { mutableIntStateOf(0) }
-        val chromePadding = if (nativeYields) {
-            PaddingValues(bottom = nativeInsetDp.dp)
-        } else {
-            PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
-        }
+        // Pages reserve the measured bar and mini player, so no card sits under a control the shell drew.
+        val chromePadding = PaddingValues(bottom = with(LocalDensity.current) { chromeHeight.toDp() })
         Row(Modifier.fillMaxSize()) {
             if (layout == ShellLayout.Rail || layout == ShellLayout.TvRail) {
                 NavigationRail(Modifier.testTag("shell-rail").fillMaxHeight().navigationMaterial(preferences),
@@ -161,7 +150,7 @@ fun ArchiveTuneShell(
                     LocalBottomUiCompactFraction provides bottomUiCompactFraction,
                 ) {
                     // This sibling is excluded from both recordings; only page pixels feed the chrome.
-                    if (!nativeYields) Column(Modifier.align(Alignment.BottomCenter).onSizeChanged { chromeHeight = it.height }) {
+                    Column(Modifier.align(Alignment.BottomCenter).onSizeChanged { chromeHeight = it.height }) {
                         when (layout) {
                             ShellLayout.Hidden -> Unit
                             ShellLayout.CompactRow -> Row(
@@ -209,15 +198,6 @@ fun ArchiveTuneShell(
         }
     }
 }
-
-/** The bottom layouts a platform tab bar and mini player stand in for. Rails and the hidden layout keep their own. */
-internal fun ShellLayout.nativeChromeReplaces(): Boolean = when (this) {
-    ShellLayout.BottomBar, ShellLayout.CompactRow, ShellLayout.MiniPlayerOnly -> true
-    ShellLayout.Rail, ShellLayout.TvRail, ShellLayout.Hidden -> false
-}
-
-private val InactiveNativeChrome: StateFlow<Boolean> = MutableStateFlow(false)
-private val NoNativeInset: StateFlow<Float> = MutableStateFlow(0f)
 
 internal val ShellTab.label: StringResource get() = when (this) {
     ShellTab.Home -> Res.string.m4_home

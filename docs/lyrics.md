@@ -63,21 +63,16 @@ review and confirmed fixes are complete; no all-language or device QA is claimed
 | `ui/component/LyricsV2.kt` | Alternate full-screen renderer |
 | `ui/player/simpmusic/SimpMusicLyrics.kt` | The SIMPMUSIC lyrics *mode* — a user-selectable style, reachable from the full-screen surface and the card |
 
-In the shared modules `LyricsFullscreenRenderer` draws every look. On iOS 26 and later, with
-the "Native iOS interface" setting on, the Enhanced look is drawn by the UIKit controller in
-`iosApp/ArchiveTune/SystemLyrics.swift` and the TextKit/Core Graphics renderer in
-`iosApp/ArchiveTune/SystemLyricsRendering.swift` instead. It reads the same render rows and the same
-lyric clock through `NativeLyricsDocument` and `NativeLyricsTimeline`, so seeking, sync offset
-and the tap policy match the Compose renderer. The document carries the Enhanced refinements the
-same way: emphasis letters for held words, the interlude break each row owns, the saved text size,
-the active-line pop, the uniform blur veil with its stagger, duet end-alignment by
+In the shared modules `LyricsFullscreenRenderer` draws every look, on every platform:
+there is one lyric renderer, and iOS mounts no second one. Its Enhanced refinements are the
+same everywhere: emphasis letters for held words, the interlude break each row owns, the saved
+text size, the active-line pop, the uniform blur veil with its stagger, duet end-alignment by
 `LyricsAlignmentPolicy`, and the credits footer with the machine-made badges. The sweep share, the
 emphasis wave and the completion lift are the shared `LyricsSweepGeometry.progressAt`,
 `LyricsEmphasis.bumpAt` and `LyricsSweepGeometry.dropAt` math
 rather than a port, so reduced motion and word completion behave identically, and readings slide in
-when their text publishes to a row, not when the row starts singing. The saved size also rides
-Dynamic Type through `UIFontMetrics`. What stays Compose-only there is the line-change settle glide
-and selection/share-card UI. Both use
+when their text publishes to a row, not when the row starts singing. What stays Compose-only there
+is the line-change settle glide and selection/share-card UI. Every surface uses
 `LyricsClock`, which subtracts the snapshot's output-latency estimate once at the playback speed,
 separately from the user offset; the iOS host does not add a second route-latency offset.
 
@@ -222,13 +217,11 @@ ripple, the width-share feather, the uniform blur, the
 Line-synced rows light at their own start with no activation lead — the timing the library view
 kept — and descenders keep their band overshoot.
 
-The iOS 26 native Enhanced pane (`iosApp/ArchiveTune/SystemLyrics.swift`,
-`iosApp/ArchiveTune/SystemLyricsRendering.swift`) draws its own sweep in UIKit. TextKit caches
-bidi-shaped glyph layout; Core Graphics clips cached images with a feathered bright mask.
-The shared profile supplies idle alpha/depth/stagger and the shared `LyricsSweepGeometry` and
-`LyricsEmphasis` supply sweep, completion lift and letter ripple. The pane retains its existing
-35% anchor, 350 ms cubic follow, local feather/glow/dots tuning, reading reveals and credits;
-it does not adopt the Compose-only settle glide or selection/share-card UI.
+iOS previously drew its own Enhanced pane in UIKit — a UIKit table, TextKit glyph caches and
+Core Graphics bright masks, with a separate 35% anchor, 350 ms follow and its own dots. That
+second renderer is removed: it duplicated the sweep, hold, seek and share policy and carried
+its own cell-reuse and interlude invalidation defects. The shared Compose renderer is the only
+Enhanced pane now.
 
 It is fed by `rememberLyricsClock`, which carries the player's twice-a-second position
 report forward on the frame clock so the sweep does not step.
