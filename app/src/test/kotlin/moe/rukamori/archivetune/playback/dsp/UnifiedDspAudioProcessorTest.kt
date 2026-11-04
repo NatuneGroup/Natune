@@ -194,9 +194,16 @@ class UnifiedDspAudioProcessorTest {
 
         var output = AudioProcessor.AudioFormat(SAMPLE_RATE, CHANNELS, C.ENCODING_PCM_16BIT)
         for (audioProcessor in listOf(dsp, transitionFilter, silenceSkipper)) {
-            output = audioProcessor.configure(output)
+            val configured = audioProcessor.configure(output)
+            // AudioProcessingPipeline advances the format only for an active processor: a disabled silence
+            // skipper declines with NOT_SET and the chain routes around it instead of keeping that value.
+            val active = audioProcessor.isActive
+            if (!active) assertEquals("an inactive processor reports NOT_SET", AudioProcessor.AudioFormat.NOT_SET, configured)
+            if (active) output = configured
         }
 
+        // The chain's own stage stays active on 16-bit PCM, which is what the sink's later processors need.
+        assertTrue(dsp.isActive)
         assertEquals(C.ENCODING_PCM_16BIT, output.encoding)
         assertEquals(SAMPLE_RATE, output.sampleRate)
         assertEquals(CHANNELS, output.channelCount)
