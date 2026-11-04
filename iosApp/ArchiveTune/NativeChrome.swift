@@ -68,7 +68,7 @@ final class NativeChromeController: UIViewController {
         search.contentView.addSubview(searchButton)
         searchButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
         searchButton.setPreferredSymbolConfiguration(.init(pointSize: 20, weight: .semibold), forImageIn: .normal)
-        searchButton.addTarget(self, action: #selector(find), for: .touchUpInside)
+        searchButton.addTarget(self, action: #selector(selectSearchTab), for: .touchUpInside)
         playButton.setPreferredSymbolConfiguration(.init(pointSize: 20), forImageIn: .normal)
         updateFonts()
         glass.alpha = 0
@@ -196,7 +196,7 @@ final class NativeChromeController: UIViewController {
     @objc private func togglePlayback() { chrome.togglePlayback() }
     @objc private func home() { chrome.selectTab(index: 0) }
     @objc private func library() { chrome.selectTab(index: 2) }
-    @objc private func find() { chrome.selectTab(index: 1) }
+    @objc private func selectSearchTab() { chrome.selectTab(index: 1) }
 }
 
 @available(iOS 26.0, *)
@@ -349,7 +349,7 @@ private final class ChromeArtworkView: UIView {
                   let source = CGImageSourceCreateWithURL(location as CFURL, nil),
                   let cover = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailMaxPixelSize: 160,
+                    kCGImageSourceThumbnailMaxPixelSize: 160,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                   ] as CFDictionary) else { return }
             let loaded = UIImage(cgImage: cover)
