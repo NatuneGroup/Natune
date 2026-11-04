@@ -49,6 +49,7 @@ internal fun DesktopGeneralSettingsPage(
     onFailure: () -> Unit,
     scrollTo: String?,
     playlistTags: PlaylistTagsRepository,
+    openEqualizer: () -> Unit,
 ) {
     var editor by remember { mutableStateOf<DesktopGeneralEditor?>(null) }
     editor?.let { open ->
@@ -90,6 +91,7 @@ internal fun DesktopGeneralSettingsPage(
             managePlaylistTags = { navigate(DesktopTagsRoute) },
             onFailure = onFailure,
             scrollTo = scrollTo,
+            onOpenEqualizer = openEqualizer,
         )
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
         DiscordExperimentalRoute -> DiscordExperimentalSettings(controller, onFailure, scrollTo)
