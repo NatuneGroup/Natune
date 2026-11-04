@@ -25,6 +25,16 @@ on:
       - 'gradle/libs.versions.toml'
       - '.github/workflows/ios_compile.yml'
   workflow_dispatch:
+    inputs:
+      # The app target links a static FFmpeg/TDLib/OpenSSL closure built by scripts/build_ios_native_core.sh
+      # (shared-data/build/ios-native/<platform>/lib). Only the release pipeline builds it, and its device leg
+      # took 3 h 09 m (run 41735716057, job 126264425424), so the pull-request path stops at the framework link
+      # and the Swift type-check. This input runs the real unsigned simulator app link on demand.
+      ios_simulator_app:
+        description: 'Build the native closure and link the unsigned simulator app target (hours, not minutes)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,7 +48,9 @@ jobs:
     # GitHub-hosted arm64 macOS 26 image: free on the public repo and ships Xcode 26.x
     # (the Select step below pins /Applications/Xcode_26.4.app for the iOS 26 SDK APIs).
     runs-on: macos-26
-    timeout-minutes: 45
+    # The pull-request path finishes in minutes; only the on-demand app link carries the closure build's hours
+    # (the measured device leg was 3 h 09 m and the app build follows it), so the ceiling covers that whole run.
+    timeout-minutes: ${{ inputs.ios_simulator_app && 330 || 45 }}
     env:
       # The job compiles only Kotlin/Native iOS targets; it never needs the Android SDK.
       # Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
@@ -125,3 +137,68 @@ jobs:
             -target arm64-apple-ios16.0-simulator \
             -F "$FRAMEWORKS" \
             iosApp/ArchiveTune/*.swift
+
+      # Nothing above links the app target: the two Swift host files are only type-checked and the three ObjC++
+      # bridges only syntax-checked. That link needs the static FFmpeg/TDLib/OpenSSL closure from
+      # scripts/build_ios_native_core.sh, because Native.xcconfig links shared-data/build/ios-native/$(PLATFORM_NAME)/lib
+      # and a missing -l archive stops the linker. Only the release pipeline builds the closure (its device leg
+      # measured 3 h 09 m, run 41735716057 job 126264425424), and an actions/cache entry written by one pull request
+      # is not readable from another, so putting it on the default trigger would charge those hours to every pull
+      # request against a macOS runner. The default trigger therefore keeps the framework link and the type-check,
+      # and this input adds the complete unsigned simulator build on demand:
+      #   gh workflow run ios_compile.yml --ref <branch> -f ios_simulator_app=true
+      # It has not run yet, so it proves nothing until a run of that input passes.
+      - name: Install the FFmpeg release-key prerequisite (macOS)
+        if: inputs.ios_simulator_app == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v gpg >/dev/null 2>&1 || brew install gnupg
+
+      - name: Build the native dependency closure for the simulator
+        if: inputs.ios_simulator_app == true
+        shell: bash
+        run: bash scripts/build_ios_native_core.sh iphonesimulator
+
+      # The target's own shell phase runs the same :shared-ui:embedAndSignAppleFrameworkForXcode task that the
+      # framework-link step above already satisfies, so Gradle reuses that linked output instead of recompiling it.
+      # A simulator bundle needs no signing identity, which is why this disables code signing rather than supplying
+      # one; the flags otherwise mirror the release pipeline's own xcodebuild of this scheme.
+      - name: Link the unsigned simulator app target
+        if: inputs.ios_simulator_app == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          DERIVED_DATA="$RUNNER_TEMP/NatuneSimulatorDerivedData"
+          xcodebuild \
+            -project iosApp/ArchiveTune.xcodeproj \
+            -scheme ArchiveTune \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build
+          APP="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/ArchiveTune.app"
+          test -x "$APP/ArchiveTune" || { echo "::error::the app target produced no executable at $APP"; exit 1; }
+          # Every source of the target must produce its object, including both Swift host files. The lookups below
+          # use command substitution and a symbol file instead of feeding a pipeline: under pipefail an early-exiting
+          # grep -q can kill the producer with SIGPIPE and fail a check that in fact passed.
+          for unit in ArchiveTuneApp ArchiveTuneSession ATNativeAudio ATAudioGraph ATNativeTelegram; do
+            found="$(find "$DERIVED_DATA/Build/Intermediates.noindex" -name "$unit.o" -print -quit)"
+            [ -n "$found" ] || { echo "::error::$unit did not compile in the app target"; exit 1; }
+          done
+          # ArchiveTuneShared is a static framework (shared-ui/build.gradle.kts sets isStatic), so its Kotlin objects
+          # have to be inside this executable - Swift cannot supply IosHost or IosSafeArea. An embedded copy proves
+          # nothing, and a Kotlin symbol in the binary can only come from that link.
+          SYMBOLS="$RUNNER_TEMP/natune-app-symbols.txt"
+          xcrun nm -g "$APP/ArchiveTune" > "$SYMBOLS"
+          grep -qE '_OBJC_CLASS_\$_(IosHost|IosSafeArea)|kfun:moe\.rukamori\.archivetune' "$SYMBOLS" \
+            || { echo "::error::no ArchiveTuneShared symbol reached the linked app"; exit 1; }
+          # One defined text entry point per bridge proves each reached the link, not only the compiler.
+          for symbol in at_audio_create at_graph_create at_telegram_client_create; do
+            grep -q "[[:space:]]T _${symbol}\$" "$SYMBOLS" \
+              || { echo "::error::$symbol is missing from the linked app"; exit 1; }
+          done
