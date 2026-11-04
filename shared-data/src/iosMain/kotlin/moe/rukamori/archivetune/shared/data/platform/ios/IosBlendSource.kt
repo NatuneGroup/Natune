@@ -46,9 +46,7 @@ internal class IosBlendSource(
             speed: Float,
         ): IosBlendSource? {
             var transport = (outcome as? IosNativeAudioRoute.Outcome.Ready)?.transport
-            val native = memScoped {
-                at_audio_create(allocArray<ByteVar>(256), 256uL)
-            }
+            val native = createIosAudioOutput()
             if (native == null) {
                 transport?.close()
                 telegramSource?.close()

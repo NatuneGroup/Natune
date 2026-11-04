@@ -48,6 +48,7 @@ class IosPlaybackPort : PlaybackPort {
     private var handoffEpoch = 0L
     private var request: PlaybackRequest? = null
     private var reopenOutput = false
+    private var outputCreationError: String? = null
     private var closed = false
 
     // Main-queue only. A source that should be rendering but has not moved is a stall: the watchdog
@@ -718,10 +719,7 @@ class IosPlaybackPort : PlaybackPort {
             output = null
             reopenOutput = false
         }
-        return output ?: memScoped {
-            val error = allocArray<ByteVar>(256)
-            at_audio_create(error, 256uL)
-        }?.also {
+        return output ?: createIosAudioOutput { outputCreationError = it }?.also {
             output = it
             at_audio_volume(it, volume)
             at_audio_speed(it, desiredSpeed)
@@ -886,7 +884,9 @@ class IosPlaybackPort : PlaybackPort {
     private fun fail(reason: PlaybackFailureReason, message: String? = null) {
         request?.let {
             errors.tryEmit(
-                PlaybackFailure(it.occurrenceId, reason, message ?: "iOS playback rejected", attemptId = it.attemptId),
+                PlaybackFailure(it.occurrenceId, reason, message ?: (
+                    outputCreationError.takeIf { reason == PlaybackFailureReason.OUTPUT_FAILED }
+                        ?: "iOS playback rejected"), attemptId = it.attemptId),
             )
         }
     }

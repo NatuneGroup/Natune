@@ -1,0 +1,4 @@
+language = Objective-C
+headers = ATAudioGraph.h
+headerFilter = ATAudioGraph.h
+package = moe.rukamori.archivetune.nativeaudio
