@@ -32,6 +32,7 @@ import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
  */
 class UnifiedDspAudioProcessor(
     private val newGraph: (DspFormat) -> DspGraph = { DspGraph(it.sampleRateHz, it.channelCount) },
+    private val bypassGate: () -> Boolean = { BitPerfectRuntime.chainBypassActive },
 ) : BaseAudioProcessor() {
 
     private class Snapshot(val settings: DspSettings, val plan: SoftwareStagePlan)
@@ -75,7 +76,7 @@ class UnifiedDspAudioProcessor(
         // Configure allocates, and Media3 calls this off the audio thread; a changed rate also drops every
         // stage's history, which is what a new stream format needs.
         graph.configure(target)
-        val gated = BitPerfectRuntime.chainBypassActive
+        val gated = bypassGate()
         graph.apply(
             if (gated) DspSettings() else request.settings,
             if (gated) UnifiedDspSettingsSource.BIT_PERFECT_PLAN else request.plan,
@@ -98,7 +99,7 @@ class UnifiedDspAudioProcessor(
         val request = requested
         // The bit-perfect gate can engage or release mid-stream, after the sink was configured, and a
         // settings move is applied once per change: the graph glides a gain or preset instead of clicking.
-        val gated = BitPerfectRuntime.chainBypassActive
+        val gated = bypassGate()
         if (request != null && (request !== applied || gated != gateBypassed)) {
             graph.apply(
                 if (gated) DspSettings() else request.settings,
