@@ -76,4 +76,110 @@ class DspPortableEqualizerTest {
         assertFailsWith<IllegalArgumentException> { EqualizerBand(EqualizerBandType.PEAKING, 0.0, gainDb = 3.0) }
         assertFailsWith<IllegalArgumentException> { EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = 3.0, q = 0.0) }
     }
+
+    @Test
+    fun aSameGainFrequencyChangeRetunesTheBand() {
+        val equalizer = warmedUp(EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = 6.0))
+        equalizer.setBands(listOf(EqualizerBand(EqualizerBandType.PEAKING, 4_000.0, gainDb = 6.0)))
+
+        // A cache keyed on the gain alone would keep the 1 kHz design and leave the 4 kHz sine at about 1.1x.
+        val stale = BiquadDesign.magnitude(BiquadDesign.peaking(rate, 1_000.0, 6.0, 1.0), rate, 4_000.0)
+        val expected = BiquadDesign.magnitude(BiquadDesign.peaking(rate, 4_000.0, 6.0, 1.0), rate, 4_000.0)
+        assertTrue(stale < expected - 0.5, "the two designs must differ at the measured frequency")
+        assertEquals(expected, gainAt(equalizer, 4_000.0), STEADY_STATE_TOLERANCE)
+    }
+
+    @Test
+    fun aSameGainQChangeRetunesTheBand() {
+        val equalizer = warmedUp(EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = -12.0, q = 6.0))
+        equalizer.setBands(listOf(EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = -12.0, q = 0.4)))
+
+        val stale = BiquadDesign.magnitude(BiquadDesign.peaking(rate, 1_000.0, -12.0, 6.0), rate, 500.0)
+        val expected = BiquadDesign.magnitude(BiquadDesign.peaking(rate, 1_000.0, -12.0, 0.4), rate, 500.0)
+        assertTrue(stale > expected + 0.2, "the two designs must differ at the measured frequency")
+        assertEquals(expected, gainAt(equalizer, 500.0), STEADY_STATE_TOLERANCE)
+    }
+
+    @Test
+    fun aSameGainTypeChangeRetunesTheBand() {
+        val equalizer = warmedUp(EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = 12.0))
+        equalizer.setBands(listOf(EqualizerBand(EqualizerBandType.LOW_SHELF, 1_000.0, gainDb = 12.0)))
+
+        // A shelf reaches half its gain at its corner; the peaking band reaches all of it.
+        val stale = BiquadDesign.magnitude(BiquadDesign.peaking(rate, 1_000.0, 12.0, 1.0), rate, 1_000.0)
+        val expected = BiquadDesign.magnitude(BiquadDesign.lowShelf(rate, 1_000.0, 12.0, 1.0), rate, 1_000.0)
+        assertTrue(stale > expected + 0.5, "the two shapes must differ at the measured frequency")
+        assertEquals(expected, gainAt(equalizer, 1_000.0), STEADY_STATE_TOLERANCE)
+    }
+
+    @Test
+    fun aSameGainRightChannelOverrideRetunesTheRightChannel() {
+        val equalizer = warmedUp(EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = 6.0, q = 1.0), channels = 2)
+        equalizer.setBands(
+            listOf(
+                EqualizerBand(
+                    type = EqualizerBandType.PEAKING,
+                    frequencyHz = 1_000.0,
+                    gainDb = 6.0,
+                    q = 1.0,
+                    rightFrequencyHz = 4_000.0,
+                    rightGainDb = 6.0,
+                    rightQ = 1.0,
+                ),
+            ),
+        )
+
+        val frames = STEADY_STATE_FRAMES
+        val samples = stereo(1_000.0, 4_000.0, frames)
+        val leftBefore = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames)
+        val rightBefore = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames, channel = 1)
+        equalizer.process(samples, frames)
+        val left = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames) / leftBefore
+        val right = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames, channel = 1) / rightBefore
+
+        assertEquals(
+            BiquadDesign.magnitude(BiquadDesign.peaking(rate, 1_000.0, 6.0, 1.0), rate, 1_000.0),
+            left,
+            STEADY_STATE_TOLERANCE,
+        )
+        // Without the override in the cache key the right channel keeps the 1 kHz design and stays near unity.
+        assertEquals(
+            BiquadDesign.magnitude(BiquadDesign.peaking(rate, 4_000.0, 6.0, 1.0), rate, 4_000.0),
+            right,
+            STEADY_STATE_TOLERANCE,
+        )
+    }
+
+    /** An equalizer that has already processed audio, so a stale cached design would be reused. */
+    private fun warmedUp(band: EqualizerBand, channels: Int = 1): PortableEqualizer =
+        PortableEqualizer(rate, channels).also {
+            it.setBands(listOf(band))
+            it.process(DspTestSignals.sine(1_000.0, rate, frames = 512, channels = channels), 512)
+        }
+
+    private fun stereo(leftHz: Double, rightHz: Double, frames: Int): FloatArray {
+        val left = DspTestSignals.sine(leftHz, rate, frames, channels = 1, amplitude = 0.1)
+        val right = DspTestSignals.sine(rightHz, rate, frames, channels = 1, amplitude = 0.1)
+        val samples = FloatArray(frames * 2)
+        for (frame in 0 until frames) {
+            samples[frame * 2] = left[frame]
+            samples[frame * 2 + 1] = right[frame]
+        }
+        return samples
+    }
+
+    /** The steady-state gain a sine at [frequencyHz] sees through [equalizer]. */
+    private fun gainAt(equalizer: PortableEqualizer, frequencyHz: Double): Double {
+        val frames = STEADY_STATE_FRAMES
+        val samples = DspTestSignals.sine(frequencyHz, rate, frames, channels = 1, amplitude = 0.1)
+        val input = DspTestSignals.rms(samples, channels = 1, fromFrame = frames / 2, toFrame = frames)
+        equalizer.process(samples, frames)
+        val output = DspTestSignals.rms(samples, channels = 1, fromFrame = frames / 2, toFrame = frames)
+        return output / input
+    }
+
+    private companion object {
+        const val STEADY_STATE_FRAMES = 48_000
+        const val STEADY_STATE_TOLERANCE = 5e-3
+    }
 }

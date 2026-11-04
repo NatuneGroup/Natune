@@ -78,10 +78,11 @@ class DspSettingsDocumentTest {
     }
 
     @Test
-    fun aHostWithoutLegacyValuesStaysNeutral() {
+    fun aHostWithoutLegacyValuesReadsTheRowsDeclaredNormalizationDefault() {
         val value = DspSettingsDocument.legacyOf(null)
 
-        assertEquals(false, value.audioNormalization)
+        // The Playback settings row shows normalization on by default, so the migrated document says on too.
+        assertEquals(true, value.audioNormalization)
         assertEquals(false, value.equalizerEnabled)
         assertNull(value.equalizerBandLevelsMb)
         assertEquals(0, value.equalizerOutputGainMb)

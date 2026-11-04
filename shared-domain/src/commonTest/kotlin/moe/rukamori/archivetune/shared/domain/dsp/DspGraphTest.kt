@@ -211,6 +211,34 @@ class DspGraphTest {
         }
     }
 
+    @Test
+    fun theUserPreampIsIndependentOfTheNormalizationSwitch() {
+        val cut = 10.0.pow(-6.0 / 20.0).toFloat()
+
+        // Preamp on, normalization off: the selected cut still reaches the output.
+        assertInputGain(DspSettings(preampDb = -6.0, normalizationEnabled = false), plan(normalization = false), cut)
+        // Preamp on, normalization on with a unity correction: the same cut, once.
+        assertInputGain(DspSettings(preampDb = -6.0, normalizationEnabled = true), plan(normalization = true), cut)
+        // Both stages on: the correction and the preamp multiply.
+        assertInputGain(DspSettings(linearGain = 0.5f, preampDb = -6.0), plan(normalization = true), 0.5f * cut)
+        // Preamp switch off: the stored decibels are kept but nothing applies them.
+        assertInputGain(DspSettings(preampDb = -6.0, preampEnabled = false), plan(normalization = false), 1f)
+        // Normalization off: the measured correction must not apply even though it is stored.
+        assertInputGain(DspSettings(linearGain = 0.5f, normalizationEnabled = false), plan(normalization = true), 1f)
+    }
+
+    private fun assertInputGain(settings: DspSettings, stagePlan: SoftwareStagePlan, expected: Float) {
+        val graph = DspGraph(rate, channels)
+        graph.apply(settings, stagePlan)
+        val frames = 256
+        val input = FloatArray(frames * channels) { 0.4f }
+        val output = render(graph, input, frames)
+        assertEquals(frames * channels, output.size)
+        for (index in output.indices) {
+            assertEquals(0.4f * expected, output[index], 1e-6f, "sample $index")
+        }
+    }
+
     private fun positiveCrossing(samples: FloatArray): Double =
         DspTestSignals.positiveCrossingFrequency(samples, channels, rate)
 }
