@@ -13,11 +13,13 @@
  */
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <jni.h>
 
 #include "archivetune_probe.h"
+#include "archivetune_jni_utf8.h"
 
 #define PROBE_BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_SpectralProbeNative_##name
 
@@ -85,14 +87,14 @@ JNIEXPORT jstring JNICALL PROBE_BINDING(read)(JNIEnv *env, jclass type, jlong ha
         return NULL;
     }
 
-    const char *path = (*env)->GetStringUTFChars(env, source, NULL);
+    char *path = jni_utf8_from_string(env, source);
     if (!path) {
         return NULL;
     }
     jsize capacity = (*env)->GetArrayLength(env, out);
     jfloat *samples = (*env)->GetFloatArrayElements(env, out, NULL);
     if (!samples) {
-        (*env)->ReleaseStringUTFChars(env, source, path);
+        free(path);
         return NULL;
     }
 
@@ -105,7 +107,7 @@ JNIEXPORT jstring JNICALL PROBE_BINDING(read)(JNIEnv *env, jclass type, jlong ha
 
     /* Mode 0 copies the decoded window back into the Java array. */
     (*env)->ReleaseFloatArrayElements(env, out, samples, 0);
-    (*env)->ReleaseStringUTFChars(env, source, path);
+    free(path);
 
     jlong values[PROBE_INFO_FIELDS];
     values[0] = (jlong)status;
@@ -119,7 +121,7 @@ JNIEXPORT jstring JNICALL PROBE_BINDING(read)(JNIEnv *env, jclass type, jlong ha
     if (status == AE_PROBE_OK) {
         return NULL;
     }
-    return (*env)->NewStringUTF(env, error[0] ? error : "the spectral probe failed");
+    return jni_string_from_utf8(env, error[0] ? error : "the spectral probe failed");
 }
 
 JNIEXPORT jstring JNICALL PROBE_BINDING(codecName)(JNIEnv *env, jclass type, jlong handle) {
@@ -127,5 +129,5 @@ JNIEXPORT jstring JNICALL PROBE_BINDING(codecName)(JNIEnv *env, jclass type, jlo
     char name[AE_PROBE_CODEC_NAME_CAPACITY];
     name[0] = '\0';
     (void)ae_probe_codec_name(probe_of(handle), name, sizeof name);
-    return (*env)->NewStringUTF(env, name);
+    return jni_string_from_utf8(env, name);
 }
