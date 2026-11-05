@@ -322,7 +322,6 @@ fun AppleMusicQueueSheet(
                     )
                 }
             }
-            // Repeat pill.
             Box(
                 modifier =
                     Modifier
@@ -346,7 +345,6 @@ fun AppleMusicQueueSheet(
                     modifier = Modifier.size(24.dp).playerControlMotion(PlayerControlKind.Repeat, repeatMode),
                 )
             }
-            // Sleep timer pill.
             Box(
                 modifier =
                     Modifier
@@ -421,7 +419,6 @@ fun AppleMusicQueueSheet(
             modifier = Modifier.padding(horizontal = 24.dp),
         )
 
-        // Reorderable queue list.
         LazyColumn(
             state = lazyListState,
             contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp),

@@ -357,9 +357,7 @@ private fun incomingStartPoint(analysis: TrackAnalysis): Double =
     listOfNotNull(analysis.audibleStartTime, analysis.pickupTime, analysis.firstBeat)
         .firstOrNull { it.isFinite() && it >= 0 } ?: 0.0
 
-// ---------------------------------------------------------------------------
 // WSOLA-style beat-matched phrase-switch plan (ported from WsolaPlanner.kt)
-// ---------------------------------------------------------------------------
 
 // The fade is bounded in beats because overlap length is musical: bounding it
 // in seconds makes a faster track get a longer mix, which is backwards. Four

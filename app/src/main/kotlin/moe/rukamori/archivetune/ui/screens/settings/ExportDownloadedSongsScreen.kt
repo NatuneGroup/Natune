@@ -116,8 +116,6 @@ fun ExportDownloadedSongsScreen(navController: NavController) {
     var isSearchActive by remember { mutableStateOf(false) }
     val selectedIds: SnapshotStateList<String> = remember { mutableStateListOf() }
 
-    // Filter songs by search query (title or artist, case-insensitive).
-    // Empty query shows all songs.
     val displayedSongs = remember(songs, searchQuery) {
         if (searchQuery.isBlank()) songs
         else {
@@ -128,7 +126,6 @@ fun ExportDownloadedSongsScreen(navController: NavController) {
         }
     }
 
-    // Load the list of downloaded songs from the cache + database.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             val cache = downloadUtil.downloadCache
@@ -345,7 +342,6 @@ fun ExportDownloadedSongsScreen(navController: NavController) {
             } finally {
                 isDeleting = false
             }
-            // Refresh the song list to reflect deletions.
             val failedMsg = if (failed > 0) ", $failed failed" else ""
             Toast.makeText(
                 context,
@@ -356,7 +352,6 @@ fun ExportDownloadedSongsScreen(navController: NavController) {
                 ),
                 Toast.LENGTH_LONG,
             ).show()
-            // Update the local list + clear selection.
             val deletedIds = toDelete.map { it.songId }.toSet()
             songs = songs.filterNot { it.songId in deletedIds }
             selectedIds.removeAll(deletedIds)
@@ -413,7 +408,6 @@ fun ExportDownloadedSongsScreen(navController: NavController) {
                 },
                 actions = {
                     if (!isSearchActive && songs.isNotEmpty()) {
-                        // Search button — toggles the search bar in the title slot.
                         IconButton(onClick = { isSearchActive = true }) {
                             Icon(
                                 painter = painterResource(R.drawable.search),
@@ -500,7 +494,6 @@ fun ExportDownloadedSongsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            // Delete button — destructive action, gated by a confirmation dialog.
                             OutlinedButton(
                                 onClick = { showDeleteConfirm = true },
                                 enabled = !isExporting && !isDeleting && selectedIds.isNotEmpty(),
