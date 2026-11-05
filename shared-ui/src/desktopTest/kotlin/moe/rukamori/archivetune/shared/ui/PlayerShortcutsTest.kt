@@ -18,7 +18,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.requestFocus
@@ -236,8 +235,8 @@ class PlayerShortcutsTest {
             }
         }
         onNodeWithTag("desktop-transport-bar").assertExists()
-        onNodeWithText("Test song").requestFocus()
-        onNodeWithText("Test song").performKeyInput {
+        onNodeWithTag("wide-mini-player-title").requestFocus()
+        onNodeWithTag("wide-mini-player-title").performKeyInput {
             keyDown(Key.Spacebar)
             keyUp(Key.Spacebar)
         }
