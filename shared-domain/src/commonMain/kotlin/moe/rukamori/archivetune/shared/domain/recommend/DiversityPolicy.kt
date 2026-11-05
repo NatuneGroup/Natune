@@ -98,7 +98,7 @@ internal class TailConstraintState(
 ) {
     private val artistHistory = ArrayDeque<Set<String>>()
     private val albumHistory = ArrayDeque<String>()
-    private var runArtists: Set<String> = previousItem?.let(DiversityPolicy::artistIds).orEmpty()
+    private var runArtists: Set<String> = previousItem?.let(DiversityPolicy::artistIds) ?: emptySet()
     private var runLength: Int = if (previousItem == null) 0 else 1
 
     fun violation(item: ContentItem): TailConstraintViolation? {
