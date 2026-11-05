@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.shared.ui.settings.IosSettingsOpenState
 import moe.rukamori.archivetune.shared.ui.settings.IosVaultSettings
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import platform.Foundation.NSBundle
+import platform.Foundation.NSLock
 
 /** What the iOS root mounts: progress, an explicit unavailable boundary, or the opened session graph. */
 internal sealed interface IosSessionState {
@@ -111,6 +112,8 @@ class IosHost {
      * native Telegram account. Null until settings are ready.
      */
     val telegram: StateFlow<IosTelegramClient?> = telegramSession.asStateFlow()
+    // willTerminate and a background-triggered close can race; only the first caller owns the durable teardown.
+    private val closeLock = NSLock()
     private var closed = false
 
     // Its own scope, so quitting can wait a bounded time for the one stopped payload before the session is released.
@@ -240,7 +243,17 @@ class IosHost {
 
     /** Forwarded by the Swift app session when the app leaves the foreground. */
     fun backgrounded() {
-        if (!closed) active.value = false
+        if (closed) return
+        active.value = false
+        // A swipe-kill never posts willTerminate, so the queue is made durable here rather than only at final close.
+        val opened = graph ?: return
+        runDurably(BACKGROUND_CHECKPOINT_TIMEOUT_MS) {
+            try {
+                opened.checkpointQueue()
+            } catch (failure: Exception) {
+                report("queue checkpoint on background failed: ${failure::class.simpleName}")
+            }
+        }
     }
 
     /**
@@ -272,10 +285,38 @@ class IosHost {
         return IosNowPlaying(player, metadata, next, previous, metadataChanges, commandAvailability).also { nowPlaying = it }
     }
 
-    /** Final process shutdown, called only by the Swift app session at willTerminate. Idempotent. */
+    /**
+     * Final process shutdown, called only by the Swift app session at willTerminate. Idempotent and safe off the
+     * main thread.
+     */
     fun close() {
-        if (closed) return
-        closed = true
+        closeLock.lock()
+        val first = !closed
+        if (first) closed = true
+        closeLock.unlock()
+        if (!first) return
+        val openedGraph = graph
+        graph = null
+        // The queue checkpoint comes before every Main-dispatched teardown below, so a throwing or unavailable main
+        // dispatcher cannot leave the last queue revision unsaved.
+        if (openedGraph != null) {
+            runDurably(QUEUE_CHECKPOINT_TIMEOUT_MS) {
+                try {
+                    openedGraph.checkpointQueue()
+                } catch (failure: Exception) {
+                    report("queue checkpoint before close failed: ${failure::class.simpleName}")
+                }
+            }
+            // The graph checkpoints once more while its owners can still write, then closes the database and clients.
+            // It runs before the Main-dispatched teardown below so a throw there cannot skip the durable close.
+            runDurably(GRAPH_CLOSE_TIMEOUT_MS) {
+                try {
+                    openedGraph.close()
+                } catch (failure: Exception) {
+                    report("session graph close failed: ${failure::class.simpleName}")
+                }
+            }
+        }
         nowPlaying?.close()
         nowPlaying = null
         val session = telegramSession.value
@@ -286,23 +327,31 @@ class IosHost {
         player.close()
         val pack = japanesePack.value
         val opened = settings
-        val openedGraph = graph
         japanesePack.value = null
         settings = null
-        graph = null
         scope.cancel()
         val presence = presenceScope.coroutineContext[Job]
-        // Teardown outlives the cancelled host scope: the pack joins its worker, then the settings owner is released.
+        // Only work that may be dropped belongs behind the cancelled host scope: presence, TDLib, the pack and settings.
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             // A running heartbeat gets its one stopped payload; a slow endpoint never holds up the rest.
             withTimeoutOrNull(PRESENCE_CLOSE_TIMEOUT_MS) { presence?.cancelAndJoin() }
             presenceTransport.close()
-            // The graph finishes the open listen and checkpoints the queue while the settings it reads are still open.
-            openedGraph?.close()
             session?.close()
             pack?.close()
             opened?.close()
         }
+    }
+
+    /**
+     * Runs [block] on the worker pool and waits at most [timeoutMs] for it on the calling thread. Backgrounding and
+     * willTerminate both run on the main thread, and a Main-dispatched continuation, including
+     * `Dispatchers.Main.immediate`, can be dropped or throw once the host is leaving. The bound lets a queue operation
+     * that is suspended on main resume instead of leaving the checkpoint deadlocked behind it; work that outlives the
+     * bound still continues on the worker pool.
+     */
+    private fun runDurably(timeoutMs: Long, block: suspend () -> Unit) {
+        val work = CoroutineScope(SupervisorJob() + Dispatchers.Default).launch { block() }
+        runBlocking(NonCancellable) { withTimeoutOrNull(timeoutMs) { work.join() } }
     }
 
     /**
@@ -424,6 +473,10 @@ class IosHost {
 
     private companion object {
         const val PRESENCE_CLOSE_TIMEOUT_MS = 2_000L
+        const val BACKGROUND_CHECKPOINT_TIMEOUT_MS = 1_000L
+        const val QUEUE_CHECKPOINT_TIMEOUT_MS = 2_000L
+        // Leaves the system time to terminate the process after the queue checkpoint and database close had their turn.
+        const val GRAPH_CLOSE_TIMEOUT_MS = 5_000L
         const val LINK_ROUTE_CAPACITY = 8
     }
 }
