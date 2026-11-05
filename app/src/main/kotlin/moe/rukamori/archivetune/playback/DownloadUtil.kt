@@ -631,7 +631,6 @@ class DownloadUtil
                     val contentLength = knownContentLength
                         ?: response.header("Content-Length")?.toLongOrNull()
                         ?: -1L
-                    // Build a DataSpec that CacheDataSink can write under.
                     val dataSpec = DataSpec.Builder()
                         .setUri(url.toUri())
                         .setKey(cacheKey)
