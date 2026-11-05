@@ -854,10 +854,12 @@ jobs:
           - platform: macos
             arch: x64
             jdk_arch: x64
+            appimage_arch: ''
             runner: macos-26
           - platform: macos
             arch: arm64
             jdk_arch: aarch64
+            appimage_arch: ''
             runner: macos-26
     env:
       ARCHIVETUNE_XCODE_VERSION: '26.4'
