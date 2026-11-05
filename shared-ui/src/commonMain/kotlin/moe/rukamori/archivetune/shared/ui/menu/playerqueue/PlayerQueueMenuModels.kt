@@ -220,6 +220,8 @@ data class PlayerQueueMenuState(
     val acousticQualitySupported: Boolean = true,
     /** A host with no equalizer UI hides the equalizer row. */
     val equalizerSupported: Boolean = true,
+    /** A host whose engine has no pitch stage hides the pitch half of the tempo/pitch dialog instead of ignoring it. */
+    val pitchSupported: Boolean = true,
     /** A host with no download owner hides the download and remove-download rows. */
     val downloadsSupported: Boolean = true,
     /** Saved named tempo/pitch presets from the host's `tempoPitchPresetsJson` setting, already decoded. */

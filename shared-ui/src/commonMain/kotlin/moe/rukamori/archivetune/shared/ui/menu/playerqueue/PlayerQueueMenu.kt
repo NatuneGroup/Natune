@@ -549,6 +549,7 @@ fun PlayerQueueMenu(
             remembered = state.tempoPitchRemembered,
             actions = actions,
             icon = icon,
+            pitchSupported = state.pitchSupported,
             onDismiss = { showTempoPitchDialog = false },
         )
     }
