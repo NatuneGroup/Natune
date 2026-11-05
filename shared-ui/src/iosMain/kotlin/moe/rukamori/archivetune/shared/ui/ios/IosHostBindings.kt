@@ -120,7 +120,7 @@ internal fun iosHostBindings(
     val sleepSheet = IosSleepTimerSheetState()
     val tempoSheet = IosTempoPitchSheetState()
     val tempoPitchActions = IosTempoPitchActions(graph)
-    val controls = IosPlayerControls(graph, sleepSheet, itemMenu)
+    val controls = IosPlayerControls(graph, host, sleepSheet, itemMenu)
     // The canvas owner resolves the current occurrence's loop behind the same gates the settings page shows;
     // its controls report availability so a canvas-capable style knows a loop answered.
     val canvas = createIosCanvas(graph)

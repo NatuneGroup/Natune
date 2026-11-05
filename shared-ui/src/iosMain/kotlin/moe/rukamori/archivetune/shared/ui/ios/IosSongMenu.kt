@@ -446,6 +446,7 @@ internal fun IosMenuNotice(key: String, onDismiss: () -> Unit) {
     val resource = when (key) {
         IosItemMenuState.NOTICE_UNAVAILABLE -> Res.string.ios_settings_feature_unavailable
         IosItemMenuState.NOTICE_DOWNLOAD_REFUSED -> Res.string.ios_download_refused
+        IosItemMenuState.NOTICE_SHARE_UNAVAILABLE -> Res.string.ios_share_link_unavailable
         else -> Res.string.ios_menu_action_failed
     }
     AlertDialog(

@@ -342,6 +342,23 @@ class IosSourceContractsTest(unittest.TestCase):
         downstream = (KOTLIN / "IosPlaybackBlend.kt").read_text()
         self.assertIn("if (!graph.promote())", downstream)
 
+    def test_shared_preamp_and_now_playing_share_reach_the_ios_host(self):
+        header = (IOS / "Native/ATNativeAudio.h").read_text()
+        self.assertIn("void at_audio_preamp(at_audio_output *output, float gain_db)", header)
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        self.assertIn("p->equalizer.globalGain = clamped(p->preamp_db, -24.0f, 24.0f)", audio)
+        graph = (IOS / "Native/ATAudioGraph.mm").read_text()
+        self.assertIn("unit.globalGain = bounded(gain_db, -24.0f, 24.0f)", graph)
+        bands = (KOTLIN / "IosEqBands.kt").read_text()
+        self.assertIn("if (preampEnabled) preampDb.toFloat() else 0f", bands)
+        self.assertIn("at_audio_preamp(output, preampDb)", bands)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("at_graph_eq_gain(eq, preampDb)", blend)
+        controls = (UI_IOS / "IosPlayerControls.kt").read_text()
+        self.assertIn("PlayerAction.SHARE -> share(occurrenceId)", controls)
+        self.assertIn("iosShareText(host, link)", controls)
+        self.assertIn("NOTICE_SHARE_UNAVAILABLE", controls)
+
     def test_ledger_does_not_turn_source_into_an_apple_pass(self):
         status = (ROOT / "docs/engineering/ios-status.md").read_text()
         self.assertIn("dictionary host/settings/root composition remains required", status)
