@@ -668,6 +668,16 @@ tasks.named<Test>("jvmTest") {
     systemProperty("archivetune.desktop.window.tests", providers.gradleProperty("desktopWindowTests").orElse("false").get())
     systemProperty("archivetune.desktop.vault.tests", providers.gradleProperty("desktopVaultTests").orElse("false").get())
     systemProperty("archivetune.desktop.browser.tests", providers.gradleProperty("desktopBrowserTests").orElse("false").get())
+    // Three suites decode the committed audio fixtures through the native engine, and the engine only runs against
+    // the pinned FFmpeg/OpenSSL/libxml2 closure that the opt-in desktop app image job builds. The unit-test workflow
+    // runs this task without that closure, so it passes -PdesktopEngineTests=false and exactly those suites are
+    // excluded instead of every run failing on the missing library. The app image job runs the task untrimmed, so
+    // the engine suites still execute in CI; the default here is the untrimmed task.
+    if (providers.gradleProperty("desktopEngineTests").orElse("true").get() != "true") {
+        filter.excludeTestsMatching("moe.rukamori.archivetune.desktop.playback.DesktopPlaybackEngineTest")
+        filter.excludeTestsMatching("moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPortTest")
+        filter.excludeTestsMatching("moe.rukamori.archivetune.desktop.playback.DesktopPlaybackStreamTest")
+    }
 }
 
 // KMP names the JVM test task `jvmTest`, but the validation commands run `:desktopApp:test --tests`.

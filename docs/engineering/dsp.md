@@ -196,3 +196,11 @@ vectors, the codec, the mapper, the stored document, the graphic layout and the 
 (`DesktopEqualizerCoefficientsTest`). Unit tests are not device audio
 evidence: no physical output, DAC, USB or bit-perfect route is verified by them, and neither host has been
 run on a device since the adapters changed.
+
+`Unit tests` (`tests.yml`) runs `:desktopApp:jvmTest` on every pull request into `dev`/`main` and every dev
+push. It passes `-PdesktopEngineTests=false`, which excludes the three suites that decode the committed
+fixtures through the native engine (`DesktopPlaybackEngineTest`, `DesktopPlaybackPortTest`,
+`DesktopPlaybackStreamTest`): their engine links the pinned FFmpeg/OpenSSL/libxml2 closure that the unit-test
+job does not build. That closure only exists in the opt-in `desktop_app_image=true` Build Pull Request job,
+which runs the same task untrimmed after building the engine, so the engine suites execute there rather than
+being dropped. The property defaults to the full suite, so a local or image-job run needs no flag.
