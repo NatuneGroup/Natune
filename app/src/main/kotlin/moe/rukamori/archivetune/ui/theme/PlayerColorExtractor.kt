@@ -145,7 +145,7 @@ object PlayerColorExtractor {
                 ).distinctBy { it.rgb }
                     .map { ColorSwatch(rgb = it.rgb, population = it.population) }
             val stats = computeGreyscaleStats(swatches)
-            val result = extractGradientColors(swatches, fallbackColor)
+            val result = extractGradientColors(swatches, fallbackColor, stats)
             Timber.tag("PlayerColorExtractor").d(
                 "palette extraction swatches=%d weightedSat=%.3f colorful=%.3f neutral=%.3f " +
                     "dominantSat=%.3f dominantVal=%.3f greyscale=%s colors=%d",
@@ -167,12 +167,24 @@ object PlayerColorExtractor {
     fun extractGradientColors(
         swatches: List<ColorSwatch>,
         fallbackColor: Int,
+    ): List<Color> = extractGradientColors(swatches, fallbackColor, computeGreyscaleStats(swatches))
+
+    /**
+     * The same extraction with the population statistics already computed.
+     *
+     * Callers that already ran [computeGreyscaleStats] for their own decision or logging pass
+     * the result here instead of paying the population-weighted saturation sum twice per
+     * palette.
+     */
+    internal fun extractGradientColors(
+        swatches: List<ColorSwatch>,
+        fallbackColor: Int,
+        stats: GreyscaleStats,
     ): List<Color> {
         if (swatches.isEmpty()) {
             return listOf(Color(fallbackColor))
         }
 
-        val stats = computeGreyscaleStats(swatches)
         if (isGreyscale(stats)) {
             return buildGreyscaleGradient(swatches)
         }

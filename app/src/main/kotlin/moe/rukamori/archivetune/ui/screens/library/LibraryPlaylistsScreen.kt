@@ -8,7 +8,6 @@
 
 package moe.rukamori.archivetune.ui.screens.library
 
-import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -63,7 +62,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -73,19 +71,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.ColorUtils
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import androidx.palette.graphics.Palette
-import coil3.imageLoader
-import coil3.request.ImageRequest
-import coil3.request.allowHardware
-import coil3.toBitmap
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
@@ -111,7 +101,6 @@ import moe.rukamori.archivetune.ui.component.ItemThumbnail
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.menu.PlaylistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubePlaylistMenu
-import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.LibraryPlaylistsViewModel
@@ -660,91 +649,6 @@ private fun triggerPlaylistMenu(
                 coroutineScope = coroutineScope,
                 onDismiss = menuState::dismiss,
             )
-        }
-    }
-}
-
-@Composable
-fun rememberArtworkGradient(
-    thumbnailUrl: String?,
-    fallbackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-): List<Color> {
-    val context = LocalContext.current
-    var colors by remember(thumbnailUrl) { mutableStateOf(listOf(fallbackColor, fallbackColor.copy(alpha = 0.5f))) }
-
-    LaunchedEffect(thumbnailUrl) {
-        if (thumbnailUrl == null) return@LaunchedEffect
-        val request =
-            ImageRequest
-                .Builder(context)
-                .data(thumbnailUrl)
-                .size(PlayerColorExtractor.Config.IMAGE_SIZE, PlayerColorExtractor.Config.IMAGE_SIZE)
-                .allowHardware(false)
-                .build()
-
-        val result =
-            runCatching {
-                context.imageLoader.execute(request)
-            }.getOrNull()
-
-        if (result != null) {
-            val bitmap = result.image?.toBitmap()
-            if (bitmap != null) {
-                val palette =
-                    withContext(Dispatchers.Default) {
-                        Palette
-                            .from(bitmap)
-                            .maximumColorCount(PlayerColorExtractor.Config.MAX_COLOR_COUNT)
-                            .resizeBitmapArea(PlayerColorExtractor.Config.BITMAP_AREA)
-                            .generate()
-                    }
-
-                val extractedColors =
-                    PlayerColorExtractor.extractGradientColors(
-                        palette = palette,
-                        fallbackColor = fallbackColor.toArgb(),
-                    )
-                if (extractedColors.size >= 2) {
-                    colors = extractedColors
-                } else if (extractedColors.isNotEmpty()) {
-                    colors = listOf(extractedColors[0], extractedColors[0].copy(alpha = 0.5f))
-                }
-            }
-        }
-    }
-    return colors
-}
-
-@Composable
-fun rememberArtworkCardColor(
-    thumbnailUrl: String?,
-    fallbackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-): Color {
-    val gradientColors =
-        rememberArtworkGradient(
-            thumbnailUrl = thumbnailUrl,
-            fallbackColor = fallbackColor,
-        )
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val useDarkTheme = remember(surfaceColor) { ColorUtils.calculateLuminance(surfaceColor.toArgb()) < 0.5 }
-    val pureBlack = LocalItemPreferences.current.pureBlack
-
-    return remember(gradientColors, useDarkTheme, pureBlack) {
-        val baseColor = gradientColors.firstOrNull() ?: fallbackColor
-        val baseArgb = baseColor.toArgb()
-        val hsv = FloatArray(3)
-        android.graphics.Color.colorToHSV(baseArgb, hsv)
-        val hue = hsv[0]
-
-        if (useDarkTheme) {
-            // Brighter s/v for visibility in pure black mode.
-            val s = (hsv[1] * 0.45f).coerceIn(0.06f, 0.20f)
-            val v = if (pureBlack) 0.18f else 0.12f
-            Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, s, v)))
-        } else {
-            val s = (hsv[1] * 0.30f).coerceIn(0.03f, 0.12f)
-            val v = 0.95f
-            Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, s, v)))
         }
     }
 }
