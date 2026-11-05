@@ -405,18 +405,36 @@ class UnifiedDspAudioProcessorTest {
         }
         graph.apply(request(1), plan())
         repeat(WARMUP_BLOCKS) { pump() }
-        val applyDeltas = IntArray(8)
-        val pushDeltas = IntArray(8)
-        for (index in 0 until 8) {
+        val lines = StringBuilder()
+        // Count change: 1 band -> 16 bands, and the reverse.
+        for (index in 0 until 4) {
             val next = request(if (index % 2 == 0) MAX_BANDS else 1)
             val beforeApply = allocatedBytes()
             graph.apply(next, plan())
-            applyDeltas[index] = (allocatedBytes() - beforeApply).toInt()
+            val applyBytes = allocatedBytes() - beforeApply
             val beforePush = allocatedBytes()
             pump()
-            pushDeltas[index] = (allocatedBytes() - beforePush).toInt()
+            lines.append("countChange[$index] apply=$applyBytes push=${allocatedBytes() - beforePush}\n")
         }
-        println("PROBE apply=" + applyDeltas.joinToString(",") + " push=" + pushDeltas.joinToString(","))
+        // Same count: 16 bands with one gain moved, so only a glide runs.
+        graph.apply(request(MAX_BANDS), plan())
+        repeat(8) { pump() }
+        for (index in 0 until 4) {
+            val next = request(MAX_BANDS).let { settings ->
+                settings.copy(equalizerBands = settings.equalizerBands.mapIndexed { band, value ->
+                    if (band == 0) value.copy(gainDb = 4.0 + index) else value
+                })
+            }
+            val beforeApply = allocatedBytes()
+            graph.apply(next, plan())
+            val applyBytes = allocatedBytes() - beforeApply
+            val beforePush = allocatedBytes()
+            pump()
+            lines.append("sameCount[$index] apply=$applyBytes push=${allocatedBytes() - beforePush}\n")
+        }
+        val target = java.io.File("../build/reports/profile/probe.txt")
+        target.parentFile?.mkdirs()
+        target.writeText(lines.toString())
     }
 
     /** One boosted band and [count]-1 flat ones, so a band-count change designs one stage, not [count]. */
