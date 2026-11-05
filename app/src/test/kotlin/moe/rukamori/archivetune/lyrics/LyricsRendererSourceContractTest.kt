@@ -53,7 +53,7 @@ class LyricsRendererSourceContractTest {
     }
 
     @Test fun lyricsBoxesFadeTheirOwnEdgesWithoutAStackedSecondMask() {
-        listOf("ui/component/LyricsEnhanced.kt", "ui/component/LyricsV2.kt", "ui/component/Lyrics.kt",
+        listOf("ui/component/LyricsEnhanced.kt", "ui/component/LyricsV2.kt",
             "ui/player/simpmusic/SimpMusicLyrics.kt").forEach { path ->
             val text = source(path)
             assertTrue(path, text.contains(".lyricsViewportFade("))

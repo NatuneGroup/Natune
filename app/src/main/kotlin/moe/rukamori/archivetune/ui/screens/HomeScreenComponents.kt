@@ -88,7 +88,6 @@ import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.innertube.pages.HomePage
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.models.SimilarRecommendation
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.ui.component.MenuState
@@ -715,53 +714,6 @@ fun AccountPlaylistsSection(
 }
 
 /**
- * Similar Recommendations section
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun SimilarRecommendationsSection(
-    recommendation: SimilarRecommendation,
-    mediaMetadata: MediaMetadata?,
-    isPlaying: Boolean,
-    navController: NavController,
-    playerConnection: PlayerConnection,
-    menuState: MenuState,
-    haptic: HapticFeedback,
-    scope: CoroutineScope,
-    modifier: Modifier = Modifier,
-) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = HomeFeedGutter),
-        horizontalArrangement = Arrangement.spacedBy(HomeShelfCardSpacing),
-        modifier = modifier,
-    ) {
-        items(
-            items = recommendation.items,
-            key = { it.id },
-            contentType = { item -> item::class },
-        ) { item ->
-            HomeFeedYTItemCard(
-                item = item,
-                mediaMetadata = mediaMetadata,
-                isPlaying = isPlaying,
-                navController = navController,
-                menuState = menuState,
-                haptic = haptic,
-                scope = scope,
-                onPlayEpisode = { episode ->
-                    playerConnection.playQueue(
-                        ListQueue(
-                            title = episode.podcast?.name ?: episode.title,
-                            items = listOf(episode.toMediaItem()),
-                        ),
-                    )
-                },
-            )
-        }
-    }
-}
-
-/**
  * HomePage Section - a single section from YouTube home page
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -866,47 +818,6 @@ fun AccountPlaylistsTitle(
             }
         },
         onClick = onClick,
-        modifier = modifier,
-    )
-}
-
-/**
- * Similar recommendations navigation title
- */
-@Composable
-fun SimilarRecommendationsTitle(
-    recommendation: SimilarRecommendation,
-    navController: NavController,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val thumbSizePx =
-        with(LocalDensity.current) {
-            ListThumbnailSize.roundToPx().coerceAtLeast(1)
-        }
-    HomeSectionHeader(
-        label = stringResource(R.string.similar_to),
-        title = (recommendation.title as? Song)?.effectiveTitle ?: recommendation.title.title,
-        // Text-only header: the "Similar to" label plus the artist/album title is enough
-        // context without a leading thumbnail, and it keeps these headers consistent with
-        // the other text-only section headers on the home page.
-        onClick = {
-            when (recommendation.title) {
-                is Song -> {
-                    navController.navigate("album/${recommendation.title.album!!.id}")
-                }
-
-                is Album -> {
-                    navController.navigate("album/${recommendation.title.id}")
-                }
-
-                is Artist -> {
-                    navController.navigate("artist/${recommendation.title.id}")
-                }
-
-                is Playlist -> {}
-            }
-        },
         modifier = modifier,
     )
 }
