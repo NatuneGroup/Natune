@@ -703,7 +703,7 @@ class BaselineSignerGateTest(unittest.TestCase):
     def gate(self, *, body=None, expected_sha=None, expected_size=None,
              expected_version=BASELINE_VERSION_CODE, fake_version=None,
              expected_signer=BASELINE_SIGNER_SHA256, fake_signer=None,
-             verify_fail=False):
+             verify_fail=False, label="V3.0 Signer:", source_stamp=False):
         body = body if body is not None else b"fixture public baseline"
         sha = expected_sha if expected_sha is not None else hashlib.sha256(body).hexdigest()
         size = expected_size if expected_size is not None else str(len(body))
@@ -727,8 +727,13 @@ class BaselineSignerGateTest(unittest.TestCase):
             if os.environ.get("BASELINE_VERIFY_FAIL") == "1":
                 print("DOES NOT VERIFY")
                 sys.exit(1)
-            print("Signer #1 certificate DN: CN=fixture-baseline-owner")
-            print("Signer #1 certificate SHA-256 digest: " + os.environ["FAKE_BASELINE_SIGNER"])
+            if os.environ.get("FAKE_SOURCE_STAMP") == "1":
+                print("Source Stamp Signer: certificate DN: CN=fixture-source-stamp")
+                print("Source Stamp Signer: certificate SHA-256 digest: " + os.environ["FAKE_BASELINE_SIGNER"])
+            else:
+                label = os.environ.get("FAKE_SIGNER_LABEL", "V3.0 Signer:")
+                print(label + " certificate DN: CN=fixture-baseline-owner")
+                print(label + " certificate SHA-256 digest: " + os.environ["FAKE_BASELINE_SIGNER"])
         """)
         bin_dir = directory / "bin"
         bin_dir.mkdir()
@@ -754,6 +759,8 @@ class BaselineSignerGateTest(unittest.TestCase):
                 "CURL_BODY": body.decode(),
                 "FAKE_BASELINE_VERSION": fake_version,
                 "FAKE_BASELINE_SIGNER": fake_signer,
+                "FAKE_SIGNER_LABEL": label,
+                "FAKE_SOURCE_STAMP": "1" if source_stamp else "0",
                 "BASELINE_VERIFY_FAIL": "1" if verify_fail else "0",
             },
             extra_path=bin_dir,
@@ -766,6 +773,16 @@ class BaselineSignerGateTest(unittest.TestCase):
         self.assertIn("Verified the pinned public baseline", result.stdout)
         self.assertNotIn("fixture-baseline-owner", result.stdout + result.stderr)
         self.assertFalse((runner_temp / "public-baseline-arm64-nightly.apk").exists())
+
+    def test_legacy_signer_label_still_extracts(self):
+        result, _ = self.gate(label="Signer #1")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Verified the pinned public baseline", result.stdout)
+
+    def test_source_stamp_signer_label_does_not_satisfy_the_pin(self):
+        result, _ = self.gate(source_stamp=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("does not match the reviewed signer pin", result.stdout + result.stderr)
 
     def test_wrong_baseline_bytes_fail_before_apksigner(self):
         result, _ = self.gate(body=b"different bytes", expected_sha="0" * 64)
@@ -983,8 +1000,8 @@ class SigningTest(unittest.TestCase):
             if args[0] == "verify" and "--print-certs" in args:
                 if os.environ.get("CERTS_FAIL") == "1":
                     sys.exit(1)
-                print("Signer #1 certificate DN: CN=fixture-owner")
-                print("Signer #1 certificate SHA-256 digest: " + os.environ["FAKE_SIGNER"])
+                print("V3.0 Signer: certificate DN: CN=fixture-owner")
+                print("V3.0 Signer: certificate SHA-256 digest: " + os.environ["FAKE_SIGNER"])
                 sys.exit(0)
             if args[0] == "verify" and "--verbose" in args:
                 if os.environ.get("VERIFY_FAIL") == "1":

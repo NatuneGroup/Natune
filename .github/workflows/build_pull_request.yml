@@ -748,7 +748,7 @@ jobs:
             echo "::error::apksigner did not verify the pinned public baseline; its signer pin is not trusted."
             exit 1
           fi
-          BASELINE_SIGNER="$(sed -n -e 's/^Signer #1 certificate SHA-256 digest:[[:space:]]*//p' "$CERTS" | head -n1 | tr 'A-F' 'a-f' | sed -e 's/[[:space:]:]//g')"
+          BASELINE_SIGNER="$(sed -n -e 's/^\(V[0-9][0-9.]* Signer: \|Signer #[0-9]\+ \)\{0,1\}certificate SHA-256 digest:[[:space:]]*//p' "$CERTS" | head -n1 | tr 'A-F' 'a-f' | sed -e 's/[[:space:]:]//g')"
           if [[ "$BASELINE_SIGNER" != "$EXPECTED_SIGNER_SHA256" ]]; then
             echo "::error::The verified public baseline certificate does not match the reviewed signer pin."
             exit 1
@@ -959,7 +959,7 @@ jobs:
             echo "::error::apksigner could not read the signed candidate's certificate."
             exit 1
           fi
-          ACTUAL_SIGNER="$(sed -n -e 's/^Signer #1 certificate SHA-256 digest:[[:space:]]*//p' "$CERTS_LOG" | head -n1 | tr 'A-F' 'a-f' | sed -e 's/[[:space:]:]//g')"
+          ACTUAL_SIGNER="$(sed -n -e 's/^\(V[0-9][0-9.]* Signer: \|Signer #[0-9]\+ \)\{0,1\}certificate SHA-256 digest:[[:space:]]*//p' "$CERTS_LOG" | head -n1 | tr 'A-F' 'a-f' | sed -e 's/[[:space:]:]//g')"
           if [[ "$ACTUAL_SIGNER" != "$EXPECTED_SIGNER_SHA256" ]]; then
             echo "::error::The signed candidate certificate does not match the trusted historical signer pin."
             exit 1
