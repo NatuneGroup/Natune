@@ -51,6 +51,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.desktop.integration.DesktopHostServices
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
+import moe.rukamori.archivetune.desktop.playback.DesktopEnginePrewarm
 import moe.rukamori.archivetune.shared.domain.settings.BooleanPreferenceKey
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.ui.ArchiveTuneRoot
@@ -140,6 +141,12 @@ internal fun DesktopSessionWindowRoot(
     quit: () -> Unit,
 ) {
     LaunchedEffect(sessions) { sessions.start() }
+    // The engine's dlopen, and its Windows closure preload, costs the first play 50-300 ms. Starting the
+    // warm from this effect keeps that off the first frame: the effect runs after composition, and the
+    // load itself runs on the prewarm's own IO dispatcher. A host without the library skips the load and
+    // playback reports its existing failure when it asks.
+    val enginePrewarm = remember { DesktopEnginePrewarm() }
+    LaunchedEffect(enginePrewarm) { enginePrewarm.start() }
     val session by sessions.state.collectAsState()
     when (val current = session) {
         is DesktopSessionState.Ready -> DesktopMountedRoot(window, current.graph, closeRequests, quit, windowState)
