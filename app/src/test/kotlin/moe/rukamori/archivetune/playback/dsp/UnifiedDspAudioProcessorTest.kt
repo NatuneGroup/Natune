@@ -392,6 +392,33 @@ class UnifiedDspAudioProcessorTest {
         }
     }
 
+    /** TEMPORARY probe: isolates where a request change allocates. Removed once the fix lands. */
+    @Test
+    fun `probe request change allocations by stage`() {
+        val graph = DspGraph(DspFormat(SAMPLE_RATE, CHANNELS))
+        graph.configure(DspFormat(SAMPLE_RATE, CHANNELS))
+        val source = FloatArray(BLOCK_SAMPLES) { index -> (((index % 128) - 64) * 128).toFloat() / SHORT_SCALE }
+        val sink = FloatArray(BLOCK_SAMPLES * 6)
+        fun pump() {
+            graph.push(source, BLOCK_SAMPLES / CHANNELS)
+            graph.pull(sink, BLOCK_SAMPLES * 3)
+        }
+        graph.apply(request(1), plan())
+        repeat(WARMUP_BLOCKS) { pump() }
+        val applyDeltas = IntArray(8)
+        val pushDeltas = IntArray(8)
+        for (index in 0 until 8) {
+            val next = request(if (index % 2 == 0) MAX_BANDS else 1)
+            val beforeApply = allocatedBytes()
+            graph.apply(next, plan())
+            applyDeltas[index] = (allocatedBytes() - beforeApply).toInt()
+            val beforePush = allocatedBytes()
+            pump()
+            pushDeltas[index] = (allocatedBytes() - beforePush).toInt()
+        }
+        println("PROBE apply=" + applyDeltas.joinToString(",") + " push=" + pushDeltas.joinToString(","))
+    }
+
     /** One boosted band and [count]-1 flat ones, so a band-count change designs one stage, not [count]. */
     private fun request(count: Int): DspSettings = DspSettings(
         preampDb = -3.0,
