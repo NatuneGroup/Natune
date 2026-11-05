@@ -484,8 +484,8 @@ class PortableQueueOwner(
     override suspend fun clearUpcoming(): Long? {
         requireInside()
         if (queueLocked()) return null
-        check(!autoLoadMoreEnabled()) { "Disable infinite queue before clearing it" }
-        infinite.reset(staticQueue = true)
+        // The queue's own append state gates the next refill; the stored Auto-load-more preference never does.
+        infinite.cancel(newQueue = true)
         val ticket = removeUndoable(currentState.entries
             .filterNot { it.occurrenceId == currentState.currentOccurrenceId }
             .mapTo(HashSet()) { it.occurrenceId })

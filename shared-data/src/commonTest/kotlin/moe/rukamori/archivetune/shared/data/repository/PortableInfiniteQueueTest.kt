@@ -266,6 +266,29 @@ class PortableInfiniteQueueTest {
         assertEquals(0, h.radioCalls.size)
     }
 
+    @Test fun clearUpcomingWorksWhileAutoLoadMoreStaysEnabled() = runTest {
+        val h = Harness(backgroundScope)
+        h.playlist = listOf(song("p1"), song("p2"), song("p3"))
+        h.load()
+        val response = CompletableDeferred<ContentPage>()
+        h.radioReply = { _, _ -> withContext(NonCancellable) { response.await() } }
+        h.enabled.value = true
+        runCurrent()
+        assertTrue(h.owner.infiniteQueueLoading.value)
+
+        // Clearing no longer requires the stored preference to be off, and it leaves the preference alone.
+        h.owner.withQueueAccess { assertNotNull(h.owner.clearUpcoming()) }
+        runCurrent()
+        assertTrue(h.enabled.value)
+        assertFalse(h.owner.infiniteQueueLoading.value)
+        assertEquals(listOf("p1"), h.ids())
+
+        response.complete(ContentPage((1..6).map { song("r$it") }))
+        runCurrent()
+        assertEquals(listOf("p1"), h.ids())
+        assertEquals(1, h.radioCalls.size)
+    }
+
     @Test fun shuffledMovesChangeOnlyPlayOrderAndReplacementInvalidatesOldUndo() = runTest {
         val h = Harness(backgroundScope)
         h.playlist = (1..6).map { song("p$it") }
