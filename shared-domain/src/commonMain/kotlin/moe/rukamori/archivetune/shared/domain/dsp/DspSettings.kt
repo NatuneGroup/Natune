@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.pow
 import moe.rukamori.archivetune.shared.domain.dsp.clarity.ClarityPreset
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
+import moe.rukamori.archivetune.shared.domain.dsp.eq.PortableEqualizer
 import moe.rukamori.archivetune.shared.domain.dsp.tempo.TempoPitchStage
 
 /**
@@ -97,7 +98,7 @@ data class DspSettings(
 
     companion object {
         /** The widest equalizer this chain accepts: sixteen sections is a full parametric desk. */
-        const val MAX_EQUALIZER_BANDS = 16
+        const val MAX_EQUALIZER_BANDS = PortableEqualizer.MAX_BANDS
 
         /** Hosts keep the user preamp inside ±12 dB, as the normalization policy already does. */
         const val MAX_PREAMP_DB = 12.0

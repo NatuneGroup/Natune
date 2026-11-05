@@ -138,8 +138,10 @@ default the Playback page declares, a flat equalizer and a preamp that is off.
   `onConfigure` — including while silence skipping is switched off, since the sink configures the whole chain.
   The reduction applies the graph's full-scale clamp and, when the settings ask for it, its TPDF dither once at
   the 16-bit grid. Reading and writing use the same signed 32768 steps and saturate at −32768/32767, which keeps
-  a neutral block bit-exact for every PCM16 value, including both end points. It reconfigures on a format change
-  off the audio thread, drains the stretch tail at end of
+  a neutral block bit-exact for every PCM16 value, including both end points. A settings request is prepared on
+  the caller's thread — the dither-stripped value, the neutral value the gate renders and the output dither
+  stage — and the equalizer's cascade is sized with the graph, so the block that adopts the request allocates
+  no stage state. It reconfigures on a format change off the audio thread, drains the stretch tail at end of
   stream, and resets on flush; a configure that arrives while the previous stream still drains is held until
   the sink flushes. `UnifiedDspSettingsSource` reads the stored values through `DspSettingsMapper` and
   publishes one settings value plus its plan to every live processor. The plan is bypassed whenever the
