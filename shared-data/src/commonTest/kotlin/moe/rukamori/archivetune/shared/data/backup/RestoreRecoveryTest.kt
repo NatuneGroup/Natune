@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.shared.data.backup
 
+import kotlinx.coroutines.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -25,11 +26,13 @@ class RestoreRecoveryTest {
         var failAt2 = -1
         var succeedThenFailAt = -1
         var failAsProcessKill = true
+        var failAsCancellation = false
 
         private fun checkpoint() {
             mutatingOps++
             if (mutatingOps == failAt || mutatingOps == failAt2) {
                 if (failAsProcessKill) throw KilledException(mutatingOps)
+                if (failAsCancellation) throw CancellationException("cancelled at op $mutatingOps")
                 throw RuntimeException("injected failure at op $mutatingOps")
             }
         }
@@ -518,5 +521,18 @@ class RestoreRecoveryTest {
         val NEW_SHM = byteArrayOf(7, 7, 7)
         val NEW_SETTINGS = byteArrayOf(6, 6, 6)
         val RUNTIME_WAL = byteArrayOf(5, 5, 5)
+    }
+
+    @Test
+    fun cancellationDuringCommitRollsBackAndDoesNotLeaveAJournal() {
+        val ops = seeded()
+        ops.failAt = 1
+        ops.failAsProcessKill = false
+        ops.failAsCancellation = true
+        assertFailsWith<CancellationException> {
+            RestoreTransaction(ops, JOURNAL, targets()).commit()
+        }
+        assertLiveEquals(ops, Side.OLD)
+        assertFalse(ops.exists(JOURNAL), "journal left after cancellation rollback")
     }
 }

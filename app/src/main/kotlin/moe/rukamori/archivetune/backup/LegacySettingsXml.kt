@@ -9,14 +9,28 @@ import moe.rukamori.archivetune.utils.applySharedPreferenceEdit
 import moe.rukamori.archivetune.utils.dataStore
 import org.xmlpull.v1.XmlPullParser
 
-/** Keep the legacy XML merge and account exclusions; normalize its candidate inside that same edit. */
-internal suspend fun restoreSettingsFromXml(
-    context: Context,
+/** Parsed legacy XML settings, kept read-only until the restore commit applies them. */
+internal data class LegacySettingsValues(
+    val booleans: Map<String, Boolean> = emptyMap(),
+    val ints: Map<String, Int> = emptyMap(),
+    val longs: Map<String, Long> = emptyMap(),
+    val floats: Map<String, Float> = emptyMap(),
+    val strings: Map<String, String> = emptyMap(),
+    val stringSets: Map<String, Set<String>> = emptyMap(),
+) {
+    val keyNames: Set<String>
+        get() = booleans.keys + ints.keys + longs.keys + floats.keys + strings.keys + stringSets.keys
+
+    val isEmpty: Boolean get() = keyNames.isEmpty()
+}
+
+/** Read-only parse used by stage preflight; this never opens DataStore or writes a preference. */
+internal fun readLegacySettings(
     inputStream: InputStream,
     excludedKeyNames: Set<String> = emptySet(),
-) {
+): LegacySettingsValues {
     val content = inputStream.readBytes().toString(Charsets.UTF_8)
-    if (content.isBlank()) return
+    if (content.isBlank()) return LegacySettingsValues()
     val parser = android.util.Xml.newPullParser()
     parser.setInput(StringReader(content))
     var eventType = parser.eventType
@@ -56,15 +70,28 @@ internal suspend fun restoreSettingsFromXml(
         }
         eventType = parser.next()
     }
-    val restoredKeyNames = booleans.keys + ints.keys + longs.keys + floats.keys + strings.keys + stringSets.keys
-    if (restoredKeyNames.isEmpty()) return
+    return LegacySettingsValues(booleans, ints, longs, floats, strings, stringSets)
+}
+
+private fun MutablePreferences.applyLegacySettings(values: LegacySettingsValues) {
+    values.booleans.forEach { (key, value) -> this[booleanPreferencesKey(key)] = value }
+    values.ints.forEach { (key, value) -> this[intPreferencesKey(key)] = value }
+    values.longs.forEach { (key, value) -> this[longPreferencesKey(key)] = value }
+    values.floats.forEach { (key, value) -> this[floatPreferencesKey(key)] = value }
+    values.strings.forEach { (key, value) -> this[stringPreferencesKey(key)] = value }
+    values.stringSets.forEach { (key, value) -> this[stringSetPreferencesKey(key)] = value }
+}
+
+/** Keep the legacy XML merge and account exclusions; normalize its candidate inside that same edit. */
+internal suspend fun restoreSettingsFromXml(
+    context: Context,
+    inputStream: InputStream,
+    excludedKeyNames: Set<String> = emptySet(),
+) {
+    val values = readLegacySettings(inputStream, excludedKeyNames)
+    if (values.isEmpty) return
     context.dataStore.edit { prefs ->
-        booleans.forEach { (key, value) -> prefs[booleanPreferencesKey(key)] = value }
-        ints.forEach { (key, value) -> prefs[intPreferencesKey(key)] = value }
-        longs.forEach { (key, value) -> prefs[longPreferencesKey(key)] = value }
-        floats.forEach { (key, value) -> prefs[floatPreferencesKey(key)] = value }
-        strings.forEach { (key, value) -> prefs[stringPreferencesKey(key)] = value }
-        stringSets.forEach { (key, value) -> prefs[stringSetPreferencesKey(key)] = value }
-        prefs.applySharedPreferenceEdit { normalizeRestoredSettings(restoredKeyNames) }
+        prefs.applyLegacySettings(values)
+        prefs.applySharedPreferenceEdit { normalizeRestoredSettings(values.keyNames) }
     }
 }
