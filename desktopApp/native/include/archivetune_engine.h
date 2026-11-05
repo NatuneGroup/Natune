@@ -138,7 +138,9 @@ AE_EXPORT uint32_t ae_engine_render_realtime(ae_engine *engine, float *out, uint
  * returns 0 or a negative AE_IO_* code. `read` returns the bytes written (1 to length), AE_IO_EOF at the
  * end of the source, or a negative code. `seek` returns the position reached, which must equal the
  * requested one, or a negative code. AE_IO_INTERRUPTED means `interrupt` woke the call; the source stays
- * usable, so the next call starts fresh. AE_IO_RETRY means nothing has arrived yet; the engine asks again
+ * usable, so the next call starts fresh. A host that keeps answering AE_IO_INTERRUPTED when no interrupt is
+ * pending has stopped producing: the engine fails the load after a bounded number of consecutive such reads
+ * rather than spinning. AE_IO_RETRY means nothing has arrived yet; the engine asks again
  * until its starvation limit and then reports a decode failure. AE_IO_FAILED is permanent.
  *
  * The engine checks for an interrupt before each call, so an interrupt that lands between that check and a
