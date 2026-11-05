@@ -39,6 +39,16 @@ internal class AndroidInfiniteQueue(
     private val setShuffleOrder: (IntArray) -> Unit,
     private val save: suspend () -> Unit,
     private val loading: MutableStateFlow<Boolean>,
+    /** Ranks the provider page already fetched; null keeps the original provider-order append. */
+    private val recommendation: AndroidQueueTailRecommendation? = null,
+    /** Deterministic offline fixtures replace exactly the current IO page calls and the elapsed clock. */
+    private val fetchInitial: suspend (Queue) -> List<MediaItem> = { queue ->
+        withContext(Dispatchers.IO) { queue.getInitialStatus().items }
+    },
+    private val fetchNext: suspend (Queue, Boolean) -> List<MediaItem> = { queue, repeatsCurrent ->
+        withContext(Dispatchers.IO) { appendableQueuePage(queue.nextPage(), repeatsCurrent) }
+    },
+    private val nowMs: () -> Long = SystemClock::elapsedRealtime,
 ) {
     private val gate = InfiniteQueueLoadGate()
     private var job: Job? = null
@@ -61,7 +71,7 @@ internal class AndroidInfiniteQueue(
         val seed = seedMediaId?.trim()?.takeIf { it.isNotBlank() }
             ?: target.currentMetadata?.id?.trim()?.takeIf { it.isNotBlank() } ?: return
         val ticket = gate.begin(
-            enabled(), target.repeatMode == Player.REPEAT_MODE_OFF, remaining(target), continuation, SystemClock.elapsedRealtime(),
+            enabled(), target.repeatMode == Player.REPEAT_MODE_OFF, remaining(target), continuation, nowMs(),
         ) ?: return
         val epoch = ++generation
         loading.value = true
@@ -72,26 +82,41 @@ internal class AndroidInfiniteQueue(
                     val source = if (continuation) original else YouTubeQueue(
                         WatchEndpoint(videoId = seed), followAutomixPreview = true,
                     )
-                    var items = filter(withContext(Dispatchers.IO) {
-                        if (continuation) appendableQueuePage(source.nextPage(), source.nextPageRepeatsCurrentItem)
-                        else source.getInitialStatus().items
-                    })
+                    var items = filter(
+                        if (continuation) {
+                            fetchNext(source, source.nextPageRepeatsCurrentItem)
+                        } else {
+                            fetchInitial(source)
+                        },
+                    )
                     val recommendations = source is YouTubeQueue
                     var pages = 1
                     while (recommendations && fresh(target, items).isEmpty() && source.hasNextPage() &&
                         pages < InfiniteQueuePolicy.MAX_BOOTSTRAP_PAGES
                     ) {
                         pages++
-                        items = filter(withContext(Dispatchers.IO) {
-                            appendableQueuePage(source.nextPage(), source.nextPageRepeatsCurrentItem)
-                        })
+                        items = filter(fetchNext(source, source.nextPageRepeatsCurrentItem))
                     }
-                    if (epoch != generation || !gate.isCurrent(ticket) || queue() !== original ||
-                        player() !== target || !enabled() || !mayLoad() || target.repeatMode != Player.REPEAT_MODE_OFF
-                    ) return@withTimeoutOrNull
+                    if (stale(epoch, ticket, original, target)) return@withTimeoutOrNull
 
-                    // A manual addition may have arrived during IO; use the live timeline again at commit.
-                    val append = if (recommendations) fresh(target, items) else items
+                    val planner = recommendation?.takeIf { recommendations && items.isNotEmpty() }
+                    val planned = planner?.let {
+                        // Player reads and the snapshot stay on the owning thread; only immutable values cross.
+                        it.plan(candidates = items, snapshot = queueSnapshot(target))
+                    }
+                    val selected =
+                        when {
+                            planned == null -> items
+                            planned.isEmpty() -> planned
+                            // Song blocks are not part of the host hide/video/artist filter; re-read them after ranking.
+                            else -> filter(planned).let { filtered ->
+                                planner?.filterBlockedSongs(filtered) ?: filtered
+                            }
+                        }
+                    if (stale(epoch, ticket, original, target)) return@withTimeoutOrNull
+
+                    // A manual addition may have arrived while scoring suspended; the live timeline decides again.
+                    val append = if (recommendations) fresh(target, selected) else items
                     val ended = target.playbackState == Player.STATE_ENDED
                     val resume = target.playWhenReady
                     if (!continuation) attachRadio(source)
@@ -116,13 +141,44 @@ internal class AndroidInfiniteQueue(
             } catch (failure: Exception) {
                 Timber.e(failure, "Failed to extend the playback queue")
             } finally {
-                gate.finish(ticket, added, SystemClock.elapsedRealtime())
+                gate.finish(ticket, added, nowMs())
                 if (epoch == generation) {
                     job = null
                     loading.value = false
                 }
             }
         }.also { it.start() }
+    }
+
+    private fun stale(epoch: Long, ticket: Long, original: Queue, target: Player): Boolean =
+        epoch != generation || !gate.isCurrent(ticket) || queue() !== original ||
+            player() !== target || !enabled() || !mayLoad() ||
+            target.repeatMode != Player.REPEAT_MODE_OFF
+
+    /**
+     * The actual play order follows the timeline's shuffled window traversal, not media-item indices. The current
+     * occurrence and hand-queued occurrences are recorded by position so duplicate media ids stay unambiguous.
+     */
+    private fun queueSnapshot(target: Player): AndroidQueueTailSnapshot {
+        val timeline = target.currentTimeline
+        val itemCount = target.mediaItemCount
+        if (timeline.isEmpty || itemCount == 0) {
+            return AndroidQueueTailSnapshot(emptyList(), currentIndex = -1)
+        }
+        val shuffle = target.shuffleModeEnabled
+        val currentItemIndex = target.currentMediaItemIndex
+        val playOrder = ArrayList<MediaItem>(itemCount)
+        val manualIndices = HashSet<Int>()
+        var currentIndex = -1
+        var windowIndex = timeline.getFirstWindowIndex(shuffle)
+        while (windowIndex != C.INDEX_UNSET && windowIndex in 0 until itemCount && playOrder.size < itemCount) {
+            val item = target.getMediaItemAt(windowIndex)
+            if (windowIndex == currentItemIndex) currentIndex = playOrder.size
+            if (item.localConfiguration != null && item.userQueuedKind() != null) manualIndices += playOrder.size
+            playOrder += item
+            windowIndex = timeline.getNextWindowIndex(windowIndex, Player.REPEAT_MODE_OFF, shuffle)
+        }
+        return AndroidQueueTailSnapshot(playOrder, currentIndex, manualIndices)
     }
 
     private fun fresh(target: Player, items: List<MediaItem>): List<MediaItem> =
