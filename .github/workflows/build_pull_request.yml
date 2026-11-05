@@ -23,6 +23,22 @@ on:
         required: false
         type: boolean
         default: false
+      # Artifact-only release candidate: one signed GMS/mobile/arm64 Release APK for storage and
+      # update-over-install testing. It never publishes a release or feed, and it is not the
+      # unsigned-degradable release path. Same-repository manual dispatch only, so no PR or fork
+      # reaches the signing/provider secrets. It cannot be combined with desktop_app_image.
+      #   gh workflow run build_pull_request.yml --ref <reviewed-branch> \
+      #     -f android_release_candidate=true -f candidate_version_code=<reserved code>
+      android_release_candidate:
+        description: 'Build one signed ARM64 Release APK candidate artifact; requires candidate_version_code (manual dispatch only)'
+        required: false
+        type: boolean
+        default: false
+      candidate_version_code:
+        description: 'Reserved absolute Android versionCode for the candidate; blank fails candidate mode'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -39,7 +55,11 @@ jobs:
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
     # A dispatch that asks for the desktop app image only wants that image; the Android assemble/lint
     # signal belongs to pull requests and dev pushes, and it would compete for the same minutes.
-    if: github.event_name != 'workflow_dispatch' || inputs.desktop_app_image != true
+    # The artifact-only release candidate is its own fixed Release job, so this Debug/lint job and the
+    # KMP compile stay out of that mode. Every other event keeps this job.
+    if: >-
+      (github.event_name != 'workflow_dispatch' || inputs.desktop_app_image != true) &&
+      (github.event_name != 'workflow_dispatch' || inputs.android_release_candidate != true)
 
     steps:
       - uses: actions/checkout@v7
@@ -161,6 +181,9 @@ jobs:
   # The desktop host compiles in its own job so a mid-flight desktopApp breakage reports
   # itself without blocking the Android assemble/lint signal.
   desktop-compile:
+    # The artifact-only release candidate must run as one Android job; only a default/desktop manual
+    # dispatch reaches this job.
+    if: github.event_name != 'workflow_dispatch' || inputs.android_release_candidate != true
     # Same fork routing as the build job: fork pull requests use the free GitHub-hosted pool.
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
     # The pull-request path compiles in minutes; the opt-in app image adds the native closure build, TDLib
@@ -336,3 +359,571 @@ jobs:
             ${{ runner.temp }}/natune-desktop/PROVENANCE.txt
           retention-days: 7
           if-no-files-found: error
+
+  # One signed GMS/mobile/arm64 Release APK, measured and uploaded as an artifact only. This is the
+  # release-shaped exception to "missing secrets leave unsigned APKs": an unsigned or debug-key file
+  # cannot prove update-over-install compatibility, so this mode fails closed instead.
+  android-release-candidate:
+    name: Android ARM64 release candidate
+    # Only a same-repository manual dispatch of the reviewed branch reaches the signing/provider
+    # secrets; pull requests, forks, pushes and default manual dispatches never enable this job.
+    # The branch check itself runs in the first step so a tag/invalid dispatch fails visibly
+    # instead of leaving every job skipped.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'NatuneGroup/Natune' &&
+      inputs.android_release_candidate == true
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # One bounded reservation. 30 minutes is the approved whole-job maximum; a run that exceeds it
+    # fails instead of delivering a late artifact as ready.
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate candidate dispatch and signing inputs
+        shell: bash
+        env:
+          CANDIDATE: ${{ inputs.android_release_candidate }}
+          REF_TYPE: ${{ github.ref_type }}
+          DESKTOP_APP_IMAGE: ${{ inputs.desktop_app_image }}
+          CANDIDATE_VERSION_CODE: ${{ inputs.candidate_version_code }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ "${CANDIDATE:-}" != "true" ]]; then
+            echo "::error::android_release_candidate must be true to run the candidate job."
+            exit 1
+          fi
+          if [[ "${REF_TYPE:-}" != "branch" ]]; then
+            echo "::error::android_release_candidate must be dispatched from a reviewed branch, not a ${REF_TYPE:-unknown} ref."
+            exit 1
+          fi
+          if [[ "${DESKTOP_APP_IMAGE:-}" == "true" ]]; then
+            echo "::error::android_release_candidate and desktop_app_image cannot be requested together."
+            exit 1
+          fi
+          # Blank or a low fallback (1/1500) is not a reserved version; only an absolute code above
+          # every published and measured floor may reach the build.
+          if [[ ! "${CANDIDATE_VERSION_CODE:-}" =~ ^[1-9][0-9]*$ || ${#CANDIDATE_VERSION_CODE} -gt 10 ]]; then
+            echo "::error::candidate_version_code must be a reserved Android positive Int (at most 2147483647); blank/default is not a candidate version."
+            exit 1
+          fi
+          if (( CANDIDATE_VERSION_CODE > 2147483647 )); then
+            echo "::error::candidate_version_code is outside Android's supported positive Int range."
+            exit 1
+          fi
+          # Presence only: values are never printed. The signing step receives them separately.
+          for secret_name in KEYSTORE KEY_ALIAS KEYSTORE_PASSWORD KEY_PASSWORD; do
+            if [[ -z "${!secret_name:-}" ]]; then
+              echo "::error::Required historical signing secret $secret_name is missing or empty; refusing an unsigned candidate."
+              exit 1
+            fi
+          done
+          echo "Candidate dispatch inputs and the four historical signing secrets are present."
+
+      - name: Check out the exact reviewed dispatch commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Assert the checked-out source is the dispatched commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          if [[ ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ || "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Checked out '$ACTUAL_SHA', not the dispatched commit '$EXPECTED_SHA'."
+            exit 1
+          fi
+          {
+            echo "SOURCE_SHA=$ACTUAL_SHA"
+            echo "DISPATCH_REF=$DISPATCH_REF"
+          } >> "$GITHUB_ENV"
+          printf 'source_sha=%s\ndispatch_ref=%s\n' "$ACTUAL_SHA" "$DISPATCH_REF"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          SDK_DIR="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f | sort -V | tail -n1)"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-37.0" "build-tools;35.0.0" "ndk;30.0.16248370"
+
+      - name: Resolve Android build-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ANDROID_HOME is not exported by every runner image; the SDK locations below cover the rest.
+          # A configured root is authoritative: an incomplete one fails instead of resolving elsewhere.
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$SDK_ROOT" ]]; then
+            for candidate in /usr/local/lib/android/sdk "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+              if [[ -d "$candidate/build-tools" ]]; then
+                SDK_ROOT="$candidate"
+                break
+              fi
+            done
+          fi
+          BUILD_TOOLS=""
+          if [[ -n "$SDK_ROOT" && -d "$SDK_ROOT/build-tools" ]]; then
+            # The highest version that actually carries every tool: a partial directory must not win.
+            while IFS= read -r candidate; do
+              if [[ -x "$candidate/apksigner" && -x "$candidate/zipalign" && -x "$candidate/aapt2" ]]; then
+                BUILD_TOOLS="$candidate"
+              fi
+            done < <(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V)
+          fi
+          if [[ -z "$BUILD_TOOLS" ]]; then
+            echo "::error::Android build-tools do not contain apksigner, zipalign and aapt2."
+            exit 1
+          fi
+          {
+            echo "BUILD_TOOLS=$BUILD_TOOLS"
+            echo "BUILD_TOOLS_NAME=$(basename "$BUILD_TOOLS")"
+          } >> "$GITHUB_ENV"
+          echo "Using build-tools: $BUILD_TOOLS"
+
+      - name: Validate the reserved version above source and published floors
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_VERSION_CODE: ${{ inputs.candidate_version_code }}
+          BASELINE_VERSION_CODE: '1793753723'
+        run: |
+          set -euo pipefail
+          if [[ ! "$CANDIDATE_VERSION_CODE" =~ ^[1-9][0-9]*$ || ${#CANDIDATE_VERSION_CODE} -gt 10 ]]; then
+            echo "::error::candidate_version_code is not a reserved Android positive Int."
+            exit 1
+          fi
+          if (( CANDIDATE_VERSION_CODE > 2147483647 )); then
+            echo "::error::candidate_version_code is outside Android's supported positive Int range."
+            exit 1
+          fi
+          SOURCE_FLOOR="$(awk -F'=' '/^val trustedUpgradeVersionCodeFloor[[:space:]]*=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' app/build.gradle.kts)"
+          if [[ ! "$SOURCE_FLOOR" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not read trustedUpgradeVersionCodeFloor from app/build.gradle.kts."
+            exit 1
+          fi
+          # Published release bodies carry the same at-build marker the update feed uses. Read them
+          # fresh at dispatch and take the maximum across both channels; an unreadable marker is a
+          # failure, not a guessed floor. The owner may still hold a newer unpublished installed build;
+          # the dispatcher must confirm that before reserving a code (documented pre-dispatch gate).
+          PUBLISHED_MAX="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false) | .body' 2>/dev/null |
+            grep -oE 'at-build:[0-9]+' | cut -d: -f2 | sort -n | tail -n1 || true)"
+          if [[ -z "${PUBLISHED_MAX:-}" ]]; then
+            echo "::error::No published at-build marker was readable; refusing to guess the current published ARM64 floor."
+            exit 1
+          fi
+          if [[ ${#PUBLISHED_MAX} -gt 10 ]]; then
+            echo "::error::The newest published at-build marker is outside Android's positive Int range; refusing to compare it."
+            exit 1
+          fi
+          if (( CANDIDATE_VERSION_CODE <= SOURCE_FLOOR )); then
+            echo "::error::candidate_version_code $CANDIDATE_VERSION_CODE is not above the source floor $SOURCE_FLOOR."
+            exit 1
+          fi
+          if (( CANDIDATE_VERSION_CODE <= BASELINE_VERSION_CODE )); then
+            echo "::error::candidate_version_code $CANDIDATE_VERSION_CODE is not above the measured baseline $BASELINE_VERSION_CODE."
+            exit 1
+          fi
+          if (( CANDIDATE_VERSION_CODE <= PUBLISHED_MAX )); then
+            echo "::error::candidate_version_code $CANDIDATE_VERSION_CODE is not above the newest published build $PUBLISHED_MAX."
+            exit 1
+          fi
+          printf 'source_floor=%s\nbaseline_version_code=%s\nnewest_published_version_code=%s\n' \
+            "$SOURCE_FLOOR" "$BASELINE_VERSION_CODE" "$PUBLISHED_MAX"
+
+      - name: Verify the trusted public baseline before trusting its signer
+        shell: bash
+        env:
+          BASELINE_URL: https://github.com/NatuneGroup/Natune/releases/download/N20261103/app-gms-mobile-arm64-nightly.apk
+          BASELINE_SHA256: 287096e15d568c8ad6e52c8a91dd55c04b5f904ea53d15a2d595ce4e16fb94bc
+          BASELINE_BYTES: '20306627'
+          BASELINE_VERSION_CODE: '1793753723'
+          # Public certificate SHA-256 derived read-only from that pinned APK's legacy v2/v3 signing
+          # block. The local parse is not a signature verification; apksigner below verifies the pinned
+          # bytes before this pin is trusted, and the signed candidate must present the same certificate.
+          EXPECTED_SIGNER_SHA256: 6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95daa5d6c7f9d9
+        run: |
+          set -euo pipefail
+          BASELINE_APK="$RUNNER_TEMP/public-baseline-arm64-nightly.apk"
+          BADGING="$RUNNER_TEMP/public-baseline-badging.txt"
+          CERTS="$RUNNER_TEMP/public-baseline-certs.txt"
+          trap 'rm -f "$BASELINE_APK" "$BADGING" "$CERTS"' EXIT
+          curl --fail --silent --show-error --location --retry 3 --output "$BASELINE_APK" "$BASELINE_URL"
+          ACTUAL_BYTES="$(wc -c < "$BASELINE_APK" | tr -d '[:space:]')"
+          ACTUAL_SHA256="$(sha256sum "$BASELINE_APK" | cut -d' ' -f1)"
+          if [[ "$ACTUAL_BYTES" != "$BASELINE_BYTES" || "$ACTUAL_SHA256" != "$BASELINE_SHA256" ]]; then
+            echo "::error::The downloaded public baseline does not match the pinned bytes and SHA-256; refusing its signer pin."
+            exit 1
+          fi
+          "$BUILD_TOOLS/aapt2" dump badging "$BASELINE_APK" > "$BADGING"
+          if ! grep -q "versionCode='$BASELINE_VERSION_CODE'" "$BADGING"; then
+            echo "::error::The pinned public baseline does not report the expected versionCode."
+            exit 1
+          fi
+          if ! "$BUILD_TOOLS/apksigner" verify --print-certs "$BASELINE_APK" > "$CERTS" 2>&1; then
+            echo "::error::apksigner did not verify the pinned public baseline; its signer pin is not trusted."
+            exit 1
+          fi
+          BASELINE_SIGNER="$(sed -n -e 's/^Signer #1 certificate SHA-256 digest:[[:space:]]*//p' "$CERTS" | head -n1 | tr 'A-F' 'a-f' | sed -e 's/[[:space:]:]//g')"
+          if [[ "$BASELINE_SIGNER" != "$EXPECTED_SIGNER_SHA256" ]]; then
+            echo "::error::The verified public baseline certificate does not match the reviewed signer pin."
+            exit 1
+          fi
+          echo "Verified the pinned public baseline bytes and its certificate SHA-256 pin."
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Assemble only the GMS mobile ARM64 release APK
+        shell: bash
+        env:
+          VERSION_CODE_OVERRIDE: ${{ inputs.candidate_version_code }}
+          SOURCE_SHA: ${{ github.sha }}
+          IS_NIGHTLY_BUILD: 'true'
+          NIGHTLY_BUILD_HASH: ${{ github.sha }}
+          PULL_REQUEST: 'false'
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          # The same provider/client BuildConfig environment the release Android leg supplies after
+          # authorization: no user-created secret is embedded here, only the existing mappings.
+          ARCHIVETUNE_LASTFM_API_KEY: ${{ secrets.ARCHIVETUNE_LASTFM_API_KEY }}
+          ARCHIVETUNE_LASTFM_API_SECRET: ${{ secrets.ARCHIVETUNE_LASTFM_API_SECRET }}
+          ARCHIVETUNE_LYPRIO_BASE_URL: ${{ vars.LYPRIO_BASE_URL }}
+          ARCHIVETUNE_ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL }}
+          ARCHIVETUNE_LYPRIO_HMAC_KEY: ${{ secrets.LYPRIO_HMAC_KEY }}
+          ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_SITEKEY }}
+          ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN: ${{ secrets.ARCHIVETUNE_AMAZON_TURNSTILE_ORIGIN }}
+          ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_ID }}
+          ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_YOUTUBE_OAUTH_CLIENT_SECRET }}
+          ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY: ${{ secrets.ARCHIVETUNE_POTOKEN_GOOGLE_API_KEY }}
+          ARCHIVETUNE_POTOKEN_REQUEST_KEY: ${{ secrets.ARCHIVETUNE_POTOKEN_REQUEST_KEY }}
+          ARCHIVETUNE_TIDAL_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_CLIENT_ID }}
+          ARCHIVETUNE_TIDAL_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_CLIENT_SECRET }}
+          ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_ID }}
+          ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET: ${{ secrets.ARCHIVETUNE_TIDAL_PKCE_CLIENT_SECRET }}
+          ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN: ${{ secrets.ARCHIVETUNE_TIDAL_CANVAS_EMBED_TOKEN }}
+          ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+          POOL_CLIENT_KEY: ${{ secrets.POOL_CLIENT_KEY }}
+          FEEDBACK_API_URL: ${{ secrets.FEEDBACK_API_URL }}
+          FEEDBACK_INGEST_KEY: ${{ secrets.FEEDBACK_INGEST_KEY }}
+          START_IO_APP_ID: ${{ secrets.START_IO_APP_ID }}
+          ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          VERSION_NAME_OVERRIDE="candidate-${SOURCE_SHA:0:12}"
+          export VERSION_NAME_OVERRIDE
+          # Standard slim Nightly shape: no optional ONNX models/runtime, TDLib stays the
+          # runtime-downloaded library, and no service, locale, ABI, minSdk or signing change.
+          ./gradlew :app:assembleGmsMobileArm64Release --no-daemon --max-workers=2 \
+            -Pautomix=false -PslimTdlib=true
+
+      - name: Stage and validate the assembled release APK
+        shell: bash
+        env:
+          CANDIDATE_VERSION_CODE: ${{ inputs.candidate_version_code }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          APK_ROOT=app/build/outputs/apk
+          if [[ ! -d "$APK_ROOT" ]]; then
+            echo "::error::$APK_ROOT does not exist after the fixed assemble task."
+            find app/build -maxdepth 4 -type d -print 2>/dev/null | sort || true
+            exit 1
+          fi
+          echo "APK files under $APK_ROOT:"
+          find "$APK_ROOT" -type f -name '*.apk' -print | sort
+          # Only .apk files count, so listing files beside the APK cannot inflate the set.
+          mapfile -t APKS < <(find "$APK_ROOT" -type f -name '*.apk' | sort)
+          if [[ "${#APKS[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one release APK from :app:assembleGmsMobileArm64Release, found ${#APKS[@]}."
+            find "$APK_ROOT" -maxdepth 8 -type f -print || true
+            exit 1
+          fi
+          APK="${APKS[0]}"
+          case "$APK" in
+            */release/*.apk) ;;
+            *) echo "::error::$APK is not a Release APK."; exit 1 ;;
+          esac
+          METADATA="$(dirname "$APK")/output-metadata.json"
+          if [[ ! -f "$METADATA" ]]; then
+            echo "::error::Missing AGP output metadata beside $APK."
+            exit 1
+          fi
+          VERSION_NAME="candidate-${SOURCE_SHA:0:12}"
+          python3 - "$METADATA" "$APK" "$CANDIDATE_VERSION_CODE" "$VERSION_NAME" <<'PY'
+          import json
+          import sys
+
+          metadata_path, apk_path, version_code, version_name = sys.argv[1:5]
+          with open(metadata_path, encoding="utf-8") as metadata_file:
+              document = json.load(metadata_file)
+          variant = str(document.get("variantName", "")).lower()
+          for expected in ("gms", "arm64", "release"):
+              if expected not in variant:
+                  raise SystemExit(f"error: variant '{variant}' is not the GMS mobile ARM64 release")
+          if document.get("applicationId") != "moe.rukamori.archivetune":
+              raise SystemExit(f"error: unexpected applicationId {document.get('applicationId')!r}")
+          elements = document.get("elements") or []
+          matches = [element for element in elements if element.get("outputFile") == apk_path.rsplit("/", 1)[-1]]
+          if len(matches) != 1:
+              raise SystemExit("error: the assembled APK is not the single output named by AGP metadata")
+          element = matches[0]
+          if str(element.get("versionCode")) != version_code or element.get("versionName") != version_name:
+              raise SystemExit("error: AGP metadata does not carry the reserved version code and candidate version name")
+          PY
+          STAGE="$RUNNER_TEMP/natune-candidate"
+          mkdir -p "$STAGE"
+          CANDIDATE_APK="$STAGE/natune-android-arm64-release-candidate.apk"
+          cp "$APK" "$CANDIDATE_APK"
+          BADGING="$RUNNER_TEMP/candidate-badging-pre-sign.txt"
+          "$BUILD_TOOLS/aapt2" dump badging "$CANDIDATE_APK" > "$BADGING"
+          if ! grep -q "^package: name='moe\.rukamori\.archivetune' versionCode='$CANDIDATE_VERSION_CODE' versionName='$VERSION_NAME'" "$BADGING"; then
+            echo "::error::The assembled APK package/version does not match the reserved candidate."
+            exit 1
+          fi
+          if ! grep -q "^sdkVersion:'24'$" "$BADGING"; then
+            echo "::error::The assembled APK does not keep the unchanged minSdk 24."
+            exit 1
+          fi
+          if [[ "$(grep -c "^native-code: 'arm64-v8a'$" "$BADGING")" -ne 1 ]]; then
+            echo "::error::The assembled APK is not exactly the arm64-v8a native set."
+            exit 1
+          fi
+          if grep -q "application-debuggable" "$BADGING"; then
+            echo "::error::The assembled APK is debuggable; refusing to label it a release candidate."
+            exit 1
+          fi
+          python3 - "$CANDIDATE_APK" <<'PY'
+          import sys
+          import zipfile
+
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              names = apk.namelist()
+          abis = sorted({name.split("/")[1] for name in names if name.startswith("lib/") and name.endswith(".so")})
+          if abis != ["arm64-v8a"]:
+              raise SystemExit(f"error: unexpected native ABI set {abis}")
+          optional = sorted(
+              name for name in names
+              if name.lower().endswith(".onnx")
+              or name.startswith("lib/onnxruntime")
+              or "/libonnxruntime" in name
+              or name.rsplit("/", 1)[-1] == "libtdjni.so"
+          )
+          if optional:
+              raise SystemExit("error: slim candidate carries optional model/TDLib entries: " + ", ".join(optional[:5]))
+          PY
+          {
+            echo "CANDIDATE_APK=$CANDIDATE_APK"
+            echo "STAGE=$STAGE"
+          } >> "$GITHUB_ENV"
+          echo "Staged the single validated release APK: $(basename "$CANDIDATE_APK")"
+
+      - name: Sign and verify the candidate APK
+        shell: bash
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          EXPECTED_SIGNER_SHA256: 6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95daa5d6c7f9d9
+        run: |
+          set -euo pipefail
+          for secret_name in KEYSTORE KEY_ALIAS KEYSTORE_PASSWORD KEY_PASSWORD; do
+            if [[ -z "${!secret_name:-}" ]]; then
+              echo "::error::Required historical signing secret $secret_name is missing; refusing to create an unsigned candidate."
+              exit 1
+            fi
+          done
+          APK="${CANDIDATE_APK:?}"
+          KEYSTORE_FILE="$(mktemp "$RUNNER_TEMP/candidate-keystore.XXXXXX")"
+          ALIGNED_APK="$(mktemp "$RUNNER_TEMP/candidate-aligned.XXXXXX")"
+          VERIFY_LOG="$(mktemp "$RUNNER_TEMP/candidate-verify.XXXXXX")"
+          CERTS_LOG="$(mktemp "$RUNNER_TEMP/candidate-certs.XXXXXX")"
+          trap 'rm -f "$KEYSTORE_FILE" "$ALIGNED_APK" "$VERIFY_LOG" "$CERTS_LOG"' EXIT
+          printf '%s' "$KEYSTORE" | base64 --decode > "$KEYSTORE_FILE"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$APK" "$ALIGNED_APK"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_FILE" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --v1-signing-enabled false \
+            "$ALIGNED_APK"
+          mv "$ALIGNED_APK" "$APK"
+          if ! "$BUILD_TOOLS/apksigner" verify --verbose "$APK" > "$VERIFY_LOG" 2>&1; then
+            echo "::error::apksigner did not verify the signed candidate."
+            exit 1
+          fi
+          if ! grep -q '^Verified using v2 scheme (APK Signature Scheme v2): true$' "$VERIFY_LOG"; then
+            echo "::error::The candidate is not verified by APK Signature Scheme v2."
+            exit 1
+          fi
+          if ! "$BUILD_TOOLS/apksigner" verify --print-certs "$APK" > "$CERTS_LOG" 2>&1; then
+            echo "::error::apksigner could not read the signed candidate's certificate."
+            exit 1
+          fi
+          ACTUAL_SIGNER="$(sed -n -e 's/^Signer #1 certificate SHA-256 digest:[[:space:]]*//p' "$CERTS_LOG" | head -n1 | tr 'A-F' 'a-f' | sed -e 's/[[:space:]:]//g')"
+          if [[ "$ACTUAL_SIGNER" != "$EXPECTED_SIGNER_SHA256" ]]; then
+            echo "::error::The signed candidate certificate does not match the trusted historical signer pin."
+            exit 1
+          fi
+          echo "Signed candidate verified; certificate SHA-256 matches the trusted historical pin."
+
+      - name: Record the final signed APK metadata, checksum and size report
+        shell: bash
+        env:
+          CANDIDATE_VERSION_CODE: ${{ inputs.candidate_version_code }}
+          SOURCE_SHA: ${{ github.sha }}
+          DISPATCH_REF: ${{ github.ref }}
+          SIGNER_SHA256: 6db8326a550861f0f96b9adcb706207d75ac4480de454fb8af95daa5d6c7f9d9
+          BASELINE_SHA256: 287096e15d568c8ad6e52c8a91dd55c04b5f904ea53d15a2d595ce4e16fb94bc
+          BASELINE_BYTES: '20306627'
+          BASELINE_VERSION_CODE: '1793753723'
+        run: |
+          set -euo pipefail
+          APK="${CANDIDATE_APK:?}"
+          STAGE="${STAGE:?}"
+          VERSION_NAME="candidate-${SOURCE_SHA:0:12}"
+          BADGING="$RUNNER_TEMP/candidate-badging-final.txt"
+          # Re-assert the final signed bytes, not only the pre-sign copy.
+          "$BUILD_TOOLS/aapt2" dump badging "$APK" > "$BADGING"
+          if ! grep -q "^package: name='moe\.rukamori\.archivetune' versionCode='$CANDIDATE_VERSION_CODE' versionName='$VERSION_NAME'" "$BADGING"; then
+            echo "::error::The final signed APK package/version changed during signing."
+            exit 1
+          fi
+          if ! grep -q "^sdkVersion:'24'$" "$BADGING"; then
+            echo "::error::The final signed APK no longer reports minSdk 24."
+            exit 1
+          fi
+          if [[ "$(grep -c "^native-code: 'arm64-v8a'$" "$BADGING")" -ne 1 ]]; then
+            echo "::error::The final signed APK is not exactly arm64-v8a."
+            exit 1
+          fi
+          if grep -q "application-debuggable" "$BADGING"; then
+            echo "::error::The final signed APK is debuggable."
+            exit 1
+          fi
+          python3 scripts/apk_size_report.py "$APK" --output "$STAGE/apk-size.json"
+          APK_SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
+          APK_BYTES="$(wc -c < "$APK" | tr -d '[:space:]')"
+          printf '%s  %s\n' "$APK_SHA256" "$(basename "$APK")" > "$STAGE/SHA256SUMS"
+          JAVA_VERSION_LINE="$(java -version 2>&1 | sed -n '1p')"
+          export JAVA_VERSION_LINE APK_SHA256 APK_BYTES
+          python3 - "$STAGE/candidate-metadata.json" <<'PY'
+          import json
+          import os
+          import sys
+
+          source_sha = os.environ["SOURCE_SHA"]
+          document = {
+              "artifact": "natune-android-arm64-release-candidate",
+              "channel": "candidate",
+              "published": False,
+              "workflow": "Build Pull Request",
+              "event": os.environ.get("GITHUB_EVENT_NAME", ""),
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+              "source_sha": source_sha,
+              "dispatch_ref": os.environ.get("DISPATCH_REF", ""),
+              "gradle_task": ":app:assembleGmsMobileArm64Release",
+              "variant": "gms-mobile-arm64-release",
+              "build_channel": "nightly-equivalent",
+              "build_flags": {"automix": False, "slimTdlib": True},
+              "toolchain": {
+                  "jdk": os.environ.get("JAVA_VERSION_LINE", ""),
+                  "gradle_wrapper": "9.6.1",
+                  "compile_sdk": 37,
+                  "min_sdk": 24,
+                  "ndk": "30.0.16248370",
+                  "build_tools": os.environ.get("BUILD_TOOLS_NAME", ""),
+              },
+              "package": "moe.rukamori.archivetune",
+              "abi": ["arm64-v8a"],
+              "version_code": int(os.environ["CANDIDATE_VERSION_CODE"]),
+              "version_name": "candidate-" + source_sha[:12],
+              "signer_sha256": os.environ["SIGNER_SHA256"],
+              "signer_verification": {
+                  "baseline_bytes_sha256_verified": True,
+                  "baseline_apksigner_verified": True,
+                  "candidate_apksigner_verified": True,
+              },
+              "apk": {
+                  "file": os.path.basename(os.environ["CANDIDATE_APK"]),
+                  "bytes": int(os.environ["APK_BYTES"]),
+                  "sha256": os.environ["APK_SHA256"],
+              },
+              "trusted_baseline": {
+                  "release": "N20261103",
+                  "version_code": int(os.environ["BASELINE_VERSION_CODE"]),
+                  "bytes": int(os.environ["BASELINE_BYTES"]),
+                  "sha256": os.environ["BASELINE_SHA256"],
+                  "signer_sha256": os.environ["SIGNER_SHA256"],
+              },
+          }
+          with open(sys.argv[1], "w", encoding="utf-8") as metadata_file:
+              json.dump(document, metadata_file, indent=2, sort_keys=True)
+              metadata_file.write("\n")
+          PY
+          # Exactly one APK plus small sanitized files may leave this job; a stray baseline,
+          # certificate dump or key file must fail before the artifact upload.
+          REQUIRED_FILES=(
+            "$APK"
+            "$STAGE/SHA256SUMS"
+            "$STAGE/candidate-metadata.json"
+            "$STAGE/apk-size.json"
+          )
+          for required in "${REQUIRED_FILES[@]}"; do
+            if [[ ! -s "$required" ]]; then
+              echo "::error::The candidate artifact set is missing $required."
+              exit 1
+            fi
+          done
+          if [[ "$(find "$STAGE" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')" -ne 4 ]]; then
+            echo "::error::The candidate staging directory holds unexpected files; only one APK plus small metadata may upload."
+            find "$STAGE" -maxdepth 1 -type f -print | sort
+            exit 1
+          fi
+          if (( $(wc -c < "$STAGE/candidate-metadata.json") > 65536 )) ||
+             (( $(wc -c < "$STAGE/apk-size.json") > 262144 )); then
+            echo "::error::The candidate metadata exceeds the small sanitized hand-off budget."
+            exit 1
+          fi
+          echo "Final signed candidate: $APK_SHA256 ($APK_BYTES bytes)"
+
+      - name: Upload the signed candidate APK and its metadata
+        uses: actions/upload-artifact@v7
+        # A required upload with no fallback: artifact quota or upload failure fails this job instead
+        # of publishing a release, tag, external store or update-feed manifest.
+        with:
+          name: natune-android-arm64-release-candidate-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/natune-candidate/natune-android-arm64-release-candidate.apk
+            ${{ runner.temp }}/natune-candidate/SHA256SUMS
+            ${{ runner.temp }}/natune-candidate/candidate-metadata.json
+            ${{ runner.temp }}/natune-candidate/apk-size.json
+          if-no-files-found: error
+          retention-days: 3
