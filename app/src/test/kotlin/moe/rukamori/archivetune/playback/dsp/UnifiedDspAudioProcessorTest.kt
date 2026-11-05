@@ -423,9 +423,9 @@ class UnifiedDspAudioProcessorTest {
             }
         }
         assertEquals(
+            "the fake adoption really allocated",
             REQUEST_CHANGES.toLong() * BLOCK_SAMPLES * CHANNELS,
             touched.toLong(),
-            "the fake adoption really allocated",
         )
         assertTrue(
             "a deliberately allocating adoption measured only $allocated bytes, so this accounting cannot fail",
