@@ -69,6 +69,8 @@ import moe.rukamori.archivetune.shared.data.provider.YouTubeAccountBinding
 import moe.rukamori.archivetune.shared.data.provider.YouTubeCatalogueTransport
 import moe.rukamori.archivetune.shared.data.provider.YouTubeContentRepository
 import moe.rukamori.archivetune.shared.data.provider.catalogueTransport
+import moe.rukamori.archivetune.shared.data.recommend.PortableRecommendationSignals
+import moe.rukamori.archivetune.shared.data.recommend.QueueTailRecommendation
 import moe.rukamori.archivetune.shared.data.repository.ContentRepositoryRouter
 import moe.rukamori.archivetune.shared.data.repository.PortableQueueOwner
 import moe.rukamori.archivetune.shared.data.repository.QueueHandoffState
@@ -702,6 +704,19 @@ internal class IosSessionGraph private constructor(
             val youtubeContent = YouTubeContentRepository(youtubeTransport, youtubeAccount)
             val contentRouter = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library), youtubeContent))
             val handoff = IosCrossfadeHandoff(host.playbackPort, vault.snapshots)
+            val blockedSongs = {
+                parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
+            }
+            // The tail ranks the page it already fetched against the same store, block list and local clock the UI shows.
+            val queueRecommendation = QueueTailRecommendation(
+                signals = PortableRecommendationSignals(
+                    listens = database.listens(),
+                    artistBlocks = database.artistBlocks(),
+                    blockedSongRefs = blockedSongs,
+                ),
+                nowMs = ::iosNowMillis,
+                offsetMsAt = ::iosOffsetMsAt,
+            )
             val owner = PortableQueueOwner(
                 player = player,
                 scope = scope,
@@ -718,10 +733,9 @@ internal class IosSessionGraph private constructor(
                 hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
                 hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
                 blockedArtistIds = { queueArtistBlocks.value },
-                blockedSongRefs = {
-                    parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
-                },
+                blockedSongRefs = blockedSongs,
                 handoffEngine = handoff,
+                recommendation = queueRecommendation,
             )
             val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints(), database.library()))
             try {
