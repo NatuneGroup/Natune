@@ -205,7 +205,7 @@ class PortableQueueOwner(
 
     private val infinitePreferenceWatcher: Job = scope.launch {
         autoLoadMoreChanges.distinctUntilChanged().collect { enabled ->
-            infinite.decide { if (enabled) consider() else cancel() }
+            infinite.decide { if (enabled) infinite.consider() else infinite.cancel() }
         }
     }
 
@@ -668,7 +668,7 @@ class PortableQueueOwner(
         if (snapshot == null) return
         followHandoff(snapshot)
         // The decision takes the queue lock, which a long load may hold; snapshot fan-out must not stall.
-        if (!snapshot.isEnded && snapshot.playWhenReady) scope.launch { infinite.decide { consider() } }
+        if (!snapshot.isEnded && snapshot.playWhenReady) scope.launch { infinite.decide { infinite.consider() } }
         if (!snapshot.isEnded) return
         val key = snapshot.occurrenceId to snapshot.playbackGeneration
         if (key == lastEnded) return
