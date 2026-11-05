@@ -102,6 +102,12 @@ checks do not prove physical audio or route recovery: verify mono/stereo, 44.1/4
 Bluetooth/AirPlay, unplug, interruption, recognition-window changes and the original crash
 on the exact installed candidate. No device validation is claimed here.
 
+The default hosted macOS job also device-links the real `archivetune_device.c` translation unit
+against the pinned miniaudio header and the CoreAudio/AudioToolbox/CoreFoundation frameworks, with
+a negative `-DMA_NO_COREAUDIO` compile that must fail on the guard diagnostic. That is a host
+compile/link check only: it opens no audio device, builds no FFmpeg/TDLib closure, packages
+nothing and does not prove heard output or desktop runtime behavior.
+
 The same workflow now also carries an opt-in app-target link, off by default. Its
 `ios_simulator_app` (`workflow_dispatch`) input builds the simulator closure with
 `scripts/build_ios_native_core.sh iphonesimulator` and then runs `xcodebuild` on
