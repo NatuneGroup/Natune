@@ -158,7 +158,7 @@ object QueueTailPlanner {
         seed: Long,
         constraints: DiversityConstraints,
     ): PoolPlan {
-        val limit = minOf(budget, constraints.maxTailItems)
+        val limit = minOf(budget, constraints.maxTailItems, MAX_TAIL_ITEMS)
         if (pool.isEmpty() || limit <= 0) return PoolPlan()
         val minScore = pool.minOf { scores.getValue(it) }
         val maxScore = pool.maxOf { scores.getValue(it) }

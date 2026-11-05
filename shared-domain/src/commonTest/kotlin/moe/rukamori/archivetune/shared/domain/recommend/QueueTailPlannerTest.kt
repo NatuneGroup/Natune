@@ -261,6 +261,22 @@ class QueueTailPlannerTest {
     }
 
     @Test
+    fun theAbsoluteTailBoundWinsOverALargerConfiguration() {
+        val songs = (1..60).map { testSong("s$it", artistId = "artist-$it") }
+        val plan =
+            QueueTailPlanner.plan(
+                songs.map { tail(it) },
+                emptyList(),
+                emptyList(),
+                profileWith(songs.map { completedFact(it) }),
+                budget = 60,
+                seed = 0,
+                constraints = DiversityConstraints(maxTailItems = 60),
+            )
+        assertEquals(QueueTailPlanner.MAX_TAIL_ITEMS, plan.items.size)
+    }
+
+    @Test
     fun aZeroBudgetProducesNoTail() {
         val plan = QueueTailPlanner.plan(emptyList(), emptyList(), emptyList(), emptyProfile(), 0, 0)
         assertTrue(plan.isEmpty)
