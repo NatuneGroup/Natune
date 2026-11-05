@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Process
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -121,7 +122,10 @@ class StartupRecoveryActivity : ComponentActivity() {
         val current = ++generation
         state = RecoveryState.Loading
         reader.execute {
-            val restoreBlocked = AndroidRestoreCoordinator.hasBlockedMarker(this)
+            val restoreBlocked =
+                runCatching { AndroidRestoreCoordinator.hasBlockedMarker(this) }
+                    .onFailure { Log.w("StartupRecovery", "Blocked restore marker could not be read", it) }
+                    .getOrDefault(false)
             if (restoreBlocked) {
                 runOnUiThread {
                     if (current != generation || isFinishing || isDestroyed) return@runOnUiThread
