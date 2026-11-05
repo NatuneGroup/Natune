@@ -689,6 +689,20 @@ android {
             excludes += "META-INF/build.archives"
             excludes += "META-INF/com.android.tools/**"
             excludes += "META-INF/proguard/**"
+            // Room's schema JSONs are committed KSP output under shared-data's commonMain resources so
+            // PortableStateMigrationTest can load them from the JVM test classpath. Nothing at runtime,
+            // backup or import reads them, so only the members that shipped are dropped here. They are
+            // listed one by one, never by namespace, so a future production schema under room-schemas/
+            // still reaches the APK and cannot disappear silently.
+            excludes += listOf(
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/1.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/7.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/8.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/9.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/10.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/11.json",
+                "room-schemas/moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase/12.json",
+            )
         }
     }
 

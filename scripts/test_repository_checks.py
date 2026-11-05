@@ -2,6 +2,7 @@
 # Copyright (c) 2026 vossgraves
 """Regression coverage for checks that can block a contributor's commit."""
 
+import re
 import unittest
 from pathlib import Path
 import subprocess
@@ -162,6 +163,53 @@ class RepositoryChecksTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(root), "add", "."], check=True)
         with patch.object(checker, "ROOT", root), Snapshot(staged=True) as snapshot:
             self.assertEqual(set(), quarantined_workflows(snapshot))
+
+
+ROOM_SCHEMA_ID = "moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase"
+ROOM_SCHEMA_VERSIONS = (1, 7, 8, 9, 10, 11, 12)
+# Pinned one by one on purpose: a namespace glob would also drop a future production schema that
+# lands under room-schemas/, which is exactly what this guard must prevent.
+ROOM_SCHEMA_MEMBERS = tuple(f"room-schemas/{ROOM_SCHEMA_ID}/{version}.json" for version in ROOM_SCHEMA_VERSIONS)
+
+
+class AndroidApkResourcePackagingTest(unittest.TestCase):
+    """Room schema JSONs are JVM-test inputs, so they stay in the tree but not in the APK."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def test_exactly_the_approved_room_schema_members_are_excluded_and_kept_for_the_jvm_test(self):
+        gradle = (self.ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn("packaging {", gradle)
+        resources = gradle.split("packaging {", 1)[1].split("if (automix)", 1)[0]
+
+        for line in resources.splitlines():
+            code = line.strip()
+            if "room-schemas" not in code or code.startswith("//"):
+                continue
+            for glob in ("*", "?", "{", "}"):
+                self.assertNotIn(glob, code, f"schema exclusion must be an exact path, not a glob: {code}")
+        self.assertEqual(
+            sorted(ROOM_SCHEMA_MEMBERS),
+            sorted(re.findall(r'"(room-schemas/[^"]*)"', resources)),
+        )
+
+        schema_dir = self.ROOT / "shared-data/src/commonMain/resources/room-schemas" / ROOM_SCHEMA_ID
+        self.assertEqual(
+            sorted(f"{version}.json" for version in ROOM_SCHEMA_VERSIONS),
+            sorted(path.name for path in schema_dir.glob("*.json")),
+        )
+
+        data_gradle = (self.ROOT / "shared-data/build.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn(
+            'arg("room.schemaLocation", "$projectDir/src/commonMain/resources/room-schemas")',
+            data_gradle,
+        )
+        migration_test = (
+            self.ROOT
+            / "shared-data/src/jvmTest/kotlin/moe/rukamori/archivetune/shared/data/persistence"
+            / "PortableStateMigrationTest.kt"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"/room-schemas/', migration_test)
 
 
 if __name__ == "__main__":
