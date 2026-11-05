@@ -1124,7 +1124,7 @@
     <string name="audio_processing_desc">Natune DSP. Normalization, the equalizer, the clarity preset, the limiter and dither run in one 32-bit float chain. Off renders the stored settings neutral on every host — flat equalizer, unity preamp, no normalization — and keeps them stored for when it is back on. Offload and bit-perfect output need it off.</string>
     <string name="audio_engines_unavailable_bit_perfect">Off while bit-perfect USB output is on</string>
     <string name="usb_exclusive_audio_title">USB exclusive output</string>
-    <string name="usb_exclusive_audio_desc">Experimental. Plays to a connected USB DAC through an exclusive AAudio stream, past the Android mixer. Engines and the float DSP still apply, and the audio stays at the normal path\'s 16-bit depth (bit-perfect USB output keeps hi-res depth). Falls back to the normal output whenever the DAC refuses. Turns off crossfade, automix, offload and bit-perfect USB output.</string>
+    <string name="usb_exclusive_audio_desc">Experimental. Plays to a connected USB DAC through an exclusive AAudio stream, past the Android mixer. The Natune DSP chain still applies on this route; only the bit-perfect USB output skips it. The audio stays at the normal path\'s 16-bit depth (bit-perfect USB output keeps hi-res depth). Falls back to the normal output whenever the DAC refuses. Turns off crossfade, automix, offload and bit-perfect USB output.</string>
     <string name="usb_exclusive_audio_unsupported">Unavailable: the native audio library did not load</string>
     <string name="usb_exclusive_audio_waiting">On · engages on the next song when a USB DAC is the active output</string>
     <string name="usb_exclusive_audio_active">Exclusive to the USB DAC · %1$d Hz</string>
