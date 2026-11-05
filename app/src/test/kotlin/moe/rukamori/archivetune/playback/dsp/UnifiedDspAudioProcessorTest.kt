@@ -21,6 +21,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UnifiedDspAudioProcessorTest {
+    /** Keeps the negative control's fake per-adoption allocation reachable, so the JIT cannot elide it. */
+    @Volatile
+    private var perAdoptionScratch: FloatArray? = null
+
     private fun processor(bypassGate: () -> Boolean = { false }) =
         UnifiedDspAudioProcessor(bypassGate = bypassGate)
 
@@ -352,16 +356,17 @@ class UnifiedDspAudioProcessorTest {
 
     /**
      * A settings move reaches the processor on every preference emission, and `queueInput` applies it at a block
-     * boundary. The settings value, the neutral value the bit-perfect gate renders and the dither stage are
-     * prepared by `submit` on the caller's thread, and the equalizer's stage pool is built with the graph, so the
-     * adopting block allocates no stage state — including an equalizer switch or a band-count change.
+     * boundary. The settings value, the neutral value the bit-perfect gate renders and the dither stage are prepared
+     * by `submit` on the caller's thread, and the equalizer's stage pool is built with the graph, so the adopting
+     * block allocates no stage state — including an equalizer switch or a band-count change.
      *
-     * The loop is measured with one reading of the counter on either side and compared with the same loop over
-     * one unchanged request: `submit` prepares a request off the render path and is expected to allocate, and
-     * sampling the counter per block would charge its own cost to every block.
+     * Only the rendering is measured: each request is submitted before its own counter window opens, and the readings
+     * are summed over every change, so an allocation made while the request is prepared is neither charged to the
+     * render nor able to cancel a render-path allocation in a baseline. The empty-body loop calibrates the two counter
+     * reads themselves and nothing else.
      */
     @Test
-    fun `a request change stays within the allocation budget`() {
+    fun `a request change allocates nothing on the render path`() {
         val processor = processor()
         processor.submit(request(1), plan())
         processor.configure(format(C.ENCODING_PCM_16BIT))
@@ -378,26 +383,52 @@ class UnifiedDspAudioProcessorTest {
             }
         }
         val stagePlan = plan()
-        // submit() prepares a request off the render path, so a repeated submission is the baseline: the same
-        // submit and render calls, with no settings move for the adopting block to apply.
-        val steady = request(MAX_BANDS)
-        val baseline = measure {
-            repeat(REQUEST_CHANGES) {
-                processor.submit(steady, stagePlan)
-                render(processor, block)
-            }
+        val rendered = requests.sumOf { request ->
+            processor.submit(request, stagePlan)
+            measure { render(processor, block) }
         }
-        val measured = measure {
-            for (request in requests) {
-                processor.submit(request, stagePlan)
-                render(processor, block)
-            }
-        }
-        val adoption = measured - baseline
+        val harness = (0 until REQUEST_CHANGES).sumOf { measure { } }
+        val adopted = rendered - harness
         assertTrue(
-            "a request change allocated $adoption bytes across ${requests.size} blocks " +
-                "(measured $measured, unchanged baseline $baseline)",
-            adoption < ALLOCATION_LIMIT_BYTES,
+            "a request change allocated $adopted bytes across ${requests.size} blocks " +
+                "(render $rendered, counter overhead $harness)",
+            adopted < ALLOCATION_LIMIT_BYTES,
+        )
+    }
+
+    /**
+     * The negative control for the measurement above: an adoption that prepares one block of stage scratch — the shape
+     * the clarity dry buffer had before its capacity moved off the render path — has to spend more than the budget
+     * through the same counter, the same helper and the same loop, so a green measurement is evidence and not a blind
+     * spot.
+     */
+    @Test
+    fun `the render allocation measurement detects a per-adoption allocation`() {
+        val processor = processor()
+        processor.submit(request(1), plan())
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        val block = block()
+        repeat(WARMUP_BLOCKS) { render(processor, block) }
+
+        val stagePlan = plan()
+        var touched = 0
+        val allocated = (0 until REQUEST_CHANGES).sumOf { index ->
+            processor.submit(request(if (index % 2 == 0) MAX_BANDS else 1), stagePlan)
+            measure {
+                render(processor, block)
+                // Kept reachable so the fake adoption really allocates instead of being optimized away.
+                perAdoptionScratch = FloatArray(BLOCK_SAMPLES * CHANNELS)
+                touched += perAdoptionScratch?.size ?: 0
+            }
+        }
+        assertEquals(
+            REQUEST_CHANGES.toLong() * BLOCK_SAMPLES * CHANNELS,
+            touched.toLong(),
+            "the fake adoption really allocated",
+        )
+        assertTrue(
+            "a deliberately allocating adoption measured only $allocated bytes, so this accounting cannot fail",
+            allocated > ALLOCATION_LIMIT_BYTES,
         )
     }
 
