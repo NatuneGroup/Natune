@@ -76,6 +76,58 @@ jobs:
         with:
           xcode-version: '26.4'
 
+      - name: Device-link the macOS Core Audio wrapper
+        # Host compile/link proof only: the real device translation unit is compiled against the pinned
+        # miniaudio header and linked with the Core Audio frameworks. This never opens audio, builds the
+        # FFmpeg/TDLib closure or packages an app, and it does not prove heard output or desktop runtime.
+        shell: bash
+        timeout-minutes: 3
+        env:
+          ARCHIVETUNE_NATIVE_BUILD: ${{ runner.temp }}/natune-macos-device-link
+        run: |
+          set -euo pipefail
+          source desktopApp/native/scripts/build-native-deps.sh
+          mkdir -p "$DOWNLOADS" "$SRC"
+          fetch "https://raw.githubusercontent.com/mackron/miniaudio/$MINIAUDIO_VERSION/miniaudio.h" \
+            "$DOWNLOADS/miniaudio.h" "$MINIAUDIO_SHA256"
+          fetch "https://raw.githubusercontent.com/mackron/miniaudio/$MINIAUDIO_VERSION/LICENSE" \
+            "$DOWNLOADS/miniaudio.LICENSE" "$MINIAUDIO_LICENSE_SHA256"
+          stage_miniaudio
+          wrapper="$BUILD/macos-device-link/archivetune_device_wrapper.c"
+          mkdir -p "$(dirname "$wrapper")"
+          cat > "$wrapper" <<'C'
+          #include "archivetune_device.c"
+
+          #if !defined(__APPLE__) || !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE
+          #error NATUNE_DESKTOP_MACOS_REQUIRED
+          #endif
+          #ifdef MA_NO_COREAUDIO
+          #error NATUNE_COREAUDIO_REQUIRED
+          #endif
+          C
+          compile_device() {
+            local output="$1"
+            shift
+            xcrun --sdk macosx clang -std=gnu11 -Wall -Wextra \
+              -dynamiclib -Wl,-undefined,error \
+              -I desktopApp/native/src -I "$SRC/miniaudio-$MINIAUDIO_VERSION" \
+              "$@" "$wrapper" \
+              -framework CoreAudio -framework AudioToolbox -framework CoreFoundation \
+              -o "$output"
+          }
+          compile_device "$RUNNER_TEMP/libarchivetune_device_macos.dylib"
+          negative_log="$RUNNER_TEMP/natune-device-negative.log"
+          if compile_device "$RUNNER_TEMP/natune-device-negative.dylib" -DMA_NO_COREAUDIO \
+              2>"$negative_log"; then
+            echo "::error::the negative control compiled with Core Audio disabled"
+            exit 1
+          fi
+          if ! grep -q "NATUNE_COREAUDIO_REQUIRED" "$negative_log"; then
+            echo "::error::the negative control failed without the Core Audio guard diagnostic"
+            cat "$negative_log"
+            exit 1
+          fi
+
       - name: Check iOS audio source contracts and PCM conversion
         shell: bash
         run: |
