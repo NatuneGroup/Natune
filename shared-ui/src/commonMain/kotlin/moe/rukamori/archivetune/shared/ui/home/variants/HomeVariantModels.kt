@@ -82,7 +82,7 @@ data class HomeVariantQuickPicks(
 /**
  * A playback intent. The owner builds the real queue from it, so the variant never picks a queue owner or fakes one.
  * Each variant documents which surface sends which intent and whether a tap on an already-playing song toggles
- * play and pause instead. Rukamori toggles for speed-dial, keep-listening and forgotten-favourite songs and for quick
+ * play and pause instead. The Classic page toggles for speed-dial, keep-listening and forgotten-favourite songs and for quick
  * picks, and never for remote shelves, similar decks or the random speed-dial tile. BitChord toggles for speed-dial
  * and keep-listening songs and for remote YouTube songs ([Watch]), and never for recents, jump back in or forgotten
  * favourites.

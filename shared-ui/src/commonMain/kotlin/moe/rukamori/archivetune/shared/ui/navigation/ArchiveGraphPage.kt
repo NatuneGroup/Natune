@@ -11,8 +11,8 @@ import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantChip
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantImage
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantNowPlaying
 import moe.rukamori.archivetune.shared.ui.home.variants.HomeVariantThumbnailAspectRatio
-import moe.rukamori.archivetune.shared.ui.home.variants.RukamoriHomeActions
-import moe.rukamori.archivetune.shared.ui.home.variants.RukamoriHomeUi
+import moe.rukamori.archivetune.shared.ui.home.variants.NatuneClassicHomeActions
+import moe.rukamori.archivetune.shared.ui.home.variants.NatuneClassicHomeUi
 import moe.rukamori.archivetune.shared.ui.home.variants.SpotifyHomeActions
 import moe.rukamori.archivetune.shared.ui.home.variants.SpotifyHomeUi
 import moe.rukamori.archivetune.shared.ui.screens.*
@@ -30,8 +30,9 @@ import moe.rukamori.archivetune.shared.ui.screens.mediainfo.TrackInfoUi
  */
 sealed interface ArchiveGraphPage {
     /**
-     * The generic feed, for the Classic and Muzo designs on the YouTube source only. Spotify, QQ, Rukamori and BitChord
-     * bind their own pages below, so the generic feed never stands in for a design it does not implement.
+     * The generic feed, for the Classic and Muzo designs on the YouTube source only. Spotify, QQ, the Natune Classic
+     * home and BitChord bind their own pages below, so the generic feed never stands in for a design it does not
+     * implement.
      */
     data class Home(
         val source: HomeSource, val availableSources: List<HomeSource>, val sourceChange: (HomeSource) -> Unit,
@@ -56,11 +57,11 @@ sealed interface ArchiveGraphPage {
         val showChips: Boolean = true,
     ) : ArchiveGraphPage
     /**
-     * Rukamori Home. The variant owns its greeting, chips, pull gesture and load-more trigger; [image] draws avatars and
+     * Classic Home. The variant owns its greeting, chips, pull gesture and load-more trigger; [image] draws avatars and
      * thumbnails. [thumbnailAspectRatio] is the owner's per-item card frame ratio, square when none is supplied.
      */
-    data class HomeRukamori(val source: HomeSourceBinding, val state: RukamoriHomeUi, val actions: RukamoriHomeActions,
-        val nowPlaying: HomeVariantNowPlaying, val image: HomeVariantImage,
+    data class HomeNatuneClassic(val source: HomeSourceBinding, val state: NatuneClassicHomeUi,
+        val actions: NatuneClassicHomeActions, val nowPlaying: HomeVariantNowPlaying, val image: HomeVariantImage,
         val thumbnailAspectRatio: HomeVariantThumbnailAspectRatio = { HomeSquareCardRatio }) : ArchiveGraphPage
     /**
      * Spotify Home. [blurEffects] is the host blur policy, passed to the variant surface unchanged. [thumbnailAspectRatio]

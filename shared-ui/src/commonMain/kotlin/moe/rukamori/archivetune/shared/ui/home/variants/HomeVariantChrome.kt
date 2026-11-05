@@ -44,7 +44,7 @@ internal fun HomeVariantNowPlaying.isActive(ref: ContentRef): Boolean = ref == t
 internal fun ContentKind.hasHomeMenu(): Boolean = this != ContentKind.PODCAST && this != ContentKind.EPISODE
 
 /**
- * The category row of the Rukamori page. The selected chip shows the done glyph and is cleared by tapping it again,
+ * The category row of the Classic page. The selected chip shows the done glyph and is cleared by tapping it again,
  * which the owner handles through [onSelect].
  */
 @Composable

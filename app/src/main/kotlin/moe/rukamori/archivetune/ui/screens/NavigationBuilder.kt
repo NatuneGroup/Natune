@@ -182,7 +182,7 @@ fun NavGraphBuilder.navigationBuilder(
         val homeScreenStyle by rememberEnumPreference(HomeScreenStyleKey, HomeScreenStyle.Default)
         when (homeScreenStyle) {
             HomeScreenStyle.RUKAMORI -> {
-                RukamoriHomeScreen(
+                NatuneClassicHomeScreen(
                     navController,
                     headerScrollConnection = homeScrollConnection,
                     listState = homeListState,

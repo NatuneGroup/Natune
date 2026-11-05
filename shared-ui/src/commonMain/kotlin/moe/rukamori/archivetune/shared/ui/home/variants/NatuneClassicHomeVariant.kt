@@ -57,17 +57,17 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
-/** The Rukamori page as the owner delivers it. Each state is complete; the variant never invents a section. */
-sealed interface RukamoriHomeUi {
-    data object Loading : RukamoriHomeUi
+/** The Classic page as the owner delivers it. Each state is complete; the variant never invents a section. */
+sealed interface NatuneClassicHomeUi {
+    data object Loading : NatuneClassicHomeUi
 
-    /** The feed loaded with nothing to show. Retry calls [RukamoriHomeActions.refresh]. */
-    data object Empty : RukamoriHomeUi
+    /** The feed loaded with nothing to show. Retry calls [NatuneClassicHomeActions.refresh]. */
+    data object Empty : NatuneClassicHomeUi
 
     /** The feed failed. [detail] is the owner's message; null shows the generic line. */
-    data class Failed(val detail: String? = null) : RukamoriHomeUi
+    data class Failed(val detail: String? = null) : NatuneClassicHomeUi
 
-    data class Ready(val content: RukamoriHomeContent) : RukamoriHomeUi
+    data class Ready(val content: NatuneClassicHomeContent) : NatuneClassicHomeUi
 }
 
 /**
@@ -75,7 +75,7 @@ sealed interface RukamoriHomeUi {
  * playlists, forgotten favourites, similar decks, then the remote shelves and the loading-more spinner.
  * Each list is in the owner's order; the variant only removes duplicate refs, as the baseline does.
  */
-data class RukamoriHomeContent(
+data class NatuneClassicHomeContent(
     val chips: List<HomeVariantChip> = emptyList(),
     val selectedChipKey: String? = null,
     val showCategoryChips: Boolean = true,
@@ -97,11 +97,11 @@ data class RukamoriHomeContent(
 )
 
 /**
- * The owner's answers to the Rukamori page. [play] receives every playback intent (see [HomeVariantPlay]) and the
+ * The owner's answers to the Classic page. [play] receives every playback intent (see [HomeVariantPlay]) and the
  * owner builds the real queue. [open] navigates by ref. [openSection] leads the remote header to its browse or mood
  * page. [menu] opens the item's sheet on long press or the more button.
  */
-class RukamoriHomeActions(
+class NatuneClassicHomeActions(
     val play: (HomeVariantPlay) -> Unit,
     val open: (ContentRef) -> Unit,
     val openAccount: () -> Unit,
@@ -112,24 +112,24 @@ class RukamoriHomeActions(
     val refresh: () -> Unit,
 )
 
-private val RukamoriHomeMaxWidth = 1_200.dp
-private val RukamoriSectionSpacing = 18.dp
+private val NatuneClassicHomeMaxWidth = 1_200.dp
+private val NatuneClassicHomeSectionSpacing = 18.dp
 internal val HomeVariantThumbnailSize = 56.dp
 internal val HomeVariantThumbnailCorner = 10.dp
 private const val DiscoveryDeckMaxItems = 4
 private const val DiscoveryDeckColumns = 2
 
 /**
- * The Rukamori home page. [artwork] draws content artwork and [image] draws the account avatar and remote section
+ * The Classic home page. [artwork] draws content artwork and [image] draws the account avatar and remote section
  * thumbnails; both are host slots. The page is laid out at [LocalShellContentPadding] unless [contentPadding] says
  * otherwise, and [listState] stays hoisted so scroll survives look changes. [thumbnailAspectRatio] gives each shelf and
  * similar-to deck card its frame ratio; the default keeps every card square. The hero carousel and list rows never use it.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun RukamoriHomeVariant(
-    state: RukamoriHomeUi,
-    actions: RukamoriHomeActions,
+fun NatuneClassicHomeVariant(
+    state: NatuneClassicHomeUi,
+    actions: NatuneClassicHomeActions,
     artwork: ContentArtwork,
     nowPlaying: HomeVariantNowPlaying,
     image: HomeVariantImage,
@@ -140,7 +140,7 @@ fun RukamoriHomeVariant(
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         when (state) {
-            RukamoriHomeUi.Loading ->
+            NatuneClassicHomeUi.Loading ->
                 HomeVariantStatePane(
                     contentPadding = contentPadding,
                     showLoading = true,
@@ -149,7 +149,7 @@ fun RukamoriHomeVariant(
                     onRetry = null,
                 )
 
-            RukamoriHomeUi.Empty ->
+            NatuneClassicHomeUi.Empty ->
                 HomeVariantStatePane(
                     contentPadding = contentPadding,
                     showLoading = false,
@@ -158,7 +158,7 @@ fun RukamoriHomeVariant(
                     onRetry = actions.refresh,
                 )
 
-            is RukamoriHomeUi.Failed ->
+            is NatuneClassicHomeUi.Failed ->
                 HomeVariantStatePane(
                     contentPadding = contentPadding,
                     showLoading = false,
@@ -167,8 +167,8 @@ fun RukamoriHomeVariant(
                     onRetry = actions.refresh,
                 )
 
-            is RukamoriHomeUi.Ready ->
-                RukamoriHomeFeed(
+            is NatuneClassicHomeUi.Ready ->
+                NatuneClassicHomeFeed(
                     content = state.content,
                     actions = actions,
                     artwork = artwork,
@@ -184,9 +184,9 @@ fun RukamoriHomeVariant(
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun RukamoriHomeFeed(
-    content: RukamoriHomeContent,
-    actions: RukamoriHomeActions,
+private fun NatuneClassicHomeFeed(
+    content: NatuneClassicHomeContent,
+    actions: NatuneClassicHomeActions,
     artwork: ContentArtwork,
     nowPlaying: HomeVariantNowPlaying,
     image: HomeVariantImage,
@@ -248,7 +248,7 @@ private fun RukamoriHomeFeed(
                 contentPadding = contentPadding,
                 modifier =
                     Modifier
-                        .widthIn(max = RukamoriHomeMaxWidth)
+                        .widthIn(max = NatuneClassicHomeMaxWidth)
                         .fillMaxWidth()
                         .align(Alignment.TopCenter),
             ) {
@@ -272,7 +272,7 @@ private fun RukamoriHomeFeed(
                         )
                     }
                     item(key = "home_remote_quick_picks", contentType = "quick_picks") {
-                        RukamoriQuickPicks(
+                        NatuneClassicHomeQuickPicks(
                             items = remoteQuickPicks.items,
                             layout = content.quickPickLayout,
                             nowPlaying = nowPlaying,
@@ -300,7 +300,7 @@ private fun RukamoriHomeFeed(
                         )
                     }
                     item(key = "home_quick_picks", contentType = "quick_picks") {
-                        RukamoriQuickPicks(
+                        NatuneClassicHomeQuickPicks(
                             items = content.quickPicks.local,
                             layout = content.quickPickLayout,
                             nowPlaying = nowPlaying,
@@ -322,7 +322,7 @@ private fun RukamoriHomeFeed(
                         )
                     }
                     item(key = "home_speed_dial", contentType = "speed_dial") {
-                        RukamoriSpeedDial(
+                        NatuneClassicHomeSpeedDial(
                             items = content.speedDial,
                             nowPlaying = nowPlaying,
                             artwork = artwork,
@@ -339,7 +339,7 @@ private fun RukamoriHomeFeed(
                         HomeFeedSectionHeader(title = keepListeningTitle)
                     }
                     item(key = "home_keep_listening", contentType = "media_shelf") {
-                        RukamoriShelfRow(
+                        NatuneClassicHomeShelfRow(
                             items = content.keepListening,
                             nowPlaying = nowPlaying,
                             artwork = artwork,
@@ -378,10 +378,10 @@ private fun RukamoriHomeFeed(
                             HomeFeedSectionHeader(
                                 title = content.accountName.ifBlank { stringResource(Res.string.m4hv_account) },
                                 subtitle = stringResource(Res.string.m4hv_your_youtube_playlists),
-                                thumbnail = { RukamoriAccountThumbnail(content.accountImageUrl, image) },
+                                thumbnail = { NatuneClassicHomeAccountThumbnail(content.accountImageUrl, image) },
                                 onClick = actions.openAccount,
                             )
-                            RukamoriShelfRow(
+                            NatuneClassicHomeShelfRow(
                                 items = content.accountPlaylists,
                                 nowPlaying = nowPlaying,
                                 artwork = artwork,
@@ -399,7 +399,7 @@ private fun RukamoriHomeFeed(
                         HomeFeedSectionHeader(title = forgottenTitle)
                     }
                     item(key = "home_forgotten_favorites", contentType = "song_shelf") {
-                        RukamoriShelfRow(
+                        NatuneClassicHomeShelfRow(
                             items = forgottenFavorites,
                             nowPlaying = nowPlaying,
                             artwork = artwork,
@@ -427,7 +427,7 @@ private fun RukamoriHomeFeed(
                 if (content.similarDecks.isNotEmpty()) {
                     rukamoriSpacer("similar_recommendations")
                     item(key = "home_similar_recommendations", contentType = "discovery_decks") {
-                        RukamoriDiscoveryDecks(
+                        NatuneClassicHomeDiscoveryDecks(
                             decks = content.similarDecks,
                             nowPlaying = nowPlaying,
                             artwork = artwork,
@@ -448,7 +448,7 @@ private fun RukamoriHomeFeed(
                             leadingIcon = { HomeVariantLeadingIcon(rukamoriSectionIcon(section.title)) },
                             thumbnail =
                                 if (section.thumbnailUrl != null) {
-                                    { RukamoriRoundThumbnail(section.thumbnailUrl, image) }
+                                    { NatuneClassicHomeRoundThumbnail(section.thumbnailUrl, image) }
                                 } else {
                                     null
                                 },
@@ -456,7 +456,7 @@ private fun RukamoriHomeFeed(
                         )
                     }
                     item(key = "home_remote_$sectionKey", contentType = "media_shelf") {
-                        RukamoriShelfRow(
+                        NatuneClassicHomeShelfRow(
                             items = section.items,
                             nowPlaying = nowPlaying,
                             artwork = artwork,
@@ -502,7 +502,7 @@ private fun RukamoriHomeFeed(
 /** Spacing before each section, as the baseline rukamoriSectionSpacer. */
 private fun androidx.compose.foundation.lazy.LazyListScope.rukamoriSpacer(key: String) {
     item(key = "home_section_spacer_$key", contentType = "section_spacer") {
-        Spacer(Modifier.height(RukamoriSectionSpacing))
+        Spacer(Modifier.height(NatuneClassicHomeSectionSpacing))
     }
 }
 
@@ -526,7 +526,7 @@ internal fun rukamoriSectionIcon(title: String): DrawableResource =
 
 /** A row of shelf cards. [onTap] receives the occurrence and its index in [items]; long press opens the sheet. */
 @Composable
-internal fun RukamoriShelfRow(
+internal fun NatuneClassicHomeShelfRow(
     items: List<ContentOccurrence>,
     nowPlaying: HomeVariantNowPlaying,
     artwork: ContentArtwork,
@@ -565,9 +565,9 @@ internal fun RukamoriShelfRow(
 
 /** The account avatar, or the person glyph when the account has no picture. */
 @Composable
-private fun RukamoriAccountThumbnail(imageUrl: String?, image: HomeVariantImage) {
+private fun NatuneClassicHomeAccountThumbnail(imageUrl: String?, image: HomeVariantImage) {
     if (imageUrl != null) {
-        RukamoriRoundThumbnail(imageUrl, image)
+        NatuneClassicHomeRoundThumbnail(imageUrl, image)
     } else {
         Icon(
             painter = painterResource(Res.drawable.m4hv_icon_person),
@@ -579,7 +579,7 @@ private fun RukamoriAccountThumbnail(imageUrl: String?, image: HomeVariantImage)
 
 /** A remote thumbnail drawn through the host image slot at the baseline 56dp, rounded 10dp. */
 @Composable
-internal fun RukamoriRoundThumbnail(url: String, image: HomeVariantImage) {
+internal fun NatuneClassicHomeRoundThumbnail(url: String, image: HomeVariantImage) {
     image(
         url,
         Modifier
@@ -590,11 +590,11 @@ internal fun RukamoriRoundThumbnail(url: String, image: HomeVariantImage) {
 
 /** The similar-to deck, a rail of two-column decks. Each deck shows its own header and up to four items. */
 @Composable
-private fun RukamoriDiscoveryDecks(
+private fun NatuneClassicHomeDiscoveryDecks(
     decks: List<HomeVariantDeck>,
     nowPlaying: HomeVariantNowPlaying,
     artwork: ContentArtwork,
-    actions: RukamoriHomeActions,
+    actions: NatuneClassicHomeActions,
     thumbnailAspectRatio: HomeVariantThumbnailAspectRatio,
     modifier: Modifier = Modifier,
 ) {
@@ -614,7 +614,7 @@ private fun RukamoriDiscoveryDecks(
                 key = { deck -> deck.key },
                 contentType = { "similar_discovery_deck" },
             ) { deck ->
-                RukamoriDiscoveryDeck(
+                NatuneClassicHomeDiscoveryDeck(
                     deck = deck,
                     nowPlaying = nowPlaying,
                     artwork = artwork,
@@ -628,11 +628,11 @@ private fun RukamoriDiscoveryDecks(
 }
 
 @Composable
-private fun RukamoriDiscoveryDeck(
+private fun NatuneClassicHomeDiscoveryDeck(
     deck: HomeVariantDeck,
     nowPlaying: HomeVariantNowPlaying,
     artwork: ContentArtwork,
-    actions: RukamoriHomeActions,
+    actions: NatuneClassicHomeActions,
     thumbnailAspectRatio: HomeVariantThumbnailAspectRatio,
     modifier: Modifier = Modifier,
 ) {
@@ -651,7 +651,7 @@ private fun RukamoriDiscoveryDeck(
             HomeFeedSectionHeader(
                 title = deck.source.title,
                 subtitle = stringResource(Res.string.m4hv_similar_to),
-                thumbnail = { RukamoriDeckSourceThumbnail(deck.source, artwork) },
+                thumbnail = { NatuneClassicHomeDeckSourceThumbnail(deck.source, artwork) },
                 onClick = if (openRef != null) { { actions.open(openRef) } } else null,
             )
             deckRows.forEach { rowItems ->
@@ -707,7 +707,7 @@ private fun RukamoriDiscoveryDeck(
 
 /** A deck header's artwork: the source item, a circle for artists and a rounded square otherwise. */
 @Composable
-private fun RukamoriDeckSourceThumbnail(source: ContentItem, artwork: ContentArtwork) {
+private fun NatuneClassicHomeDeckSourceThumbnail(source: ContentItem, artwork: ContentArtwork) {
     val shape: Shape =
         if (source.ref.kind == ContentKind.ARTIST) {
             CircleShape

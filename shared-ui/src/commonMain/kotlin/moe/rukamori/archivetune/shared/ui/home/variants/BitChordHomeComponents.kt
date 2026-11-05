@@ -71,7 +71,7 @@ import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import moe.rukamori.archivetune.shared.ui.theme.LocalArchiveTuneFontFamily
 import org.jetbrains.compose.resources.painterResource
 
-/** The BitChord page gutter. The shared Rukamori feed uses a tighter 10dp gutter, so BitChord keeps its own 16dp. */
+/** The BitChord page gutter. The shared Classic feed uses a tighter 10dp gutter, so BitChord keeps its own 16dp. */
 internal val BitChordPageGutter = 16.dp
 
 /** The playing accent on the current card's title. */
