@@ -135,10 +135,11 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
     }
 
     /** The same two paths as [setPitch]: the deck units render the fade, the native units survive it. */
-    fun setEqualizer(enabled: Boolean, bands: List<IosEqBand>) {
-        applyIosEqualizer(graph.current.output, bands, enabled)
-        next?.let { applyIosEqualizer(it.output, bands, enabled) }
-        graph.setEqualizer(enabled, bands)
+    /** The same two paths as [setPitch]: the deck units render the fade, the native units survive it. */
+    fun setTone(enabled: Boolean, bands: List<IosEqBand>, preampDb: Float) {
+        applyIosTone(graph.current.output, bands, enabled, preampDb)
+        next?.let { applyIosTone(it.output, bands, enabled, preampDb) }
+        graph.setTone(enabled, bands, preampDb)
     }
 
     fun play(): Boolean = graph.play()

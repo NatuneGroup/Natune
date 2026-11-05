@@ -59,6 +59,7 @@ struct at_audio_output {
     at_eq_band eq_bands[AT_AUDIO_EQ_MAX_BANDS] = {};
     uint32_t eq_count = 0;
     bool eq_enabled = false;
+    float preamp_db = 0.0f;
     double graph_rate = 0.0;
     uint64_t graph_generation = 0;
     uint64_t output_error = 0;
@@ -177,6 +178,9 @@ static void apply_tone(at_audio_output *p) {
         }
         unit.bypass = !p->eq_enabled;
     }
+    // The preamp belongs to the same unit, so it survives a graph replacement with the bands. The gain is global to
+    // the EQ, which is where the shared chain applies its user preamp before the band cascade.
+    p->equalizer.globalGain = clamped(p->preamp_db, -24.0f, 24.0f);
     p->graph.mainMixerNode.outputVolume = p->volume;
 }
 
@@ -520,6 +524,11 @@ void at_audio_equalizer(at_audio_output *p, const at_eq_band *bands, uint32_t co
     p->eq_count = bands ? std::min(count, (uint32_t)AT_AUDIO_EQ_MAX_BANDS) : 0;
     if (p->eq_count) memcpy(p->eq_bands, bands, p->eq_count * sizeof(at_eq_band));
     p->eq_enabled = enabled != 0;
+    if (!audio_try(^BOOL { apply_tone(p); return YES; })) { p->plain_graph = true; invalidate_graph(p); }
+}
+void at_audio_preamp(at_audio_output *p, float gain_db) {
+    require_main();
+    p->preamp_db = clamped(gain_db, -24.0f, 24.0f);
     if (!audio_try(^BOOL { apply_tone(p); return YES; })) { p->plain_graph = true; invalidate_graph(p); }
 }
 void at_audio_volume(at_audio_output *p, float volume) {

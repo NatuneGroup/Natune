@@ -157,9 +157,12 @@ default the Playback page declares, a flat equalizer and a preamp that is off.
   mixer owns, so the remaining work is to decide whether the shared graph replaces them.
 - **iOS**: `IosPlaybackPort.applyDspSettings` takes the same value and `IosEqBands` converts its band list for
   the `AVAudioUnitEQ` the output and the blend decks already own, with `EqualizerBandwidth` as the one
-  Q-to-octaves mapping; the host carries no band model or coefficient design of its own. Pitch stays on
-  `AVAudioUnitTimePitch` via `PitchConversion`. `AVAudioEngine` remains the I/O, so tone and dynamics are not
-  rendered by `DspGraph`.
+  Q-to-octaves mapping; the host carries no band model or coefficient design of its own. The user preamp rides
+  that same unit's global gain (`at_audio_preamp` on the output, `at_graph_eq_gain` on a deck, both clamped to
+  ±24 dB) and keeps its own switch, so turning the equalizer off does not also drop it. Each blend deck applies
+  the preamp on its own unit, and a promoted deck's output carries it once more, so a crossfade never changes
+  level. Pitch stays on `AVAudioUnitTimePitch` via `PitchConversion`. `AVAudioEngine` remains the I/O, so the
+  remaining dynamics and the normalization correction are not rendered by `DspGraph`.
 - **All**: keep buffer sizing from `requiredOutputCapacity`, one graph per output stream, and no allocation
   or locking on the render thread.
 

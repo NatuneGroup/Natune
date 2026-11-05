@@ -30,6 +30,8 @@ int at_graph_volume(AVAudioMixerNode * _Nonnull mixer, float volume);
 int at_graph_pitch(AVAudioUnitTimePitch * _Nonnull unit, float cents);
 int at_graph_eq_band(AVAudioUnitEQ * _Nonnull unit, uint32_t index, uint32_t type,
                      float frequency, float bandwidth, float gain, int enabled, double rate);
+/* The unit's global gain in decibels, the preamp the shared chain applies before its band cascade, clamped to +-24. */
+int at_graph_eq_gain(AVAudioUnitEQ * _Nonnull unit, float gain_db);
 int at_graph_schedule(AVAudioPlayerNode * _Nonnull player, AVAudioPCMBuffer * _Nonnull buffer,
                       AVAudioTime * _Nullable time);
 int at_graph_player_play(AVAudioPlayerNode * _Nonnull player, AVAudioTime * _Nullable time);
