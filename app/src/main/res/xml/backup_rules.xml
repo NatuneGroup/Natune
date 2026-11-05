@@ -16,4 +16,13 @@
     <exclude
         domain="file"
         path="./datastore/listener_presence.preferences_pb" />
+    <exclude
+        domain="database"
+        path="restore-pending" />
+    <exclude
+        domain="file"
+        path="./custom_fonts/restore-pending" />
+    <exclude
+        domain="file"
+        path="./datastore/restore-pending" />
 </full-backup-content>

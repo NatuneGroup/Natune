@@ -59,6 +59,7 @@ import java.util.concurrent.Executors
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.MainActivity
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.backup.AndroidRestoreCoordinator
 import moe.rukamori.archivetune.ui.theme.ArchiveTuneTheme
 
 /**
@@ -73,6 +74,18 @@ class StartupRecoveryActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra(EXTRA_RESTORE_BLOCKED, false)) {
+            state = RecoveryState.RestoreBlocked
+            setContent {
+                ArchiveTuneTheme {
+                    RestoreBlockedScreen(
+                        onRetry = ::retryBlockedRestore,
+                        onClose = ::finishAndRemoveTask,
+                    )
+                }
+            }
+            return
+        }
         setContent {
             ArchiveTuneTheme {
                 when (val current = state) {
@@ -84,6 +97,10 @@ class StartupRecoveryActivity : ComponentActivity() {
                         onClose = ::closeReport,
                         onActionFailed = ::showActionFailure,
                     )
+                    RecoveryState.RestoreBlocked -> RestoreBlockedScreen(
+                        onRetry = ::retryBlockedRestore,
+                        onClose = ::finishAndRemoveTask,
+                    )
                 }
             }
         }
@@ -93,6 +110,10 @@ class StartupRecoveryActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_RESTORE_BLOCKED, false)) {
+            state = RecoveryState.RestoreBlocked
+            return
+        }
         checkPreviousLaunch()
     }
 
@@ -100,15 +121,23 @@ class StartupRecoveryActivity : ComponentActivity() {
         val current = ++generation
         state = RecoveryState.Loading
         reader.execute {
-            val result = runCatching { previousLaunchReport(this) }
-            runOnUiThread {
-                if (current != generation || isFinishing || isDestroyed) return@runOnUiThread
-                result.fold(
-                    onSuccess = { report -> if (report == null) openMain(restart = false) else showReport(report) },
-                    onFailure = {
-                        showReport(StartupReport(getString(R.string.startup_report_unavailable), true, 0L))
-                    },
-                )
+            val restoreBlocked = AndroidRestoreCoordinator.hasBlockedMarker(this)
+            if (restoreBlocked) {
+                runOnUiThread {
+                    if (current != generation || isFinishing || isDestroyed) return@runOnUiThread
+                    state = RecoveryState.RestoreBlocked
+                }
+            } else {
+                val result = runCatching { previousLaunchReport(this) }
+                runOnUiThread {
+                    if (current != generation || isFinishing || isDestroyed) return@runOnUiThread
+                    result.fold(
+                        onSuccess = { report -> if (report == null) openMain(restart = false) else showReport(report) },
+                        onFailure = {
+                            showReport(StartupReport(getString(R.string.startup_report_unavailable), true, 0L))
+                        },
+                    )
+                }
             }
         }
     }
@@ -149,6 +178,11 @@ class StartupRecoveryActivity : ComponentActivity() {
         }.onFailure { showActionFailure() }
     }
 
+    private fun retryBlockedRestore() {
+        AndroidRestoreCoordinator.clearBlockedMarker(this)
+        openMain(restart = false)
+    }
+
     private fun openMain(restart: Boolean) {
         runCatching {
             startActivity(Intent(this, MainActivity::class.java).apply {
@@ -172,11 +206,16 @@ class StartupRecoveryActivity : ComponentActivity() {
         reader.shutdownNow()
         super.onDestroy()
     }
+
+    companion object {
+        const val EXTRA_RESTORE_BLOCKED = "restore_blocked"
+    }
 }
 
 private sealed interface RecoveryState {
     data object Loading : RecoveryState
     data class Report(val report: StartupReport) : RecoveryState
+    data object RestoreBlocked : RecoveryState
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -197,6 +236,34 @@ private fun RecoveryLoadingScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 16.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun RestoreBlockedScreen(onRetry: () -> Unit, onClose: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.restore_blocked_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.restore_blocked_body),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            OutlinedButton(onClick = onRetry, modifier = Modifier.padding(top = 24.dp)) {
+                Text(stringResource(R.string.restore_blocked_retry))
+            }
+            Button(onClick = onClose, modifier = Modifier.padding(top = 8.dp)) {
+                Text(stringResource(R.string.restore_blocked_close))
+            }
         }
     }
 }
