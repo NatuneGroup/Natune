@@ -25,7 +25,10 @@ internal fun queueMonotonicClock(): () -> Long {
     return { origin.elapsedNow().inWholeMilliseconds }
 }
 
-/** Recommendation work for PortableQueueOwner, always committed under that owner's existing queue lock. */
+/**
+ * Recommendation work for PortableQueueOwner, always committed under that owner's existing queue lock. Watchers
+ * and playback snapshots reach the bookkeeping through [decide], so it never races an in-flight append.
+ */
 internal class PortableInfiniteQueue(
     private val scope: CoroutineScope,
     private val access: suspend (suspend () -> Unit) -> Unit,
@@ -40,10 +43,15 @@ internal class PortableInfiniteQueue(
 ) {
     private val gate = InfiniteQueueLoadGate()
     private var job: Job? = null
-    private var generation = 0L
     private var knownStaticQueue = false
     private var radioLineage = false
     val loading = MutableStateFlow(false)
+
+    /**
+     * Runs [block] under the owner's queue lock. Watchers fire outside a queue command, so they decide here; the
+     * bookkeeping below then never races [replenish]'s gate and lineage writes.
+     */
+    suspend fun decide(block: () -> Unit) = access { block() }
 
     fun reset(staticQueue: Boolean = false, radio: Boolean = false) {
         cancel(newQueue = true)
@@ -51,8 +59,8 @@ internal class PortableInfiniteQueue(
         radioLineage = radio
     }
 
+    /** Assumes the owner's queue lock is held, like every other queue command and [decide]. */
     fun cancel(newQueue: Boolean = false) {
-        generation++
         gate.invalidate(newQueue)
         job?.cancel()
         job = null
@@ -66,14 +74,10 @@ internal class PortableInfiniteQueue(
             return
         }
         if (job?.isActive == true || !eligible(state.value)) return
-        val epoch = generation
-        job = scope.launch(start = CoroutineStart.LAZY) {
-            try {
-                access { replenish() }
-            } finally {
-                if (epoch == generation) job = null
-            }
-        }.also { it.start() }
+        // LAZY so `job` is published before the queued access starts; the started fetch waits for the same lock.
+        val next = scope.launch(start = CoroutineStart.LAZY) { access { replenish() } }
+        job = next
+        next.start()
     }
 
     private fun eligible(queue: QueueState): Boolean {
