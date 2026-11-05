@@ -93,6 +93,7 @@ class PlayerHeaderActionSupportTest {
 
     @Test
     fun aHostWithoutAnOutputPickerShowsNoOutputControl() = runComposeUiTest {
+        val callbacks = PlayerTestActions()
         var output = ""
         setContent {
             output = stringResource(Res.string.m5_output)
