@@ -7,7 +7,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,7 +26,7 @@ class TidalInstanceCooldownTest {
         return TidalInstanceResolver(HttpClient(engine), nowMs = { NOW_MS })
     }
 
-    @Test fun aHardFailedInstanceIsTriedAfterTheHealthyOnes() = runTest {
+    @Test fun aHardFailedInstanceIsTriedAfterTheHealthyOnes() = runBlocking<Unit> {
         val instances = listOf("https://b.example", "https://a.example")
 
         val hosts = mutableListOf<String>()
