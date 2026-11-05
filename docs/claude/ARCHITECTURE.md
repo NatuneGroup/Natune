@@ -211,6 +211,13 @@ without Ctrl/Cmd/Alt is dropped — Space, letters, arrows and digits reach the 
 chords stay live. Today the shared search field is the instrumented input; other fields still let an unmodified
 letter shortcut through, which the shortcut table must not be extended into until they report focus too.
 
+Space is claimed before the focused control sees it: `Modifier.playerShortcuts` resolves the table, but a bare Space
+runs in the preview pass and both edges are consumed, because a pressable control activates on the Space key-up. A
+focused mini-player strip, card or player icon therefore toggles playback instead of opening the sheet or pressing
+itself, which is what Space means after Escape returns focus to the strip. Enter is never claimed, so the focused
+control still activates for accessibility, and a tracked text field keeps silencing the unmodified chords through
+`ShortcutTextInputState`, Space included.
+
 Settings → Keyboard → Keyboard shortcuts opens the same overlay as the Help chord. The desktop host keeps its own
 window accelerators and the Alt+Back navigation gesture; whether any of them claim a chord here has no local
 evidence, because this source is uncompiled and unexecuted and no device or keyboard-layout QA is claimed.
