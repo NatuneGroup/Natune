@@ -56,6 +56,7 @@ import moe.rukamori.archivetune.widget.PlaybackSpotlightWidget
 import moe.rukamori.archivetune.widget.WidgetInsightsSnapshot
 import moe.rukamori.archivetune.widget.toWidgetPreferenceValue
 import java.io.File
+import java.security.MessageDigest
 
 internal class MusicServiceWidgetUpdater(
     private val service: MusicService,
@@ -296,51 +297,103 @@ internal class MusicServiceWidgetUpdater(
 
     private suspend fun cacheAlbumArt(uri: Uri): File? =
         withContext(Dispatchers.IO) {
-            val dest = File(service.cacheDir, "widget_art_${Integer.toHexString(uri.toString().hashCode())}.jpg")
-            if (dest.isFile && dest.length() > 0L) return@withContext dest
-
-            if (uri.scheme == "content" || uri.scheme == "file") {
-                return@withContext try {
-                    service.contentResolver.openInputStream(uri)?.use { src ->
-                        dest.outputStream().use { dst -> src.copyTo(dst) }
-                    }
-                    if (dest.exists() && dest.length() > 0) dest else null
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    null
-                }
+            val directory = service.cacheDir
+            val dest = File(directory, WidgetArtCachePolicy.fileNameFor(uri.toString()))
+            if (dest.isFile && dest.length() > 0L) {
+                pruneWidgetArtCache(directory, keep = dest)
+                return@withContext dest
             }
 
-            if (uri.scheme == "https" || uri.scheme == "http") {
-                return@withContext try {
-                    val loader = service.applicationContext.imageLoader
-                    val request =
-                        ImageRequest
-                            .Builder(service.applicationContext)
-                            .data(uri.toString())
-                            .size(512, 512)
-                            .allowHardware(false)
-                            .build()
-                    val result = loader.execute(request)
-                    if (result is SuccessResult) {
-                        val bitmap = result.image.toBitmap()
-                        dest.outputStream().use { out ->
-                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out)
-                        }
-                        if (dest.exists() && dest.length() > 0) dest else null
-                    } else {
-                        null
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    null
-                }
-            }
+            val cached =
+                when (uri.scheme) {
+                    "content", "file" -> cacheStreamedArtwork(uri, dest)
+                    "https", "http" -> cacheRemoteArtwork(uri, dest)
+                    else -> null
+                } ?: return@withContext null
 
+            pruneWidgetArtCache(directory, keep = cached)
+            cached
+        }
+
+    private fun cacheStreamedArtwork(
+        uri: Uri,
+        dest: File,
+    ): File? =
+        try {
+            val temporary = temporaryArtworkFile(dest)
+            try {
+                val source = service.contentResolver.openInputStream(uri) ?: return null
+                source.use { input ->
+                    temporary.outputStream().use { output -> input.copyTo(output) }
+                }
+                if (temporary.length() <= 0L) return null
+                if (!temporary.renameTo(dest)) return null
+                dest
+            } finally {
+                temporary.delete()
+            }
+        } catch (_: Exception) {
             null
         }
+
+    private suspend fun cacheRemoteArtwork(
+        uri: Uri,
+        dest: File,
+    ): File? =
+        try {
+            val loader = service.applicationContext.imageLoader
+            val request =
+                ImageRequest
+                    .Builder(service.applicationContext)
+                    .data(uri.toString())
+                    .size(512, 512)
+                    .allowHardware(false)
+                    .build()
+            val result = loader.execute(request)
+            if (result !is SuccessResult) return null
+
+            val bitmap = result.image.toBitmap()
+            val temporary = temporaryArtworkFile(dest)
+            try {
+                val compressed =
+                    temporary.outputStream().use { output ->
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, output)
+                    }
+                if (!compressed) return null
+                if (temporary.length() <= 0L) return null
+                if (!temporary.renameTo(dest)) return null
+                dest
+            } finally {
+                temporary.delete()
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun temporaryArtworkFile(dest: File): File =
+        File.createTempFile("${dest.name}.", ".tmp", dest.parentFile)
+
+    private fun pruneWidgetArtCache(
+        directory: File,
+        keep: File,
+    ) {
+        val files = directory.listFiles()?.filter(File::isFile) ?: return
+        val evicted =
+            WidgetArtCachePolicy.filesToEvict(
+                files =
+                    files.map { file ->
+                        WidgetArtCacheFile(
+                            fileName = file.name,
+                            lastModifiedEpochMs = file.lastModified(),
+                            sizeBytes = file.length(),
+                        )
+                    },
+                keepFileName = keep.name,
+            )
+        files.filter { it.name in evicted }.forEach { runCatching { it.delete() } }
+    }
 
     private suspend fun extractDominantColor(file: File): Int? =
         withContext(Dispatchers.Default) {
@@ -442,4 +495,65 @@ internal class MusicServiceWidgetUpdater(
                 WidgetTarget(PlaybackCommandWidget::class.java, PlaybackCommandWidget()),
             )
     }
+}
+
+internal data class WidgetArtCacheFile(
+    val fileName: String,
+    val lastModifiedEpochMs: Long,
+    val sizeBytes: Long,
+)
+
+/**
+ * Identity-safe and bounded file cache for the artwork the widgets render.
+ *
+ * The file name is the SHA-256 of the artwork URI: the old `Integer.toHexString` of
+ * `String.hashCode` mapped distinct URIs to one file and could silently show the wrong art.
+ * Each successful write evicts the oldest entries over the entry/byte budget, never the artwork
+ * being written, and only files this cache owns. The directory itself and unrelated cache files
+ * are never touched, so the only files removed are the excess widget artwork entries.
+ */
+internal object WidgetArtCachePolicy {
+    const val MAX_ENTRIES = 32
+    const val MAX_BYTES = 16L * 1024 * 1024
+
+    private val currentFileName = Regex("widget_art_[0-9a-f]{64}\\.jpg")
+    private val legacyFileName = Regex("widget_art_[0-9a-f]{1,8}\\.jpg")
+
+    fun fileNameFor(artworkUri: String): String = "widget_art_${digest(artworkUri)}.jpg"
+
+    fun filesToEvict(
+        files: Collection<WidgetArtCacheFile>,
+        keepFileName: String?,
+    ): Set<String> {
+        val ordered =
+            files
+                .filter { currentFileName.matches(it.fileName) || legacyFileName.matches(it.fileName) }
+                .sortedWith(
+                    compareByDescending<WidgetArtCacheFile> { it.lastModifiedEpochMs }
+                        .thenBy { it.fileName },
+                )
+
+        val excess = mutableListOf<String>()
+        var retainedEntries = 0
+        var retainedBytes = 0L
+        ordered.forEach { file ->
+            val keep = file.fileName == keepFileName
+            val usable = file.sizeBytes > 0L
+            val fitsEntryLimit = keep || retainedEntries < MAX_ENTRIES
+            val fitsByteLimit = keep || retainedBytes + file.sizeBytes <= MAX_BYTES
+            if (!keep && (!usable || !fitsEntryLimit || !fitsByteLimit)) {
+                excess += file.fileName
+            } else {
+                retainedEntries += 1
+                retainedBytes += file.sizeBytes.coerceAtLeast(0L)
+            }
+        }
+        return excess.toCollection(LinkedHashSet())
+    }
+
+    private fun digest(value: String): String =
+        MessageDigest
+            .getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 }
