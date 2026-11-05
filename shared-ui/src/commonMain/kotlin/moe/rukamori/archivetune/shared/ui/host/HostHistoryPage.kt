@@ -58,7 +58,6 @@ fun hostHistoryPage(
     LaunchedEffect(activeRemote) { activeRemote?.loadOnce() }
     val now = nowMs()
     val today = localDay(now, offsetMsAt)
-    pager.today = today
     val labels = mapOf(
         TODAY to stringResource(Res.string.m4_today),
         YESTERDAY to stringResource(Res.string.m4_yesterday),
@@ -98,7 +97,7 @@ fun hostHistoryPage(
         // The host supplies back for this page.
         back = {},
         play = { event, sectionKey ->
-            if (local) pager.play(event, sectionKey) else activeRemote?.activate(event, sectionKey)
+            if (local) pager.play(event, sectionKey, today) else activeRemote?.activate(event, sectionKey)
         },
         more = more,
         toggleSelection = { id -> pager.selected = if (id in pager.selected) pager.selected - id else pager.selected + id },
@@ -167,7 +166,6 @@ private class LocalHistoryPager(
         private set
     var selected by mutableStateOf<Set<Long>>(emptySet())
     var query by mutableStateOf("")
-    var today = 0L
 
     private val lock = Mutex()
     private var generation = 0
@@ -244,15 +242,14 @@ private class LocalHistoryPager(
      * Plays the section the row belongs to, from that row, as the baseline does. The section is read to its end first,
      * so the queue is never a loaded prefix; a section longer than the read bound is refused with one line.
      */
-    fun play(event: HistoryEventUi, sectionKey: String) {
+    fun play(event: HistoryEventUi, sectionKey: String, today: Long) {
         val gen = generation
-        val day = today
         val filter = query.trim()
         scope.launch {
             val section = lock.withLock {
                 try {
                     var pages = 0
-                    while (continuation != null && events.lastOrNull()?.let { keyOf(it, day) == sectionKey } == true &&
+                    while (continuation != null && events.lastOrNull()?.let { keyOf(it, today) == sectionKey } == true &&
                         pages < MAX_SECTION_PAGES
                     ) {
                         if (!fetchNext(gen)) break
@@ -265,12 +262,12 @@ private class LocalHistoryPager(
                     return@withLock null
                 }
                 if (gen != generation) return@withLock null
-                if (continuation != null && events.lastOrNull()?.let { keyOf(it, day) == sectionKey } == true) {
+                if (continuation != null && events.lastOrNull()?.let { keyOf(it, today) == sectionKey } == true) {
                     owners.report("history section is too long to play completely")
                     return@withLock null
                 }
                 val edits = owners.content.songMetadataOverrides()
-                events.filter { keyOf(it, day) == sectionKey && it.matches(filter, edits) }
+                events.filter { keyOf(it, today) == sectionKey && it.matches(filter, edits) }
             } ?: return@launch
             val entries = section.map { it.id to it.item.queuedEntry() }
             val listenId = eventIds[event.eventId ?: return@launch]
