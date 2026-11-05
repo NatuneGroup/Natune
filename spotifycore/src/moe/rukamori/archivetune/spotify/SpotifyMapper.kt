@@ -47,7 +47,6 @@ object SpotifyMapper {
     private val MULTI_SPACE_PATTERN = Regex("\\s+")
 
     private const val NORM_CACHE_MAX_SIZE = 256
-    private const val EARLY_EXIT_THRESHOLD = 0.95
 
     /**
      * LRU cache for normalized strings. Avoids re-running 7 regex replacements
@@ -218,9 +217,6 @@ object SpotifyMapper {
         val durationScore = durationScore(precomputed.durationMs, candidateDurationSec)
         return titleScore * 0.45 + artistScore * 0.35 + durationScore * 0.20
     }
-
-    /** Threshold above which we consider a match good enough to skip remaining candidates. */
-    fun earlyExitThreshold(): Double = EARLY_EXIT_THRESHOLD
 
     private fun durationScore(
         spotifyDurationMs: Int,

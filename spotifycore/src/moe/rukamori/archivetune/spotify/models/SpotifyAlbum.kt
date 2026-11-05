@@ -25,9 +25,3 @@ data class SpotifyAlbum(
     val popularity: Int? = null,
     val genres: List<String> = emptyList(),
 )
-
-@Serializable
-data class SpotifySavedAlbum(
-    @SerialName("added_at") val addedAt: String? = null,
-    val album: SpotifyAlbum,
-)

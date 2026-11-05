@@ -57,9 +57,7 @@ object AppleMusicProvider {
     // Log levels mirroring android.util.Log so this pure-JVM module doesn't
     // depend on the Android framework. The host app (App.kt) maps these to
     // android.util.Log when routing through GlobalLog.
-    private const val LOG_LEVEL_VERBOSE = 2
     private const val LOG_LEVEL_DEBUG = 3
-    private const val LOG_LEVEL_INFO = 4
     private const val LOG_LEVEL_WARN = 5
     private const val LOG_LEVEL_ERROR = 6
 

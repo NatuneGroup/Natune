@@ -66,44 +66,4 @@ object SpotifyHashProvider {
      * returns a PersistedQueryNotFound error.
      */
     fun getPreviousHash(operationName: String): String? = hashes[operationName]?.previousHash
-
-    /**
-     * Bulk-update hashes from a remote or cached source.
-     * Only overwrites entries whose remote hash differs from the
-     * current hardcoded default, preserving the hardcoded value
-     * as an implicit fallback (always reachable via [loadHardcodedDefaults]).
-     */
-    fun updateHashes(
-        remoteHashes: Map<String, RemoteHashEntry>,
-        source: HashSource,
-    ): UpdateResult {
-        var updated = 0
-        var unchanged = 0
-        remoteHashes.forEach { (op, remote) ->
-            val current = hashes[op]
-            if (current != null) {
-                val hashChanged = current.hash != remote.hash
-                if (hashChanged) updated++ else unchanged++
-                hashes[op] =
-                    GqlHashEntry(
-                        hash = remote.hash,
-                        previousHash = remote.previousHash,
-                        source = source,
-                    )
-            }
-        }
-        return UpdateResult(updated = updated, unchanged = unchanged)
-    }
-
-    data class UpdateResult(
-        val updated: Int,
-        val unchanged: Int,
-    )
-
-    fun getAll(): Map<String, GqlHashEntry> = hashes.toMap()
-
-    data class RemoteHashEntry(
-        val hash: String,
-        val previousHash: String? = null,
-    )
 }
