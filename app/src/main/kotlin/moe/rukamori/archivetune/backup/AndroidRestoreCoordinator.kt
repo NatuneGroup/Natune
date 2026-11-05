@@ -207,8 +207,10 @@ internal object AndroidRestoreCoordinator {
             var previousSettingsPresent = false
             if (settingsKind == SettingsKind.XML) {
                 val liveSettings = File(settingsDir, SETTINGS_PB)
-                if (liveSettings.isFile) {
-                    require(liveSettings.length() in 1..AndroidRestoreLimits.MAX_SETTINGS_BYTES) {
+                val liveSettingsBytes = if (liveSettings.isFile) liveSettings.length() else 0L
+                // DataStore can legitimately leave a zero-byte preferences file; it is not prior content to snapshot.
+                if (liveSettingsBytes > 0L) {
+                    require(liveSettingsBytes <= AndroidRestoreLimits.MAX_SETTINGS_BYTES) {
                         "Live settings are invalid to snapshot"
                     }
                     FileInputStream(liveSettings).use { input ->
