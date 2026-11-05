@@ -120,13 +120,15 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Cache Kotlin/Native compiler and dependencies
-        uses: actions/cache@v4
+      # Pull requests restore only: GitHub's cache is scoped so a PR cannot publish into the branch-scoped
+      # keys the trusted dev/main runs use. The explicit save below is skipped for pull_request events.
+      - name: Restore the Kotlin/Native cache
+        id: konan-cache
+        uses: actions/cache/restore@v4
+        continue-on-error: true
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts') }}
-          restore-keys: |
-            konan-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Compile shared modules and iosTest sources for the iOS simulator
         # Test-source compilation only: this does not link a test binary, execute tests, build the native
@@ -169,10 +171,63 @@ jobs:
           set -euo pipefail
           command -v gpg >/dev/null 2>&1 || brew install gnupg
 
+      - name: Compute iOS download cache key
+        id: ios-downloads-key
+        if: inputs.ios_simulator_app == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f scripts/native_dependency_cache.py ]]; then
+            echo "::notice::Selected source commit has no native cache helper; native recipes run uncached."
+            echo "key=" >> "$GITHUB_OUTPUT"
+            echo "paths<<NATIVE_CACHE_PATHS" >> "$GITHUB_OUTPUT"
+            echo "NATIVE_CACHE_PATHS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 scripts/native_dependency_cache.py key --kind ios-downloads --platform ios \
+            --target-arch universal --optional >> "$GITHUB_OUTPUT"
+
+      - name: Restore iOS download cache
+        id: ios-downloads-cache
+        if: inputs.ios_simulator_app == true && steps.ios-downloads-key.outputs.key != ''
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ steps.ios-downloads-key.outputs.paths }}
+          key: ${{ steps.ios-downloads-key.outputs.key }}
+
       - name: Build the native dependency closure for the simulator
         if: inputs.ios_simulator_app == true
         shell: bash
-        run: bash scripts/build_ios_native_core.sh iphonesimulator
+        run: |
+          set -euo pipefail
+          if [[ -f scripts/native_dependency_cache.py && -e shared-data/build/ios-native-work/downloads ]]; then
+            if ! python3 scripts/native_dependency_cache.py verify --kind ios-downloads --platform ios \
+                --target-arch universal; then
+              echo "::warning::iOS download cache failed validation; re-fetching it."
+              python3 scripts/native_dependency_cache.py invalidate --kind ios-downloads --platform ios \
+                --target-arch universal
+            fi
+          fi
+          bash scripts/build_ios_native_core.sh iphonesimulator
+          if [[ -f scripts/native_dependency_cache.py ]]; then
+            python3 scripts/native_dependency_cache.py manifest --kind ios-downloads --platform ios --optional \
+              --target-arch universal
+          fi
+
+      - name: Save iOS download cache
+        if: >-
+          success() && inputs.ios_simulator_app == true &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          github.repository == 'NatuneGroup/Natune' &&
+          hashFiles('shared-data/build/ios-native-work/downloads/.cache-manifest.json') != '' &&
+          steps.ios-downloads-key.outputs.key != '' &&
+          steps.ios-downloads-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: ${{ steps.ios-downloads-key.outputs.paths }}
+          key: ${{ steps.ios-downloads-key.outputs.key }}
 
       # The target's own shell phase runs the same :shared-ui:embedAndSignAppleFrameworkForXcode task that the
       # framework-link step above already satisfies, so Gradle reuses that linked output instead of recompiling it.
@@ -216,3 +271,15 @@ jobs:
             grep -q "[[:space:]]T _${symbol}\$" "$SYMBOLS" \
               || { echo "::error::$symbol is missing from the linked app"; exit 1; }
           done
+
+      - name: Save the Kotlin/Native cache
+        if: >-
+          success() &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          github.repository == 'NatuneGroup/Natune' &&
+          steps.konan-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts') }}
