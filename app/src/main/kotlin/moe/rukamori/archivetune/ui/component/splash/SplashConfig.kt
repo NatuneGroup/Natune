@@ -14,7 +14,6 @@
 package moe.rukamori.archivetune.ui.component.splash
 
 object SplashConfig {
-    var AUTO_BURST: Boolean = true
     var SLOTS_LOGO: Int = 28
     var SLOTS_BOLT: Int = 24
     var SLOTS_CROSS: Int = 24
@@ -90,15 +89,8 @@ object SplashConfig {
         var FLOATER_BOOST: Float = 0.85f
         var POST_BURST_FRAMES: Int = 130
 
-        var SHOCKWAVE_SPEED: Float = 20f
         var SHOCKWAVE_RADIUS_FACTOR: Float = 1.2f
-        var SHOCKWAVE_ALPHA_BOLT: Float = 0.75f
-        var SHOCKWAVE_ALPHA_CROSS: Float = 0.85f
         var SHOCKWAVE_ALPHA_BURST: Float = 1.0f
-
-        var SCREEN_FLASH_BURST: Float = 0.18f
-        var SCREEN_FLASH_IGNITE: Float = 0.08f
-        var SCREEN_FLASH_DECAY: Float = 0.012f
 
         var SNAP_SCALE: Float = 0.85f
         var SNAP_MS: Float = 40f
@@ -108,7 +100,6 @@ object SplashConfig {
         var PULSE_WAVE_SPEED: Float = 0.32f
         var STAR_STAGGER_MS: Float = 60f
         var STAR_STAGGER_SHORT_MS: Float = 34f
-        var STAR_SIZE_DP: Float = 24f
         var PINCH_FACTOR: Float = 0.06f
 
         var SWING_ANGLE_DEG: Float = 3.6f
