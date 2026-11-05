@@ -33,6 +33,7 @@ import moe.rukamori.archivetune.about.AboutTranslationContributorCollection
 import moe.rukamori.archivetune.about.FetchAboutContributorsUseCase
 import moe.rukamori.archivetune.about.FetchAboutDependencyLicensesUseCase
 import moe.rukamori.archivetune.about.FetchAboutTranslationContributorsUseCase
+import moe.rukamori.archivetune.shared.domain.update.UpdateRepository
 import javax.inject.Inject
 
 sealed interface AboutScreenState {
@@ -411,7 +412,7 @@ class AboutViewModel
                             id = "github",
                             iconResId = R.drawable.github,
                             labelResId = R.string.about_content_desc_github,
-                            url = "https://github.com/NatuneGroup/Natune",
+                            url = UpdateRepository.REPOSITORY_URL,
                         ),
                         AboutLinkUiModel(
                             id = "telegram",

@@ -60,7 +60,7 @@ private val QuickPickListItemHeight = 72.dp
  * play and pause). [onMenu] opens the item's sheet from the list's more button or a long press on a card.
  */
 @Composable
-internal fun RukamoriQuickPicks(
+internal fun NatuneClassicHomeQuickPicks(
     items: List<ContentOccurrence>,
     layout: HomeVariantQuickPickLayout,
     nowPlaying: HomeVariantNowPlaying,
@@ -72,7 +72,7 @@ internal fun RukamoriQuickPicks(
     val distinct = remember(items) { items.distinctBy { it.item.ref } }
     when (layout) {
         HomeVariantQuickPickLayout.CARD ->
-            RukamoriQuickPickRail(
+            NatuneClassicHomeQuickPickRail(
                 items = distinct,
                 nowPlaying = nowPlaying,
                 artwork = artwork,
@@ -82,7 +82,7 @@ internal fun RukamoriQuickPicks(
             )
 
         HomeVariantQuickPickLayout.LIST ->
-            RukamoriQuickPickGrid(
+            NatuneClassicHomeQuickPickGrid(
                 items = distinct,
                 nowPlaying = nowPlaying,
                 artwork = artwork,
@@ -100,7 +100,7 @@ internal fun RukamoriQuickPicks(
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun RukamoriQuickPickRail(
+private fun NatuneClassicHomeQuickPickRail(
     items: List<ContentOccurrence>,
     nowPlaying: HomeVariantNowPlaying,
     artwork: ContentArtwork,
@@ -124,7 +124,7 @@ private fun RukamoriQuickPickRail(
             modifier = Modifier.fillMaxWidth().height(heroHeight),
         ) { index ->
             val occurrence = items[index]
-            RukamoriQuickPickHero(
+            NatuneClassicHomeQuickPickHero(
                 occurrence = occurrence,
                 artwork = artwork,
                 active = nowPlaying.isActive(occurrence.item.ref),
@@ -148,7 +148,7 @@ private fun RukamoriQuickPickRail(
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun CarouselItemScope.RukamoriQuickPickHero(
+private fun CarouselItemScope.NatuneClassicHomeQuickPickHero(
     occurrence: ContentOccurrence,
     artwork: ContentArtwork,
     active: Boolean,
@@ -225,7 +225,7 @@ private fun CarouselItemScope.RukamoriQuickPickHero(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RukamoriQuickPickGrid(
+private fun NatuneClassicHomeQuickPickGrid(
     items: List<ContentOccurrence>,
     nowPlaying: HomeVariantNowPlaying,
     artwork: ContentArtwork,
@@ -246,7 +246,7 @@ private fun RukamoriQuickPickGrid(
                 key = { occurrence -> occurrence.occurrenceId },
                 contentType = { "quick_pick_row" },
             ) { occurrence ->
-                RukamoriQuickPickRow(
+                NatuneClassicHomeQuickPickRow(
                     occurrence = occurrence,
                     active = nowPlaying.isActive(occurrence.item.ref),
                     isPlaying = nowPlaying.isPlaying,
@@ -266,7 +266,7 @@ private fun RukamoriQuickPickGrid(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RukamoriQuickPickRow(
+private fun NatuneClassicHomeQuickPickRow(
     occurrence: ContentOccurrence,
     active: Boolean,
     isPlaying: Boolean,

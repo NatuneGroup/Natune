@@ -23,7 +23,7 @@ class HomeComposeTest {
         var selectedSource: HomeSource? = null
         var selectedRow: String? = null
         var more = 0
-        var design by mutableStateOf(HomeFeedDesign.Rukamori)
+        var design by mutableStateOf(HomeFeedDesign.NatuneClassicHome)
         setContent {
             val list = rememberLazyListState()
             MaterialTheme {
