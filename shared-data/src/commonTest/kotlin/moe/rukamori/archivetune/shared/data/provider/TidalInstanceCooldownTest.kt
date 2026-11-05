@@ -6,7 +6,9 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -30,14 +32,14 @@ class TidalInstanceCooldownTest {
         val hosts = mutableListOf<String>()
         val fresh = resolver(hosts)
         fresh.setInstances(instances)
-        assertEquals("42", fresh.findHealthProbeTrackId())
+        assertEquals("42", fresh.probe())
         assertEquals(listOf("b.example"), hosts)
 
         hosts.clear()
         val cooled = resolver(hosts)
         cooled.setInstances(instances)
         cooled.applyHealthResult("https://b.example", healthy = false)
-        assertEquals("42", cooled.findHealthProbeTrackId())
+        assertEquals("42", cooled.probe())
         assertEquals(listOf("a.example"), hosts)
 
         hosts.clear()
@@ -45,9 +47,17 @@ class TidalInstanceCooldownTest {
         recovered.setInstances(instances)
         recovered.applyHealthResult("https://b.example", healthy = false)
         recovered.applyHealthResult("https://b.example", healthy = true)
-        assertEquals("42", recovered.findHealthProbeTrackId())
+        assertEquals("42", recovered.probe())
         assertEquals(listOf("b.example"), hosts)
     }
+
+    /**
+     * The probe's request timeout is a real-time bound, so it must not run on the virtual test
+     * scheduler: the mock engine's answer arrives on Ktor's own dispatcher, which the scheduler
+     * would otherwise race by advancing to the timeout first.
+     */
+    private suspend fun TidalInstanceResolver.probe(): String? =
+        withContext(Dispatchers.Default) { findHealthProbeTrackId() }
 
     private companion object {
         const val NOW_MS = 1_000_000L

@@ -18,7 +18,9 @@ class QueueTailRecommendationTest {
         val preferred = dataSong("preferred")
         val other = dataSong("other", artistId = "other-artist")
         val signals = signalsOf(listOf(completed(preferred)))
-        val adapter = recommendation(signals)
+        // The fact that proves the preference is also the newest listen; recency rejection is pinned
+        // separately, so this case isolates the affinity the typed facts contribute.
+        val adapter = recommendation(signals, DiversityConstraints(recencyWindowPlays = 0))
         val plan = adapter.planTail(listOf(dataOccurrence(preferred), dataOccurrence(other)), emptyList(), seed = 0)
         assertEquals(listOf(preferred.ref, other.ref), plan.items.map { it.item.ref })
     }

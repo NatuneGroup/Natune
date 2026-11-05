@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.download.DownloadSourceResolver
 import moe.rukamori.archivetune.shared.domain.download.DownloadTask
 import moe.rukamori.archivetune.shared.domain.download.DownloadTaskStore
@@ -65,8 +67,8 @@ class DownloadQueueOwner(
             }
         }
         ownerScope.launch(dispatcher) {
-            store.observeTasks().collect { rows ->
-                queueGate.withLock { snapshot = rows.associateBy { it.id } }
+            store.observeTasks().collect {
+                queueGate.withLock { syncSnapshotLocked() }
             }
         }
     }
@@ -182,12 +184,27 @@ class DownloadQueueOwner(
                     updateTimeMs = timeMs())
             }
         } finally {
-            queueGate.withLock {
-                workers.remove(task.id)
-                snapshot = store.tasks().associateBy { it.id }
-                pump()
+            // A cancelled worker still has to release its slot: stop()/remove() hold this gate while
+            // they cancel, and a plain withLock in a cancelled coroutine would throw before removing
+            // the entry, leaving every later resume queued behind a worker that no longer exists.
+            withContext(NonCancellable) {
+                queueGate.withLock {
+                    workers.remove(task.id)
+                    syncSnapshotLocked()
+                    pump()
+                }
             }
         }
+    }
+
+    /**
+     * Refreshes [snapshot] from [DownloadTaskStore] without discarding a live worker's entry. A store
+     * emission can have been read before the worker's latest progress/completion write, and the
+     * worker's writes are gated on its DOWNLOADING phase, so a stale collector copy must not win.
+     */
+    private suspend fun syncSnapshotLocked() {
+        val activeIds = workers.keys
+        snapshot = store.tasks().associateBy { it.id } + snapshot.filterKeys { it in activeIds }
     }
 
     /** Persists the DOWNLOADING row for a queued task, unless a stop or remove already made the phase terminal. */
