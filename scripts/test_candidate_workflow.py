@@ -158,12 +158,13 @@ def write_zip(path, extra=()):
 
 
 def badging(version_code=RESERVED_VERSION_CODE, version_name=VERSION_NAME,
-            package=PACKAGE, min_sdk="24", native_code="'arm64-v8a'", debuggable=False):
+            package=PACKAGE, min_sdk="24", native_code="'arm64-v8a'", debuggable=False,
+            legacy_min_sdk=False):
     lines = [
         f"package: name='{package}' versionCode='{version_code}' versionName='{version_name}' "
         "platformBuildVersionName='15' platformBuildVersionCode='36' compileSdkVersion='37' "
         "compileSdkVersionCodename='17'",
-        f"sdkVersion:'{min_sdk}'",
+        f"{'sdkVersion' if legacy_min_sdk else 'minSdkVersion'}:'{min_sdk}'",
         "targetSdkVersion:'37'",
     ]
     if debuggable:
@@ -900,6 +901,10 @@ class StageValidationTest(unittest.TestCase):
         recorded = github_env.read_text(encoding="utf-8")
         self.assertIn(f"CANDIDATE_APK={staged}", recorded)
 
+    def test_legacy_sdk_version_label_still_stages(self):
+        result, _, _, _ = self.stage(badging_text=badging(legacy_min_sdk=True))
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_wrong_package_version_min_sdk_abi_or_debuggable_fails(self):
         cases = {
             "package": badging(package="com.example.app"),
@@ -1172,6 +1177,10 @@ class FinalMetadataTest(unittest.TestCase):
             },
             {path.name for path in stage.iterdir() if path.is_file()},
         )
+
+    def test_legacy_sdk_version_label_still_records(self):
+        result, _, _ = self.record(badging_text=badging(legacy_min_sdk=True))
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_unexpected_staged_file_blocks_the_hand_off(self):
         result, _, _ = self.record(extra_stage_file=True)
