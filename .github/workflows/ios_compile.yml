@@ -13,6 +13,7 @@ on:
     paths:
       - 'shared-ui/src/iosMain/**'
       - 'shared-data/src/iosMain/**'
+      - 'shared-data/src/iosTest/**'
       - 'shared-domain/src/iosMain/**'
       - 'shared-*/src/commonMain/**'
       - 'shared-*/src/appleMain/**'
@@ -127,8 +128,12 @@ jobs:
           restore-keys: |
             konan-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Compile shared modules for the iOS simulator
-        run: ./gradlew :shared-ui:compileKotlinIosSimulatorArm64 --continue --stacktrace
+      - name: Compile shared modules and iosTest sources for the iOS simulator
+        # Test-source compilation only: this does not link a test binary, execute tests, build the native
+        # closure, run the simulator app or create an IPA.
+        run: >-
+          ./gradlew :shared-ui:compileKotlinIosSimulatorArm64
+          :shared-data:compileTestKotlinIosSimulatorArm64 --continue --stacktrace
 
       # A static framework needs no native closure, so the Swift sources can be checked without the full app link.
       - name: Link the simulator framework
