@@ -213,12 +213,14 @@ letter shortcut through, which the shortcut table must not be extended into unti
 
 The window root only handles presses the focused control did not consume (`Modifier.playerShortcuts` is a bubbling
 `onKeyEvent`); it never claims a key in the preview pass, so an untracked text field keeps its space and its letters
-before the table is consulted. The player's own strip is the one place where a pressable surface would otherwise take
-Space as its activation: `Modifier.spaceTogglesPlayback` is applied to the mini-player surface, claims a bare Space in
-that surface's preview pass, consumes both edges (a clickable activates on the key-up) and runs play/pause on the press.
-After Escape returns focus to the strip, Space therefore pauses instead of re-opening the sheet, while Enter is never
-claimed and still activates the focused control for accessibility. A text field never carries the modifier, so a typed
-space is unaffected.
+before the table is consulted. The mini player's clickable expansion surfaces are the one place where a pressable would
+otherwise take Space as its activation: `Modifier.spaceTogglesPlayback` sits on the compact strip and the wide title row,
+reads that surface's own `onFocusChanged` state, and claims a bare Space in the preview pass only while that surface
+holds focus. It consumes both edges (a clickable activates on the key-up) and runs play/pause on the press, so after
+Escape returns focus to the strip Space pauses instead of re-opening the sheet. A control focused inside the strip — the
+transport icons, the wide bar's queue and lyrics, the seek bar — leaves the gate false and keeps its own Space
+activation, Enter is never claimed, so the focused surface stays activatable for accessibility, and a text field never
+carries the modifier, so a typed space is unaffected.
 
 Settings → Keyboard → Keyboard shortcuts opens the same overlay as the Help chord. The desktop host keeps its own
 window accelerators and the Alt+Back navigation gesture; whether any of them claim a chord here has no local
