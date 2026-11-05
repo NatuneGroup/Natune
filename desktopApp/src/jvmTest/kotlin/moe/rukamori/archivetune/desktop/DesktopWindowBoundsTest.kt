@@ -13,11 +13,19 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class DesktopWindowBoundsTest {
+    private class TestWindowState(
+        override var placement: WindowPlacement,
+        override var position: WindowPosition,
+        override var size: DpSize,
+    ) : WindowState {
+        override var isMinimized = false
+    }
+
     @Test
     fun saveFallsBackWhenAtomicRenameIsUnsupported() {
         val directory = Files.createTempDirectory("archivetune-window-bounds")
         try {
-            val state = WindowState(
+            val state = TestWindowState(
                 placement = WindowPlacement.Maximized,
                 position = WindowPosition(40.dp, 60.dp),
                 size = DpSize(900.dp, 700.dp),
