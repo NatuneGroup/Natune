@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.shared.domain.update.UpdateRepository
 import javax.inject.Inject
 
 class ObserveOnboardingDataUseCase
@@ -228,7 +229,7 @@ class BuildOnboardingUiStateUseCase
                         titleResId = R.string.support_development_star,
                         descriptionResId = R.string.onboarding_community_github_desc,
                         iconResId = R.drawable.github,
-                        url = "https://github.com/rukamori/ArchiveTune",
+                        url = UpdateRepository.REPOSITORY_URL,
                     ),
                     OnboardingCommunityActionUiModel(
                         id = "discord",
@@ -243,13 +244,6 @@ class BuildOnboardingUiStateUseCase
                         descriptionResId = R.string.onboarding_community_telegram_desc,
                         iconResId = R.drawable.telegram,
                         url = "https://t.me/ArchiveTuneGC",
-                    ),
-                    OnboardingCommunityActionUiModel(
-                        id = "donate",
-                        titleResId = R.string.about_content_desc_donate,
-                        descriptionResId = R.string.onboarding_community_donate_desc,
-                        iconResId = R.drawable.coffee,
-                        url = "https://github.com/vossgraves/ArchiveTune",
                     ),
                 )
         }

@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -34,6 +33,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.shared.domain.update.UpdateRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,25 +67,9 @@ fun StarDialog(
                 style = MaterialTheme.typography.bodyMedium,
             )
 
-            Button(
-                onClick = {
-                    uriHandler.openUri("https://github.com/vossgraves/ArchiveTune")
-                    onSupport()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.coffee),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                Text(text = stringResource(R.string.support_development_donate))
-            }
-
             FilledTonalButton(
                 onClick = {
-                    uriHandler.openUri("https://github.com/rukamori/ArchiveTune")
+                    uriHandler.openUri(UpdateRepository.REPOSITORY_URL)
                     onSupport()
                 },
                 modifier = Modifier.fillMaxWidth(),
