@@ -42,6 +42,7 @@ import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
+import moe.rukamori.archivetune.utils.WebAuthCookieScopes
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
@@ -247,7 +248,9 @@ fun QobuzLoginScreen(navController: NavController) {
                     },
                     "QobuzAuth",
                 )
-                resetAuthWebViewSession(ctx, this, clearCookies = true) {
+                // Only Qobuz's own cookies expire: the web player hands back a stale session
+                // otherwise, and every other provider shares this WebView profile's jar.
+                resetAuthWebViewSession(this, WebAuthCookieScopes.QOBUZ) {
                     loadUrl(QOBUZ_WEB_PLAYER_URL)
                 }
             }
