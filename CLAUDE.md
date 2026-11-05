@@ -56,7 +56,7 @@ history, and the app migrates a stored Canary channel to Nightly — see
 | [docs/telegram-native.md](docs/telegram-native.md) | The TDLight engine: why the native library is downloaded, the digest pinning, schema drift from 1.8.56 |
 | [docs/spotify-native-playback.md](docs/spotify-native-playback.md) | Playing Spotify tracks with no YouTube release: shipped ISRC resolution, and the unshipped native-id design |
 | [docs/spotify-streaming.md](docs/spotify-streaming.md) | The experimental Spotify audio source: the separate streaming account, the two resolve methods, DRM and cache routing |
-| [docs/REMOVED_RUKAMORI_COMPONENTS.md](docs/REMOVED_RUKAMORI_COMPONENTS.md) | What the 2026-08 cleanup deleted, and why not to restore it |
+| [docs/REMOVED_UPSTREAM_COMPONENTS.md](docs/REMOVED_UPSTREAM_COMPONENTS.md) | What the 2026-08 cleanup deleted, and why not to restore it |
 
 ## Task state
 
@@ -115,5 +115,5 @@ uninitialized/unchanged here and never publish another Canary.
   permissions are in `.claude/settings.json`, personal overrides go in the ignored
   `.claude/settings.local.json`); do not create competing copies of maintained docs.
 - User-facing strings go in `strings.xml`/`archivetune_strings.xml`, never inline.
-- Never restore anything in `docs/REMOVED_RUKAMORI_COMPONENTS.md` without reading
+- Never restore anything in `docs/REMOVED_UPSTREAM_COMPONENTS.md` without reading
   why it went.

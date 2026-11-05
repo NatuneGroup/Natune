@@ -15,8 +15,9 @@ import javax.inject.Singleton
 /**
  * Fork-native stand-in for upstream's youtubei-backed resolver.
  *
- * Upstream v15.0.0 resolves here through `morideobfuscator.youtubei.YoutubeiResolver`
- * (session pool + QuickJS player runtimes). The fork's pinned morideobfuscator submodule
+ * Upstream v15.0.0 resolves here through the
+ * `moe.rukamori.archivetune.morideobfuscator.youtubei.YoutubeiResolver`
+ * (session pool + QuickJS player runtimes). The fork's pinned `deobfuscator` submodule
  * (`4262067`) ships only the `ytdlp` package — there is no `youtubei` package — so the
  * upstream implementation cannot compile as-is. This class keeps the upstream surface
  * ([preWarm]/[invalidateSessions]/[trimMemory]) so

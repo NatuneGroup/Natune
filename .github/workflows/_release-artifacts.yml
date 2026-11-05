@@ -393,7 +393,7 @@ jobs:
       ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
       # The desktop installers compile only JVM and Kotlin/Native host targets; they never need the
       # Android SDK. Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
-      # :jiosaavn and :morideobfuscator load no build script and the shared modules skip their Android
+      # :jiosaavn and :deobfuscator load no build script and the shared modules skip their Android
       # targets. Without this, configuring :app lets AGP auto-install the pinned ~1 GB NDK — a slow
       # dl.google.com transfer whose corrupt downloads have failed the macOS legs, and one the desktop
       # tasks never use.
@@ -811,7 +811,7 @@ jobs:
       ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID: ${{ vars.ARCHIVETUNE_SPOTIFY_OAUTH_CLIENT_ID }}
       # The desktop installers compile only JVM and Kotlin/Native host targets; they never need the
       # Android SDK. Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
-      # :jiosaavn and :morideobfuscator load no build script and the shared modules skip their Android
+      # :jiosaavn and :deobfuscator load no build script and the shared modules skip their Android
       # targets. Without this, configuring :app lets AGP auto-install the pinned ~1 GB NDK — a slow
       # dl.google.com transfer whose corrupt downloads have failed the macOS legs, and one the desktop
       # tasks never use.
@@ -1200,7 +1200,7 @@ jobs:
       ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME: ${{ secrets.ARCHIVETUNE_GOOGLE_DRIVE_URL_SCHEME }}
       # The job builds only the Kotlin/Native iOS framework through xcodebuild; it never needs the
       # Android SDK. Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
-      # :jiosaavn and :morideobfuscator load no build script and the shared modules skip their Android
+      # :jiosaavn and :deobfuscator load no build script and the shared modules skip their Android
       # targets. Without this, configuring :app lets AGP auto-install the pinned ~1 GB NDK — a slow
       # dl.google.com transfer whose corrupt downloads have failed this job, and one the iOS tasks
       # never use.

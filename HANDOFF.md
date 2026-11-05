@@ -26,7 +26,7 @@ Reference (port source of truth): `NatuneGroup/ArchiveTune` branch `dev`, HEAD `
 
 ## Build architecture (for local work)
 
-- JDK 21, Gradle wrapper 9.6.1, compileSdk 37. Modules: `:app` (Android host), `:shared*`, `:desktopApp` (jvmMain), `:iosApp`, plus `core`/`lyrics`/`IconPack`/`morideobfuscator` submodules.
+- JDK 21, Gradle wrapper 9.6.1, compileSdk 37. Modules: `:app` (Android host), `:shared*`, `:desktopApp` (jvmMain), `:iosApp`, plus `core`/`lyrics`/`IconPack`/`deobfuscator` submodules.
 - CI = compile signal: `.github/workflows/build_pull_request.yml` → `build` + `Compile and run unit tests` + `desktop-compile` on `blacksmith-*-ubuntu-2404` runners. `android_emulator_qa.yml` + `scripts/emulator_qa.py` = emulator smoke test (Linux KVM runner only; macOS VM has no HVF).
 - `settings.gradle.kts` declares the GCS Maven-Central mirror BEFORE `mavenCentral()` — do not reorder (429s). JitPack is `exclusiveContent`-scoped; new `com.github.*` deps fail until their group is allow-listed.
 - Lightweight check: `python3 scripts/check_repository.py --worktree` (no Gradle/JVM/network).
