@@ -133,6 +133,7 @@ internal object AndroidRestoreCoordinator {
                 settings = includeSettings,
                 account = includeAccount,
                 settingsKind = settingsKind,
+                fontCount = fontStage.listFiles()?.count { it.isFile } ?: 0,
             )
             val targets = buildTargets(context, ready)
             preflightTargets(targets)
@@ -412,6 +413,11 @@ internal object AndroidRestoreCoordinator {
         ) {
             return false
         }
+        if (ready.settings) {
+            val fonts = File(context.filesDir, "${BackupArchiveRepository.CUSTOM_FONTS_DIR_NAME}/$FONT_STAGE_PREFIX${ready.stageId}")
+            val present = fonts.listFiles()?.count { it.isFile } ?: 0
+            if (present != ready.fontCount) return false
+        }
         return true
     }
 
@@ -423,6 +429,7 @@ internal object AndroidRestoreCoordinator {
             append("settings=").append(ready.settings).append('\n')
             append("account=").append(ready.account).append('\n')
             append("kind=").append(ready.settingsKind.name).append('\n')
+            append("fonts=").append(ready.fontCount).append('\n')
         }
         AndroidRestoreFileOps().writeAtomically(
             File(restoreRoot(context), READY_FILE).path,
@@ -439,12 +446,15 @@ internal object AndroidRestoreCoordinator {
         if (values["version"] != READY_VERSION) return null
         val stageId = values["stage"]?.takeIf { it.isNotBlank() } ?: return null
         val kind = values["kind"]?.let { runCatching { SettingsKind.valueOf(it) }.getOrNull() } ?: return null
+        val settings = values["settings"]?.toBoolean() ?: false
+        if (settings != (kind != SettingsKind.NONE)) return null
         return ReadyMarker(
             stageId = stageId,
             library = values["library"]?.toBoolean() ?: false,
-            settings = values["settings"]?.toBoolean() ?: false,
+            settings = settings,
             account = values["account"]?.toBoolean() ?: false,
             settingsKind = kind,
+            fontCount = values["fonts"]?.toIntOrNull()?.takeIf { it >= 0 } ?: 0,
         )
     }
 
@@ -469,6 +479,7 @@ internal object AndroidRestoreCoordinator {
 
     private fun cleanupOrphans(context: Context) {
         val root = restoreRoot(context)
+        File(root, READY_FILE).delete()
         root.listFiles()?.filter { it.name.startsWith(STAGE_PREFIX) }?.forEach(::deleteTree)
         val fontsDir = File(context.filesDir, BackupArchiveRepository.CUSTOM_FONTS_DIR_NAME)
         fontsDir.listFiles()
@@ -558,4 +569,5 @@ private data class ReadyMarker(
     val settings: Boolean,
     val account: Boolean,
     val settingsKind: SettingsKind,
+    val fontCount: Int,
 )
