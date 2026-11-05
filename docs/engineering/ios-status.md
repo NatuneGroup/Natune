@@ -118,6 +118,14 @@ app-target link and the closure linkage through `Native.xcconfig` stay **UNVERIF
 Both paths now run on `blacksmith-12vcpu-macos-26`; the 45-minute default and 330-minute opt-in
 ceilings bound a run at 1,800 and 13,200 equivalent minutes respectively at the provider's 40x
 macOS multiplier. Xcode 26.4 selection and actual duration on that image remain unverified.
+The opt-in closure may restore the validated pinned-download cache. A per-platform
+dependency-prefix cache is deferred: the current evidence does not prove the Mach-O platform
+(device versus simulator) and every static-archive member, so the dependency build and portable
+core always run from source and the closure is always reassembled and verified. PR paths restore
+caches only; explicit saves run for trusted `push`/`workflow_dispatch` on this repository, and the
+separate Kotlin/Native `~/.konan` entry follows the same restore-only PR policy. If a release
+dispatch selects an older source commit without the cache helper, the closure runs uncached and
+the workflow emits one notice; it does not compute a key, restore or save.
 
 ## Host/build integration
 

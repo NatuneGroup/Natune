@@ -483,10 +483,70 @@ jobs:
           sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
           arch -x86_64 /usr/bin/true
 
+      - name: Compute native dependency cache key (Windows)
+        id: native-key-win
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          if [[ ! -f scripts/native_dependency_cache.py ]]; then
+            echo "::notice::Selected source commit has no native cache helper; native recipes run uncached."
+            echo "key=" >> "$GITHUB_OUTPUT"
+            echo "paths<<NATIVE_CACHE_PATHS" >> "$GITHUB_OUTPUT"
+            echo "NATIVE_CACHE_PATHS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python scripts/native_dependency_cache.py key --kind desktop --platform windows --target-arch x64 \
+            --optional >> "$GITHUB_OUTPUT"
+
+      - name: Compute native dependency cache key
+        id: native-key-unix
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f scripts/native_dependency_cache.py ]]; then
+            echo "::notice::Selected source commit has no native cache helper; native recipes run uncached."
+            echo "key=" >> "$GITHUB_OUTPUT"
+            echo "paths<<NATIVE_CACHE_PATHS" >> "$GITHUB_OUTPUT"
+            echo "NATIVE_CACHE_PATHS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 scripts/native_dependency_cache.py key --kind desktop --optional \
+            --platform "${{ matrix.platform }}" --target-arch "${{ matrix.arch }}" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Restore native dependency cache
+        id: native-cache
+        if: >-
+          (matrix.platform == 'windows' && steps.native-key-win.outputs.key != '') ||
+          (matrix.platform != 'windows' && steps.native-key-unix.outputs.key != '')
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ matrix.platform == 'windows' && steps.native-key-win.outputs.paths || steps.native-key-unix.outputs.paths }}
+          key: ${{ matrix.platform == 'windows' && steps.native-key-win.outputs.key || steps.native-key-unix.outputs.key }}
+
       - name: Build host native dependencies (Windows)
         if: matrix.platform == 'windows'
         shell: msys2 {0}
-        run: bash desktopApp/native/scripts/build-native-deps.sh
+        run: |
+          set -euo pipefail
+          if [[ -f scripts/native_dependency_cache.py && ( -e desktopApp/build/native/prefix || -e desktopApp/build/native/openssl-static || -e desktopApp/build/native/.native-deps-cache.json ) ]]; then
+            if python scripts/native_dependency_cache.py verify --kind desktop --platform windows \
+                --target-arch x64; then
+              echo "Native dependency cache verified; skipping the recipe."
+              exit 0
+            fi
+            echo "::warning::Native dependency cache failed validation; rebuilding it."
+            python scripts/native_dependency_cache.py invalidate --kind desktop --platform windows \
+              --target-arch x64
+          fi
+          bash desktopApp/native/scripts/build-native-deps.sh
+          if [[ -f scripts/native_dependency_cache.py ]]; then
+            python scripts/native_dependency_cache.py manifest --kind desktop --platform windows --optional \
+              --target-arch x64
+          fi
 
       - name: Build host native dependencies
         if: matrix.platform != 'windows'
@@ -495,11 +555,44 @@ jobs:
         # Rosetta: darwin64-x86_64-cc dylibs for the x64 JDK/jpackage chain that packages it.
         run: |
           set -euo pipefail
+          PY=(python3)
           if [[ "${{ matrix.platform }}" == macos && "${{ matrix.arch }}" == x64 ]]; then
-            arch -x86_64 bash desktopApp/native/scripts/build-native-deps.sh
+            BUILD=(arch -x86_64 bash desktopApp/native/scripts/build-native-deps.sh)
           else
-            bash desktopApp/native/scripts/build-native-deps.sh
+            BUILD=(bash desktopApp/native/scripts/build-native-deps.sh)
           fi
+          if [[ -f scripts/native_dependency_cache.py && ( -e desktopApp/build/native/prefix || -e desktopApp/build/native/openssl-static || -e desktopApp/build/native/.native-deps-cache.json ) ]]; then
+            if "${PY[@]}" scripts/native_dependency_cache.py verify --kind desktop \
+                --platform "${{ matrix.platform }}" --target-arch "${{ matrix.arch }}"; then
+              echo "Native dependency cache verified; skipping the recipe."
+              exit 0
+            fi
+            echo "::warning::Native dependency cache failed validation; rebuilding it."
+            "${PY[@]}" scripts/native_dependency_cache.py invalidate --kind desktop \
+              --platform "${{ matrix.platform }}" --target-arch "${{ matrix.arch }}"
+
+          fi
+          "${BUILD[@]}"
+          if [[ -f scripts/native_dependency_cache.py ]]; then
+            "${PY[@]}" scripts/native_dependency_cache.py manifest --kind desktop --optional \
+              --platform "${{ matrix.platform }}" --target-arch "${{ matrix.arch }}"
+          fi
+
+
+      - name: Save native dependency cache
+        if: >-
+          success() &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          github.repository == 'NatuneGroup/Natune' &&
+          hashFiles('desktopApp/build/native/.native-deps-cache.json') != '' &&
+          ((matrix.platform == 'windows' && steps.native-key-win.outputs.key != '') ||
+           (matrix.platform != 'windows' && steps.native-key-unix.outputs.key != '')) &&
+          steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: ${{ matrix.platform == 'windows' && steps.native-key-win.outputs.paths || steps.native-key-unix.outputs.paths }}
+          key: ${{ matrix.platform == 'windows' && steps.native-key-win.outputs.key || steps.native-key-unix.outputs.key }}
 
       - name: Build TDLight native library (Windows)
         if: matrix.platform == 'windows'
@@ -1257,9 +1350,61 @@ jobs:
           set -euo pipefail
           command -v gpg >/dev/null 2>&1 || brew install gnupg
 
+      - name: Compute iOS download cache key
+        id: ios-downloads-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f scripts/native_dependency_cache.py ]]; then
+            echo "::notice::Selected source commit has no native cache helper; native recipes run uncached."
+            echo "key=" >> "$GITHUB_OUTPUT"
+            echo "paths<<NATIVE_CACHE_PATHS" >> "$GITHUB_OUTPUT"
+            echo "NATIVE_CACHE_PATHS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 scripts/native_dependency_cache.py key --kind ios-downloads --platform ios \
+            --target-arch universal --optional >> "$GITHUB_OUTPUT"
+
+      - name: Restore iOS download cache
+        id: ios-downloads-cache
+        if: steps.ios-downloads-key.outputs.key != ''
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ steps.ios-downloads-key.outputs.paths }}
+          key: ${{ steps.ios-downloads-key.outputs.key }}
+
       - name: Build the iOS native dependency closure
         shell: bash
-        run: bash scripts/build_ios_native_core.sh iphoneos
+        run: |
+          set -euo pipefail
+          if [[ -f scripts/native_dependency_cache.py && -e shared-data/build/ios-native-work/downloads ]]; then
+            if ! python3 scripts/native_dependency_cache.py verify --kind ios-downloads --platform ios \
+                --target-arch universal; then
+              echo "::warning::iOS download cache failed validation; re-fetching it."
+              python3 scripts/native_dependency_cache.py invalidate --kind ios-downloads --platform ios \
+                --target-arch universal
+            fi
+          fi
+          bash scripts/build_ios_native_core.sh iphoneos
+          if [[ -f scripts/native_dependency_cache.py ]]; then
+            python3 scripts/native_dependency_cache.py manifest --kind ios-downloads --platform ios --optional \
+              --target-arch universal
+          fi
+
+      - name: Save iOS download cache
+        if: >-
+          success() &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          github.repository == 'NatuneGroup/Natune' &&
+          hashFiles('shared-data/build/ios-native-work/downloads/.cache-manifest.json') != '' &&
+          steps.ios-downloads-key.outputs.key != '' &&
+          steps.ios-downloads-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: ${{ steps.ios-downloads-key.outputs.paths }}
+          key: ${{ steps.ios-downloads-key.outputs.key }}
 
       # Native.xcconfig includes Credentials.xcconfig last, so these values reach Info.plist as build settings without
       # appearing on the xcodebuild command line. They pass through the environment and are never echoed. xcconfig
