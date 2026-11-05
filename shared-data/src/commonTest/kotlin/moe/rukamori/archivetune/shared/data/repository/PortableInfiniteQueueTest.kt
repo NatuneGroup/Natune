@@ -11,7 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -101,21 +100,22 @@ class PortableInfiniteQueueTest {
         runCurrent()
         assertTrue(h.owner.infiniteQueueLoading.value)
 
-        val lockHeld = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val holder = launch { h.owner.withQueueAccess { lockHeld.complete(Unit); release.await() } }
-        lockHeld.await()
+        // The append holds the queue lock while its page fetch is suspended, so the test cannot take that same
+        // lock without waiting for this response. The toggle's own decision is what queues behind the append.
         h.enabled.value = false
         runCurrent()
         // The toggle's cancel() waits for the queue lock, so it cannot race the in-flight append's gate writes.
         assertTrue(h.owner.infiniteQueueLoading.value)
-        release.complete(Unit)
-        holder.join()
-        runCurrent()
-        assertFalse(h.owner.infiniteQueueLoading.value)
+        assertEquals(1, h.radioCalls.size)
+
         response.complete(ContentPage(emptyList()))
         runCurrent()
+        assertFalse(h.owner.infiniteQueueLoading.value)
         assertEquals(listOf("p1"), h.ids())
+        // The empty page armed the backoff; re-enabling inside it must not fetch again.
+        h.enabled.value = true
+        runCurrent()
+        assertEquals(1, h.radioCalls.size)
     }
 
     @Test fun emptyAndFailedRequestsBackOffAcrossPreferenceTogglesAndSuccessResetsTheGate() = runTest {
@@ -269,12 +269,11 @@ class PortableInfiniteQueueTest {
     @Test fun clearUpcomingWorksWhileAutoLoadMoreStaysEnabled() = runTest {
         val h = Harness(backgroundScope)
         h.playlist = listOf(song("p1"), song("p2"), song("p3"))
+        h.radioReply = { _, _ -> ContentPage(emptyList()) }
         h.load()
-        val response = CompletableDeferred<ContentPage>()
-        h.radioReply = { _, _ -> withContext(NonCancellable) { response.await() } }
         h.enabled.value = true
         runCurrent()
-        assertTrue(h.owner.infiniteQueueLoading.value)
+        assertEquals(1, h.radioCalls.size)
 
         // Clearing no longer requires the stored preference to be off, and it leaves the preference alone.
         h.owner.withQueueAccess { assertNotNull(h.owner.clearUpcoming()) }
@@ -283,10 +282,12 @@ class PortableInfiniteQueueTest {
         assertFalse(h.owner.infiniteQueueLoading.value)
         assertEquals(listOf("p1"), h.ids())
 
-        response.complete(ContentPage((1..6).map { song("r$it") }))
+        // A later queue still auto-appends, because clearing never wrote the preference off.
+        h.playlist = listOf(song("q1"), song("q2"), song("q3"))
+        h.load()
         runCurrent()
-        assertEquals(listOf("p1"), h.ids())
-        assertEquals(1, h.radioCalls.size)
+        assertEquals(2, h.radioCalls.size)
+        assertEquals(listOf("q1", "q2", "q3"), h.ids())
     }
 
     @Test fun shuffledMovesChangeOnlyPlayOrderAndReplacementInvalidatesOldUndo() = runTest {
