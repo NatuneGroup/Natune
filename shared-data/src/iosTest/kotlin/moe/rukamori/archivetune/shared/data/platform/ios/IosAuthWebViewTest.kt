@@ -6,6 +6,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.UIKit.*
+import platform.UIKit.NSLayoutAttributeBottom
+import platform.UIKit.NSLayoutAttributeTop
 import platform.WebKit.WKWebViewConfiguration
 import platform.WebKit.WKWebsiteDataStore
 
@@ -30,14 +32,14 @@ class IosAuthWebViewTest {
         val constraints = controller.view.constraints.filterIsInstance<NSLayoutConstraint>()
         assertFalse(webView.translatesAutoresizingMaskIntoConstraints)
         assertTrue(constraints.any {
-            it.firstItem == webView && it.firstAttribute == NSLayoutAttribute.NSLayoutAttributeTop &&
+            it.firstItem == webView && it.firstAttribute == NSLayoutAttributeTop &&
                 it.secondItem == controller.view.safeAreaLayoutGuide &&
-                it.secondAttribute == NSLayoutAttribute.NSLayoutAttributeTop
+                it.secondAttribute == NSLayoutAttributeTop
         })
         assertTrue(constraints.any {
-            it.firstItem == webView && it.firstAttribute == NSLayoutAttribute.NSLayoutAttributeBottom &&
+            it.firstItem == webView && it.firstAttribute == NSLayoutAttributeBottom &&
                 it.secondItem == controller.view.keyboardLayoutGuide &&
-                it.secondAttribute == NSLayoutAttribute.NSLayoutAttributeTop
+                it.secondAttribute == NSLayoutAttributeTop
         })
     }
 }

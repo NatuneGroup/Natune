@@ -43,7 +43,7 @@ class IosDownloadResumeTest {
             })
             val committed = transfer.transfer(task, stream(), resumeFromBytes = 64, song = null, progress = { _, _ -> })
             assertEquals(68L, committed)
-            assertEquals(listOf("bytes=64-"), ranges)
+            assertEquals(listOf<String?>("bytes=64-"), ranges)
             // The 36 stale bytes the crash left past the recorded progress are gone, so the row describes the file.
             assertEquals(68L, files.sizeOf(files.destinationPath(task, AudioSourceType.TIDAL)))
         }
