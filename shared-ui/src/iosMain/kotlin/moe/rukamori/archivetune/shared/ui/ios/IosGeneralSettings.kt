@@ -87,6 +87,7 @@ internal fun IosGeneralSettingsPage(
             managePlaylistTags = { navigate("library/tags") },
             onFailure = onFailure,
             scrollTo = scrollTo,
+            onOpenEqualizer = { graph.equalizer.openSheet() },
         )
         "settings/lyrics" -> RowsPage(controller, scrollTo, onFailure) { lyricsSettingsRows(navigate) }
         DiscordExperimentalRoute -> DiscordExperimentalSettings(controller, onFailure, scrollTo)

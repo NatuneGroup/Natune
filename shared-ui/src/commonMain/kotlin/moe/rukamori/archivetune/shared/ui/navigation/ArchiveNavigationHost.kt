@@ -48,6 +48,9 @@ fun ArchiveNavigationHost(
     modifier: Modifier = Modifier,
     preferences: PreferenceSnapshot = PreferenceSnapshot.EMPTY,
     newsEntry: NewsEntry = NewsEntry(),
+    /** A search shortcut asked for the field; the Search screen takes focus once and reports it consumed. */
+    searchFocusRequested: Boolean = false,
+    onSearchFocusConsumed: () -> Unit = {},
 ) {
     NavigationEntryContent(navigation, modifier) {
         val route = requireNotNull(ArchiveRoutes.resolve(navigation.route)) { "Unregistered ArchiveTune route: ${navigation.route}" }
@@ -115,7 +118,8 @@ fun ArchiveNavigationHost(
                         if (binding.scope == SearchScope.Local) ContentProvider.LOCAL else binding.provider, binding.filter)) },
                     binding.voice, binding.recognition, binding.page,
                     content(binding.page, binding.page.request, binding.loadMore, binding.retry), artwork,
-                    preferences = preferences)
+                    preferences = preferences,
+                    focusRequested = searchFocusRequested, onFocusConsumed = onSearchFocusConsumed)
             }
             is ArchiveGraphPage.Library -> {
                 require(route.destination == ArchiveDestination.LIBRARY)
