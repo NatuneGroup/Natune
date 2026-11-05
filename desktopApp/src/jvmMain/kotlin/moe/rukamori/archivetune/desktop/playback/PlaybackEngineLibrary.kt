@@ -109,7 +109,7 @@ internal fun engineLibraryPresent(
     explicitPath: String?,
     resourcesDirectory: String?,
     libraryName: String,
-    libraryPath: String?,
+    libraryPath: String? = null,
     fileExists: (File) -> Boolean = { it.isFile },
 ): Boolean {
     if (explicitPath != null) return fileExists(File(explicitPath))
