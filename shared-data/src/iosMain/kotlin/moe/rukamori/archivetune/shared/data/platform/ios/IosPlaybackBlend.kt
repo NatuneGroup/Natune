@@ -45,6 +45,9 @@ internal class IosPlaybackBlend private constructor(private val graph: IosBlendA
 
     fun poll(nowNanos: Long): Read {
         val outgoing = graph.poll()
+        // The system owns the session (or an unapproved interruption left it paused): the successor is still a valid
+        // preparation and must survive until the listener resumes, pauses or replaces the track.
+        if (graph.isInterrupted || graph.isHeldAfterInterruption) return Read(outgoing)
         val source = next ?: return Read(outgoing)
         val incoming = graph.incoming ?: return Read(outgoing)
         val incomingState = incoming.observation()

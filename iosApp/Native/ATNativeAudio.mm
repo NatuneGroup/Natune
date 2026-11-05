@@ -514,9 +514,12 @@ int at_audio_play(at_audio_output *p) {
     require_main();
     p->wants_play.store(true);
     ae_engine_play(p->core);
-    // A play requested during the interruption is kept as intent, but only an approved resume starts the output.
-    // Reporting success here would let a manual blend node start PCM queued before the call.
-    if (p->interrupted.load()) p->resume_after_interruption.store(true);
+    if (p->interrupted.load()) {
+        // The system owns the session until the interruption ends. Accept the listener's intent and start only on an
+        // approved ShouldResume; the blend path guards its nodes before reaching this call, so no queued PCM starts.
+        p->resume_after_interruption.store(true);
+        return 1;
+    }
     return start_output(p) ? 1 : 0;
 }
 void at_audio_pause(at_audio_output *p) {
