@@ -16,7 +16,7 @@ import moe.rukamori.archivetune.shared.ui.home.HomeSource
 import moe.rukamori.archivetune.shared.ui.home.HomeWelcomeHeader
 import moe.rukamori.archivetune.shared.ui.home.QqHomeScreen
 import moe.rukamori.archivetune.shared.ui.home.variants.BitChordHomeVariant
-import moe.rukamori.archivetune.shared.ui.home.variants.RukamoriHomeVariant
+import moe.rukamori.archivetune.shared.ui.home.variants.NatuneClassicHomeVariant
 import moe.rukamori.archivetune.shared.ui.home.variants.SpotifyHomeVariant
 import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.*
@@ -82,10 +82,10 @@ fun ArchiveNavigationHost(
                     chips = binding.chips, selectedChipKey = binding.selectedChipKey,
                     selectChip = binding.selectChip, showChips = binding.showChips)
             }
-            is ArchiveGraphPage.HomeRukamori -> {
+            is ArchiveGraphPage.HomeNatuneClassic -> {
                 require(route.destination == ArchiveDestination.HOME)
                 HomeVariantFrame(navigation, newsEntry, binding.source) { contentPadding ->
-                    RukamoriHomeVariant(binding.state, binding.actions, artwork, binding.nowPlaying, binding.image,
+                    NatuneClassicHomeVariant(binding.state, binding.actions, artwork, binding.nowPlaying, binding.image,
                         contentPadding = contentPadding, thumbnailAspectRatio = binding.thumbnailAspectRatio)
                 }
             }

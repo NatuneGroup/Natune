@@ -4,7 +4,7 @@
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
- * "Rukamori" home screen style — layout ported from upstream rukamori/ArchiveTune
+ * "Classic" home screen style — layout ported from upstream rukamori/ArchiveTune
  * (dev branch HomeScreen.kt) onto this fork's HomeViewModel/HomeUiState wiring.
  * Differences vs the fork's default home:
  *   - No "Jump back in" hero, no minimal-mode partitioning, no Live-performance
@@ -148,7 +148,7 @@ private val HomeFeedMaxWidth = 1_200.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun RukamoriHomeScreen(
+fun NatuneClassicHomeScreen(
     navController: NavController,
     headerScrollConnection: NestedScrollConnection? = null,
     listState: LazyListState? = null,
@@ -222,7 +222,7 @@ fun RukamoriHomeScreen(
     ) {
         when (val state = screenState) {
             HomeScreenState.Loading -> {
-                RukamoriHomeStatePane(
+                NatuneClassicHomeStatePane(
                     iconResId = null,
                     messageResId = null,
                     showLoadingIndicator = true,
@@ -230,7 +230,7 @@ fun RukamoriHomeScreen(
             }
 
             HomeScreenState.Empty -> {
-                RukamoriHomeStatePane(
+                NatuneClassicHomeStatePane(
                     iconResId = R.drawable.music_note,
                     messageResId = R.string.no_results_found,
                     actionResId = R.string.retry,
@@ -239,7 +239,7 @@ fun RukamoriHomeScreen(
             }
 
             is HomeScreenState.Error -> {
-                RukamoriHomeStatePane(
+                NatuneClassicHomeStatePane(
                     iconResId = R.drawable.info,
                     messageResId = state.messageResId,
                     actionResId = R.string.retry,
@@ -248,7 +248,7 @@ fun RukamoriHomeScreen(
             }
 
             is HomeScreenState.Success -> {
-                RukamoriHomeContent(
+                NatuneClassicHomeBody(
                     uiState = state.uiState,
                     mediaMetadata = mediaMetadata,
                     isPlaying = isPlaying,
@@ -266,7 +266,7 @@ fun RukamoriHomeScreen(
 }
 
 @Composable
-private fun RukamoriHomeStatePane(
+private fun NatuneClassicHomeStatePane(
     @DrawableRes iconResId: Int?,
     @StringRes messageResId: Int?,
     modifier: Modifier = Modifier,
@@ -320,7 +320,7 @@ private fun RukamoriHomeStatePane(
     ExperimentalMaterial3ExpressiveApi::class,
 )
 @Composable
-private fun RukamoriHomeContent(
+private fun NatuneClassicHomeBody(
     uiState: HomeUiState,
     mediaMetadata: MediaMetadata?,
     isPlaying: Boolean,
