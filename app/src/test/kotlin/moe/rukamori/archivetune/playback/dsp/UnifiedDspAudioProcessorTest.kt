@@ -14,7 +14,6 @@ import moe.rukamori.archivetune.shared.domain.dsp.TpdfDither
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
-import moe.rukamori.archivetune.shared.domain.dsp.eq.PortableEqualizer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -374,136 +373,30 @@ class UnifiedDspAudioProcessorTest {
                 settings
             }
         }
-        var allocated = 0L
-        val perBlock = IntArray(requests.size)
-        for ((index, request) in requests.withIndex()) {
-            processor.submit(request, plan())
-            val before = allocatedBytes()
+        // submit() prepares a request off the render path, so its own allocations are expected. Repeating one
+        // unchanged submission runs the same submit-and-adopt loop with no adoption work, and reading the
+        // per-thread counter is not free enough to sample every block, so that loop is the baseline this
+        // measurement subtracts.
+        val steady = request(MAX_BANDS)
+        val beforeBaseline = allocatedBytes()
+        repeat(REQUEST_CHANGES) {
+            processor.submit(steady, plan())
             render(processor, block)
-            perBlock[index] = (allocatedBytes() - before).toInt()
-            allocated += perBlock[index]
         }
+        val baseline = allocatedBytes() - beforeBaseline
 
-        if (allocated >= ALLOCATION_LIMIT_BYTES) {
-            // Only a failing block pays for this message; the measured loop stays allocation-tight.
-            org.junit.Assert.fail(
-                "a request change allocated $allocated bytes across ${requests.size} blocks: " +
-                    perBlock.joinToString(","),
-            )
-        }
-    }
-
-    /** TEMPORARY probe: isolates where a request change allocates. Removed once the fix lands. */
-    @Test
-    fun `probe request change allocations by stage`() {
-        val graph = DspGraph(SAMPLE_RATE, CHANNELS)
-        val source = FloatArray(BLOCK_SAMPLES) { index -> (((index % 128) - 64) * 128).toFloat() / SHORT_SCALE }
-        val sink = FloatArray(BLOCK_SAMPLES * 6)
-        fun pump() {
-            graph.push(source, BLOCK_SAMPLES / CHANNELS)
-            graph.pull(sink, BLOCK_SAMPLES * 3)
-        }
-        graph.apply(request(1), plan())
-        repeat(WARMUP_BLOCKS) { pump() }
-        val lines = StringBuilder()
-        // Control: a neutral document and a bypassed plan both stay on the pass-through path.
-        graph.apply(DspSettings(), plan())
-        for (index in 0 until 2) {
-            val before = allocatedBytes()
-            pump()
-            lines.append("neutral[${index}] pump=${allocatedBytes() - before}\n")
-        }
-        graph.apply(request(MAX_BANDS), plan(bypass = true))
-        for (index in 0 until 2) {
-            val before = allocatedBytes()
-            pump()
-            lines.append("bypass[${index}] pump=${allocatedBytes() - before}\n")
-        }
-        graph.apply(request(1), plan())
-        repeat(8) { pump() }
-        // Count change: 1 band -> 16 bands, and the reverse.
-        for (index in 0 until 4) {
-            val next = request(if (index % 2 == 0) MAX_BANDS else 1)
-            val beforeApply = allocatedBytes()
-            graph.apply(next, plan())
-            val applyBytes = allocatedBytes() - beforeApply
-            val beforePush = allocatedBytes()
-            pump()
-            lines.append("countChange[$index] apply=$applyBytes push=${allocatedBytes() - beforePush}\n")
-        }
-        // Same count: 16 bands with one gain moved, so only a glide runs.
-        graph.apply(request(MAX_BANDS), plan())
-        repeat(8) { pump() }
-        for (index in 0 until 4) {
-            val next = request(MAX_BANDS).let { settings ->
-                settings.copy(equalizerBands = settings.equalizerBands.mapIndexed { band, value ->
-                    if (band == 0) value.copy(gainDb = 4.0 + index) else value
-                })
-            }
-            val beforeApply = allocatedBytes()
-            graph.apply(next, plan())
-            val applyBytes = allocatedBytes() - beforeApply
-            val beforePush = allocatedBytes()
-            pump()
-            lines.append("sameCount[$index] apply=$applyBytes push=${allocatedBytes() - beforePush}\n")
-        }
-        // The equalizer alone, without the graph: a count change, then a same-count glide.
-        val equalizer = PortableEqualizer(SAMPLE_RATE, CHANNELS)
-        val bands16 = request(MAX_BANDS).equalizerBands
-        val bands1 = request(1).equalizerBands
-        val frames = BLOCK_SAMPLES / CHANNELS
-        val pcm = FloatArray(BLOCK_SAMPLES) { index -> (((index % 128) - 64) * 128).toFloat() / SHORT_SCALE }
-        equalizer.setBands(bands16, glideFrames = 960)
-        repeat(8) { equalizer.process(pcm, frames) }
-        for (index in 0 until 2) {
-            val before = allocatedBytes()
-            equalizer.setBands(if (index == 0) bands1 else bands16, glideFrames = 960)
-            val setBytes = allocatedBytes() - before
-            val beforeProcess = allocatedBytes()
-            equalizer.process(pcm, frames)
-            lines.append("eqCountChange[$index] set=$setBytes process=${allocatedBytes() - beforeProcess}\n")
-        }
-        equalizer.setBands(bands16, glideFrames = 960)
-        repeat(8) { equalizer.process(pcm, frames) }
-        for (index in 0 until 2) {
-            val glide = bands16.mapIndexed { index2, band ->
-                if (index2 == 0) band.copy(gainDb = 4.0 + index) else band
-            }
-            val before = allocatedBytes()
-            equalizer.setBands(glide, glideFrames = 960)
-            val setBytes = allocatedBytes() - before
-            val beforeProcess = allocatedBytes()
-            equalizer.process(pcm, frames)
-            lines.append("eqGlide[$index] set=$setBytes process=${allocatedBytes() - beforeProcess}\n")
-        }
-        val target = java.io.File("../build/reports/profile/probe.txt")
-        target.parentFile?.mkdirs()
-        target.writeText(lines.toString())
-    }
-
-    /** TEMPORARY probe: splits the adapter's adopting block into queue and output. Removed with the fix. */
-    @Test
-    fun `probe processor allocations by phase`() {
-        val processor = processor()
-        processor.submit(request(1), plan())
-        processor.configure(format(C.ENCODING_PCM_16BIT))
-        val block = block()
-        repeat(WARMUP_BLOCKS) { render(processor, block) }
-        val lines = StringBuilder()
-        val requests = List(8) { request(if (it % 2 == 0) MAX_BANDS else 1) }
-        for ((index, request) in requests.withIndex()) {
+        val before = allocatedBytes()
+        for (request in requests) {
             processor.submit(request, plan())
-            block.position(0)
-            val beforeQueue = allocatedBytes()
-            processor.queueInput(block)
-            val queueBytes = allocatedBytes() - beforeQueue
-            val beforeOutput = allocatedBytes()
-            processor.getOutput()
-            lines.append("processor[$index] queue=$queueBytes output=${allocatedBytes() - beforeOutput}\n")
+            render(processor, block)
         }
-        val target = java.io.File("../build/reports/profile/processor.txt")
-        target.parentFile?.mkdirs()
-        target.writeText(lines.toString())
+        val allocated = allocatedBytes() - before - baseline
+
+        assertTrue(
+            "a request change allocated $allocated bytes across ${requests.size} blocks " +
+                "(submission baseline $baseline)",
+            allocated < ALLOCATION_LIMIT_BYTES,
+        )
     }
 
     /** One boosted band and [count]-1 flat ones, so a band-count change designs one stage, not [count]. */
