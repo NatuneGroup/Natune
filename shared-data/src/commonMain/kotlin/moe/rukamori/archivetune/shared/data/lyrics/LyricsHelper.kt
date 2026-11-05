@@ -122,8 +122,15 @@ class LyricsHelper(
             invalidate(key)
         } else {
             allResultsCache.get(key)?.let { cached ->
-                cached.forEach(callback)
-                return
+                if (cached.isEmpty()) return
+                // A stored list from a provider the user has since switched off must not reappear in
+                // manual search. Replay only the still-selectable providers; if none survive, the
+                // lookup falls through to the current provider set.
+                val selectable = cached.filter { isCachedProviderEnabled(it.providerName) }
+                if (selectable.isNotEmpty()) {
+                    selectable.forEach(callback)
+                    return
+                }
             }
         }
 
@@ -169,9 +176,13 @@ class LyricsHelper(
         request: LyricsRequest,
     ): Boolean {
         val provider = providers.firstOrNull { it.name == providerName } ?: return false
-        return isEnabled(provider.name) &&
-            isAvailable(provider.name) &&
+        return isCachedProviderEnabled(providerName) &&
             LyricsMediaIdPolicy.supportsMediaId(provider, request.mediaId)
+    }
+
+    private fun isCachedProviderEnabled(providerName: String): Boolean {
+        val provider = providers.firstOrNull { it.name == providerName } ?: return false
+        return isEnabled(provider.name) && isAvailable(provider.name)
     }
 
     private suspend fun fetchAndCache(

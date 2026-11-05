@@ -56,6 +56,40 @@ class LyricsHelperProviderSelectionTest {
         }
 
     @Test
+    fun getAllLyricsReplaysOnlyResultsFromStillEnabledProviders() =
+        runTest {
+            val disabled = answering("LrcLib", PLAIN_TEXT)
+            val enabled = answering("Kugou", PLAIN_TEXT)
+            var enabledNames = setOf("LrcLib", "Kugou")
+            val helper = helperOf(listOf(disabled, enabled), backgroundScope, isEnabled = { it in enabledNames })
+
+            helper.getAllLyrics(request()) {}
+
+            enabledNames = setOf("Kugou")
+            val replayed = mutableListOf<String>()
+            helper.getAllLyrics(request()) { replayed += it.providerName }
+
+            assertEquals(listOf("Kugou"), replayed)
+            assertEquals(1, disabled.calls)
+            assertEquals(1, enabled.calls)
+        }
+
+    @Test
+    fun anEmptyCachedAllResultsRunIsReplayedWithoutCallingProviders() =
+        runTest {
+            val provider = answering("LrcLib", null)
+            val helper = helperOf(listOf(provider), backgroundScope)
+
+            helper.getAllLyrics(request()) {}
+
+            var replayed = 0
+            helper.getAllLyrics(request()) { replayed++ }
+
+            assertEquals(0, replayed)
+            assertEquals(1, provider.calls)
+        }
+
+    @Test
     fun aCachedAllResultsEntryFromADisabledProviderIsSkippedForTheEnabledOne() =
         runTest {
             val disabled = answering("LrcLib", PLAIN_TEXT)
