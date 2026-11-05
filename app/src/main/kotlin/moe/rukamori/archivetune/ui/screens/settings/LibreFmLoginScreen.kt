@@ -40,6 +40,7 @@ import moe.rukamori.archivetune.scrobbling.lastFmSignInKeys
 import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
+import moe.rukamori.archivetune.utils.WebAuthCookieScopes
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
@@ -163,7 +164,9 @@ fun LibreFmLoginScreen(navController: NavController) {
                         url: String?,
                     ): Boolean = handleRedirect(url)
                 }
-                resetAuthWebViewSession(ctx, this, clearCookies = true) {
+                // Libre.fm's own cookies only; the default profile is shared with every other
+                // provider's sign-in, YouTube Music's included.
+                resetAuthWebViewSession(this, WebAuthCookieScopes.LIBRE_FM) {
                     // Libre.fm's auth URL — same shape as Last.fm's but
                     // pointing at libre.fm. Note the no-`www` host and the
                     // slightly different path (no trailing slash before `?`).

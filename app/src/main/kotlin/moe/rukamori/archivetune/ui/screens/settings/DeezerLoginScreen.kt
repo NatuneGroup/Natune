@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.deezer.DeezerAudioProvider
 import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
+import moe.rukamori.archivetune.utils.WebAuthCookieScopes
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
@@ -132,9 +133,10 @@ fun DeezerLoginScreen(navController: NavController) {
                             finishLogin(arl)
                         }
                     }
-                // Clearing cookies first means an already-signed-in browser session cannot hand back
-                // a stale ARL for an account the user is trying to switch away from.
-                resetAuthWebViewSession(ctx, this, clearCookies = true) {
+                // Expiring Deezer's own cookies first means an already-signed-in browser session
+                // cannot hand back a stale ARL for an account the user is switching away from, and it
+                // leaves every other provider's jar — YouTube Music's included — untouched.
+                resetAuthWebViewSession(this, WebAuthCookieScopes.DEEZER) {
                     CookieManager.getInstance().setAcceptCookie(true)
                     CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                     loadUrl(LOGIN_URL)

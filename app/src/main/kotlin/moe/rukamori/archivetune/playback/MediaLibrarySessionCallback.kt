@@ -12,6 +12,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.util.LruCache
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.core.net.toUri
@@ -33,6 +34,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -42,7 +44,6 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.plus
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.HideExplicitKey
@@ -74,7 +75,6 @@ import moe.rukamori.archivetune.utils.isLocalMediaId
 import java.text.Collator
 import java.time.LocalDateTime
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import kotlin.math.min
 
@@ -86,10 +86,10 @@ class MediaLibrarySessionCallback
         val downloadUtil: DownloadUtil,
         val spotifyLibraryRepository: SpotifyLibraryRepository,
     ) : MediaLibrarySession.Callback {
-        private val scope = CoroutineScope(Dispatchers.Main) + Job()
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main) // a failed callback cancels only itself
         private var pendingSearchJob: Job? = null
-        private val onlineSearchItemCache = ConcurrentHashMap<String, MediaItem>()
-        private val spotifyPlaylistItemCache = ConcurrentHashMap<String, List<MediaItem>>()
+        private val onlineSearchItemCache = LruCache<String, MediaItem>(256) // a long Auto session runs many searches
+        private val spotifyPlaylistItemCache = LruCache<String, List<MediaItem>>(8) // one entry can hold a whole playlist
         var toggleLike: () -> Unit = {}
         var toggleStartRadio: () -> Unit = {}
         var toggleLibrary: () -> Unit = {}
@@ -317,7 +317,7 @@ class MediaLibrarySessionCallback
                     searchOnlineSongs(q, previewSize = requested).filter { onlineItem ->
                         existingSongIds.add(searchSongIdentity(onlineItem))
                     }
-                onlineSongs.forEach { onlineSearchItemCache[it.mediaId] = it }
+                onlineSongs.forEach { onlineSearchItemCache.put(it.mediaId, it) }
                 items +=
                     interleaveMediaItems(
                         first = offlineSongs.items,
@@ -770,7 +770,7 @@ class MediaLibrarySessionCallback
                     }
 
                     else -> {
-                        onlineSearchItemCache[mediaId]?.let {
+                        onlineSearchItemCache.get(mediaId)?.let {
                             LibraryResult.ofItem(it, null)
                         } ?: database.song(mediaId).first()?.toMediaItem()?.let {
                             LibraryResult.ofItem(it, null)
@@ -1020,7 +1020,7 @@ class MediaLibrarySessionCallback
                     else -> {
                         val directMediaId = firstItem.mediaId.trim()
                         if (directMediaId.isNotBlank() && !directMediaId.contains("/")) {
-                            val selectedItem = onlineSearchItemCache[directMediaId] ?: firstItem
+                            val selectedItem = onlineSearchItemCache.get(directMediaId) ?: firstItem
                             return@future MediaSession.MediaItemsWithStartPosition(
                                 listOf(selectedItem),
                                 0,
@@ -1073,7 +1073,7 @@ class MediaLibrarySessionCallback
             val songId = path.getOrNull(1) ?: return null
             val parentId = mediaId.substringBeforeLast('/')
             return if (root == MusicService.HOME_SUGGESTED_SONGS) {
-                onlineSearchItemCache[songId]
+                onlineSearchItemCache.get(songId)
                     ?.buildUpon()
                     ?.setMediaId(mediaId)
                     ?.build()
@@ -1115,7 +1115,7 @@ class MediaLibrarySessionCallback
          * browse callback that times out.
          */
         private suspend fun spotifyLikedMediaItems(): List<MediaItem> {
-            spotifyPlaylistItemCache[SPOTIFY_LIKED_CACHE_KEY]?.let { return it }
+            spotifyPlaylistItemCache.get(SPOTIFY_LIKED_CACHE_KEY)?.let { return it }
             if (!context.dataStore.get(ShowSpotifyPlaylistsKey, false)) return emptyList()
             val resolved =
                 runCatching {
@@ -1135,7 +1135,7 @@ class MediaLibrarySessionCallback
                             }.filterNotNull()
                         }
                 }.getOrElse { emptyList() }
-            if (resolved.isNotEmpty()) spotifyPlaylistItemCache[SPOTIFY_LIKED_CACHE_KEY] = resolved
+            if (resolved.isNotEmpty()) spotifyPlaylistItemCache.put(SPOTIFY_LIKED_CACHE_KEY, resolved)
             return resolved
         }
 
@@ -1212,7 +1212,7 @@ class MediaLibrarySessionCallback
         }
 
         private suspend fun spotifyPlaylistMediaItems(playlistId: String): List<MediaItem> {
-            spotifyPlaylistItemCache[playlistId]?.let { return it }
+            spotifyPlaylistItemCache.get(playlistId)?.let { return it }
             val resolved =
                 runCatching {
                     spotifyLibraryRepository
@@ -1226,7 +1226,7 @@ class MediaLibrarySessionCallback
                             }.filterNotNull()
                         }
                 }.getOrElse { emptyList() }
-            if (resolved.isNotEmpty()) spotifyPlaylistItemCache[playlistId] = resolved
+            if (resolved.isNotEmpty()) spotifyPlaylistItemCache.put(playlistId, resolved)
             return resolved
         }
 
@@ -1536,7 +1536,7 @@ class MediaLibrarySessionCallback
                 .filterIsInstance<SongItem>()
                 .distinctBy { it.id }
                 .take(AUTO_BROWSE_LIMIT)
-                .onEach { onlineSearchItemCache[it.id] = it.toMediaItem() }
+                .onEach { onlineSearchItemCache.put(it.id, it.toMediaItem()) }
         }
 
         private suspend fun homeMixesAndRadios(): List<MediaItem> {
@@ -1667,14 +1667,14 @@ class MediaLibrarySessionCallback
                 .orEmpty()
                 .distinctBy { it.id }
                 .take(AUTO_BROWSE_LIMIT)
-                .onEach { onlineSearchItemCache[it.id] = it.toMediaItem() }
+                .onEach { onlineSearchItemCache.put(it.id, it.toMediaItem()) }
 
         internal suspend fun onlinePlaylistSongItem(
             playlistId: String,
             songId: String,
             parentId: String,
         ): MediaItem? =
-            onlineSearchItemCache[songId]
+            onlineSearchItemCache.get(songId)
                 ?.buildUpon()
                 ?.setMediaId("$parentId/$songId")
                 ?.build()
@@ -1965,8 +1965,7 @@ class MediaLibrarySessionCallback
             if (cachedIds.isEmpty()) return emptyList()
 
             val normalizedQuery = query.lowercase(Locale.getDefault())
-            return database
-                .getSongsByIds(cachedIds)
+            return cachedIds.chunked(SONG_ID_QUERY_BATCH_SIZE).flatMap { database.getSongsByIds(it) }
                 .asSequence()
                 .filter { it.song.inLibrary == null }
                 .filterNot { it.id in excludeIds }
@@ -2027,7 +2026,7 @@ class MediaLibrarySessionCallback
                 searchOnlineSongs(q, previewSize).filter { onlineItem ->
                     existingIds.add(searchSongIdentity(onlineItem))
                 }
-            onlineSongs.forEach { onlineSearchItemCache[it.mediaId] = it }
+            onlineSongs.forEach { onlineSearchItemCache.put(it.mediaId, it) }
             return interleaveMediaItems(offlineSongs.items, onlineSongs).take(previewSize)
         }
 
@@ -2063,6 +2062,7 @@ class MediaLibrarySessionCallback
             private const val AUTO_BROWSE_LIMIT = 100
             private const val AUTO_HOME_PLAYLIST_LIMIT = 20
             private const val SPOTIFY_RESOLVE_BATCH_SIZE = 20
+            private const val SONG_ID_QUERY_BATCH_SIZE = 900 // SQLite on Android 11 and older binds at most 999 variables
             private const val HOME_RECENT_WINDOW_MS = 86400000L * 14L
             /**
              * Liked songs share [spotifyPlaylistItemCache] under a key no Spotify playlist id can
