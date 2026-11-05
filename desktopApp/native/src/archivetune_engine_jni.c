@@ -19,6 +19,7 @@
 #include <jni.h>
 
 #include "archivetune_engine.h"
+#include "archivetune_jni_utf8.h"
 
 #define BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_PlaybackEngineNative_##name
 
@@ -85,12 +86,12 @@ JNIEXPORT jlong JNICALL BINDING(load)(JNIEnv *env, jclass type, jlong handle, js
         throw_argument(env, "source must not be null");
         return 0;
     }
-    const char *path = (*env)->GetStringUTFChars(env, source, NULL);
+    char *path = jni_utf8_from_string(env, source);
     if (!path) {
         return 0;
     }
     uint64_t generation = ae_engine_load(engine_of(handle), path, (uint64_t)start_us, play_when_ready ? 1 : 0);
-    (*env)->ReleaseStringUTFChars(env, source, path);
+    free(path);
     return (jlong)generation;
 }
 
@@ -369,9 +370,9 @@ JNIEXPORT jstring JNICALL BINDING(lastError)(JNIEnv *env, jclass type, jlong han
     char buffer[AE_ERROR_MESSAGE_CAPACITY];
     size_t length = ae_engine_last_error(engine_of(handle), buffer, sizeof buffer);
     if (length == 0) {
-        return (*env)->NewStringUTF(env, "");
+        return jni_string_from_utf8(env, "");
     }
-    return (*env)->NewStringUTF(env, buffer);
+    return jni_string_from_utf8(env, buffer);
 }
 
 JNIEXPORT jint JNICALL BINDING(render)(JNIEnv *env, jclass type, jlong handle, jfloatArray out, jint frames) {
