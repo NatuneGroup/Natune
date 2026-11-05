@@ -395,8 +395,7 @@ class UnifiedDspAudioProcessorTest {
     /** TEMPORARY probe: isolates where a request change allocates. Removed once the fix lands. */
     @Test
     fun `probe request change allocations by stage`() {
-        val graph = DspGraph(DspFormat(SAMPLE_RATE, CHANNELS))
-        graph.configure(DspFormat(SAMPLE_RATE, CHANNELS))
+        val graph = DspGraph(SAMPLE_RATE, CHANNELS)
         val source = FloatArray(BLOCK_SAMPLES) { index -> (((index % 128) - 64) * 128).toFloat() / SHORT_SCALE }
         val sink = FloatArray(BLOCK_SAMPLES * 6)
         fun pump() {
