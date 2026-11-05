@@ -1,11 +1,12 @@
 package moe.rukamori.archivetune.desktop.playback
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -48,6 +49,9 @@ class DesktopSpectralAuthenticity internal constructor(
     private val timeoutMs: Long,
 ) {
     constructor() : this(DEFAULT_TIMEOUT_MS)
+
+    /** Owns a probe read that outlives its caller. It dispatches to the shared IO pool, so no thread accumulates here. */
+    private val decoderScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * Returns the evidence for [locator]. A missing native library, an undecodable source or a timeout produces
@@ -121,8 +125,9 @@ class DesktopSpectralAuthenticity internal constructor(
     }
 
     /**
-     * Reads one window on an IO thread. A cancelled caller asks the native read to stop, then waits for it to return
-     * before the probe is closed, because the native handle must not be freed while a read still uses it.
+     * Reads one window on an IO thread. A cancelled caller asks the native read to stop, and the handle is released when
+     * that read returns rather than while it still uses it. The native probe bounds its own blocking I/O, so the wait
+     * for it is bounded too: a host that ignores the deadline is abandoned instead of making the caller unbounded.
      */
     private suspend fun decode(
         source: String,
@@ -131,20 +136,16 @@ class DesktopSpectralAuthenticity internal constructor(
         samples: FloatArray = FloatArray(WINDOW_SAMPLES),
     ): DecodedWindow {
         val probe = NativeSpectralProbe.create()
-        try {
-            return coroutineScope {
-                val reading = async(Dispatchers.IO) { probe.read(source, startUs, maxFrames, samples) }
-                val window = try {
-                    reading.await()
-                } catch (cancelled: CancellationException) {
-                    probe.cancel()
-                    withContext(NonCancellable) { reading.join() }
-                    throw cancelled
-                }
-                DecodedWindow(samples, window)
-            }
-        } finally {
-            probe.close()
+        // The read is not a child of the caller: a cancelled child would be abandoned unobserved, and the caller would
+        // still wait for it at scope exit. It owns the handle, so it frees it exactly when it ends.
+        val reading = decoderScope.async(Dispatchers.IO) { probe.read(source, startUs, maxFrames, samples) }
+        reading.invokeOnCompletion { probe.close() }
+        return try {
+            DecodedWindow(samples, reading.await())
+        } catch (cancelled: CancellationException) {
+            probe.cancel()
+            awaitAbandonedRead(reading, DRAIN_GRACE_MS)
+            throw cancelled
         }
     }
 
@@ -188,6 +189,9 @@ class DesktopSpectralAuthenticity internal constructor(
 
     private companion object {
         const val DEFAULT_TIMEOUT_MS = 30_000L
+
+        /** How long a cancelled caller waits for the native read to return before it is abandoned. */
+        const val DRAIN_GRACE_MS = 1_000L
         const val MICROS_PER_MILLI = 1_000L
         const val STEREO = 2
         const val MAX_CHANNELS = 8
@@ -213,3 +217,11 @@ class DesktopSpectralAuthenticity internal constructor(
         )
     }
 }
+
+/**
+ * Waits at most [graceMs] for a native read to end after it was cancelled, and reports whether it did. The wait runs
+ * uncancellably, because the caller is usually already cancelled, but the timeout still bounds it: a read that ignores
+ * both the probe's cancellation and its I/O deadline is abandoned rather than joined without a limit.
+ */
+internal suspend fun awaitAbandonedRead(reading: Job, graceMs: Long): Boolean =
+    withContext(NonCancellable) { withTimeoutOrNull(graceMs) { reading.join() } } != null
