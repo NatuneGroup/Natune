@@ -25,4 +25,22 @@ class DeepLinkSingleInstanceTest {
             Files.delete(directory)
         }
     }
+
+    @Test fun failedInitialDeliveryReleasesTheLockAndSocketForTheNextOwner() {
+        val directory = Files.createTempDirectory("archivetune-instance-failure")
+        try {
+            assertFailsWith<IllegalStateException> {
+                DesktopSingleInstance.acquire(directory, "archivetune://open/first") { error("launch intake failed") }
+            }
+            val received = LinkedBlockingQueue<String>()
+            DesktopSingleInstance.acquire(directory, "archivetune://open/second") { received += it ?: "restore" }!!.use {
+                assertEquals("archivetune://open/second", received.poll(2, TimeUnit.SECONDS))
+            }
+        } finally {
+            Files.deleteIfExists(directory.resolve("instance.endpoint"))
+            Files.deleteIfExists(directory.resolve("instance.lock"))
+            Files.deleteIfExists(directory.resolve("instance.sock"))
+            Files.delete(directory)
+        }
+    }
 }

@@ -9,8 +9,15 @@ import org.freedesktop.dbus.connections.impl.DBusConnectionBuilder
 import org.freedesktop.dbus.exceptions.DBusExecutionException
 import org.freedesktop.dbus.interfaces.DBus
 import org.freedesktop.dbus.interfaces.Properties
+import org.freedesktop.dbus.messages.MethodCall
 import org.freedesktop.dbus.types.UInt32
 import org.freedesktop.dbus.types.Variant
+
+private const val WATCHER_BUS_NAME = "org.kde.StatusNotifierWatcher"
+private const val WATCHER_OBJECT_PATH = "/StatusNotifierWatcher"
+private const val WATCHER_INTERFACE = "org.kde.StatusNotifierWatcher"
+// A wedged session bus must not hold the window close or the startup path for dbus-java's 20 s default.
+private const val DBUS_CALL_TIMEOUT_MILLIS = 2_000
 
 /** Real session-bus MPRIS and StatusNotifierItem exports. No bus/host failure can stop audio. */
 class LinuxSystemIntegration(
@@ -18,7 +25,10 @@ class LinuxSystemIntegration(
     private val raise: () -> Unit,
     private val quit: () -> Unit,
     private val openUri: (String) -> Unit,
-    private val connection: DBusConnection = DBusConnectionBuilder.forSessionBus().withShared(false).build(),
+    private val connection: DBusConnection = DBusConnectionBuilder.forSessionBus().apply {
+        withShared(false)
+        transportConfig().withTimeout(DBUS_CALL_TIMEOUT_MILLIS)
+    }.build(),
 ) : DesktopSystemIntegration {
     private data class Published(
         val snapshot: PlaybackSnapshot?,
@@ -29,6 +39,7 @@ class LinuxSystemIntegration(
     val busName = "org.mpris.MediaPlayer2.ArchiveTune"
     private val daemon = connection.getRemoteObject("org.freedesktop.DBus", "/org/freedesktop/DBus", DBus::class.java)
     @Volatile private var registeredWatcher: String? = null
+    @Volatile private var watcherHostRegistered = false
     private val watcherEvents: AutoCloseable
     private val watcherProperties: AutoCloseable
     private val media = Media()
@@ -36,18 +47,24 @@ class LinuxSystemIntegration(
     private val menu = Menu()
 
     init {
+        MethodCall.setDefaultTimeout(DBUS_CALL_TIMEOUT_MILLIS.toLong())
         try {
             connection.requestBusName(busName)
             connection.exportObject(MPRIS_PATH, media)
             connection.exportObject(SNI_PATH, tray)
             connection.exportObject("/Menu", menu)
-            watcherEvents = connection.addSigHandler(DBus.NameOwnerChanged::class.java) {
+            watcherEvents = connection.addSigHandler(DBus.NameOwnerChanged::class.java) { change ->
                 // Re-register after watcher restart; name-owner signals never carry credentials.
-                registerTray()
+                if (change.name == WATCHER_BUS_NAME) registerTray()
             }
-            watcherProperties = connection.addSigHandler(Properties.PropertiesChanged::class.java) {
-                if (it.interfaceName == "org.kde.StatusNotifierWatcher" &&
-                    it.propertiesChanged["IsStatusNotifierHostRegistered"]?.value == false) raise()
+            watcherProperties = connection.addSigHandler(Properties.PropertiesChanged::class.java) { change ->
+                if (change.interfaceName == WATCHER_INTERFACE) {
+                    val hostRegistered = change.propertiesChanged["IsStatusNotifierHostRegistered"]?.value
+                    if (hostRegistered is Boolean) {
+                        watcherHostRegistered = hostRegistered
+                        if (!hostRegistered) raise()
+                    }
+                }
             }
             registerTray()
         } catch (error: Exception) {
@@ -56,28 +73,37 @@ class LinuxSystemIntegration(
         }
     }
 
+    /*
+     * The close path runs on the AWT event thread. The watcher owner and host registration are cached from
+     * startup and the bus signals, so this must never perform a round trip there.
+     */
     override val trayAvailable: Boolean
-        get() = registeredWatcher != null && runCatching {
-            daemon.GetNameOwner("org.kde.StatusNotifierWatcher") == registeredWatcher &&
-                connection.getRemoteObject("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", Properties::class.java)
-                    .Get<Any>("org.kde.StatusNotifierWatcher", "IsStatusNotifierHostRegistered").let {
-                        (if (it is Variant<*>) it.value else it) == true
-                    }
-        }.getOrDefault(false)
+        get() = registeredWatcher != null && watcherHostRegistered
 
     @Synchronized private fun registerTray() {
         try {
-            if (!daemon.NameHasOwner("org.kde.StatusNotifierWatcher")) {
+            if (!daemon.NameHasOwner(WATCHER_BUS_NAME)) {
                 if (registeredWatcher != null) raise()
-                registeredWatcher = null; return
+                registeredWatcher = null
+                watcherHostRegistered = false
+                return
             }
-            val owner = daemon.GetNameOwner("org.kde.StatusNotifierWatcher")
+            val owner = daemon.GetNameOwner(WATCHER_BUS_NAME)
             if (registeredWatcher == owner) return
-            connection.getRemoteObject("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", StatusNotifierWatcher::class.java)
+            connection.getRemoteObject(WATCHER_BUS_NAME, WATCHER_OBJECT_PATH, StatusNotifierWatcher::class.java)
                 .RegisterStatusNotifierItem(SNI_PATH)
             registeredWatcher = owner
-        } catch (_: Exception) { registeredWatcher = null }
+            watcherHostRegistered = statusNotifierHostRegistered()
+        } catch (_: Exception) {
+            registeredWatcher = null
+            watcherHostRegistered = false
+        }
     }
+
+    private fun statusNotifierHostRegistered(): Boolean = connection
+        .getRemoteObject(WATCHER_BUS_NAME, WATCHER_OBJECT_PATH, Properties::class.java)
+        .Get<Any>(WATCHER_INTERFACE, "IsStatusNotifierHostRegistered")
+        .let { if (it is Variant<*>) it.value else it } == true
 
     override fun update(snapshot: PlaybackSnapshot?, metadata: DesktopMediaMetadata?, transport: DesktopTransportState) {
         val safe = metadata?.takeIf { it.occurrenceId == snapshot?.occurrenceId }
@@ -92,6 +118,8 @@ class LinuxSystemIntegration(
     }
 
     override fun close() {
+        registeredWatcher = null
+        watcherHostRegistered = false
         watcherEvents.close()
         watcherProperties.close()
         connection.unExportObject("/Menu")

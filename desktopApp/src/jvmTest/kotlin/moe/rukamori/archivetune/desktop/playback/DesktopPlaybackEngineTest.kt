@@ -1,5 +1,8 @@
 package moe.rukamori.archivetune.desktop.playback
 
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.test.Test
@@ -126,6 +129,29 @@ class DesktopPlaybackEngineTest {
             assertEquals(EnginePlaybackState.ERROR_OPEN, failed.errorCode)
             assertTrue(failed.hasSource)
             assertTrue(engine.lastError().isNotBlank(), "the engine should explain the failed open")
+        }
+    }
+
+    /**
+     * GetStringUTFChars hands native code CESU-8, which is not valid UTF-8, so a path with a
+     * supplementary-plane character could not be opened even though the Java file APIs saw it.
+     */
+    @Test
+    fun supplementaryPlaneFilenameOpens() {
+        val copy = Files.createTempFile("archivetune-\uD83C\uDFB5-", ".wav")
+        try {
+            Files.copy(Path.of(PlaybackFixtures.localPath("ramp-48k.wav")), copy, StandardCopyOption.REPLACE_EXISTING)
+            openManualEngine().use { engine ->
+                engine.load(copy.toAbsolutePath().toString(), 0L, playWhenReady = true)
+
+                val loaded = awaitValue("a supplementary-plane filename to load") {
+                    engine.snapshot().takeIf { it.errorCode != 0 || (it.hasSource && it.durationUs > 0L) }
+                }
+                assertEquals(0, loaded.errorCode, engine.lastError())
+                assertRampAt(0L, engine.renderLeft(FRAMES_PER_100_MS), "supplementary-plane filename")
+            }
+        } finally {
+            Files.deleteIfExists(copy)
         }
     }
 
