@@ -93,7 +93,11 @@ reusing scratch or freeing the decoder; a drain overrun retains memory rather th
 
 `ios_compile.yml` now syntax-checks the actual Objective-C++ bridges against the simulator
 SDK and runs native format/conversion and deterministic NSException-containment regressions,
-plus the iOS source contracts. Common tests cover the bounded constructor fallback. These
+plus the iOS source contracts. Its default Gradle step also compiles the shared-data
+`iosTest` sources with `:shared-data:compileTestKotlinIosSimulatorArm64`; test-only changes
+under `shared-data/src/iosTest/**` trigger the workflow. That target compiles test sources
+only: it does not link a test binary, execute tests, build the native closure, run the
+simulator app or create an IPA. Common tests cover the bounded constructor fallback. These
 checks do not prove physical audio or route recovery: verify mono/stereo, 44.1/48 kHz,
 Bluetooth/AirPlay, unplug, interruption, recognition-window changes and the original crash
 on the exact installed candidate. No device validation is claimed here.
