@@ -12,10 +12,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
@@ -30,10 +32,12 @@ import moe.rukamori.archivetune.shared.ui.player.PlayerRepeat
 import moe.rukamori.archivetune.shared.ui.player.playerFixture
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
- * Space keeps its documented play/pause meaning wherever focus sits. After Escape closes the player sheet, focus stays
- * on the mini-player strip, where Space used to activate the strip and reopen the sheet instead of pausing.
+ * Space stays the player's play/pause on the player's own strip, where Escape leaves focus, and stays a typed space in
+ * a text field that is not tracked by the shortcut table. The window root never claims a key in the preview pass, so
+ * the focused field keeps its space; the strip claims Space itself, where the exception is intended.
  */
 @OptIn(ExperimentalTestApi::class)
 class PlayerShortcutsTest {
@@ -58,13 +62,14 @@ class PlayerShortcutsTest {
 
     @Test
     fun spaceOnTheFocusedMiniPlayerStripTogglesPlaybackInsteadOfOpeningTheSheet() = runComposeUiTest {
-        var toggles = 0
+        var plays = 0
         var opens = 0
+        var rootToggles = 0
         setContent {
             MaterialTheme {
                 Box(
                     Modifier.requiredSize(420.dp, 96.dp).playerShortcuts(textInputActive = { false }) { action ->
-                        if (action == KeymapAction.TogglePlayback) toggles++
+                        if (action == KeymapAction.TogglePlayback) rootToggles++
                         true
                     },
                 ) {
@@ -76,7 +81,7 @@ class PlayerShortcutsTest {
                         motion = false,
                         onExpand = { opens++ },
                         onOpenPanel = {},
-                        onPlayPause = {},
+                        onPlayPause = { plays++ },
                         onSeekTo = {},
                         onAction = {},
                         onVolumeChange = {},
@@ -90,20 +95,22 @@ class PlayerShortcutsTest {
             keyUp(Key.Spacebar)
         }
         runOnIdle {
-            assertEquals(1, toggles, "Space on the focused strip plays or pauses")
+            assertEquals(1, plays, "Space on the focused strip plays or pauses")
             assertEquals(0, opens, "Space must not activate the strip and open the sheet")
+            assertEquals(0, rootToggles, "the claimed press never reaches the root handler as well")
         }
     }
 
     @Test
-    fun enterStillActivatesTheFocusedControl() = runComposeUiTest {
-        var toggles = 0
+    fun enterStillActivatesTheFocusedStrip() = runComposeUiTest {
+        var plays = 0
         var opens = 0
+        var rootToggles = 0
         setContent {
             MaterialTheme {
                 Box(
                     Modifier.requiredSize(420.dp, 96.dp).playerShortcuts(textInputActive = { false }) { action ->
-                        if (action == KeymapAction.TogglePlayback) toggles++
+                        if (action == KeymapAction.TogglePlayback) rootToggles++
                         true
                     },
                 ) {
@@ -115,7 +122,7 @@ class PlayerShortcutsTest {
                         motion = false,
                         onExpand = { opens++ },
                         onOpenPanel = {},
-                        onPlayPause = {},
+                        onPlayPause = { plays++ },
                         onSeekTo = {},
                         onAction = {},
                         onVolumeChange = {},
@@ -129,24 +136,35 @@ class PlayerShortcutsTest {
             keyUp(Key.Enter)
         }
         runOnIdle {
-            assertEquals(1, opens, "Enter stays the keyboard activation of the focused control")
-            assertEquals(0, toggles, "Enter must not toggle playback")
+            assertEquals(1, opens, "Enter stays the keyboard activation of the focused strip")
+            assertEquals(0, plays, "Enter must not toggle playback")
+            assertEquals(0, rootToggles, "Enter reaches the strip, not the shortcut table")
         }
     }
 
     @Test
-    fun aTrackedTextInputKeepsItsSpace() = runComposeUiTest {
+    fun anUntrackedTextFieldKeepsItsSpace() = runComposeUiTest {
         var toggles = 0
+        var fieldSawSpace = false
         var typed by mutableStateOf("")
         setContent {
             MaterialTheme {
                 Box(
-                    Modifier.requiredSize(320.dp, 96.dp).playerShortcuts(textInputActive = { true }) {
+                    Modifier.requiredSize(320.dp, 96.dp).playerShortcuts(textInputActive = { false }) {
                         toggles++
                         true
                     },
                 ) {
-                    BasicTextField(typed, { typed = it }, Modifier.fillMaxSize().testTag("field"))
+                    // A plain field that never registers with ShortcutTextInputState, like the settings and dialog
+                    // inputs: the window root must not take its space before the field can use it.
+                    BasicTextField(
+                        typed,
+                        { typed = it },
+                        Modifier.fillMaxSize().testTag("field").onPreviewKeyEvent { event ->
+                            if (event.key == Key.Spacebar) fieldSawSpace = true
+                            false
+                        },
+                    )
                 }
             }
         }
@@ -155,6 +173,14 @@ class PlayerShortcutsTest {
             keyDown(Key.Spacebar)
             keyUp(Key.Spacebar)
         }
-        runOnIdle { assertEquals(0, toggles, "an editing surface keeps its space") }
+        runOnIdle {
+            assertTrue(fieldSawSpace, "the focused field keeps the Space key")
+            assertEquals(0, toggles, "typing a space must not toggle playback")
+        }
+        onNodeWithTag("field").performTextInput(" ")
+        runOnIdle {
+            assertTrue(typed.contains(" "), "the typed space lands in the field")
+            assertEquals(0, toggles)
+        }
     }
 }
