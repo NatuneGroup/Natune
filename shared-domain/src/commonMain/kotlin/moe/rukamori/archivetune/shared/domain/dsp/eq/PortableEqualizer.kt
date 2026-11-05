@@ -238,12 +238,18 @@ class PortableEqualizer(
                 continue
             }
             designInto(band.type, band.frequencyHz, gain, band.q, designScratch)
-            val rightDesign = if (band.hasRightOverride) {
+            // The right channel keeps its own design until its current gain meets the primary one. Removing an
+            // override is a glide too: the shared band stops declaring the override at once, while the right gain is
+            // still walking down from its old value, so dropping the secondary design here would jump the channel to
+            // the primary coefficients instead of finishing the fade. BiquadFilter drops the second set itself once
+            // the two designs are equal.
+            val overridden = band.hasRightOverride
+            val rightDesign = if (overridden || rightGain != gain) {
                 designInto(
                     type = band.type,
-                    frequencyHz = band.rightFrequencyHz ?: band.frequencyHz,
+                    frequencyHz = if (overridden) band.rightFrequencyHz ?: band.frequencyHz else band.frequencyHz,
                     gainDb = rightGain,
-                    q = band.rightQ ?: band.q,
+                    q = if (overridden) band.rightQ ?: band.q else band.q,
                     out = rightDesignScratch,
                 )
                 rightDesignScratch
