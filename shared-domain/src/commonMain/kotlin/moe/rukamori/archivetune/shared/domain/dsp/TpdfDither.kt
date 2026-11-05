@@ -9,8 +9,9 @@ import kotlin.math.round
  * word, their difference a triangle one LSB wide peak to peak. Seeded identically it produces an identical
  * sequence, which is what the parity test pins.
  *
- * Quantization uses `2^(bits-1) - 1` steps of full scale, the full scale the native float-to-int16
- * conversion uses, so a full-scale sample stays at full scale instead of overshooting it.
+ * Quantization uses `2^(bits-1)` steps of full scale — the signed PCM grid, -32768..32767 at 16 bits — the
+ * same grid a PCM16 host converts on. A dithered sample therefore lands exactly on an integer step of that
+ * grid, and the conversion reproduces it without a second rounding; a positive overshoot saturates at 32767.
  */
 class TpdfDither(
     bitDepth: Int = DspDither.DEFAULT_BIT_DEPTH,
@@ -21,7 +22,7 @@ class TpdfDither(
     var bitDepth: Int = validatedBitDepth(bitDepth)
         private set
 
-    /** Full-scale steps at [bitDepth]: 32767 for 16 bits, the value the native conversion multiplies by. */
+    /** Full-scale steps at [bitDepth]: 32768 for 16 bits, the signed PCM grid this dither quantizes onto. */
     var fullScaleSteps: Float = fullScaleFor(bitDepth)
         private set
 
@@ -68,7 +69,7 @@ class TpdfDither(
         private fun fullScaleFor(bitDepth: Int): Float {
             var steps = 1f
             repeat(validatedBitDepth(bitDepth) - 1) { steps *= 2f }
-            return steps - 1f
+            return steps
         }
     }
 }

@@ -28,7 +28,8 @@ import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
  * transition filter after the supplied processors, both of which reject anything but 16-bit PCM in
  * `onConfigure` — even when silence skipping is switched off, because the sink configures every processor
  * in its chain. The graph's clamp runs before the reduction and its TPDF dither runs on the way out when a
- * host asked for it, so the 16-bit output is the same samples the retired float chain produced.
+ * host asked for it. Decoding and encoding share the signed 16-bit grid (32768 steps, saturated at the end
+ * points), so a neutral block returns every PCM16 value unchanged and only an engaged stage moves a sample.
  *
  * Anything else — and every bit-perfect route, whose plan arrives bypassed — leaves this processor
  * inactive, which is [AudioProcessor.AudioFormat.NOT_SET] and makes Media3 skip it, so those samples never
@@ -241,14 +242,18 @@ class UnifiedDspAudioProcessor(
         return AudioProcessor.AudioFormat.NOT_SET
     }
 
-    /** The graph already clamped; the reduction rounds to the 16-bit grid, dithered when it was asked for. */
+    /**
+     * The chain reduces onto the signed 16-bit grid the input was read from: a full-scale sample saturates at
+     * the end points instead of wrapping, and a neutral block round-trips every PCM16 value unchanged. The
+     * dither, when a host asked for it, quantizes onto that same grid before this reduction.
+     */
     private fun writePcm16(samples: Int, channels: Int) {
         val bytes = samples * SHORT_BYTES
         val output = replaceOutputBuffer(bytes).order(ByteOrder.nativeOrder())
         dither?.process(outputFrames, samples / channels, channels)
         for (index in 0 until samples) {
-            val scaled = outputFrames[index].coerceIn(-1f, 1f) * SHORT_FULL_SCALE
-            output.putShort(index * SHORT_BYTES, round(scaled).toInt().coerceIn(-MAX_SHORT, MAX_SHORT).toShort())
+            val scaled = round(outputFrames[index].coerceIn(-1f, 1f) * SHORT_SCALE).toInt()
+            output.putShort(index * SHORT_BYTES, scaled.coerceIn(SHORT_MIN, SHORT_MAX).toShort())
         }
         output.position(0)
         output.limit(bytes)
@@ -271,11 +276,11 @@ class UnifiedDspAudioProcessor(
     private companion object {
         const val FLOAT_BYTES = 4
         const val SHORT_BYTES = 2
-        const val SHORT_SCALE = 32_768f
 
-        /** `2^(bits-1) - 1` full-scale steps: a full-scale sample stays at full scale, as the native chain did. */
-        const val SHORT_FULL_SCALE = 32_767f
-        const val MAX_SHORT = 32_767
+        /** `2^15`: the divisor that reads every PCM16 value, including [SHORT_MIN], into [-1, 1]. */
+        const val SHORT_SCALE = 32_768f
+        const val SHORT_MIN = -32_768
+        const val SHORT_MAX = 32_767
         const val OUTPUT_BIT_DEPTH = 16
     }
 }
