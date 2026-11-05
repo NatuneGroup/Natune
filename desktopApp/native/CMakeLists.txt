@@ -72,6 +72,12 @@ if(UNIX)
     # libm exists only on the Unix hosts; MSVC's CRT covers the same calls.
     target_link_libraries(archivetune_engine PRIVATE m)
 endif()
+if(APPLE)
+    # miniaudio's Core Audio backend is plain C and needs the system frameworks. The iOS build of this file drops the
+    # backend with MA_NO_COREAUDIO, so this is the macOS link line only.
+    target_link_libraries(archivetune_engine PRIVATE
+        "-framework CoreAudio" "-framework AudioToolbox" "-framework CoreFoundation")
+endif()
 
 if(UNIX AND NOT APPLE)
     # The transitive FFmpeg dependencies (TLS, XML, zlib) live in the same prefix, so the linker needs
@@ -112,6 +118,11 @@ if(BUILD_TESTING)
         Threads::Threads ${CMAKE_DL_LIBS})
     if(UNIX)
         target_link_libraries(archivetune_realtime_test PRIVATE m)
+    endif()
+    if(APPLE)
+        # The test compiles the device wrapper, so it needs the same frameworks as the engine on macOS.
+        target_link_libraries(archivetune_realtime_test PRIVATE
+            "-framework CoreAudio" "-framework AudioToolbox" "-framework CoreFoundation")
     endif()
     if(UNIX AND NOT APPLE)
         target_link_options(archivetune_realtime_test PRIVATE "LINKER:-rpath-link,${AE_PREFIX}/lib")
