@@ -14,7 +14,7 @@ repositories {
 
 val sourceRoot = providers.gradleProperty("analysisRoot").map(::file).getOrElse(rootDir.parentFile)
 val reportRoot = providers.gradleProperty("analysisReports").map(::file).getOrElse(layout.buildDirectory.dir("reports").get().asFile)
-val sourcePatterns = listOf(
+val legacySourcePatterns = listOf(
     "app/src/main/kotlin/**/*.kt",
     "app/src/gms/kotlin/**/*.kt",
     "canvas/src/**/*.kt",
@@ -24,6 +24,18 @@ val sourcePatterns = listOf(
     "shazamkit/src/**/*.kt",
     "spotifycore/src/**/*.kt",
 )
+val kmpSourcePatterns = listOf(
+    "shared-domain/src/**/*.kt",
+    "shared-data/src/**/*.kt",
+    "shared-ui/src/**/*.kt",
+    "desktopApp/src/**/*.kt",
+)
+val analysisProfile = providers.gradleProperty("analysisProfile").getOrElse("structural")
+val sourcePatterns = if (analysisProfile == "legacy-android-gms") {
+    legacySourcePatterns
+} else {
+    legacySourcePatterns + kmpSourcePatterns
+}
 val kotlinSources = fileTree(sourceRoot) { sourcePatterns.forEach { include(it) } }
 val formatterRoot = providers.gradleProperty("analysisFormatRoot")
     .map(::file).getOrElse(layout.buildDirectory.dir("format-input").get().asFile)
