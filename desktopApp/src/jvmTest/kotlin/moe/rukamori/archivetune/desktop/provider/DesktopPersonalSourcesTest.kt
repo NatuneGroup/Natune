@@ -43,7 +43,7 @@ class DesktopPersonalSourcesTest {
                 AmazonTurnstileJwtKey to "primary-jwt", AmazonTurnstileJwtExpiryMsKey to 100_000L)
             val source = DesktopAmazonSource(http, { prefs }, { 1000 })
             assertFailsWith<Exception> { source.resolve(request) }
-            assertEquals(listOf("first.invalid" to "primary-jwt"), seen)
+            assertEquals(listOf<Pair<String, String?>>("first.invalid" to "primary-jwt"), seen)
             seen.clear()
             prefs = prefs.toEditor().apply { this[AmazonBypassTokenKey] = "fixture-operator" }.snapshot()
             val audio = assertIs<PreparedAudio.Progressive>(source.resolve(request))

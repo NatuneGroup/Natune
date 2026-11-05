@@ -27,8 +27,7 @@ internal class DesktopLyricsOffsets(private val graph: DesktopSessionGraph) {
     fun observe(ref: ContentRef?): Flow<Long?> = ref?.let(graph.songLyricsOffsets::observeOffset) ?: flowOf(null)
     fun adjust(ref: ContentRef, deltaMs: Long) {
         graph.scope.launch {
-            val next = ((graph.songLyricsOffsets.offset(ref) ?: 0L) + deltaMs)
-                .coerceIn(-MAX_LYRICS_SYNC_OFFSET_MS, MAX_LYRICS_SYNC_OFFSET_MS)
+            val next = adjustedLyricsOffset(graph.songLyricsOffsets.offset(ref), deltaMs)
             graph.songLyricsOffsets.setOffset(ref, next)
         }
     }
@@ -36,6 +35,13 @@ internal class DesktopLyricsOffsets(private val graph: DesktopSessionGraph) {
         graph.scope.launch { graph.songLyricsOffsets.setOffset(ref, null) }
     }
 }
+
+/**
+ * The value one adjustment stores: the current offset (absent reads as zero) plus the delta, held inside the shared
+ * ±30 s bound the store also refuses to exceed. It is a function of its own so the bound is pinned without a session.
+ */
+internal fun adjustedLyricsOffset(currentMs: Long?, deltaMs: Long): Long =
+    ((currentMs ?: 0L) + deltaMs).coerceIn(-MAX_LYRICS_SYNC_OFFSET_MS, MAX_LYRICS_SYNC_OFFSET_MS)
 
 internal class DesktopLyricsTools(private val graph: DesktopSessionGraph) {
     val offsets = DesktopLyricsOffsets(graph)
