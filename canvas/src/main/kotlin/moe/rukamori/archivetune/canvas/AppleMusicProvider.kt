@@ -19,6 +19,7 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -285,6 +286,7 @@ object AppleMusicProvider {
             header("User-Agent", APPLE_MUSIC_WEB_UA)
         }
         if (!resp.status.isSuccess()) {
+            discard(resp)
             Log.w("Apple Music storefront fetch failed: ${resp.status}")
             return null
         }
@@ -310,7 +312,9 @@ object AppleMusicProvider {
                     parameter("types", "albums")
                     parameter("limit", "1")
                 }
-            response.status == HttpStatusCode.OK
+            val healthy = response.status == HttpStatusCode.OK
+            discard(response)
+            healthy
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -337,6 +341,7 @@ object AppleMusicProvider {
             // music.apple.com/ 301s to a localised landing page (e.g. /us/new). Ktor follows that,
             // so only a genuine error status is fatal here.
             if (!homeResponse.status.isSuccess()) {
+                discard(homeResponse)
                 Log.w("Apple Music home fetch failed: ${homeResponse.status}")
                 return null
             }
@@ -356,6 +361,7 @@ object AppleMusicProvider {
             for (jsBundleUrl in bundleUrls) {
                 val jsResponse = tokenClient.get(jsBundleUrl)
                 if (!jsResponse.status.isSuccess()) {
+                    discard(jsResponse)
                     Log.w("Apple Music token: JS bundle fetch failed: ${jsResponse.status} ($jsBundleUrl)")
                     continue
                 }
@@ -371,6 +377,11 @@ object AppleMusicProvider {
         }
 
     // ── Networking ───────────────────────────────────────────────────────────────────
+
+    /** Ktor completes the engine call only when the body is read, so an answer we discard must be drained. */
+    private suspend fun discard(response: HttpResponse) {
+        response.bodyAsText()
+    }
 
     private val json =
         Json {
@@ -504,6 +515,7 @@ object AppleMusicProvider {
             if (response.status == HttpStatusCode.Unauthorized) {
                 // Token expired between refresh and use — force-refresh and retry once. A refresh
                 // that yields nothing means a second attempt would repeat the same 401.
+                discard(response)
                 Log.w("AMP search returned 401 — force-refreshing token and retrying once")
                 token = refreshToken() ?: return@runCatching null
                 response =
@@ -522,6 +534,7 @@ object AppleMusicProvider {
                     }
             }
             if (response.status != HttpStatusCode.OK) {
+                discard(response)
                 Log.w("search failed with status ${response.status}")
                 return@runCatching null
             }
@@ -628,6 +641,7 @@ object AppleMusicProvider {
                     parameter("include", "tracks")
                 }
             if (response.status == HttpStatusCode.Unauthorized) {
+                discard(response)
                 Log.w("album fetch returned 401 — force-refreshing token and retrying once")
                 token = refreshToken() ?: return@runCatching null
                 response =
@@ -642,6 +656,7 @@ object AppleMusicProvider {
                     }
             }
             if (response.status != HttpStatusCode.OK) {
+                discard(response)
                 Log.w("album fetch failed for $albumId: ${response.status}")
                 return@runCatching null
             }

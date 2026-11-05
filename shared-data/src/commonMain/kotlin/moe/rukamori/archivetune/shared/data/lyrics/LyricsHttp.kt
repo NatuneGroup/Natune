@@ -26,7 +26,7 @@ internal val LyricsJson: Json =
         coerceInputValues = true
     }
 
-/** An answered request. [body] is read only for a 2xx [status], as the Android helper did. */
+/** An answered request. The body is always consumed; [body] keeps it only for a 2xx [status]. */
 internal class LyricsHttpResponse(
     val status: Int,
     val body: String?,
@@ -65,9 +65,11 @@ internal object LyricsHttp {
                 if (defaultUserAgent && !sentAgent) header(HttpHeaders.UserAgent, USER_AGENT)
             }
         val ok = response.status.isSuccess()
+        // Ktor completes the engine call only when the body is read or cancelled, so read it for every status.
+        val text = response.bodyAsText()
         return LyricsHttpResponse(
             status = response.status.value,
-            body = if (ok) response.bodyAsText() else null,
+            body = text.takeIf { ok },
         )
     }
 
