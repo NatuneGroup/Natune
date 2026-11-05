@@ -21,6 +21,8 @@ data class PlayerNativeState(
     val palette: List<Color>,
     val spatialFont: FontFamily? = null,
     val handoff: PlayerHandoff? = null,
+    /** The actions this host answers; a surface renders only these, so it cannot show a dead control. */
+    val actionSupport: PlayerActionSupport = PlayerActionSupport.ALL,
 )
 
 /**
@@ -57,6 +59,7 @@ fun PlayerState.withNativeState(native: PlayerNativeState, reducedMotion: Boolea
         spatialFont = native.spatialFont,
         reducedMotion = reducedMotion,
         handoff = native.handoff?.takeIf { matching && it.fromOccurrenceId == playback?.occurrenceId },
+        actionSupport = native.actionSupport,
     )
 }
 
