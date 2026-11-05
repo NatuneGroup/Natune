@@ -28,6 +28,7 @@ import moe.rukamori.archivetune.constants.AppleMusicMediaUserTokenKey
 import moe.rukamori.archivetune.ui.component.AuthSignInWebViewClient
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.ui.component.createAuthWebView
+import moe.rukamori.archivetune.utils.WebAuthCookieScopes
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
@@ -91,6 +92,14 @@ private const val APPLE_HOOK_JS = """
 })()
 """
 
+/**
+ * Runs on Apple's own origin before the login document is loaded a second time. [APPLE_HOOK_JS]
+ * reads `media-user-token` from localStorage when MusicKit exposes no live instance, so a token
+ * left by a previous account would be handed back after the cookie session expired.
+ */
+private const val MUSIC_STORAGE_CLEAR_JS =
+    "try{localStorage.clear();sessionStorage.clear();}catch(e){}"
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun AppleMusicLoginScreen(navController: NavController) {
@@ -98,6 +107,14 @@ fun AppleMusicLoginScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     // The poll fires repeatedly; only the first delivery may save and navigate.
     val handled = remember { AtomicBoolean(false) }
+    // MusicKit mirrors its Music User Token into localStorage, where it outlives the cookie session.
+    // No public API clears one origin's DOM storage on the default WebView profile, and the global
+    // wipe this flow used to rely on would sign the YouTube Music WebView out, so the token is
+    // cleared on Apple's own origin once per attempt. Without it a disconnected account is silently
+    // re-selected by the hook's localStorage fallback.
+    val musicStorageCleared = remember { AtomicBoolean(false) }
+    // The sheet can be dismissed while the clear is in flight; a reload of the destroyed view fails.
+    val released = remember { AtomicBoolean(false) }
 
     AuthWebViewScreen(
         navController = navController,
@@ -107,7 +124,10 @@ fun AppleMusicLoginScreen(navController: NavController) {
         // The injected poll is a live 500 ms timer, and it would otherwise keep running — with the
         // renderer, the MusicKit instance and the JavaScript interface behind it — for up to two
         // minutes after the user has closed the sheet. Releasing the WebView tears all of it down.
-        onRelease = { it.releaseAuthWebView("AppleAuth") },
+        onRelease = {
+            released.set(true)
+            it.releaseAuthWebView("AppleAuth")
+        },
         factory = { ctx ->
             createAuthWebView(ctx).apply {
                 webViewClient =
@@ -116,9 +136,14 @@ fun AppleMusicLoginScreen(navController: NavController) {
                             view: WebView,
                             url: String?,
                         ) {
-                            if (url?.contains("music.apple.com", ignoreCase = true) == true) {
-                                view.evaluateJavascript(APPLE_HOOK_JS, null)
+                            if (url?.contains("music.apple.com", ignoreCase = true) != true) return
+                            if (musicStorageCleared.compareAndSet(false, true)) {
+                                view.evaluateJavascript(MUSIC_STORAGE_CLEAR_JS) {
+                                    if (!released.get()) view.loadUrl(LOGIN_URL)
+                                }
+                                return
                             }
+                            view.evaluateJavascript(APPLE_HOOK_JS, null)
                         }
                     }
                 addJavascriptInterface(
@@ -161,7 +186,10 @@ fun AppleMusicLoginScreen(navController: NavController) {
                     },
                     "AppleAuth",
                 )
-                resetAuthWebViewSession(ctx, this, clearCookies = true) {
+                // An Apple ID attempt must not inherit an earlier `.apple.com` session, but it also
+                // must not expire anything outside Apple's own jar. Apple's DOM storage is cleared
+                // by the page callback above, which reloads this URL once the clear has run.
+                resetAuthWebViewSession(this, WebAuthCookieScopes.APPLE_MUSIC) {
                     loadUrl(LOGIN_URL)
                 }
             }

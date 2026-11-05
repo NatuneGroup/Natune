@@ -53,7 +53,7 @@ import moe.rukamori.archivetune.spotify.models.SpotifySavedTrack
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.spotify.models.SpotifySearchResult
-import moe.rukamori.archivetune.utils.clearWebAuthSession
+import moe.rukamori.archivetune.utils.clearSpotifyCatalogWebAuthSession
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.reportException
 import javax.inject.Inject
@@ -282,7 +282,7 @@ class SpotifyLibraryRepository
                 Spotify.accessToken = null
                 clearCatalogCaches()
                 clearRecentlyPlayed()
-                runCatching { clearWebAuthSession(context) }
+                runCatching { clearSpotifyCatalogWebAuthSession() }
                     .onFailure(::reportException)
                 SpotifyLibrespotAccount.signOut(context)
             }
