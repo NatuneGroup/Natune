@@ -86,27 +86,4 @@ object LastFmEndpoints {
     const val DEFAULT = "https://ws.audioscrobbler.com/2.0/"
     const val LIBREFM = "https://libre.fm/2.0/"
     const val MAX_SCROBBLES_PER_BATCH = 50
-
-    /**
-     * Normalizes a user-entered endpoint to `scheme://authority/path/`, using `/2.0` when no path is given.
-     * Returns null for anything that is not an http or https URL with a host and without a query, fragment
-     * or whitespace.
-     */
-    fun normalizeOrNull(raw: String): String? {
-        val text = raw.trim()
-        if (text.any { it.isWhitespace() }) return null
-        if (text.indexOf('?') >= 0 || text.indexOf('#') >= 0) return null
-        val schemeEnd = text.indexOf("://")
-        if (schemeEnd <= 0) return null
-        val scheme = text.substring(0, schemeEnd).lowercase()
-        if (scheme != "http" && scheme != "https") return null
-        val afterScheme = text.substring(schemeEnd + 3)
-        val slash = afterScheme.indexOf('/')
-        val authority = if (slash < 0) afterScheme else afterScheme.substring(0, slash)
-        val path = if (slash < 0) "" else afterScheme.substring(slash)
-        val hostPort = authority.substringAfterLast('@')
-        if (hostPort.isEmpty() || hostPort.startsWith(':')) return null
-        val cleanPath = path.trimEnd('/').ifEmpty { "/2.0" }
-        return "$scheme://$authority$cleanPath/"
-    }
 }

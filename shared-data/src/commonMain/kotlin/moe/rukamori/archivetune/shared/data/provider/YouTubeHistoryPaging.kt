@@ -12,7 +12,6 @@ data class HistoryBrowsePage<T>(
     /** The original first page remains readable, but the selected route has no public continuation API. */
     val paginationUnavailable: Boolean = false,
 )
-typealias YouTubeHistorySection = HistoryBrowseSection<YouTubeEntry>
 typealias YouTubeHistoryPage = HistoryBrowsePage<YouTubeEntry>
 
 class YouTubeHistoryRoutingUnavailable : IllegalStateException("History paging cannot access the configured rotating proxy")
