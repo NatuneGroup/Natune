@@ -128,7 +128,7 @@ include(":lastfm")
 include(":canvas")
 include(":shazamkit")
 include(":spotifycore")
-include(":morideobfuscator")
+include(":deobfuscator")
 include(":jiosaavn")
 
 // Android modules apply AGP plugins, which need an Android SDK while their projects configure. Without
@@ -143,8 +143,8 @@ val androidSdkDir: String? = listOf(System.getenv("ANDROID_HOME"), System.getenv
 val hasAndroidSdk = androidSdkDir?.let { File(it).isDirectory } == true
 gradle.extra["hasAndroidSdk"] = hasAndroidSdk
 if (!hasAndroidSdk) {
-    logger.lifecycle("No Android SDK configured: Android KMP targets and the :app, :jiosaavn and :morideobfuscator build scripts are skipped.")
-    listOf(":app", ":jiosaavn", ":morideobfuscator").forEach { path ->
+    logger.lifecycle("No Android SDK configured: Android KMP targets and the :app, :jiosaavn and :deobfuscator build scripts are skipped.")
+    listOf(":app", ":jiosaavn", ":deobfuscator").forEach { path ->
         project(path).buildFileName = "android-sdk-required.gradle.kts"
     }
 }

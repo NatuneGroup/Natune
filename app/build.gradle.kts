@@ -831,7 +831,7 @@ dependencies {
     implementation(project(":canvas"))
     implementation(project(":shazamkit"))
     implementation(project(":spotifycore"))
-    implementation(project(":morideobfuscator"))
+    implementation(project(":deobfuscator"))
     implementation(project(":jiosaavn"))
     implementation("com.materialkolor:material-kolor:5.0.0-alpha07")
 
