@@ -224,7 +224,8 @@ class QueueTailPlannerTest {
             )
         assertEquals(5, plan.items.size)
         assertEquals(1, plan.exploreSlotsFilled)
-        assertTrue(plan.items[4].item.ref in explore.map { it.ref })
+        val exploreRefs = explore.map { it.ref }
+        assertTrue(plan.items[4].item.ref in exploreRefs)
     }
 
     @Test
