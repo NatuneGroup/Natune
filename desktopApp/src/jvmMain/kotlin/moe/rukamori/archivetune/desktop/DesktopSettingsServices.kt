@@ -27,6 +27,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import moe.rukamori.archivetune.desktop.storage.DesktopStorageRelocation
 import moe.rukamori.archivetune.shared.data.ai.KtorAiTextService
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapanesePackFailure
 import moe.rukamori.archivetune.shared.domain.lyrics.romanization.JapaneseLanguagePackManager
@@ -238,8 +239,10 @@ internal class DesktopSettingsServices(
         Files.walk(dir).use { stream -> stream.filter { Files.isRegularFile(it) }.mapToLong { Files.size(it) }.sum() }
 
     /**
-     * Moves the whole instance to a user-picked folder, then records a pointer so the next launch
-     * resolves there. The returned token is the new location; null means the user cancelled.
+     * Records a move to a user-picked folder for the next start. Nothing is copied while the graph has the database
+     * open: checkpoints, settings and downloads written after this point stay in the current directory and are part of
+     * the snapshot the next start copies before the session opens. The returned token is the destination; null means
+     * the user cancelled.
      */
     suspend fun pickAndCommitStorage(): String? = withContext(Dispatchers.IO) {
         val chooser = JFileChooser().apply {
@@ -247,22 +250,13 @@ internal class DesktopSettingsServices(
             dialogTitle = "Choose storage location"
         }
         if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) return@withContext null
-        val target = chooser.selectedFile.toPath().resolve(instanceDirectory.fileName.toString())
-        if (target == instanceDirectory) return@withContext target.toString()
-        if (Files.exists(target) && Files.list(target).use { it.findFirst().isPresent }) {
-            error("Destination folder is not empty")
-        }
-        Files.createDirectories(target)
-        Files.list(instanceDirectory).use { stream ->
-            stream.forEach { child ->
-                if (child.fileName.toString() in setOf("instance.lock", "instance.endpoint", ".owner.lock")) {
-                    return@forEach
-                }
-                child.toFile().copyRecursively(target.resolve(child.fileName.toString()).toFile(), overwrite = true)
-            }
-        }
-        Files.writeString(storagePointerFile(), target.toAbsolutePath().toString() + "\n")
-        target.toAbsolutePath().toString()
+        val target = chooser.selectedFile.toPath()
+            .resolve(instanceDirectory.fileName.toString())
+            .toAbsolutePath()
+            .normalize()
+        if (target == instanceDirectory.toAbsolutePath().normalize()) return@withContext target.toString()
+        DesktopStorageRelocation.stage(instanceDirectory, target)
+        target.toString()
     }
 
     companion object {
@@ -272,24 +266,15 @@ internal class DesktopSettingsServices(
         private const val UPDATE_FEED_MANIFEST_SCHEMA = 1
 
         /** Fixed pointer file the next launch reads before opening the instance directory. */
-        fun storagePointerFile(): Path =
-            Path.of(System.getProperty("user.home"), ".archivetune", "desktop_location")
+        fun storagePointerFile(): Path = DesktopStorageRelocation.pointerFile()
 
-        fun resolveStorageDirectory(fallback: Path): Path =
-            runCatching {
-                val pointer = storagePointerFile()
-                if (Files.isRegularFile(pointer)) {
-                    Path.of(Files.readString(pointer).trim()).takeIf { Files.isDirectory(it) }
-                } else null
-            }.getOrNull() ?: fallback
+        fun resolveStorageDirectory(fallback: Path): Path = DesktopStorageRelocation.resolveStorageDirectory(fallback)
 
-        /** The instance directory this launch honours: an explicit override, else the relocated pointer, else default. */
-        fun currentInstanceDirectory(): Path {
-            val configured = System.getProperty("archivetune.instance.directory")
-            val fallback = configured?.let(Path::of)
-                ?: Path.of(System.getProperty("user.home"), ".archivetune", "desktop")
-            return resolveStorageDirectory(fallback)
-        }
+        /**
+         * The instance directory this launch honours: an explicit override, else the relocated pointer, else default.
+         * A staged move is applied here, before the single-instance lock and the graph exist.
+         */
+        fun currentInstanceDirectory(): Path = DesktopStorageRelocation.currentInstanceDirectory()
     }
 
     // ------------------------------------------------------------------ network
