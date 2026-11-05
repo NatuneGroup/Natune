@@ -35,10 +35,13 @@ Use this before a local or remote build, then keep the final exact-candidate gat
    KMP structural roots. It is formatting/structural analysis with no type resolution;
    it is not a compiler, LSP, native, Swift, linker or runtime result. The optional
    `--classpath-file` is legacy Android-GMS-only and does not validate native/KMP
-   expect/actual semantics. In CI, the independent `Build Pull Request` /
-   `Kotlin quality` job runs on pull requests and dev pushes; manual dispatch needs
-   the quality-only `quality_base` input and does not run the normal Android build or
-   desktop compile. The job has a 20-minute bound and no build dependency.
+   expect/actual semantics. The independent `Build Pull Request` / `Kotlin quality`
+   job is a **manual diagnostic trial only**: dispatch with the quality-only
+   `quality_base` input. It is not an automatic PR/dev gate until split and
+   method-rename debt lineage is proven. Manual quality-only mode does not run the
+   normal Android build or desktop compile; the job has a 20-minute bound and no
+   build dependency. A non-zero finding report is diagnostic evidence, not proof
+   that quality is clean.
 5. Compile or test the changed module normally when the bounded change needs it.
    Batch platform compilation (including iOS native/Swift/iosTest compile) for shared
    or iOS changes. Spend native closure, APK, desktop package or IPA work only on
