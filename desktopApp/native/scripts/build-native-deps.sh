@@ -251,7 +251,9 @@ main() {
         "$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz.asc" "$FFMPEG_ASC_SHA256"
     fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" \
         "$DOWNLOADS/ffmpeg-$FFMPEG_VERSION.tar.xz" "$FFMPEG_SHA256"
-    fetch "https://zlib.net/zlib-$ZLIB_VERSION.tar.gz" "$DOWNLOADS/zlib-$ZLIB_VERSION.tar.gz" "$ZLIB_SHA256"
+    # zlib.net serves the release tarballs from /fossils/; the bare /zlib-<version>.tar.gz path answers 404, and
+    # the pin below is that fossil tarball's digest (verified 2026-11-05: bb329a0a…).
+    fetch "https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz" "$DOWNLOADS/zlib-$ZLIB_VERSION.tar.gz" "$ZLIB_SHA256"
     fetch "https://www.openssl.org/source/openssl-$OPENSSL_VERSION.tar.gz" \
         "$DOWNLOADS/openssl-$OPENSSL_VERSION.tar.gz" "$OPENSSL_SHA256"
     fetch "https://download.gnome.org/sources/libxml2/2.15/libxml2-$LIBXML2_VERSION.tar.xz" \
