@@ -451,7 +451,7 @@ class AndroidInfiniteQueueRecommendationTest {
                     setIds: Boolean,
                 ): Timeline.Period = period
 
-                override fun getIndexOfPeriod(uid: Any?): Int = C.INDEX_UNSET
+                override fun getIndexOfPeriod(uid: Any): Int = C.INDEX_UNSET
 
                 override fun getUidOfPeriod(periodIndex: Int): Any = Any()
 
