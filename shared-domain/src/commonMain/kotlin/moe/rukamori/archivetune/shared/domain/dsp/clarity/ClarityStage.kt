@@ -39,6 +39,18 @@ class ClarityStage(private val sampleRateHz: Int, private val channels: Int) {
     val isEngaged: Boolean
         get() = preset != null
 
+    /**
+     * Reserves the dry copy for a block of [samples] interleaved samples. The graph calls this with every block it
+     * renders, so the capacity follows the block size rather than the first enabled preset: enabling clarity while a
+     * track is already playing then finds the array already there instead of allocating a block-sized one on the
+     * playback thread. A block that grows past the reserved size still grows here, exactly as the graph's own work
+     * buffer does.
+     */
+    fun prepare(samples: Int) {
+        require(samples >= 0) { "samples must not be negative" }
+        ensureDry(samples)
+    }
+
     /** Installs a preset, or removes the contour with null. Coefficients keep their state, so a preset move glides. */
     fun setPreset(preset: ClarityPreset?) {
         if (preset == this.preset) return
