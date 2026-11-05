@@ -12,6 +12,7 @@ import java.time.Duration
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +31,58 @@ import moe.rukamori.archivetune.shared.domain.settings.*
 import moe.rukamori.archivetune.shared.ui.settings.DiscordDebugState
 import moe.rukamori.archivetune.shared.ui.settings.SettingsController
 import moe.rukamori.archivetune.desktop.integration.DesktopDeepLinks
+
+private const val HELPER_TIMEOUT_MILLIS = 2_000L
+private const val HELPER_KILL_MILLIS = 500L
+
+/**
+ * The XDG desktop entry that registers the Discord callback scheme. The Exec value is quoted with the
+ * escaping the Desktop Entry specification applies before its quoting rule, so a path with spaces,
+ * quotes, backslashes, dollars or percent signs still reaches the executable as one argument.
+ */
+internal fun discordDesktopEntry(executable: String, applicationId: String): String {
+    require(executable.none { it.code < 0x20 }) { "the executable path cannot be represented in a desktop entry" }
+    return "[Desktop Entry]\nType=Application\nName=ArchiveTune Discord\n" +
+        "Exec=${desktopExecArgument(executable)} %u\n" +
+        "MimeType=x-scheme-handler/discord-$applicationId;\nNoDisplay=true\n"
+}
+
+internal fun desktopExecArgument(value: String): String = buildString {
+    append('"')
+    for (character in value) {
+        when (character) {
+            // The file-level string unescape runs first, then Exec's quoted-argument rule.
+            '\\' -> append("\\\\\\\\")
+            '"', '`', '$' -> append("\\\\").append(character)
+            '%' -> append("%%")
+            else -> append(character)
+        }
+    }
+    append('"')
+}
+
+/** Runs one registration helper without letting a blocked desktop tool hold OAuth open. */
+private fun runRegistrationHelper(vararg command: String): Boolean {
+    val process = runCatching {
+        ProcessBuilder(*command)
+            .redirectErrorStream(true)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .start()
+    }.getOrNull() ?: return false
+    return try {
+        if (process.waitFor(HELPER_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+            process.exitValue() == 0
+        } else {
+            process.destroyForcibly()
+            process.waitFor(HELPER_KILL_MILLIS, TimeUnit.MILLISECONDS)
+            false
+        }
+    } catch (_: InterruptedException) {
+        process.destroyForcibly()
+        Thread.currentThread().interrupt()
+        false
+    }
+}
 
 /**
  * The desktop Discord owner: PKCE OAuth against discord.com, a minimal-identify Gateway session and
@@ -369,7 +422,9 @@ internal class DesktopDiscordPresence(
                     arrayOf("reg", "add", key, "/ve", "/d", "URL:ArchiveTune Discord", "/f"),
                     arrayOf("reg", "add", key, "/v", "URL Protocol", "/d", "", "/f"),
                     arrayOf("reg", "add", "$key\\shell\\open\\command", "/ve", "/d", "\"$exe\" \"%1\"", "/f"),
-                ).forEach { ProcessBuilder(*it).redirectErrorStream(true).start().waitFor() }
+                ).forEach { command ->
+                    if (!runRegistrationHelper(*command)) report("Discord scheme registration: reg add did not finish")
+                }
             }
             "linux" in os || "unix" in os -> {
                 val desktop = Path.of(
@@ -378,15 +433,12 @@ internal class DesktopDiscordPresence(
                 )
                 val exe = ProcessHandle.current().info().command().orElse(null) ?: return@runCatching
                 Files.createDirectories(desktop.parent)
-                Files.writeString(
-                    desktop,
-                    "[Desktop Entry]\nType=Application\nName=ArchiveTune Discord\n" +
-                        "Exec=$exe %u\nMimeType=x-scheme-handler/discord-$DISCORD_APPLICATION_ID;\nNoDisplay=true\n",
-                )
-                ProcessBuilder(
+                Files.writeString(desktop, discordDesktopEntry(exe, DISCORD_APPLICATION_ID))
+                val registered = runRegistrationHelper(
                     "xdg-mime", "default", "archivetune-discord.desktop",
                     "x-scheme-handler/discord-$DISCORD_APPLICATION_ID",
-                ).redirectErrorStream(true).start().waitFor()
+                )
+                if (!registered) report("Discord scheme registration: xdg-mime did not finish")
             }
         }
     }
