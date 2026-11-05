@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.shared.ui.settings.IosSettingsOpenState
 import moe.rukamori.archivetune.shared.ui.settings.IosVaultSettings
 import moe.rukamori.archivetune.shared.ui.settings.VaultProviderAccountStore
 import platform.Foundation.NSBundle
+import platform.Foundation.NSLock
 
 /** What the iOS root mounts: progress, an explicit unavailable boundary, or the opened session graph. */
 internal sealed interface IosSessionState {
@@ -111,6 +112,8 @@ class IosHost {
      * native Telegram account. Null until settings are ready.
      */
     val telegram: StateFlow<IosTelegramClient?> = telegramSession.asStateFlow()
+    // willTerminate and a background-triggered close can race; only the first caller owns the durable teardown.
+    private val closeLock = NSLock()
     private var closed = false
 
     // Its own scope, so quitting can wait a bounded time for the one stopped payload before the session is released.
@@ -282,10 +285,16 @@ class IosHost {
         return IosNowPlaying(player, metadata, next, previous, metadataChanges, commandAvailability).also { nowPlaying = it }
     }
 
-    /** Final process shutdown, called only by the Swift app session at willTerminate. Idempotent. */
+    /**
+     * Final process shutdown, called only by the Swift app session at willTerminate. Idempotent and safe off the
+     * main thread.
+     */
     fun close() {
-        if (closed) return
-        closed = true
+        closeLock.lock()
+        val first = !closed
+        if (first) closed = true
+        closeLock.unlock()
+        if (!first) return
         val openedGraph = graph
         graph = null
         // The queue checkpoint comes before every Main-dispatched teardown below, so a throwing or unavailable main

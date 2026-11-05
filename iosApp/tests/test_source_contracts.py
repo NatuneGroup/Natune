@@ -93,9 +93,23 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("current.nativeState().playWhenReady", interruption)
         self.assertNotIn("ShouldResume != 0uL && current.nativeState().playWhenReady", interruption)
 
+    def test_blend_keeps_the_prepared_successor_through_an_interruption(self):
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        self.assertIn("private var interrupted = false", blend)
+        self.assertIn("private var heldAfterInterruption = false", blend)
+        began = blend.split("AVAudioSessionInterruptionTypeBegan", 1)[1].split("} else {", 1)[0]
+        self.assertIn("interrupted = true", began)
+        self.assertIn("heldAfterInterruption = false", began)
+        ended = blend.split("val approved = options", 1)[1].split("if (approved)", 1)[0]
+        self.assertIn("heldAfterInterruption = true", ended)
+        handoff = (KOTLIN / "IosPlaybackBlend.kt").read_text()
+        poll = handoff.split("fun poll(nowNanos: Long): Read {", 1)[1].split("val source = next", 1)[0]
+        self.assertIn("graph.isInterrupted || graph.isHeldAfterInterruption", poll)
+
     def test_host_close_makes_the_queue_durable_before_it_returns(self):
         host = (UI_IOS.parent / "IosHost.kt").read_text()
         close = host.split("fun close()", 1)[1].split("private fun runDurably", 1)[0]
+        self.assertIn("closeLock.lock()", close)
         self.assertIn("runDurably(QUEUE_CHECKPOINT_TIMEOUT_MS)", close)
         self.assertIn("runDurably(GRAPH_CLOSE_TIMEOUT_MS)", close)
         self.assertIn("openedGraph.checkpointQueue()", close)

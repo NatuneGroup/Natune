@@ -36,6 +36,8 @@ internal class IosBlendAudioGraph private constructor(
     private var configurationObserver: Any? = null
     private var closed = false
     private var suspended = false
+    private var interrupted = false
+    private var heldAfterInterruption = false
     private var graphDirty = false
     private var rebuildQueued = false
     private var plainGraph = false
@@ -45,6 +47,15 @@ internal class IosBlendAudioGraph private constructor(
         private set
     var incoming: Deck? = null
         private set
+
+    /** True for the whole system interruption window. */
+    val isInterrupted: Boolean get() = interrupted
+
+    /**
+     * True after an interruption that did not carry ShouldResume. The decoded successor stays armed and unplayed
+     * until the listener resumes, pauses or replaces the track; an ordinary pause still clears it.
+     */
+    val isHeldAfterInterruption: Boolean get() = heldAfterInterruption
 
     init {
         check(at_graph_volume(mainMixer, volume) != 0)
@@ -87,10 +98,18 @@ internal class IosBlendAudioGraph private constructor(
     }
 
     fun play(): Boolean {
-        if (closed || at_audio_play(current.output) == 0) return false
+        if (closed) return false
+        if (interrupted) {
+            // Keep the listener's intent without starting a manual node: the approved interruption end starts the graph.
+            at_audio_play(current.output)
+            incoming?.let { at_audio_play(it.output) }
+            return true
+        }
+        if (at_audio_play(current.output) == 0) return false
         if (graphDirty && !rebuildWithFallback()) { failOutput(); return false }
         if (!startEngine()) { failOutput(); return false }
         suspended = false
+        heldAfterInterruption = false
         incoming?.let { if (at_audio_play(it.output) == 0) { failOutput(); return false } }
         current.pump()
         current.start()
@@ -108,6 +127,7 @@ internal class IosBlendAudioGraph private constructor(
 
     fun pause() {
         resumeEpoch++ // A queued automatic rebuild must never override this listener pause.
+        heldAfterInterruption = false // An explicit pause does not preserve a prepared successor.
         current.observation(commit = false)
         incoming?.observation(commit = false)
         suspended = true
@@ -146,6 +166,8 @@ internal class IosBlendAudioGraph private constructor(
     fun close() {
         if (closed) return
         closed = true
+        interrupted = false
+        heldAfterInterruption = false
         val center = NSNotificationCenter.defaultCenter
         observers.forEach { center.removeObserver(it) }
         observers.clear()
@@ -167,6 +189,8 @@ internal class IosBlendAudioGraph private constructor(
             val type = (note?.userInfo?.get(AVAudioSessionInterruptionTypeKey) as? NSNumber)?.unsignedLongLongValue
             if (type == AVAudioSessionInterruptionTypeBegan) {
                 resumeEpoch++
+                interrupted = true
+                heldAfterInterruption = false
                 current.observation(commit = false)
                 incoming?.observation(commit = false)
                 suspended = true
@@ -175,8 +199,13 @@ internal class IosBlendAudioGraph private constructor(
                 if (at_graph_pause(engine) == 0) failOutput()
             } else {
                 graphDirty = true
+                interrupted = false
                 val options = (note?.userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)?.unsignedLongLongValue ?: 0uL
-                if (options and AVAudioSessionInterruptionOptionShouldResume != 0uL) {
+                val approved = options and AVAudioSessionInterruptionOptionShouldResume != 0uL
+                // Hold the prepared successor through the end-of-interruption main turn; an approved, successful
+                // play() clears the hold, while a pause or a track replacement has already released the handoff.
+                heldAfterInterruption = true
+                if (approved) {
                     // The native observer restores the deck's play intent for an approved resume; check it only after
                     // that observer's main-queue turn, so these two observers do not depend on each other's order.
                     val epoch = resumeEpoch
