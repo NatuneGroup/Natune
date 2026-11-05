@@ -205,7 +205,7 @@ class PortableQueueOwner(
 
     private val infinitePreferenceWatcher: Job = scope.launch {
         autoLoadMoreChanges.distinctUntilChanged().collect { enabled ->
-            if (enabled) infinite.consider() else infinite.cancel()
+            infinite.decide { if (enabled) consider() else cancel() }
         }
     }
 
@@ -222,6 +222,7 @@ class PortableQueueOwner(
         endWatcher.cancel()
         failureWatcher.cancel()
         infinitePreferenceWatcher.cancel()
+        // Teardown must not wait for an in-flight page, so this cancel is the one decision outside the queue lock.
         infinite.cancel()
         handoffWatcher?.cancel()
     }
@@ -666,7 +667,8 @@ class PortableQueueOwner(
     private fun onSnapshot(snapshot: PlaybackSnapshot?) {
         if (snapshot == null) return
         followHandoff(snapshot)
-        if (!snapshot.isEnded && snapshot.playWhenReady) infinite.consider()
+        // The decision takes the queue lock, which a long load may hold; snapshot fan-out must not stall.
+        if (!snapshot.isEnded && snapshot.playWhenReady) scope.launch { infinite.decide { consider() } }
         if (!snapshot.isEnded) return
         val key = snapshot.occurrenceId to snapshot.playbackGeneration
         if (key == lastEnded) return
