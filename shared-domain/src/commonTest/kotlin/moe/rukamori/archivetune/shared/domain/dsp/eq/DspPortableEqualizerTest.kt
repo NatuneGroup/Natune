@@ -150,6 +150,57 @@ class DspPortableEqualizerTest {
         )
     }
 
+    /**
+     * A stereo graphic preset can boost only the right driver. The left band is at 0 dB, so a cascade that
+     * decides engagement from the left gain alone returns from [PortableEqualizer.process] and never renders
+     * the right correction.
+     */
+    @Test
+    fun aRightOnlyBoostEngagesTheCascadeAndRendersTheRightChannel() {
+        val equalizer = PortableEqualizer(rate, channels = 2)
+        equalizer.setBands(listOf(EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = 0.0, rightGainDb = 6.0)))
+        assertTrue(equalizer.isEngaged, "the right channel's 6 dB is not the identity design")
+
+        val frames = STEADY_STATE_FRAMES
+        val samples = stereo(1_000.0, 1_000.0, frames)
+        val leftBefore = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames)
+        val rightBefore = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames, channel = 1)
+        equalizer.process(samples, frames)
+        val left = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames) / leftBefore
+        val right =
+            DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames, channel = 1) / rightBefore
+
+        assertEquals(1.0, left, STEADY_STATE_TOLERANCE)
+        assertEquals(10.0.pow(6.0 / 20.0), right, STEADY_STATE_TOLERANCE)
+    }
+
+    /**
+     * A glide can land the left gain at 0 dB while the right keep its boost. The cascade stays engaged on the
+     * right design instead of treating the band as flat once the left glide finishes.
+     */
+    @Test
+    fun aGlideThatLandsTheLeftAtFlatKeepsRenderingTheRight() {
+        val boosted = EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = 6.0, rightGainDb = 6.0)
+        val equalizer = PortableEqualizer(rate, channels = 2)
+        equalizer.setBands(listOf(boosted))
+        equalizer.process(stereo(1_000.0, 1_000.0, 1_024), 1_024)
+
+        equalizer.setBands(listOf(boosted.copy(gainDb = 0.0)), glideFrames = 512)
+        val frames = STEADY_STATE_FRAMES
+        val samples = stereo(1_000.0, 1_000.0, frames)
+        val leftBefore = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames)
+        val rightBefore = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames, channel = 1)
+        equalizer.process(samples, frames)
+
+        assertFalse(equalizer.isGliding)
+        assertTrue(equalizer.isEngaged, "the right channel still needs its 6 dB after the left landed flat")
+        val left = DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames) / leftBefore
+        val right =
+            DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames, channel = 1) / rightBefore
+        assertEquals(1.0, left, STEADY_STATE_TOLERANCE)
+        assertEquals(10.0.pow(6.0 / 20.0), right, STEADY_STATE_TOLERANCE)
+    }
+
     /** An equalizer that has already processed audio, so a stale cached design would be reused. */
     private fun warmedUp(band: EqualizerBand, channels: Int = 1): PortableEqualizer =
         PortableEqualizer(rate, channels).also {
