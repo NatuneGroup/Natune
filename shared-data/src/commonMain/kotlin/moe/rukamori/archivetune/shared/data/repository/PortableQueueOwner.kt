@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.data.persistence.AlbumCompletionIndex
+import moe.rukamori.archivetune.shared.data.recommend.QueueTailRecommendation
 import moe.rukamori.archivetune.shared.data.repository.QueueStreamRecovery.Prepared
 import moe.rukamori.archivetune.shared.domain.persistence.PositionRestorePolicy
 import moe.rukamori.archivetune.shared.domain.persistence.QueueCheckpoint
@@ -115,6 +116,8 @@ class PortableQueueOwner(
     private val wallTimeMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     /** The wall clock for locator expiresAtEpochMs: an epoch instant, never the monotonic clock's ticks. */
     epochNowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    /** Optional local-history planner; absent keeps the provider-order tail, as existing fixtures expect. */
+    private val recommendation: QueueTailRecommendation? = null,
 ) : TypedQueueOwnerPort, QueueEditingCommands {
     private val lock = Mutex()
     private val finitePlaylists = FinitePlaylistLoader(content, albumCompletion)
@@ -166,6 +169,7 @@ class PortableQueueOwner(
         enabled = autoLoadMoreEnabled,
         repeatOff = { repeatMode() == QueueRepeatMode.OFF },
         nowMs = monotonicTimeMs,
+        recommendation = recommendation,
         report = { advanceFailureFlow.tryEmit(it) },
     )
     override val infiniteQueueLoading: StateFlow<Boolean> = infinite.loading.asStateFlow()
@@ -198,11 +202,9 @@ class PortableQueueOwner(
     private val endWatcher: Job = scope.launch {
         player.snapshot.collect { snapshot -> onSnapshot(snapshot) }
     }
-
     private val failureWatcher: Job = scope.launch {
         merge(player.failures, resolutionFailureFlow).collect { failure -> onFailure(failure) }
     }
-
     private val infinitePreferenceWatcher: Job = scope.launch {
         autoLoadMoreChanges.distinctUntilChanged().collect { enabled ->
             infinite.decide { if (enabled) infinite.consider() else infinite.cancel() }
@@ -978,7 +980,6 @@ class PortableQueueOwner(
             }
         }
     }
-
     private companion object {
         /** Resolve and preload this far ahead of the blend, as Android prepares its second player. */
         const val HANDOFF_PREPARE_AHEAD_MS = 30_000L
@@ -994,7 +995,6 @@ class PortableQueueOwner(
 
         const val MIN_SPEED = 0.1f
     }
-
     private fun requireInside() = check(inside) { "Queue changes must run inside withQueueAccess" }
 
 }

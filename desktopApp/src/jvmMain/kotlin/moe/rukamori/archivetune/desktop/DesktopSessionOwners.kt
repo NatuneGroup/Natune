@@ -40,6 +40,8 @@ import moe.rukamori.archivetune.shared.data.customartwork.JvmCustomArtworkFiles
 import moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase
 import moe.rukamori.archivetune.shared.data.platform.desktop.jvmJapaneseLanguagePackManager
 import moe.rukamori.archivetune.shared.data.persistence.RoomArtistBlockRepository
+import moe.rukamori.archivetune.shared.data.recommend.PortableRecommendationSignals
+import moe.rukamori.archivetune.shared.data.recommend.QueueTailRecommendation
 import moe.rukamori.archivetune.shared.data.persistence.RoomLibraryRepository
 import moe.rukamori.archivetune.shared.data.persistence.RoomListeningHistory
 import moe.rukamori.archivetune.shared.data.persistence.RoomPodcastProgressStore
@@ -275,6 +277,19 @@ internal suspend fun assembleDesktopSessionOwners(
     val handoffHold = MutableStateFlow(false)
     // One router feeds the queue and the chat song picker, so a pick resolves exactly what playback resolves.
     val contentRouter = ContentRepositoryRouter(listOf(TypedRoomLibraryRepository(library), youtubeContent))
+    val blockedSongs = {
+        parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
+    }
+    // The tail ranks the page it already fetched against the same store, block list and local clock the UI shows.
+    val queueRecommendation = QueueTailRecommendation(
+        signals = PortableRecommendationSignals(
+            listens = database.listens(),
+            artistBlocks = database.artistBlocks(),
+            blockedSongRefs = blockedSongs,
+        ),
+        nowMs = System::currentTimeMillis,
+        offsetMsAt = { epochMs -> TimeZone.getDefault().getOffset(epochMs).toLong() },
+    )
     val owner = PortableQueueOwner(
         player = player,
         scope = scope,
@@ -290,11 +305,10 @@ internal suspend fun assembleDesktopSessionOwners(
         hideExplicit = { vault.snapshots.value?.get(HideExplicitKey) ?: false },
         hideVideo = { vault.snapshots.value?.get(HideVideoKey) ?: false },
         blockedArtistIds = { queueArtistBlocks.value },
-        blockedSongRefs = {
-            parseBlockedSongRefs(vault.snapshots.value?.get(BlockedSongIdsKey).orEmpty()).toSet()
-        },
+        blockedSongRefs = blockedSongs,
         handoffEngine = DesktopCrossfadeHandoff(playback, vault.snapshots, handoffHold),
         songMetadata = songMetadata,
+        recommendation = queueRecommendation,
     )
     val queue = TypedDelegatingQueueController(owner, RoomQueueCheckpointStore(database.checkpoints(), database.library()))
     try {
