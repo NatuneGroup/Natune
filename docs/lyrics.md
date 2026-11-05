@@ -17,7 +17,10 @@ Prioritize word-synced lyrics first tries BetterLyrics, YouLyPlus and Unison in 
 order, regardless of their user switches. Provider switches and priority still control the
 ordinary fallback and manual provider search; they remain editable while word-sync priority
 is on. The shared helper follows this Android policy, with actual host/provider availability
-checked separately from the user toggle. Portato is not part of the fixed sweep.
+checked separately from the user toggle. Portato is not part of the fixed sweep. In-memory
+cached answers are revalidated on every read too: a result from a provider that is now
+disabled, unavailable or unable to serve the track is treated as a miss and the lookup falls
+through to the current provider set, without clearing other providers' entries.
 
 `LyricsModeKey` is the canonical renderer selection; the old `use_lyrics_v2` search anchor
 navigates to that selector rather than editing an ignored boolean. Android's tuning page

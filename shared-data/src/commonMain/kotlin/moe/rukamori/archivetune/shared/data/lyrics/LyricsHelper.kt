@@ -94,7 +94,7 @@ class LyricsHelper(
         if (forceRefresh) {
             invalidate(key)
         } else {
-            cachedResult(key, prioritize)?.let { return it }
+            cachedResult(key, request, prioritize)?.let { return it }
         }
 
         // Checked after the cache so a cached answer still works offline, as on Android.
@@ -142,17 +142,36 @@ class LyricsHelper(
 
     private suspend fun cachedResult(
         key: String,
+        request: LyricsRequest,
         prioritize: Boolean,
     ): LyricsResult? {
         // With the word-synced toggle on, a cached line-synced or plain answer is stale. Skip it so the
-        // sweep gets another chance.
+        // sweep gets another chance. A cached answer from a provider that is now disabled, unavailable
+        // or unable to handle this media id is stale too: switches apply on every read, not only when
+        // the network path runs. The entry is skipped, not purged, so re-enabling the provider can
+        // reuse it when no other provider answers.
         resultCache.get(key)?.let { cached ->
-            if (!prioritize || LyricsDetection.hasWordSyncedLyrics(cached.lyrics)) return cached
+            if (isCachedProviderSelectable(cached.providerName, request) &&
+                (!prioritize || LyricsDetection.hasWordSyncedLyrics(cached.lyrics))
+            ) {
+                return cached
+            }
         }
-        allResultsCache.get(key)?.firstOrNull()?.let { cached ->
-            if (!prioritize || LyricsDetection.hasWordSyncedLyrics(cached.lyrics)) return cached
+        allResultsCache.get(key)?.let { cached ->
+            val first = cached.firstOrNull { isCachedProviderSelectable(it.providerName, request) }
+            if (first != null && (!prioritize || LyricsDetection.hasWordSyncedLyrics(first.lyrics))) return first
         }
         return null
+    }
+
+    private fun isCachedProviderSelectable(
+        providerName: String,
+        request: LyricsRequest,
+    ): Boolean {
+        val provider = providers.firstOrNull { it.name == providerName } ?: return false
+        return isEnabled(provider.name) &&
+            isAvailable(provider.name) &&
+            LyricsMediaIdPolicy.supportsMediaId(provider, request.mediaId)
     }
 
     private suspend fun fetchAndCache(
