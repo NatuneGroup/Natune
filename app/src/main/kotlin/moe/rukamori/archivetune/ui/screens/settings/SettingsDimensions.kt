@@ -20,7 +20,6 @@ import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.scaleAwareSpring
 
 object SettingsDimensions {
-    val GroupCardCornerRadius = 18.dp
     val BannerCardCornerRadius = 18.dp
 
     val ScreenHorizontalPadding = 16.dp
@@ -34,13 +33,6 @@ object SettingsDimensions {
     val BannerIconSize = 46.dp
     val BannerIconInnerSize = 24.dp
     val ChevronSize = 18.dp
-
-    val ProfileCardAvatarSize = 52.dp
-    val ProfileCardAvatarIconSize = 24.dp
-
-    val DividerThickness = 0.5.dp
-    val DividerStartIndent = 60.dp
-    val DividerAlpha = 0.3f
 
     val SectionHeaderBottomPadding = 6.dp
     val SectionHeaderHorizontalPadding = 20.dp
