@@ -325,7 +325,7 @@
     <string name="about_lead_developer">Développeur principal</string>
     <string name="aod_customize_text_alignment">Alignement du texte</string>
     <string name="settings_lyrics_subtitle">Fournisseurs de paroles, préchargement et traduction</string>
-    <string name="aod_customize_sample_artist">Koiverse Ensemble</string>
+    <string name="aod_customize_sample_artist">Natune Ensemble</string>
     <string name="ai_integration">Intégration de l\'IA</string>
     <plurals name="news_article_count">
         <item quantity="one">%d article</item>
