@@ -6,10 +6,12 @@
 import io
 import json
 import os
+import struct
 import tempfile
 import unittest
 import warnings
 import zipfile
+import zlib
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -43,6 +45,62 @@ class ApkSizeReportTest(unittest.TestCase):
             with zipfile.ZipFile(path, "w") as archive:
                 for entry_name, payload, compression in entries:
                     archive.writestr(entry_name, payload, compress_type=compression)
+        return path
+
+    def write_invalid_utf8_member_name_apk(self, name="invalid-utf8-name.apk"):
+        """Builds a valid central directory whose UTF-8 member name is one 0xff byte."""
+        path = self.apk_path(name)
+        payload = b"x"
+        member_name = b"\xff"
+        crc = zlib.crc32(payload) & 0xFFFFFFFF
+        local_header = struct.pack(
+            "<IHHHHHIIIHH",
+            0x04034B50,
+            20,
+            0x0800,
+            0,
+            0,
+            0,
+            crc,
+            len(payload),
+            len(payload),
+            len(member_name),
+            0,
+        )
+        central_header = struct.pack(
+            "<IHHHHHHIIIHHHHHII",
+            0x02014B50,
+            20,
+            20,
+            0x0800,
+            0,
+            0,
+            0,
+            crc,
+            len(payload),
+            len(payload),
+            len(member_name),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+        end_record = struct.pack(
+            "<IHHHHIIH",
+            0x06054B50,
+            0,
+            0,
+            1,
+            1,
+            len(central_header) + len(member_name),
+            len(local_header) + len(member_name) + len(payload),
+            0,
+        )
+        path.write_bytes(
+            local_header + member_name + payload + central_header + member_name + end_record
+        )
         return path
 
     def fixture_entries(self):
@@ -206,6 +264,28 @@ class ApkSizeReportTest(unittest.TestCase):
         self.assertIn("not a readable ZIP/APK archive", errors.getvalue())
         self.assertNotIn("Traceback", errors.getvalue())
 
+    def test_invalid_utf8_member_name_is_an_input_error(self):
+        path = self.write_invalid_utf8_member_name_apk()
+        with self.assertRaises(UnicodeDecodeError):
+            with zipfile.ZipFile(path) as archive:
+                archive.infolist()
+        with patch.object(
+            zipfile.ZipFile, "read", side_effect=AssertionError("entry payload read")
+        ), patch.object(
+            zipfile.ZipFile, "open", side_effect=AssertionError("entry stream opened")
+        ):
+            with self.assertRaises(ReportError):
+                inspect_apk(path)
+
+            output = self.apk_path("invalid-utf8-report.json")
+            errors = io.StringIO()
+            with redirect_stderr(errors):
+                exit_code = main([str(path), "--output", str(output)])
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(output.exists())
+        self.assertIn("not a readable ZIP/APK archive", errors.getvalue())
+        self.assertNotIn("Traceback", errors.getvalue())
+
     def test_missing_and_directory_paths_are_rejected(self):
         with self.assertRaises(ReportError):
             inspect_apk(self.apk_path("missing.apk"))
@@ -328,6 +408,51 @@ class ApkSizeReportTest(unittest.TestCase):
         self.assertEqual(fresh_report["artifact"]["bytes"], candidate.stat().st_size)
         self.assertEqual(candidate.read_bytes(), candidate_before)
         self.assertEqual(baseline.read_bytes(), baseline_before)
+
+    def test_output_rejects_a_symlink_to_the_candidate(self):
+        candidate = self.write_apk("candidate.apk", self.fixture_entries())
+        output = self.apk_path("candidate-symlink.json")
+        os.symlink(candidate, output)
+        candidate_before = candidate.read_bytes()
+
+        errors = io.StringIO()
+        with redirect_stderr(errors):
+            exit_code = main([str(candidate), "--output", str(output)])
+        self.assertEqual(exit_code, 2)
+        self.assertIn("must not overwrite", errors.getvalue())
+        self.assertTrue(output.is_symlink())
+        self.assertEqual(output.read_bytes(), candidate_before)
+        self.assertEqual(candidate.read_bytes(), candidate_before)
+
+    def test_literal_tilde_output_hardlinks_are_rejected(self):
+        candidate = self.write_apk("candidate.apk", self.fixture_entries())
+        baseline = self.write_apk("baseline.apk", self.fixture_entries())
+        candidate_before = candidate.read_bytes()
+        baseline_before = baseline.read_bytes()
+        literal_tilde_directory = self.root / "~"
+        literal_tilde_directory.mkdir()
+
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(self.root)
+            for role, target in (("candidate", candidate), ("baseline", baseline)):
+                with self.subTest(role=role):
+                    output = Path("~") / f"{role}-hardlink.json"
+                    os.link(target, output)
+                    arguments = ["candidate.apk", "--output", str(output)]
+                    if role == "baseline":
+                        arguments[1:1] = ["--baseline", "baseline.apk"]
+                    errors = io.StringIO()
+                    with redirect_stderr(errors):
+                        exit_code = main(arguments)
+                    self.assertEqual(exit_code, 2)
+                    self.assertIn("must not overwrite", errors.getvalue())
+                    self.assertEqual(candidate.read_bytes(), candidate_before)
+                    self.assertEqual(baseline.read_bytes(), baseline_before)
+                    expected = candidate_before if role == "candidate" else baseline_before
+                    self.assertEqual(output.read_bytes(), expected)
+        finally:
+            os.chdir(original_cwd)
 
     def test_classifier_keeps_dex_and_assets_distinct(self):
         self.assertEqual(classify_entry("classes.dex"), "dex")
