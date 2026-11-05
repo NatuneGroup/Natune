@@ -149,28 +149,28 @@ class DownloadQueueOwner(
             if (task.phase == DownloadPhase.REMOVING) {
                 removeCommitted(task); store.remove(task.id); return
             }
-            val downloading = task.copy(phase = DownloadPhase.DOWNLOADING, updateTimeMs = timeMs())
-            put(downloading)
+            val downloading = claimDownloading(task) ?: return
             val prepared = resolver.resolve(downloading)
             val stream = (prepared as? PreparedAudio.Progressive)?.stream
                 ?: error("Source did not resolve to a progressive stream")
             // The committed file is keyed by the resolved source, so the task records it before the transfer.
-            put(downloading.copy(source = stream.source))
+            if (!updateWhileDownloading(downloading.id) { it.copy(source = stream.source) }) return
             val size = transfer.transfer(downloading, stream, downloading.resumeBytes, itemOf(downloading.ref)) { done, total ->
-                val live = snapshot[downloading.id] ?: downloading
-                put(live.copy(phase = DownloadPhase.DOWNLOADING, bytesDownloaded = done,
-                    totalBytes = total ?: live.totalBytes, resumeBytes = done, updateTimeMs = timeMs()))
+                updateWhileDownloading(downloading.id) {
+                    it.copy(bytesDownloaded = done, totalBytes = total ?: it.totalBytes,
+                        resumeBytes = done, updateTimeMs = timeMs())
+                }
             }
-            put((snapshot[downloading.id] ?: downloading).copy(phase = DownloadPhase.COMPLETED,
-                bytesDownloaded = size, totalBytes = size, updateTimeMs = timeMs()))
+            updateWhileDownloading(downloading.id) {
+                it.copy(phase = DownloadPhase.COMPLETED, bytesDownloaded = size, totalBytes = size,
+                    updateTimeMs = timeMs())
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
-            val live = snapshot[task.id] ?: task
-            // A row the user paused or removed while the transfer unwound keeps its terminal phase.
-            if (live.phase != DownloadPhase.STOPPED && live.phase != DownloadPhase.REMOVING) {
-                put(live.copy(phase = DownloadPhase.FAILED, failReason = failure.message ?: "download failed",
-                    updateTimeMs = timeMs()))
+            updateWhileDownloading(task.id) {
+                it.copy(phase = DownloadPhase.FAILED, failReason = failure.message ?: "download failed",
+                    updateTimeMs = timeMs())
             }
         } finally {
             queueGate.withLock {
@@ -181,11 +181,32 @@ class DownloadQueueOwner(
         }
     }
 
-    /** Persists [task] and updates the snapshot for callers that do not already hold [queueGate]. */
-    private suspend fun put(task: DownloadTask) {
-        store.put(task)
-        queueGate.withLock { snapshot = snapshot + (task.id to task) }
+    /** Persists the DOWNLOADING row for a queued task, unless a stop or remove already made the phase terminal. */
+    private suspend fun claimDownloading(task: DownloadTask): DownloadTask? = queueGate.withLock {
+        val live = snapshot[task.id] ?: return@withLock null
+        // A re-armed row can still carry the DOWNLOADING phase a killed process persisted.
+        if (live.phase != DownloadPhase.QUEUED && live.phase != DownloadPhase.DOWNLOADING) return@withLock null
+        val next = live.copy(phase = DownloadPhase.DOWNLOADING, updateTimeMs = timeMs())
+        store.put(next)
+        snapshot = snapshot + (task.id to next)
+        next
     }
+
+    /**
+     * A worker write only lands while the row is still this worker's DOWNLOADING entry. The progress and
+     * completion callbacks run in the transfer coroutine, so a [stop] or [remove] can win the gate between the
+     * transfer's last suspension and this write; writing anyway would resurrect a stopped download as
+     * DOWNLOADING with no worker behind it, or re-create a removed row whose file is already gone.
+     */
+    private suspend fun updateWhileDownloading(id: String, update: (DownloadTask) -> DownloadTask): Boolean =
+        queueGate.withLock {
+            val live = snapshot[id] ?: return@withLock false
+            if (live.phase != DownloadPhase.DOWNLOADING) return@withLock false
+            val next = update(live)
+            store.put(next)
+            snapshot = snapshot + (id to next)
+            true
+        }
 
     /** The same write for callers serialized inside [queueGate]; the mutex is not reentrant. */
     private suspend fun putLocked(task: DownloadTask) {
