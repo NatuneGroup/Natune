@@ -24,14 +24,14 @@ class PlaybackEngineLibraryTest {
     fun aMissingExplicitLibraryIsNotPresent() {
         val explicit = File("/dev/natune/missing.so")
 
-        assertFalse(engineLibraryPresent(explicit.path, "/app/resources", NAME) { false })
+        assertFalse(engineLibraryPresent(explicit.path, "/app/resources", NAME, null) { false })
     }
 
     @Test
     fun aPresentExplicitLibraryNeedsNoResourcesDirectory() {
         val explicit = File("/dev/natune/engine.so")
 
-        assertTrue(engineLibraryPresent(explicit.path, null, NAME) { it == explicit })
+        assertTrue(engineLibraryPresent(explicit.path, null, NAME, null) { it == explicit })
     }
 
     @Test
@@ -39,7 +39,7 @@ class PlaybackEngineLibraryTest {
         val resources = File("/app/resources")
         val packaged = File(File(resources, "native"), NAME)
 
-        assertTrue(engineLibraryPresent(null, resources.path, NAME) { it == packaged })
+        assertTrue(engineLibraryPresent(null, resources.path, NAME, null) { it == packaged })
     }
 
     @Test
