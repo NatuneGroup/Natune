@@ -108,8 +108,9 @@ object PortableListenFacts {
             blockedArtists.filter { it.kind == ContentKind.ARTIST }.groupBy({ it.provider }, { it.id })
         val facts =
             rows.mapNotNull { fromRow(it, recommendedRefs) }.filter { fact ->
+                val blockedForProvider = blockedArtistIds[fact.ref.provider] ?: emptyList()
                 BlockedSongRef(fact.ref.provider, fact.ref.id) !in blockedSongs &&
-                    fact.artistIds.none { artistId -> artistId in blockedArtistIds[fact.ref.provider].orEmpty() }
+                    fact.artistIds.none { artistId -> artistId in blockedForProvider }
             }
         return RecommendationSignalSnapshot(facts, blockedArtists, blockedSongs)
     }
