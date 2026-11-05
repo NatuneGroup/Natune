@@ -107,14 +107,25 @@ class LyricsHelperPriorityTest {
     fun prioritizedSweepMatchesAndroidAndIgnoresFallbackSwitches() =
         runTest {
             val disabled = answering("BetterLyrics", WORD_SYNCED_TTML)
+            var online = true
             val helper =
                 helperOf(
                     listOf(disabled, answering("YouLyPlus", WORD_SYNCED_TTML)),
                     backgroundScope,
                     prioritizeWordSynced = true,
                     isEnabled = { it != "BetterLyrics" },
+                    isNetworkAvailable = { online },
                 )
 
+            assertEquals("BetterLyrics", helper.getLyricsWithProvider(request()).providerName)
+            assertEquals(1, disabled.calls)
+
+            // The sweep result stays a cache hit even though its provider switch is off.
+            assertEquals("BetterLyrics", helper.getLyricsWithProvider(request()).providerName)
+            assertEquals(1, disabled.calls)
+
+            // A cached sweep answer still works offline.
+            online = false
             assertEquals("BetterLyrics", helper.getLyricsWithProvider(request()).providerName)
             assertEquals(1, disabled.calls)
         }
