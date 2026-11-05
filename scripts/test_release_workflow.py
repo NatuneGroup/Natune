@@ -726,5 +726,20 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertNotIn("bin/Natune.exe", stage)
 
 
+    def test_desktop_matrix_normalizes_only_the_linux_only_appimage_field(self):
+        text = WORKFLOW.read_text()
+        macos = job_block(text, "desktop-macos")
+        matrix = macos.split("        include:\n", 1)[1].split("    env:\n", 1)[0]
+        rows = re.findall(r"(?m)^          - platform: (\w+)\n((?:            [^\n]+\n)+)", matrix)
+        self.assertEqual(["macos", "macos"], [platform for platform, _ in rows])
+        for _, body in rows:
+            self.assertIn("appimage_arch: ''", body)
+        desktop = job_block(text, "desktop")
+        linux_matrix = desktop.split("        include:\n", 1)[1].split("    env:\n", 1)[0]
+        self.assertIn("appimage_arch: x86_64", linux_matrix)
+        self.assertIn("appimage_arch: aarch64", linux_matrix)
+        self.assertEqual(2, linux_matrix.count("appimage_arch:"))
+
+
 if __name__ == "__main__":
     unittest.main()
