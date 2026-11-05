@@ -27,8 +27,10 @@ internal object ArtworkThumbnailDecode {
         maxDimensionPx: Int,
     ): Int {
         require(maxDimensionPx > 0) { "maxDimensionPx must be positive" }
+        // BitmapFactory leaves both bounds at -1 when it cannot read a file; a partially invalid
+        // pair is not a trustworthy size either, so it takes the same full-decode path.
+        if (sourceWidth <= 0 || sourceHeight <= 0) return 1
         val largestDimension = maxOf(sourceWidth, sourceHeight)
-        if (largestDimension <= 0) return 1
 
         var sampleSize = 1
         while (largestDimension / (sampleSize * 2) >= maxDimensionPx) {
