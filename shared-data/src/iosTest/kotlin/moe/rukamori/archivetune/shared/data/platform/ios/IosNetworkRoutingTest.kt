@@ -364,6 +364,7 @@ class IosNetworkRoutingTest {
         }
         assertTrue(IosStreamProxyRouting.mustProxy())
         assertNotNull(IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration))
+        Unit
     }
 
     @Test
