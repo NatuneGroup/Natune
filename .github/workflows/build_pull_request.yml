@@ -878,7 +878,7 @@ jobs:
             echo "::error::The assembled APK package/version does not match the reserved candidate."
             exit 1
           fi
-          if ! grep -q "^sdkVersion:'24'$" "$BADGING"; then
+          if ! grep -Eq "^(minSdkVersion|sdkVersion):'24'$" "$BADGING"; then
             echo "::error::The assembled APK does not keep the unchanged minSdk 24."
             exit 1
           fi
@@ -988,7 +988,7 @@ jobs:
             echo "::error::The final signed APK package/version changed during signing."
             exit 1
           fi
-          if ! grep -q "^sdkVersion:'24'$" "$BADGING"; then
+          if ! grep -Eq "^(minSdkVersion|sdkVersion):'24'$" "$BADGING"; then
             echo "::error::The final signed APK no longer reports minSdk 24."
             exit 1
           fi
