@@ -517,13 +517,52 @@ jobs:
             echo "::error::Could not read trustedUpgradeVersionCodeFloor from app/build.gradle.kts."
             exit 1
           fi
-          # Published release bodies carry the same at-build marker the update feed uses. Read them
-          # fresh at dispatch and take the maximum across both channels; an unreadable marker is a
-          # failure, not a guessed floor. The owner may still hold a newer unpublished installed build;
-          # the dispatcher must confirm that before reserving a code (documented pre-dispatch gate).
-          PUBLISHED_MAX="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq '.[] | select(.draft == false) | .body' 2>/dev/null |
-            grep -oE 'at-build:[0-9]+' | cut -d: -f2 | sort -n | tail -n1 || true)"
+          # Published release bodies carry the same at-build marker the update feed uses. Capture the
+          # complete paginated response in a runner-temporary file (release notes can be large, and a
+          # failed later page must not leave a partially parsed inventory), require the API read to
+          # succeed, then validate every present declaration before selecting the maximum. The owner
+          # may still hold a newer unpublished installed build; the dispatcher must confirm that
+          # before reserving a code (documented pre-dispatch gate).
+          RELEASE_BODIES="$(mktemp "$RUNNER_TEMP/candidate-release-bodies.XXXXXX")"
+          RELEASE_MAX="$(mktemp "$RUNNER_TEMP/candidate-release-max.XXXXXX")"
+          trap 'rm -f "$RELEASE_BODIES" "$RELEASE_MAX"' EXIT
+          if ! gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false) | .body' > "$RELEASE_BODIES"; then
+            echo "::error::The published-release API read did not complete; refusing to parse a partial inventory."
+            exit 1
+          fi
+          if ! python3 - "$RELEASE_BODIES" "$RELEASE_MAX" <<'PY'
+          import re
+          import sys
+
+          declaration = re.compile(r"^<!-- at-build:([1-9][0-9]*) -->$")
+          with open(sys.argv[1], encoding="utf-8") as bodies:
+              lines = bodies.read().splitlines()
+          values = []
+          for line in lines:
+              candidate = line.strip()
+              if "at-build:" not in candidate:
+                  continue
+              match = declaration.fullmatch(candidate)
+              if match is None:
+                  raise SystemExit(
+                      "error: malformed at-build declaration: " + repr(candidate[:120]))
+              digits = match.group(1)
+              if len(digits) > 10 or int(digits) > 2147483647:
+                  raise SystemExit(
+                      "error: at-build declaration is outside Android's positive Int range")
+              values.append(int(digits))
+          if not values:
+              raise SystemExit(
+                  "error: no complete at-build declaration in the published release bodies")
+          with open(sys.argv[2], "w", encoding="utf-8") as output:
+              output.write(f"{max(values)}\n")
+          PY
+          then
+            echo "::error::Published release bodies have no usable build declaration; refusing to guess the current published ARM64 floor."
+            exit 1
+          fi
+          PUBLISHED_MAX="$(cat "$RELEASE_MAX")"
           if [[ -z "${PUBLISHED_MAX:-}" ]]; then
             echo "::error::No published at-build marker was readable; refusing to guess the current published ARM64 floor."
             exit 1
@@ -681,10 +720,15 @@ jobs:
           metadata_path, apk_path, version_code, version_name = sys.argv[1:5]
           with open(metadata_path, encoding="utf-8") as metadata_file:
               document = json.load(metadata_file)
-          variant = str(document.get("variantName", "")).lower()
-          for expected in ("gms", "arm64", "release"):
+          variant_name = document.get("variantName")
+          variant = str(variant_name or "").lower()
+          for expected in ("gms", "mobile", "arm64", "release"):
               if expected not in variant:
-                  raise SystemExit(f"error: variant '{variant}' is not the GMS mobile ARM64 release")
+                  raise SystemExit(
+                      f"error: variant {variant_name!r} is not the exact gmsMobileArm64Release variant")
+          if variant_name != "gmsMobileArm64Release":
+              raise SystemExit(
+                  f"error: variant {variant_name!r} is not the exact gmsMobileArm64Release variant")
           if document.get("applicationId") != "moe.rukamori.archivetune":
               raise SystemExit(f"error: unexpected applicationId {document.get('applicationId')!r}")
           elements = document.get("elements") or []

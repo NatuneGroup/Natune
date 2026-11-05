@@ -308,6 +308,26 @@ class WorkflowStructureTest(unittest.TestCase):
         self.assertIn(f"BASELINE_BYTES: '{BASELINE_BYTES}'", final)
         self.assertIn(f"BASELINE_VERSION_CODE: '{BASELINE_VERSION_CODE}'", final)
 
+    def test_published_version_acquisition_is_complete_and_file_backed(self):
+        gate = step_block("Validate the reserved version above source and published floors")
+        self.assertIn('mktemp "$RUNNER_TEMP/candidate-release-bodies.XXXXXX"', gate)
+        self.assertIn('> "$RELEASE_BODIES"', gate)
+        self.assertIn("if ! gh api --paginate", gate)
+        self.assertIn("API read did not complete", gate)
+        self.assertIn("declaration.fullmatch", gate)
+        self.assertNotIn("|| true", gate)
+        self.assertNotIn("grep -oE 'at-build:", gate)
+        # Release notes stay in the temporary file, not an environment string.
+        self.assertNotIn("GH_BODIES", gate)
+        self.assertNotIn('PUBLISHED_MAX="$(gh api', gate)
+        self.assertIn('variant_name != "gmsMobileArm64Release"', workflow_text())
+        self.assertIn('for expected in ("gms", "mobile", "arm64", "release")',
+                      workflow_text())
+
+    def test_standalone_branch_does_not_reference_the_quality_input(self):
+        self.assertNotIn("quality_base", workflow_text())
+        self.assertIn("  android-release-candidate:\n", workflow_text())
+
     def test_fixed_release_task_and_standard_nightly_shape(self):
         assemble = step_block("Assemble only the GMS mobile ARM64 release APK")
         script = run_script("Assemble only the GMS mobile ARM64 release APK")
@@ -420,15 +440,17 @@ class VersionGateTest(unittest.TestCase):
             f'val baseVersionName = "15.0.0"\nval trustedUpgradeVersionCodeFloor = {floor}\n',
             encoding="utf-8",
         )
+        runner_temp = directory / "runner"
+        runner_temp.mkdir()
         bin_dir = directory / "bin"
         bin_dir.mkdir()
         tool(bin_dir, "gh", """
             #!/usr/bin/env python3
             import os
             import sys
+            print(os.environ.get("GH_BODIES", ""))
             if os.environ.get("GH_FAIL") == "1":
                 sys.exit(1)
-            print(os.environ.get("GH_BODIES", ""))
         """)
         return bash(
             self.script, directory,
@@ -436,6 +458,7 @@ class VersionGateTest(unittest.TestCase):
                 "CANDIDATE_VERSION_CODE": str(version),
                 "BASELINE_VERSION_CODE": BASELINE_VERSION_CODE,
                 "GITHUB_REPOSITORY": "NatuneGroup/Natune",
+                "RUNNER_TEMP": str(runner_temp),
                 "GH_FAIL": "1" if gh_fail else "0",
                 "GH_BODIES": "\n".join(bodies),
             },
@@ -443,7 +466,7 @@ class VersionGateTest(unittest.TestCase):
         )
 
     def test_version_above_all_floors_passes(self):
-        result = self.gate(1793753724, ["nightly <!-- at-build:1793753723 -->"])
+        result = self.gate(1793753724, ["<!-- at-build:1793753723 -->"])
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("newest_published_version_code=1793753723", result.stdout)
 
@@ -459,25 +482,75 @@ class VersionGateTest(unittest.TestCase):
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn(message, result.stdout + result.stderr)
 
-    def test_unreadable_or_missing_published_marker_fails_closed(self):
-        for bodies, gh_fail in (([], False), ([""], False), (["no marker"], False), ([], True)):
-            with self.subTest(bodies=bodies, gh_fail=gh_fail):
-                result = self.gate(1793753724, bodies, gh_fail=gh_fail)
+    def test_partial_api_output_then_failure_never_parses(self):
+        result = self.gate(1793753724, ["<!-- at-build:1793753723 -->"], gh_fail=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("API read did not complete", result.stdout + result.stderr)
+        self.assertNotIn("newest_published_version_code", result.stdout)
+
+    def test_api_failure_without_output_fails_closed(self):
+        result = self.gate(1793753724, [], gh_fail=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("API read did not complete", result.stdout + result.stderr)
+
+    def test_empty_or_no_usable_published_marker_fails_closed(self):
+        for bodies in ([], [""], ["no marker"], ["null"]):
+            with self.subTest(bodies=bodies):
+                result = self.gate(1793753724, bodies)
                 self.assertNotEqual(0, result.returncode)
-                self.assertIn("refusing to guess", result.stdout + result.stderr)
+                self.assertIn("no usable build declaration", result.stdout + result.stderr)
 
     def test_maximum_published_marker_wins_across_channels(self):
         result = self.gate(
             1900000000,
-            ["stable <!-- at-build:1700000000 -->", "nightly <!-- at-build:1800000000 -->"],
+            [
+                "stable notes\n<!-- at-build:1700000000 -->\nmore notes",
+                "nightly notes\n<!-- at-build:1793753723 -->",
+                "<!-- at-build:1800000000 -->",
+            ],
         )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("newest_published_version_code=1800000000", result.stdout)
 
-    def test_published_marker_outside_the_int_range_fails_closed(self):
-        result = self.gate(2147483647, ["<!-- at-build:99999999999999999999 -->"])
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("positive Int range", result.stdout + result.stderr)
+    def test_malformed_marker_next_to_a_valid_marker_fails_closed(self):
+        for malformed in (
+            "<!-- at-build:+1800000000 -->",
+            "<!-- at-build:1793753723garbage -->",
+            "<!-- at-build:1793753723 --> trailing",
+        ):
+            with self.subTest(malformed=malformed):
+                result = self.gate(1793753724, ["<!-- at-build:1793753723 -->", malformed])
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("malformed at-build declaration", result.stdout + result.stderr)
+                self.assertNotIn("newest_published_version_code", result.stdout)
+
+    def test_malformed_zero_negative_or_nondecimal_markers_fail_closed(self):
+        for marker in (
+            "<!-- at-build:0 -->",
+            "<!-- at-build:-1 -->",
+            "<!-- at-build:1.5 -->",
+            "<!-- at-build:abc -->",
+            "<!-- at-build:01793753723 -->",
+            "<!-- at-build: 1793753723 -->",
+            "at-build:1793753723",
+            "prefix <!-- at-build:1793753723 -->",
+            "<!-- at-build:1793753723",
+            "<!-- at-build:1793753723 ->",
+        ):
+            with self.subTest(marker=marker):
+                result = self.gate(2147483647, [marker])
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("malformed at-build declaration", result.stdout + result.stderr)
+
+    def test_out_of_range_published_markers_fail_closed(self):
+        for marker in (
+            "<!-- at-build:2147483648 -->",
+            "<!-- at-build:99999999999999999999 -->",
+        ):
+            with self.subTest(marker=marker):
+                result = self.gate(2147483647, [marker])
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("positive Int range", result.stdout + result.stderr)
 
     def test_source_floor_is_read_from_the_current_build_script(self):
         result = self.gate(6999, ["<!-- at-build:1793753723 -->"], floor=7000)
@@ -705,7 +778,7 @@ class StageValidationTest(unittest.TestCase):
 
     def test_agp_metadata_must_describe_the_gms_arm64_release(self):
         cases = {
-            "variant": apk_metadata(variant="fossMobileArm64Release"),
+            "foss variant": apk_metadata(variant="fossMobileArm64Release"),
             "package": apk_metadata(package="com.example.app"),
             "version": apk_metadata(version_code="1700000000"),
             "output": apk_metadata(output_file="other.apk"),
@@ -714,6 +787,19 @@ class StageValidationTest(unittest.TestCase):
             with self.subTest(label=label):
                 result, _, _, _ = self.stage(metadata=document)
                 self.assertNotEqual(0, result.returncode)
+
+    def test_tv_universal_debug_or_case_variant_is_rejected(self):
+        for variant in (
+            "gmsTvArm64Release",
+            "gmsMobileUniversalRelease",
+            "gmsMobileArm64Debug",
+            "gmsMobileArm64ReleaseExtra",
+            "gmsmobilearm64release",
+        ):
+            with self.subTest(variant=variant):
+                result, _, _, _ = self.stage(metadata=apk_metadata(variant=variant))
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("gmsMobileArm64Release", result.stdout + result.stderr)
 
 
 class SigningTest(unittest.TestCase):
