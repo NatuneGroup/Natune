@@ -189,7 +189,7 @@ def inspect_apk(path: Path) -> ApkReport:
         digest = sha256_of(path)
         with zipfile.ZipFile(path) as archive:
             infos = archive.infolist()
-    except (zipfile.BadZipFile, zipfile.LargeZipFile, NotImplementedError):
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, NotImplementedError, UnicodeDecodeError):
         raise ReportError(f"not a readable ZIP/APK archive: {terminal_safe(str(path))}") from None
     except OSError as error:
         reason = error.strerror or "the archive cannot be opened"
@@ -570,16 +570,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _output_conflicts(output: Path, inputs: Sequence[Path]) -> bool:
-    output_path = output.expanduser()
     for input_path in inputs:
-        expanded_input = input_path.expanduser()
         try:
-            if output_path.resolve() == expanded_input.resolve():
+            if output.resolve() == input_path.resolve():
                 return True
         except OSError:
             pass
         try:
-            if os.path.samefile(output_path, expanded_input):
+            if os.path.samefile(output, input_path):
                 return True
         except OSError:
             continue
