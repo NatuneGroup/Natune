@@ -38,67 +38,117 @@ object BiquadDesign {
     }
 
     fun lowPass(sampleRateHz: Int, frequencyHz: Double, q: Double = BUTTERWORTH_Q): BiquadCoefficients {
-        val shape = Shape.of(sampleRateHz, frequencyHz, q)
-        return normalized(
-            b0 = (1 - shape.cos) / 2,
-            b1 = 1 - shape.cos,
-            b2 = (1 - shape.cos) / 2,
-            a0 = 1 + shape.alpha,
-            a1 = -2 * shape.cos,
-            a2 = 1 - shape.alpha,
+        val out = DoubleArray(BiquadFilter.COEFFICIENTS)
+        lowPassInto(sampleRateHz, frequencyHz, q, out)
+        return BiquadCoefficients(out[0], out[1], out[2], out[3], out[4])
+    }
+
+    /** [lowPass] written into [out] as b0, b1, b2, a1, a2, so a render-path retune can allocate nothing. */
+    fun lowPassInto(sampleRateHz: Int, frequencyHz: Double, q: Double = BUTTERWORTH_Q, out: DoubleArray) {
+        val w0 = shapeW0(sampleRateHz, frequencyHz, q)
+        val cosW0 = cos(w0)
+        val alpha = sin(w0) / (2 * q)
+        normalizedInto(
+            b0 = (1 - cosW0) / 2,
+            b1 = 1 - cosW0,
+            b2 = (1 - cosW0) / 2,
+            a0 = 1 + alpha,
+            a1 = -2 * cosW0,
+            a2 = 1 - alpha,
+            out = out,
         )
     }
 
     fun highPass(sampleRateHz: Int, frequencyHz: Double, q: Double = BUTTERWORTH_Q): BiquadCoefficients {
-        val shape = Shape.of(sampleRateHz, frequencyHz, q)
-        return normalized(
-            b0 = (1 + shape.cos) / 2,
-            b1 = -(1 + shape.cos),
-            b2 = (1 + shape.cos) / 2,
-            a0 = 1 + shape.alpha,
-            a1 = -2 * shape.cos,
-            a2 = 1 - shape.alpha,
+        val out = DoubleArray(BiquadFilter.COEFFICIENTS)
+        highPassInto(sampleRateHz, frequencyHz, q, out)
+        return BiquadCoefficients(out[0], out[1], out[2], out[3], out[4])
+    }
+
+    /** [highPass] written into [out] as b0, b1, b2, a1, a2. */
+    fun highPassInto(sampleRateHz: Int, frequencyHz: Double, q: Double = BUTTERWORTH_Q, out: DoubleArray) {
+        val w0 = shapeW0(sampleRateHz, frequencyHz, q)
+        val cosW0 = cos(w0)
+        val alpha = sin(w0) / (2 * q)
+        normalizedInto(
+            b0 = (1 + cosW0) / 2,
+            b1 = -(1 + cosW0),
+            b2 = (1 + cosW0) / 2,
+            a0 = 1 + alpha,
+            a1 = -2 * cosW0,
+            a2 = 1 - alpha,
+            out = out,
         )
     }
 
     fun peaking(sampleRateHz: Int, frequencyHz: Double, gainDb: Double, q: Double): BiquadCoefficients {
-        val shape = Shape.of(sampleRateHz, frequencyHz, q)
+        val out = DoubleArray(BiquadFilter.COEFFICIENTS)
+        peakingInto(sampleRateHz, frequencyHz, gainDb, q, out)
+        return BiquadCoefficients(out[0], out[1], out[2], out[3], out[4])
+    }
+
+    /** [peaking] written into [out] as b0, b1, b2, a1, a2. */
+    fun peakingInto(sampleRateHz: Int, frequencyHz: Double, gainDb: Double, q: Double, out: DoubleArray) {
+        val w0 = shapeW0(sampleRateHz, frequencyHz, q)
+        val cosW0 = cos(w0)
+        val alpha = sin(w0) / (2 * q)
         val a = amplitude(gainDb)
-        return normalized(
-            b0 = 1 + shape.alpha * a,
-            b1 = -2 * shape.cos,
-            b2 = 1 - shape.alpha * a,
-            a0 = 1 + shape.alpha / a,
-            a1 = -2 * shape.cos,
-            a2 = 1 - shape.alpha / a,
+        normalizedInto(
+            b0 = 1 + alpha * a,
+            b1 = -2 * cosW0,
+            b2 = 1 - alpha * a,
+            a0 = 1 + alpha / a,
+            a1 = -2 * cosW0,
+            a2 = 1 - alpha / a,
+            out = out,
         )
     }
 
     fun lowShelf(sampleRateHz: Int, frequencyHz: Double, gainDb: Double, q: Double): BiquadCoefficients {
-        val shape = Shape.of(sampleRateHz, frequencyHz, q)
+        val out = DoubleArray(BiquadFilter.COEFFICIENTS)
+        lowShelfInto(sampleRateHz, frequencyHz, gainDb, q, out)
+        return BiquadCoefficients(out[0], out[1], out[2], out[3], out[4])
+    }
+
+    /** [lowShelf] written into [out] as b0, b1, b2, a1, a2. */
+    fun lowShelfInto(sampleRateHz: Int, frequencyHz: Double, gainDb: Double, q: Double, out: DoubleArray) {
+        val w0 = shapeW0(sampleRateHz, frequencyHz, q)
+        val cosW0 = cos(w0)
+        val alpha = sin(w0) / (2 * q)
         val a = amplitude(gainDb)
-        val beta = 2 * sqrt(a) * shape.alpha
-        return normalized(
-            b0 = a * ((a + 1) - (a - 1) * shape.cos + beta),
-            b1 = 2 * a * ((a - 1) - (a + 1) * shape.cos),
-            b2 = a * ((a + 1) - (a - 1) * shape.cos - beta),
-            a0 = (a + 1) + (a - 1) * shape.cos + beta,
-            a1 = -2 * ((a - 1) + (a + 1) * shape.cos),
-            a2 = (a + 1) + (a - 1) * shape.cos - beta,
+        val beta = 2 * sqrt(a) * alpha
+        normalizedInto(
+            b0 = a * ((a + 1) - (a - 1) * cosW0 + beta),
+            b1 = 2 * a * ((a - 1) - (a + 1) * cosW0),
+            b2 = a * ((a + 1) - (a - 1) * cosW0 - beta),
+            a0 = (a + 1) + (a - 1) * cosW0 + beta,
+            a1 = -2 * ((a - 1) + (a + 1) * cosW0),
+            a2 = (a + 1) + (a - 1) * cosW0 - beta,
+            out = out,
         )
     }
 
     fun highShelf(sampleRateHz: Int, frequencyHz: Double, gainDb: Double, q: Double): BiquadCoefficients {
-        val shape = Shape.of(sampleRateHz, frequencyHz, q)
+        val out = DoubleArray(BiquadFilter.COEFFICIENTS)
+        highShelfInto(sampleRateHz, frequencyHz, gainDb, q, out)
+        return BiquadCoefficients(out[0], out[1], out[2], out[3], out[4])
+    }
+
+    /** [highShelf] written into [out] as b0, b1, b2, a1, a2. */
+    fun highShelfInto(sampleRateHz: Int, frequencyHz: Double, gainDb: Double, q: Double, out: DoubleArray) {
+        val w0 = shapeW0(sampleRateHz, frequencyHz, q)
+        val cosW0 = cos(w0)
+        val alpha = sin(w0) / (2 * q)
         val a = amplitude(gainDb)
-        val beta = 2 * sqrt(a) * shape.alpha
-        return normalized(
-            b0 = a * ((a + 1) + (a - 1) * shape.cos + beta),
-            b1 = -2 * a * ((a - 1) + (a + 1) * shape.cos),
-            b2 = a * ((a + 1) + (a - 1) * shape.cos - beta),
-            a0 = (a + 1) - (a - 1) * shape.cos + beta,
-            a1 = 2 * ((a - 1) - (a + 1) * shape.cos),
-            a2 = (a + 1) - (a - 1) * shape.cos - beta,
+        val beta = 2 * sqrt(a) * alpha
+        normalizedInto(
+            b0 = a * ((a + 1) + (a - 1) * cosW0 + beta),
+            b1 = -2 * a * ((a - 1) + (a + 1) * cosW0),
+            b2 = a * ((a + 1) + (a - 1) * cosW0 - beta),
+            a0 = (a + 1) - (a - 1) * cosW0 + beta,
+            a1 = 2 * ((a - 1) - (a + 1) * cosW0),
+            a2 = (a + 1) - (a - 1) * cosW0 - beta,
+            out = out,
         )
     }
 
@@ -108,6 +158,19 @@ object BiquadDesign {
      * design keeps both forms and the clarity preset names the one it was ported with.
      */
     fun highShelfSlope(sampleRateHz: Int, frequencyHz: Double, gainDb: Double, slope: Double): BiquadCoefficients {
+        val out = DoubleArray(BiquadFilter.COEFFICIENTS)
+        highShelfSlopeInto(sampleRateHz, frequencyHz, gainDb, slope, out)
+        return BiquadCoefficients(out[0], out[1], out[2], out[3], out[4])
+    }
+
+    /** [highShelfSlope] written into [out] as b0, b1, b2, a1, a2. */
+    fun highShelfSlopeInto(
+        sampleRateHz: Int,
+        frequencyHz: Double,
+        gainDb: Double,
+        slope: Double,
+        out: DoubleArray,
+    ) {
         require(slope.isFinite() && slope > 0.0) { "slope must be positive" }
         val frequency = clampFrequency(sampleRateHz, frequencyHz)
         val w0 = 2 * PI * frequency / sampleRateHz
@@ -117,13 +180,14 @@ object BiquadDesign {
         val safeSlope = slope.coerceIn(0.1, 1.0)
         val alpha = (sinW0 * 0.5) * sqrt((a + 1.0 / a) * (1.0 / safeSlope - 1.0) + 2.0)
         val beta = 2 * sqrt(a) * alpha
-        return normalized(
+        normalizedInto(
             b0 = a * ((a + 1) + (a - 1) * cosW0 + beta),
             b1 = -2 * a * ((a - 1) + (a + 1) * cosW0),
             b2 = a * ((a + 1) + (a - 1) * cosW0 - beta),
             a0 = (a + 1) - (a - 1) * cosW0 + beta,
             a1 = 2 * ((a - 1) - (a + 1) * cosW0),
             a2 = (a + 1) - (a - 1) * cosW0 - beta,
+            out = out,
         )
     }
 
@@ -144,23 +208,28 @@ object BiquadDesign {
 
     private fun amplitude(gainDb: Double): Double = 10.0.pow(gainDb / 40.0)
 
-    private fun normalized(
+    /** The cookbook's angular centre frequency, with the same validation the object-returning designs apply. */
+    private fun shapeW0(sampleRateHz: Int, frequencyHz: Double, q: Double): Double {
+        require(q.isFinite() && q > 0.0) { "q must be positive" }
+        return 2 * PI * clampFrequency(sampleRateHz, frequencyHz) / sampleRateHz
+    }
+
+    /** Writes b0, b1, b2, a1, a2 with a0 divided out, so no coefficient object is built. */
+    private fun normalizedInto(
         b0: Double,
         b1: Double,
         b2: Double,
         a0: Double,
         a1: Double,
         a2: Double,
-    ): BiquadCoefficients = BiquadCoefficients(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
-
-    private class Shape(val cos: Double, val alpha: Double) {
-        companion object {
-            fun of(sampleRateHz: Int, frequencyHz: Double, q: Double): Shape {
-                require(q.isFinite() && q > 0.0) { "q must be positive" }
-                val w0 = 2 * PI * clampFrequency(sampleRateHz, frequencyHz) / sampleRateHz
-                return Shape(cos = cos(w0), alpha = sin(w0) / (2 * q))
-            }
-        }
+        out: DoubleArray,
+    ) {
+        require(out.size >= BiquadFilter.COEFFICIENTS) { "out holds fewer than ${BiquadFilter.COEFFICIENTS} coefficients" }
+        out[0] = b0 / a0
+        out[1] = b1 / a0
+        out[2] = b2 / a0
+        out[3] = a1 / a0
+        out[4] = a2 / a0
     }
 }
 
@@ -169,12 +238,27 @@ object BiquadDesign {
  * through one instance never leaks one channel into the other.
  *
  * A second coefficient set may ride along for the right channel of every stereo pair, which is what a
- * band with a per-channel override uses; without one, every channel shares [coefficients].
+ * band with a per-channel override uses; without one, every channel shares the primary design.
+ *
+ * The running coefficients are held as primitives. A retune on the playback thread installs a design that
+ * was computed into a plain array ([setDesign]), so it allocates nothing; the value-typed API stays for
+ * hosts and tests that design off the render path.
  */
 class BiquadFilter(private val channels: Int) {
     private val z1: DoubleArray
     private val z2: DoubleArray
-    private var secondChannel: BiquadCoefficients? = null
+
+    private var primaryB0 = 1.0
+    private var primaryB1 = 0.0
+    private var primaryB2 = 0.0
+    private var primaryA1 = 0.0
+    private var primaryA2 = 0.0
+    private var secondaryB0 = 1.0
+    private var secondaryB1 = 0.0
+    private var secondaryB2 = 0.0
+    private var secondaryA1 = 0.0
+    private var secondaryA2 = 0.0
+    private var hasSecondary = false
 
     init {
         require(channels > 0) { "channels must be positive" }
@@ -182,26 +266,74 @@ class BiquadFilter(private val channels: Int) {
         z2 = DoubleArray(channels)
     }
 
-    var coefficients: BiquadCoefficients = BiquadCoefficients.IDENTITY
-        private set
+    /** The primary design, for diagnostics. The render path reads the primitives instead. */
+    val coefficients: BiquadCoefficients
+        get() = BiquadCoefficients(primaryB0, primaryB1, primaryB2, primaryA1, primaryA2)
 
     /**
      * Swaps coefficients and keeps the history, so a retune mid-stream glides instead of restarting the
      * filter. [rightChannel] replaces the coefficients of channel index 1, 3, … when the stream is stereo.
      */
     fun setCoefficients(next: BiquadCoefficients, rightChannel: BiquadCoefficients? = null) {
-        coefficients = next
-        secondChannel = if (channels > 1 && rightChannel != null && rightChannel != next) rightChannel else null
+        primaryB0 = next.b0
+        primaryB1 = next.b1
+        primaryB2 = next.b2
+        primaryA1 = next.a1
+        primaryA2 = next.a2
+        hasSecondary = channels > 1 && rightChannel != null && rightChannel != next
+        if (hasSecondary && rightChannel != null) {
+            secondaryB0 = rightChannel.b0
+            secondaryB1 = rightChannel.b1
+            secondaryB2 = rightChannel.b2
+            secondaryA1 = rightChannel.a1
+            secondaryA2 = rightChannel.a2
+        }
+    }
+
+    /**
+     * Installs a design already written as b0, b1, b2, a1, a2, so a coefficient change on the playback
+     * thread allocates nothing. [rightDesign] replaces channel 1's coefficients exactly as [setCoefficients].
+     */
+    fun setDesign(design: DoubleArray, rightDesign: DoubleArray? = null) {
+        require(design.size >= COEFFICIENTS) { "design holds fewer than $COEFFICIENTS coefficients" }
+        primaryB0 = design[0]
+        primaryB1 = design[1]
+        primaryB2 = design[2]
+        primaryA1 = design[3]
+        primaryA2 = design[4]
+        hasSecondary = channels > 1 && rightDesign != null && !sameDesign(design, rightDesign)
+        if (hasSecondary && rightDesign != null) {
+            secondaryB0 = rightDesign[0]
+            secondaryB1 = rightDesign[1]
+            secondaryB2 = rightDesign[2]
+            secondaryA1 = rightDesign[3]
+            secondaryA2 = rightDesign[4]
+        }
+    }
+
+    /** True when [left] and [right] carry the same five coefficients. */
+    private fun sameDesign(left: DoubleArray, right: DoubleArray): Boolean {
+        if (right.size < COEFFICIENTS) return false
+        for (index in 0 until COEFFICIENTS) {
+            if (left[index] != right[index]) return false
+        }
+        return true
     }
 
     /** Filters one sample of [channel] and returns it, advancing that channel's history. */
     fun tick(input: Float, channel: Int): Float {
-        val c = if (channel and 1 == 1) secondChannel ?: coefficients else coefficients
         val x = input.toDouble()
-        val y = c.b0 * x + z1[channel]
-        z1[channel] = c.b1 * x - c.a1 * y + z2[channel]
-        z2[channel] = c.b2 * x - c.a2 * y
-        return y.toFloat()
+        return if (channel and 1 == 1 && hasSecondary) {
+            val y = secondaryB0 * x + z1[channel]
+            z1[channel] = secondaryB1 * x - secondaryA1 * y + z2[channel]
+            z2[channel] = secondaryB2 * x - secondaryA2 * y
+            y.toFloat()
+        } else {
+            val y = primaryB0 * x + z1[channel]
+            z1[channel] = primaryB1 * x - primaryA1 * y + z2[channel]
+            z2[channel] = primaryB2 * x - primaryA2 * y
+            y.toFloat()
+        }
     }
 
     /** Filters [frames] interleaved frames in place, starting at [startFrame]. */
@@ -210,23 +342,33 @@ class BiquadFilter(private val channels: Int) {
             "samples hold fewer than $frames frames from frame $startFrame"
         }
         var index = startFrame * channels
-        val primary = coefficients
-        val secondary = secondChannel
         repeat(frames) {
             for (channel in 0 until channels) {
-                val c = if (channel and 1 == 1) secondary ?: primary else primary
                 val x = samples[index].toDouble()
-                val y = c.b0 * x + z1[channel]
-                z1[channel] = c.b1 * x - c.a1 * y + z2[channel]
-                z2[channel] = c.b2 * x - c.a2 * y
+                val y: Double
+                if (channel and 1 == 1 && hasSecondary) {
+                    y = secondaryB0 * x + z1[channel]
+                    z1[channel] = secondaryB1 * x - secondaryA1 * y + z2[channel]
+                    z2[channel] = secondaryB2 * x - secondaryA2 * y
+                } else {
+                    y = primaryB0 * x + z1[channel]
+                    z1[channel] = primaryB1 * x - primaryA1 * y + z2[channel]
+                    z2[channel] = primaryB2 * x - primaryA2 * y
+                }
                 samples[index] = y.toFloat()
                 index++
             }
         }
     }
 
+
     fun reset() {
         z1.fill(0.0)
         z2.fill(0.0)
+    }
+
+    companion object {
+        /** b0, b1, b2, a1, a2: the plain-array shape [setDesign] takes. */
+        const val COEFFICIENTS = 5
     }
 }

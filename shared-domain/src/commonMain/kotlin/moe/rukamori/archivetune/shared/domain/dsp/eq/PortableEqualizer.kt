@@ -103,6 +103,10 @@ class PortableEqualizer(
     private var appliedBands = arrayOfNulls<EqualizerBand>(MAX_BANDS)
     private var glideRemainingFrames = 0
 
+    /** Designs are written here and copied into their stage, so a glide's retune allocates nothing. */
+    private val designScratch = DoubleArray(BiquadFilter.COEFFICIENTS)
+    private val rightDesignScratch = DoubleArray(BiquadFilter.COEFFICIENTS)
+
     init {
         require(channels > 0) { "channels must be positive" }
         require(glideChunkFrames > 0) { "glideChunkFrames must be positive" }
@@ -130,7 +134,8 @@ class PortableEqualizer(
     fun setBands(bands: List<EqualizerBand>, glideFrames: Int = 0) {
         require(glideFrames >= 0) { "glideFrames must not be negative" }
         require(bands.size <= MAX_BANDS) { "at most $MAX_BANDS bands" }
-        if (bands == this.bands) return
+        // The size check first keeps a band-count change from walking two lists just to compare them.
+        if (bands === this.bands || (bands.size == this.bands.size && bands == this.bands)) return
         val countChanged = bands.size != this.bands.size
         this.bands = bands
         bandCount = bands.size
@@ -230,12 +235,22 @@ class PortableEqualizer(
             appliedBands[index] = band
             if (flatAtRest) {
                 stages[index].setCoefficients(BiquadCoefficients.IDENTITY)
-            } else {
-                stages[index].setCoefficients(
-                    next = design(band.type, band.frequencyHz, gain, band.q),
-                    rightChannel = rightCoefficients(band, rightGain),
-                )
+                continue
             }
+            designInto(band.type, band.frequencyHz, gain, band.q, designScratch)
+            val rightDesign = if (band.hasRightOverride) {
+                designInto(
+                    type = band.type,
+                    frequencyHz = band.rightFrequencyHz ?: band.frequencyHz,
+                    gainDb = rightGain,
+                    q = band.rightQ ?: band.q,
+                    out = rightDesignScratch,
+                )
+                rightDesignScratch
+            } else {
+                null
+            }
+            stages[index].setDesign(designScratch, rightDesign)
         }
     }
 
@@ -243,30 +258,22 @@ class PortableEqualizer(
     private fun rightGainOf(band: EqualizerBand): Double = band.rightGainDb ?: band.gainDb
 
     /**
-     * The right channel's design on its glided [gainDb], or null when both channels share the left one. The
-     * band's own override values are read directly, so a retune allocates no intermediate band copy.
+     * Writes one band's design into [out] as b0, b1, b2, a1, a2. The band's own override values are read
+     * directly, so a retune allocates no intermediate band or coefficient value.
      */
-    private fun rightCoefficients(band: EqualizerBand, gainDb: Double): BiquadCoefficients? {
-        if (!band.hasRightOverride) return null
-        return design(
-            type = band.type,
-            frequencyHz = band.rightFrequencyHz ?: band.frequencyHz,
-            gainDb = gainDb,
-            q = band.rightQ ?: band.q,
-        )
-    }
-
-    private fun design(
+    private fun designInto(
         type: EqualizerBandType,
         frequencyHz: Double,
         gainDb: Double,
         q: Double,
-    ): BiquadCoefficients = when (type) {
-        EqualizerBandType.PEAKING -> BiquadDesign.peaking(sampleRateHz, frequencyHz, gainDb, q)
-        EqualizerBandType.LOW_SHELF -> BiquadDesign.lowShelf(sampleRateHz, frequencyHz, gainDb, q)
-        EqualizerBandType.HIGH_SHELF -> BiquadDesign.highShelf(sampleRateHz, frequencyHz, gainDb, q)
+        out: DoubleArray,
+    ) {
+        when (type) {
+            EqualizerBandType.PEAKING -> BiquadDesign.peakingInto(sampleRateHz, frequencyHz, gainDb, q, out)
+            EqualizerBandType.LOW_SHELF -> BiquadDesign.lowShelfInto(sampleRateHz, frequencyHz, gainDb, q, out)
+            EqualizerBandType.HIGH_SHELF -> BiquadDesign.highShelfInto(sampleRateHz, frequencyHz, gainDb, q, out)
+        }
     }
-
     companion object {
         /**
          * The widest band list the chain accepts — `DspSettings.MAX_EQUALIZER_BANDS`. The stage pool and its

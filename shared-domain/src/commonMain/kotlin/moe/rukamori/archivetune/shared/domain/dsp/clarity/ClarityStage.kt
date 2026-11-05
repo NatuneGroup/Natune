@@ -1,6 +1,5 @@
 package moe.rukamori.archivetune.shared.domain.dsp.clarity
 
-import moe.rukamori.archivetune.shared.domain.dsp.eq.BiquadCoefficients
 import moe.rukamori.archivetune.shared.domain.dsp.eq.BiquadDesign
 import moe.rukamori.archivetune.shared.domain.dsp.eq.BiquadFilter
 
@@ -19,6 +18,9 @@ class ClarityStage(private val sampleRateHz: Int, private val channels: Int) {
     private val exciter = BiquadFilter(channels)
     private val side = BiquadFilter(1)
     private var dry = FloatArray(0)
+
+    /** One reusable design, so installing a preset allocates no coefficient value. */
+    private val designScratch = DoubleArray(BiquadFilter.COEFFICIENTS)
 
     var preset: ClarityPreset? = null
         private set
@@ -47,8 +49,19 @@ class ClarityStage(private val sampleRateHz: Int, private val channels: Int) {
             side.reset()
             return
         }
-        val bands = preset.bands
-        bands.forEachIndexed { index, band -> contour[index].setCoefficients(design(band)) }
+        // The design is written into one scratch array and copied into its stage, so a preset change on the
+        // playback thread allocates no coefficient value.
+        preset.bands.forEachIndexed { index, band ->
+            when (band.type) {
+                ClarityFilterType.HIGH_PASS ->
+                    BiquadDesign.highPassInto(sampleRateHz, band.frequencyHz, band.q, designScratch)
+                ClarityFilterType.PEAKING ->
+                    BiquadDesign.peakingInto(sampleRateHz, band.frequencyHz, band.gainDb, band.q, designScratch)
+                ClarityFilterType.HIGH_SHELF ->
+                    BiquadDesign.highShelfSlopeInto(sampleRateHz, band.frequencyHz, band.gainDb, band.slope, designScratch)
+            }
+            contour[index].setDesign(designScratch)
+        }
         exciter.setCoefficients(exciterCoefficients)
         side.setCoefficients(sideCoefficients)
     }
@@ -108,11 +121,5 @@ class ClarityStage(private val sampleRateHz: Int, private val channels: Int) {
 
     private fun ensureDry(samples: Int) {
         if (dry.size < samples) dry = FloatArray(samples)
-    }
-
-    private fun design(band: ClarityBand): BiquadCoefficients = when (band.type) {
-        ClarityFilterType.HIGH_PASS -> BiquadDesign.highPass(sampleRateHz, band.frequencyHz, band.q)
-        ClarityFilterType.PEAKING -> BiquadDesign.peaking(sampleRateHz, band.frequencyHz, band.gainDb, band.q)
-        ClarityFilterType.HIGH_SHELF -> BiquadDesign.highShelfSlope(sampleRateHz, band.frequencyHz, band.gainDb, band.slope)
     }
 }
