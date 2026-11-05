@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: false
+      quality_base:
+        description: 'Quality-only manual run: full 40-character base SHA; mutually exclusive with desktop_app_image/android_release_candidate'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -39,7 +44,10 @@ jobs:
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
     # A dispatch that asks for the desktop app image only wants that image; the Android assemble/lint
     # signal belongs to pull requests and dev pushes, and it would compete for the same minutes.
-    if: github.event_name != 'workflow_dispatch' || inputs.desktop_app_image != true
+    # A quality_base dispatch is quality-only and must not run the normal Android build.
+    if: >-
+      (github.event_name != 'workflow_dispatch' || inputs.desktop_app_image != true) &&
+      (github.event_name != 'workflow_dispatch' || inputs.quality_base == '')
 
     steps:
       - uses: actions/checkout@v7
@@ -158,10 +166,105 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  kotlin-quality:
+    name: Kotlin quality
+    # Structural ktfmt/Detekt/CPD checks over the Android and KMP source roots. This is an
+    # independent middle-tier signal, not a compiler/LSP or native validation gate.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
+    if: github.event_name == 'workflow_dispatch' && inputs.quality_base != ''
+    timeout-minutes: 20
+    steps:
+      - name: Reject incompatible manual modes
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          QUALITY_BASE_VALUE: ${{ inputs.quality_base }}
+          DESKTOP_APP_IMAGE_VALUE: ${{ inputs.desktop_app_image }}
+          INPUTS_JSON: ${{ toJSON(github.event.inputs) }}
+        run: |
+          set -euo pipefail
+          android_candidate="$(python3 -c 'import json, os; print(str(json.loads(os.environ["INPUTS_JSON"]).get("android_release_candidate", "")).lower())')"
+          if [[ -n "$QUALITY_BASE_VALUE" && ( "$DESKTOP_APP_IMAGE_VALUE" == "true" || "$android_candidate" == "true" ) ]]; then
+            echo "::error::quality_base is quality-only and cannot be combined with desktop_app_image or android_release_candidate."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the explicit quality base
+        id: quality-base
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+          MANUAL_BASE: ${{ inputs.quality_base }}
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request) base="$PR_BASE" ;;
+            push) base="$PUSH_BASE" ;;
+            workflow_dispatch) base="$MANUAL_BASE" ;;
+            *) base="" ;;
+          esac
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            echo "::error::Kotlin quality needs an explicit non-zero base commit."
+            exit 1
+          fi
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Kotlin quality base must be a full lowercase 40-character commit SHA."
+            exit 1
+          fi
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "Base object is not in the checkout; fetching the exact commit read-only."
+            git fetch --no-tags origin "$base"
+          fi
+          resolved="$(git rev-parse --verify --end-of-options "${base}^{commit}")"
+          if [[ "$resolved" != "$base" ]]; then
+            echo "::error::Kotlin quality base did not resolve to the exact supplied commit."
+            exit 1
+          fi
+          merge_base="$(git merge-base "$base" HEAD)"
+          if [[ "$merge_base" == "$(git rev-parse HEAD)" ]]; then
+            echo "::error::Kotlin quality base resolves to the candidate HEAD."
+            exit 1
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: 21
+          distribution: "temurin"
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+          cache-cleanup: on-success
+
+      - name: Run Kotlin formatting and structural analysis
+        env:
+          BASE_SHA: ${{ steps.quality-base.outputs.base }}
+        run: python3 scripts/check_code_quality.py --base "$BASE_SHA"
+
+      - name: Upload quality reports
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: kotlin-quality-reports
+          path: .factory/reports/code-quality/
+          if-no-files-found: ignore
+          retention-days: 3
+
   # The desktop host compiles in its own job so a mid-flight desktopApp breakage reports
   # itself without blocking the Android assemble/lint signal.
   desktop-compile:
     # Same fork routing as the build job: fork pull requests use the free GitHub-hosted pool.
+    # A quality_base dispatch is quality-only and must not run the desktop compile/package path.
+    if: github.event_name != 'workflow_dispatch' || inputs.quality_base == ''
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
     # The pull-request path compiles in minutes; the opt-in app image adds the native closure build, TDLib
     # and jpackage, which measured over an hour on this runner class in the release pipeline.

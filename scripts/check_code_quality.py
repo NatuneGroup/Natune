@@ -19,11 +19,52 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE_ROOTS = (
+LEGACY_SOURCE_ROOTS = (
     "app/src/main/kotlin", "app/src/gms/kotlin", "canvas/src", "jiosaavn/src",
     "lastfm/src", "musixmatch/src", "shazamkit/src", "spotifycore/src",
 )
+KMP_SOURCE_ROOTS = (
+    "shared-domain/src", "shared-data/src", "shared-ui/src", "desktopApp/src",
+)
+SOURCE_ROOTS = (*LEGACY_SOURCE_ROOTS, *KMP_SOURCE_ROOTS)
 FORMAT_ROOTS = (*SOURCE_ROOTS, "app/src/test")
+PROFILE_STRUCTURAL = "structural"
+PROFILE_LEGACY_ANDROID = "legacy-android-gms"
+BASE_OID = re.compile(r"^[0-9a-f]{40}$")
+
+
+def source_roots(profile: str) -> tuple[str, ...]:
+    return LEGACY_SOURCE_ROOTS if profile == PROFILE_LEGACY_ANDROID else SOURCE_ROOTS
+
+
+def profile_for_classpath(classpath: Path | None) -> str:
+    return PROFILE_LEGACY_ANDROID if classpath else PROFILE_STRUCTURAL
+
+
+def resolve_base(value: str) -> str:
+    """Resolve one explicit full commit and reject a base that is the candidate itself."""
+    if not BASE_OID.fullmatch(value):
+        raise ValueError("--base must be a full 40-character lowercase commit SHA")
+    try:
+        revision = subprocess.check_output(
+            ["git", "-C", str(ROOT), "rev-parse", "--verify", "--end-of-options", f"{value}^{{commit}}"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except subprocess.SubprocessError as error:
+        raise ValueError("--base is not a resolvable commit in this checkout") from error
+    if revision != value:
+        raise ValueError("--base does not resolve to the supplied full commit")
+    head = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"]).decode().strip()
+    try:
+        merge_base = subprocess.check_output(
+            ["git", "-C", str(ROOT), "merge-base", revision, head],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except subprocess.SubprocessError as error:
+        raise ValueError("--base has no merge base with the candidate checkout") from error
+    if merge_base == head:
+        raise ValueError("--base resolves to the candidate HEAD; pass the meaningful base commit")
+    return merge_base
 
 
 def prepare_formatter(root: Path, revision: str, destination: Path) -> int:
@@ -90,13 +131,72 @@ def rewritten_lines(original: Path, formatted: Path) -> int:
     return len(lines)
 
 
-def prepare_base_formatter(root: Path, revision: str, candidates: Path, original: Path, destination: Path) -> int:
+def parse_rename_status(data: bytes) -> dict[str, str]:
+    fields = [field for field in data.split(b"\0") if field]
+    renames: dict[str, str] = {}
+    index = 0
+    while index < len(fields):
+        status = fields[index].decode()
+        index += 1
+        if status.startswith(("R", "C")):
+            old = fields[index].decode()
+            new = fields[index + 1].decode()
+            index += 2
+            if status.startswith("R"):
+                renames[old] = new
+        else:
+            index += 1
+    return renames
+
+
+def rename_map(root: Path, revision: str, roots: tuple[str, ...]) -> dict[str, str]:
+    """Git-confirmed renames only, restricted to both configured scope roots."""
+    output = subprocess.check_output(
+        [
+            "git", "-C", str(root), "diff", "--find-renames", "--name-status", "-z",
+            revision, "--", *roots,
+        ],
+        stderr=subprocess.DEVNULL,
+    )
+    return parse_rename_status(output)
+
+
+def remap_findings(findings: Counter, weights: dict, renames: dict[str, str]) -> tuple[Counter, dict]:
+    remapped = Counter()
+    for key, count in findings.items():
+        path, rule, message = key
+        remapped[(renames.get(path, path), rule, message)] += count
+    remapped_weights = {}
+    for key, weight in weights.items():
+        path, rule, message = key
+        remapped_weights[(renames.get(path, path), rule, message)] = weight
+    return remapped, remapped_weights
+
+
+def remap_duplicates(duplicates: Counter, renames: dict[str, str]) -> Counter:
+    remapped = Counter()
+    for key, count in duplicates.items():
+        paths, fragment = key
+        remapped[(tuple(sorted(renames.get(path, path) for path in paths)), fragment)] += count
+    return remapped
+
+
+def prepare_base_formatter(
+    root: Path,
+    revision: str,
+    candidates: Path,
+    original: Path,
+    destination: Path,
+    renames: dict[str, str] | None = None,
+) -> int:
     """Copy the base version of each candidate file twice: one kept as is, one to format."""
+    old_paths = {new: old for old, new in (renames or {}).items()}
     count = 0
     for candidate in sorted(candidates.rglob("*.kt")):
         relative = candidate.relative_to(candidates).as_posix()
+        base_relative = old_paths.get(relative, relative)
         shown = subprocess.run(
-            ["git", "-C", str(root), "show", f"{revision}:{relative}"],
+            ["git", "-C", str(root), "show", f"{revision}:{base_relative}"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
         )
         if shown.returncode:
@@ -187,14 +287,16 @@ def run(command: list[str], *, output: Path | None = None) -> None:
         raise ValueError(f"quality tool failed ({result.returncode}); inspect {output or 'console output'}")
 
 
-def extract_sources(revision: str, destination: Path) -> None:
+def extract_sources(
+    revision: str, destination: Path, roots: tuple[str, ...], root: Path = ROOT
+) -> None:
     tracked = subprocess.check_output(
-        ["git", "-C", str(ROOT), "ls-tree", "-d", "--name-only", revision, "--", *SOURCE_ROOTS],
+        ["git", "-C", str(root), "ls-tree", "-d", "--name-only", revision, "--", *roots],
     ).decode().splitlines()
     if not tracked:
         raise ValueError("base revision has no Kotlin source roots")
     archive = subprocess.check_output(
-        ["git", "-C", str(ROOT), "archive", revision, "--", *tracked],
+        ["git", "-C", str(root), "archive", revision, "--", *tracked],
     )
     with tarfile.open(fileobj=BytesIO(archive)) as tree:
         for member in tree:
@@ -210,18 +312,19 @@ def extract_sources(revision: str, destination: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default="HEAD", help="revision to compare; never an analyzer suppression file")
-    parser.add_argument("--classpath-file", type=Path, help="real compiler classpath from the optional qualityInputs task")
+    parser.add_argument("--base", required=True, help="explicit full 40-character base commit SHA")
+    parser.add_argument("--classpath-file", type=Path, help="optional legacy Android GMS compiler classpath from the authorized host")
     args = parser.parse_args()
-    revision = subprocess.check_output(
-        ["git", "-C", str(ROOT), "rev-parse", "--verify", "--end-of-options", args.base + "^{commit}"],
-    ).decode().strip()
-    revision = subprocess.check_output(
-        ["git", "-C", str(ROOT), "merge-base", revision, "HEAD"],
-    ).decode().strip()
+    revision = resolve_base(args.base)
+    head = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"]).decode().strip()
+    profile = profile_for_classpath(args.classpath_file)
+    roots = source_roots(profile)
     reports = ROOT / ".factory/reports/code-quality"
     reports.mkdir(parents=True, exist_ok=True)
-    wrapper = [str(ROOT / "gradlew"), "-p", str(ROOT / "quality"), "--console=plain", "--stacktrace"]
+    wrapper = [
+        str(ROOT / "gradlew"), "-p", str(ROOT / "quality"), "--console=plain", "--stacktrace",
+        f"-PanalysisProfile={profile}",
+    ]
     if args.classpath_file:
         entries = [Path(line) for line in args.classpath_file.read_text().splitlines() if line.strip()]
         if not entries or not all(path.is_absolute() and path.exists() for path in entries):
@@ -231,6 +334,7 @@ def main() -> int:
     formatter_parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="format-input-", dir=formatter_parent) as temporary:
         formatter_root = Path(temporary)
+        format_renames = rename_map(ROOT, revision, FORMAT_ROOTS)
         formatted_files = prepare_formatter(ROOT, revision, formatter_root)
         formatting = [*wrapper, f"-PanalysisFormatRoot={formatter_root}"]
         (reports / "formatter.patch").unlink(missing_ok=True)
@@ -251,7 +355,9 @@ def main() -> int:
             with tempfile.TemporaryDirectory(prefix="format-base-", dir=formatter_parent) as base_temporary:
                 base_original = Path(base_temporary) / "original"
                 base_formatted = Path(base_temporary) / "formatted"
-                if prepare_base_formatter(ROOT, revision, formatter_root, base_original, base_formatted):
+                if prepare_base_formatter(
+                    ROOT, revision, formatter_root, base_original, base_formatted, format_renames
+                ):
                     run(
                         [*wrapper, f"-PanalysisFormatRoot={base_formatted}", "spotlessApply"],
                         output=reports / "formatter-base.log",
@@ -266,7 +372,7 @@ def main() -> int:
             print("Touched files keep only inherited formatting debt; retained in formatter.patch")
     with tempfile.TemporaryDirectory(prefix="archivetune-quality-") as temporary:
         base = Path(temporary)
-        extract_sources(revision, base)
+        extract_sources(revision, base, roots)
         collected = {}
         for name, source in (("base", base), ("candidate", ROOT)):
             report = reports / name
@@ -281,7 +387,11 @@ def main() -> int:
             findings, weights = detekt_findings(report / "detekt.xml", source)
             duplicates = cpd_findings(report / "cpd.xml", source)
             collected[name] = (findings, weights, duplicates)
-        before, old_weights, old_duplicates = collected["base"]
+        analysis_renames = rename_map(ROOT, revision, roots)
+        before, old_weights = remap_findings(
+            collected["base"][0], collected["base"][1], analysis_renames
+        )
+        old_duplicates = remap_duplicates(collected["base"][2], analysis_renames)
         after, new_weights, new_duplicates = collected["candidate"]
         new_findings = regressions(before, after, old_weights, new_weights)
         duplicate_regressions = []
@@ -290,8 +400,18 @@ def main() -> int:
             if not any(old_paths == paths and fragment in old_fragment for old_paths, old_fragment in old_duplicates):
                 duplicate_regressions.append(key)
         summary = {
-            "base": revision,
+            "baseInput": args.base,
+            "baseMergeBase": revision,
+            "candidateHead": head,
+            "profile": profile,
+            "analyzedRoots": list(roots),
             "semanticAnalysis": bool(args.classpath_file),
+            "semanticScope": (
+                "legacy-android-gms-type-resolution"
+                if args.classpath_file
+                else "structural-no-type-resolution"
+            ),
+            "nativeValidation": False,
             "changedKotlinFilesChecked": formatted_files,
             "inheritedFormattingDebt": inherited_formatting,
             "inheritedDetektFindings": before.total(),
