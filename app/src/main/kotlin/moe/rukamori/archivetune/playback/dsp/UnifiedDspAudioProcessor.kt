@@ -44,7 +44,16 @@ class UnifiedDspAudioProcessor(
     private val bypassGate: () -> Boolean = { BitPerfectRuntime.chainBypassActive },
 ) : BaseAudioProcessor() {
 
-    private class Snapshot(val settings: DspSettings, val plan: SoftwareStagePlan)
+    /**
+     * One prepared settings request. Everything a change needs is built in [submit] on the caller's thread: the
+     * settings with the graph's dither stripped (this adapter dithers once, at the output grid) and the output
+     * dither stage. The render path then only swaps references at a block boundary.
+     */
+    private class Snapshot(
+        val settings: DspSettings,
+        val plan: SoftwareStagePlan,
+        val dither: TpdfDither?,
+    )
 
     /**
      * One `configure` for the next stream, held until Media3 flushes. Configure may arrive while the
@@ -91,7 +100,26 @@ class UnifiedDspAudioProcessor(
 
     /** Replaces the settings and the route plan whole. Safe from any thread, including the UI thread. */
     fun submit(settings: DspSettings, plan: SoftwareStagePlan) {
-        requested = Snapshot(settings, plan)
+        // The request is prepared here, on the caller's thread: the block that adopts it only swaps references.
+        requested = Snapshot(
+            settings = settings.copy(dither = DspDither.OFF),
+            plan = plan,
+            dither = ditherFor(settings),
+        )
+    }
+
+    /**
+     * The output dither stage this request runs. A preference re-emission repeats the same request, so keeping
+     * the running generator for the same seed avoids restarting the noise sequence on every emission.
+     */
+    private fun ditherFor(settings: DspSettings): TpdfDither? {
+        if (!settings.dither.enabled) return null
+        val running = requested?.dither
+        return if (running != null && running.seed == settings.dither.seed) {
+            running
+        } else {
+            TpdfDither(OUTPUT_BIT_DEPTH, settings.dither.seed)
+        }
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -219,18 +247,20 @@ class UnifiedDspAudioProcessor(
         EngineRuntime.publishDspActive(isEngaged)
     }
 
+    /**
+     * Swaps in one prepared request. The graph dithers for a host that reads its float output, while this
+     * adapter quantizes to 16-bit itself, so the prepared settings already carry the dither off and the output
+     * dither stage rides with the request. Neither the settings value nor the equalizer's stages are built here:
+     * the host prepared both, and this path only installs them.
+     */
     private fun applyRequest(graph: DspGraph, request: Snapshot, gated: Boolean) {
-        val settings = if (gated) DspSettings().withoutProcessing() else request.settings
-        val plan = if (gated) UnifiedDspSettingsSource.BIT_PERFECT_PLAN else request.plan
-        // The graph dithers for a host that reads its float output; this adapter quantizes to 16-bit
-        // itself, so the dither is applied once, at the output grid, instead of twice.
-        graph.apply(settings.copy(dither = DspDither.OFF), plan)
-        dither =
-            if (settings.dither.enabled) {
-                dither ?: TpdfDither(OUTPUT_BIT_DEPTH, settings.dither.seed)
-            } else {
-                null
-            }
+        if (gated) {
+            graph.apply(NEUTRAL_SETTINGS, UnifiedDspSettingsSource.BIT_PERFECT_PLAN)
+            dither = null
+        } else {
+            graph.apply(request.settings, request.plan)
+            dither = request.dither
+        }
         applied = request
         gateBypassed = gated
     }
@@ -282,5 +312,8 @@ class UnifiedDspAudioProcessor(
         const val SHORT_MIN = -32_768
         const val SHORT_MAX = 32_767
         const val OUTPUT_BIT_DEPTH = 16
+
+        /** What the bit-perfect gate renders, built once instead of per request. */
+        val NEUTRAL_SETTINGS: DspSettings = DspSettings().withoutProcessing()
     }
 }

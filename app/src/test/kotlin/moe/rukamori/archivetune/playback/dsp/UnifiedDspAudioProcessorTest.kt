@@ -6,6 +6,7 @@ import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import moe.rukamori.archivetune.playback.TransitionFilterProcessor
+import moe.rukamori.archivetune.shared.domain.dsp.DspDither
 import moe.rukamori.archivetune.shared.domain.dsp.DspFormat
 import moe.rukamori.archivetune.shared.domain.dsp.DspGraph
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
@@ -335,10 +336,7 @@ class UnifiedDspAudioProcessorTest {
         )
         processor.configure(format(C.ENCODING_PCM_16BIT))
 
-        val block = ByteBuffer.allocateDirect(BLOCK_SAMPLES * SHORT_BYTES).order(ByteOrder.nativeOrder())
-        block.asShortBuffer().put(ShortArray(BLOCK_SAMPLES) { index -> (((index % 128) - 64) * 128).toShort() })
-        block.position(0)
-        block.limit(BLOCK_SAMPLES * SHORT_BYTES)
+        val block = block()
 
         repeat(WARMUP_BLOCKS) { render(processor, block) }
 
@@ -350,6 +348,65 @@ class UnifiedDspAudioProcessorTest {
             "steady-state rendering allocated $allocated bytes over $MEASURED_BLOCKS blocks",
             allocated < ALLOCATION_LIMIT_BYTES,
         )
+    }
+
+    /**
+     * A settings move reaches the processor on every preference emission, and `queueInput` applies it at a block
+     * boundary. The settings value, the neutral value the bit-perfect gate renders and the dither stage are
+     * prepared by `submit` on the caller's thread, and the equalizer's stage pool is built with the graph, so the
+     * adopting block allocates nothing — including an equalizer switch or a band-count change.
+     */
+    @Test
+    fun `a request change allocates nothing on the render path`() {
+        val processor = processor()
+        processor.submit(request(1), plan())
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        val block = block()
+        repeat(WARMUP_BLOCKS) { render(processor, block) }
+
+        // Built before the measurement: only the adopting block is measured, not the request's own objects.
+        val requests = List(REQUEST_CHANGES) { index ->
+            val settings = request(if (index % 2 == 0) MAX_BANDS else 1)
+            if (index == REQUEST_CHANGES / 2) {
+                settings.copy(dither = DspDither(enabled = true))
+            } else {
+                settings
+            }
+        }
+        var allocated = 0L
+        for (request in requests) {
+            processor.submit(request, plan())
+            val before = allocatedBytes()
+            render(processor, block)
+            allocated += allocatedBytes() - before
+        }
+
+        assertTrue(
+            "a request change allocated $allocated bytes across ${requests.size} blocks",
+            allocated < ALLOCATION_LIMIT_BYTES,
+        )
+    }
+
+    /** One boosted band and [count]-1 flat ones, so a band-count change designs one stage, not [count]. */
+    private fun request(count: Int): DspSettings = DspSettings(
+        preampDb = -3.0,
+        equalizerEnabled = true,
+        equalizerBands = List(count) { index ->
+            EqualizerBand(
+                type = EqualizerBandType.PEAKING,
+                frequencyHz = 250.0 * (index + 1),
+                gainDb = if (index == 0) 4.0 else 0.0,
+                q = 1.0,
+            )
+        },
+    )
+
+    private fun block(): ByteBuffer {
+        val block = ByteBuffer.allocateDirect(BLOCK_SAMPLES * SHORT_BYTES).order(ByteOrder.nativeOrder())
+        block.asShortBuffer().put(ShortArray(BLOCK_SAMPLES) { index -> (((index % 128) - 64) * 128).toShort() })
+        block.position(0)
+        block.limit(BLOCK_SAMPLES * SHORT_BYTES)
+        return block
     }
 
     private fun render(processor: UnifiedDspAudioProcessor, block: ByteBuffer) {
@@ -385,6 +442,8 @@ class UnifiedDspAudioProcessorTest {
         const val BLOCK_SAMPLES = 2_048
         const val WARMUP_BLOCKS = 64
         const val MEASURED_BLOCKS = 512
+        const val REQUEST_CHANGES = 64
+        const val MAX_BANDS = 16
         const val ALLOCATION_LIMIT_BYTES = 32L * 1_024L
     }
 }

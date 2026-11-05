@@ -15,9 +15,13 @@ import kotlin.math.round
  */
 class TpdfDither(
     bitDepth: Int = DspDither.DEFAULT_BIT_DEPTH,
-    seed: Int = DspDither.DEFAULT_SEED,
+    /**
+     * The seed the sequence starts from; 0 means [DspDither.DEFAULT_SEED]. Kept readable so a host can tell
+     * whether a new request needs a new generator or may keep the running one.
+     */
+    val seed: Int = DspDither.DEFAULT_SEED,
 ) {
-    private var state: Int = if (seed == 0) DspDither.DEFAULT_SEED else seed
+    private var state: Int = normalizedSeed(seed)
 
     var bitDepth: Int = validatedBitDepth(bitDepth)
         private set
@@ -33,7 +37,7 @@ class TpdfDither(
 
     /** Restarts the sequence. Only a host starting a new stream calls this; a running stream keeps going. */
     fun reseed(seed: Int) {
-        state = if (seed == 0) DspDither.DEFAULT_SEED else seed
+        state = normalizedSeed(seed)
     }
 
     /** Adds one LSB of triangular noise and rounds to the target grid, in place. */
@@ -58,6 +62,8 @@ class TpdfDither(
 
     companion object {
         private const val UNIFORM_DIVISOR = 16_777_216f
+
+        private fun normalizedSeed(seed: Int): Int = if (seed == 0) DspDither.DEFAULT_SEED else seed
 
         private fun validatedBitDepth(bitDepth: Int): Int {
             require(bitDepth in DspDither.MIN_BIT_DEPTH..DspDither.MAX_BIT_DEPTH) {
