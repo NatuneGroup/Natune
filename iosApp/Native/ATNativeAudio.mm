@@ -47,6 +47,9 @@ struct at_audio_output {
     std::atomic<bool> running{false};
     std::atomic<bool> wants_play{false};
     std::atomic<bool> interrupted{false};
+    // The listener's play intent when an interruption began. A pause during the call clears it, so an approved
+    // ShouldResume restores only intent the listener still holds.
+    std::atomic<bool> resume_after_interruption{false};
     std::atomic<bool> consuming{false};
     std::atomic<bool> closing{false};
     std::atomic<bool> manual_output{false};
@@ -406,15 +409,22 @@ static at_audio_output *create_output(char *error, size_t error_len, bool plain)
             at_audio_output *output = gate->output;
             if (!output) return;
             if (type == AVAudioSessionInterruptionTypeBegan) {
+                const bool resumeIntent = output->wants_play.load();
                 output->interrupted.store(true);
                 output->running.store(false);
                 output->consuming.store(false);
-                if (!audio_try(^BOOL { [output->graph pause]; return YES; })) output_failure(output);
-                release_playback(output);
+                // Pause the portable engine as well as the graph: the shared snapshot, Now Playing and remote commands
+                // then read paused for the whole interruption instead of holding intent that makes no audio.
+                at_audio_pause(output);
+                output->resume_after_interruption.store(resumeIntent);
             } else {
                 output->interrupted.store(false);
                 output->graph_dirty = true;
-                if (output->wants_play.load() && (options & AVAudioSessionInterruptionOptionShouldResume)) start_output(output);
+                const bool resume = output->resume_after_interruption.exchange(false) &&
+                    (options & AVAudioSessionInterruptionOptionShouldResume);
+                // Restore the engine's play intent before starting output, so the first snapshot after the interruption
+                // window ends already describes the resumed session while the device transaction is still pending.
+                if (resume) at_audio_play(output); else at_audio_pause(output);
             }
         });
     }];
@@ -437,6 +447,7 @@ static at_audio_output *create_output(char *error, size_t error_len, bool plain)
             at_audio_output *output = gate->output;
             if (!output) return;
             output->wants_play.store(false);
+            output->resume_after_interruption.store(false);
             ae_engine_pause(output->core);
             audio_try(^BOOL { [output->graph stop]; return YES; });
             output->requires_recreation = true;
@@ -484,28 +495,37 @@ void at_audio_destroy(at_audio_output *p) {
 uint64_t at_audio_load(at_audio_output *p, const char *source, uint64_t start, int play) {
     require_main();
     p->wants_play.store(play != 0);
+    p->resume_after_interruption.store(play != 0);
     if (!play) release_playback(p);
     uint64_t generation = ae_engine_load(p->core, source, start, play);
-    if (generation && play) start_output(p);
+    if (generation && play && !p->interrupted.load()) start_output(p);
     return generation;
 }
 uint64_t at_audio_load_stream(at_audio_output *p, const ae_stream_io *io, uint64_t start, int play) {
     require_main();
     p->wants_play.store(play != 0);
+    p->resume_after_interruption.store(play != 0);
     if (!play) release_playback(p);
     uint64_t generation = ae_engine_load_stream(p->core, io, start, play);
-    if (generation && play) start_output(p);
+    if (generation && play && !p->interrupted.load()) start_output(p);
     return generation;
 }
 int at_audio_play(at_audio_output *p) {
     require_main();
     p->wants_play.store(true);
     ae_engine_play(p->core);
+    if (p->interrupted.load()) {
+        // The system owns the session until the interruption ends. Accept the listener's intent and start only on an
+        // approved ShouldResume; the blend path guards its nodes before reaching this call, so no queued PCM starts.
+        p->resume_after_interruption.store(true);
+        return 1;
+    }
     return start_output(p) ? 1 : 0;
 }
 void at_audio_pause(at_audio_output *p) {
     require_main();
     p->wants_play.store(false);
+    p->resume_after_interruption.store(false);
     ae_engine_pause(p->core);
     p->running.store(false);
     p->consuming.store(false);
@@ -540,6 +560,9 @@ void at_audio_stop(at_audio_output *p) { at_audio_pause(p); ae_engine_stop(p->co
 void at_audio_snapshot(at_audio_output *p, ae_snapshot *snapshot) {
     require_main();
     ae_engine_snapshot(p->core, snapshot);
+    // An interruption is a pause the listener did not request: publish it as paused while the system owns the
+    // session, so the player, Now Playing and the transport agree and the stall watchdog does not reload the song.
+    if (p->interrupted.load()) snapshot->flags &= ~AE_FLAG_PLAY_WHEN_READY;
     if (!p->running.load() || !p->consuming.load() || p->interrupted.load() ||
         CACurrentMediaTime() - p->last_render.load() > 0.15) snapshot->flags &= ~AE_FLAG_ADVANCING;
     snapshot->error_sequence += p->output_error;
@@ -580,6 +603,7 @@ void at_audio_manual_output_failed(at_audio_output *p) {
     require_main();
     p->requires_recreation = true;
     p->wants_play.store(false);
+    p->resume_after_interruption.store(false);
     ae_engine_pause(p->core);
     output_failure(p);
 }
