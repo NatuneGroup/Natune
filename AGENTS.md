@@ -45,6 +45,8 @@ must preserve the invariants below.
 - Run `python3 scripts/check_repository.py --worktree` without Gradle/JVM/network
   work. It checks maintained docs/skills, CI command consistency, dependency drift,
   source/module boundaries, file budgets and copyright preservation.
+- Use the bounded [fast-check](.factory/skills/fast-check/SKILL.md) procedure for
+  pre-build feedback; it never substitutes for the final exact-candidate gates.
 - Install the lightweight staged-content hook as documented in
   [quality gates](docs/engineering/quality.md); preserve an existing user hook setup.
 - Kotlin/Java types use PascalCase, functions/properties camelCase, Compose UI
