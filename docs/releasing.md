@@ -114,9 +114,10 @@ gh workflow run build_pull_request.yml \
   above the source `trustedUpgradeVersionCodeFloor`, above the measured
   N20261103 ARM64 baseline `1793753723`, and above the newest `at-build:` marker
   in this repository's published release bodies read at dispatch. A
-  blank/default value or an unreadable marker fails before checkout. The
-  release list must be read completely (a failed page aborts before parsing),
-  every present declaration must be the complete
+  blank/default value or an unreadable marker fails closed after checkout but
+  before any build or signing. The release list must be read completely (a
+  failed page aborts before parsing), every present declaration must be the
+  complete
   `<!-- at-build:<positive Int> -->` line, at least one valid declaration must
   exist, and any malformed or out-of-range declaration fails closed. The
   dispatcher must also confirm that the reserved code exceeds any newer target
