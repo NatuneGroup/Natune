@@ -205,6 +205,52 @@ class PlayerColorExtractorTest {
         assertFalse(PlayerColorExtractor.isGreyscale(colourfulStats))
     }
 
+    @Test
+    fun suppliedGreyscaleStatsDriveTheDecisionWithoutRecomputing() {
+        // Real stats for this pair say "colourful"; the supplied stats must win, which is only
+        // possible when the extraction does not recompute them behind the caller's back.
+        val swatches =
+            listOf(
+                swatch(0xFF1133CC.toInt(), 60),
+                swatch(0xFFCC1111.toInt(), 40),
+            )
+        val forcedGreyscale =
+            PlayerColorExtractor.GreyscaleStats(
+                weightedSaturation = 0f,
+                colorfulPopulationRatio = 0f,
+                neutralPopulationRatio = 1f,
+                dominantSaturation = 0f,
+                dominantBrightness = 0.5f,
+            )
+        assertFalse(PlayerColorExtractor.isGreyscale(PlayerColorExtractor.computeGreyscaleStats(swatches)))
+
+        val colors = PlayerColorExtractor.extractGradientColors(swatches, FALLBACK, forcedGreyscale)
+        assertEquals(6, colors.size)
+        colors.forEach { color ->
+            assertTrue(
+                "supplied greyscale stats must produce a neutral gradient, got saturation ${saturationOf(color)}",
+                saturationOf(color) < 0.02f,
+            )
+        }
+    }
+
+    @Test
+    fun suppliedStatsProduceTheSameGradientAsTheSelfComputingOverload() {
+        val swatches =
+            listOf(
+                swatch(0xFFCC1111.toInt(), 55),
+                swatch(0xFF1133CC.toInt(), 45),
+            )
+        assertEquals(
+            PlayerColorExtractor.extractGradientColors(swatches, FALLBACK),
+            PlayerColorExtractor.extractGradientColors(
+                swatches,
+                FALLBACK,
+                PlayerColorExtractor.computeGreyscaleStats(swatches),
+            ),
+        )
+    }
+
     private companion object {
         const val FALLBACK = 0xFF202020.toInt()
     }

@@ -427,11 +427,12 @@ fun LibrarySongsScreen(
                     val isActive = song.id == mediaMetadata?.id
 
                     // The active row takes its colour from the artwork; inactive rows use the
-                    // theme colour.
+                    // theme colour and must not pay for the extraction at all.
                     val activeCardColor =
                         rememberArtworkCardColor(
                             thumbnailUrl = song.song.thumbnailUrl,
                             fallbackColor = MaterialTheme.colorScheme.primaryContainer,
+                            enabled = isActive,
                         )
                     val inactiveCardColor = MaterialTheme.colorScheme.surfaceContainerLow
 
