@@ -191,10 +191,12 @@ object DspSettingsMapper {
         val graphic = bandsFromTryptifyJson(values.tryptifyGraphicBandsJson)
         val legacy = bandsFromLastWaveGains(values.lastWaveGainsDb)
         val levels = bandsFromLevelsMb(values.equalizerBandLevelsMb, bandCentresHz)
-        val parametricStage =
-            values.tryptifyEqualizerEnabled && values.tryptifyParametricStageEnabled && parametric.isNotEmpty()
-        val graphicStage =
-            values.tryptifyEqualizerEnabled && values.tryptifyGraphicStageEnabled && graphic.isNotEmpty()
+        // A stage is switched on by its engine and its own switch; an empty band list is a valid state, because
+        // the stage's preamp ran whether or not it had a curve.
+        val parametricActive = values.tryptifyEqualizerEnabled && values.tryptifyParametricStageEnabled
+        val graphicActive = values.tryptifyEqualizerEnabled && values.tryptifyGraphicStageEnabled
+        val parametricStage = parametricActive && parametric.isNotEmpty()
+        val graphicStage = graphicActive && graphic.isNotEmpty()
         val lastWaveStage =
             values.lastWaveEngineEnabled && values.lastWaveEqualizerEnabled && legacy.isNotEmpty()
         val migrated = when {
@@ -206,7 +208,7 @@ object DspSettingsMapper {
         val bands = (if (migrated.isEmpty()) levels else migrated).take(DspSettings.MAX_EQUALIZER_BANDS)
 
         val floatChain = values.floatDspEnabled
-        val stagePreampDb = migratedStagePreampDb(values, parametricStage, graphicStage)
+        val stagePreampDb = migratedStagePreampDb(values, parametricActive, graphicActive)
         return DspSettings(
             linearGain = 1f,
             preampDb = (sharedPreampDb(values) + stagePreampDb)
@@ -234,21 +236,21 @@ object DspSettingsMapper {
     private fun sharedPreampDb(values: PersistedDspValues): Double = values.equalizerOutputGainMb / MILLIBELS_PER_DB
 
     /**
-     * The preamp the migrated stage carried. Both were applied by their own stage in the old engine, so the
-     * one that supplies the band curve contributes its gain, and a stage that supplies nothing contributes
-     * nothing.
+     * The preamp the migrated stage carried. Each retired stage applied its own gain whenever that stage was
+     * switched on, whether or not it also had a band curve, so a preamp-only preset keeps its gain. The first
+     * enabled stage still supplies the one preamp this model has, in the same precedence the bands use.
      */
     private fun stagePreampDb(preampDb: Double?): Double =
         if (preampDb != null && preampDb.isFinite()) preampDb else 0.0
 
     private fun migratedStagePreampDb(
         values: PersistedDspValues,
-        parametricStage: Boolean,
-        graphicStage: Boolean,
+        parametricActive: Boolean,
+        graphicActive: Boolean,
     ): Double =
         when {
-            parametricStage -> stagePreampDb(values.tryptifyParametricPreampDb)
-            graphicStage -> stagePreampDb(values.tryptifyGraphicPreampDb)
+            parametricActive -> stagePreampDb(values.tryptifyParametricPreampDb)
+            graphicActive -> stagePreampDb(values.tryptifyGraphicPreampDb)
             else -> 0.0
         }
 

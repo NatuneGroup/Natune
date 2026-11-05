@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettingsDocument
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
@@ -26,6 +27,12 @@ import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
  * value and writes the document, so from then on there is one value rather than switches that can disagree.
  * The legacy keys stay on disk for older builds. The Playback settings normalization row keeps writing its own
  * key, so that key and the document are kept equal; the document is the authority for both.
+ *
+ * A store hands its current value to a new collector, so the snapshot the constructor already adopted arrives
+ * once more. That replay is not an edit: only a row value that differs from the acknowledged snapshot, and from
+ * the value this owner itself is writing into that row, is bridged into the document. The row corrections and
+ * the document writes otherwise queue behind each other, newest last, so an older queued correction cannot
+ * overwrite a value the user has already moved to.
  *
  * The one Audio processing switch is followed from the same store. While it is off the host's engine receives
  * an all-neutral value, but the document keeps every stored preset untouched, so turning the switch back on
@@ -75,7 +82,22 @@ class DspSettingsOwner(
 
     /** The document a save has already queued but not committed yet, so its own snapshot is not adopted either. */
     private var pendingDocument: String? = null
-    private var adopted = false
+
+    /** The store inputs this owner has consumed, so the collector's replay of the same value is not an edit. */
+    private var acknowledged: Inputs? = null
+
+    /**
+     * The row values a pending document-to-row correction replaces and writes, so the stale value the store
+     * still holds is not bridged back into the document as a user edit.
+     */
+    private var reconciliation: Reconciliation? = null
+
+    /** Orders the queued saves: every write takes a newer revision, and only the newest revision lands. */
+    private var writeRevision = 0L
+
+    private val writeLock = Mutex()
+
+    private class Reconciliation(val stale: Boolean, val target: Boolean)
 
     init {
         // The stored value applies at once, so the engine matches it before the first track loads.
@@ -124,9 +146,12 @@ class DspSettingsOwner(
     private fun adopt(inputs: Inputs, snapshot: PreferenceSnapshot?) {
         // A null snapshot means the initial persisted read has not completed, not a fresh installation.
         if (snapshot == null) return
-        val ownDocument = inputs.document == appliedDocument || inputs.document == pendingDocument
-        if (!adopted || !ownDocument) {
-            adopted = true
+        val previous = acknowledged
+        // A store replays its current value to a new collector; the constructor already adopted that snapshot.
+        if (previous == inputs) return
+        acknowledged = inputs
+        if (previous == null || !owns(inputs.document)) {
+            // The first value, or a document another host wrote: the document is the authority for both.
             appliedDocument = inputs.document
             processingEnabled = inputs.processingEnabled
             val next = DspSettingsDocument.of(inputs.document, DspSettingsDocument.legacyOf(snapshot))
@@ -136,14 +161,8 @@ class DspSettingsOwner(
                 persist(next)
             } else if (next.normalizationEnabled != inputs.normalizationEnabled) {
                 // A document another host wrote is the authority, so the Playback settings row follows it.
-                persistNormalization(next.normalizationEnabled)
+                mirrorNormalization(next.normalizationEnabled, stale = inputs.normalizationEnabled)
             }
-            return
-        }
-        if (inputs.normalizationEnabled != stored.normalizationEnabled) {
-            // The Playback settings row writes the legacy key. Bridge it into the one document, so the row and
-            // the engine cannot hold two different normalization values.
-            commit(stored.copy(normalizationEnabled = inputs.normalizationEnabled))
             return
         }
         if (inputs.processingEnabled != processingEnabled) {
@@ -151,7 +170,22 @@ class DspSettingsOwner(
             processingEnabled = inputs.processingEnabled
             publish(stored)
         }
+        val row = inputs.normalizationEnabled
+        val pending = reconciliation
+        when {
+            // The row either still holds the value the document replaced, or already the correction we wrote.
+            pending != null && (row == pending.stale || row == pending.target) -> {
+                if (row == pending.target) reconciliation = null
+            }
+            // The Playback settings row writes the legacy key. Bridge an edit of that row into the one
+            // document, so the row and the engine cannot hold two different normalization values.
+            row != stored.normalizationEnabled -> commit(stored.copy(normalizationEnabled = row))
+        }
     }
+
+    /** True when [document] is this owner's own value, so its snapshot carries no foreign change. */
+    private fun owns(document: String?): Boolean =
+        document == appliedDocument || document == pendingDocument
 
     private fun publish(next: DspSettings) {
         stored = next
@@ -169,39 +203,63 @@ class DspSettingsOwner(
      * Writes the document, remembering it first so the snapshot this write publishes is not adopted back. The
      * Playback settings row reads [AudioNormalizationKey], so the one document value is written there in the
      * same commit: the row and the engine can never disagree by a write.
+     *
+     * Writes are serialized and revisioned: a write that has been superseded while it waited is dropped, so a
+     * slow queued value cannot land after the user has already moved past it.
      */
     private fun persist(settings: DspSettings) {
         val document = DspSettingsDocument.write(settings)
         pendingDocument = document
+        val revision = ++writeRevision
         scope.launch {
+            writeLock.lock()
             try {
-                store.edit {
-                    set(DspSettingsDocumentKey, document)
-                    if (this[AudioNormalizationKey, NORMALIZATION_DEFAULT] != settings.normalizationEnabled) {
-                        set(AudioNormalizationKey, settings.normalizationEnabled)
+                // A newer write has already been queued, so this one would restore a value the user moved past.
+                if (revision != writeRevision) return@launch
+                try {
+                    store.edit {
+                        set(DspSettingsDocumentKey, document)
+                        if (this[AudioNormalizationKey, NORMALIZATION_DEFAULT] != settings.normalizationEnabled) {
+                            set(AudioNormalizationKey, settings.normalizationEnabled)
+                        }
                     }
+                    appliedDocument = document
+                    reconciliation = null
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    // A lost save leaves the applied value in memory, so playback and the panel still agree.
+                    onSaveFailure(failure)
+                } finally {
+                    if (pendingDocument == document) pendingDocument = null
                 }
-                appliedDocument = document
-                pendingDocument = null
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                // A lost save leaves the applied value in memory, so playback and the panel still agree.
-                pendingDocument = null
-                onSaveFailure(failure)
+            } finally {
+                writeLock.unlock()
             }
         }
     }
 
-    /** Mirrors the document's normalization into the row's key, so the row shows the value the chain applies. */
-    private fun persistNormalization(enabled: Boolean) {
+    /**
+     * Mirrors the document's normalization into the row's key, so the row shows the value the chain applies.
+     * The row it replaces is remembered, so the stale value the store still holds is not read as an edit.
+     */
+    private fun mirrorNormalization(enabled: Boolean, stale: Boolean) {
+        reconciliation = Reconciliation(stale = stale, target = enabled)
+        val revision = ++writeRevision
         scope.launch {
+            writeLock.lock()
             try {
-                store.edit { set(AudioNormalizationKey, enabled) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                onSaveFailure(failure)
+                if (revision != writeRevision) return@launch
+                try {
+                    store.edit { set(AudioNormalizationKey, enabled) }
+                    reconciliation = null
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    onSaveFailure(failure)
+                }
+            } finally {
+                writeLock.unlock()
             }
         }
     }
