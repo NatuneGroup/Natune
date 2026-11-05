@@ -358,6 +358,9 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("PlayerAction.SHARE -> share(occurrenceId)", controls)
         self.assertIn("iosShareText(host, link)", controls)
         self.assertIn("NOTICE_SHARE_UNAVAILABLE", controls)
+        menu = (UI_IOS / "IosSongMenu.kt").read_text()
+        self.assertIn("import moe.rukamori.archivetune.shared.ui.resources.ios_share_link_unavailable", menu)
+        self.assertIn("Res.string.ios_share_link_unavailable", menu)
 
     def test_ledger_does_not_turn_source_into_an_apple_pass(self):
         status = (ROOT / "docs/engineering/ios-status.md").read_text()
