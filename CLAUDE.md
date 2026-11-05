@@ -26,7 +26,10 @@ prerelease and the `nightly.json` update-feed manifest the in-app updater reads,
 workflow (`tests.yml`), manual-only (`workflow_dispatch`) to keep pushes fast; the APK
 jobs assemble releases and never compile `app/src/test`, so start it by hand after
 integration and before promoting `dev`. `Build Pull Request` / `build` assembles
-GMS/mobile/universal Debug plus lint on a GitHub-hosted runner. Run that workflow and
+GMS/mobile/universal Debug plus lint on a GitHub-hosted runner. The same workflow has an
+opt-in, same-repository manual `android_release_candidate` job: one signed ARM64 Release
+APK artifact with a reserved versionCode, fail-closed signing, no publication and a
+30-minute bound (see [docs/releasing.md](docs/releasing.md)). Run that workflow and
 `Unit tests` / `Compile and run unit tests` concurrently on the exact candidate head.
 Tests invoke the documented task directly; both workflows retain local Gradle profiles
 and reports, without external build scans. PR caches remain read-only. Debug checks
