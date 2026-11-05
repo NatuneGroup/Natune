@@ -24,10 +24,7 @@ internal class PersistedQueueSnapshot(
 )
 
 /** The write a teardown started, and how long teardown may wait for it. */
-internal class TeardownQueueSave(
-    val write: Job,
-    val waitBudgetMs: Long,
-)
+internal class TeardownQueueSave(val write: Job, val waitBudgetMs: Long)
 
 // One writer for the whole process, deliberately independent of any service's scopeJob: onDestroy
 // cancels that job while the snapshot it has just taken can still be on its way to disk, and a
@@ -45,23 +42,21 @@ private val teardownPersistenceScope = CoroutineScope(SupervisorJob() + Dispatch
  * teardown continues without the save.
  */
 internal fun MusicService.saveQueueForTeardown(): TeardownQueueSave? {
-    val snapshot =
-        runCatching {
-            val enabled = dataStore.get(PersistentQueueKey, true)
-            if (TeardownQueuePersistence.shouldSave(enabled, player.mediaItemCount)) {
-                snapshotQueue()
-            } else {
-                null
-            }
-        }.onFailure {
-            Timber.tag(TAG).w(it, "Could not snapshot the queue during teardown")
-        }.getOrNull() ?: return null
-
-    val write =
-        teardownPersistenceScope.launch {
-            runCatching { writeQueueSnapshot(snapshot) }
-                .onFailure { Timber.tag(TAG).w(it, "Queue save failed during teardown") }
+    val snapshot = runCatching {
+        val enabled = dataStore.get(PersistentQueueKey, true)
+        if (TeardownQueuePersistence.shouldSave(enabled, player.mediaItemCount)) {
+            snapshotQueue()
+        } else {
+            null
         }
+    }.onFailure {
+        Timber.tag(TAG).w(it, "Could not snapshot the queue during teardown")
+    }.getOrNull() ?: return null
+
+    val write = teardownPersistenceScope.launch {
+        runCatching { writeQueueSnapshot(snapshot) }
+            .onFailure { Timber.tag(TAG).w(it, "Queue save failed during teardown") }
+    }
     val waitBudgetMs = TeardownQueuePersistence.destroyWaitMillis(snapshot.queue.items.size)
     return TeardownQueueSave(write, waitBudgetMs)
 }
@@ -114,10 +109,7 @@ internal object TeardownQueuePersistence {
      * Blocks the calling thread until [write] finishes, for at most [timeoutMs]. A timeout leaves
      * [write] running: it is the waiter that is cancelled, never the write.
      */
-    fun blockUntilFinished(
-        write: Job,
-        timeoutMs: Long,
-    ): Boolean {
+    fun blockUntilFinished(write: Job, timeoutMs: Long): Boolean {
         if (write.isCompleted) return true
         if (timeoutMs <= 0L) return false
         return runBlocking { withTimeoutOrNull(timeoutMs) { write.join() } } != null
