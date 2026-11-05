@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.shared.domain.dsp.TpdfDither
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
+import moe.rukamori.archivetune.shared.domain.dsp.eq.PortableEqualizer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -405,6 +406,21 @@ class UnifiedDspAudioProcessorTest {
         graph.apply(request(1), plan())
         repeat(WARMUP_BLOCKS) { pump() }
         val lines = StringBuilder()
+        // Control: a neutral document and a bypassed plan both stay on the pass-through path.
+        graph.apply(DspSettings(), plan())
+        for (index in 0 until 2) {
+            val before = allocatedBytes()
+            pump()
+            lines.append("neutral[${index}] pump=${allocatedBytes() - before}\n")
+        }
+        graph.apply(request(MAX_BANDS), plan(bypass = true))
+        for (index in 0 until 2) {
+            val before = allocatedBytes()
+            pump()
+            lines.append("bypass[${index}] pump=${allocatedBytes() - before}\n")
+        }
+        graph.apply(request(1), plan())
+        repeat(8) { pump() }
         // Count change: 1 band -> 16 bands, and the reverse.
         for (index in 0 until 4) {
             val next = request(if (index % 2 == 0) MAX_BANDS else 1)
@@ -430,6 +446,35 @@ class UnifiedDspAudioProcessorTest {
             val beforePush = allocatedBytes()
             pump()
             lines.append("sameCount[$index] apply=$applyBytes push=${allocatedBytes() - beforePush}\n")
+        }
+        // The equalizer alone, without the graph: a count change, then a same-count glide.
+        val equalizer = PortableEqualizer(SAMPLE_RATE, CHANNELS)
+        val bands16 = request(MAX_BANDS).equalizerBands
+        val bands1 = request(1).equalizerBands
+        val frames = BLOCK_SAMPLES / CHANNELS
+        val pcm = FloatArray(BLOCK_SAMPLES) { index -> (((index % 128) - 64) * 128).toFloat() / SHORT_SCALE }
+        equalizer.setBands(bands16, glideFrames = 960)
+        repeat(8) { equalizer.process(pcm, frames) }
+        for (index in 0 until 2) {
+            val before = allocatedBytes()
+            equalizer.setBands(if (index == 0) bands1 else bands16, glideFrames = 960)
+            val setBytes = allocatedBytes() - before
+            val beforeProcess = allocatedBytes()
+            equalizer.process(pcm, frames)
+            lines.append("eqCountChange[$index] set=$setBytes process=${allocatedBytes() - beforeProcess}\n")
+        }
+        equalizer.setBands(bands16, glideFrames = 960)
+        repeat(8) { equalizer.process(pcm, frames) }
+        for (index in 0 until 2) {
+            val glide = bands16.mapIndexed { index2, band ->
+                if (index2 == 0) band.copy(gainDb = 4.0 + index) else band
+            }
+            val before = allocatedBytes()
+            equalizer.setBands(glide, glideFrames = 960)
+            val setBytes = allocatedBytes() - before
+            val beforeProcess = allocatedBytes()
+            equalizer.process(pcm, frames)
+            lines.append("eqGlide[$index] set=$setBytes process=${allocatedBytes() - beforeProcess}\n")
         }
         val target = java.io.File("../build/reports/profile/probe.txt")
         target.parentFile?.mkdirs()
