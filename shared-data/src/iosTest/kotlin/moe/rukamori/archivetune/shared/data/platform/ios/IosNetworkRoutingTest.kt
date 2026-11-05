@@ -330,6 +330,7 @@ class IosNetworkRoutingTest {
         assertFailsWith<ByteSourceException> {
             IosStreamProxyRouting.applyTo(NSURLSessionConfiguration.ephemeralSessionConfiguration)
         }
+        Unit
     }
 
     @Test
