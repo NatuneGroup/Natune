@@ -374,17 +374,22 @@ class UnifiedDspAudioProcessorTest {
             }
         }
         var allocated = 0L
-        for (request in requests) {
+        val perBlock = IntArray(requests.size)
+        for ((index, request) in requests.withIndex()) {
             processor.submit(request, plan())
             val before = allocatedBytes()
             render(processor, block)
-            allocated += allocatedBytes() - before
+            perBlock[index] = (allocatedBytes() - before).toInt()
+            allocated += perBlock[index]
         }
 
-        assertTrue(
-            "a request change allocated $allocated bytes across ${requests.size} blocks",
-            allocated < ALLOCATION_LIMIT_BYTES,
-        )
+        if (allocated >= ALLOCATION_LIMIT_BYTES) {
+            // Only a failing block pays for this message; the measured loop stays allocation-tight.
+            org.junit.Assert.fail(
+                "a request change allocated $allocated bytes across ${requests.size} blocks: " +
+                    perBlock.joinToString(","),
+            )
+        }
     }
 
     /** One boosted band and [count]-1 flat ones, so a band-count change designs one stage, not [count]. */
