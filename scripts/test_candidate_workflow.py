@@ -497,6 +497,74 @@ class QualityPreflightTest(unittest.TestCase):
         self.assertEqual(0, self.preflight(candidate="false").returncode)
 
 
+class BuildPrCacheProofTest(unittest.TestCase):
+    STEP = "Verify the produced Linux native dependency prefix"
+
+    def test_proof_is_guarded_bounded_nonblocking_and_honest(self):
+        step = step_block(self.STEP, job="desktop-compile")
+        self.assertIn("if: inputs.desktop_app_image == true", step)
+        self.assertIn("timeout-minutes: 2", step)
+        self.assertIn("continue-on-error: true", step)
+        self.assertIn("LC_ALL: C", step)
+        script = run_script(self.STEP, job="desktop-compile")
+        self.assertIn("manifest --kind desktop --platform linux --target-arch x64", script)
+        self.assertIn("verify --kind desktop --platform linux --target-arch x64", script)
+        self.assertIn("desktopApp/build/native/.native-deps-cache.json", script)
+        self.assertIn('echo "NATIVE CACHE VERIFICATION: $status" >> "$GITHUB_STEP_SUMMARY"', script)
+        self.assertIn("VERIFIED (identity, inventory and ABI only", script)
+        self.assertIn("UNVERIFIED (the real Linux prefix", script)
+        self.assertNotIn("cache/save", script)
+        self.assertNotIn("build-native-deps.sh", script)
+
+    def run_proof(self, directory, ok):
+        root = Path(directory)
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        tool(bin_dir, "python3", """
+            #!/usr/bin/python3
+            import os, pathlib, sys
+            args = sys.argv[1:]
+            ok = os.environ.get("FAKE_CACHE_OK") == "1"
+            if "manifest" in args:
+                if ok:
+                    path = pathlib.Path("desktopApp/build/native/.native-deps-cache.json")
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("{}")
+                sys.exit(0 if ok else 1)
+            sys.exit(0 if ok else 1)
+        """)
+        runner_temp = root / "runner-temp"
+        runner_temp.mkdir()
+        summary = root / "summary"
+        result = bash(
+            run_script(self.STEP, job="desktop-compile"),
+            root,
+            env_overrides={
+                "RUNNER_TEMP": str(runner_temp),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "FAKE_CACHE_OK": "1" if ok else "0",
+            },
+            extra_path=bin_dir,
+        )
+        return result, summary.read_text() if summary.exists() else ""
+
+    def test_failure_is_visible_unverified_and_does_not_fail_the_step(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, summary = self.run_proof(directory, ok=False)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("UNVERIFIED", result.stdout + result.stderr)
+            self.assertIn("UNVERIFIED", summary)
+            self.assertNotIn("VERIFIED (identity", summary)
+
+    def test_success_reports_only_identity_inventory_and_abi(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, summary = self.run_proof(directory, ok=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("VERIFIED", result.stdout + result.stderr)
+            self.assertIn("identity, inventory and ABI only", summary)
+            self.assertIn("no reuse, speed-up or runtime proof", summary)
+
+
 class VersionGateTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
