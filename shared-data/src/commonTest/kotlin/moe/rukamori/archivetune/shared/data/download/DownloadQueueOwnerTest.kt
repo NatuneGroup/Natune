@@ -2,12 +2,14 @@ package moe.rukamori.archivetune.shared.data.download
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.shared.domain.download.DownloadSourceResolver
 import moe.rukamori.archivetune.shared.domain.download.DownloadTask
 import moe.rukamori.archivetune.shared.domain.download.DownloadTaskStore
@@ -126,6 +128,37 @@ class DownloadQueueOwnerTest {
         assertEquals(2, transfer.calls.size)
     }
 
+    @Test fun aProgressDeliveredAfterStopKeepsTheRowStopped() = runTest {
+        val store = MemoryStore()
+        val release = CompletableDeferred<Unit>()
+        val owner = owner(store, transfer = LateProgressTransfer(release))
+        owner.start(song.ref, "")
+        advanceUntilIdle()
+        assertEquals(DownloadPhase.DOWNLOADING, store.state.value.single().phase)
+        owner.stop("youtube:abc")
+        advanceUntilIdle()
+        release.complete(Unit)
+        advanceUntilIdle()
+        val task = store.state.value.single()
+        assertEquals(DownloadPhase.STOPPED, task.phase)
+        assertEquals(0L, task.bytesDownloaded)
+    }
+
+    @Test fun aProgressDeliveredAfterRemoveDoesNotResurrectTheRow() = runTest {
+        val store = MemoryStore()
+        val removed = mutableListOf<DownloadTask>()
+        val release = CompletableDeferred<Unit>()
+        val owner = owner(store, transfer = LateProgressTransfer(release), removeCommitted = { removed += it })
+        owner.start(song.ref, "")
+        advanceUntilIdle()
+        owner.remove("youtube:abc")
+        advanceUntilIdle()
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(store.state.value.isEmpty())
+        assertEquals(listOf(DownloadPhase.REMOVING), removed.map { it.phase })
+    }
+
     @Test fun removeDropsTheCommittedFileAndItsRow() = runTest {
         val store = MemoryStore()
         val removed = mutableListOf<DownloadTask>()
@@ -221,6 +254,23 @@ class DownloadQueueOwnerTest {
             progress(size / 2, size)
             progressBytes += size / 2
             return size
+        }
+    }
+
+    private class LateProgressTransfer(private val release: CompletableDeferred<Unit>) : DownloadTransfer {
+        override suspend fun transfer(
+            task: DownloadTask,
+            stream: DirectStream,
+            resumeFromBytes: Long,
+            song: ContentItem?,
+            progress: suspend (bytesDone: Long, totalBytes: Long?) -> Unit,
+        ): Long {
+            // A real transfer can deliver its last progress from an uncancellable cleanup block.
+            withContext(NonCancellable) {
+                release.await()
+                progress(10L, 20L)
+            }
+            return 20L
         }
     }
 
