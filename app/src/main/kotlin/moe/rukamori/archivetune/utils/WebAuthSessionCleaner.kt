@@ -160,7 +160,7 @@ suspend fun clearSpotifyCatalogWebAuthSession() {
  * YouTube Music login share one default profile, so a global cookie or DOM-storage wipe would be a
  * logout for every other provider.
  */
-fun resetAuthWebViewSession(
+internal fun resetAuthWebViewSession(
     webView: WebView,
     scope: WebAuthCookieScope?,
     onReady: () -> Unit,
