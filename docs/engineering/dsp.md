@@ -137,7 +137,9 @@ default the Playback page declares, a flat equalizer and a preamp that is off.
   project's `TransitionFilterProcessor` after the supplied processors and both reject every other encoding in
   `onConfigure` — including while silence skipping is switched off, since the sink configures the whole chain.
   The reduction applies the graph's full-scale clamp and, when the settings ask for it, its TPDF dither once at
-  the 16-bit grid. It reconfigures on a format change off the audio thread, drains the stretch tail at end of
+  the 16-bit grid. Reading and writing use the same signed 32768 steps and saturate at −32768/32767, which keeps
+  a neutral block bit-exact for every PCM16 value, including both end points. It reconfigures on a format change
+  off the audio thread, drains the stretch tail at end of
   stream, and resets on flush; a configure that arrives while the previous stream still drains is held until
   the sink flushes. `UnifiedDspSettingsSource` reads the stored values through `DspSettingsMapper` and
   publishes one settings value plus its plan to every live processor. The plan is bypassed whenever the

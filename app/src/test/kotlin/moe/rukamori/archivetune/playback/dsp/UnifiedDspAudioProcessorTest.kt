@@ -9,6 +9,7 @@ import moe.rukamori.archivetune.playback.TransitionFilterProcessor
 import moe.rukamori.archivetune.shared.domain.dsp.DspFormat
 import moe.rukamori.archivetune.shared.domain.dsp.DspGraph
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
+import moe.rukamori.archivetune.shared.domain.dsp.TpdfDither
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
@@ -62,9 +63,9 @@ class UnifiedDspAudioProcessorTest {
 
     private fun format(encoding: Int) = AudioProcessor.AudioFormat(SAMPLE_RATE, CHANNELS, encoding)
 
-    /** A float sample as this adapter writes it: the full-scale grid the shared TPDF dither uses. */
+    /** A float sample as this adapter writes it: the signed 16-bit grid, saturated at the end points. */
     private fun pcm16(value: Float): Short =
-        kotlin.math.round(value.coerceIn(-1f, 1f) * SHORT_FULL_SCALE).toInt().toShort()
+        kotlin.math.round(value.coerceIn(-1f, 1f) * SHORT_SCALE).toInt().coerceIn(SHORT_MIN, SHORT_MAX).toShort()
 
     @Test
     fun `the chain always publishes 16-bit PCM`() {
@@ -81,11 +82,54 @@ class UnifiedDspAudioProcessorTest {
         processor.submit(DspSettings(), plan())
         processor.configure(format(C.ENCODING_PCM_16BIT))
 
-        // Levels whose 16-bit round trip is exact on the full-scale grid the adapter quantizes to.
-        val input = shortArrayOf(0, 8192, -8192, 16384, 16_000, -16_000)
+        // Both end points: a 32767-and-32768 mismatch would turn 32767 into 32766 and -32768 into -32767.
+        val input = shortArrayOf(Short.MIN_VALUE, Short.MAX_VALUE, 0, 0, 8192, -8192, 16_000, -16_000)
         processor.queueInput(shortBuffer(input))
 
         assertArrayEquals(input, readShorts(processor.getOutput()))
+    }
+
+    /** Every signed 16-bit value, so neutrality covers the whole grid rather than the values a scale hides. */
+    @Test
+    fun `a neutral plan keeps every PCM16 value bit-exact`() {
+        val processor = processor()
+        processor.submit(DspSettings(), plan())
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+
+        val values = ShortArray(PCM16_VALUES) { (it + Short.MIN_VALUE).toShort() }
+        var start = 0
+        while (start < values.size) {
+            val count = minOf(1_024, values.size - start)
+            val block = ShortArray(count * CHANNELS) { values[start + it / CHANNELS] }
+            processor.queueInput(shortBuffer(block))
+            assertArrayEquals("values from $start", block, readShorts(processor.getOutput()))
+            start += count
+        }
+    }
+
+    /**
+     * The output quantizer runs the dither and then rounds onto the same 16-bit grid, so a dithered sample is
+     * already an integer number of steps and the conversion does not round it a second time.
+     */
+    @Test
+    fun `dither lands on the grid the output converter rounds on`() {
+        val dither = TpdfDither(OUTPUT_BIT_DEPTH, seed = 12_345)
+        val samples = floatArrayOf(0.5f, -0.5f, 1f, -1f, 0.001f, -0.001f)
+        dither.process(samples, samples.size / CHANNELS, CHANNELS)
+
+        for (index in samples.indices) {
+            val steps = samples[index] * SHORT_SCALE
+            assertTrue("sample $index sits off the 16-bit grid", steps == kotlin.math.round(steps))
+            // Positive full scale saturates at 32767; every other dithered sample is exactly its grid step.
+            if (samples[index] < 1f) {
+                assertEquals(
+                    "sample $index",
+                    samples[index].toDouble(),
+                    pcm16(samples[index]).toDouble() / SHORT_SCALE.toDouble(),
+                    0.0,
+                )
+            }
+        }
     }
 
     @Test
@@ -331,7 +375,11 @@ class UnifiedDspAudioProcessorTest {
         const val CHANNELS = 2
         const val FLOAT_BYTES = 4
         const val SHORT_BYTES = 2
-        const val SHORT_FULL_SCALE = 32_767f
+        const val SHORT_SCALE = 32_768f
+        const val SHORT_MIN = -32_768
+        const val SHORT_MAX = 32_767
+        const val OUTPUT_BIT_DEPTH = 16
+        const val PCM16_VALUES = 65_536
         const val BLOCK_SAMPLES = 2_048
         const val WARMUP_BLOCKS = 64
         const val MEASURED_BLOCKS = 512
