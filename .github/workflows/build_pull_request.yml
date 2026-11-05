@@ -343,6 +343,30 @@ jobs:
         shell: bash
         run: bash desktopApp/native/scripts/build-native-deps.sh
 
+      - name: Verify the produced Linux native dependency prefix
+        # One real-prefix proof after the existing producer: manifest then verify the actual
+        # desktopApp/build/native prefix. It is bounded, non-blocking and never saves or rebuilds.
+        # A failure/unsupported identity is reported as UNVERIFIED, even though the package job
+        # stays green; success is identity/inventory/ABI evidence, not reuse, speed or runtime proof.
+        if: inputs.desktop_app_image == true
+        shell: bash
+        timeout-minutes: 2
+        continue-on-error: true
+        env:
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/natune-linux-native-deps-manifest.json"
+          if python3 scripts/native_dependency_cache.py manifest --kind desktop --platform linux --target-arch x64 \
+              && python3 scripts/native_dependency_cache.py verify --kind desktop --platform linux --target-arch x64; then
+            cp desktopApp/build/native/.native-deps-cache.json "$manifest"
+            status="VERIFIED (identity, inventory and ABI only; no reuse, speed-up or runtime proof)"
+          else
+            status="UNVERIFIED (the real Linux prefix has no validated cache identity/inventory/ABI)"
+          fi
+          echo "Native cache proof: $status"
+          echo "NATIVE CACHE VERIFICATION: $status" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build TDLight native library
         if: inputs.desktop_app_image == true
         shell: bash
