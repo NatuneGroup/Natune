@@ -61,7 +61,8 @@ data class EqualizerBand(
 /**
  * Cascade of biquad bands, one stage per band. A band at 0 dB keeps its stage: its design is the identity,
  * so dragging a band through 0 dB retunes that stage in place instead of resetting the others. [process]
- * returns without touching the samples while every band is at 0 dB, which keeps a flat equalizer bit-exact.
+ * returns without touching the samples while every band is at 0 dB on both channels, which keeps a flat
+ * equalizer bit-exact — including a band whose left gain is flat while its right-channel override is not.
  *
  * A retune can glide. With a glide of N frames the band gains walk from their old value to the new one over
  * N frames of *processing*, one small gain step per [glideChunkFrames] samples, so a slider drag or a preset
@@ -83,6 +84,15 @@ class PortableEqualizer(
     private var currentGainsDb = DoubleArray(0)
     private var appliedGainsDb = DoubleArray(0) { Double.NaN }
 
+    /**
+     * The gain each band's right channel runs at: the override when the band has one, otherwise the same gain
+     * as its left channel. A right-only boost is a design that is not the identity, so it decides engagement,
+     * gliding and bypass exactly as a left-channel gain does.
+     */
+    private var targetRightGainsDb = DoubleArray(0)
+    private var currentRightGainsDb = DoubleArray(0)
+    private var appliedRightGainsDb = DoubleArray(0) { Double.NaN }
+
     /** The band each stage was last designed from, so any coefficient-defining change retunes that stage. */
     private var appliedBands = arrayOfNulls<EqualizerBand>(0)
     private var glideRemainingFrames = 0
@@ -97,6 +107,7 @@ class PortableEqualizer(
             if (glideRemainingFrames > 0) return true
             for (index in currentGainsDb.indices) {
                 if (currentGainsDb[index] != 0.0 || targetGainsDb[index] != 0.0) return true
+                if (currentRightGainsDb[index] != 0.0 || targetRightGainsDb[index] != 0.0) return true
             }
             return false
         }
@@ -121,11 +132,18 @@ class PortableEqualizer(
             targetGainsDb = DoubleArray(bands.size)
             currentGainsDb = DoubleArray(bands.size)
             appliedGainsDb = DoubleArray(bands.size) { Double.NaN }
+            targetRightGainsDb = DoubleArray(bands.size)
+            currentRightGainsDb = DoubleArray(bands.size)
+            appliedRightGainsDb = DoubleArray(bands.size) { Double.NaN }
             appliedBands = arrayOfNulls(bands.size)
         }
-        bands.forEachIndexed { index, band -> targetGainsDb[index] = band.gainDb }
+        bands.forEachIndexed { index, band ->
+            targetGainsDb[index] = band.gainDb
+            targetRightGainsDb[index] = rightGainOf(band)
+        }
         if (glideFrames == 0 || countChanged) {
             currentGainsDb = targetGainsDb.copyOf()
+            currentRightGainsDb = targetRightGainsDb.copyOf()
             glideRemainingFrames = 0
         } else {
             glideRemainingFrames = glideFrames
@@ -151,7 +169,9 @@ class PortableEqualizer(
     fun reset() {
         stages.forEach { it.reset() }
         currentGainsDb = targetGainsDb.copyOf()
+        currentRightGainsDb = targetRightGainsDb.copyOf()
         appliedGainsDb = DoubleArray(targetGainsDb.size) { Double.NaN }
+        appliedRightGainsDb = DoubleArray(targetGainsDb.size) { Double.NaN }
         appliedBands = arrayOfNulls(bands.size)
         glideRemainingFrames = 0
         retune()
@@ -162,36 +182,58 @@ class PortableEqualizer(
         val fraction = minOf(1.0, chunk.toDouble() / glideRemainingFrames)
         for (index in currentGainsDb.indices) {
             currentGainsDb[index] += (targetGainsDb[index] - currentGainsDb[index]) * fraction
+            currentRightGainsDb[index] += (targetRightGainsDb[index] - currentRightGainsDb[index]) * fraction
         }
         glideRemainingFrames -= chunk
         if (glideRemainingFrames <= 0) {
             glideRemainingFrames = 0
             currentGainsDb = targetGainsDb.copyOf()
+            currentRightGainsDb = targetRightGainsDb.copyOf()
         }
     }
 
     /**
      * Designs every stage whose design input changed. The gain alone is not that input: a preset can move a
      * band's frequency, its shape, its width or its right-channel override while the gain stays the same, and a
-     * gain-only cache would keep the previous coefficients for the whole stream.
+     * gain-only cache would keep the previous coefficients for the whole stream. Both channels' gains are part
+     * of that input, so a right-only change retunes and keeps rendering.
      */
     private fun retune() {
         for (index in stages.indices) {
             val gain = currentGainsDb[index]
+            val rightGain = currentRightGainsDb[index]
             val band = bands[index]
-            if (appliedGainsDb[index] == gain && appliedBands[index] == band) continue
+            if (appliedGainsDb[index] == gain &&
+                appliedRightGainsDb[index] == rightGain &&
+                appliedBands[index] == band
+            ) {
+                continue
+            }
             appliedGainsDb[index] = gain
+            appliedRightGainsDb[index] = rightGain
             appliedBands[index] = band
             stages[index].setCoefficients(
                 next = design(band.type, band.frequencyHz, gain, band.q),
-                rightChannel = rightCoefficients(band),
+                rightChannel = rightCoefficients(band, rightGain),
             )
         }
     }
 
-    private fun rightCoefficients(band: EqualizerBand): BiquadCoefficients? {
-        val right = band.rightBand() ?: return null
-        return design(right.type, right.frequencyHz, right.gainDb, right.q)
+    /** The gain a band's right channel runs at: its override, or the left gain when it has none. */
+    private fun rightGainOf(band: EqualizerBand): Double = band.rightGainDb ?: band.gainDb
+
+    /**
+     * The right channel's design on its glided [gainDb], or null when both channels share the left one. The
+     * band's own override values are read directly, so a retune allocates no intermediate band copy.
+     */
+    private fun rightCoefficients(band: EqualizerBand, gainDb: Double): BiquadCoefficients? {
+        if (!band.hasRightOverride) return null
+        return design(
+            type = band.type,
+            frequencyHz = band.rightFrequencyHz ?: band.frequencyHz,
+            gainDb = gainDb,
+            q = band.rightQ ?: band.q,
+        )
     }
 
     private fun design(

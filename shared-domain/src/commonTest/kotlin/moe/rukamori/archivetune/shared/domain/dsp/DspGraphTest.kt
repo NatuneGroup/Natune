@@ -191,6 +191,43 @@ class DspGraphTest {
         assertTrue(abs(before * 2.0 - shifted) <= 40.0, "12 semitones moved $before Hz to $shifted Hz")
     }
 
+    /**
+     * A migrated stereo graphic preset can carry a flat left band and a boosted right one. The graph must run
+     * the equalizer for the right driver, not hand the block through because the left band reads 0 dB.
+     */
+    @Test
+    fun aFlatLeftAndBoostedRightBandReachesTheRightChannel() {
+        val graph = DspGraph(rate, channels)
+        graph.apply(
+            DspSettings(
+                equalizerEnabled = true,
+                equalizerBands = listOf(
+                    EqualizerBand(
+                        type = EqualizerBandType.PEAKING,
+                        frequencyHz = 1_000.0,
+                        gainDb = 0.0,
+                        rightGainDb = 6.0,
+                    ),
+                ),
+            ),
+            plan(equalizer = true),
+        )
+
+        val frames = rate
+        val input = DspTestSignals.sine(1_000.0, rate, frames = frames, channels = channels, amplitude = 0.1)
+        val output = render(graph, input, frames)
+
+        val leftBefore = DspTestSignals.rms(input, channels, fromFrame = frames / 2, toFrame = frames)
+        val rightBefore =
+            DspTestSignals.rms(input, channels, fromFrame = frames / 2, toFrame = frames, channel = 1)
+        val left = DspTestSignals.rms(output, channels, fromFrame = frames / 2, toFrame = frames) / leftBefore
+        val right =
+            DspTestSignals.rms(output, channels, fromFrame = frames / 2, toFrame = frames, channel = 1) / rightBefore
+
+        assertEquals(1.0, left, 5e-3, "the left channel had no boost")
+        assertEquals(10.0.pow(6.0 / 20.0), right, 5e-3, "the right channel's 6 dB never rendered")
+    }
+
     @Test
     fun configuringANewFormatRebuildsEveryStage() {
         val graph = DspGraph(rate, channels)
