@@ -65,19 +65,6 @@ fun PreferenceEditor.setTidalInstances(instances: List<String>) {
 }
 
 /**
- * Commits a host-verified session in one edit. The access and refresh tokens are vault-routed by the logical adapter.
- * Account name and subscription change only when the host supplies them. A completed session always clears the
- * needs-relogin flag, as the baseline token flows do.
- */
-fun PreferenceEditor.commitTidalSession(session: TidalSessionFacts) {
-    require(session.accessToken.isNotBlank()) { "Tidal access token is required before a session is committed" }
-    require(session.refreshToken.isNotBlank()) { "Tidal refresh token is required before a session is committed" }
-    this[TidalAccessTokenKey] = session.accessToken
-    this[TidalRefreshTokenKey] = session.refreshToken
-    commitTidalSessionFacts(session)
-}
-
-/**
  * Writes only the display facts of a verified session: expiry, flow, user, country, name and subscription. The tokens
  * belong to the account commit, which writes them together with the verified identity, so this edit never touches them.
  */
@@ -89,16 +76,6 @@ fun PreferenceEditor.commitTidalSessionFacts(session: TidalSessionFacts) {
     session.accountName?.takeIf(String::isNotBlank)?.let { this[TidalAccountNameKey] = it }
     session.subscription?.let { this[TidalSubscriptionKey] = it.name }
     this[TidalNeedsReloginKey] = false
-}
-
-/**
- * Clears the tokens and every display fact in one edit, and returns subscription to UNKNOWN. The host drops its
- * in-memory tokens before this commit, so the session never outlives its stored copy.
- */
-fun PreferenceEditor.clearTidalSession() {
-    this[TidalAccessTokenKey] = ""
-    this[TidalRefreshTokenKey] = ""
-    clearTidalSessionFacts()
 }
 
 /** Clears the display facts only. The account sign-out has already removed the tokens and the identity in its own edit. */
