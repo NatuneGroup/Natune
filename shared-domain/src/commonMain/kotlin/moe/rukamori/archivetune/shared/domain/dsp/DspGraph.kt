@@ -161,6 +161,9 @@ class DspGraph(
         }
         val samples = frames * channels
         ensureWork(samples)
+        // The clarity stage's dry copy is sized here with the block, like this graph's own work buffer, so a preset
+        // enabled mid-stream never allocates a block-sized array on the playback thread.
+        clarity.prepare(samples)
         input.copyInto(work, 0, 0, samples)
         if (inputGain != 1f) {
             for (index in 0 until samples) work[index] *= inputGain

@@ -12,6 +12,7 @@ import moe.rukamori.archivetune.shared.domain.dsp.DspGraph
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.TpdfDither
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
+import moe.rukamori.archivetune.shared.domain.dsp.clarity.ClarityPreset
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
 import org.junit.Assert.assertArrayEquals
@@ -432,6 +433,30 @@ class UnifiedDspAudioProcessorTest {
         )
     }
 
+    /**
+     * Studio Master Clarity is switched on while a track is already playing at a settled block size. Its dry copy
+     * belongs to the block, not to the first enabled preset: the graph reserves it alongside its own work buffer, so
+     * the adopting block does not allocate the block-sized array that a stage which only grew on the first enabled
+     * preset would need.
+     */
+    @Test
+    fun `enabling clarity mid-stream allocates no block-sized buffer on the render path`() {
+        val processor = processor()
+        processor.submit(request(1), plan())
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        val block = block()
+        repeat(WARMUP_BLOCKS) { render(processor, block) }
+
+        processor.submit(request(1).copy(clarity = ClarityPreset.REFERENCE), plan())
+        val overhead = measure { }
+        val adopting = measure { render(processor, block) } - overhead
+        assertTrue(
+            "enabling clarity allocated $adopting bytes on the adopting block, " +
+                "close to the ${BLOCK_SAMPLES * CHANNELS * FLOAT_BYTES}-byte dry copy",
+            adopting < CLARITY_RENDER_LIMIT_BYTES,
+        )
+    }
+
     /** One boosted band and [count]-1 flat ones, so a band-count change designs one stage, not [count]. */
     private fun request(count: Int): DspSettings = DspSettings(
         preampDb = -3.0,
@@ -497,5 +522,8 @@ class UnifiedDspAudioProcessorTest {
         const val REQUEST_CHANGES = 64
         const val MAX_BANDS = 16
         const val ALLOCATION_LIMIT_BYTES = 32L * 1_024L
+
+        /** Far below the block the clarity dry copy needs, so the mid-stream switch is proved allocation-free. */
+        const val CLARITY_RENDER_LIMIT_BYTES = 4L * 1_024L
     }
 }
