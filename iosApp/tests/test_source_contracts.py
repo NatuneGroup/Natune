@@ -71,6 +71,47 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertNotRegex(adapter, r"positionMs\s*(?:\+=|\+\+)")
         self.assertIn("at_audio_destroy", adapter)
 
+    def test_interruption_is_published_paused_and_resumes_only_approved_intent(self):
+        audio = (IOS / "Native/ATNativeAudio.mm").read_text()
+        began = audio.split("AVAudioSessionInterruptionTypeBegan", 1)[1].split("} else {", 1)[0]
+        self.assertIn("const bool resumeIntent = output->wants_play.load()", began)
+        self.assertIn("at_audio_pause(output)", began)
+        self.assertIn("output->resume_after_interruption.store(resumeIntent)", began)
+        ended = audio.split("resume_after_interruption.exchange(false)", 1)[1].split("});", 1)[0]
+        self.assertIn("AVAudioSessionInterruptionOptionShouldResume", ended)
+        self.assertIn("if (resume) at_audio_play(output); else at_audio_pause(output);", ended)
+        play = audio.split("int at_audio_play", 1)[1].split("\n}", 1)[0]
+        self.assertIn("if (p->interrupted.load())", play)
+        self.assertIn("p->resume_after_interruption.store(true)", play)
+        pause = audio.split("void at_audio_pause", 1)[1].split("\n}", 1)[0]
+        self.assertIn("p->resume_after_interruption.store(false)", pause)
+        snapshot = audio.split("void at_audio_snapshot", 1)[1].split("\n}", 1)[0]
+        self.assertIn("if (p->interrupted.load()) snapshot->flags &= ~AE_FLAG_PLAY_WHEN_READY;", snapshot)
+        blend = (KOTLIN / "IosBlendAudioGraph.kt").read_text()
+        interruption = blend.split("AVAudioSessionInterruptionNotification", 1)[1].split("observers +=", 1)[0]
+        self.assertIn("dispatch_async(dispatch_get_main_queue())", interruption)
+        self.assertIn("current.nativeState().playWhenReady", interruption)
+        self.assertNotIn("ShouldResume != 0uL && current.nativeState().playWhenReady", interruption)
+
+    def test_host_close_makes_the_queue_durable_before_it_returns(self):
+        host = (UI_IOS.parent / "IosHost.kt").read_text()
+        close = host.split("fun close()", 1)[1].split("private fun runDurably", 1)[0]
+        self.assertIn("runDurably(QUEUE_CHECKPOINT_TIMEOUT_MS)", close)
+        self.assertIn("runDurably(GRAPH_CLOSE_TIMEOUT_MS)", close)
+        self.assertIn("openedGraph.checkpointQueue()", close)
+        self.assertIn("openedGraph.close()", close)
+        self.assertNotIn("openedGraph?.close()", close)
+        self.assertLess(close.index("runDurably(QUEUE_CHECKPOINT_TIMEOUT_MS)"), close.index("nowPlaying?.close()"))
+        background = host.split("fun backgrounded()", 1)[1].split("fun openLink", 1)[0]
+        self.assertIn("opened.checkpointQueue()", background)
+        self.assertIn("runDurably(BACKGROUND_CHECKPOINT_TIMEOUT_MS)", background)
+        graph = (UI_IOS / "IosSessionGraph.kt").read_text()
+        self.assertIn("suspend fun checkpointQueue()", graph)
+        helper = host.split("private fun runDurably", 1)[1]
+        self.assertIn("CoroutineScope(SupervisorJob() + Dispatchers.Default).launch", helper)
+        self.assertIn("runBlocking(NonCancellable)", helper)
+        self.assertIn("withTimeoutOrNull(timeoutMs) { work.join() }", helper)
+
     def test_platform_ports_are_the_m7_interfaces(self):
         for filename, interface in [
             ("IosKeychainCredentialStore.kt", "SecureCredentialStore"),

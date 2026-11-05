@@ -176,7 +176,9 @@ internal class IosBlendAudioGraph private constructor(
             } else {
                 graphDirty = true
                 val options = (note?.userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)?.unsignedLongLongValue ?: 0uL
-                if (options and AVAudioSessionInterruptionOptionShouldResume != 0uL && current.nativeState().playWhenReady) {
+                if (options and AVAudioSessionInterruptionOptionShouldResume != 0uL) {
+                    // The native observer restores the deck's play intent for an approved resume; check it only after
+                    // that observer's main-queue turn, so these two observers do not depend on each other's order.
                     val epoch = resumeEpoch
                     dispatch_async(dispatch_get_main_queue()) {
                         if (!closed && epoch == resumeEpoch && current.nativeState().playWhenReady && !play()) failOutput()

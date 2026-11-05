@@ -319,6 +319,16 @@ internal class IosSessionGraph private constructor(
         queue.state.value.entries.firstOrNull { it.occurrenceId == occurrenceId }?.item
 
     /**
+     * Writes the queue's current revision without stopping the graph. The host calls it when the app enters the
+     * background and once more before [close], because a swipe-kill never reaches willTerminate. It runs on the
+     * caller's worker and needs no main-queue work, so a missing or throwing `Dispatchers.Main.immediate` cannot
+     * defer the checkpoint.
+     */
+    suspend fun checkpointQueue() = withContext(NonCancellable) {
+        checkpointNow(queue, reportLine)
+    }
+
+    /**
      * Final shutdown. The open listen and podcast position are finished first so their play time and progress are kept,
      * then the queue is checkpointed while the owner can still write, and only then are the database and the client
      * released. The host's player, port and settings belong to the host, which closes them afterwards.
