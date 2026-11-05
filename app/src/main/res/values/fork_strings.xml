@@ -64,7 +64,7 @@
     <string name="home_screen_style">Home screen style</string>
     <string name="home_screen_style_desc">Layout of the home feed</string>
     <string name="home_screen_style_default">Natune</string>
-    <string name="home_screen_style_rukamori">Rukamori</string>
+    <string name="home_screen_style_rukamori">Classic</string>
 
     <!-- Download source priority (fork-only — JioSaavn added). -->
     <string name="download_source_jiosaavn">JioSaavn</string>
