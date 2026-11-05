@@ -118,6 +118,11 @@ fetch() {
             log "attempt $attempt for $(basename "$dest") failed (curl exit $status); resuming"
             sleep $((attempt * 5))
         done
+        if ! sha256_check "$sha" "$dest.part"; then
+            rm -f "$dest.part"
+            log "checksum mismatch for the partial $(basename "$dest"); removed the partial download"
+            exit 1
+        fi
         mv "$dest.part" "$dest"
     fi
     if ! sha256_check "$sha" "$dest"; then
