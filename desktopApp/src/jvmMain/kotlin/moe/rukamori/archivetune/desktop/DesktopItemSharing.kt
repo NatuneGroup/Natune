@@ -6,6 +6,7 @@ import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.net.URLEncoder
 import org.drinkless.tdlib.TdApi
+import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
 import moe.rukamori.archivetune.shared.domain.repository.ContentProvider
@@ -102,6 +103,30 @@ internal suspend fun revealDesktopAudio(mediaId: String, graph: DesktopSessionGr
 
 private fun copyDesktopMenuText(text: String) {
     Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+}
+
+/**
+ * Copies [text] and answers whether the clipboard accepted it, so a notice never claims a copy that failed.
+ */
+internal fun copyDesktopText(text: String): Boolean = try {
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+    true
+} catch (failure: Exception) {
+    desktopDiagnostic("clipboard unavailable: ${failure.javaClass.simpleName}")
+    false
+}
+
+/**
+ * The player's Share: a catalogue song copies its watch or catalogue link and says so, while a local file or a
+ * provider without a public link leaves the notice that says why. Nothing is claimed without a copy.
+ */
+internal fun shareDesktopSong(ref: ContentRef, notify: (String) -> Unit, copy: (String) -> Boolean = ::copyDesktopText) {
+    val uri = desktopItemShareUri(ref)
+    if (uri == null) {
+        notify(DesktopStrings["share_link_unavailable"])
+        return
+    }
+    notify(DesktopStrings[if (copy(uri)) "link_copied" else "clipboard_unavailable"])
 }
 
 internal fun desktopMenuSharing(state: DesktopItemMenuState, graph: DesktopSessionGraph): MenuSharing = object : MenuSharing {

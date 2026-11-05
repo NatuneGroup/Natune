@@ -2,7 +2,10 @@ package moe.rukamori.archivetune.desktop
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -17,6 +20,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowState
 import java.awt.AWTEvent
@@ -40,6 +44,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -250,20 +256,33 @@ internal fun DesktopMountedRoot(
     val platformDark by services.systemDark.collectAsState()
     // The platform watcher wins where it reports; everywhere else Compose's own reading answers.
     val effectiveDark = platformDark ?: isSystemInDarkTheme()
+    // Host actions leave their one-line notices here (the player's Share says what it copied), so no action owns UI.
+    val notices = remember { SnackbarHostState() }
+    LaunchedEffect(graph) {
+        graph.notices.receiveAsFlow().collect { message -> notices.showSnackbar(message) }
+    }
     CompositionLocalProvider(
         LocalDesktopWindowShown provides (activity.visible && !activity.minimized),
         LocalDesktopSystemDark provides effectiveDark,
     ) {
-        ArchiveTuneRoot(
-            host = host,
-            // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
-            visible = activity.visible && !activity.minimized && !activity.occluded,
-            resumed = activity.resumed,
-            opticalCapabilities = DesktopOpticalCapabilities,
-            systemDark = effectiveDark,
-            // Escape and the other hardware shortcuts have no owner here until the root itself holds focus.
-            rootKeyFocus = true,
-        )
+        Box(Modifier.fillMaxSize()) {
+            ArchiveTuneRoot(
+                host = host,
+                // A minimized or occluded window is not visible: frames, blur and shimmer stop. Audio keeps playing.
+                visible = activity.visible && !activity.minimized && !activity.occluded,
+                resumed = activity.resumed,
+                opticalCapabilities = DesktopOpticalCapabilities,
+                systemDark = effectiveDark,
+                // Escape and the other hardware shortcuts have no owner here until the root itself holds focus.
+                rootKeyFocus = true,
+            )
+            // The host's notice sits outside the app theme, so it carries the same light/dark reading itself.
+            ArchiveTuneTheme(darkTheme = effectiveDark) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                    SnackbarHost(notices, Modifier.padding(16.dp))
+                }
+            }
+        }
     }
 }
 

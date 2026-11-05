@@ -199,6 +199,42 @@ class PlayerSettingsFamilyTest {
         } finally { directory.toFile().deleteRecursively() }
     }
 
+    @Test fun desktopPlaybackPageHeadsWithItsTitleTheOneProcessingSwitchAndTheHostEqualizer() = runBlocking {
+        val directory = Files.createTempDirectory("m6-playback-processing-")
+        val store = DesktopSettingsStore.open(directory.resolve("settings.bin"))
+        var equalizerOpened = 0
+        try {
+            val controller = SettingsController(store, store.snapshot(), false)
+            runComposeUiTest {
+                setContent { MaterialTheme {
+                    PlaybackSettings(
+                        controller = controller,
+                        bitPerfectSupported = false,
+                        bitPerfectSinkActive = false,
+                        usbExclusiveSupported = false,
+                        releaseBitPerfectSink = {},
+                        navigate = {},
+                        arrangeArtworkProviders = {},
+                        managePlaylistTags = {},
+                        onFailure = { error("Unexpected settings failure") },
+                        onOpenEqualizer = { equalizerOpened++ },
+                    )
+                } }
+                // The subpage carries the title the other pages do, so the desktop Playback page is identifiable.
+                onNodeWithTag("setting:playback_group").assertExists()
+                onNodeWithTag("setting:audio_processing").assertExists()
+                onNodeWithTag("toggle:audio_processing").assertIsOn()
+                onNodeWithTag("toggle:audio_processing").performClick()
+                waitUntil { store.snapshots.value?.get(AudioProcessingEnabledKey) == false }
+                onNodeWithTag("setting:equalizer").performScrollTo().performClick()
+                assertEquals(1, equalizerOpened)
+            }
+        } finally {
+            store.close()
+            directory.toFile().deleteRecursively()
+        }
+    }
+
     private fun appearance(snapshot: PreferenceSnapshot) = playerAppearanceSettingsRows(snapshot, false, {}, {})
     private fun playback(snapshot: PreferenceSnapshot, active: Boolean = false) =
         playbackSettingsRows(snapshot, false, active, false, {}, {}, {})

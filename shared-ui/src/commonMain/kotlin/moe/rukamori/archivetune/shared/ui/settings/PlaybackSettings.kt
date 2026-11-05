@@ -23,12 +23,14 @@ fun PlaybackSettings(
     scrollTo: String? = null,
     modifier: Modifier = Modifier,
     deviceMuteSupported: Boolean = true,
+    /** A host that shows the equalizer over its own window supplies the command; null keeps the row off the page. */
+    onOpenEqualizer: (() -> Unit)? = null,
 ) {
     val snapshot by controller.store.snapshots.collectAsState()
     val preferences = snapshot
     if (preferences == null) { CircularProgressIndicator(); return }
     SettingsPage(playbackSettingsRows(preferences, bitPerfectSupported, bitPerfectSinkActive,
-        usbExclusiveSupported, navigate, arrangeArtworkProviders, managePlaylistTags, deviceMuteSupported),
+        usbExclusiveSupported, navigate, arrangeArtworkProviders, managePlaylistTags, deviceMuteSupported, onOpenEqualizer),
         preferences, controller, scrollTo, onFailure = onFailure, modifier = modifier,
         onCommitted = { if (bitPerfectSinkActive && it.needsBitPerfectSinkRelease()) releaseBitPerfectSink() })
 }
@@ -43,6 +45,8 @@ fun playbackSettingsRows(
     managePlaylistTags: () -> Unit,
     // Hosts without a pause-on-mute watch hide both rows; a dead toggle would only write the key.
     deviceMuteSupported: Boolean = true,
+    // A host that renders the equalizer over its own window supplies the command; null keeps the row off the page.
+    onOpenEqualizer: (() -> Unit)? = null,
     // The retired engine switches are Android-only history; no host renders them, and their stored
     // values stay readable as preset-format input for the unified chain.
 ): List<SettingsRow> = buildList {
@@ -50,6 +54,16 @@ fun playbackSettingsRows(
     val offload = preferences[AudioOffload, false]
     val blocked = preferences.bitPerfectOutputSelected() || bitPerfectSinkActive
     val bypassReason = Res.string.m6_processing_bypassed_bit_perfect.takeIf { blocked }
+    // The page's own title, as the other subpages carry one; the one processing switch heads it so a host without
+    // bit-perfect output shows the chain's master control without scrolling past crossfade and offload.
+    add(SettingsRow.Header("playback_group", Res.string.m6_settings_home_playback))
+    // The chain's one switch. It stays enabled while offload is on because turning it on turns offload off.
+    add(SettingsRow.Toggle("audio_processing", Res.string.m6_audio_processing, AudioProcessingEnabledKey, true,
+        description = bypassReason ?: Res.string.m6_audio_processing_desc, enabled = !blocked,
+        write = { setAudioProcessingPreference(it) }))
+    if (onOpenEqualizer != null) {
+        add(SettingsRow.Action("equalizer", Res.string.m5pq_equalizer, onOpenEqualizer))
+    }
     add(SettingsRow.Action("preferred_sources", Res.string.m6_source_settings, { navigate("settings/sources") }))
     add(SettingsRow.Action("lyrics", Res.string.m6_lyrics_settings, { navigate("settings/lyrics") }))
     add(SettingsRow.Toggle("enable_video_playback", Res.string.m6_video_playback, EnableVideoPlaybackKey, false))
@@ -113,10 +127,6 @@ fun playbackSettingsRows(
         description = Res.string.m6_usb_exclusions,
         enabled = usbExclusiveSupported, read = { usbExclusiveSupported && it[UsbExclusiveAudioKey, false] },
         write = { setPlaybackOutputPreference(UsbExclusiveAudioKey, it) }))
-    // The chain's one switch. It stays enabled while offload is on because turning it on turns offload off.
-    add(SettingsRow.Toggle("audio_processing", Res.string.m6_audio_processing, AudioProcessingEnabledKey, true,
-        description = bypassReason ?: Res.string.m6_audio_processing_desc, enabled = !blocked,
-        write = { setAudioProcessingPreference(it) }))
 
     add(SettingsRow.Toggle("seek_seconds_addup", Res.string.m6_seek_extra, SeekExtraSeconds, false))
     if (deviceMuteSupported) {
