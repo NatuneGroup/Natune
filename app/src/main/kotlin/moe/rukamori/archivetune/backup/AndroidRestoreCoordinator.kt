@@ -260,11 +260,11 @@ internal object AndroidRestoreCoordinator {
             if (!readyWritten) {
                 deleteTree(stageRoot)
                 val fontsDir = File(context.filesDir, BackupArchiveRepository.CUSTOM_FONTS_DIR_NAME)
-                deleteTree(File(fontsDir, RESTORE_PENDING_DIR, "$STAGE_PREFIX$stageId"))
-                deleteTree(File(fontsDir, RESTORE_PENDING_DIR, "$BACKUP_PREFIX$stageId"))
+                deleteTree(File(File(fontsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX$stageId"))
+                deleteTree(File(File(fontsDir, RESTORE_PENDING_DIR), "$BACKUP_PREFIX$stageId"))
                 val settingsDir = File(context.filesDir, "datastore")
-                deleteTree(File(settingsDir, RESTORE_PENDING_DIR, "$STAGE_PREFIX$stageId"))
-                deleteTree(File(settingsDir, RESTORE_PENDING_DIR, "$BACKUP_PREFIX$stageId"))
+                deleteTree(File(File(settingsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX$stageId"))
+                deleteTree(File(File(settingsDir, RESTORE_PENDING_DIR), "$BACKUP_PREFIX$stageId"))
             }
         }
     }
@@ -528,8 +528,8 @@ internal object AndroidRestoreCoordinator {
         }
         if (ready.settingsKind == SettingsKind.PB) {
             val settingsDir = File(context.filesDir, "datastore")
-            val staged = File(settingsDir, RESTORE_PENDING_DIR, "$STAGE_PREFIX${ready.stageId}")
-            val previous = File(settingsDir, RESTORE_PENDING_DIR, "$BACKUP_PREFIX${ready.stageId}")
+            val staged = File(File(settingsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX${ready.stageId}")
+            val previous = File(File(settingsDir, RESTORE_PENDING_DIR), "$BACKUP_PREFIX${ready.stageId}")
             targets += RestoreTarget(
                 livePath = File(settingsDir, SETTINGS_PB).path,
                 stagedPath = File(staged, SETTINGS_PB).path,
@@ -538,8 +538,8 @@ internal object AndroidRestoreCoordinator {
         }
         if (ready.settings) {
             val fontsDir = File(context.filesDir, BackupArchiveRepository.CUSTOM_FONTS_DIR_NAME)
-            val staged = File(fontsDir, RESTORE_PENDING_DIR, "$STAGE_PREFIX${ready.stageId}")
-            val previous = File(fontsDir, RESTORE_PENDING_DIR, "$BACKUP_PREFIX${ready.stageId}")
+            val staged = File(File(fontsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX${ready.stageId}")
+            val previous = File(File(fontsDir, RESTORE_PENDING_DIR), "$BACKUP_PREFIX${ready.stageId}")
             ready.fontEntries.forEach { font ->
                 val file = File(staged, font.name)
                 require(file.isFile && file.length() == font.length) { "Staged font changed: ${font.name}" }
@@ -679,11 +679,11 @@ internal object AndroidRestoreCoordinator {
         }
         deleteTree(stageRoot(context, ready))
         val fontsDir = File(context.filesDir, BackupArchiveRepository.CUSTOM_FONTS_DIR_NAME)
-        deleteTree(File(fontsDir, RESTORE_PENDING_DIR, "$STAGE_PREFIX${ready.stageId}"))
-        deleteTree(File(fontsDir, RESTORE_PENDING_DIR, "$BACKUP_PREFIX${ready.stageId}"))
+        deleteTree(File(File(fontsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX${ready.stageId}"))
+        deleteTree(File(File(fontsDir, RESTORE_PENDING_DIR), "$BACKUP_PREFIX${ready.stageId}"))
         val settingsDir = File(context.filesDir, "datastore")
-        deleteTree(File(settingsDir, RESTORE_PENDING_DIR, "$STAGE_PREFIX${ready.stageId}"))
-        deleteTree(File(settingsDir, RESTORE_PENDING_DIR, "$BACKUP_PREFIX${ready.stageId}"))
+        deleteTree(File(File(settingsDir, RESTORE_PENDING_DIR), "$STAGE_PREFIX${ready.stageId}"))
+        deleteTree(File(File(settingsDir, RESTORE_PENDING_DIR), "$BACKUP_PREFIX${ready.stageId}"))
     }
 
     private fun cleanupOrphans(context: Context) {
