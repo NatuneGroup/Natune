@@ -73,6 +73,15 @@ class StartupRecoveryActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra(EXTRA_RESTORE_BLOCKED, false)) {
+            state = RecoveryState.RestoreBlocked
+            setContent {
+                ArchiveTuneTheme {
+                    RestoreBlockedScreen(onClose = ::finishAndRemoveTask)
+                }
+            }
+            return
+        }
         setContent {
             ArchiveTuneTheme {
                 when (val current = state) {
@@ -84,6 +93,7 @@ class StartupRecoveryActivity : ComponentActivity() {
                         onClose = ::closeReport,
                         onActionFailed = ::showActionFailure,
                     )
+                    RecoveryState.RestoreBlocked -> RestoreBlockedScreen(onClose = ::finishAndRemoveTask)
                 }
             }
         }
@@ -93,6 +103,10 @@ class StartupRecoveryActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_RESTORE_BLOCKED, false)) {
+            state = RecoveryState.RestoreBlocked
+            return
+        }
         checkPreviousLaunch()
     }
 
@@ -172,11 +186,16 @@ class StartupRecoveryActivity : ComponentActivity() {
         reader.shutdownNow()
         super.onDestroy()
     }
+
+    companion object {
+        const val EXTRA_RESTORE_BLOCKED = "restore_blocked"
+    }
 }
 
 private sealed interface RecoveryState {
     data object Loading : RecoveryState
     data class Report(val report: StartupReport) : RecoveryState
+    data object RestoreBlocked : RecoveryState
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -197,6 +216,31 @@ private fun RecoveryLoadingScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 16.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun RestoreBlockedScreen(onClose: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.restore_blocked_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.restore_blocked_body),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            Button(onClick = onClose, modifier = Modifier.padding(top = 24.dp)) {
+                Text(stringResource(R.string.restore_blocked_close))
+            }
         }
     }
 }
