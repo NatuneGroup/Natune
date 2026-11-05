@@ -93,6 +93,9 @@ int at_graph_eq_band(AVAudioUnitEQ *unit, uint32_t index, uint32_t type,
         return YES;
     });
 }
+int at_graph_eq_gain(AVAudioUnitEQ *unit, float gain_db) {
+    return audio_try(^BOOL { unit.globalGain = bounded(gain_db, -24.0f, 24.0f); return YES; });
+}
 int at_graph_schedule(AVAudioPlayerNode *player, AVAudioPCMBuffer *buffer, AVAudioTime *time) {
     return audio_try(^BOOL {
         [player scheduleBuffer:buffer atTime:time options:(AVAudioPlayerNodeBufferOptions)0 completionHandler:nil];

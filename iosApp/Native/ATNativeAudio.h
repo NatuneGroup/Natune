@@ -46,6 +46,11 @@ typedef struct at_eq_band {
  * the parameters, so a later enable is instant. A level that arrives before the first load still applies to every
  * later load. The manual pull carries decoder PCM before this stage, so a blend applies its own equalizer. */
 void at_audio_equalizer(at_audio_output *output, const at_eq_band *bands, uint32_t count, int enabled);
+/* The output's preamp on the in-graph equalizer's global gain, in decibels, clamped to +-24; 0 is unity. It is the
+ * same unit the bands run on, so a plain fallback graph drops it with the tone stage. A level that arrives before
+ * the first load still applies to every later load. A blend applies its own preamp to each deck for the same reason
+ * as the equalizer. */
+void at_audio_preamp(at_audio_output *output, float gain_db);
 /* The app's output level, 0 to 1, applied by the engine's mixer node on top of decoder output. It scales what the
  * listener hears, like the desktop port's volume, while the hardware buttons keep owning the session route volume.
  * A level that arrives before the first load still applies to every later load. Values outside 0..1 are clamped. */

@@ -31,6 +31,7 @@ internal class IosBlendAudioGraph private constructor(
     private var pitchCents = 0f
     private var equalizerEnabled = false
     private var equalizerBands: List<IosEqBand> = emptyList()
+    private var preampDb = 0f
     private val observers = mutableListOf<Any>()
     private var configurationObserver: Any? = null
     private var closed = false
@@ -78,9 +79,10 @@ internal class IosBlendAudioGraph private constructor(
         if (!current.applyTone() || incoming?.applyTone() == false) { plainGraph = true; invalidateGraph() }
     }
 
-    fun setEqualizer(enabled: Boolean, bands: List<IosEqBand>) {
+    fun setTone(enabled: Boolean, bands: List<IosEqBand>, preampDb: Float) {
         equalizerEnabled = enabled
         equalizerBands = bands
+        this.preampDb = preampDb
         if (!current.applyTone() || incoming?.applyTone() == false) { plainGraph = true; invalidateGraph() }
     }
 
@@ -325,6 +327,7 @@ internal class IosBlendAudioGraph private constructor(
             val pitch = pitchUnit ?: return false
             val eq = eqUnit ?: return false
             if (at_graph_pitch(pitch, pitchCents) == 0) return false
+            if (at_graph_eq_gain(eq, preampDb) == 0) return false
             for (index in 0 until EQ_UNIT_BANDS.toInt()) {
                 val band = equalizerBands.getOrNull(index)
                 if (at_graph_eq_band(

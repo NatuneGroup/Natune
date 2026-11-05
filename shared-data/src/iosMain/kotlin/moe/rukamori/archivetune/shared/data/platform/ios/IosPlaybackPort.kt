@@ -226,12 +226,12 @@ class IosPlaybackPort : PlaybackPort {
                     outcome = null
                     telegramSource = null
                     val prepared = source ?: return@withContext false
-                    // A blend opened under a stored pitch/equalizer tone renders the same curve the
-                    // port's outputs do: the deck units render the fade and the promoted output keeps it.
+                    // A blend opened under a stored pitch/tone renders the same curve the port's
+                    // outputs do: the deck units render the fade and the promoted output keeps it.
                     val engine = blend ?: IosPlaybackBlend.open(native, volume)?.also {
                         blend = it
                         it.setPitch(desiredPitchCents)
-                        it.setEqualizer(dspSettings.equalizerEnabled, dspSettings.toIosEqBands())
+                        it.setTone(dspSettings.equalizerEnabled, dspSettings.toIosEqBands(), dspSettings.iosPreampDb)
                     } ?: return@withContext false
                     if (!engine.arm(prepared, overlapMs)) return@withContext false
                     source = null
@@ -726,21 +726,22 @@ class IosPlaybackPort : PlaybackPort {
             at_audio_volume(it, volume)
             at_audio_speed(it, desiredSpeed)
             at_audio_pitch(it, desiredPitchCents)
-            applyEqualizer(it)
+            applyDsp(it)
         }
     }
 
     /**
      * Applies the shared DSP settings on every live output and any created or recreated later, like [setVolume].
-     * iOS renders the equalizer of that one value through each output's in-graph unit; the adapter converts its
-     * band list once per call. Tempo stays with [PlaybackCommand.SetSpeed], so a settings push never moves it.
+     * iOS renders the tone of that one value through each output's in-graph unit: the bands, their switch and the
+     * user preamp, with the adapter converting the band list once per call. Tempo stays with
+     * [PlaybackCommand.SetSpeed], so a settings push never moves it.
      */
     fun applyDspSettings(settings: DspSettings) {
         scope.launch {
             if (closed) return@launch
             dspSettings = settings
-            output?.let { applyEqualizer(it) }
-            blend?.setEqualizer(settings.equalizerEnabled, settings.toIosEqBands())
+            output?.let { applyDsp(it) }
+            blend?.setTone(settings.equalizerEnabled, settings.toIosEqBands(), settings.iosPreampDb)
         }
     }
 
@@ -751,9 +752,9 @@ class IosPlaybackPort : PlaybackPort {
     suspend fun currentRequest(): PlaybackRequest? =
         runCatching { withContext(scope.coroutineContext) { request.takeUnless { closed } } }.getOrNull()
 
-    /** Applies the stored DSP settings' equalizer to [native]. */
-    private fun applyEqualizer(native: CPointer<at_audio_output>) =
-        applyIosEqualizer(native, dspSettings)
+    /** Applies the stored DSP settings' bands and preamp to [native]. */
+    private fun applyDsp(native: CPointer<at_audio_output>) =
+        applyIosDsp(native, dspSettings)
 
     /** Returns true while the engine plays or buffers, the states whose position and failure reads must stay prompt. */
     private fun observe(): Boolean {
@@ -778,7 +779,7 @@ class IosPlaybackPort : PlaybackPort {
                 at_audio_volume(incoming.output, volume)
                 at_audio_speed(incoming.output, desiredSpeed)
                 at_audio_pitch(incoming.output, desiredPitchCents)
-                applyEqualizer(incoming.output)
+                applyDsp(incoming.output)
                 mapper.beginRequest(incoming.request, incoming.generation)
             }
             if (read.state.errorCode == EnginePlaybackState.ERROR_OUTPUT) reopenOutput = true
