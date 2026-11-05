@@ -173,15 +173,17 @@ class App :
             return
         }
         if (AndroidRestoreCoordinator.isBlocked()) {
-            // The recovery screen lives in :crash. Exit this main process after queueing it so no
-            // Hilt-dependent Activity can start against the unrecovered file set.
-            runCatching {
-                startActivity(
-                    Intent(this, StartupRecoveryActivity::class.java).apply {
-                        putExtra(StartupRecoveryActivity.EXTRA_RESTORE_BLOCKED, true)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    },
-                )
+            // The recovery screen lives in :crash. A background start may be silently refused, so the
+            // durable blocked marker is the authoritative path; this attempt only helps the first launch.
+            if (!AndroidRestoreCoordinator.wasBlockedAtStartup()) {
+                runCatching {
+                    startActivity(
+                        Intent(this, StartupRecoveryActivity::class.java).apply {
+                            putExtra(StartupRecoveryActivity.EXTRA_RESTORE_BLOCKED, true)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        },
+                    )
+                }
             }
             onCreateWithoutInjection()
             exitProcess(0)

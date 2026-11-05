@@ -818,7 +818,7 @@ class BackupRestoreViewModel
                     } catch (e: Exception) {
                         reportException(e)
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, R.string.restore_failed, Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, e.message ?: context.getString(R.string.restore_failed), Toast.LENGTH_LONG).show()
                         }
                     } finally {
                         _backupRestoreProgress.value = null
