@@ -12503,68 +12503,69 @@ class MusicService :
     }
 
     private suspend fun saveQueueToDisk() {
+        val snapshot = withContext(Dispatchers.Main.immediate) { snapshotQueue() } ?: return
+        writeQueueSnapshot(snapshot)
+    }
+
+    /** Main thread only: the player is thread-confined; teardown runs this before release. */
+    internal fun snapshotQueue(): PersistedQueueSnapshot? {
+        if (isRestoringPersistentState || isHydratingRestoredQueue) return null
+        if (finiteMutationInProgress) return null
         val saveGeneration = persistentSaveGeneration.get()
-        val snapshot =
-            withContext(Dispatchers.Main.immediate) {
-                if (
-                    saveGeneration != persistentSaveGeneration.get() ||
-                    isRestoringPersistentState ||
-                    isHydratingRestoredQueue || finiteMutationInProgress
-                ) {
-                    return@withContext null
-                }
 
-                val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
-                if (mediaItemsSnapshot.isEmpty()) return@withContext null
+        val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
+        if (mediaItemsSnapshot.isEmpty()) return null
 
-                val currentMediaItemIndex = player.currentMediaItemIndex
-                val currentPosition = player.currentPosition
-                val persistQueue =
-                    currentQueue.toPersistQueue(
-                        title = queueTitle,
-                        items = mediaItemsSnapshot,
-                        mediaItemIndex = currentMediaItemIndex,
-                        position = currentPosition,
-                        timelineOccurrences = player.mediaItems.map { item ->
-                            (currentQueue as? YouTubePlaylistQueue)?.occurrenceOf(item) ?: item.finiteOccurrence()
-                        },
-                    ).copy(
-                        savedAtEpochMs = System.currentTimeMillis(),
-                        manualQueueKinds = player.mediaItems.map { it.userQueuedKind()?.ordinal },
-                        shuffleOrder = buildList {
-                            val timeline = player.currentTimeline
-                            var index = timeline.getFirstWindowIndex(true)
-                            while (index != C.INDEX_UNSET && size < player.mediaItemCount) {
-                                add(index)
-                                index = timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, true)
-                            }
-                        },
-                    )
-                val persistPlayerState =
-                    PersistPlayerState(
-                        playWhenReady = player.playWhenReady,
-                        repeatMode = player.repeatMode,
-                        shuffleModeEnabled = player.shuffleModeEnabled,
-                        volume = playerVolume.value,
-                        currentPosition = currentPosition,
-                        currentMediaItemIndex = currentMediaItemIndex,
-                        playbackState = player.playbackState,
-                    )
+        val currentMediaItemIndex = player.currentMediaItemIndex
+        val currentPosition = player.currentPosition
+        val persistQueue =
+            currentQueue.toPersistQueue(
+                title = queueTitle,
+                items = mediaItemsSnapshot,
+                mediaItemIndex = currentMediaItemIndex,
+                position = currentPosition,
+                timelineOccurrences = player.mediaItems.map { item ->
+                    val playlistQueue = currentQueue as? YouTubePlaylistQueue
+                    playlistQueue?.occurrenceOf(item) ?: item.finiteOccurrence()
+                },
+            ).copy(
+                savedAtEpochMs = System.currentTimeMillis(),
+                manualQueueKinds = player.mediaItems.map { it.userQueuedKind()?.ordinal },
+                shuffleOrder = buildList {
+                    val timeline = player.currentTimeline
+                    var index = timeline.getFirstWindowIndex(true)
+                    while (index != C.INDEX_UNSET && size < player.mediaItemCount) {
+                        add(index)
+                        index = timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, true)
+                    }
+                },
+            )
+        val persistPlayerState =
+            PersistPlayerState(
+                playWhenReady = player.playWhenReady,
+                repeatMode = player.repeatMode,
+                shuffleModeEnabled = player.shuffleModeEnabled,
+                volume = playerVolume.value,
+                currentPosition = currentPosition,
+                currentMediaItemIndex = currentMediaItemIndex,
+                playbackState = player.playbackState,
+            )
 
-                persistQueue to persistPlayerState
-            } ?: return
+        return PersistedQueueSnapshot(saveGeneration, persistQueue, persistPlayerState)
+    }
 
+    internal suspend fun writeQueueSnapshot(snapshot: PersistedQueueSnapshot) {
         withContext(Dispatchers.IO) {
             synchronized(persistentStateLock) {
-                if (saveGeneration != persistentSaveGeneration.get()) return@synchronized
+                if (snapshot.saveGeneration != persistentSaveGeneration.get()) return@synchronized
                 // Transition, play/pause and state-change callbacks fire in bursts for one user action,
                 // each snapshotting the same queue; only the first needs to hit the disk.
-                if (snapshot.first != lastPersistedQueue &&
-                    writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.first)
+                if (snapshot.queue != lastPersistedQueue &&
+                    writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.queue)
                 ) {
-                    lastPersistedQueue = snapshot.first
+                    lastPersistedQueue = snapshot.queue
                 }
-                persistPlayerStateIfChangedLocked(snapshot.second)
+                persistPlayerStateIfChangedLocked(snapshot.playerState)
             }
         }
     }
@@ -12621,14 +12622,9 @@ class MusicService :
             releaseAudioEffects()
         } catch (_: Exception) {
         }
-        try {
-            if (dataStore.get(PersistentQueueKey, true) && player.mediaItemCount > 0) {
-                runBlocking {
-                    saveQueueToDisk()
-                }
-            }
-        } catch (_: Exception) {
-        }
+        // Snapshotted here, before the player below is released; the write outlives scopeJob, which
+        // this method cancels, and is awaited at the end instead of parking the main thread here.
+        val teardownQueueSave = saveQueueForTeardown()
         try {
             mediaSession.release()
         } catch (_: Exception) {
@@ -12658,6 +12654,7 @@ class MusicService :
         runCatching { smartFadeAnalyzer?.release() }
         smartFadeAnalyzer = null
         scopeJob.cancel()
+        awaitTeardownQueueSave(teardownQueueSave)
     }
 
     override fun onBind(intent: Intent?): android.os.IBinder? {
@@ -12703,9 +12700,9 @@ class MusicService :
                 return
             }
 
-            if (dataStore.get(PersistentQueueKey, true) && player.mediaItemCount > 0) {
-                runBlocking { saveQueueToDisk() }
-            }
+            // The service keeps running (and playing) after the task is removed, so this only hands
+            // the write off; a teardown that follows awaits it.
+            saveQueueForTeardown()
         } catch (_: Exception) {
         }
     }
