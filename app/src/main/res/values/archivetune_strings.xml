@@ -839,6 +839,7 @@
     <string name="restore_pending_restart">A restore is already ready. Restart the app to apply it.</string>
     <string name="restore_blocked_title">Restore could not be completed</string>
     <string name="restore_blocked_body">The app was not opened because a restore could not be completed safely. The recovery files were kept on this device.</string>
+    <string name="restore_blocked_retry">Retry</string>
     <string name="restore_blocked_close">Close</string>
     <string name="backup_options_title">What to back up?</string>
     <string name="restore_options_title">What to restore?</string>

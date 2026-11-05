@@ -59,6 +59,7 @@ import java.util.concurrent.Executors
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.MainActivity
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.backup.AndroidRestoreCoordinator
 import moe.rukamori.archivetune.ui.theme.ArchiveTuneTheme
 
 /**
@@ -77,7 +78,10 @@ class StartupRecoveryActivity : ComponentActivity() {
             state = RecoveryState.RestoreBlocked
             setContent {
                 ArchiveTuneTheme {
-                    RestoreBlockedScreen(onClose = ::finishAndRemoveTask)
+                    RestoreBlockedScreen(
+                        onRetry = ::retryBlockedRestore,
+                        onClose = ::finishAndRemoveTask,
+                    )
                 }
             }
             return
@@ -93,7 +97,10 @@ class StartupRecoveryActivity : ComponentActivity() {
                         onClose = ::closeReport,
                         onActionFailed = ::showActionFailure,
                     )
-                    RecoveryState.RestoreBlocked -> RestoreBlockedScreen(onClose = ::finishAndRemoveTask)
+                    RecoveryState.RestoreBlocked -> RestoreBlockedScreen(
+                        onRetry = ::retryBlockedRestore,
+                        onClose = ::finishAndRemoveTask,
+                    )
                 }
             }
         }
@@ -114,15 +121,23 @@ class StartupRecoveryActivity : ComponentActivity() {
         val current = ++generation
         state = RecoveryState.Loading
         reader.execute {
-            val result = runCatching { previousLaunchReport(this) }
-            runOnUiThread {
-                if (current != generation || isFinishing || isDestroyed) return@runOnUiThread
-                result.fold(
-                    onSuccess = { report -> if (report == null) openMain(restart = false) else showReport(report) },
-                    onFailure = {
-                        showReport(StartupReport(getString(R.string.startup_report_unavailable), true, 0L))
-                    },
-                )
+            val restoreBlocked = AndroidRestoreCoordinator.hasBlockedMarker(this)
+            if (restoreBlocked) {
+                runOnUiThread {
+                    if (current != generation || isFinishing || isDestroyed) return@runOnUiThread
+                    state = RecoveryState.RestoreBlocked
+                }
+            } else {
+                val result = runCatching { previousLaunchReport(this) }
+                runOnUiThread {
+                    if (current != generation || isFinishing || isDestroyed) return@runOnUiThread
+                    result.fold(
+                        onSuccess = { report -> if (report == null) openMain(restart = false) else showReport(report) },
+                        onFailure = {
+                            showReport(StartupReport(getString(R.string.startup_report_unavailable), true, 0L))
+                        },
+                    )
+                }
             }
         }
     }
@@ -161,6 +176,11 @@ class StartupRecoveryActivity : ComponentActivity() {
             runCatching { store.acknowledgeThrough(report.reviewedThroughMs) }
             finishAndRemoveTask()
         }.onFailure { showActionFailure() }
+    }
+
+    private fun retryBlockedRestore() {
+        AndroidRestoreCoordinator.clearBlockedMarker(this)
+        openMain(restart = false)
     }
 
     private fun openMain(restart: Boolean) {
@@ -221,7 +241,7 @@ private fun RecoveryLoadingScreen() {
 }
 
 @Composable
-private fun RestoreBlockedScreen(onClose: () -> Unit) {
+private fun RestoreBlockedScreen(onRetry: () -> Unit, onClose: () -> Unit) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -238,7 +258,10 @@ private fun RestoreBlockedScreen(onClose: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(top = 12.dp),
             )
-            Button(onClick = onClose, modifier = Modifier.padding(top = 24.dp)) {
+            OutlinedButton(onClick = onRetry, modifier = Modifier.padding(top = 24.dp)) {
+                Text(stringResource(R.string.restore_blocked_retry))
+            }
+            Button(onClick = onClose, modifier = Modifier.padding(top = 8.dp)) {
                 Text(stringResource(R.string.restore_blocked_close))
             }
         }

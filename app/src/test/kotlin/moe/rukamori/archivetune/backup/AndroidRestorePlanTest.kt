@@ -48,4 +48,49 @@ class AndroidRestorePlanTest {
         assertFalse(AndroidRestoreArchivePolicy.canStage(readyExists = false, journalExists = true))
         assertFalse(AndroidRestoreArchivePolicy.canStage(readyExists = true, journalExists = true))
     }
+
+    @Test
+    fun fontManifestRequiresTheExactSortedNameAndLengthSet() {
+        val expected = listOf(
+            AndroidRestoreFont("b.ttf", 20),
+            AndroidRestoreFont("a.ttf", 10),
+        )
+        val encoded = AndroidRestoreFontPolicy.encode(expected)
+        assertEquals(expected.sortedBy { it.name }, AndroidRestoreFontPolicy.decode(encoded))
+        assertTrue(AndroidRestoreFontPolicy.matches(expected, expected.reversed()))
+        assertFalse(AndroidRestoreFontPolicy.matches(expected, listOf(AndroidRestoreFont("a.ttf", 11), AndroidRestoreFont("b.ttf", 20))))
+        assertFalse(AndroidRestoreFontPolicy.matches(expected, expected + AndroidRestoreFont("c.ttf", 30)))
+        assertFalse(AndroidRestoreFontPolicy.isValid(AndroidRestoreFont("a.ttf", 0)))
+    }
+
+    @Test
+    fun stageIdsAndBlockedMarkerPolicyAreBounded() {
+        assertTrue(AndroidRestoreFontPolicy.isSafeStageId("123-abc"))
+        assertFalse(AndroidRestoreFontPolicy.isSafeStageId("../outside"))
+        assertFalse(AndroidRestoreFontPolicy.isSafeStageId(""))
+        assertFalse(AndroidRestoreBlockedPolicy.shouldSkipHeavyRecovery(markerExists = false))
+        assertTrue(AndroidRestoreBlockedPolicy.shouldSkipHeavyRecovery(markerExists = true))
+        assertTrue(AndroidRestoreBlockedPolicy.shouldAttemptBestEffortScreen(markerExistedAtStartup = false))
+        assertFalse(AndroidRestoreBlockedPolicy.shouldAttemptBestEffortScreen(markerExistedAtStartup = true))
+    }
+
+    @Test
+    fun settingsRollbackPolicyRestoresOnlyAMatchingSnapshot() {
+        assertEquals(
+            AndroidRestoreSettingsRollbackAction.RESTORE_SNAPSHOT,
+            AndroidRestoreSettingsRollbackPolicy.decide(previousSettingsPresent = true, snapshotExists = true),
+        )
+        assertEquals(
+            AndroidRestoreSettingsRollbackAction.DELETE_LIVE,
+            AndroidRestoreSettingsRollbackPolicy.decide(previousSettingsPresent = false, snapshotExists = false),
+        )
+        assertEquals(
+            AndroidRestoreSettingsRollbackAction.FAIL_CLOSED,
+            AndroidRestoreSettingsRollbackPolicy.decide(previousSettingsPresent = true, snapshotExists = false),
+        )
+        assertEquals(
+            AndroidRestoreSettingsRollbackAction.FAIL_CLOSED,
+            AndroidRestoreSettingsRollbackPolicy.decide(previousSettingsPresent = false, snapshotExists = true),
+        )
+    }
 }
