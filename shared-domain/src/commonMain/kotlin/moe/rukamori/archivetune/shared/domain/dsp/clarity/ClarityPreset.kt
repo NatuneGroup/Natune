@@ -78,6 +78,8 @@ data class ClarityPreset(
     private fun linearGain(trimDb: Double): Double = if (trimDb == 0.0) 1.0 else 10.0.pow(trimDb / 20.0)
 
     companion object {
+        /** Every preset's contour has this many sections; the stage builds its cascade for that width up front. */
+        const val CONTOUR_SECTIONS = 6
         const val TRIM_COUNT = 8
         const val MIN_TRIM_DB = -12.0
         const val MAX_TRIM_DB = 12.0

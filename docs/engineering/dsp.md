@@ -67,8 +67,11 @@ host's engine renders. The Playback page's one **Audio processing** switch gates
 off the owner hands the engine `DspSettings.withoutProcessing()` (flat equalizer, unity preamp, no
 normalization), while the stored document keeps the presets it will render again when the switch returns. The
 Playback page's normalization row writes its own legacy key, so the owner mirrors the one document value into
-that key on every save and adopts the row's edit as a document change; the document stays the authority, and
-the row shows the value the chain applies.
+that key on every save and adopts an actual row edit as a document change; the document stays the authority, and
+the row shows the value the chain applies. A store replays its snapshot to a new collector, so the value the
+constructor already adopted is not a second edit: the owner remembers the inputs it has acknowledged and the
+row correction it is writing itself, and neither is bridged back. Queued writes are serialized and revisioned,
+so a superseded correction cannot land after a newer edit.
 
 Decoding is tolerant on purpose, because a stored blob must never be able to stop playback: a blank,
 unreadable or non-object document reads as `DspSettings()`; a missing, non-numeric or out-of-range field
@@ -134,7 +137,11 @@ default the Playback page declares, a flat equalizer and a preamp that is off.
   project's `TransitionFilterProcessor` after the supplied processors and both reject every other encoding in
   `onConfigure` — including while silence skipping is switched off, since the sink configures the whole chain.
   The reduction applies the graph's full-scale clamp and, when the settings ask for it, its TPDF dither once at
-  the 16-bit grid. It reconfigures on a format change off the audio thread, drains the stretch tail at end of
+  the 16-bit grid. Reading and writing use the same signed 32768 steps and saturate at −32768/32767, which keeps
+  a neutral block bit-exact for every PCM16 value, including both end points. A settings request is prepared on
+  the caller's thread — the dither-stripped value, the neutral value the gate renders and the output dither
+  stage — and the equalizer's cascade is sized with the graph, so the block that adopts the request allocates
+  no stage state. It reconfigures on a format change off the audio thread, drains the stretch tail at end of
   stream, and resets on flush; a configure that arrives while the previous stream still drains is held until
   the sink flushes. `UnifiedDspSettingsSource` reads the stored values through `DspSettingsMapper` and
   publishes one settings value plus its plan to every live processor. The plan is bypassed whenever the

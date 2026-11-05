@@ -13,7 +13,9 @@ import moe.rukamori.archivetune.shared.domain.dsp.eq.BiquadFilter
  * because on phone speakers it reads as phasey coloration.
  */
 class ClarityStage(private val sampleRateHz: Int, private val channels: Int) {
-    private val contour = ArrayList<BiquadFilter>()
+    // Every preset carries the same six sections, so the contour is built once here rather than on the first
+    // preset a host enables: installing a preset then only retunes stages that already exist.
+    private val contour = List(ClarityPreset.CONTOUR_SECTIONS) { BiquadFilter(channels) }
     private val exciter = BiquadFilter(channels)
     private val side = BiquadFilter(1)
     private var dry = FloatArray(0)
@@ -25,6 +27,12 @@ class ClarityStage(private val sampleRateHz: Int, private val channels: Int) {
         require(sampleRateHz >= BiquadDesign.MIN_SAMPLE_RATE_HZ) { "sampleRateHz must be at least ${BiquadDesign.MIN_SAMPLE_RATE_HZ}" }
         require(channels > 0) { "channels must be positive" }
     }
+
+    // Both filters are fixed by the sample rate, so their designs are built with the stage, not with a preset.
+    private val exciterCoefficients =
+        BiquadDesign.highPass(sampleRateHz, ClarityPreset.EXCITER_HZ, ClarityPreset.BUTTERWORTH_Q)
+    private val sideCoefficients =
+        BiquadDesign.highPass(sampleRateHz, ClarityPreset.MONO_BASS_HZ, ClarityPreset.BUTTERWORTH_Q)
 
     val isEngaged: Boolean
         get() = preset != null
@@ -40,14 +48,9 @@ class ClarityStage(private val sampleRateHz: Int, private val channels: Int) {
             return
         }
         val bands = preset.bands
-        while (contour.size < bands.size) contour.add(BiquadFilter(channels))
         bands.forEachIndexed { index, band -> contour[index].setCoefficients(design(band)) }
-        exciter.setCoefficients(
-            BiquadDesign.highPass(sampleRateHz, ClarityPreset.EXCITER_HZ, ClarityPreset.BUTTERWORTH_Q),
-        )
-        side.setCoefficients(
-            BiquadDesign.highPass(sampleRateHz, ClarityPreset.MONO_BASS_HZ, ClarityPreset.BUTTERWORTH_Q),
-        )
+        exciter.setCoefficients(exciterCoefficients)
+        side.setCoefficients(sideCoefficients)
     }
 
     fun process(samples: FloatArray, frames: Int) {

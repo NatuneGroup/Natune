@@ -271,6 +271,51 @@ class DspSettingsMapperTest {
         assertEquals(-7.0, graphicStage.preampDb, 1e-9)
     }
 
+    /**
+     * The legacy parametric stage applied its own preamp whether or not it also held a band curve, so a preset
+     * with no bands but a -6 dB preamp keeps its gain. Activation reads the engine and stage gates, not the
+     * decoded band list.
+     */
+    @Test
+    fun aStagePreampSurvivesWithoutAnyBand() {
+        val preampOnly = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = true,
+                tryptifyParametricStageEnabled = true,
+                tryptifyParametricBandsJson = "[]",
+                tryptifyParametricPreampDb = -6.0,
+            ),
+            listOf(100.0, 1_000.0),
+        )
+        assertEquals(-6.0, preampOnly.preampDb, 1e-9)
+        assertTrue(preampOnly.preampEnabled, "the migrated preamp must render without its own switch")
+        assertTrue(preampOnly.equalizerBands.isEmpty(), "a preamp-only preset migrates no band")
+
+        // The same gates still keep a dormant stage's stored preamp inactive.
+        val dormant = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = false,
+                tryptifyParametricStageEnabled = true,
+                tryptifyParametricBandsJson = "[]",
+                tryptifyParametricPreampDb = -6.0,
+            ),
+            emptyList(),
+        )
+        assertEquals(0.0, dormant.preampDb, 1e-9)
+
+        // And the graphic stage's preamp survives the same way when only it is switched on.
+        val graphicOnly = DspSettingsMapper.fromPersisted(
+            PersistedDspValues(
+                tryptifyEqualizerEnabled = true,
+                tryptifyGraphicStageEnabled = true,
+                tryptifyGraphicBandsJson = "[]",
+                tryptifyGraphicPreampDb = -3.0,
+            ),
+            emptyList(),
+        )
+        assertEquals(-3.0, graphicOnly.preampDb, 1e-9)
+    }
+
     @Test
     fun aStereoGraphicCurveKeepsItsRightChannelOverrides() {
         val left = """[{"type":"PEAKING","freq":1000,"gain":2,"q":1},{"type":"PEAKING","freq":2000,"gain":3,"q":1}]"""
