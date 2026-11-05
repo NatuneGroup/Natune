@@ -10,6 +10,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -195,6 +196,7 @@ class NatuneNewsClientTest {
             assertTrue(news.isOpen)
 
             news.close()
+            awaitFeedClosed(news)
 
             assertFalse(news.isOpen)
             assertTrue(engine.isActive)
@@ -203,6 +205,16 @@ class NatuneNewsClientTest {
             news.close()
             shared.close()
             engine.close()
+        }
+    }
+
+    /**
+     * Ktor finishes closing a client through its own job, so "closed" is observed rather than assumed right
+     * after [NatuneNewsClient.close] returns; asserting immediately is what made these three tests flaky.
+     */
+    private suspend fun awaitFeedClosed(news: NatuneNewsClient) {
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) { while (news.isOpen) delay(10) }
         }
     }
 
@@ -217,6 +229,7 @@ class NatuneNewsClientTest {
             shared.close()
 
             withContext(Dispatchers.Default) { withTimeout(5_000) { shared.coroutineContext[Job]!!.join() } }
+            awaitFeedClosed(news)
             assertFalse(news.isOpen)
             assertTrue(engine.isActive)
             // An explicitly supplied engine is caller-owned; client.close() must not close it.
@@ -244,6 +257,7 @@ class NatuneNewsClientTest {
             shared.close()
 
             withContext(Dispatchers.Default) { withTimeout(5_000) { engine.coroutineContext[Job]!!.join() } }
+            awaitFeedClosed(news)
             assertFalse(news.isOpen)
         } finally {
             news.close()

@@ -96,39 +96,45 @@ class DesktopPodcastContentTest {
     }
 
     @Test
-    fun completionRejectsBlankRepeatedOrEmptyTails() = runBlocking {
-        assertFailsWith<IncompleteFinitePlaylistException> {
-            completeDesktopPodcast(FakeTransport(DesktopPodcastEpisodePage(listOf(episode("a")), " ")), "show")
-        }
-        assertFailsWith<IncompleteFinitePlaylistException> {
-            completeDesktopPodcast(
-                FakeTransport(
-                    DesktopPodcastEpisodePage(listOf(episode("a")), "t2"),
-                    mapOf("t2" to DesktopPodcastEpisodePage(listOf(episode("b")), "t2")),
-                ),
-                "show",
-            )
-        }
-        // An unrecognized envelope parses as an empty page with no token; that is incomplete, not done.
-        assertFailsWith<IncompleteFinitePlaylistException> {
-            completeDesktopPodcast(
-                FakeTransport(
-                    DesktopPodcastEpisodePage(listOf(episode("a")), "t2"),
-                    mapOf("t2" to DesktopPodcastEpisodePage(emptyList(), null)),
-                ),
-                "show",
-            )
+    fun completionRejectsBlankRepeatedOrEmptyTails() {
+        // A body, not `= runBlocking { }`: JUnit4 only runs void test methods, and the last assertion here
+        // returns the exception it matched.
+        runBlocking {
+            assertFailsWith<IncompleteFinitePlaylistException> {
+                completeDesktopPodcast(FakeTransport(DesktopPodcastEpisodePage(listOf(episode("a")), " ")), "show")
+            }
+            assertFailsWith<IncompleteFinitePlaylistException> {
+                completeDesktopPodcast(
+                    FakeTransport(
+                        DesktopPodcastEpisodePage(listOf(episode("a")), "t2"),
+                        mapOf("t2" to DesktopPodcastEpisodePage(listOf(episode("b")), "t2")),
+                    ),
+                    "show",
+                )
+            }
+            // An unrecognized envelope parses as an empty page with no token; that is incomplete, not done.
+            assertFailsWith<IncompleteFinitePlaylistException> {
+                completeDesktopPodcast(
+                    FakeTransport(
+                        DesktopPodcastEpisodePage(listOf(episode("a")), "t2"),
+                        mapOf("t2" to DesktopPodcastEpisodePage(emptyList(), null)),
+                    ),
+                    "show",
+                )
+            }
         }
     }
 
     @Test
-    fun completionStopsAtTheRequestBound() = runBlocking {
-        val pages = (1..250).associate { i -> "t$i" to DesktopPodcastEpisodePage(listOf(episode("e$i")), "t${i + 1}") }
-        assertFailsWith<IncompleteFinitePlaylistException> {
-            completeDesktopPodcast(
-                FakeTransport(DesktopPodcastEpisodePage(listOf(episode("e0")), "t1"), pages),
-                "show",
-            )
+    fun completionStopsAtTheRequestBound() {
+        runBlocking {
+            val pages = (1..250).associate { i -> "t$i" to DesktopPodcastEpisodePage(listOf(episode("e$i")), "t${i + 1}") }
+            assertFailsWith<IncompleteFinitePlaylistException> {
+                completeDesktopPodcast(
+                    FakeTransport(DesktopPodcastEpisodePage(listOf(episode("e0")), "t1"), pages),
+                    "show",
+                )
+            }
         }
     }
 
