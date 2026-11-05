@@ -53,11 +53,15 @@ class DesktopPlaybackPortTest {
             port.awaitSnapshot("playback past 200 ms") { it.positionMs >= 200L }
 
             port.submit(PlaybackCommand.Pause)
-            val paused = port.awaitSnapshot("a paused snapshot") { !it.playWhenReady }
+            // The pause reaches the engine on its own audio callback and the next poll reads that, so the settled
+            // snapshot is the first one that also reports the engine stopped advancing. Asserting on the first
+            // playWhenReady=false read only measured how quickly the command was published.
+            val paused = port.awaitSnapshot("a settled paused snapshot") {
+                !it.playWhenReady && !it.isAudioAdvancing
+            }
             Thread.sleep(300L)
             val later = assertNotNull(port.snapshots.value)
 
-            assertFalse(paused.isAudioAdvancing)
             assertEquals(paused.positionMs, later.positionMs, "position moved while paused")
             assertFalse(later.isAudioAdvancing)
         }
@@ -244,7 +248,11 @@ class DesktopPlaybackPortTest {
             port.submit(PlaybackCommand.Load(localRequest("occ-park", "ramp-48k.wav"), 0L, playWhenReady = true))
             port.awaitSnapshot("playback past 300 ms") { it.positionMs >= 300L }
             port.submit(PlaybackCommand.Pause)
-            val paused = port.awaitSnapshot("a paused snapshot") { !it.playWhenReady }
+            // Parking stops the polls, so the snapshot the parked state is judged by is the last one published:
+            // wait for the engine to report the pause before freeing the output.
+            val paused = port.awaitSnapshot("a settled paused snapshot") {
+                !it.playWhenReady && !it.isAudioAdvancing
+            }
 
             port.releaseOutput()
             awaitValue("the parked output") { port.outputSuspended.value.takeIf { it } }

@@ -265,6 +265,21 @@ jobs:
             -PdesktopPackageVersion=1.0.0 \
             -PdesktopDisplayVersion=1.0.0
 
+      - name: Upload the desktop test reports
+        if: always() && inputs.desktop_app_image == true
+        uses: actions/upload-artifact@v7
+        # The full desktop suite only runs in this opt-in job; its JUnit XML is what names a failing engine
+        # assertion precisely. Quota exposure is the same as the other report uploads, so a failed upload must
+        # not mask the test verdict.
+        continue-on-error: true
+        with:
+          name: desktop-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            desktopApp/build/reports/tests/
+            desktopApp/build/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Package the Linux app image
         if: inputs.desktop_app_image == true
         shell: bash
