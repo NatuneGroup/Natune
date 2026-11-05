@@ -66,12 +66,14 @@ not part of the local cheap-edit loop:
 python3 scripts/check_code_quality.py --base <full-40-char-base-oid>
 ```
 
-`Build Pull Request` runs it in the independent `kotlin-quality` job on PRs and dev
-pushes. Manual dispatch runs that job only when the quality-only `quality_base` input is
-supplied; manual quality-only mode does not run the Android build or desktop compile and
-is mutually exclusive with `desktop_app_image`/`android_release_candidate`. The base is
-always an explicit full commit (PR base, push before, or manual SHA); an unavailable
-object is fetched read-only, and a base that resolves to HEAD is rejected.
+`Build Pull Request` keeps the independent `kotlin-quality` job **manual-only** for now:
+it runs only when the quality-only `quality_base` input is supplied and is not an
+automatic PR/dev required gate until split and method-rename debt lineage is proven.
+Manual quality-only mode does not run the Android build or desktop compile and is
+mutually exclusive with `desktop_app_image`/`android_release_candidate`. The base is
+always an explicit full commit (manual SHA); an unavailable object is fetched read-only,
+and a base that resolves to HEAD is rejected. A non-zero finding report is diagnostic
+evidence, not proof that quality is clean.
 
 The default `structural` profile analyzes the legacy Android roots plus
 `shared-domain/src`, `shared-data/src`, `shared-ui/src` and `desktopApp/src` (all Kotlin
@@ -86,8 +88,15 @@ summary reports `semanticAnalysis: false` and the analyzed roots/profile. Git-co
 renames are normalized for base/candidate comparisons; new files, copies, new counts and
 increased complexity still fail. Do not add suppressions or exclude changed paths to pass.
 
+Known limitation: a Git `R<100` partial rename plus a newly added extracted file, or a
+renamed declaration whose finding message changes, can still be classified as new. The
+repository's recorded split case (`R055` old home screen to the renamed screen, plus a new
+components file and renamed main function) reproduces this as synthetic comparator
+evidence, not measured Detekt output. No cross-file lineage framework or waiver is added;
+the diagnostic report must not be presented as a clean or complete gate.
+
 Full Detekt/CPD reports and per-rule counts are retained under
-`.factory/reports/code-quality/` and in the PR quality artifact. Existing findings
+`.factory/reports/code-quality/` and in the manual quality artifact. Existing findings
 remain visible. The gate compares the base with the candidate using identical
 rules; it rejects new findings, increased reported complexity and new duplication.
 Source line movement and reductions of existing duplicated blocks do not create
