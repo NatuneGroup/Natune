@@ -83,14 +83,16 @@ class PortableInfiniteQueueTest {
         assertEquals(1, h.radioCalls.size)
         h.enabled.value = false
         runCurrent()
-        assertFalse(h.owner.infiniteQueueLoading.value)
+        // The toggle's decision queues behind the in-flight page, which keeps its ticket until it returns.
+        assertTrue(h.owner.infiniteQueueLoading.value)
         response.complete(ContentPage(listOf(song("stale-radio"))))
         runCurrent()
+        assertFalse(h.owner.infiniteQueueLoading.value)
         assertEquals(listOf("p1"), h.ids())
         assertEquals("p1", h.owner.state.value.currentOccurrenceId)
     }
 
-    @Test fun aPreferenceToggleDecidesUnderTheQueueLockItSharesWithTheAppend() = runTest {
+    @Test fun aPreferenceToggleDuringAnAppendKeepsTheFailureBackoff() = runTest {
         val h = Harness(backgroundScope)
         h.playlist = listOf(song("p1"))
         h.load()
@@ -98,24 +100,23 @@ class PortableInfiniteQueueTest {
         h.radioReply = { _, _ -> withContext(NonCancellable) { response.await() } }
         h.enabled.value = true
         runCurrent()
+        assertEquals(1, h.radioCalls.size)
         assertTrue(h.owner.infiniteQueueLoading.value)
 
-        // The append holds the queue lock while its page fetch is suspended, so the test cannot take that same
-        // lock without waiting for this response. The toggle's own decision is what queues behind the append.
+        // The append holds the queue lock while its page fetch is suspended, so the toggle's cancel()
+        // queues behind it instead of invalidating the gate mid-flight.
         h.enabled.value = false
         runCurrent()
-        // The toggle's cancel() waits for the queue lock, so it cannot race the in-flight append's gate writes.
         assertTrue(h.owner.infiniteQueueLoading.value)
-        assertEquals(1, h.radioCalls.size)
-
         response.complete(ContentPage(emptyList()))
         runCurrent()
         assertFalse(h.owner.infiniteQueueLoading.value)
-        assertEquals(listOf("p1"), h.ids())
-        // The empty page armed the backoff; re-enabling inside it must not fetch again.
+
+        // The empty answer armed the backoff; re-enabling inside it must not fetch again.
         h.enabled.value = true
         runCurrent()
         assertEquals(1, h.radioCalls.size)
+        assertEquals(listOf("p1"), h.ids())
     }
 
     @Test fun emptyAndFailedRequestsBackOffAcrossPreferenceTogglesAndSuccessResetsTheGate() = runTest {
