@@ -163,7 +163,6 @@ fun LibraryArtistsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            // Featured Spotlight Row
             item(span = { GridItemSpan(2) }, key = "spotlight_row") {
                 Row(
                     modifier =
@@ -450,7 +449,6 @@ fun LibraryArtistsScreen(
                             }
                         }
 
-                        // Sort direction toggle button
                         Spacer(modifier = Modifier.width(4.dp))
                         Box(
                             modifier =
@@ -559,7 +557,6 @@ fun LibraryArtistsScreen(
                         )
                     }
 
-                    // Play & More button
                     IconButton(
                         onClick = {
                             coroutineScope.launch {
@@ -598,7 +595,6 @@ fun LibraryArtistsScreen(
                 }
             }
 
-            // Recently Played Artists Section
             if (artists.size > 2) {
                 item(span = { GridItemSpan(2) }, key = "recent_artists_header") {
                     Text(

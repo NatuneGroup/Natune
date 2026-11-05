@@ -603,9 +603,7 @@ object DeezerAudioProvider {
         }
     }
 
-    // ---------------------------------------------------------------------------------------------
     // Search
-    // ---------------------------------------------------------------------------------------------
 
     /** Finds the Deezer track id that best matches [query], or null when nothing scores high enough. */
     private fun matchTrack(
@@ -706,9 +704,7 @@ object DeezerAudioProvider {
         }
     }
 
-    // ---------------------------------------------------------------------------------------------
     // Stream URL
-    // ---------------------------------------------------------------------------------------------
 
     /**
      * Exchanges a track id for a CDN URL via the media endpoint.
@@ -934,9 +930,7 @@ object DeezerAudioProvider {
         return if (union == 0.0) 0.0 else inter / union
     }
 
-    // ---------------------------------------------------------------------------------------------
     // Lyrics
-    // ---------------------------------------------------------------------------------------------
 
     /**
      * Fetches Deezer lyrics for a track via the gateway `song.getLyrics` method, using an available

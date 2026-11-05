@@ -178,9 +178,7 @@ object TidalAccountManager {
             }
         } ?: null
 
-    // ---------------------------------------------------------------------------------------------
     // PKCE web login (primary WebView flow) + Bearer capture (fallback).
-    // ---------------------------------------------------------------------------------------------
 
     /**
      * A generated PKCE challenge. [authUrl] is the URL to load in the login WebView; [verifier] and
@@ -566,9 +564,7 @@ object TidalAccountManager {
         }
     }
 
-    // -------------------------------------------------------------------------
     // Lyrics (official API, needs a bearer token)
-    // -------------------------------------------------------------------------
 
     /**
      * Fetches Tidal lyrics for a track via the official API `tracks/{id}/lyrics` using

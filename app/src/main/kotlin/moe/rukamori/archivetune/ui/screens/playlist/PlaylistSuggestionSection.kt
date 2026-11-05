@@ -81,7 +81,6 @@ fun PlaylistSuggestionsSection(
     if (currentSuggestions == null && !isLoading) return
     if (currentSuggestions != null && currentSuggestions.items.isEmpty() && !isLoading) return
 
-    // Duplicate Check Dialog
     if (showDuplicateDialog && songToCheck != null) {
         val song = songToCheck!!
         DefaultDialog(
@@ -138,7 +137,6 @@ fun PlaylistSuggestionsSection(
     Column(
         modifier = modifier.fillMaxWidth(),
     ) {
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
