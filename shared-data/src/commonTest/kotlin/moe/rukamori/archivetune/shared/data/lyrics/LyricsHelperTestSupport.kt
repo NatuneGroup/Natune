@@ -118,12 +118,14 @@ internal fun helperOf(
     isEnabled: (String) -> Boolean = { true },
     failures: MutableList<String>? = null,
     isAvailable: (String) -> Boolean = { true },
+    isNetworkAvailable: () -> Boolean = { true },
 ): LyricsHelper =
     LyricsHelper(
         providers = providers,
         isEnabled = isEnabled,
         scope = scope,
         prioritizeWordSynced = { prioritizeWordSynced },
+        isNetworkAvailable = isNetworkAvailable,
         reportProviderFailure = { providerName, _ -> failures?.add(providerName) },
         isAvailable = isAvailable,
     )

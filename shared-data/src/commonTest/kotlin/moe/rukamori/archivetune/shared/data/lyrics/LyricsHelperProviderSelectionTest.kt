@@ -44,6 +44,33 @@ class LyricsHelperProviderSelectionTest {
         }
 
     @Test
+    fun aCachedDisabledProviderOutsideTheSweepIsAMissWhenTheSweepIsOn() =
+        runTest {
+            val disabled = answering("LrcLib", WORD_SYNCED_TTML)
+            val enabled = answering("Kugou", WORD_SYNCED_TTML)
+            var enabledNames = setOf("LrcLib", "Kugou")
+            var sweepActive = false
+            val helper =
+                LyricsHelper(
+                    providers = listOf(disabled, enabled),
+                    isEnabled = { it in enabledNames },
+                    scope = backgroundScope,
+                    prioritizeWordSynced = { sweepActive },
+                )
+
+            assertEquals("LrcLib", helper.getLyricsWithProvider(request()).providerName)
+            assertEquals(1, disabled.calls)
+
+            sweepActive = true
+            enabledNames = setOf("Kugou")
+            val result = helper.getLyricsWithProvider(request())
+
+            assertEquals("Kugou", result.providerName)
+            assertEquals(1, disabled.calls)
+            assertEquals(2, enabled.calls)
+        }
+
+    @Test
     fun aCachedProviderThatIsStillEnabledIsServedWithoutASecondFetch() =
         runTest {
             val provider = answering("LrcLib", PLAIN_TEXT)

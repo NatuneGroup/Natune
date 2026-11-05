@@ -153,19 +153,21 @@ class LyricsHelper(
         prioritize: Boolean,
     ): LyricsResult? {
         // With the word-synced toggle on, a cached line-synced or plain answer is stale. Skip it so the
-        // sweep gets another chance. A cached answer from a provider that is now disabled, unavailable
-        // or unable to handle this media id is stale too: switches apply on every read, not only when
-        // the network path runs. The entry is skipped, not purged, so re-enabling the provider can
-        // reuse it when no other provider answers.
+        // sweep gets another chance. Eligibility follows the same lookup mode as the fetch path: an
+        // ordinary lookup requires the provider switch, while an available sweep provider's cached
+        // word-synced answer stays reusable because the sweep itself ignores those switches. A cached
+        // answer from a provider that is unavailable or cannot handle this media id is always stale.
+        // The entry is skipped, not purged, so re-enabling the provider can reuse it when no other
+        // provider answers.
         resultCache.get(key)?.let { cached ->
-            if (isCachedProviderSelectable(cached.providerName, request) &&
+            if (isCachedProviderSelectable(cached.providerName, request, prioritize) &&
                 (!prioritize || LyricsDetection.hasWordSyncedLyrics(cached.lyrics))
             ) {
                 return cached
             }
         }
         allResultsCache.get(key)?.let { cached ->
-            val first = cached.firstOrNull { isCachedProviderSelectable(it.providerName, request) }
+            val first = cached.firstOrNull { isCachedProviderSelectable(it.providerName, request, prioritize) }
             if (first != null && (!prioritize || LyricsDetection.hasWordSyncedLyrics(first.lyrics))) return first
         }
         return null
@@ -174,10 +176,28 @@ class LyricsHelper(
     private fun isCachedProviderSelectable(
         providerName: String,
         request: LyricsRequest,
+        sweepActive: Boolean,
     ): Boolean {
         val provider = providers.firstOrNull { it.name == providerName } ?: return false
-        return isCachedProviderEnabled(providerName) &&
-            LyricsMediaIdPolicy.supportsMediaId(provider, request.mediaId)
+        return isLookupEligible(provider, request, sweepActive)
+    }
+
+    /**
+     * One eligibility authority for the fetch path and its cache. [sweepActive] keeps the documented
+     * word-sync exception: the three canonical sweep providers are queried regardless of their
+     * fallback switches, so their answers must remain reusable in that lookup mode. Every other
+     * mode accepts only providers the user has enabled. Availability and media-id capability always
+     * apply.
+     */
+    private fun isLookupEligible(
+        provider: LyricsProvider,
+        request: LyricsRequest,
+        sweepActive: Boolean,
+    ): Boolean {
+        if (!isAvailable(provider.name)) return false
+        if (!LyricsMediaIdPolicy.supportsMediaId(provider, request.mediaId)) return false
+        return (sweepActive && provider.name in LyricsProviderOrder.WORD_SYNC_NAMES) ||
+            isEnabled(provider.name)
     }
 
     private fun isCachedProviderEnabled(providerName: String): Boolean {
@@ -199,10 +219,7 @@ class LyricsHelper(
             }
         }
 
-        val usable =
-            providers.filter { provider ->
-                isEnabled(provider.name) && isAvailable(provider.name) && LyricsMediaIdPolicy.supportsMediaId(provider, request.mediaId)
-            }
+        val usable = providers.filter { isLookupEligible(it, request, sweepActive = false) }
         // Android takes the first of the user-ordered list. The host's list order plays that role here.
         val candidates = if (preferredProviderOnly) usable.take(1) else usable
         val result = fetchPriority(candidates, request)
@@ -218,7 +235,7 @@ class LyricsHelper(
         val sweepProviders =
             LyricsProviderOrder.WORD_SYNC_NAMES
                 .mapNotNull { name -> providers.firstOrNull { it.name == name } }
-                .filter { isAvailable(it.name) }
+                .filter { isLookupEligible(it, request, sweepActive = true) }
         if (sweepProviders.isEmpty()) return null
 
         val answers =

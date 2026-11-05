@@ -18,9 +18,11 @@ order, regardless of their user switches. Provider switches and priority still c
 ordinary fallback and manual provider search; they remain editable while word-sync priority
 is on. The shared helper follows this Android policy, with actual host/provider availability
 checked separately from the user toggle. Portato is not part of the fixed sweep. In-memory
-cached answers are revalidated on every read too: a result from a provider that is now
-disabled, unavailable or unable to serve the track is treated as a miss and the lookup falls
-through to the current provider set, without clearing other providers' entries.
+cached answers are revalidated on every read with the same eligibility as that lookup mode:
+an ordinary lookup treats a result from a now-disabled, unavailable or media-id-incompatible
+provider as a miss, while an available sweep provider's cached word-synced answer stays valid
+even when its fallback switch is off, exactly as the sweep itself ignores the switch. Skipping
+an entry leaves other providers' entries intact.
 
 `LyricsModeKey` is the canonical renderer selection; the old `use_lyrics_v2` search anchor
 navigates to that selector rather than editing an ignored boolean. Android's tuning page
