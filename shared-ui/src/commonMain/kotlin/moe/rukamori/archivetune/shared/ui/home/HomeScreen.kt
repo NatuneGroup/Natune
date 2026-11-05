@@ -25,7 +25,7 @@ import moe.rukamori.archivetune.shared.ui.screens.*
 import org.jetbrains.compose.resources.stringResource
 
 /** A presentation choice only, never serialized as a new replacement for HomeScreenStyle. */
-enum class HomeFeedDesign { Classic, Rukamori, BitChord, Muzo }
+enum class HomeFeedDesign { Classic, NatuneClassicHome, BitChord, Muzo }
 
 /** Titles are provider metadata; action availability is retained from the actual section endpoint. */
 data class HomeShelf(

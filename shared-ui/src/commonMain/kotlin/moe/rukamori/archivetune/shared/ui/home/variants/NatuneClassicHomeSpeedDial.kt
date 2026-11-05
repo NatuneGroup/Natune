@@ -67,18 +67,18 @@ private class SpeedDialSlot(val key: String, val occurrence: ContentOccurrence?)
 /**
  * The speed dial. [items] is the owner's pin order; the variant keeps the first distinct 24 and appends a random tile.
  * Songs form one finite queue in pin order: a tap starts it at the tapped song, and the owner toggles play and pause
- * when that song is already playing. Albums, artists and playlists lead to their pages with [RukamoriHomeActions.open].
+ * when that song is already playing. Albums, artists and playlists lead to their pages with [NatuneClassicHomeActions.open].
  * A long press opens the item's sheet. The random tile starts the same song queue at a random position without
  * toggling, and does nothing when the dial holds no songs, as the baseline does.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun RukamoriSpeedDial(
+internal fun NatuneClassicHomeSpeedDial(
     items: List<ContentOccurrence>,
     nowPlaying: HomeVariantNowPlaying,
     artwork: ContentArtwork,
     shelfTitle: String,
-    actions: RukamoriHomeActions,
+    actions: NatuneClassicHomeActions,
     modifier: Modifier = Modifier,
 ) {
     val pinned = remember(items) { items.distinctBy { it.item.ref }.take(SpeedDialMaxItems) }
@@ -160,7 +160,7 @@ internal fun RukamoriSpeedDial(
                                 rowSlots.forEach { slot ->
                                     val occurrence = slot.occurrence
                                     if (occurrence == null) {
-                                        RukamoriSpeedDialRandomTile(
+                                        NatuneClassicHomeSpeedDialRandomTile(
                                             onClick = {
                                                 if (songs.isNotEmpty()) {
                                                     actions.play(
@@ -176,7 +176,7 @@ internal fun RukamoriSpeedDial(
                                             modifier = Modifier.size(tileSize),
                                         )
                                     } else {
-                                        RukamoriSpeedDialTile(
+                                        NatuneClassicHomeSpeedDialTile(
                                             occurrence = occurrence,
                                             artwork = artwork,
                                             isActive = nowPlaying.isActive(occurrence.item.ref),
@@ -257,7 +257,7 @@ internal fun RukamoriSpeedDial(
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun RukamoriSpeedDialTile(
+private fun NatuneClassicHomeSpeedDialTile(
     occurrence: ContentOccurrence,
     artwork: ContentArtwork,
     isActive: Boolean,
@@ -365,7 +365,7 @@ private fun RukamoriSpeedDialTile(
 /** The random tile, drawn as the baseline: three primary dots on a raised surface. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RukamoriSpeedDialRandomTile(
+private fun NatuneClassicHomeSpeedDialRandomTile(
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
