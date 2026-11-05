@@ -89,14 +89,18 @@ class DesktopSingleInstance private constructor(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        server.close()
-        thread.join(JOIN_MILLIS)
+        runCatching { server.close() }
+        try {
+            thread.join(JOIN_MILLIS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         try {
             // The socket file goes while the lock is still held, so the next primary never meets a stale socket.
-            Files.deleteIfExists(socketPath)
+            runCatching { Files.deleteIfExists(socketPath) }
         } finally {
-            lock.release()
-            channel.close()
+            runCatching { lock.release() }
+            runCatching { channel.close() }
         }
         // Keep the lock inode stable: deleting it allows two primaries after a close/acquire race.
     }
@@ -124,6 +128,7 @@ class DesktopSingleInstance private constructor(
                 return null
             }
             var server: ServerSocketChannel? = null
+            var lockOwned = true
             try {
                 require(socketPath.toString().toByteArray().size <= MAX_SOCKET_PATH_BYTES) {
                     "Instance directory is too long for a Unix-domain socket"
@@ -136,14 +141,26 @@ class DesktopSingleInstance private constructor(
                 val secret = ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
                 Files.writeString(endpoint, "$SOCKET_NAME\n$secret", StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING, LinkOption.NOFOLLOW_LINKS)
-                return DesktopSingleInstance(channel, lock, listener, socketPath, secret, receive).also { if (uri != null) receive(uri) }
-            } catch (error: Exception) {
-                server?.close()
+                val instance = DesktopSingleInstance(channel, lock, listener, socketPath, secret, receive)
+                lockOwned = false
+                if (uri != null) {
+                    try {
+                        receive(uri)
+                    } catch (failure: Throwable) {
+                        // An owner that failed its first delivery never reaches a window, so a later launch
+                        // must not be forwarded to it. close() releases the lock, socket and receiver thread.
+                        instance.close()
+                        throw failure
+                    }
+                }
+                return instance
+            } catch (error: Throwable) {
+                runCatching { server?.close() }
                 // The lock is still ours here, so a socket file left behind is stale. Removing it keeps the instance
                 // directory down to the lock and endpoint files after a failed start.
                 runCatching { Files.deleteIfExists(socketPath) }
-                lock.release()
-                channel.close()
+                if (lockOwned) runCatching { lock.release() }
+                runCatching { channel.close() }
                 throw error
             }
         }
