@@ -439,17 +439,34 @@ class UnifiedDspAudioProcessorTest {
      */
     @Test
     fun `clarity allocation probe`() {
+        val probe = StringBuilder("probe ")
+        val settings = request(1)
+        val stagePlan = plan()
+        val graph = DspGraph(SAMPLE_RATE, CHANNELS)
+        val input = FloatArray(2_048) { index -> (((index % 128) - 64) * 128) / 32_768f }
+        val output = FloatArray(8_192)
+        graph.apply(settings, stagePlan)
+        repeat(64) {
+            graph.push(input, 1_024)
+            graph.pull(output, 4_096)
+        }
+        probe.append("graphSteady=").append(measure { graph.push(input, 1_024); graph.pull(output, 4_096) }).append(' ')
+        probe.append("graphApply=")
+            .append(measure { graph.apply(settings.copy(clarity = ClarityPreset.REFERENCE), stagePlan) })
+            .append(' ')
+        probe.append("graphPushOn=").append(measure { graph.push(input, 1_024) }).append(' ')
+        probe.append("graphPullOn=").append(measure { graph.pull(output, 4_096) }).append(' ')
+        probe.append("graphAfter=").append(measure { graph.push(input, 1_024); graph.pull(output, 4_096) }).append(' ')
+
         val processor = processor()
-        processor.submit(request(1), plan())
+        processor.submit(settings, stagePlan)
         processor.configure(format(C.ENCODING_PCM_16BIT))
         val block = block()
         repeat(WARMUP_BLOCKS) { render(processor, block) }
-        val probe = StringBuilder("probe ")
-        repeat(4) { probe.append("off$it=").append(measure { render(processor, block) }).append(' ') }
-        processor.submit(request(1).copy(clarity = ClarityPreset.REFERENCE), plan())
-        repeat(4) { probe.append("on$it=").append(measure { render(processor, block) }).append(' ') }
-        processor.submit(request(1), plan())
-        repeat(3) { probe.append("back$it=").append(measure { render(processor, block) }).append(' ') }
+        probe.append("procSteady=").append(measure { render(processor, block) }).append(' ')
+        processor.submit(settings.copy(clarity = ClarityPreset.REFERENCE), stagePlan)
+        probe.append("procAdopt=").append(measure { render(processor, block) }).append(' ')
+        probe.append("procAfter=").append(measure { render(processor, block) }).append(' ')
         probe.append("empty=").append(measure { }).append(' ')
         throw AssertionError(probe.toString())
     }
