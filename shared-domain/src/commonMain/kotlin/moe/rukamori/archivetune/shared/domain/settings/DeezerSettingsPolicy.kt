@@ -38,18 +38,6 @@ private fun normalizeDeezerInstance(raw: String): String? {
 }
 
 /**
- * Stores a host-verified ARL with its account name and premium flag, and turns Deezer on, in one edit. The ARL is a
- * credential: [DeezerArlKey] is vault-routed by the logical adapter, so it never reaches an ordinary edit.
- */
-fun PreferenceEditor.commitDeezerArlSignIn(arl: String, accountName: String, premium: Boolean) {
-    val normalized = normalizeDeezerArl(arl)
-    require(normalized.length >= DeezerArlMinimumLength) { "Deezer ARL is too short to commit" }
-    require(accountName.isNotBlank()) { "Deezer account name is required before an ARL is committed" }
-    this[DeezerArlKey] = normalized
-    commitDeezerAccountFacts(accountName, premium)
-}
-
-/**
  * Writes the display state of a verified account and turns Deezer on. The ARL itself belongs to the account commit, which
  * writes it together with the verified identity, so this edit never touches it.
  */
@@ -58,12 +46,6 @@ fun PreferenceEditor.commitDeezerAccountFacts(accountName: String, premium: Bool
     this[DeezerAccountNameKey] = accountName
     this[DeezerAccountPremiumKey] = premium
     this[DeezerEnabledKey] = true
-}
-
-/** Clears the ARL and its display state together. The host drops its in-memory ARL before this commit. */
-fun PreferenceEditor.clearDeezerSession() {
-    this[DeezerArlKey] = ""
-    clearDeezerAccountFacts()
 }
 
 /** Clears the display state only. The account sign-out has already removed the ARL and the identity in its own edit. */
