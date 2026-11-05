@@ -321,7 +321,6 @@ fun AddToPlaylistDialogOnline(
         )
     }
 
-    // Result Dialog
     if (showResultDialog && processingSummary != null) {
         val summary = processingSummary!!
         DefaultDialog(

@@ -240,7 +240,6 @@ fun LibraryPlaylistsScreen(
                     .fillMaxSize()
                     .padding(top = LibraryHeaderContentPadding),
         ) {
-            // Control row (Sort dropdown, grid/list layout toggle, + add button)
             Row(
                 modifier =
                     Modifier
@@ -249,7 +248,6 @@ fun LibraryPlaylistsScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Left: Sort dropdown
                 var showSortMenu by remember { mutableStateOf(false) }
                 val currentSortLabel =
                     when (sortType) {
@@ -406,7 +404,6 @@ fun LibraryPlaylistsScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
 
-                    // List/Grid Toggle
                     Row(
                         modifier =
                             Modifier
@@ -476,7 +473,6 @@ fun LibraryPlaylistsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Main Content
             if (isGridView) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
@@ -795,7 +791,6 @@ fun PlaylistListCard(
                 ).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Thumbnail
         ItemThumbnail(
             thumbnailUrl = playlist.thumbnails.getOrNull(0),
             isActive = false,
@@ -810,7 +805,6 @@ fun PlaylistListCard(
 
         Spacer(modifier = Modifier.width(16.dp))
 
-        // Text & details
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = playlist.playlist.name,
@@ -846,7 +840,6 @@ fun PlaylistListCard(
             }
         }
 
-        // Play Button
         IconButton(
             onClick = onPlay,
             colors =
@@ -865,7 +858,6 @@ fun PlaylistListCard(
 
         Spacer(modifier = Modifier.width(4.dp))
 
-        // Options Button
         IconButton(
             onClick = onMenuClick,
             modifier = Modifier.size(36.dp),

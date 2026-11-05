@@ -435,14 +435,12 @@ fun AlbumScreen(
                     )
                 }
 
-                // Songs Section Header
                 item(key = "songs_header") {
                     NavigationTitle(
                         title = stringResource(R.string.songs),
                     )
                 }
 
-                // Songs List
                 itemsIndexed(
                     items = wrappedSongs,
                     key = { _, song -> song.item.id },
@@ -699,7 +697,6 @@ fun AlbumScreen(
                 onBack = { navController.navigateUp() },
                 onBackLongClick = { navController.backToMain() },
             ) {
-                // Bookmark toggle (heart)
                 Box(
                     modifier = Modifier.size(48.dp),
                     contentAlignment = Alignment.Center,
@@ -723,7 +720,6 @@ fun AlbumScreen(
                         )
                     }
                 }
-                // Album menu
                 Box(
                     modifier = Modifier.size(48.dp),
                     contentAlignment = Alignment.Center,
@@ -756,7 +752,6 @@ fun AlbumScreen(
         // overlay above handles navigation and actions, so the TopAppBar is
         // hidden entirely (no overlay, no click interception).
         if (!header.liquidGlassActive || selection) {
-        // Top App Bar
         val topAppBarColors =
             if (transparentAppBar) {
                 TopAppBarDefaults.topAppBarColors(
