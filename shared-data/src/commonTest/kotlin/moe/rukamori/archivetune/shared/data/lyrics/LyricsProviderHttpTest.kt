@@ -2,14 +2,17 @@ package moe.rukamori.archivetune.shared.data.lyrics
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class LyricsProviderHttpTest {
     @Test
@@ -41,6 +44,18 @@ class LyricsProviderHttpTest {
             assertEquals(503, response.status)
             assertNull(response.body)
             assertEquals(503, assertFailsWith<LyricsHttpStatusException> { response.requireBody() }.status)
+        }
+
+    @Test
+    fun aNonSuccessBodyIsReadSoTheEngineCallCompletes() =
+        runTest {
+            val body = ByteReadChannel("not found")
+            val client = HttpClient(MockEngine { respond(body, HttpStatusCode.NotFound) })
+            val response = LyricsHttp.getWithStatus(client, "https://example.test/lyrics")
+
+            assertEquals(404, response.status)
+            assertNull(response.body)
+            assertTrue(body.isClosedForRead)
         }
 
     @Test
