@@ -17,7 +17,6 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume
 import org.junit.Test
 
 class UnifiedDspAudioProcessorTest {
@@ -320,8 +319,8 @@ class UnifiedDspAudioProcessorTest {
 
     /**
      * Steady-state rendering runs on the playback thread, so a block must not allocate. The JVM's own
-     * per-thread allocation counter is read reflectively (the API lives outside the standard
-     * `java.lang.management` view) and the test is skipped where the JVM does not account for it.
+     * per-thread allocation counter is read through the exported `com.sun.management.ThreadMXBean`; the test
+     * fails where that accounting is missing or disabled instead of passing without measuring.
      */
     @Test
     fun `a warmed steady-state block allocates nothing`() {
@@ -344,12 +343,9 @@ class UnifiedDspAudioProcessorTest {
         repeat(WARMUP_BLOCKS) { render(processor, block) }
 
         val before = allocatedBytes()
-        Assume.assumeTrue("this JVM does not account per-thread allocation", before != null)
         repeat(MEASURED_BLOCKS) { render(processor, block) }
-        val after = allocatedBytes()
-        Assume.assumeTrue("this JVM does not account per-thread allocation", after != null)
+        val allocated = allocatedBytes() - before
 
-        val allocated = after!! - before!!
         assertTrue(
             "steady-state rendering allocated $allocated bytes over $MEASURED_BLOCKS blocks",
             allocated < ALLOCATION_LIMIT_BYTES,
@@ -362,12 +358,18 @@ class UnifiedDspAudioProcessorTest {
         processor.getOutput()
     }
 
-    private fun allocatedBytes(): Long? =
-        runCatching {
-            val bean = java.lang.management.ManagementFactory.getThreadMXBean()
-            val method = bean.javaClass.getMethod("getThreadAllocatedBytes", java.lang.Long.TYPE)
-            method.invoke(bean, Thread.currentThread().id) as? Long
-        }.getOrNull()
+    /**
+     * Per-thread allocation accounting is a `com.sun.management` extension, not part of the `java.lang.management`
+     * view. It is read through that exported interface, because reflecting on the HotSpot implementation class
+     * hits a module access check and returned null — which made this test skip itself on the runtime every CI
+     * job uses. A missing or disabled counter is a test failure, not an unsupported JVM.
+     */
+    private fun allocatedBytes(): Long {
+        val bean = java.lang.management.ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
+        assertTrue("this JVM does not support per-thread allocation accounting", bean.isThreadAllocatedMemorySupported)
+        assertTrue("per-thread allocation accounting is disabled", bean.isThreadAllocatedMemoryEnabled)
+        return bean.getThreadAllocatedBytes(Thread.currentThread().id)
+    }
 
     private companion object {
         const val SAMPLE_RATE = 48_000
