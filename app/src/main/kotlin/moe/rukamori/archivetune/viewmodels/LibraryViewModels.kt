@@ -12,8 +12,6 @@ package moe.rukamori.archivetune.viewmodels
 
 import android.content.Context
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -57,7 +55,6 @@ import moe.rukamori.archivetune.constants.ArtistSortType
 import moe.rukamori.archivetune.constants.ArtistSortTypeKey
 import moe.rukamori.archivetune.constants.HideExplicitKey
 import moe.rukamori.archivetune.constants.HideVideoKey
-import moe.rukamori.archivetune.constants.LibraryFilter
 import moe.rukamori.archivetune.constants.PlaylistSortDescendingKey
 import moe.rukamori.archivetune.constants.PlaylistSortType
 import moe.rukamori.archivetune.constants.PlaylistSortTypeKey
@@ -863,11 +860,3 @@ data class MostPlayedAlbumUiModel(
     val trackCount: Int,
     val tracks: ImmutableList<MediaMetadata>,
 )
-
-@HiltViewModel
-class LibraryViewModel
-    @Inject
-    constructor() : ViewModel() {
-        private val curScreen = mutableStateOf(LibraryFilter.LIBRARY)
-        val filter: MutableState<LibraryFilter> = curScreen
-    }
