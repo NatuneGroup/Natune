@@ -235,7 +235,7 @@ jobs:
         env:
           # Packaging compiles only JVM and Kotlin/Native host targets; it never needs the Android SDK.
           # Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app, :jiosaavn and
-          # :morideobfuscator load no build script and AGP never auto-installs the pinned ~1 GB NDK.
+          # :deobfuscator load no build script and AGP never auto-installs the pinned ~1 GB NDK.
           ANDROID_HOME: ""
           ANDROID_SDK_ROOT: ""
           # dl.google.com flakes have terminated configuration downloads on these runners; retry with backoff.

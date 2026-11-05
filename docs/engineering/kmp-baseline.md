@@ -28,6 +28,10 @@ Initialize these exact pins from the public origins in the unchanged `.gitmodule
 Children remain separate Git repositories, not vendored directories. No child
 repository push or gitlink change is part of setup.
 
+The table records the import snapshot. The local media-obfuscator path was later
+renamed `morideobfuscator` → `deobfuscator` (Gradle module `:deobfuscator`) with the
+same pinned commit; its `.gitmodules` origin stays `rukamori/morideobfuscator`.
+
 ## Workflow quarantine
 
 Before the first private push, all 13 inherited files were moved unchanged from
