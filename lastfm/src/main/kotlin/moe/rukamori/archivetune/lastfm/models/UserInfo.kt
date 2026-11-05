@@ -10,7 +10,6 @@ package moe.rukamori.archivetune.lastfm.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 
 /**
  * Top-level response returned by Last.fm's `user.getInfo` method.
@@ -251,12 +250,3 @@ data class TopAlbum(
 ) {
     val playcount: Int? get() = _playcount?.toIntOrNull()
 }
-
-/**
- * Fallback raw JSON element — used when we want to surface a parse
- * failure to the UI without losing the whole dashboard.
- */
-@Serializable
-data class RawJson(
-    val raw: JsonElement? = null,
-)

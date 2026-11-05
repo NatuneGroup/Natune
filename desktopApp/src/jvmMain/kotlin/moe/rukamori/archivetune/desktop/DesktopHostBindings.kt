@@ -240,13 +240,6 @@ internal fun desktopListenTogetherCode(link: String): String? =
     (ExternalLinks.classify(link) as? ExternalLink.ListenTogetherInvite)?.code
 
 /**
- * The route an `archivetune://open/...` link opens, or null when it opens none. The shared classifier decides, and the
- * refusal every host keeps stays: a link starts no sign-in and no action.
- */
-internal fun desktopLaunchRoute(link: String): String? =
-    (ExternalLinks.classify(link) as? ExternalLink.Route)?.route?.let(ExternalLinks::openableRoute)
-
-/**
  * Only web links leave the app. Every other scheme, a missing browser and a failed launch are reported as one line and
  * never handed to the operating system. Returns false when the link was not opened.
  */

@@ -53,14 +53,6 @@ fun CanvasArtwork.looselyMatchesSongIdentity(
         requestedArtist.contains(resolvedArtist)
 }
 
-/** Whether this artwork's album matches the requested album title (normalized containment). */
-fun CanvasArtwork.matchesAlbumIdentity(album: String): Boolean {
-    val requested = album.toCanvasSongIdentity()
-    val resolved = albumName?.toCanvasSongIdentity().orEmpty()
-    if (requested.isEmpty() || resolved.isEmpty()) return false
-    return resolved == requested || resolved.contains(requested) || requested.contains(resolved)
-}
-
 private fun String.toCanvasSongIdentity(): String =
     replace(CanvasFeaturingQualifierRegex, "")
         .replace(CanvasPresentationQualifierRegex, "")
