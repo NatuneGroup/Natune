@@ -18,7 +18,7 @@ import moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef
  * read; nothing here performs network work or runs on the scoring path.
  */
 data class RecommendationSignalSnapshot(
-    val facts: List<ListenFact>,
+    val facts: List<ListenFact> = emptyList(),
     val blockedArtists: Set<ContentRef> = emptySet(),
     val blockedSongs: Set<BlockedSongRef> = emptySet(),
 ) {
