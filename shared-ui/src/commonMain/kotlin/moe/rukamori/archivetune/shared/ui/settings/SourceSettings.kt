@@ -96,17 +96,20 @@ fun SourceSettings(
     }
     val operation = dialog
     if (operation == SourceDialog.CHECK || operation == SourceDialog.POOL && poolEnabled) {
-        var checks by remember(operation, preferences, spotifyReady) { mutableStateOf<Map<AudioSourceType, Boolean>?>(null) }
-        var refresh by remember(operation, preferences) { mutableStateOf<SourcePoolRefreshOutcome?>(null) }
-        var failed by remember(operation, preferences) { mutableStateOf(false) }
-        LaunchedEffect(operation, preferences, spotifyReady) {
+        val probe = remember(preferences, spotifyReady) { sourceProbePlan(preferences, spotifyReady) }
+        var checks by remember(operation, probe) { mutableStateOf<Map<AudioSourceType, Boolean>?>(null) }
+        var refresh by remember(operation) { mutableStateOf<SourcePoolRefreshOutcome?>(null) }
+        var failed by remember(operation) { mutableStateOf(false) }
+        // A pool refresh has no probe inputs; only the check dialog restarts when its source set changes.
+        val probeKey = if (operation == SourceDialog.CHECK) probe else null
+        LaunchedEffect(operation, probeKey) {
+            failed = false
             try {
                 if (operation == SourceDialog.POOL) refresh = refreshPool()
                 else {
                     val results = linkedMapOf<AudioSourceType, Boolean>()
-                    for (source in AudioSourceConfig.parseOrder(preferences[AudioSourceOrderKey])) {
-                        if (preferences.audioSourceEnabled(source, spotifyReady))
-                            results[source] = checkSource(source, preferences)
+                    for (source in probe.order) {
+                        if (probe.enabled[source] == true) results[source] = checkSource(source, preferences)
                     }
                     checks = results
                 }
@@ -135,6 +138,22 @@ fun SourceSettings(
         )
     }
 }
+
+/**
+ * The only preference values the source check reads: the order it walks and which sources it may probe. Keying
+ * the dialog on this instead of the whole snapshot keeps an unrelated settings write from discarding collected
+ * results and probing every enabled source again.
+ */
+internal data class SourceProbePlan(
+    val order: List<AudioSourceType>,
+    val enabled: Map<AudioSourceType, Boolean>,
+)
+
+internal fun sourceProbePlan(preferences: PreferenceSnapshot, spotifyReady: Boolean): SourceProbePlan =
+    SourceProbePlan(
+        order = AudioSourceConfig.parseOrder(preferences[AudioSourceOrderKey]),
+        enabled = AudioSourceType.entries.associateWith { preferences.audioSourceEnabled(it, spotifyReady) },
+    )
 
 fun sourceSettingsRows(
     preferences: PreferenceSnapshot,
