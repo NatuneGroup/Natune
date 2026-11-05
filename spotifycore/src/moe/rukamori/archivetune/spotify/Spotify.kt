@@ -2028,86 +2028,6 @@ object Spotify {
             )
         }
 
-    suspend fun artistTopTracks(
-        artistId: String,
-        market: String = "US",
-    ): Result<ArtistTopTracksResponse> =
-        runCatching {
-            val vars =
-                buildJsonObject {
-                    put("uri", "spotify:artist:$artistId")
-                    put("locale", "")
-                }
-
-            val response =
-                graphqlPost(
-                    operationName = "queryArtistOverview",
-                    variables = vars,
-                )
-
-            val artistData =
-                response.obj("data")?.obj("artistUnion")
-                    ?: throw SpotifyException(500, "Invalid queryArtistOverview response")
-
-            val topTracksItems =
-                artistData
-                    .obj("discography")
-                    ?.obj("topTracks")
-                    ?.arr("items") ?: JsonArray(emptyList())
-
-            val tracks =
-                topTracksItems.mapNotNull { elem ->
-                    val trackObj = elem.jsonObject.obj("track") ?: return@mapNotNull null
-                    parseGqlTrack(trackObj)
-                }
-
-            ArtistTopTracksResponse(tracks = tracks)
-        }
-
-    /**
-     * Extracts related artists from the GQL queryArtistOverview endpoint.
-     * This avoids the rate-limited REST /related-artists endpoint entirely.
-     */
-    suspend fun artistRelatedArtists(artistId: String): Result<List<SpotifyArtist>> =
-        runCatching {
-            val vars =
-                buildJsonObject {
-                    put("uri", "spotify:artist:$artistId")
-                    put("locale", "")
-                }
-
-            val response =
-                graphqlPost(
-                    operationName = "queryArtistOverview",
-                    variables = vars,
-                )
-
-            val artistData =
-                response.obj("data")?.obj("artistUnion")
-                    ?: throw SpotifyException(500, "Invalid queryArtistOverview response")
-
-            val relatedItems =
-                artistData
-                    .obj("relatedContent")
-                    ?.obj("relatedArtists")
-                    ?.arr("items")
-                    ?: JsonArray(emptyList())
-
-            relatedItems.mapNotNull { elem ->
-                val uri = elem.jsonObject.str("uri") ?: return@mapNotNull null
-                val id = uri.substringAfterLast(":")
-                val name = elem.jsonObject.obj("profile")?.str("name") ?: return@mapNotNull null
-                val images =
-                    parseGqlImages(
-                        elem.jsonObject
-                            .obj("visuals")
-                            ?.obj("avatarImage")
-                            ?.arr("sources"),
-                    )
-                SpotifyArtist(id = id, name = name, images = images, uri = uri)
-            }
-        }
-
     // ── Related Artists (REST fallback) ─────────────────────────────────
 
     suspend fun relatedArtists(artistId: String): Result<RelatedArtistsResponse> =
@@ -2117,11 +2037,6 @@ object Spotify {
 
     fun isAuthenticated(): Boolean = accessToken != null
 }
-
-@kotlinx.serialization.Serializable
-data class ArtistTopTracksResponse(
-    val tracks: List<SpotifyTrack> = emptyList(),
-)
 
 @kotlinx.serialization.Serializable
 data class RelatedArtistsResponse(

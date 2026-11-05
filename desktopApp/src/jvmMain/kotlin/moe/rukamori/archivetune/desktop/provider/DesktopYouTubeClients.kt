@@ -305,12 +305,6 @@ internal class DesktopYouTubeBadResponseException(
     message: String = "YouTube player returned an unreadable response",
 ) : IllegalStateException(message)
 
-/** The login-only playability reasons. Terminal: no other client can answer for a signed-out viewer. */
-internal class DesktopYouTubeLoginRequiredException(
-    val videoId: String,
-    reason: String?,
-) : IllegalStateException(reason)
-
 internal class DesktopYouTubeBotDetectionException(
     val videoId: String,
     val clients: Set<String>,
@@ -459,8 +453,6 @@ private fun contextJson(
 internal fun JsonObject.stringOf(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
 internal fun JsonObject.intOf(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
-
-internal fun JsonObject.longOf(key: String): Long? = (this[key] as? JsonPrimitive)?.longOrNull
 
 internal fun JsonObject.booleanOf(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
 

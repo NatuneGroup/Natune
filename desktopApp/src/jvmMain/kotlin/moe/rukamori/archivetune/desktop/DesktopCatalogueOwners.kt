@@ -95,11 +95,6 @@ internal class DesktopCatalogueOwners(
         return false
     }
 
-    /** Plays a whole list from its first row, or from a shuffled order when [shuffled] is set. */
-    fun playList(collection: ContentRequest, shuffled: Boolean) {
-        playCatalogueList(collection, shownLists[collection].orEmpty(), shuffled = shuffled)
-    }
-
     /**
      * Reads the whole list, from the rows the page already holds, within the shared finite-completion bounds, then
      * hands it to the queue — the same completion rule the shared album/playlist pages follow. A list that repeats a
@@ -108,7 +103,6 @@ internal class DesktopCatalogueOwners(
     private fun playCatalogueList(
         collection: ContentRequest,
         held: List<ContentOccurrence>,
-        shuffled: Boolean = false,
         startOccurrenceId: String? = null,
     ) {
         scope.launch {
@@ -124,11 +118,10 @@ internal class DesktopCatalogueOwners(
             }
             val playable = entries.filter { it.item.ref.kind == ContentKind.SONG || it.item.ref.kind == ContentKind.EPISODE }
             if (playable.isEmpty()) return@launch owners.report("the list holds no playable rows")
-            val order = if (shuffled) playable.shuffled() else playable
-            val startId = startOccurrenceId?.takeIf { id -> order.any { it.occurrenceId == id } }
-                ?: order.first().occurrenceId
+            val startId = startOccurrenceId?.takeIf { id -> playable.any { it.occurrenceId == id } }
+                ?: playable.first().occurrenceId
             try {
-                owners.queue.replace(order, startId, playWhenReady = true)
+                owners.queue.replace(playable, startId, playWhenReady = true)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
