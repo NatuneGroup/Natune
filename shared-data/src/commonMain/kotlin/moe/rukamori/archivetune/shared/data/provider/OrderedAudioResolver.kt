@@ -103,7 +103,11 @@ class OrderedAudioResolver(providers: List<AudioProviderRepository>, private val
             if (outcome == null) { chain.attempts += AudioAttempt(source, AudioAttemptResult.TIMEOUT); continue }
             val audio = outcome.audio
             if (audio == null) { chain.attempts += AudioAttempt(source, AudioAttemptResult.NO_MATCH); continue }
-            require(audio.source == source) { "Provider returned another source" }
+            // A provider that answers for another source failed this attempt; it must not abort the chain.
+            if (audio.source != source) {
+                chain.attempts += AudioAttempt(source, AudioAttemptResult.FAILED)
+                continue
+            }
             if (!audio.matchesRequest(request)) {
                 chain.attempts += AudioAttempt(source, AudioAttemptResult.REJECTED_METADATA); continue
             }
