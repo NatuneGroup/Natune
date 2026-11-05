@@ -5,6 +5,7 @@
 
 import io
 import json
+import os
 import tempfile
 import unittest
 import warnings
@@ -296,6 +297,37 @@ class ApkSizeReportTest(unittest.TestCase):
             exit_code = main([str(path), "--output", str(path)])
         self.assertEqual(exit_code, 2)
         self.assertEqual(path.read_bytes(), before)
+
+    def test_output_rejects_hardlinks_to_candidate_and_baseline(self):
+        candidate = self.write_apk("candidate.apk", self.fixture_entries())
+        baseline = self.write_apk("baseline.apk", self.fixture_entries())
+        candidate_before = candidate.read_bytes()
+        baseline_before = baseline.read_bytes()
+
+        for role, target in (("candidate", candidate), ("baseline", baseline)):
+            with self.subTest(role=role):
+                output = self.apk_path(f"{role}-hardlink.json")
+                os.link(target, output)
+                arguments = [str(candidate), "--output", str(output)]
+                if role == "baseline":
+                    arguments[1:1] = ["--baseline", str(baseline)]
+                errors = io.StringIO()
+                with redirect_stderr(errors):
+                    exit_code = main(arguments)
+                self.assertEqual(exit_code, 2)
+                self.assertIn("must not overwrite", errors.getvalue())
+                self.assertEqual(candidate.read_bytes(), candidate_before)
+                self.assertEqual(baseline.read_bytes(), baseline_before)
+                self.assertEqual(output.read_bytes(), candidate_before if role == "candidate" else baseline_before)
+
+        fresh_output = self.apk_path("fresh-report.json")
+        with redirect_stderr(io.StringIO()):
+            fresh_exit = main([str(candidate), "--output", str(fresh_output)])
+        self.assertEqual(fresh_exit, 0)
+        fresh_report = json.loads(fresh_output.read_text(encoding="utf-8"))
+        self.assertEqual(fresh_report["artifact"]["bytes"], candidate.stat().st_size)
+        self.assertEqual(candidate.read_bytes(), candidate_before)
+        self.assertEqual(baseline.read_bytes(), baseline_before)
 
     def test_classifier_keeps_dex_and_assets_distinct(self):
         self.assertEqual(classify_entry("classes.dex"), "dex")
