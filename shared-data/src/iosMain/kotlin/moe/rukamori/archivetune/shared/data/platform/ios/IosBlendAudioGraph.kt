@@ -408,6 +408,12 @@ internal class IosBlendAudioGraph private constructor(
             if (raw.playWhenReady && !ended && !moving && (queued.isEmpty() || waitingForSeek != null)) {
                 flags = flags or EnginePlaybackState.FLAG_BUFFERING
             }
+            // The blend observes the same native session as the source-node output, but can read it before that
+            // output's notification callback has run. The session pause/hold is authoritative until resume.
+            if (interrupted || heldAfterInterruption) {
+                flags = flags and (EnginePlaybackState.FLAG_PLAY_WHEN_READY or EnginePlaybackState.FLAG_ADVANCING or
+                    EnginePlaybackState.FLAG_BUFFERING).inv()
+            }
             return raw.copy(flags = flags, positionUs = mediaUs, playbackSpeed = mediaSpeed)
         }
 
