@@ -98,7 +98,6 @@ import moe.rukamori.archivetune.ui.utils.preferredThumbnailRatio
 import moe.rukamori.archivetune.ui.utils.rememberLifecycleStarted
 import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
-// ============================================================================
 // BitChord home-feed design system (ported from kushagrasinghx/BitChord).
 //
 // The metrics below are the single source of truth for the home page's visual
@@ -107,7 +106,6 @@ import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 // vertical breathing room a shelf leaves below itself. Everything the feed
 // renders — the real cards and the skeletons that stand in for them — reads
 // these so nothing jumps when data lands.
-// ============================================================================
 
 /** The left and right inset every home page's content sits at (BitChord PAGE_GUTTER). */
 val HomeFeedGutter = 10.dp
@@ -161,11 +159,9 @@ fun Modifier.homeFeedThumbnailBorder(shape: Shape): Modifier =
         )
     }
 
-// ============================================================================
 // Shimmer skeletons (ported from BitChord Skeletons.kt). Grey stand-ins for
 // content still on the wire, laid out to the same metrics as the real rows
 // and cards so nothing jumps when the data lands.
-// ============================================================================
 
 /** How long one highlight sweep takes to cross a placeholder. */
 private const val HomeShimmerPeriodMs = 1400
@@ -318,10 +314,8 @@ fun LazyListScope.homeFeedMoreSkeleton() {
     item(key = "home_skeleton_more") { HomeShelfSkeleton() }
 }
 
-// ============================================================================
 // Section header — the BitChord "Shelf" heading: a heavy title with an
 // optional second line, typography-led rather than chrome-led.
-// ============================================================================
 
 /**
  * BitChord-style section header: title at BitChord's headlineMedium scale (22sp, W700, tight
@@ -375,9 +369,7 @@ fun HomeFeedSectionHeader(
     }
 }
 
-// ============================================================================
 // Cards
-// ============================================================================
 
 private fun Modifier.headerClickable(onClick: () -> Unit): Modifier =
     composed {
@@ -478,11 +470,9 @@ fun HomeFeedShelfCard(
     }
 }
 
-// ============================================================================
 // Typed cards — map the fork's data types onto the generic cards above while
 // preserving every existing interaction (section queue playback, navigation,
 // long-press menus).
-// ============================================================================
 
 /** A compact shelf card for a local [Song]. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -693,13 +683,11 @@ fun HomeFeedLocalItemCard(
     }
 }
 
-// ============================================================================
 // Pull-to-refresh — BitChord behaviour: the usual circular puck suppressed,
 // the drag feedback instead being a loader line along the bottom edge of the
 // top bar. The line fills left-to-right as the pull approaches the threshold,
 // then sweeps indefinitely once the refresh is away, so the two phases read
 // as one continuous gesture.
-// ============================================================================
 
 private val HomeRefreshLineHeight = 2.5.dp
 
@@ -745,14 +733,12 @@ fun HomePullRefreshLine(
     }
 }
 
-// ============================================================================
 // TopFadeBlur — the glass behind the home top bar (BitChord TopFadeBlur).
 // Full blur along the top edge, ramping to nothing on the way down: a bar
 // carrying a uniform pane is a rectangle sitting on the page, and its bottom
 // edge is a line drawn across whatever scrolls under it. Fading out instead
 // leaves the title and actions something to be legible against and the page
 // nothing to be interrupted by.
-// ============================================================================
 
 /**
  * The run the fade needs below the bar to get from full blur to none without
@@ -890,12 +876,10 @@ fun HomeAtmosphereBackground(modifier: Modifier = Modifier) {
     )
 }
 
-// ============================================================================
 // Shared glass screen-header scrim (used by GlassScreenHeader.kt). Delegates to
 // HomeTopFadeBlur: the page-coloured top fade. Early-returns unless liquid
 // glass is on and the RuntimeShader stack exists (Android 12+), so with glass
 // OFF nothing is composed and rendering is unchanged.
-// ============================================================================
 
 /** Header bar height the scrim fades below (status-bar inset sits above it). */
 val ScreenHeaderHazeBarZone = 64.dp

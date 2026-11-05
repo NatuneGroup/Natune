@@ -992,9 +992,7 @@ fun HomePageSectionTitle(
     )
 }
 
-// ============================================================
 // Apple Music–style Home Redesign Components
-// ============================================================
 
 /**
  * Helper that renders the small neutral glyph used as the leading icon for

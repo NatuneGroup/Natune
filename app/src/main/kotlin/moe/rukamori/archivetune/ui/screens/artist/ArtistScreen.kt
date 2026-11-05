@@ -660,7 +660,6 @@ fun ArtistScreen(
 
                 // Content sections
                 if (showLocal) {
-                    // Local Songs Section
                     if (librarySongs.isNotEmpty()) {
                         item {
                             NavigationTitle(
@@ -767,7 +766,6 @@ fun ArtistScreen(
                         }
                     }
 
-                    // Local Albums Section
                     if (libraryAlbums.isNotEmpty()) {
                         item {
                             NavigationTitle(
@@ -1021,7 +1019,6 @@ fun ArtistScreen(
                     }
                 }
 
-                // Bottom spacing
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -1040,7 +1037,6 @@ fun ArtistScreen(
             },
         )
 
-        // Snackbar
         SnackbarHost(
             hostState = snackbarHostState,
             modifier =
@@ -1060,7 +1056,6 @@ fun ArtistScreen(
                 onBack = { navController.navigateUp() },
                 onBackLongClick = { navController.backToMain() },
             ) {
-                // More
                 Box(
                     modifier = Modifier.size(48.dp),
                     contentAlignment = Alignment.Center,
@@ -1081,7 +1076,6 @@ fun ArtistScreen(
     // active, the shared overlay above handles navigation and actions, so the
     // TopAppBar is hidden entirely.
     if (!header.liquidGlassActive) {
-    // Top App Bar
     TopAppBar(
         windowInsets =
             WindowInsets(top = systemBarsTopPadding)
