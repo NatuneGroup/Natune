@@ -645,7 +645,7 @@ fun UpdateScreen(
                 )
             }
 
-            // Task 5: unofficial fork warning pill. Sits right under the dashboard so the user
+            // Unofficial fork warning pill. Sits right under the dashboard so the user
             // sees it before checking for updates or reading commits. Reminds them this is a
             // personal fork — issues are unlikely to be fixed unless they're serious.
             item(key = "fork_warning", contentType = "warning") {
