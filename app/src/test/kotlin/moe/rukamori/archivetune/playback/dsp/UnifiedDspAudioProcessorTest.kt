@@ -481,6 +481,31 @@ class UnifiedDspAudioProcessorTest {
         target.writeText(lines.toString())
     }
 
+    /** TEMPORARY probe: splits the adapter's adopting block into queue and output. Removed with the fix. */
+    @Test
+    fun `probe processor allocations by phase`() {
+        val processor = processor()
+        processor.submit(request(1), plan())
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        val block = block()
+        repeat(WARMUP_BLOCKS) { render(processor, block) }
+        val lines = StringBuilder()
+        val requests = List(8) { request(if (it % 2 == 0) MAX_BANDS else 1) }
+        for ((index, request) in requests.withIndex()) {
+            processor.submit(request, plan())
+            block.position(0)
+            val beforeQueue = allocatedBytes()
+            processor.queueInput(block)
+            val queueBytes = allocatedBytes() - beforeQueue
+            val beforeOutput = allocatedBytes()
+            processor.getOutput()
+            lines.append("processor[$index] queue=$queueBytes output=${allocatedBytes() - beforeOutput}\n")
+        }
+        val target = java.io.File("../build/reports/profile/processor.txt")
+        target.parentFile?.mkdirs()
+        target.writeText(lines.toString())
+    }
+
     /** One boosted band and [count]-1 flat ones, so a band-count change designs one stage, not [count]. */
     private fun request(count: Int): DspSettings = DspSettings(
         preampDb = -3.0,
