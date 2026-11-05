@@ -7,21 +7,47 @@ import unittest
 from pathlib import Path
 import subprocess
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import scripts.check_repository as checker
 from scripts.check_repository import (
     Snapshot,
     budget_problem,
     forbidden_imports,
+    header_origin,
     header_problems,
     link_problem,
     literal_dependencies,
     markdown_targets,
+    parse_rename_origins,
     quarantine_reference,
     quarantined_workflows,
     skill_problems,
 )
+
+
+class _DiffSnapshot:
+    """A header/budget fixture; it never commits fixture history or touches real Git objects."""
+
+    def __init__(self, files, old_files=None, origins=None, changed=None):
+        self._files = dict(files)
+        self._old_files = dict(old_files or {})
+        self._origins = dict(origins or {})
+        self._changed = set(changed or ())
+        self.files = set(self._files)
+
+    def changed(self):
+        return set(self._changed)
+
+    def size(self, path, old=False):
+        source = self._old_files if old else self._files
+        return len(source[path].encode()) if path in source else None
+
+    def text(self, path, old=False):
+        return (self._old_files if old else self._files).get(path, "")
+
+    def rename_origin(self, path):
+        return self._origins.get(path)
 
 
 class RepositoryChecksTest(unittest.TestCase):
@@ -90,6 +116,19 @@ class RepositoryChecksTest(unittest.TestCase):
         root = Path(directory.name)
         subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
         return root
+
+    def changed_path_problems(self, snapshot):
+        policy = (Path(checker.ROOT) / checker.POLICY).read_text()
+        snapshot._files[checker.POLICY] = policy
+        snapshot.files = set(snapshot._files)
+        with patch.multiple(
+            checker,
+            documented_tasks=Mock(return_value=[]),
+            architecture_problems=Mock(return_value=[]),
+            dependency_problems=Mock(return_value=[]),
+            toolchain_markdown=Mock(return_value=""),
+        ):
+            return checker.check(snapshot)
 
     def test_staged_validation_cannot_be_hidden_by_unstaged_repairs(self):
         root = self.temporary_repository()
@@ -163,6 +202,135 @@ class RepositoryChecksTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(root), "add", "."], check=True)
         with patch.object(checker, "ROOT", root), Snapshot(staged=True) as snapshot:
             self.assertEqual(set(), quarantined_workflows(snapshot))
+
+
+    def test_rename_status_parser_uses_true_renames_and_ignores_copies(self):
+        output = (
+            b"R055\0app/src/main/kotlin/Old Home.kt\0app/src/main/kotlin/New Home.kt\0"
+            b"M\0docs/Guide.md\0"
+            b"C100\0app/src/main/kotlin/Source.kt\0app/src/main/kotlin/Copy.kt\0"
+            b"A\0app/src/main/kotlin/Brand New.kt\0"
+        )
+        self.assertEqual(
+            {"app/src/main/kotlin/New Home.kt": "app/src/main/kotlin/Old Home.kt"},
+            parse_rename_origins(output),
+        )
+        with self.assertRaises(ValueError):
+            parse_rename_origins(b"R100\0only-one-path")
+
+    def test_rename_status_parser_accepts_real_git_output_with_spaces(self):
+        root = self.temporary_repository()
+        old = root / "app" / "Old Home.kt"
+        old.parent.mkdir(parents=True)
+        old.write_text("/*\n * GPL-3.0 License\n */\npackage example\n")
+        subprocess.run(["git", "-C", str(root), "add", "app/Old Home.kt"], check=True)
+        tree = subprocess.check_output(["git", "-C", str(root), "write-tree"]).decode().strip()
+        subprocess.run(["git", "-C", str(root), "rm", "-q", "--cached", "app/Old Home.kt"], check=True)
+        old.rename(root / "app" / "New Home.kt")
+        subprocess.run(["git", "-C", str(root), "add", "app/New Home.kt"], check=True)
+        output = subprocess.check_output([
+            "git", "-C", str(root), "diff", "--name-status", "-z", "--find-renames", "--cached", tree, "--",
+        ])
+        self.assertEqual(
+            {"app/New Home.kt": "app/Old Home.kt"},
+            parse_rename_origins(output),
+        )
+
+    def test_rename_origin_uses_the_current_snapshot_range_and_caches(self):
+        def snapshot(staged=False, committed=False, base="HEAD"):
+            value = Snapshot.__new__(Snapshot)
+            value.staged = staged
+            value.committed = committed
+            value.base = base
+            value.renames = None
+            return value
+
+        renamed = b"R100\0old.kt\0new.kt\0"
+        with patch.object(checker, "git", return_value=renamed) as run:
+            staged = snapshot(staged=True)
+            self.assertEqual("old.kt", staged.rename_origin("new.kt"))
+            self.assertEqual(
+                ("diff", "--name-status", "-z", "--find-renames", "--cached", "HEAD", "--"),
+                run.call_args.args,
+            )
+            run.reset_mock()
+            self.assertEqual("old.kt", staged.rename_origin("new.kt"))
+            run.assert_not_called()
+        with patch.object(checker, "git", return_value=renamed) as run:
+            committed = snapshot(committed=True, base="abc123")
+            self.assertEqual("old.kt", committed.rename_origin("new.kt"))
+            self.assertEqual(
+                ("diff", "--name-status", "-z", "--find-renames", "abc123", "HEAD", "--"),
+                run.call_args.args,
+            )
+        with patch.object(checker, "git", return_value=b"") as run:
+            worktree = snapshot()
+            self.assertIsNone(worktree.rename_origin("new.kt"))
+            self.assertEqual(
+                ("diff", "--name-status", "-z", "--find-renames", "HEAD", "--"),
+                run.call_args.args,
+            )
+
+    def test_changed_paths_keep_the_no_renames_budget_baseline(self):
+        value = Snapshot.__new__(Snapshot)
+        value.staged = True
+        with patch.object(checker, "git", return_value=b"new.kt\0") as run:
+            self.assertEqual({"new.kt"}, value.changed())
+        self.assertIn("--no-renames", run.call_args.args)
+
+    def test_header_origin_uses_same_path_first_and_only_trusts_renames(self):
+        banner = "/*\n * © Rukamori\n * GPL-3.0 License\n */\npackage example\n"
+        snapshot = Mock()
+        snapshot.text.return_value = banner
+        snapshot.rename_origin.return_value = "app/src/Old.kt"
+        self.assertEqual((banner, False), header_origin(snapshot, "app/src/New.kt", "", None))
+        snapshot.rename_origin.assert_called_once_with("app/src/New.kt")
+        snapshot.reset_mock()
+        snapshot.text.return_value = "same path"
+        self.assertEqual(("same path", False), header_origin(snapshot, "app/src/Same.kt", "same path", 42))
+        snapshot.rename_origin.assert_not_called()
+        snapshot.reset_mock()
+        snapshot.text.return_value = ""
+        snapshot.rename_origin.return_value = None
+        self.assertEqual(("", True), header_origin(snapshot, "app/src/Add.kt", "", None))
+
+    def test_renamed_banner_is_inherited_while_copyright_removal_still_fails(self):
+        old = "app/src/main/kotlin/Old.kt"
+        new = "app/src/main/kotlin/New.kt"
+        banner = "/*\n * © Rukamori\n * GPL-3.0 License\n */\npackage example\n"
+        inherited = _DiffSnapshot({new: banner}, {old: banner}, {new: old}, {new})
+        self.assertEqual([], self.changed_path_problems(inherited))
+        replaced = banner.replace("© Rukamori", "© Someone Else")
+        lost = _DiffSnapshot({new: replaced}, {old: banner}, {new: old}, {new})
+        self.assertIn(
+            (new, "existing copyright attribution was removed or replaced"),
+            self.changed_path_problems(lost),
+        )
+
+    def test_new_or_copied_banner_is_not_excused_by_a_retained_source(self):
+        new = "app/src/main/kotlin/Copy.kt"
+        banner = "/*\n * GPL-3.0 License | Contributors: see git history\n */\npackage example\n"
+        copied = _DiffSnapshot({new: banner}, {}, {}, {new})
+        self.assertIn(
+            (new, "new Kotlin sources start with the package line, without a license banner"),
+            self.changed_path_problems(copied),
+        )
+
+    def test_renamed_oversized_file_keeps_the_new_path_budget(self):
+        old = "app/src/main/kotlin/Old.kt"
+        new = "app/src/main/kotlin/New.kt"
+        banner = "/*\n * © Rukamori\n * GPL-3.0 License\n */\npackage example\n"
+        current = banner + "// current\n" * 1001
+        previous = banner + "// previous\n" * 1500
+        snapshot = _DiffSnapshot({new: current}, {old: previous}, {new: old}, {new})
+        problems = self.changed_path_problems(snapshot)
+        self.assertTrue(any(path == new and "1,000-line budget" in message for path, message in problems), problems)
+        self.assertFalse(any("new Kotlin sources" in message for _, message in problems), problems)
+
+    def test_extracted_new_file_stays_new_and_package_first_is_allowed(self):
+        new = "app/src/main/kotlin/NatuneClassicHomeComponents.kt"
+        snapshot = _DiffSnapshot({new: "package example\n" + "// line\n" * 600}, {}, {}, {new})
+        self.assertEqual([], self.changed_path_problems(snapshot))
 
 
 ROOM_SCHEMA_ID = "moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase"
