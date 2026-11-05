@@ -6,6 +6,7 @@ import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.toKString
 import moe.rukamori.archivetune.nativeaudio.at_audio_create
 import moe.rukamori.archivetune.nativeaudio.at_audio_create_plain
 import moe.rukamori.archivetune.shared.data.playback.createAudioOutputWithFallback
@@ -21,7 +22,8 @@ internal fun createIosAudioOutput(onFailure: (String?) -> Unit = {}): CPointer<a
         primary = { at_audio_create(error, 256uL) },
         plain = { at_audio_create_plain(error, 256uL) },
     )
-    // Do not decode arbitrary native error text: the stable wording is safe even when the core refused creation.
-    onFailure(if (output == null) OUTPUT_CREATION_FAILED else null)
+    // Both constructors only ever write their own sanitized text, never an Apple exception, so the native reason is
+    // passed through: the field report of a refused output is worthless without it.
+    onFailure(if (output == null) error.toKString().ifEmpty { OUTPUT_CREATION_FAILED } else null)
     output
 }

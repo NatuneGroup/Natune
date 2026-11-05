@@ -31,7 +31,6 @@ import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStageRequest
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.normalization.NormalizationGain
-import moe.rukamori.archivetune.shared.domain.dsp.tempo.PitchConversion
 import moe.rukamori.archivetune.shared.domain.platform.AcceptedAccountReader
 import moe.rukamori.archivetune.shared.domain.playback.MonotonicClock
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackCommand
@@ -428,11 +427,9 @@ class DesktopPlaybackPort(
                 applyStages()
             }
             is PlaybackCommand.SetPitch -> {
-                stages = stages.copy(
-                    request = stages.request.copy(
-                        pitchSemitones = PitchConversion.multiplierToSemitones(command.pitch.toDouble())
-                    )
-                )
+                // The engine graph has no pitch stage, so the request stays neutral: the host hides the pitch control,
+                // and a stored or remote value must not claim a sample change this host cannot make.
+                stages = stages.copy(request = stages.request.copy(pitchSemitones = 0.0))
                 applyStages()
             }
             PlaybackCommand.Stop -> {
@@ -649,27 +646,11 @@ class DesktopPlaybackPort(
     private fun applySession(mix: NativeTwoDeckMixer, index: Int, plan: SoftwareStagePlan) {
         val session = sessions[index] ?: return
         mix.setDeckGain(index, gainFor(plan, session.trackGainDb, session.trackPeak))
-        mix.deck(index).setSpeed(effectiveSpeed(plan))
+        mix.deck(index).setSpeed(desktopEffectiveSpeed(plan, stages.request))
     }
 
-    /**
-     * The stages that run now. The bit-perfect gate is given what this port actually does to samples, so a
-     * request cannot bypass the software chain while an equalizer or normalization is engaged.
-     */
-    private fun currentPlan(): SoftwareStagePlan {
-        val config = stages
-        val equalizerEngaged = config.request.equalizerEnabled && config.bands.any { it.gainDb != 0.0 }
-        val samplesAltered = equalizerEngaged ||
-            config.request.normalizationEnabled ||
-            config.request.speed != 1.0 ||
-            config.request.pitchSemitones != 0.0
-        val decision = BitPerfectGate.evaluate(config.routeFacts.copy(softwareDspEngaged = samplesAltered))
-        return SoftwareStagePlan.resolve(decision, config.request)
-    }
-
-    /** The engine's tempo is the playback speed, and the shared plan keeps tempo off whenever the route is requested. */
-    private fun effectiveSpeed(plan: SoftwareStagePlan): Float =
-        if (plan.tempoPitch) stages.request.speed.toFloat() else 1f
+    /** The stages that run now: what this host can honour, narrowed by the shared bit-perfect gate. */
+    private fun currentPlan(): SoftwareStagePlan = desktopStagePlan(stages)
 
     private fun gainFor(plan: SoftwareStagePlan, trackGainDb: Double?, trackPeak: Double?): Float =
         outputVolume * (if (outputEnabled) 1f else 0f) * preampGain *

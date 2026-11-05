@@ -79,6 +79,12 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "Realtime output requires lock-free in
 #define AE_STREAM_RETRY_NS 5000000LL
 #define AE_STREAM_STARVATION_NS 30000000000LL
 #define AE_STREAM_BUFFER_BYTES 32768
+/*
+ * A host that answers AE_IO_INTERRUPTED is asked again, because the engine's interrupt is transient and
+ * the source stays usable. A host whose lease was broken by that interrupt answers the same way forever,
+ * so the load fails after this many consecutive interrupted reads instead of the producer spinning.
+ */
+#define AE_MAX_INTERRUPTED_READS 256
 
 /*
  * The producer's copy of a host source. FFmpeg's AVIO callbacks receive a pointer to it, so it must stay
@@ -113,6 +119,7 @@ typedef struct ae_source {
     AVIOContext *avio;   /* custom input of a host source, or NULL for a file or URL */
     ae_lease lease;     /* the host source behind avio; valid while leased is set */
     int leased;
+    int interrupted_reads; /* consecutive reads the host answered as interrupted without an engine interrupt */
 } ae_source;
 
 struct ae_engine {
@@ -1026,8 +1033,18 @@ static void decode_step(ae_engine *e, ae_source *s, uint64_t epoch, char *messag
     }
     if (r < 0) {
         if (r == AVERROR_EXIT || interrupt_requested(e)) {
-            /* An interrupted host read is not the end of the stream, so the next read must ask the host again. */
+            /* An interrupted host read is not the end of the stream, so the next read must ask the host again. An
+               interrupt the engine did not ask for is a host that stopped answering: after a bounded number of quiet
+               retries the load fails, because the ring can never fill and nothing else would end it. */
             clear_avio_latch(s);
+            if (!interrupt_requested(e) && ++s->interrupted_reads > AE_MAX_INTERRUPTED_READS) {
+                snprintf(message, len, "%s", "the stream source stopped answering after an interrupt");
+                pthread_mutex_lock(&e->mutex);
+                if (epoch == e->epoch) {
+                    fail_locked(e, AE_ERROR_DECODE, message);
+                }
+                pthread_mutex_unlock(&e->mutex);
+            }
             return;
         }
         format_error(message, len, "read", r);
@@ -1042,6 +1059,7 @@ static void decode_step(ae_engine *e, ae_source *s, uint64_t epoch, char *messag
         av_packet_unref(s->packet);
         return;
     }
+    s->interrupted_reads = 0;
 
     for (;;) {
         r = avcodec_send_packet(s->decoder, s->packet);

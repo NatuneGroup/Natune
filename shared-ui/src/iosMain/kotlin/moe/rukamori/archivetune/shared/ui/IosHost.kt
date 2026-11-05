@@ -236,6 +236,7 @@ class IosHost {
     fun foregrounded() {
         if (closed) return
         active.value = true
+        playbackPort.setAppActive(true)
         foregroundRequested = true
         val pack = japanesePack.value ?: return
         scope.launch { pack.onForeground() }
@@ -245,6 +246,8 @@ class IosHost {
     fun backgrounded() {
         if (closed) return
         active.value = false
+        // The UI stops drawing, so the playback port also stops reading its state at the active rate.
+        playbackPort.setAppActive(false)
         // A swipe-kill never posts willTerminate, so the queue is made durable here rather than only at final close.
         val opened = graph ?: return
         runDurably(BACKGROUND_CHECKPOINT_TIMEOUT_MS) {
