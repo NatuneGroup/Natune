@@ -182,11 +182,7 @@ fun PlaybackQueuePanel(
     val onLock: () -> Unit = { command { settings.edit { set(QueueEditLockKey, !locked) } } }
     val onJump: () -> Unit = { if (currentIndex >= 0) scope.launch { list.animateScrollToItem(currentIndex + QueuePanelHeaderItems) } }
     val onSave: () -> Unit = { save(rows) }
-    val onClear: () -> Unit = { remove {
-        settings.edit { set(AutoLoadMoreKey, false) }
-        edits.refreshInfiniteQueue()
-        edits.clearUpcoming()
-    } }
+    val onClear: () -> Unit = { remove { edits.clearUpcoming() } }
     val onSelect: () -> Unit = { selected = rows.mapTo(HashSet()) { it.occurrenceId } }
     val header: @Composable () -> Unit = {
         QueuePanelHeader(
