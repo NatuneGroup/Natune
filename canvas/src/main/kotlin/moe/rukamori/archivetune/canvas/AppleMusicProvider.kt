@@ -185,9 +185,16 @@ object AppleMusicProvider {
      * Scrapes a fresh Apple Music web player JWT from the JavaScript bundle the landing page
      * loads, and returns it, or null when none could be obtained. Reached through
      * [ensureTokenFresh] and the 401 retry paths, and throttled by the caller.
+     *
+     * [rejectedToken] is the token the caller found dead, if any. A caller that queued on
+     * [tokenRefreshMutex] behind a successful scrape reuses that winner's token instead of
+     * paying for a second page and bundle fetch.
      */
-    private suspend fun refreshToken(): String? =
+    private suspend fun refreshToken(rejectedToken: String? = null): String? =
         tokenRefreshMutex.withLock {
+            reusableRefreshedToken(
+                appleMusicToken, appleMusicTokenExpAtSec, rejectedToken, System.currentTimeMillis() / 1000L,
+            )?.let { return@withLock it }
             appleMusicTokenLastRefreshAtMs = System.currentTimeMillis()
             val fresh = scrapeTokenFromWeb()
             if (fresh != null) {
@@ -204,6 +211,14 @@ object AppleMusicProvider {
             }
             fresh
         }
+
+    /** The held token [refreshToken] may hand a queued caller: still fresh, and not the one it rejected. */
+    internal fun reusableRefreshedToken(
+        held: String?,
+        heldExpAtSec: Long,
+        rejected: String?,
+        nowSec: Long,
+    ): String? = held?.takeIf { it != rejected && heldExpAtSec - nowSec >= TOKEN_REFRESH_MARGIN_SEC }
 
     /**
      * Returns a usable Apple Music JWT, scraping one when none is held or the held one is within
@@ -517,7 +532,7 @@ object AppleMusicProvider {
                 // that yields nothing means a second attempt would repeat the same 401.
                 discard(response)
                 Log.w("AMP search returned 401 — force-refreshing token and retrying once")
-                token = refreshToken() ?: return@runCatching null
+                token = refreshToken(token) ?: return@runCatching null
                 response =
                     client.get(searchUrl) {
                         header("Authorization", "Bearer $token")
@@ -643,7 +658,7 @@ object AppleMusicProvider {
             if (response.status == HttpStatusCode.Unauthorized) {
                 discard(response)
                 Log.w("album fetch returned 401 — force-refreshing token and retrying once")
-                token = refreshToken() ?: return@runCatching null
+                token = refreshToken(token) ?: return@runCatching null
                 response =
                     client.get(albumUrl) {
                         header("Authorization", "Bearer $token")
