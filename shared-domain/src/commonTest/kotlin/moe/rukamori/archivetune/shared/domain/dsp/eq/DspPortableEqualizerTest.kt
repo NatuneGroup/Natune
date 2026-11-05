@@ -201,6 +201,46 @@ class DspPortableEqualizerTest {
         assertEquals(10.0.pow(6.0 / 20.0), right, STEADY_STATE_TOLERANCE)
     }
 
+    /**
+     * Removing a right-channel override glides the right gain down from its old value, so the shared band no longer
+     * carries the large gain the secondary design existed for. The channel has to keep that design while the fade
+     * runs: a design chosen only from the new band's override flag would jump the right channel to the primary
+     * coefficients on the first block instead of walking down. The two designs meet only when the glide lands.
+     */
+    @Test
+    fun removingARightOverrideKeepsTheSecondaryDesignUntilTheGlideLands() {
+        val band = EqualizerBand(EqualizerBandType.PEAKING, 1_000.0, gainDb = 0.0, q = 1.0, rightGainDb = 6.0)
+        val equalizer = PortableEqualizer(rate, channels = 2)
+        equalizer.setBands(listOf(band))
+        equalizer.process(stereo(1_000.0, 1_000.0, 1_024), 1_024)
+
+        equalizer.setBands(listOf(band.copy(rightGainDb = null)), glideFrames = 4_096)
+        assertTrue(equalizer.isGliding, "removing the override glides the right gain down")
+
+        // Two successive 512-frame blocks inside the 4,096-frame glide: the right channel is still corrected, and
+        // the correction keeps falling, instead of both reading unity from a dropped secondary design.
+        val frames = 512
+        val first = stereo(1_000.0, 1_000.0, frames)
+        val firstBefore = rightRms(first, frames)
+        equalizer.process(first, frames)
+        val firstGain = rightRms(first, frames) / firstBefore
+
+        val second = stereo(1_000.0, 1_000.0, frames)
+        val secondBefore = rightRms(second, frames)
+        equalizer.process(second, frames)
+        val secondGain = rightRms(second, frames) / secondBefore
+
+        assertTrue(equalizer.isGliding, "the glide is longer than the two measured blocks")
+        assertTrue(firstGain > 1.4, "the first block after the override is removed keeps its fading boost, was $firstGain")
+        assertTrue(secondGain > 1.4, "the next block still fades instead of using the primary design, was $secondGain")
+        assertTrue(secondGain < firstGain, "the fade keeps walking down: $firstGain then $secondGain")
+
+        // Once the glide lands the effective gains meet, the secondary design goes away and the cascade is flat again.
+        equalizer.process(stereo(1_000.0, 1_000.0, 4_096), 4_096)
+        assertFalse(equalizer.isGliding)
+        assertFalse(equalizer.isEngaged, "a removed override leaves nothing for the right channel to correct")
+    }
+
     /** An equalizer that has already processed audio, so a stale cached design would be reused. */
     private fun warmedUp(band: EqualizerBand, channels: Int = 1): PortableEqualizer =
         PortableEqualizer(rate, channels).also {
@@ -218,6 +258,10 @@ class DspPortableEqualizerTest {
         }
         return samples
     }
+
+    /** The right channel's RMS over the settled second half of a block, so a moving glide is read near one value. */
+    private fun rightRms(samples: FloatArray, frames: Int): Double =
+        DspTestSignals.rms(samples, channels = 2, fromFrame = frames / 2, toFrame = frames, channel = 1)
 
     /** The steady-state gain a sine at [frequencyHz] sees through [equalizer]. */
     private fun gainAt(equalizer: PortableEqualizer, frequencyHz: Double): Double {
