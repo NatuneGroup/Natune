@@ -29,7 +29,6 @@ import java.nio.file.Paths
 import java.util.concurrent.Executor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
@@ -40,10 +39,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.integration.DesktopStrings
 import moe.rukamori.archivetune.desktop.playback.NativeVideoArtwork
 import moe.rukamori.archivetune.desktop.playback.VideoArtworkState
+import moe.rukamori.archivetune.desktop.playback.openWithOwnership
 import moe.rukamori.archivetune.shared.domain.playback.PlaybackClock
 import moe.rukamori.archivetune.shared.domain.settings.canvasLoopPositionMs
 import moe.rukamori.archivetune.shared.domain.playback.SystemMonotonicClock
@@ -91,7 +90,7 @@ internal class DesktopCanvasFrames(private val graph: DesktopSessionGraph, priva
         try {
             val uri = URI(target.uri)
             val input = if (uri.scheme == "file") "file:" + Paths.get(uri).toString() else target.uri
-            reader = withContext(Dispatchers.IO) { NativeVideoArtwork.open(input, null, 720) }
+            reader = openWithOwnership { NativeVideoArtwork.open(input, null, 720) }
                 ?: error("Canvas decoder unavailable")
             var sequence = 0L
             var capacity = 0L
