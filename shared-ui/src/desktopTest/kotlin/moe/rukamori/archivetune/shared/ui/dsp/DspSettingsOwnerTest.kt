@@ -3,12 +3,17 @@ package moe.rukamori.archivetune.shared.ui.dsp
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.DspSettingsDocument
@@ -21,7 +26,10 @@ import moe.rukamori.archivetune.shared.domain.settings.EqualizerBandLevelsMbKey
 import moe.rukamori.archivetune.shared.domain.settings.EqualizerEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.EqualizerOutputGainEnabledKey
 import moe.rukamori.archivetune.shared.domain.settings.EqualizerOutputGainMbKey
+import moe.rukamori.archivetune.shared.domain.settings.PreferenceEditor
 import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
+import moe.rukamori.archivetune.shared.domain.settings.SettingsChange
+import moe.rukamori.archivetune.shared.domain.settings.SettingsStore
 import moe.rukamori.archivetune.shared.domain.settings.setPcmProcessingPreference
 import moe.rukamori.archivetune.shared.ui.settings.DesktopSettingsStore
 import kotlin.test.Test
@@ -85,6 +93,66 @@ class DspSettingsOwnerTest {
         } finally {
             reopened.close()
         }
+    }
+
+    /**
+     * An upgrade can leave a stored document and the legacy row disagreeing, because the build that wrote them
+     * did not synchronize the two. The document is the authority; the row correction that follows is this owner's
+     * own write, and the store's replay of the initial snapshot is not a row edit either.
+     */
+    @Test
+    fun anInitialRowReplayIsNotAUserEdit() = runBlocking {
+        val levels = GraphicEqualizer.flatLevelsMb().toMutableList().also { it[2] = 600 }
+        val document = DspSettingsDocument.write(
+            DspSettings(
+                normalizationEnabled = false,
+                equalizerEnabled = true,
+                equalizerBands = GraphicEqualizer.bandsFromLevelsMb(levels),
+            ),
+        )
+        val store = GatedSettingsStore(
+            PreferenceSnapshot.of(
+                AudioProcessingEnabledKey to true,
+                // The row still says on although the document says off: exactly the upgrade state that exposed this.
+                AudioNormalizationKey to true,
+                DspSettingsDocumentKey to document,
+            ),
+        )
+        // The document-to-row correction must not land before the collector has subscribed to the store.
+        store.holdEdits()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val applied = CopyOnWriteArrayList<DspSettings>()
+        try {
+            val owner = DspSettingsOwner(scope, store, onApplied = { applied += it })
+            assertEquals(false, owner.state.value.normalizationEnabled, "the document's value applies at once")
+
+            // A change to another row reaches the collector, which shows it has subscribed and replayed the snapshot.
+            store.publish { this[AudioProcessingEnabledKey] = false }
+            awaitUntil("the owner never followed the switch off") { !owner.state.value.processingEnabled }
+            store.publish { this[AudioProcessingEnabledKey] = true }
+            awaitUntil("the owner never followed the switch back on") { owner.state.value.processingEnabled }
+            assertTrue(applied.none { it.normalizationEnabled }, "the stale row value reached the engine before any edit")
+
+            store.releaseEdits()
+            awaitUntil("the row correction never landed") { store.snapshots.value?.get(AudioNormalizationKey) == false }
+            assertEquals(
+                false,
+                DspSettingsDocument.read(store.snapshots.value?.get(DspSettingsDocumentKey))?.normalizationEnabled,
+                "the replay rewrote the document from the stale row",
+            )
+            assertEquals(false, owner.state.value.normalizationEnabled)
+            assertTrue(applied.none { it.normalizationEnabled }, "the row correction was read back as a user edit")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    private suspend fun awaitUntil(message: String, predicate: () -> Boolean) {
+        val reached = withTimeoutOrNull(AWAIT_TIMEOUT_MS) {
+            while (!predicate()) delay(POLL_MS)
+            true
+        }
+        assertTrue(reached == true, message)
     }
 
     private fun preset(): PreferenceSnapshot {
@@ -162,5 +230,44 @@ class DspSettingsOwnerTest {
         const val SETTINGS_FILE = "settings.bin"
         const val AWAIT_TIMEOUT_MS = 10_000L
         const val POLL_MS = 5L
+    }
+}
+
+/**
+ * A store whose edits can be held, so a test can prove the owner's collector has subscribed and replayed the
+ * current snapshot before a document-to-row correction lands. [publish] arrives the way another row's write
+ * would, without waiting for the held edits.
+ */
+private class GatedSettingsStore(initial: PreferenceSnapshot) : SettingsStore {
+    private val state = MutableStateFlow<PreferenceSnapshot?>(initial)
+    override val snapshots: StateFlow<PreferenceSnapshot?> = state.asStateFlow()
+    private val lock = Mutex()
+    private var gate: CompletableDeferred<Unit>? = null
+
+    fun holdEdits() {
+        gate = CompletableDeferred()
+    }
+
+    fun releaseEdits() {
+        gate?.complete(Unit)
+        gate = null
+    }
+
+    fun publish(change: PreferenceEditor.() -> Unit) {
+        val before = requireNotNull(state.value)
+        state.value = before.toEditor().apply(change).snapshot()
+    }
+
+    override suspend fun edit(change: PreferenceEditor.() -> Unit): SettingsChange {
+        lock.lock()
+        try {
+            gate?.await()
+            val before = requireNotNull(state.value)
+            val after = before.toEditor().apply(change).snapshot()
+            state.value = after
+            return SettingsChange(before, after)
+        } finally {
+            lock.unlock()
+        }
     }
 }
