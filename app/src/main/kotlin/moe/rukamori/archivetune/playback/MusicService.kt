@@ -655,7 +655,6 @@ class MusicService :
     private val fastFailHttpDataSourceFactory: DataSource.Factory by lazy {
         FastFailHttpDataSource.Factory(mediaFastFailOkHttpClient, mediaOkHttpClient)
     }
-
     private var finiteQueueJob: Job? = null
     private val finiteLoadOwner = PlaylistLoadOwner()
     private var playlistActionJob: Job? = null
@@ -692,6 +691,7 @@ class MusicService :
             setShuffleOrder = { localPlayer.setShuffleOrder(DefaultShuffleOrder(it, System.currentTimeMillis())) },
             save = { if (dataStore.get(PersistentQueueKey, true)) saveQueueToDisk() },
             loading = infiniteQueueLoading,
+            recommendation = androidQueueTailRecommendation(database, autoAddedMediaIds),
         )
     }
     private val queueRemovals = QueueRemovalOwner(
