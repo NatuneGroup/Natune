@@ -159,6 +159,29 @@ class DownloadQueueOwnerTest {
         assertEquals(listOf(DownloadPhase.REMOVING), removed.map { it.phase })
     }
 
+    @Test fun aStoppedWorkerHoldsItsSlotUntilTheCancelledTransferUnwinds() = runTest {
+        val store = MemoryStore()
+        val release = CompletableDeferred<Unit>()
+        val transfer = HeldTransfer(release)
+        val owner = owner(store, transfer = transfer, maxParallel = 1)
+        owner.start(ContentRef("youtube", ContentKind.SONG, "first"), "")
+        advanceUntilIdle()
+        assertEquals(1, transfer.calls.size)
+        owner.stop("youtube:first")
+        advanceUntilIdle()
+        owner.start(ContentRef("youtube", ContentKind.SONG, "second"), "")
+        advanceUntilIdle()
+        // The first transfer has not unwound yet, so the only slot is still taken.
+        assertEquals(1, transfer.calls.size)
+        assertEquals(DownloadPhase.STOPPED, store.state.value.single { it.id == "youtube:first" }.phase)
+        assertEquals(DownloadPhase.QUEUED, store.state.value.single { it.id == "youtube:second" }.phase)
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(2, transfer.calls.size)
+        assertEquals(DownloadPhase.STOPPED, store.state.value.single { it.id == "youtube:first" }.phase)
+        assertEquals(DownloadPhase.COMPLETED, store.state.value.single { it.id == "youtube:second" }.phase)
+    }
+
     @Test fun removeDropsTheCommittedFileAndItsRow() = runTest {
         val store = MemoryStore()
         val removed = mutableListOf<DownloadTask>()
@@ -194,6 +217,7 @@ class DownloadQueueOwnerTest {
         resolver: DownloadSourceResolver = StaticResolver(progressive),
         removeCommitted: suspend (DownloadTask) -> Unit = {},
         dispatcher: CoroutineDispatcher = UnconfinedTestDispatcher(testScheduler),
+        maxParallel: Int = 3,
     ) = DownloadQueueOwner(
         store = store,
         transfer = transfer,
@@ -203,6 +227,7 @@ class DownloadQueueOwnerTest {
         timeMs = { 1_000L },
         scope = backgroundScope,
         dispatcher = dispatcher,
+        maxParallel = maxParallel,
     )
 
     private fun task(phase: DownloadPhase, provider: String, mediaId: String) = DownloadTask(
@@ -270,6 +295,23 @@ class DownloadQueueOwnerTest {
                 release.await()
                 progress(10L, 20L)
             }
+            return 20L
+        }
+    }
+
+    private class HeldTransfer(private val release: CompletableDeferred<Unit>) : DownloadTransfer {
+        val calls = mutableListOf<DownloadTask>()
+
+        override suspend fun transfer(
+            task: DownloadTask,
+            stream: DirectStream,
+            resumeFromBytes: Long,
+            song: ContentItem?,
+            progress: suspend (bytesDone: Long, totalBytes: Long?) -> Unit,
+        ): Long {
+            calls += task
+            // A cancelled worker keeps unwinding here until the held block is released.
+            withContext(NonCancellable) { release.await() }
             return 20L
         }
     }

@@ -2,6 +2,7 @@ package moe.rukamori.archivetune.shared.data.download
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -100,7 +101,7 @@ class DownloadQueueOwner(
     override suspend fun stop(id: String) = queueGate.withLock {
         val task = snapshot[id] ?: queued[id] ?: return@withLock
         queued.remove(id)
-        workers.remove(id)?.cancel()
+        workers[id]?.cancel()
         val stopped = task.copy(phase = DownloadPhase.STOPPED, updateTimeMs = timeMs())
         putLocked(stopped)
     }
@@ -115,7 +116,7 @@ class DownloadQueueOwner(
     override suspend fun remove(id: String) = queueGate.withLock {
         val task = snapshot[id] ?: queued[id] ?: return@withLock
         queued.remove(id)
-        workers.remove(id)?.cancel()
+        workers[id]?.cancel()
         val removing = task.copy(phase = DownloadPhase.REMOVING, updateTimeMs = timeMs())
         putLocked(removing)
         try {
@@ -127,20 +128,28 @@ class DownloadQueueOwner(
     }
 
     private fun enqueue(task: DownloadTask) {
-        if (workers.containsKey(task.id) || queued.containsKey(task.id)) return
+        if (workers[task.id]?.isActive == true || queued.containsKey(task.id)) return
         queued[task.id] = task
         pump()
     }
 
-    /** Moves queued rows into free worker slots; serialized callers keep exactly [maxParallel] in flight. */
+    /**
+     * Moves queued rows into free worker slots; serialized callers keep exactly [maxParallel] in flight. A
+     * cancelled worker keeps its slot until `runTask`'s finally drops the entry: freeing it in [stop]/[remove]
+     * let a following start run [maxParallel] + 1 transfers until the cancelled coroutine unwound.
+     */
     private fun pump() {
         val free = maxParallel - workers.size
         if (free <= 0) return
-        val batch = queued.values.filter { it.phase == DownloadPhase.QUEUED || it.phase == DownloadPhase.REMOVING }
+        val batch = queued.values
+            .filter { (it.phase == DownloadPhase.QUEUED || it.phase == DownloadPhase.REMOVING) && !workers.containsKey(it.id) }
             .take(free)
         for (task in batch) {
             queued.remove(task.id)
-            workers[task.id] = ownerScope.launch(dispatcher) { runTask(task) }
+            // LAZY so the slot is recorded before a worker can finish and remove itself.
+            val job = ownerScope.launch(dispatcher, start = CoroutineStart.LAZY) { runTask(task) }
+            workers[task.id] = job
+            job.start()
         }
     }
 
