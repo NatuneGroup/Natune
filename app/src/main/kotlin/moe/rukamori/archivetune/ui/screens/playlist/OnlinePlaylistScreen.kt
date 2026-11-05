@@ -629,7 +629,6 @@ fun OnlinePlaylistScreen(
                         }
                     }
 
-                    // Songs List
                     items(
                         items = wrappedSongs,
                         key = { it.item.second.setVideoId ?: "${it.item.second.id}-${it.item.first}" },
@@ -812,7 +811,6 @@ fun OnlinePlaylistScreen(
                         .align(Alignment.TopEnd)
                         .padding(end = 12.dp, top = systemBarsTopPadding + 12.dp),
             ) {
-                // Search
                 Box(
                     modifier = Modifier.size(48.dp),
                     contentAlignment = Alignment.Center,
@@ -825,7 +823,6 @@ fun OnlinePlaylistScreen(
                         )
                     }
                 }
-                // More
                 Box(
                     modifier = Modifier.size(48.dp),
                     contentAlignment = Alignment.Center,
