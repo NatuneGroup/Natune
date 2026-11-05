@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import stat
 import sys
 import zipfile
@@ -569,11 +570,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _output_conflicts(output: Path, inputs: Sequence[Path]) -> bool:
-    try:
-        output_resolved = output.expanduser().resolve()
-        return any(output_resolved == path.expanduser().resolve() for path in inputs)
-    except OSError:
-        return False
+    output_path = output.expanduser()
+    for input_path in inputs:
+        expanded_input = input_path.expanduser()
+        try:
+            if output_path.resolve() == expanded_input.resolve():
+                return True
+        except OSError:
+            pass
+        try:
+            if os.path.samefile(output_path, expanded_input):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def main(argv: Sequence[str] | None = None) -> int:
