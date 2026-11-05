@@ -81,9 +81,7 @@ object TelegramBotClient {
         chatMessageFlows.remove(chatId)
     }
 
-    // ------------------------------------------------------------------
     // Bot resolution + message sending
-    // ------------------------------------------------------------------
 
     /**
      * Resolves a bot by its public @username to a TDLib chat. The first call hits Telegram's
@@ -147,9 +145,7 @@ object TelegramBotClient {
         Timber.tag(TAG).w(e, "fetchBotCommands: failed for chatId=%s", chatId)
     }.getOrDefault(emptyList())
 
-    // ------------------------------------------------------------------
     // Reply collection
-    // ------------------------------------------------------------------
 
     /** Collects audio-carrying messages that arrive on [chatId] within [BOT_REPLY_TIMEOUT]. */
     suspend fun collectAudioReplies(
@@ -296,9 +292,7 @@ object TelegramBotClient {
         Timber.tag(TAG).w(e, "clickInlineButton: callback query failed")
     }.getOrNull()
 
-    // ------------------------------------------------------------------
     // Forwarding
-    // ------------------------------------------------------------------
 
     /**
      * Forwards [messageIds] (originally received in [fromChatId]) to [toChatId]. Returns the list
@@ -339,9 +333,7 @@ object TelegramBotClient {
     }
 }
 
-// ------------------------------------------------------------------
 // Models for inline-keyboard prompts (quality pickers, format pickers, etc.)
-// ------------------------------------------------------------------
 
 /** A single button on a bot's inline keyboard. */
 data class TelegramBotPromptButton(

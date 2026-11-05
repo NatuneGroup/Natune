@@ -681,9 +681,7 @@ object QobuzAudioProvider {
         instanceCooldownUntilMs.clear()
     }
 
-    // -------------------------------------------------------------------------
     // Search + download
-    // -------------------------------------------------------------------------
 
     /** Resolves the best-matching Qobuz track id for [query] against a single backend. */
     private fun resolveTrackId(
@@ -845,9 +843,7 @@ object QobuzAudioProvider {
         }
     }
 
-    // -------------------------------------------------------------------------
     // Direct Qobuz API (token) — www.qobuz.com/api.json/0.2 with MD5 request signature
-    // -------------------------------------------------------------------------
 
     private fun searchItemsDirect(
         token: QobuzToken,
@@ -1009,9 +1005,7 @@ object QobuzAudioProvider {
             }
     }
 
-    // -------------------------------------------------------------------------
     // Defensive JSON extraction (proxy responses vary slightly)
-    // -------------------------------------------------------------------------
 
     /** Finds the track item array across the common response shapes. */
     private fun JSONObject.findTrackItems(): JSONArray? {
@@ -1069,9 +1063,7 @@ object QobuzAudioProvider {
     private fun JSONObject.longOrNull(key: String): Long? =
         if (has(key)) optLong(key).takeIf { it > 0L } else null
 
-    // -------------------------------------------------------------------------
     // Matching (self-contained; mirrors Tidal's heuristics)
-    // -------------------------------------------------------------------------
 
     private fun scoreMatch(
         wantedTitle: String,

@@ -301,7 +301,6 @@ fun LibraryAlbumsScreen(
                         }
                     }
 
-                    // Sort direction toggle button
                     Spacer(modifier = Modifier.width(4.dp))
                     Box(
                         modifier =
@@ -330,7 +329,6 @@ fun LibraryAlbumsScreen(
                     }
                 }
 
-                // Grid / List Toggle layout controls
                 Row(
                     modifier =
                         Modifier
@@ -537,7 +535,6 @@ fun LibraryAlbumsScreen(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize(),
                                 )
-                                // Play Overlay button on cover
                                 Box(
                                     modifier =
                                         Modifier
@@ -582,7 +579,6 @@ fun LibraryAlbumsScreen(
                     }
                 }
             } else {
-                // List View
                 LazyColumn(
                     contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = playerAwareBottomPadding),
                     verticalArrangement = Arrangement.spacedBy(12.dp),

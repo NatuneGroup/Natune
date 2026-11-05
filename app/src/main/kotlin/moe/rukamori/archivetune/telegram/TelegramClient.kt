@@ -184,9 +184,7 @@ object TelegramClient {
             .onFailure { Timber.tag(TAG).w(it, "logOut failed") }
     }
 
-    // ------------------------------------------------------------------
     // Auth flow
-    // ------------------------------------------------------------------
 
     /**
      * Submits a phone number. TDLib accepts this both from the initial WaitPhoneNumber state and
@@ -216,9 +214,7 @@ object TelegramClient {
 
     suspend fun getMe(): TdApi.User = send(TdApi.GetMe())
 
-    // ------------------------------------------------------------------
     // Channel search + audio listing
-    // ------------------------------------------------------------------
 
     /**
      * Searches public chats and keeps only channels/supergroups. Accepts plain queries, @usernames,
@@ -403,9 +399,7 @@ object TelegramClient {
             else -> null
         }
 
-    // ------------------------------------------------------------------
     // File access (streaming)
-    // ------------------------------------------------------------------
 
     suspend fun getFile(fileId: Int): TdApi.File = send(TdApi.GetFile(fileId))
 
@@ -502,9 +496,7 @@ object TelegramClient {
         }.getOrNull()
     }
 
-    // ------------------------------------------------------------------
     // Internals
-    // ------------------------------------------------------------------
 
     suspend fun <T : TdApi.Object> send(function: TdApi.Function<T>): T {
         val currentClient =

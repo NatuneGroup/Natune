@@ -162,7 +162,6 @@ fun ListenTogetherSettings(
         )
     }
     
-    // Handle events
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
             when (event) {
