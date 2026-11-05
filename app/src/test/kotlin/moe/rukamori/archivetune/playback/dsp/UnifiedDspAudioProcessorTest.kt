@@ -354,7 +354,11 @@ class UnifiedDspAudioProcessorTest {
      * A settings move reaches the processor on every preference emission, and `queueInput` applies it at a block
      * boundary. The settings value, the neutral value the bit-perfect gate renders and the dither stage are
      * prepared by `submit` on the caller's thread, and the equalizer's stage pool is built with the graph, so the
-     * adopting block allocates nothing — including an equalizer switch or a band-count change.
+     * adopting block allocates no stage state — including an equalizer switch or a band-count change.
+     *
+     * The loop is measured with one reading of the counter on either side and compared with the same loop over
+     * one unchanged request: `submit` prepares a request off the render path and is expected to allocate, and
+     * sampling the counter per block would charge its own cost to every block.
      */
     @Test
     fun `a request change stays within the allocation budget`() {
@@ -377,8 +381,6 @@ class UnifiedDspAudioProcessorTest {
         // submit() prepares a request off the render path, so a repeated submission is the baseline: the same
         // submit and render calls, with no settings move for the adopting block to apply.
         val steady = request(MAX_BANDS)
-        val submitOnly = measure { for (request in requests) processor.submit(request, stagePlan) }
-        val renderOnly = measure { repeat(REQUEST_CHANGES) { render(processor, block) } }
         val baseline = measure {
             repeat(REQUEST_CHANGES) {
                 processor.submit(steady, stagePlan)
@@ -394,7 +396,7 @@ class UnifiedDspAudioProcessorTest {
         val adoption = measured - baseline
         assertTrue(
             "a request change allocated $adoption bytes across ${requests.size} blocks " +
-                "(measured $measured, unchanged baseline $baseline, submits $submitOnly, renders $renderOnly)",
+                "(measured $measured, unchanged baseline $baseline)",
             adoption < ALLOCATION_LIMIT_BYTES,
         )
     }
