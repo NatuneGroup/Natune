@@ -13,6 +13,7 @@ import moe.rukamori.archivetune.shared.domain.dsp.DspSettings
 import moe.rukamori.archivetune.shared.domain.dsp.TpdfDither
 import moe.rukamori.archivetune.shared.domain.dsp.bitperfect.SoftwareStagePlan
 import moe.rukamori.archivetune.shared.domain.dsp.clarity.ClarityPreset
+import moe.rukamori.archivetune.shared.domain.dsp.clarity.ClarityStage
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBand
 import moe.rukamori.archivetune.shared.domain.dsp.eq.EqualizerBandType
 import org.junit.Assert.assertArrayEquals
@@ -434,51 +435,24 @@ class UnifiedDspAudioProcessorTest {
     }
 
     /**
-     * Temporary probe: reports the per-block allocation readings around a clarity switch so the budget can be pinned to
-     * the real cost instead of a guess. Removed before the branch is reported.
-     */
-    @Test
-    fun `clarity allocation probe`() {
-        val probe = StringBuilder("probe ")
-        val settings = request(1)
-        val stagePlan = plan()
-        val graph = DspGraph(SAMPLE_RATE, CHANNELS)
-        val input = FloatArray(2_048) { index -> (((index % 128) - 64) * 128) / 32_768f }
-        val output = FloatArray(8_192)
-        graph.apply(settings, stagePlan)
-        repeat(64) {
-            graph.push(input, 1_024)
-            graph.pull(output, 4_096)
-        }
-        probe.append("graphSteady=").append(measure { graph.push(input, 1_024); graph.pull(output, 4_096) }).append(' ')
-        probe.append("graphApply=")
-            .append(measure { graph.apply(settings.copy(clarity = ClarityPreset.REFERENCE), stagePlan) })
-            .append(' ')
-        probe.append("graphPushOn=").append(measure { graph.push(input, 1_024) }).append(' ')
-        probe.append("graphPullOn=").append(measure { graph.pull(output, 4_096) }).append(' ')
-        probe.append("graphAfter=").append(measure { graph.push(input, 1_024); graph.pull(output, 4_096) }).append(' ')
-
-        val processor = processor()
-        processor.submit(settings, stagePlan)
-        processor.configure(format(C.ENCODING_PCM_16BIT))
-        val block = block()
-        repeat(WARMUP_BLOCKS) { render(processor, block) }
-        probe.append("procSteady=").append(measure { render(processor, block) }).append(' ')
-        processor.submit(settings.copy(clarity = ClarityPreset.REFERENCE), stagePlan)
-        probe.append("procAdopt=").append(measure { render(processor, block) }).append(' ')
-        probe.append("procAfter=").append(measure { render(processor, block) }).append(' ')
-        probe.append("empty=").append(measure { }).append(' ')
-        throw AssertionError(probe.toString())
-    }
-
-    /**
      * Studio Master Clarity is switched on while a track is already playing at a settled block size. Its dry copy
      * belongs to the block, not to the first enabled preset: the graph reserves it alongside its own work buffer, so
-     * the adopting block does not allocate the block-sized array that a stage which only grew on the first enabled
-     * preset would need.
+     * the adopting block finds the capacity already there instead of allocating a block-sized array on the playback
+     * thread.
+     *
+     * A separate processor runs the stage's code path with clarity enabled first: the first execution of the clarity
+     * method chain costs classes and compilation far more than the block it renders, and that one-time cost belongs to
+     * neither the fix nor the defect this test pins. The measured processor's own stage buffers are untouched by the
+     * warmup, so a dry copy that only grew on its first enabled preset would still be charged to the adopting block.
      */
     @Test
     fun `enabling clarity mid-stream allocates no block-sized buffer on the render path`() {
+        val warming = processor()
+        warming.submit(request(1).copy(clarity = ClarityPreset.REFERENCE), plan())
+        warming.configure(format(C.ENCODING_PCM_16BIT))
+        val warmBlock = block()
+        repeat(WARMUP_BLOCKS) { render(warming, warmBlock) }
+
         val processor = processor()
         processor.submit(request(1), plan())
         processor.configure(format(C.ENCODING_PCM_16BIT))
@@ -489,9 +463,28 @@ class UnifiedDspAudioProcessorTest {
         val overhead = measure { }
         val adopting = measure { render(processor, block) } - overhead
         assertTrue(
-            "enabling clarity allocated $adopting bytes on the adopting block, " +
-                "close to the ${BLOCK_SAMPLES * CHANNELS * FLOAT_BYTES}-byte dry copy",
+            "enabling clarity allocated $adopting bytes on the adopting block, more than the " +
+                "${CLARITY_RENDER_LIMIT_BYTES}-byte budget and near the block-sized dry copy",
             adopting < CLARITY_RENDER_LIMIT_BYTES,
+        )
+    }
+
+    /**
+     * The control for the test above: the same counter charges a stage that has not reserved its dry copy, which is the
+     * block-sized allocation the mid-stream switch used to make. The reading is far above the budget even though the
+     * clarity code path is already warm, so the measurement above can fail.
+     */
+    @Test
+    fun `an unprepared clarity stage shows up in the render allocation counter`() {
+        val stage = ClarityStage(SAMPLE_RATE, CHANNELS)
+        stage.setPreset(ClarityPreset.REFERENCE)
+        val samples = FloatArray(BLOCK_SAMPLES)
+
+        val overhead = measure { }
+        val unprepared = measure { stage.process(samples, BLOCK_SAMPLES / CHANNELS) } - overhead
+        assertTrue(
+            "an unprepared stage allocated only $unprepared bytes, so the block-sized dry copy is invisible",
+            unprepared > CLARITY_RENDER_LIMIT_BYTES,
         )
     }
 
