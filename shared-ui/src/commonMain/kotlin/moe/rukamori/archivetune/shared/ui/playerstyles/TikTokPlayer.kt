@@ -72,8 +72,10 @@ internal fun TikTokPlayer(c: PlayerRenderContext) {
                 // Artist avatar: tapping opens the artist page like the original rail entry.
                 Box(Modifier.size(46.dp).clip(CircleShape).testTag("tiktok-artist-avatar")) {
                     c.slots.artwork(c.state.playback?.occurrenceId, Modifier.fillMaxSize())
-                    Box(Modifier.matchParentSize().background(Color.Transparent).testTag("tiktok-avatar-hit")
-                        .pointerInput(Unit) { detectTapGestures(onTap = { c.actions.onAction(PlayerAction.ARTIST) }) })
+                    if (PlayerAction.ARTIST in c.state.actionSupport) {
+                        Box(Modifier.matchParentSize().background(Color.Transparent).testTag("tiktok-avatar-hit")
+                            .pointerInput(Unit) { detectTapGestures(onTap = { c.actions.onAction(PlayerAction.ARTIST) }) })
+                    }
                 }
                 ActionButton(PlayerAction.LIKE, c)
                 PlayerIcon(PlayerSymbol.QUEUE, stringResource(Res.string.m5_queue),
@@ -93,12 +95,20 @@ internal fun TikTokPlayer(c: PlayerRenderContext) {
                 MarqueeText(
                     c.state.title.ifBlank { stringResource(Res.string.m5_no_track) },
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { c.actions.onAction(PlayerAction.TITLE) }) },
+                    modifier = if (PlayerAction.TITLE in c.state.actionSupport) {
+                        Modifier.pointerInput(Unit) { detectTapGestures(onTap = { c.actions.onAction(PlayerAction.TITLE) }) }
+                    } else {
+                        Modifier
+                    },
                 )
                 MarqueeText(
                     c.state.artist,
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { c.actions.onAction(PlayerAction.ARTIST) }) },
+                    modifier = if (PlayerAction.ARTIST in c.state.actionSupport) {
+                        Modifier.pointerInput(Unit) { detectTapGestures(onTap = { c.actions.onAction(PlayerAction.ARTIST) }) }
+                    } else {
+                        Modifier
+                    },
                 )
                 c.slots.compactLyrics(Modifier.fillMaxWidth().height(48.dp))
                 PlayerSeek(c, native = PlayerSliderStyle.Simple)

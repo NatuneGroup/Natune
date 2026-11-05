@@ -24,6 +24,7 @@ import moe.rukamori.archivetune.shared.domain.settings.PreferenceSnapshot
 import moe.rukamori.archivetune.shared.domain.settings.RepeatModeKey
 import moe.rukamori.archivetune.shared.domain.settings.SeekExtraSeconds
 import moe.rukamori.archivetune.shared.ui.player.PlayerAction
+import moe.rukamori.archivetune.shared.ui.player.PlayerActionSupport
 import moe.rukamori.archivetune.shared.ui.player.PlayerHandoff
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeControls
 import moe.rukamori.archivetune.shared.ui.player.PlayerNativeState
@@ -134,16 +135,15 @@ internal class DesktopPlayerControls(
     }
 
     override fun onAction(action: PlayerAction, occurrenceId: String?) {
-        when (action) {
-            // The root closes the sheet for COLLAPSE before an action reaches the host, so only song
-            // actions arrive here.
-            PlayerAction.COLLAPSE -> Unit
-            PlayerAction.LIKE -> toggleLike(occurrenceId)
-            PlayerAction.SHARE -> share(occurrenceId)
-            PlayerAction.SLEEP -> sleepSheet.open = true
-            PlayerAction.MORE -> openMenu(occurrenceId)
-            else -> graph.report("player action ${action.name} is not connected on the desktop host")
-        }
+        val handled = desktopPlayerAction(
+            action = action,
+            occurrenceId = occurrenceId,
+            like = ::toggleLike,
+            share = ::share,
+            more = ::openMenu,
+            sleep = { sleepSheet.open = true },
+        )
+        if (!handled) graph.report("player action ${action.name} is not connected on the desktop host")
     }
 
     /** Opens the player menu on the song of [occurrenceId]. An occurrence the queue no longer holds opens nothing. */
@@ -172,6 +172,8 @@ internal class DesktopPlayerControls(
             try {
                 val currentlyLiked = graph.libraryContent.isLiked(item.ref).first()
                 graph.libraryContent.setLiked(item, !currentlyLiked)
+                // A like changes only the button's own tint, so the log carries the state change the way a failure does.
+                graph.report(if (currentlyLiked) "the playing song is no longer liked" else "the playing song is liked")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -180,6 +182,49 @@ internal class DesktopPlayerControls(
         }
     }
 }
+
+/**
+ * The desktop's answer for [action]: [like], [share], [more] and [sleep] are the handlers this host owns, and COLLAPSE
+ * is the root's own collapse, which closes the sheet before an action reaches the host. False means this host has no
+ * owner for the action, so a player surface offers no control for it.
+ */
+internal fun desktopPlayerAction(
+    action: PlayerAction,
+    occurrenceId: String?,
+    like: (String?) -> Unit,
+    share: (String?) -> Unit,
+    more: (String?) -> Unit,
+    sleep: () -> Unit,
+): Boolean = when (action) {
+    PlayerAction.COLLAPSE -> true
+    PlayerAction.LIKE -> { like(occurrenceId); true }
+    PlayerAction.SHARE -> { share(occurrenceId); true }
+    PlayerAction.MORE -> { more(occurrenceId); true }
+    PlayerAction.SLEEP -> { sleep(); true }
+    else -> false
+}
+
+/** The actions the typed desktop overrides perform: previous, next, shuffle, repeat and both seek steps. */
+internal val DESKTOP_PLAYER_TRANSPORT_ACTIONS: Set<PlayerAction> = setOf(
+    PlayerAction.PREVIOUS,
+    PlayerAction.NEXT,
+    PlayerAction.SHUFFLE,
+    PlayerAction.REPEAT,
+    PlayerAction.SEEK_BACKWARD,
+    PlayerAction.SEEK_FORWARD,
+)
+
+/**
+ * Every player action this host can perform. Title and artist taps would need a song or artist page route from the
+ * player, and the output picker is the Android audio route's, so those stay out and the shared player hides their
+ * controls here instead of showing a tap whose only effect could be a diagnostic.
+ */
+internal val DESKTOP_PLAYER_ACTIONS: Set<PlayerAction> = PlayerAction.entries
+    .filter { it in DESKTOP_PLAYER_TRANSPORT_ACTIONS || desktopPlayerAction(it, null, {}, {}, {}, {}) }
+    .toSet()
+
+/** One support value for the whole session, so an unchanged capability set never by itself makes a new player state. */
+internal val DESKTOP_PLAYER_SUPPORT = PlayerActionSupport(DESKTOP_PLAYER_ACTIONS)
 
 /**
  * The observed native state for [playback]. Previous and next follow the queue owner's own rules: the same successor
@@ -216,6 +261,7 @@ internal fun desktopNativeState(
         handoff = handoff?.takeIf { it.fromOccurrenceId == playback?.occurrenceId }?.let {
             PlayerHandoff(it.fromOccurrenceId, it.toOccurrenceId, it.fadeStartPositionMs, it.overlapMs)
         },
+        actionSupport = DESKTOP_PLAYER_SUPPORT,
     )
 }
 

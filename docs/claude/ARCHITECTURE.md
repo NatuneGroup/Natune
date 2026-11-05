@@ -215,6 +215,17 @@ Settings → Keyboard → Keyboard shortcuts opens the same overlay as the Help 
 window accelerators and the Alt+Back navigation gesture; whether any of them claim a chord here has no local
 evidence, because this source is uncompiled and unexecuted and no device or keyboard-layout QA is claimed.
 
+## Player action support (local source; validation pending)
+
+`PlayerActionSupport` is the set of player actions a host has an owner for, carried on `PlayerNativeState` and copied
+onto `PlayerState` by `withNativeState`. The shared player renders a control only for an action in that set: the title
+and artist stay plain text where the host has no song or artist route, the output picker is drawn only where the host
+supplies one or answers `OUTPUT`, and a style's share/like/more/sleep/collapse button disappears where the action is
+not answered. The desktop host derives its set from `desktopPlayerAction`, the same function that dispatches
+`PlayerNativeControls.onAction`, so an offered action always has a handler and a removed branch stops being offered.
+Title, artist and output stay out of the desktop set; the `else` branch of `onAction` still reports anything that
+reaches it, which is now a defect signal rather than the normal path.
+
 ## Performance
 
 SpatialFlow's player (a second Media3 player, 50–60 s buffering, a 250 ms progress loop and a simpler linear crossfade handoff) is a useful comparison, not a source to copy wholesale: this fork already has stronger readiness, generation, cache, codec, audio-route and promotion safeguards, so measure before borrowing anything. Before changing buffer sizes or adding audio processors, measure transition latency, resolver calls, cache hit rate, decoder state, dropped frames, CPU, radio use, and thermal status. Low-end validation must cover crossfade, canvas/artwork, lyrics, and audio offload independently.
