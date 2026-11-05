@@ -140,7 +140,8 @@ internal fun ArchiveMiniPlayer(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
                                 .spaceTogglesPlayback(onPlayPause)
-                                .clickable(onClick = onExpand),
+                                .clickable(onClick = onExpand)
+                                .testTag("wide-mini-player-title"),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
