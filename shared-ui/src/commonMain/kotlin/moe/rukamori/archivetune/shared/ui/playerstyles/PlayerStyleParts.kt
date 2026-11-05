@@ -91,7 +91,7 @@ internal fun ExplicitBadge(color: Color, modifier: Modifier = Modifier, size: Dp
     }
 }
 
-/** Track title with the inline explicit badge and the TITLE action on tap. */
+/** Track title with the inline explicit badge and the TITLE action on tap, where the host answers TITLE. */
 @Composable
 internal fun TitleLine(
     c: PlayerRenderContext,
@@ -103,8 +103,13 @@ internal fun TitleLine(
     centered: Boolean = false,
     onClick: Boolean = true,
 ) {
+    val titleModifier = if (onClick && PlayerAction.TITLE in c.state.actionSupport && c.state.title.isNotBlank()) {
+        modifier.clickable { c.actions.onAction(PlayerAction.TITLE) }
+    } else {
+        modifier
+    }
     Row(
-        modifier.clickable(enabled = onClick && c.state.title.isNotBlank()) { c.actions.onAction(PlayerAction.TITLE) },
+        titleModifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start,
     ) {
@@ -135,9 +140,14 @@ internal fun ArtistLine(
     onClick: Boolean = true,
 ) {
     val artist = if (uppercase) c.state.artist.uppercase() else c.state.artist
+    val artistModifier = if (onClick && PlayerAction.ARTIST in c.state.actionSupport && artist.isNotBlank()) {
+        modifier.clickable { c.actions.onAction(PlayerAction.ARTIST) }
+    } else {
+        modifier
+    }
     MarqueeText(
         artist,
-        modifier.clickable(enabled = onClick && artist.isNotBlank()) { c.actions.onAction(PlayerAction.ARTIST) },
+        artistModifier,
         color = color.copy(alpha = color.alpha * alpha),
         style = style, fontWeight = fontWeight, fontFamily = fontFamily, centered = centered,
         letterSpacing = letterSpacing,
@@ -439,7 +449,7 @@ private fun SleepGlyph(color: Color) {
     }
 }
 
-/** Generic circular/square icon button with the shared glyph vocabulary. */
+/** Generic circular/square icon button with the shared glyph vocabulary. An unsupported action draws nothing. */
 @Composable
 internal fun StyleIconButton(
     c: PlayerRenderContext,
@@ -457,6 +467,8 @@ internal fun StyleIconButton(
     enabled: Boolean = true,
     selected: Boolean? = null,
 ) {
+    // A host that does not answer the action gets no control, never a button that only reports itself unconnected.
+    if (action != null && action !in c.state.actionSupport) return
     val outputButton = c.slots.outputButton
     if (action == PlayerAction.OUTPUT && outputButton != null) {
         outputButton(

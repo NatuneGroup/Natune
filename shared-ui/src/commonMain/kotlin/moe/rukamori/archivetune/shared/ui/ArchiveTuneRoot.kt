@@ -8,14 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isAltPressed
-import androidx.compose.ui.input.key.isCtrlPressed
-import androidx.compose.ui.input.key.isMetaPressed
-import androidx.compose.ui.input.key.isShiftPressed
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -33,7 +25,6 @@ import moe.rukamori.archivetune.shared.ui.player.*
 import moe.rukamori.archivetune.shared.ui.screens.*
 import moe.rukamori.archivetune.shared.ui.marquee.MarqueeText
 import moe.rukamori.archivetune.shared.ui.resources.*
-import moe.rukamori.archivetune.shared.ui.shortcuts.KeyboardShortcuts
 import moe.rukamori.archivetune.shared.ui.shortcuts.KeyboardShortcutsDialog
 import moe.rukamori.archivetune.shared.ui.shortcuts.LocalShortcutTextInput
 import moe.rukamori.archivetune.shared.ui.shortcuts.ShortcutTextInputState
@@ -310,18 +301,7 @@ private fun ArchiveTuneLoadedRoot(
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
                     .safeAreaPadding(safeArea)
                     .rootKeyTarget(rootKeyFocus, navigation.route)
-                    .onKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                    val action = KeyboardShortcuts.actionFor(
-                        key = event.key,
-                        ctrl = event.isCtrlPressed,
-                        meta = event.isMetaPressed,
-                        alt = event.isAltPressed,
-                        shift = event.isShiftPressed,
-                        textInputFocused = textInputs.active,
-                    ) ?: return@onKeyEvent false
-                    handleKeymap(action)
-                }) {
+                    .playerShortcuts(textInputActive = { textInputs.active }, dispatch = ::handleKeymap)) {
                     ArchiveTuneShell(navigation, preferences,
                         onSearch = { navigation.select(ShellTab.Search, toRoot = true) },
                         television = television, contentModifier = pageSource,
