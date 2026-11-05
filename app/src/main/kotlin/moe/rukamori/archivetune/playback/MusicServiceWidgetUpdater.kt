@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.extensions.SilentHandler
+import moe.rukamori.archivetune.utils.ArtworkThumbnailDecode
 import moe.rukamori.archivetune.utils.reportException
 import moe.rukamori.archivetune.widget.AlbumArtWidget
 import moe.rukamori.archivetune.widget.ListeningInsightsWidget
@@ -68,6 +69,12 @@ internal class MusicServiceWidgetUpdater(
     private val widgetManager = GlanceAppWidgetManager(service)
     private var stateJob: Job? = null
     private var progressJob: Job? = null
+
+    // Dominant colours, keyed by artwork file identity. Bounded: a session can play hundreds of
+    // tracks and a colour is four bytes.
+    private val dominantColorMemo = object : LinkedHashMap<String, Int>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Int>): Boolean = size > 16
+    }
 
     // Widgets are not visible with the screen off, so the progress timer stops with the screen and starts again on
     // ACTION_SCREEN_ON. Nothing ticks while the screen is off.
@@ -337,12 +344,43 @@ internal class MusicServiceWidgetUpdater(
 
     private suspend fun extractDominantColor(file: File): Int? =
         withContext(Dispatchers.Default) {
+            // A state push happens on every track change and again on play/pause; the same cached
+            // artwork file can only yield the same colour, so remember it by file identity.
+            val cacheKey = "${file.absolutePath}:${file.length()}:${file.lastModified()}"
+            synchronized(dominantColorMemo) { dominantColorMemo[cacheKey] }?.let { return@withContext it }
             try {
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@withContext null
+                val bounds =
+                    BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
+                        // Read the file's real pixel size; density metadata must not scale the
+                        // bounds and change the sample decision.
+                        inScaled = false
+                    }
+                BitmapFactory.decodeFile(file.absolutePath, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+
+                val bitmap =
+                    BitmapFactory.decodeFile(
+                        file.absolutePath,
+                        BitmapFactory.Options().apply {
+                            // A widget palette only needs colours: a full-resolution cover is a
+                            // multi-megabyte decode for no visible gain.
+                            inSampleSize =
+                                ArtworkThumbnailDecode.sampleSize(
+                                    sourceWidth = bounds.outWidth,
+                                    sourceHeight = bounds.outHeight,
+                                    maxDimensionPx = ArtworkThumbnailDecode.PALETTE_MAX_DIMENSION_PX,
+                                )
+                            inScaled = false
+                        },
+                    ) ?: return@withContext null
                 val palette = Palette.from(bitmap).generate()
-                palette.getDarkVibrantColor(
-                    palette.getDominantColor(android.graphics.Color.DKGRAY),
-                )
+                val color =
+                    palette.getDarkVibrantColor(
+                        palette.getDominantColor(android.graphics.Color.DKGRAY),
+                    )
+                synchronized(dominantColorMemo) { dominantColorMemo[cacheKey] = color }
+                color
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
