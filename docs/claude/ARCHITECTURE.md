@@ -211,9 +211,29 @@ without Ctrl/Cmd/Alt is dropped — Space, letters, arrows and digits reach the 
 chords stay live. Today the shared search field is the instrumented input; other fields still let an unmodified
 letter shortcut through, which the shortcut table must not be extended into until they report focus too.
 
+The window root only handles presses the focused control did not consume (`Modifier.playerShortcuts` is a bubbling
+`onKeyEvent`); it never claims a key in the preview pass, so an untracked text field keeps its space and its letters
+before the table is consulted. The player's own strip is the one place where a pressable surface would otherwise take
+Space as its activation: `Modifier.spaceTogglesPlayback` is applied to the mini-player surface, claims a bare Space in
+that surface's preview pass, consumes both edges (a clickable activates on the key-up) and runs play/pause on the press.
+After Escape returns focus to the strip, Space therefore pauses instead of re-opening the sheet, while Enter is never
+claimed and still activates the focused control for accessibility. A text field never carries the modifier, so a typed
+space is unaffected.
+
 Settings → Keyboard → Keyboard shortcuts opens the same overlay as the Help chord. The desktop host keeps its own
 window accelerators and the Alt+Back navigation gesture; whether any of them claim a chord here has no local
 evidence, because this source is uncompiled and unexecuted and no device or keyboard-layout QA is claimed.
+
+## Player action support (local source; validation pending)
+
+`PlayerActionSupport` is the set of player actions a host has an owner for, carried on `PlayerNativeState` and copied
+onto `PlayerState` by `withNativeState`. The shared player renders a control only for an action in that set: the title
+and artist stay plain text where the host has no song or artist route, the output picker is drawn only where the host
+supplies one or answers `OUTPUT`, and a style's share/like/more/sleep/collapse button disappears where the action is
+not answered. The desktop host derives its set from `desktopPlayerAction`, the same function that dispatches
+`PlayerNativeControls.onAction`, so an offered action always has a handler and a removed branch stops being offered.
+Title, artist and output stay out of the desktop set; the `else` branch of `onAction` still reports anything that
+reaches it, which is now a defect signal rather than the normal path.
 
 ## Performance
 

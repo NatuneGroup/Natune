@@ -77,7 +77,9 @@ internal fun ArchiveMiniPlayer(
     CompositionLocalProvider(
         LocalPlayerControlMotion provides PlayerControlMotionEnvironment(motion, nativeState.repeat),
     ) {
-        BoxWithConstraints(modifier.fillMaxWidth()) {
+        // Space stays the player's key on its own strip: a focused bar would otherwise click itself and re-open the
+        // sheet after Escape returns focus here, and the element-local claim leaves every text field untouched.
+        BoxWithConstraints(modifier.fillMaxWidth().spaceTogglesPlayback(onPlayPause)) {
             val barWidth = maxWidth
             if (!isWideTransportBar(barWidth)) {
                 Row(

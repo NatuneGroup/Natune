@@ -39,6 +39,8 @@ data class PlayerState(
     val formatLossless: Boolean = false,
     /** Remaining sleep-timer milliseconds while armed; null means no countdown chip. */
     val sleepTimerMs: Long? = null,
+    /** What this host can actually perform; a surface renders no control for an action outside it. */
+    val actionSupport: PlayerActionSupport = PlayerActionSupport.ALL,
 )
 
 /**
@@ -57,6 +59,21 @@ data class PlayerHandoff(
 
 enum class PlayerRepeat { OFF, ALL, ONE }
 enum class PlayerAction { PREVIOUS, NEXT, SHUFFLE, REPEAT, LIKE, SHARE, MORE, SLEEP, TITLE, ARTIST, COLLAPSE, SEEK_BACKWARD, SEEK_FORWARD, OUTPUT }
+
+/**
+ * The player actions a host has an owner for. A host that leaves one out does not render its control at all, so a
+ * surface never offers a tap whose only outcome would be a "not connected" diagnostic. The default is every action,
+ * which is what a host that implements the whole contract answers.
+ */
+class PlayerActionSupport(actions: Collection<PlayerAction>) {
+    private val supported: Set<PlayerAction> = actions.toSet()
+
+    operator fun contains(action: PlayerAction): Boolean = action in supported
+
+    companion object {
+        val ALL = PlayerActionSupport(PlayerAction.entries)
+    }
+}
 
 /** Required callbacks deliberately have no no-op defaults. Queue dispatch stays occurrence-based. */
 class PlayerActions(
