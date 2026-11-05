@@ -478,7 +478,7 @@ jobs:
       - name: Install Rosetta 2 (macOS x64 leg)
         if: matrix.platform == 'macos' && matrix.arch == 'x64'
         shell: bash
-        # softwareupdate needs root on the GitHub-hosted image; sudo is a no-op cost elsewhere.
+        # softwareupdate needs root on the macOS image; it is a no-op when Rosetta 2 is already installed.
         run: |
           sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
           arch -x86_64 /usr/bin/true
@@ -756,16 +756,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Optional legs: a failed or never-picked-up macOS leg must not gate the release. They stay on
-          # the GitHub-hosted arm64 macOS 26 image; x64 builds under Rosetta on the same image.
+          # Optional legs: a failed or never-picked-up macOS leg must not gate the release. Both run on the
+          # organization's 12 vCPU Blacksmith macOS 26 image (Apple silicon), keeping the desktop packaging
+          # unchanged: the arm64 leg packages natively and the x64 leg still builds its x86_64 closure under
+          # Rosetta on the same arm64 host, as before.
+          # BUDGET: the same-nightly GitHub-hosted baseline was 1 h 56 m (x64) and 44 m (arm64); at
+          # the provider's 40x 12 vCPU multiplier those are about 4,670 and 1,790 equivalent minutes.
           - platform: macos
             arch: x64
             jdk_arch: x64
-            runner: macos-26
+            runner: blacksmith-12vcpu-macos-26
           - platform: macos
             arch: arm64
             jdk_arch: aarch64
-            runner: macos-26
+            runner: blacksmith-12vcpu-macos-26
     env:
       ARCHIVETUNE_XCODE_VERSION: '26.4'
       VERSION_NAME_OVERRIDE: ${{ inputs.version_name }}
@@ -901,7 +905,7 @@ jobs:
       - name: Install Rosetta 2 (macOS x64 leg)
         if: matrix.platform == 'macos' && matrix.arch == 'x64'
         shell: bash
-        # softwareupdate needs root on the GitHub-hosted image; sudo is a no-op cost elsewhere.
+        # softwareupdate needs root on the macOS image; it is a no-op when Rosetta 2 is already installed.
         run: |
           sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
           arch -x86_64 /usr/bin/true
@@ -1154,9 +1158,14 @@ jobs:
 
   ios:
     name: Unsigned iOS IPA
-    # GitHub-hosted arm64 macOS 26 image: free on the public repo and ships the Xcode 26.x
-    # releases setup-xcode resolves (26.4 -> /Applications/Xcode_26.4.app).
-    runs-on: macos-26
+    # Blacksmith's 12 vCPU macOS 26 image is Apple silicon and follows the macOS 26 runner image.
+    # setup-xcode must resolve the pinned 26.4 to /Applications/Xcode_26.4.app; that selection is
+    # unverified on the Blacksmith image until a run passes.
+    # BUDGET: the GitHub-hosted macos-26 baseline for this leg measured 3 h 09 m (run 41735716057);
+    # at the provider's 40 equivalent minutes per 12 vCPU macOS minute, a same-duration run would
+    # consume about 7,600 equivalent minutes, above the reported 3,000-equivalent-minute allowance.
+    # Do not run this leg (build_ios=true) until the owner explicitly approves that spend.
+    runs-on: blacksmith-12vcpu-macos-26
     if: inputs.build_ios
     permissions:
       # Write only for the staging prerelease that carries the IPA when artifact storage is full.
@@ -1369,8 +1378,8 @@ jobs:
   publish-release:
     name: Publish ${{ inputs.channel }} release
     # Only the required legs (Android plus the Windows/Linux desktop legs) gate this job. The macOS and
-    # iOS legs are optional on GitHub-hosted runners, so waiting for them would let an unavailable
-    # macOS runner hold the release; attach-optional-assets adds their files once the release exists.
+    # iOS legs are optional best-effort builds, so waiting for them would let a slow or unavailable
+    # macOS leg hold the release; attach-optional-assets adds their files once the release exists.
     # !cancelled() keeps a cancelled run from publishing half-written assets.
     if: >-
       !cancelled() &&
