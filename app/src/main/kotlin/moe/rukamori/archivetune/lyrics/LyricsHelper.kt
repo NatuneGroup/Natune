@@ -167,22 +167,28 @@ class LyricsHelper
                 invalidateCache(cacheKey)
             } else {
                 singleLyricsCache.get(cacheKey)?.let { cached ->
+                    val cachedIsSelectable = cachedProviderIsSelectable(cached, mediaMetadata)
                     val cachedIsWordSynced = LyricsUtils.hasWordSyncedLyrics(cached.lyrics)
                     // When prioritizing word-synced lyrics, only honor the cache if the
-                    // cached lyrics are themselves word-synced. Otherwise skip the cache
-                    // so the word-synced lookup gets a chance to find better lyrics.
-                    if (!prioritizeWordSynced || cachedIsWordSynced) {
+                    // cached lyrics are themselves word-synced. A cached answer from a provider
+                    // that has since been disabled is always stale: the network path already
+                    // filters those providers, and a switch must apply to cached tracks too.
+                    if (cachedIsSelectable && (!prioritizeWordSynced || cachedIsWordSynced)) {
                         GlobalLog.append(Log.DEBUG, "LyricsHelper", "Found lyrics in cache for ${mediaMetadata.title}")
                         return cached
                     }
                     GlobalLog.append(
                         Log.DEBUG,
                         "LyricsHelper",
-                        "Skipping cache for ${mediaMetadata.title}: prioritizeWordSynced=true, cached lyrics not word-synced",
+                        if (!cachedIsSelectable) {
+                            "Skipping cache for ${mediaMetadata.title}: provider ${cached.providerName} is disabled or unsupported"
+                        } else {
+                            "Skipping cache for ${mediaMetadata.title}: prioritizeWordSynced=true, cached lyrics not word-synced"
+                        },
                     )
                 }
 
-                val cached = cache.get(cacheKey)?.firstOrNull()
+                val cached = cache.get(cacheKey)?.firstOrNull { cachedProviderIsSelectable(it, mediaMetadata) }
                 if (cached != null) {
                     val cachedIsWordSynced = LyricsUtils.hasWordSyncedLyrics(cached.lyrics)
                     if (!prioritizeWordSynced || cachedIsWordSynced) {
@@ -487,6 +493,19 @@ class LyricsHelper
         }
 
         private fun isMeaningfulLyrics(lyrics: String): Boolean = LyricsUtils.hasMeaningfulLyricsContent(lyrics)
+
+        /**
+         * A cached answer may only be reused while its provider is still enabled and still handles
+         * this media id. Otherwise the in-memory cache would keep serving a provider the user has
+         * switched off until the entry evicted, while the network path already skips it.
+         */
+        private fun cachedProviderIsSelectable(
+            cached: LyricsResult,
+            mediaMetadata: MediaMetadata,
+        ): Boolean {
+            val provider = baseProviders.firstOrNull { it.name == cached.providerName } ?: return false
+            return provider.isEnabled(context) && supportsMediaId(provider, mediaMetadata.id)
+        }
 
         private fun supportsMediaId(
             provider: LyricsProvider,
