@@ -54,6 +54,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.desktop.playback.NativeVideoArtwork
 import moe.rukamori.archivetune.desktop.playback.VideoArtworkState
+import moe.rukamori.archivetune.desktop.playback.openWithOwnership
 import moe.rukamori.archivetune.desktop.provider.DESKTOP_VIDEO_MAX_HEIGHT
 import moe.rukamori.archivetune.desktop.provider.DesktopVideoArtworkResult
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
@@ -145,7 +146,7 @@ internal class DesktopVideoArtwork(
      * closed while it is drawn. While the clock holds still it polls slowly.
      */
     private suspend fun run(feed: Feed) {
-        var reader = withContext(Dispatchers.IO) { open(feed.videoId) } ?: return
+        var reader = open(feed.videoId) ?: return
         var bitmap: Bitmap? = null
         var pixels: Pixmap? = null
         var capacity = 0L
@@ -176,7 +177,7 @@ internal class DesktopVideoArtwork(
                     reader.close()
                     if (recoveries >= MAX_RECOVERIES) break
                     recoveries++
-                    reader = withContext(Dispatchers.IO) { open(feed.videoId, refresh = true) } ?: break
+                    reader = open(feed.videoId, refresh = true) ?: break
                     reader.setActive(true)
                     sequence = 0L
                     continue
@@ -234,8 +235,8 @@ internal class DesktopVideoArtwork(
      * library is missing. [refresh] asks YouTube again, for a stream whose address stopped working.
      */
     suspend fun open(videoId: String, refresh: Boolean = false): NativeVideoArtwork? {
-        val stream = stream(videoId, refresh) ?: return null
-        return withContext(Dispatchers.IO) {
+        val stream = withContext(Dispatchers.IO) { stream(videoId, refresh) } ?: return null
+        return openWithOwnership {
             try {
                 NativeVideoArtwork.open(stream.url, stream.userAgent, DESKTOP_VIDEO_MAX_HEIGHT)
             } catch (cancelled: CancellationException) {
