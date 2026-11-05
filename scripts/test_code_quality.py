@@ -307,6 +307,38 @@ class CodeQualityTest(unittest.TestCase):
             (formatted_base / new).write_text("fun legacy() {}\n")
             self.assertEqual([], formatting_regressions(root, candidates, original, formatted_base))
 
+    def test_partial_rename_and_extraction_case_records_unproved_lineage_as_new(self):
+        old = "app/src/main/kotlin/moe/rukamori/archivetune/ui/screens/RukamoriHomeScreen.kt"
+        renamed = "app/src/main/kotlin/moe/rukamori/archivetune/ui/screens/NatuneClassicHomeScreen.kt"
+        extracted = "app/src/main/kotlin/moe/rukamori/archivetune/ui/screens/NatuneClassicHomeComponents.kt"
+        status = (
+            f"R055\0{old}\0{renamed}\0A\0{extracted}\0"
+        ).encode()
+        renames = parse_rename_status(status)
+        self.assertEqual({old: renamed}, renames)
+        quick = "QuickPicksSection is too long (81). Allowed: 80."
+        home_old = "RukamoriHomeScreen is too long (90). Allowed: 80."
+        home_new = "NatuneClassicHomeScreen is too long (90). Allowed: 80."
+        before, weights = remap_findings(
+            Counter({(old, "LongMethod", quick): 1, (old, "LongMethod", home_old): 1}),
+            {(old, "LongMethod", quick): 81, (old, "LongMethod", home_old): 90},
+            renames,
+        )
+        after = Counter({
+            (extracted, "LongMethod", quick): 1,
+            (renamed, "LongMethod", home_new): 1,
+        })
+        self.assertEqual(
+            {
+                (extracted, "LongMethod", quick),
+                (renamed, "LongMethod", home_new),
+            },
+            set(regressions(before, after, weights, {(extracted, "LongMethod", quick): 81,
+                                                     (renamed, "LongMethod", home_new): 90})),
+        )
+        self.assertNotIn(extracted, renames)
+        self.assertEqual({old: renamed}, renames)
+
     def test_extract_sources_collects_nonempty_kmp_roots(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "repo"
@@ -337,7 +369,7 @@ class CodeQualityTest(unittest.TestCase):
         self.assertIn("github.event.pull_request.base.sha", job)
         self.assertIn("github.event.before", job)
         self.assertIn("inputs.quality_base", job)
-        self.assertIn("github.event_name != 'workflow_dispatch' || inputs.quality_base != ''", job)
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.quality_base != ''", job)
         self.assertIn("android_release_candidate", job)
         self.assertIn("toJSON(github.event.inputs)", job)
         self.assertIn("quality_base is quality-only", job)

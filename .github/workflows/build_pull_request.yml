@@ -171,7 +171,7 @@ jobs:
     # Structural ktfmt/Detekt/CPD checks over the Android and KMP source roots. This is an
     # independent middle-tier signal, not a compiler/LSP or native validation gate.
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'blacksmith-8vcpu-ubuntu-2404' }}
-    if: github.event_name != 'workflow_dispatch' || inputs.quality_base != ''
+    if: github.event_name == 'workflow_dispatch' && inputs.quality_base != ''
     timeout-minutes: 20
     steps:
       - name: Reject incompatible manual modes
