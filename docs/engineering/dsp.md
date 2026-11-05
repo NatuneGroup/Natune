@@ -67,8 +67,11 @@ host's engine renders. The Playback page's one **Audio processing** switch gates
 off the owner hands the engine `DspSettings.withoutProcessing()` (flat equalizer, unity preamp, no
 normalization), while the stored document keeps the presets it will render again when the switch returns. The
 Playback page's normalization row writes its own legacy key, so the owner mirrors the one document value into
-that key on every save and adopts the row's edit as a document change; the document stays the authority, and
-the row shows the value the chain applies.
+that key on every save and adopts an actual row edit as a document change; the document stays the authority, and
+the row shows the value the chain applies. A store replays its snapshot to a new collector, so the value the
+constructor already adopted is not a second edit: the owner remembers the inputs it has acknowledged and the
+row correction it is writing itself, and neither is bridged back. Queued writes are serialized and revisioned,
+so a superseded correction cannot land after a newer edit.
 
 Decoding is tolerant on purpose, because a stored blob must never be able to stop playback: a blank,
 unreadable or non-object document reads as `DspSettings()`; a missing, non-numeric or out-of-range field
