@@ -164,5 +164,34 @@ class RepositoryChecksTest(unittest.TestCase):
             self.assertEqual(set(), quarantined_workflows(snapshot))
 
 
+class AndroidApkResourcePackagingTest(unittest.TestCase):
+    """Room schema JSONs are JVM-test inputs, so they stay in the tree but not in the APK."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def test_room_schemas_are_excluded_from_the_apk_and_kept_for_the_jvm_test(self):
+        gradle = (self.ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn("packaging {", gradle)
+        resources = gradle.split("packaging {", 1)[1].split("if (automix)", 1)[0]
+        self.assertIn('excludes += "room-schemas/**"', resources)
+
+        schema_dir = self.ROOT / "shared-data/src/commonMain/resources/room-schemas" / (
+            "moe.rukamori.archivetune.shared.data.persistence.PortableStateDatabase"
+        )
+        self.assertNotEqual([], sorted(schema_dir.glob("*.json")))
+
+        data_gradle = (self.ROOT / "shared-data/build.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn(
+            'arg("room.schemaLocation", "$projectDir/src/commonMain/resources/room-schemas")',
+            data_gradle,
+        )
+        migration_test = (
+            self.ROOT
+            / "shared-data/src/jvmTest/kotlin/moe/rukamori/archivetune/shared/data/persistence"
+            / "PortableStateMigrationTest.kt"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"/room-schemas/', migration_test)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -689,6 +689,10 @@ android {
             excludes += "META-INF/build.archives"
             excludes += "META-INF/com.android.tools/**"
             excludes += "META-INF/proguard/**"
+            // Room's schema JSONs are committed KSP output under shared-data's commonMain resources so
+            // PortableStateMigrationTest can load them from the JVM test classpath. Nothing at runtime
+            // reads them, and KSP keeps writing that source path, so packaging them only bloated the APK.
+            excludes += "room-schemas/**"
         }
     }
 
