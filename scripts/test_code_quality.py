@@ -6,8 +6,15 @@ import re
 import tempfile
 import unittest
 import subprocess
+from unittest.mock import patch
 
-from scripts.check_code_quality import ROOT, FORMAT_ROOTS, SOURCE_ROOTS, cpd_findings, detekt_findings, formatter_patch, formatting_regressions, prepare_base_formatter, prepare_formatter, regressions
+from scripts.check_code_quality import (
+    ROOT, FORMAT_ROOTS, LEGACY_SOURCE_ROOTS, PROFILE_LEGACY_ANDROID, PROFILE_STRUCTURAL,
+    SOURCE_ROOTS, cpd_findings, detekt_findings, extract_sources, formatter_patch,
+    formatting_regressions, parse_rename_status, prepare_base_formatter, prepare_formatter,
+    profile_for_classpath, regressions, remap_duplicates, remap_findings, resolve_base,
+    source_roots,
+)
 
 
 class CodeQualityTest(unittest.TestCase):
@@ -95,9 +102,13 @@ class CodeQualityTest(unittest.TestCase):
 
     def test_gradle_analysis_patterns_match_the_python_source_roots(self):
         text = (ROOT / "quality/build.gradle.kts").read_text(encoding="utf-8")
-        block = text.split("val sourcePatterns = listOf(", 1)[1].split(")", 1)[0]
-        patterns = re.findall(r'"([^"]+)"', block)
+        legacy_block = text.split("val legacySourcePatterns = listOf(", 1)[1].split(")", 1)[0]
+        kmp_block = text.split("val kmpSourcePatterns = listOf(", 1)[1].split(")", 1)[0]
+        patterns = re.findall(r'"([^"]+)"', legacy_block + kmp_block)
         self.assertEqual([f"{root}/**/*.kt" for root in SOURCE_ROOTS], patterns)
+        for root in ("shared-domain/src", "shared-data/src", "shared-ui/src", "desktopApp/src"):
+            self.assertIn(root, SOURCE_ROOTS)
+            self.assertIn(root, FORMAT_ROOTS)
         self.assertIn("app/src/gms/kotlin", FORMAT_ROOTS)
         self.assertTrue((ROOT / "app/src/gms/kotlin").is_dir())
 
@@ -189,6 +200,167 @@ class CodeQualityTest(unittest.TestCase):
             ["app/src/main/kotlin/Legacy.kt: formatter rewrites 1 lines, base 0"],
             self.formatting_case(None, None, "fun added(){}\n", "fun added() {}\n"),
         )
+
+
+    def test_formatter_selects_changed_kmp_sources_but_not_unchanged_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            root.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
+            git("init", "--quiet")
+            changed = root / "shared-ui/src/commonMain/kotlin/Changed.kt"
+            unchanged = root / "shared-data/src/commonMain/kotlin/Unchanged.kt"
+            changed.parent.mkdir(parents=True)
+            unchanged.parent.mkdir(parents=True)
+            changed.write_text("class Changed\n")
+            unchanged.write_text("class Unchanged\n")
+            git("add", ".")
+            revision = git("write-tree")
+            changed.write_text("class Changed(val value: Int)\n")
+            destination = Path(temporary) / "formatter"
+            self.assertEqual(1, prepare_formatter(root, revision, destination))
+            self.assertTrue((destination / "shared-ui/src/commonMain/kotlin/Changed.kt").is_file())
+            self.assertFalse((destination / "shared-data/src/commonMain/kotlin/Unchanged.kt").exists())
+
+    def test_structural_profile_includes_kmp_and_legacy_classpath_profile_does_not(self):
+        self.assertIn("shared-ui/src", source_roots(PROFILE_STRUCTURAL))
+        self.assertNotIn("shared-ui/src", source_roots(PROFILE_LEGACY_ANDROID))
+        self.assertEqual(LEGACY_SOURCE_ROOTS, source_roots(PROFILE_LEGACY_ANDROID))
+        self.assertEqual(PROFILE_LEGACY_ANDROID, profile_for_classpath(Path("classpath.txt")))
+        self.assertEqual(PROFILE_STRUCTURAL, profile_for_classpath(None))
+
+    def test_base_must_be_an_explicit_non_head_full_commit(self):
+        head = "b" * 40
+        base = "a" * 40
+        def fake(command, *args, **kwargs):
+            if command[-1] == "HEAD":
+                return (head + "\n").encode()
+            if "merge-base" in command:
+                return (base + "\n").encode()
+            if command[-1].endswith("^{commit}"):
+                return (base + "\n").encode()
+            raise AssertionError(command)
+        for value in ("HEAD", "0" * 40, head[:12], head):
+            with self.assertRaises(ValueError):
+                resolve_base(value)
+        with patch("scripts.check_code_quality.subprocess.check_output", side_effect=fake):
+            self.assertEqual(base, resolve_base(base))
+        def fake_head(command, *args, **kwargs):
+            if command[-1] == "HEAD":
+                return (head + "\n").encode()
+            if "merge-base" in command:
+                return (head + "\n").encode()
+            if command[-1].endswith("^{commit}"):
+                return (head + "\n").encode()
+            raise AssertionError(command)
+        with patch("scripts.check_code_quality.subprocess.check_output", side_effect=fake_head):
+            with self.assertRaisesRegex(ValueError, "candidate HEAD"):
+                resolve_base(head)
+
+    def test_git_confirmed_rename_maps_base_findings_and_formatter_copy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            root.mkdir()
+            def git(*args, **kwargs):
+                return subprocess.check_output(["git", "-C", str(root), *args], stderr=subprocess.DEVNULL, **kwargs).decode().strip()
+            git("init", "--quiet")
+            old = "shared-ui/src/commonMain/kotlin/Legacy.kt"
+            new = "shared-ui/src/commonMain/kotlin/Renamed.kt"
+            old_path = root / old
+            old_path.parent.mkdir(parents=True)
+            old_path.write_text("fun legacy(){}\n")
+            git("add", ".")
+            base_tree = git("write-tree")
+            (root / new).parent.mkdir(parents=True, exist_ok=True)
+            git("mv", old, new)
+            git("add", "-A")
+            current_tree = git("write-tree")
+            status = subprocess.check_output(
+                ["git", "-C", str(root), "diff-tree", "-r", "-M", "--name-status", "-z", base_tree, current_tree]
+            )
+            renames = parse_rename_status(status)
+            self.assertEqual({old: new}, renames)
+            findings, weights = remap_findings(
+                Counter({(old, "LongMethod", "message"): 1}), {(old, "LongMethod", "message"): 81}, renames
+            )
+            self.assertIn((new, "LongMethod", "message"), findings)
+            self.assertIn((new, "LongMethod", "message"), weights)
+            self.assertEqual([], regressions(
+                findings, Counter({(new, "LongMethod", "message"): 1}), weights,
+                {(new, "LongMethod", "message"): 81},
+            ))
+            self.assertEqual({}, parse_rename_status(b"A\0new.kt\0C100\0old.kt\0copy.kt\0M\0same.kt\0"))
+            duplicates = remap_duplicates(Counter({((old, "app/A.kt"), "fragment"): 1}), renames)
+            self.assertIn((tuple(sorted((new, "app/A.kt"))), "fragment"), duplicates)
+            candidates = Path(temporary) / "candidates"
+            formatted = candidates / new
+            formatted.parent.mkdir(parents=True)
+            formatted.write_text("fun legacy() {}\n")
+            original = Path(temporary) / "original"
+            formatted_base = Path(temporary) / "formatted-base"
+            self.assertEqual(1, prepare_base_formatter(
+                root, base_tree, candidates, original, formatted_base, renames
+            ))
+            self.assertTrue((original / new).is_file())
+            self.assertTrue((formatted_base / new).is_file())
+            (formatted_base / new).write_text("fun legacy() {}\n")
+            self.assertEqual([], formatting_regressions(root, candidates, original, formatted_base))
+
+    def test_extract_sources_collects_nonempty_kmp_roots(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            root.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
+            git("init", "--quiet")
+            for relative in ("shared-ui/src/commonMain/kotlin/A.kt", "desktopApp/src/jvmMain/kotlin/B.kt"):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"class {Path(relative).stem}\n")
+            git("add", ".")
+            tree = git("write-tree")
+            destination = Path(temporary) / "extract"
+            extract_sources(tree, destination, ("shared-ui/src", "desktopApp/src"), root=root)
+            self.assertTrue((destination / "shared-ui/src/commonMain/kotlin/A.kt").is_file())
+            self.assertTrue((destination / "desktopApp/src/jvmMain/kotlin/B.kt").is_file())
+
+    def test_build_pr_quality_job_is_independent_and_uses_explicit_trusted_base(self):
+        text = (ROOT / ".github/workflows/build_pull_request.yml").read_text()
+        job = text.split("  kotlin-quality:\n", 1)[1].split("\n  # The desktop host", 1)[0]
+        self.assertIn("timeout-minutes: 20", job)
+        self.assertIn("fetch-depth: 0", job)
+        self.assertIn("persist-credentials: false", job)
+        self.assertIn("cache-read-only: true", job)
+        self.assertIn("quality_base", text)
+        self.assertIn("--base \"$BASE_SHA\"", job)
+        self.assertIn("github.event.pull_request.base.sha", job)
+        self.assertIn("github.event.before", job)
+        self.assertIn("inputs.quality_base", job)
+        self.assertIn("github.event_name != 'workflow_dispatch' || inputs.quality_base != ''", job)
+        self.assertIn("android_release_candidate", job)
+        self.assertIn("toJSON(github.event.inputs)", job)
+        self.assertIn("quality_base is quality-only", job)
+        self.assertIn('git fetch --no-tags origin "$base"', job)
+        self.assertIn("git merge-base", job)
+        self.assertLess(job.index("Reject incompatible manual modes"), job.index("actions/checkout@v7"))
+        self.assertLess(job.index("Resolve the explicit quality base"), job.index("Set up JDK 21"))
+        self.assertIn("ubuntu-latest", job)
+        self.assertIn("blacksmith-8vcpu-ubuntu-2404", job)
+        self.assertNotIn("sdkmanager", job)
+        self.assertNotIn("needs:", job)
+        self.assertNotIn("assemble", job)
+        self.assertNotIn("desktopApp", job)
+        self.assertNotIn("buildNativeEngine", job)
+        self.assertIn("quality-only", text.split("quality_base:", 1)[1].split("permissions:", 1)[0].lower())
+
+    def test_manual_quality_base_is_quality_only_for_normal_jobs(self):
+        text = (ROOT / ".github/workflows/build_pull_request.yml").read_text()
+        build = text.split("  build:\n", 1)[1].split("  kotlin-quality:\n", 1)[0]
+        desktop = text.split("  desktop-compile:\n", 1)[1]
+        self.assertIn("inputs.quality_base == ''", build)
+        self.assertIn("inputs.quality_base == ''", desktop)
+        self.assertIn("inputs.desktop_app_image != true", build)
 
 
 if __name__ == "__main__":
