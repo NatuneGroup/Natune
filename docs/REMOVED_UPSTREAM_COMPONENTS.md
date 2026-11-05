@@ -1,8 +1,10 @@
-# Removed Rukamori/Koiverse Components — Reference
+# Removed Upstream Components — Reference
 
 This file documents components deleted during the 2026-08 koiverse cleanup so
-nothing functionally important is lost. **Every file below is still recoverable
-from git history** at commit `819476ff6` (and earlier):
+nothing functionally important is lost. The components are inherited from the
+upstream ArchiveTune lineage and keep the names that lineage gives them
+(`Rukamori`, `Koiverse`); this repository carries none of them. **Every file
+below is still recoverable from git history** at commit `819476ff6` (and earlier):
 
 ```bash
 git show 819476ff6:<path>     # print a deleted file
@@ -89,8 +91,8 @@ Files: `app/src/main/kotlin/moe/rukamori/archivetune/cipher/CipherSettingsReposi
 
 Why: the app never called `MoriCipherRuntime.initialize(...)` and never
 scheduled `MoriCipherUpdateScheduler`, so the whole screen/worker was inert
-dead code. The YouTube cipher engine itself — the `morideobfuscator` submodule
-(user's fork) — was **kept untouched**.
+dead code. The YouTube cipher engine itself — the `deobfuscator` submodule,
+named `morideobfuscator` at the time — was **kept untouched**.
 
 If the cipher UI is ever revived, the concepts to rebuild: a settings screen
 showing engine status (`CipherRuntimeStatus`), last/next refresh times, manual

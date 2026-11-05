@@ -167,8 +167,8 @@ This file should be reviewed whenever ArchiveTune changes its permissions, stora
 
 For questions or corrections, use the project repository and issue tracker.
 
-- Repository: [https://github.com/rukamori/ArchiveTune](https://github.com/rukamori/ArchiveTune)
-- Issues: [https://github.com/rukamori/ArchiveTune/issues](https://github.com/rukamori/ArchiveTune/issues)
+- Repository: [https://github.com/NatuneGroup/Natune](https://github.com/NatuneGroup/Natune)
+- Issues: [https://github.com/NatuneGroup/Natune/issues](https://github.com/NatuneGroup/Natune/issues)
 
 ## Technical Appendix
 

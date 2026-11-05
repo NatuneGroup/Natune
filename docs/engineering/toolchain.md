@@ -53,7 +53,7 @@ Release shrinking/signing or device behavior.
 - `:canvas`
 - `:shazamkit`
 - `:spotifycore`
-- `:morideobfuscator`
+- `:deobfuscator`
 - `:jiosaavn`
 
 Submodule pins and initialization remain separate from this generated reference.

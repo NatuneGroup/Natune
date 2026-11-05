@@ -54,7 +54,7 @@ jobs:
     env:
       # The job compiles only Kotlin/Native iOS targets; it never needs the Android SDK.
       # Blank values count as unset, so settings.gradle.kts takes its no-SDK path: :app,
-      # :jiosaavn and :morideobfuscator load no build script and the shared modules skip
+      # :jiosaavn and :deobfuscator load no build script and the shared modules skip
       # their Android targets. Without this, configuring :app makes AGP auto-install the
       # pinned ~1 GB NDK on every run — a slow dl.google.com transfer whose corrupt
       # downloads have failed this job, and one the iOS tasks never use.
