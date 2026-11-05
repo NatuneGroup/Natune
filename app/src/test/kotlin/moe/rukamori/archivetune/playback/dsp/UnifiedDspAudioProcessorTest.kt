@@ -357,7 +357,7 @@ class UnifiedDspAudioProcessorTest {
      * adopting block allocates nothing — including an equalizer switch or a band-count change.
      */
     @Test
-    fun `a request change allocates nothing on the render path`() {
+    fun `a request change stays within the allocation budget`() {
         val processor = processor()
         processor.submit(request(1), plan())
         processor.configure(format(C.ENCODING_PCM_16BIT))
@@ -373,29 +373,29 @@ class UnifiedDspAudioProcessorTest {
                 settings
             }
         }
-        // submit() prepares a request off the render path, so its own allocations are expected. Repeating one
-        // unchanged submission runs the same submit-and-adopt loop with no adoption work, and reading the
-        // per-thread counter is not free enough to sample every block, so that loop is the baseline this
-        // measurement subtracts.
+        val stagePlan = plan()
+        // submit() prepares a request off the render path, so a repeated submission is the baseline: the same
+        // submit and render calls, with no settings move for the adopting block to apply.
         val steady = request(MAX_BANDS)
-        val beforeBaseline = allocatedBytes()
-        repeat(REQUEST_CHANGES) {
-            processor.submit(steady, plan())
-            render(processor, block)
+        val submitOnly = measure { for (request in requests) processor.submit(request, stagePlan) }
+        val renderOnly = measure { repeat(REQUEST_CHANGES) { render(processor, block) } }
+        val baseline = measure {
+            repeat(REQUEST_CHANGES) {
+                processor.submit(steady, stagePlan)
+                render(processor, block)
+            }
         }
-        val baseline = allocatedBytes() - beforeBaseline
-
-        val before = allocatedBytes()
-        for (request in requests) {
-            processor.submit(request, plan())
-            render(processor, block)
+        val measured = measure {
+            for (request in requests) {
+                processor.submit(request, stagePlan)
+                render(processor, block)
+            }
         }
-        val allocated = allocatedBytes() - before - baseline
-
+        val adoption = measured - baseline
         assertTrue(
-            "a request change allocated $allocated bytes across ${requests.size} blocks " +
-                "(submission baseline $baseline)",
-            allocated < ALLOCATION_LIMIT_BYTES,
+            "a request change allocated $adoption bytes across ${requests.size} blocks " +
+                "(measured $measured, unchanged baseline $baseline, submits $submitOnly, renders $renderOnly)",
+            adoption < ALLOCATION_LIMIT_BYTES,
         )
     }
 
@@ -425,6 +425,13 @@ class UnifiedDspAudioProcessorTest {
         block.position(0)
         processor.queueInput(block)
         processor.getOutput()
+    }
+
+    /** Runs [body] between one reading of the per-thread allocation counter on either side. */
+    private inline fun measure(body: () -> Unit): Long {
+        val before = allocatedBytes()
+        body()
+        return allocatedBytes() - before
     }
 
     /**
