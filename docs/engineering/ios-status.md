@@ -115,6 +115,14 @@ readable from another, so a per-pull-request gate would need a closure cache pro
 - a larger change than this workflow edit. The pull-request trigger therefore still stops at
 the framework link and the `swiftc -typecheck`, and the opt-in link has not run yet: the
 app-target link and the closure linkage through `Native.xcconfig` stay **UNVERIFIED**.
+The opt-in closure may restore the validated pinned-download cache. A per-platform
+dependency-prefix cache is deferred: the current evidence does not prove the Mach-O platform
+(device versus simulator) and every static-archive member, so the dependency build and portable
+core always run from source and the closure is always reassembled and verified. PR paths restore
+caches only; explicit saves run for trusted `push`/`workflow_dispatch` on this repository, and the
+separate Kotlin/Native `~/.konan` entry follows the same restore-only PR policy. If a release
+dispatch selects an older source commit without the cache helper, the closure runs uncached and
+the workflow emits one notice; it does not compute a key, restore or save.
 
 ## Host/build integration
 

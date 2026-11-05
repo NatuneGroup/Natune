@@ -201,11 +201,12 @@ GitHub-hosted `macos-26` for the macOS and iOS legs:
   keyring cannot live under the deep work tree) and prints the gpg log on failure.
   This is not yet a successful device-link/package result.
 
-Nightly preparation runs `scripts.test_release_workflow` and
-`scripts.test_native_release_packaging` with Python's standard-library unittest.
-These use fixture files and fake SDK/GitHub/native tools to cover argument
-boundaries, six/seven-variant inventories, missing signing secrets, private
-manifest URLs, stale-head refusal, download integrity and native staging.
+Nightly preparation runs `scripts.test_release_workflow`,
+`scripts.test_native_release_packaging` and `scripts.test_native_dependency_cache`
+with Python's standard-library unittest. These use fixture files and fake
+SDK/GitHub/native tools to cover argument boundaries, six/seven-variant
+inventories, missing signing secrets, private manifest URLs, stale-head refusal,
+download integrity, native staging and the synthetic cache manifests.
 They do not compile an APK, native library or JVM code, contact GitHub, or prove
 runtime behavior. New regression tests and packaging changes are unexecuted
 until the orchestrator runs the candidate on Blacksmith.
@@ -219,6 +220,54 @@ image, and without `%u` or a MimeType. `addLinuxBrowserDebDepends` adds
 it already unpacks, `addLinuxBrowserRpmRequires` passes jpackage an overriding
 `Natune.desktop` template through `--resource-dir`, and the AppImage's
 hand-written entry declares the same pair in the workflow.
+
+## Native dependency caches
+
+The release and opt-in iOS compile workflows cache only the pinned third-party
+producers, never project build output:
+
+- Desktop `build-native-deps.sh`: the `build/native/prefix` install prefix, the
+  static OpenSSL prefix, the miniaudio header/license and the four license files
+  its staging scripts require. Linux and Windows validate archive members in bulk;
+  macOS static-archive platform validation is not proven, so macOS dependency
+  caching is disabled instead of trusting a guessed probe.
+- iOS: only the pinned download archives. The per-platform install-prefix cache
+  is deferred: proving the Mach-O platform (device versus simulator) and every
+  static-archive member is not yet established, so the closure always builds
+  from source and the portable core is always rebuilt.
+- TDLib compiled-stage caching is deferred too: selecting a static zlib for the
+  desktop Linux archive is not proven PIC/shared-JNI safe, so the TDLib recipe
+  and its existing system/Windows dependency wiring stay unchanged.
+
+Never cached by this native cache layer: CMake/engine build trees, source
+checkouts or source-generator executables, Gradle caches, DerivedData, signed
+assets, IPA/installers, credentials or signing material.
+
+A release dispatch can select an older `commit_sha` whose source tree predates
+`scripts/native_dependency_cache.py`. The workflow then emits one uncached notice
+and runs the original native producers normally: no cache key is computed and no
+restore/save occurs. There is no legacy fallback helper or alternative transport.
+
+`scripts/native_dependency_cache.py` derives an exact key from the producer
+script SHA (which already pins versions, checksums, flags and derived targets),
+platform plus target architecture, workspace path, byte-exact whitelisted
+environment and the actual resolved tool binaries with their SHA-256/version
+(including `CC`/`CXX`/`AR`/`RANLIB`/`NM` overrides).
+A restored tree is accepted only when its manifest matches that input identity,
+the complete expected inventory, every file's SHA-256 and the target binary
+architecture. A mismatch removes only that cache's generated paths and reruns
+the recipe, so stale stamps cannot mask it. If an identity or probe is
+unsupported, caching is disabled for that run and the producer still runs; a
+manifest is written only after a validated build, and an absent/partial manifest
+cannot be saved. Download archives remain subject to the producer's own checksum
+and FFmpeg signature verification on every run.
+
+Pull-request paths use `actions/cache/restore` only. `actions/cache/save` runs
+only for `push` or `workflow_dispatch` on `NatuneGroup/Natune`, after a validated
+build and a present manifest. Feature-branch caches are not automatically
+visible to `dev`, `main` or unrelated pull requests, and nothing warms a cache.
+No cache run or duration improvement is claimed; the first approved run is the
+evidence.
 
 ## Run by hand
 
