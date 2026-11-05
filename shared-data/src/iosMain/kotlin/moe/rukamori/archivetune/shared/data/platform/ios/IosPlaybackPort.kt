@@ -145,7 +145,7 @@ class IosPlaybackPort : PlaybackPort {
                 val busy = observe()
                 // Paused or idle reads drop to four a second, so the main thread is not woken twenty times a second for
                 // nothing; a backgrounded app reads even less often while playback continues.
-                withTimeoutOrNull(pollCadence.intervalMs(busy, blend == null)) { pollWake.receive() }
+                withTimeoutOrNull(pollCadence.intervalMs(busy, blend != null)) { pollWake.receive() }
             }
         }
     }
