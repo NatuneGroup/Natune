@@ -233,6 +233,7 @@ class IosHost {
     fun foregrounded() {
         if (closed) return
         active.value = true
+        playbackPort.setAppActive(true)
         foregroundRequested = true
         val pack = japanesePack.value ?: return
         scope.launch { pack.onForeground() }
@@ -240,7 +241,10 @@ class IosHost {
 
     /** Forwarded by the Swift app session when the app leaves the foreground. */
     fun backgrounded() {
-        if (!closed) active.value = false
+        if (closed) return
+        active.value = false
+        // The UI stops drawing, so the playback port also stops reading its state at the active rate.
+        playbackPort.setAppActive(false)
     }
 
     /**
