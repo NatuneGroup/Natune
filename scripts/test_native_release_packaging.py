@@ -174,12 +174,100 @@ class NativeReleasePackagingTest(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
             calls = [json.loads(line) for line in (root / "curl-calls").read_text().splitlines()]
             self.assertEqual(1, len(calls))
-            for option in ("--retry", "--retry-all-errors", "--retry-max-time", "--connect-timeout", "--max-time"):
+            # The recipe resumes partial transfers with its own bounded loop; curl's --retry would restart
+            # from byte zero and is deliberately not used.
+            for option in ("--continue-at", "--speed-limit", "--speed-time", "--connect-timeout", "--max-time"):
                 self.assertIn(option, calls[0])
             (root / "archive").write_bytes(b"corrupt fixture")
             result = subprocess.run(["bash", "-c", command], env=env, capture_output=True, timeout=10)
             self.assertNotEqual(0, result.returncode)
             self.assertFalse((root / "archive").exists())
+
+    def test_ios_producer_uses_the_verified_zlib_fossil_url_and_digest(self) -> None:
+        text = (ROOT / "scripts/build_ios_native_core.sh").read_text()
+        self.assertIn(
+            'fetch "https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz"', text
+        )
+        self.assertNotIn('fetch "https://zlib.net/zlib-$ZLIB_VERSION.tar.gz"', text)
+        desktop = DEPS.read_text()
+        digest = re.search(r"^ZLIB_SHA256=([0-9a-f]{64})$", desktop, re.M).group(1)
+        self.assertIn(f"ZLIB_SHA256={digest}", text)
+
+    def download_harness(self, directory, failures, body):
+        root = Path(directory)
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        tool(bin_dir, "curl", """
+            #!/usr/bin/env python3
+            import os, pathlib, sys
+            args = sys.argv[1:]
+            state = pathlib.Path(os.environ["CURL_STATE"])
+            count = int(state.read_text()) + 1 if state.exists() else 1
+            state.write_text(str(count))
+            target = pathlib.Path(args[args.index("-o") + 1])
+            if count <= int(os.environ.get("CURL_FAIL_ATTEMPTS", "0")):
+                target.write_bytes(b"partial fixture")
+                sys.exit(7)
+            target.write_bytes(bytes.fromhex(os.environ["CURL_BODY"]))
+        """)
+        tool(bin_dir, "sleep", '#!/bin/sh\necho "$*" >> "$SLEEP_CALLS"\n')
+        tool(bin_dir, "mv", """
+            #!/usr/bin/env python3
+            import os, pathlib, shutil, sys
+            with open(os.environ["MV_CALLS"], "a") as log:
+                log.write(" ".join(sys.argv[1:]) + "\\n")
+            shutil.move(sys.argv[1], sys.argv[2])
+        """)
+        env = dict(
+            os.environ,
+            PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+            ARCHIVETUNE_NATIVE_BUILD=str(root / "build"),
+            DEPS_SCRIPT=str(DEPS),
+            DEST=str(root / "archive"),
+            DIGEST=hashlib.sha256(b"download fixture").hexdigest(),
+            CURL_STATE=str(root / "curl-state"),
+            CURL_FAIL_ATTEMPTS=str(failures),
+            CURL_BODY=body.hex(),
+            SLEEP_CALLS=str(root / "sleep-calls"),
+            MV_CALLS=str(root / "mv-calls"),
+        )
+        return root, env, 'source "$DEPS_SCRIPT"; fetch https://example.invalid/archive "$DEST" "$DIGEST"'
+
+    def test_download_resumes_after_a_transient_failure_without_sleeping_for_real(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env, command = self.download_harness(directory, 1, b"download fixture")
+            result = subprocess.run(["bash", "-c", command], env=env, text=True, capture_output=True, timeout=10)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(b"download fixture", (root / "archive").read_bytes())
+            self.assertFalse((root / "archive.part").exists())
+            self.assertEqual("5", (root / "sleep-calls").read_text().strip())
+            self.assertEqual("2", (root / "curl-state").read_text())
+            self.assertEqual(
+                f"{root / 'archive.part'} {root / 'archive'}",
+                (root / "mv-calls").read_text().strip(),
+            )
+
+    def test_download_exhausts_eight_attempts_and_never_promotes_the_partial_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env, command = self.download_harness(directory, 8, b"download fixture")
+            result = subprocess.run(["bash", "-c", command], env=env, text=True, capture_output=True, timeout=10)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("giving up", result.stdout + result.stderr)
+            self.assertFalse((root / "archive").exists())
+            self.assertTrue((root / "archive.part").exists())
+            self.assertEqual("8", (root / "curl-state").read_text())
+            self.assertEqual(7, len((root / "sleep-calls").read_text().splitlines()))
+            self.assertFalse((root / "mv-calls").exists())
+
+    def test_download_rejects_a_checksum_mismatch_without_promoting_the_partial_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env, command = self.download_harness(directory, 0, b"corrupt fixture")
+            result = subprocess.run(["bash", "-c", command], env=env, text=True, capture_output=True, timeout=10)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("checksum mismatch for the partial", result.stdout + result.stderr)
+            self.assertFalse((root / "archive").exists())
+            self.assertFalse((root / "archive.part").exists())
+            self.assertFalse((root / "mv-calls").exists())
 
     def mingw_fixture(self, directory, runtime="jvm.dll"):
         root = Path(directory)
