@@ -61,6 +61,8 @@ import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
 import moe.rukamori.archivetune.startup.StartupApplication
 import moe.rukamori.archivetune.startup.StartupRecovery
+import moe.rukamori.archivetune.startup.StartupRecoveryActivity
+import moe.rukamori.archivetune.backup.AndroidRestoreCoordinator
 import moe.rukamori.archivetune.applemusic.AppleMusicAudioProvider
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
@@ -169,6 +171,20 @@ class App :
         if (StartupRecovery.isRecoveryProcess(this)) {
             onCreateWithoutInjection()
             return
+        }
+        if (AndroidRestoreCoordinator.isBlocked()) {
+            // The recovery screen lives in :crash. Exit this main process after queueing it so no
+            // Hilt-dependent Activity can start against the unrecovered file set.
+            runCatching {
+                startActivity(
+                    Intent(this, StartupRecoveryActivity::class.java).apply {
+                        putExtra(StartupRecoveryActivity.EXTRA_RESTORE_BLOCKED, true)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    },
+                )
+            }
+            onCreateWithoutInjection()
+            exitProcess(0)
         }
         // Ahead of super.onCreate(): Hilt injects there, and an OkHttpClient built by an injected
         // object would otherwise capture the system ProxySelector for good.
