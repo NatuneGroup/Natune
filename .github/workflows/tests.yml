@@ -86,14 +86,22 @@ jobs:
       - name: Run shared KMP module tests
         shell: bash
         # This step is the verdict: every suite below must pass, so it carries no leniency flag and
-        # no task is dropped. The live-network YouTube smoke tests are the one opt-in suite
+        # no suite is dropped. The live-network YouTube smoke tests are the one opt-in suite
         # (JvmInnerTubeXSmokeTest), because a network outage or a YouTube rate limit cannot fail an
         # unrelated change; pass the innertube_smoke input on a manual dispatch to run them.
+        # :desktopApp:jvmTest runs here too. Three of its suites decode the committed audio fixtures
+        # through the native engine, whose FFmpeg/OpenSSL/libxml2 closure this job does not build (it
+        # measured over an hour on an 8-vCPU runner, so it stays on the opt-in desktop app image job).
+        # -PdesktopEngineTests=false excludes exactly those three suites by class name; Build Pull
+        # Request with desktop_app_image=true runs the task untrimmed against the closure, so they do
+        # run in CI rather than being dropped.
         run: |
           set -euo pipefail
           ./gradlew --console=plain --stacktrace --continue \
             "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
-            :shared-domain:jvmTest --rerun :shared-data:jvmTest --rerun :shared-ui:desktopTest --rerun
+            -PdesktopEngineTests=false \
+            :shared-domain:jvmTest --rerun :shared-data:jvmTest --rerun :shared-ui:desktopTest --rerun \
+            :desktopApp:jvmTest --rerun
         env:
           INNERTUBE_SMOKE: ${{ inputs.innertube_smoke == true && '1' || '0' }}
 
@@ -113,6 +121,8 @@ jobs:
             app/build/reports/jacoco/
             shared-*/build/reports/tests/
             shared-*/build/test-results/
+            desktopApp/build/reports/tests/
+            desktopApp/build/test-results/
           if-no-files-found: warn
           retention-days: 7
 
@@ -127,5 +137,6 @@ jobs:
             app/build/reports/jacoco/*.xml
             app/build/test-results/**/TEST-*.xml
             shared-*/build/test-results/**/TEST-*.xml
+            desktopApp/build/test-results/**/TEST-*.xml
           if-no-files-found: warn
           retention-days: 7

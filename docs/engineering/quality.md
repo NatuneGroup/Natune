@@ -158,6 +158,21 @@ direct-stream metadata, source order/overrides, fallback chains and cached-sourc
 gating. This is a critical-policy threshold, not a claim of 80% whole-app coverage.
 Missing policy bytecode or execution data fails the check.
 
+The same workflow's second step is the KMP verdict and runs every shared and desktop suite:
+
+```sh
+./gradlew --console=plain --stacktrace --continue \
+  :shared-domain:jvmTest :shared-data:jvmTest :shared-ui:desktopTest :desktopApp:jvmTest \
+  -PdesktopEngineTests=false
+```
+
+`-PdesktopEngineTests=false` excludes only the three `:desktopApp` suites that decode the committed fixtures
+through the native engine (`DesktopPlaybackEngineTest`, `DesktopPlaybackPortTest`,
+`DesktopPlaybackStreamTest`), because that engine links the pinned FFmpeg/OpenSSL/libxml2 closure the job does
+not build. Build Pull Request with `desktop_app_image=true` builds the closure and runs the same task
+untrimmed, so those suites execute there. The property defaults to the untrimmed task, and an exclusion is
+never a pass: a suite that is excluded has to be green in the image job.
+
 For this constrained mission, full app compilation, lint, coverage and repeated/
 semantic checks run on GitHub-hosted runners, not the smaller VPS. Open a
 validation PR to `dev` for the build/lint gate, then dispatch `Unit tests` at the

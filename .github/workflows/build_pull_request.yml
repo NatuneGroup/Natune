@@ -246,6 +246,25 @@ jobs:
             -PdesktopPackageVersion=1.0.0 \
             -PdesktopDisplayVersion=1.0.0
 
+      - name: Run the desktop test suite against the native closure
+        if: inputs.desktop_app_image == true
+        shell: bash
+        # DesktopPlaybackEngineTest, DesktopPlaybackPortTest and DesktopPlaybackStreamTest decode the committed
+        # fixtures through the engine, so they need the closure the previous step just built and they are the
+        # reason the unit-test workflow passes -PdesktopEngineTests=false. This step runs the untrimmed task, so
+        # every desktop suite executes here; it stops before packaging so a test failure does not spend the
+        # remaining half hour on jpackage.
+        env:
+          ANDROID_HOME: ""
+          ANDROID_SDK_ROOT: ""
+          GRADLE_OPTS: -Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=60000 -Dorg.gradle.internal.repository.max.retries=5 -Dorg.gradle.internal.repository.initial.backoff=2000
+        run: |
+          set -euo pipefail
+          ./gradlew :desktopApp:jvmTest --rerun --no-daemon --max-workers=2 \
+            "-Pkotlin.daemon.jvmargs=-Xmx4g -Djava.awt.headless=true" \
+            -PdesktopPackageVersion=1.0.0 \
+            -PdesktopDisplayVersion=1.0.0
+
       - name: Package the Linux app image
         if: inputs.desktop_app_image == true
         shell: bash
