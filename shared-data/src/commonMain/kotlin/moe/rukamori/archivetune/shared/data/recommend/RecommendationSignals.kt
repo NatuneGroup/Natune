@@ -10,6 +10,7 @@ import moe.rukamori.archivetune.shared.data.persistence.PortableListenEventRow
 import moe.rukamori.archivetune.shared.domain.recommend.ListenFact
 import moe.rukamori.archivetune.shared.domain.repository.ContentItem
 import moe.rukamori.archivetune.shared.domain.repository.ContentKind
+import moe.rukamori.archivetune.shared.domain.repository.ContentOccurrence
 import moe.rukamori.archivetune.shared.domain.repository.ContentRef
 import moe.rukamori.archivetune.shared.domain.settings.BlockedSongRef
 
