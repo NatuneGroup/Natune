@@ -19,8 +19,8 @@ import moe.rukamori.archivetune.shared.domain.repository.ContentRef
  * call this adapter with the same candidate page the tail already fetched. Until then the current provider-order tail
  * is untouched.
  *
- * Reads happen once per call through [RecommendationSignals]; comparison and MMR run on [computeDispatcher]. There is
- * no network call anywhere in this path and no per-item scoring on the caller's thread.
+ * Reads happen once per call through [RecommendationSignals]; the read and the comparison/MMR both run on
+ * [computeDispatcher]. There is no network call anywhere in this path and no per-item scoring on the caller's thread.
  */
 class QueueTailRecommendation(
     private val signals: RecommendationSignals,
@@ -41,10 +41,10 @@ class QueueTailRecommendation(
         seed: Long,
         budget: Int = DEFAULT_TAIL_BUDGET,
         existingTailSize: Int = 0,
-    ): QueueTailPlan {
-        val snapshot = signals.snapshot(recommendedRefs())
-        val atMs = nowMs()
-        return withContext(computeDispatcher) {
+    ): QueueTailPlan =
+        withContext(computeDispatcher) {
+            val snapshot = signals.snapshot(recommendedRefs())
+            val atMs = nowMs()
             val visible = candidates.filterNot { snapshot.isBlocked(it.item) }
             val plan =
                 QueueTailPlanner.plan(
@@ -58,21 +58,19 @@ class QueueTailRecommendation(
                 )
             plan.copy(rejections = plan.rejections.copy(blocked = candidates.size - visible.size))
         }
-    }
 
     /** The P1 shelf entry point: affinity order, global block list, deterministic seed. */
     suspend fun rankCandidates(
         candidates: List<ContentOccurrence>,
         seed: Long,
         limit: Int = DEFAULT_SHELF_LIMIT,
-    ): List<RankedCandidate> {
-        val snapshot = signals.snapshot(recommendedRefs())
-        val atMs = nowMs()
-        return withContext(computeDispatcher) {
+    ): List<RankedCandidate> =
+        withContext(computeDispatcher) {
+            val snapshot = signals.snapshot(recommendedRefs())
+            val atMs = nowMs()
             val visible = candidates.filterNot { snapshot.isBlocked(it.item) }
             TasteProfile.build(snapshot.facts, atMs, offsetMsAt).rank(visible, limit, seed)
         }
-    }
 
     companion object {
         const val DEFAULT_TAIL_BUDGET = 10
