@@ -18,7 +18,7 @@ class QueueTailRecommendationTest {
         val preferred = dataSong("preferred")
         val other = dataSong("other", artistId = "other-artist")
         val signals = signalsOf(listOf(completed(preferred)))
-        val adapter = adapter(signals)
+        val adapter = recommendation(signals)
         val plan = adapter.planTail(listOf(dataOccurrence(preferred), dataOccurrence(other)), emptyList(), seed = 0)
         assertEquals(listOf(preferred.ref, other.ref), plan.items.map { it.item.ref })
     }
@@ -35,7 +35,7 @@ class QueueTailRecommendationTest {
                 blockedArtists = setOf(ContentRef(blockedSong.ref.provider, ContentKind.ARTIST, "danger")),
             )
         val plan =
-            adapter(FakeSignals(snapshot)).planTail(
+            recommendation(FakeSignals(snapshot)).planTail(
                 listOf(dataOccurrence(blockedSong), dataOccurrence(blockedArtist), dataOccurrence(allowed)),
                 emptyList(),
                 seed = 0,
@@ -49,7 +49,7 @@ class QueueTailRecommendationTest {
     fun anAlreadyFullTailNeedsNoCandidates() = runTest {
         val song = dataSong("a")
         val plan =
-            adapter(signalsOf(emptyList())).planTail(
+            recommendation(signalsOf(emptyList())).planTail(
                 listOf(dataOccurrence(song)),
                 emptyList(),
                 seed = 0,
@@ -64,7 +64,7 @@ class QueueTailRecommendationTest {
         val songs = (1..3).map { dataSong("s$it", artistId = "artist-$it") }
         val constraints = DiversityConstraints(maxTailItems = 5)
         val plan =
-            adapter(signalsOf(emptyList()), constraints).planTail(
+            recommendation(signalsOf(emptyList()), constraints).planTail(
                 songs.map { dataOccurrence(it) },
                 emptyList(),
                 seed = 0,
@@ -81,7 +81,7 @@ class QueueTailRecommendationTest {
             RecommendationSignalSnapshot(
                 blockedSongs = setOf(BlockedSongRef(song.ref.provider, song.ref.id)),
             )
-        val plan = adapter(FakeSignals(snapshot)).planTail(listOf(dataOccurrence(song)), emptyList(), seed = 0)
+        val plan = recommendation(FakeSignals(snapshot)).planTail(listOf(dataOccurrence(song)), emptyList(), seed = 0)
         assertTrue(plan.isEmpty)
         assertEquals(1, plan.rejections.blocked)
     }
@@ -90,7 +90,7 @@ class QueueTailRecommendationTest {
     fun aReplayFromTheRecentWindowIsRejected() = runTest {
         val justPlayed = dataSong("just-played")
         val signals = signalsOf(listOf(completed(justPlayed, atMs = DATA_TEST_NOW - 1_000L)))
-        val plan = adapter(signals).planTail(listOf(dataOccurrence(justPlayed)), emptyList(), seed = 0)
+        val plan = recommendation(signals).planTail(listOf(dataOccurrence(justPlayed)), emptyList(), seed = 0)
         assertTrue(plan.isEmpty)
         assertEquals(1, plan.rejections.recency)
     }
@@ -98,7 +98,7 @@ class QueueTailRecommendationTest {
     @Test
     fun theSameSeedProducesTheSameTail() = runTest {
         val songs = (1..6).map { dataSong("s$it", artistId = "artist-$it") }
-        val adapter = adapter(signalsOf(emptyList()))
+        val adapter = recommendation(signalsOf(emptyList()))
         val first = adapter.planTail(songs.map { dataOccurrence(it) }, emptyList(), seed = 11)
         val second = adapter.planTail(songs.map { dataOccurrence(it) }, emptyList(), seed = 11)
         assertEquals(first.items.map { it.occurrenceId }, second.items.map { it.occurrenceId })
@@ -113,7 +113,7 @@ class QueueTailRecommendationTest {
                 blockedSongs = setOf(BlockedSongRef(blocked.ref.provider, blocked.ref.id)),
             )
         val ranked =
-            adapter(FakeSignals(snapshot)).rankCandidates(
+            recommendation(FakeSignals(snapshot)).rankCandidates(
                 listOf(dataOccurrence(blocked), dataOccurrence(allowed)),
                 seed = 0,
                 limit = 1,
@@ -126,7 +126,7 @@ class QueueTailRecommendationTest {
         val preferred = dataSong("preferred")
         val other = dataSong("other", artistId = "other-artist")
         val ranked =
-            adapter(signalsOf(listOf(completed(preferred)))).rankCandidates(
+            recommendation(signalsOf(listOf(completed(preferred)))).rankCandidates(
                 listOf(dataOccurrence(other), dataOccurrence(preferred)),
                 seed = 0,
                 limit = 2,
@@ -150,7 +150,7 @@ class QueueTailRecommendationTest {
         assertEquals(recommended, signals.lastRecommendedRefs)
     }
 
-    private fun adapter(
+    private fun recommendation(
         signals: RecommendationSignals,
         constraints: DiversityConstraints = DiversityConstraints.Default,
     ): QueueTailRecommendation =
