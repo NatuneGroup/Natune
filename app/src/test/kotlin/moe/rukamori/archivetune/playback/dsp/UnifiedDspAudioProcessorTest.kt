@@ -434,6 +434,27 @@ class UnifiedDspAudioProcessorTest {
     }
 
     /**
+     * Temporary probe: reports the per-block allocation readings around a clarity switch so the budget can be pinned to
+     * the real cost instead of a guess. Removed before the branch is reported.
+     */
+    @Test
+    fun `clarity allocation probe`() {
+        val processor = processor()
+        processor.submit(request(1), plan())
+        processor.configure(format(C.ENCODING_PCM_16BIT))
+        val block = block()
+        repeat(WARMUP_BLOCKS) { render(processor, block) }
+        val probe = StringBuilder("probe ")
+        repeat(4) { probe.append("off$it=").append(measure { render(processor, block) }).append(' ') }
+        processor.submit(request(1).copy(clarity = ClarityPreset.REFERENCE), plan())
+        repeat(4) { probe.append("on$it=").append(measure { render(processor, block) }).append(' ') }
+        processor.submit(request(1), plan())
+        repeat(3) { probe.append("back$it=").append(measure { render(processor, block) }).append(' ') }
+        probe.append("empty=").append(measure { }).append(' ')
+        throw AssertionError(probe.toString())
+    }
+
+    /**
      * Studio Master Clarity is switched on while a track is already playing at a settled block size. Its dry copy
      * belongs to the block, not to the first enabled preset: the graph reserves it alongside its own work buffer, so
      * the adopting block does not allocate the block-sized array that a stage which only grew on the first enabled
