@@ -72,7 +72,9 @@ class IosDownloadTransfer(
             val status = response.status.value
             val declared = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
             if (append && status == 416) {
-                // The staged bytes already hold the whole body, so the transfer commits them without another read.
+                // The staged bytes already hold the whole body, so the transfer commits them without another read. The
+                // range start is what the server admitted, so the file is cut back to it rather than left longer.
+                cutStaged(staging, offset)
                 committed = offset
                 return@execute
             }
@@ -80,8 +82,7 @@ class IosDownloadTransfer(
             if (status !in 200..299) error("Download HTTP $status")
             val start = if (append) offset else 0L
             val expectedTotal = declared?.let { it + start }
-            val mode = if (append) "ab" else "wb"
-            val file = fopen(staging, mode) ?: error("Cannot stage download")
+            val file = openStaged(staging, start) ?: error("Cannot stage download")
             try {
                 val channel = response.bodyAsChannel()
                 memScoped {
@@ -124,6 +125,32 @@ class IosDownloadTransfer(
 
     /** Drops a task's staged bytes without committing them. */
     suspend fun discard(task: DownloadTask) = files.discard(task.id)
+}
+
+/**
+ * Opens [path] for writing at [offset]. A resume appends the server's bytes from that offset, so anything the staged file
+ * holds past it is dropped first: when the staged file is longer than the recorded progress — the crash window where the
+ * write landed but the row did not — appending at the end would duplicate the gap and the committed row would name a
+ * corrupt file. A zero offset rewrites the file, as a server that ignored the range forces.
+ */
+private fun openStaged(path: String, offset: Long): CPointer<FILE>? {
+    if (offset <= 0L) return fopen(path, "wb")
+    val file = fopen(path, "r+b") ?: return null
+    if (ftruncate(fileno(file), offset) != 0 || fseek(file, offset, SEEK_SET) != 0) {
+        fclose(file)
+        return null
+    }
+    return file
+}
+
+/** Cuts a staged file back to [length], failing the transfer rather than committing a file the row does not describe. */
+private fun cutStaged(path: String, length: Long) {
+    val file = fopen(path, "r+b") ?: error("Cannot stage download")
+    try {
+        check(ftruncate(fileno(file), length) == 0) { "Cannot stage download" }
+    } finally {
+        fclose(file)
+    }
 }
 
 /**

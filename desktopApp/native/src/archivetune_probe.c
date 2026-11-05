@@ -37,6 +37,11 @@
 #define AE_PROBE_MAX_CHANNELS 8u
 /* Bounds the packets one read may demux, so a source without enough audio cannot keep a probe busy. */
 #define AE_PROBE_PACKET_BUDGET (1u << 18)
+/*
+ * Bounds one blocking protocol read. The interrupt callback is only consulted between transfers, so a socket that
+ * accepts the connection and then sends nothing would otherwise hold the read (and the caller) forever.
+ */
+#define AE_PROBE_IO_TIMEOUT_US 5000000LL
 
 struct ae_probe {
     _Atomic int interrupt; /* set by ae_probe_cancel and read by FFmpeg's interrupt callback */
@@ -115,6 +120,8 @@ static ae_probe_status probe_open(ae_probe *probe, probe_session *s, const char 
     if (strncmp(source, "http://", 7) == 0 || strncmp(source, "https://", 8) == 0) {
         /* The app owns connection reuse, so FFmpeg keeps none of its own, as it does in the playback engine. */
         av_dict_set(&options, "multiple_requests", "0", 0);
+        /* The same deadline as the format context, for the protocol layer that reads the option by name. */
+        av_dict_set(&options, "rw_timeout", "5000000", 0);
     }
     s->format = avformat_alloc_context();
     if (!s->format) {
@@ -124,6 +131,7 @@ static ae_probe_status probe_open(ae_probe *probe, probe_session *s, const char 
     }
     s->format->interrupt_callback.callback = probe_interrupt_cb;
     s->format->interrupt_callback.opaque = probe;
+    s->format->rw_timeout = AE_PROBE_IO_TIMEOUT_US;
 
     r = avformat_open_input(&s->format, source, NULL, &options);
     av_dict_free(&options);

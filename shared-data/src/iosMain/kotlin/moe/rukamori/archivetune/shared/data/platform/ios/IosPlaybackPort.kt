@@ -88,6 +88,9 @@ class IosPlaybackPort : PlaybackPort {
     // Wakes the periodic read after a command, so a resume returns to the fast rate without waiting out the idle delay.
     private val pollWake = Channel<Unit>(Channel.CONFLATED)
 
+    // The steady read rate, reduced while the host reports the app is not frontmost.
+    private val pollCadence = IosPlaybackPollCadence()
+
     override val snapshots: StateFlow<PlaybackSnapshot?> = state.asStateFlow()
     override val failures: SharedFlow<PlaybackFailure> = errors.asSharedFlow()
 
@@ -140,9 +143,9 @@ class IosPlaybackPort : PlaybackPort {
         scope.launch {
             while (isActive) {
                 val busy = observe()
-                // Paused or idle reads drop to four a second, so the main thread is not woken twenty times a second for nothing.
-                val interval = if (!busy) IDLE_POLL_MS else if (blend == null) ACTIVE_POLL_MS else BLEND_POLL_MS
-                withTimeoutOrNull(interval) { pollWake.receive() }
+                // Paused or idle reads drop to four a second, so the main thread is not woken twenty times a second for
+                // nothing; a backgrounded app reads even less often while playback continues.
+                withTimeoutOrNull(pollCadence.intervalMs(busy, blend == null)) { pollWake.receive() }
             }
         }
     }
@@ -186,6 +189,12 @@ class IosPlaybackPort : PlaybackPort {
             output?.let { at_audio_volume(it, volume) }
             blend?.setVolume(volume)
         }
+    }
+
+    /** Reports the app's activation, so the periodic read drops to the background rate while it is not frontmost. */
+    fun setAppActive(active: Boolean) {
+        pollCadence.appActive = active
+        pollWake.trySend(Unit)
     }
 
     /**
@@ -917,10 +926,6 @@ class IosPlaybackPort : PlaybackPort {
     private companion object {
         /** Queue preparations not yet claimed. The queue prepares one occurrence at a time, so a few cover every race. */
         const val MAX_QUEUED_VIEWS = 4
-
-        const val ACTIVE_POLL_MS = 50L
-        const val BLEND_POLL_MS = 20L
-        const val IDLE_POLL_MS = 250L
     }
 
     /** Work for the one command loop, which runs it in arrival order: a command, a preparation to start, or its result. */

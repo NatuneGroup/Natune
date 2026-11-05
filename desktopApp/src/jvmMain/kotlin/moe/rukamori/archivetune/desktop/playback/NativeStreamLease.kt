@@ -19,7 +19,6 @@ import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceException
 import moe.rukamori.archivetune.shared.data.bytesource.ByteSourceLease
 import moe.rukamori.archivetune.shared.data.bytesource.GuardedByteSource
 import moe.rukamori.archivetune.shared.data.bytesource.LeaseCancellation
-import moe.rukamori.archivetune.shared.data.bytesource.LeaseTicket
 import moe.rukamori.archivetune.shared.data.bytesource.RandomAccessByteSource
 import moe.rukamori.archivetune.shared.data.bytesource.StreamOrigin
 import moe.rukamori.archivetune.shared.data.bytesource.TelegramLocalPartialFileSource
@@ -66,10 +65,11 @@ internal class NativeStreamLease private constructor(
     private val interruptSource: () -> Unit,
     private val closeSource: () -> Unit,
     /**
-     * Cancels the calls that [probe] and [readAt] wait in, so an interrupt wakes a read that a TDLib request holds. Null for
-     * a source whose calls end on their own, such as an HTTP request that [interruptSource] already breaks.
+     * Restartable cancellation for the calls that [probe] and [readAt] wait in, so an interrupt wakes a read that a
+     * TDLib request holds. Null for a source whose calls end on their own, such as an HTTP request that
+     * [interruptSource] already breaks.
      */
-    private val lifetime: Job? = null,
+    private val lifetimes: ReadLifetimes? = null,
 ) {
     // Confined to the producer thread. The engine keeps the same position in its own view of the stream.
     private var position = 0L
@@ -139,8 +139,8 @@ internal class NativeStreamLease private constructor(
         closeSource()
     }
 
-    /** The context for a call the producer waits on: the lifetime when the source has one, so an interrupt ends the wait. */
-    private fun blockingContext(): CoroutineContext = lifetime ?: EmptyCoroutineContext
+    /** The context for a call the producer waits on: the read's own token, so an interrupt ends only the read in flight. */
+    private fun blockingContext(): CoroutineContext = lifetimes?.start() ?: EmptyCoroutineContext
 
     companion object {
         private const val PLAYBACK_PROVIDER = "playback"
@@ -206,14 +206,16 @@ internal class NativeStreamLease private constructor(
             )
             val http = HttpRangeSource(lease, locator.url, locator.headers, cookies = emptyList())
             val cancellation = LeaseCancellation()
-            val ticket = cancellation.issueTicket()
+            // The ciphertext reader takes its ticket at the start of each read, and the plaintext guard is applied per
+            // read, so an interrupt discards the chunk in flight without making every later read refuse.
             val plaintext = DeezerChunkByteSource(
-                ciphertext = WholeReadSource(http, ticket),
+                ciphertext = WholeReadSource(http, cancellation),
                 key = DeezerCrypto.deriveKey(locator.trackId),
             )
-            val guarded = GuardedByteSource(plaintext, ticket)
             return NativeStreamLease(
-                readAt = { position, buffer, offset, length -> guarded.readAt(position, buffer, offset, length) },
+                readAt = { position, buffer, offset, length ->
+                    GuardedByteSource(plaintext, cancellation.issueTicket()).readAt(position, buffer, offset, length)
+                },
                 probe = { http.probe().let { StreamSizing(it.sizeBytes, it.seekable) } },
                 interruptSource = {
                     cancellation.cancelAll()
@@ -243,8 +245,9 @@ internal class NativeStreamLease private constructor(
             openTelegramPorts.add(port)
             // Set by the open. A read cannot arrive before a successful open, so an empty holder fails the read closed.
             val admittedSource = AtomicReference<TelegramRandomAccessSource?>(null)
-            // One job covers the probe and every read, so an interrupt ends a TDLib request that is still waiting.
-            val lifetime = Job()
+            // One token covers the probe and every read. An interrupt ends the TDLib request in flight and arms a fresh
+            // token, because the engine's interrupt is a transient wake-up and the next read must reach TDLib again.
+            val lifetimes = ReadLifetimes()
             return NativeStreamLease(
                 readAt = { position, buffer, offset, length ->
                     val source = admittedSource.get()
@@ -263,9 +266,9 @@ internal class NativeStreamLease private constructor(
                     // reads can start at any offset, so the stream is seekable.
                     guarded.state().let { StreamSizing(it.expectedSizeBytes ?: -1L, seekable = true) }
                 },
-                interruptSource = { lifetime.cancel() },
+                interruptSource = { lifetimes.interrupt() },
                 closeSource = {
-                    lifetime.cancel()
+                    lifetimes.close()
                     telegramRetireScope.launch {
                         try {
                             port.cancelDownload()
@@ -274,7 +277,7 @@ internal class NativeStreamLease private constructor(
                         }
                     }
                 },
-                lifetime = lifetime,
+                lifetimes = lifetimes,
             )
         }
 
@@ -304,19 +307,21 @@ internal class StreamSizing(val sizeBytes: Long, val seekable: Boolean)
 
 /**
  * Completes each read from [upstream] unless the stream ends first, so each chunk request reaches
- * [DeezerChunkByteSource] whole. That class now withholds a partial encrypted chunk by itself, so this adapter is no
+ * [DeezerChunkByteSource] whole. That class withholds a partial encrypted chunk by itself, so this adapter is no
  * longer what keeps ciphertext away from the engine. It still owns the stall budget for the ciphertext reads: it gives up
  * after the same budget the engine applies to an empty read, counted from the last byte received, so a slow but live
- * connection is not cut off. It stops as soon as the lease generation is cancelled.
+ * connection is not cut off. It stops as soon as the lease generation is cancelled, taking its ticket at the start of
+ * each read so a cancelled read does not make the next one refuse.
  */
 private class WholeReadSource(
     private val upstream: RandomAccessByteSource,
-    private val ticket: LeaseTicket,
+    private val cancellation: LeaseCancellation,
 ) : RandomAccessByteSource {
     override val lease: ByteSourceLease
         get() = upstream.lease
 
     override suspend fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int {
+        val ticket = cancellation.issueTicket()
         var got = 0
         var ended = false
         // A monotonic clock, because a wall-clock step would otherwise end or extend the stall budget.
@@ -338,6 +343,34 @@ private class WholeReadSource(
                 delay(RETRY_DELAY_MS)
             }
         }
+        ticket.throwIfCancelled()
         return if (got == 0 && ended) RandomAccessByteSource.END_OF_STREAM else got
+    }
+}
+
+/**
+ * The read token of a lease whose host call can block. The engine's interrupt contract is a transient wake-up: it wakes
+ * the read in flight and the source stays usable. So every read takes the current token, and an interrupt cancels that
+ * token and arms a new one for the next read. A single fixed job would end the lease at the first seek.
+ */
+internal class ReadLifetimes {
+    private val current = AtomicReference(Job())
+
+    /** The token of a read that starts now. */
+    fun start(): Job = current.get()
+
+    /** Ends the read in flight and arms a fresh token for the next one. */
+    fun interrupt() {
+        var previous: Job
+        do {
+            previous = current.get()
+        } while (!current.compareAndSet(previous, Job()))
+        previous.cancel()
+    }
+
+    /** After a close no read may run again, so every token that start hands out is already cancelled. */
+    fun close() {
+        interrupt()
+        current.get().cancel()
     }
 }

@@ -15,12 +15,9 @@ final class ArchiveTuneSession {
     )
 
     private init() {
+        IosFatalExceptionRecord.prepare()
         NSSetUncaughtExceptionHandler { exception in
-            IosCrashHooksKt.iosCaptureNSException(
-                name: exception.name.rawValue,
-                reason: exception.reason,
-                callStack: exception.callStackSymbols
-            )
+            IosFatalExceptionRecord.record(exception)
         }
         // Launch-time registration precedes the first activation and the pack's foreground consideration.
         observers.append(NotificationCenter.default.addObserver(
@@ -70,6 +67,39 @@ final class ArchiveTuneSession {
         observers.removeAll()
         presenter = nil
         host.close()
+    }
+}
+
+/// The fatal Objective-C exception path runs with the runtime state already undefined, so it may only use POSIX calls:
+/// no Kotlin runtime, no report objects, no file open. The record goes through a descriptor opened at launch, and the
+/// next launch classifies it into the normal crash report.
+private enum IosFatalExceptionRecord {
+    private static let capacity = 4096
+    private static let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: IosFatalExceptionRecord.capacity)
+    private static var descriptor: Int32 = -1
+
+    /// Opens the record once, at launch, and never truncates it here: the previous launch's record is read first.
+    static func prepare() {
+        guard let path = IosCrashHooksKt.iosNativeCrashRecordPath() else { return }
+        descriptor = path.withCString { open($0, O_WRONLY | O_CREAT, 0o600) }
+    }
+
+    /// Truncates and writes the pre-opened record. The call stack is dropped: reading it allocates in a process whose
+    /// runtime state is not trustworthy, and a lost record is worse than a short one.
+    static func record(_ exception: NSException) {
+        guard descriptor >= 0 else { return }
+        _ = ftruncate(descriptor, 0)
+        _ = lseek(descriptor, 0, SEEK_SET)
+        let reason = exception.reason ?? ""
+        exception.name.rawValue.withCString { name in
+            reason.withCString { detail in
+                _ = snprintf(
+                    buffer, capacity, "%lld\nObjective-C uncaught exception: %.200s\n%.2000s\n",
+                    Int64(time(nil)), name, detail
+                )
+            }
+        }
+        _ = write(descriptor, buffer, strlen(buffer))
     }
 }
 

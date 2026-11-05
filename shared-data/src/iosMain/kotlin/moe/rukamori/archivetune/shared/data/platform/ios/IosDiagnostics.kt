@@ -29,6 +29,7 @@ import platform.posix.ftello
 import platform.posix.fwrite
 import platform.posix.getpid
 import platform.posix.remove
+import platform.posix.truncate
 import platform.posix.uname
 import platform.posix.utsname
 import platform.UIKit.UIDevice
@@ -121,7 +122,11 @@ class IosDiagnosticLogFiles(private val folder: String) : DiagnosticLogFiles {
 @OptIn(kotlin.experimental.ExperimentalNativeApi::class)
 object IosCrashCapture {
     private const val REPORT_FILE = "crash_report.txt"
+
+    /** The plain record the Objective-C exception handler writes with POSIX calls only, on a descriptor it pre-opens. */
+    private const val NATIVE_REPORT_FILE = "native_exception.txt"
     private var reportPath: String? = null
+    private var nativeReportPath: String? = null
     private var appVersion = ""
     private var packageName = ""
     private var recordStore: IosCrashLogStore? = null
@@ -132,6 +137,7 @@ object IosCrashCapture {
         this.appVersion = appVersion
         this.packageName = packageName
         reportPath = "$directory/$REPORT_FILE"
+        nativeReportPath = "$directory/$NATIVE_REPORT_FILE"
         recordStore = IosCrashLogStore("$directory/records")
         var previous: ReportUnhandledExceptionHook? = null
         previous = setUnhandledExceptionHook { error ->
@@ -140,7 +146,10 @@ object IosCrashCapture {
         }
     }
 
-    /** The Objective-C side: [callStack] is the exception's call stack symbols, newest frame first. */
+    /**
+     * The Kotlin side capture of a reported, non-fatal Objective-C exception. The fatal uncaught-exception handler must
+     * never call it: a dying process may not run the Kotlin runtime, allocate or open a file.
+     */
     fun captureNSException(name: String, reason: String?, callStack: List<String>) {
         capture(buildString {
             append(name)
@@ -149,16 +158,37 @@ object IosCrashCapture {
         }, CrashLogKind.NS)
     }
 
+    /** Where the app shell's fatal handler writes with POSIX calls; null until [install] has run. */
+    fun nativeRecordPath(): String? = nativeReportPath
+
     fun stored(): CrashReport? {
         val path = reportPath ?: return null
-        val text = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null) ?: return null
-        return CrashReport.decode(text)
+        val text = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
+        text?.let { CrashReport.decode(it) }?.let { return it }
+        return storedNative()
     }
 
     /** False while the report is still on disk, so it is offered again next launch. */
     fun clear(): Boolean {
         val path = reportPath ?: return true
-        return !NSFileManager.defaultManager.fileExistsAtPath(path) || remove(path) == 0
+        val cleared = !NSFileManager.defaultManager.fileExistsAtPath(path) || remove(path) == 0
+        // The fatal handler's descriptor is opened once at launch, so its file is emptied here and never unlinked: a
+        // deleted inode would take the next record with it.
+        val native = nativeReportPath
+        val nativeCleared = native == null || !NSFileManager.defaultManager.fileExistsAtPath(native) ||
+            truncate(native, 0L) == 0
+        return cleared && nativeCleared
+    }
+
+    /**
+     * Classifies the fatal handler's plain record into the shape the crash screen reads. The record starts with the
+     * capture time in epoch seconds on its own line and then the text the handler could copy safely; the call stack is
+     * not part of it, because reading it allocates in a process whose runtime state is already undefined.
+     */
+    private fun storedNative(): CrashReport? {
+        val path = nativeReportPath ?: return null
+        val raw = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null) ?: return null
+        return parseNativeIosCrashRecord(raw, appVersion, packageName)
     }
 
     private fun capture(rawTrace: String, kind: CrashLogKind) {
@@ -195,6 +225,26 @@ object IosCrashCapture {
             // Nothing can be reported from a crashing process; the original failure still ends it.
         }
     }
+}
+
+/**
+ * Classifies the fatal handler's plain record into the report the crash screen reads. Its first line is the capture time
+ * in epoch seconds; the rest is what the handler could copy with POSIX calls alone, so it carries no frame list. An empty
+ * or cleared record is not a report.
+ */
+internal fun parseNativeIosCrashRecord(raw: String, appVersion: String, packageName: String): CrashReport? {
+    if (raw.isBlank()) return null
+    val header = raw.substringBefore('\n')
+    val capturedSeconds = header.trim().takeWhile { it.isDigit() }.toLongOrNull() ?: 0L
+    val body = raw.substringAfter('\n', "").trim().ifEmpty { raw.trim() }
+    return CrashReport(
+        capturedAtMillis = capturedSeconds * 1_000L,
+        timestampText = if (capturedSeconds > 0L) iosDiagnosticTime(capturedSeconds * 1_000L) else "",
+        appVersion = appVersion,
+        packageName = packageName,
+        deviceInfo = iosCrashDeviceInfo(),
+        stackTrace = CrashReport.redactedStack(body),
+    )
 }
 
 /** The rows of the crash screen's Device info card, under the labels the Android crash screen uses. */

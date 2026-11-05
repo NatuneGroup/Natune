@@ -67,10 +67,11 @@ internal class HostCiphertextOpener(
 
     /**
      * Wraps [source] so that a read still in flight when [interrupt] or [close] runs is discarded instead of reaching the
-     * decoder. The ticket is issued here, so only a cancellation after this call reaches the wrapped view.
+     * decoder. The ticket is taken per read: a fixed one would turn stale at the first interrupt and refuse every later
+     * read, so a view the engine interrupted once could never play again. The engine's interrupt is a transient wake-up
+     * and leaves the source usable. A closed opener refuses the read outright.
      */
-    fun guard(source: RandomAccessByteSource): RandomAccessByteSource =
-        GuardedByteSource(source, cancellation.issueTicket())
+    fun guard(source: RandomAccessByteSource): RandomAccessByteSource = PerReadGuardedSource(this, source)
 
     /**
      * Cancels every outstanding read and breaks each socket. It runs on the command thread while the engine mutex is held,
@@ -111,6 +112,10 @@ internal class HostCiphertextOpener(
      */
     internal fun adopt(source: HttpRangeSource): Boolean = register(source)
 
+    /** One read's ticket over [source]. Only a cancellation that lands after it was issued discards that read. */
+    internal fun guardForRead(source: RandomAccessByteSource): RandomAccessByteSource =
+        GuardedByteSource(source, cancellation.issueTicket())
+
     private fun register(source: HttpRangeSource): Boolean =
         synchronized(lock) {
             if (closed) {
@@ -120,6 +125,28 @@ internal class HostCiphertextOpener(
                 true
             }
         }
+}
+
+/**
+ * A host source handed to the engine, guarded once per read. Each read takes its own ticket, so the interrupt that wakes
+ * it discards only that read.
+ */
+private class PerReadGuardedSource(
+    private val owner: HostCiphertextOpener,
+    private val source: RandomAccessByteSource,
+) : RandomAccessByteSource {
+    override val lease: ByteSourceLease
+        get() = source.lease
+
+    override suspend fun readAt(
+        position: Long,
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
+        if (owner.isClosed) throw ByteSourceCancelledException()
+        return owner.guardForRead(source).readAt(position, buffer, offset, length)
+    }
 }
 
 /**
