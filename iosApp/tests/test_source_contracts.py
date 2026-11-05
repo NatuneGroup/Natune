@@ -126,6 +126,51 @@ class IosSourceContractsTest(unittest.TestCase):
         self.assertIn("runBlocking(NonCancellable)", helper)
         self.assertIn("withTimeoutOrNull(timeoutMs) { work.join() }", helper)
 
+    def test_fatal_exception_record_is_a_prewarmed_bounded_byte_formatter(self):
+        session = (IOS / "ArchiveTune/ArchiveTuneSession.swift").read_text()
+        fatal = session.split("private enum IosFatalExceptionRecord", 1)[1].split("\n}\n", 1)[0]
+        # The old shape used C-variadic snprintf, which Swift imports as unavailable, and its
+        # static buffer was allocated lazily on the first fatal record. These checks pin the
+        # bounded byte formatter and the launch-time initialization that replaces both.
+        self.assertNotIn("snprintf(", fatal)
+        self.assertNotIn("%lld", fatal)
+        self.assertNotIn("String(format:", fatal)
+        self.assertNotIn("withVaList", fatal)
+        self.assertNotIn("strlen(", fatal)
+        self.assertNotIn("abs(", fatal)
+        record = fatal.split("static func record", 1)[1]
+        self.assertNotIn("withCString", record)
+        self.assertIn("import Darwin", session)
+        self.assertIn("private static let capacity = 4096", fatal)
+        prepare = fatal.split("static func prepare()", 1)[1].split("static func record", 1)[0]
+        self.assertIn("buffer.initialize(repeating: 0, count: capacity)", prepare)
+        self.assertLess(prepare.index("buffer.initialize"), prepare.index("open("))
+        # The record sequence is epoch seconds, the fixed prefix, bounded name, bounded reason.
+        self.assertIn("writeInt64(Int64(time(nil))", record)
+        self.assertIn("private static let exceptionPrefix: StaticString", fatal)
+        self.assertIn("writeStaticString(exceptionPrefix", record)
+        self.assertIn("private static let nameByteLimit = 200", fatal)
+        self.assertIn("private static let reasonByteLimit = 2000", fatal)
+        self.assertIn("writeUTF8(exception.name.rawValue.utf8, limit: nameByteLimit", record)
+        self.assertIn("writeUTF8(reason.utf8, limit: reasonByteLimit", record)
+        self.assertIn("buffer[used] = 0", record)
+        self.assertIn("write(descriptor, UnsafeRawPointer(buffer), used)", record)
+        self.assertIn("guard descriptor >= 0 else { return }", record)
+        self.assertIn("ftruncate(descriptor, 0)", record)
+        self.assertIn("lseek(descriptor, 0, SEEK_SET)", record)
+        # Bounds: the byte writers reset at NUL, at the field limit and before the final NUL slot.
+        self.assertIn("if byte == 0 || copied >= limit || used >= capacity - 1 { return }", fatal)
+        self.assertIn("guard used < capacity - 1 else { return }", fatal)
+        self.assertIn("while index < value.utf8CodeUnitCount", fatal)
+        # Signed epochs use magnitude, so Int64.min cannot overflow a negation.
+        self.assertIn("let magnitude = value.magnitude", fatal)
+        self.assertIn("while divisor <= magnitude / 10 { divisor *= 10 }", fatal)
+        self.assertIn("divisor /= 10", fatal)
+        # One existing launch-time descriptor/record route, prepared before the handler can fire.
+        self.assertEqual(1, session.count("NSSetUncaughtExceptionHandler"))
+        self.assertIn("IosFatalExceptionRecord.record(exception)", session)
+        self.assertLess(session.index("IosFatalExceptionRecord.prepare()"), session.index("NSSetUncaughtExceptionHandler"))
+
     def test_platform_ports_are_the_m7_interfaces(self):
         for filename, interface in [
             ("IosKeychainCredentialStore.kt", "SecureCredentialStore"),

@@ -354,7 +354,7 @@ private class WholeReadSource(
  * token and arms a new one for the next read. A single fixed job would end the lease at the first seek.
  */
 internal class ReadLifetimes {
-    private val current = AtomicReference(Job())
+    private val current = AtomicReference<Job>(Job())
 
     /** The token of a read that starts now. */
     fun start(): Job = current.get()

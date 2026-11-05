@@ -1,4 +1,5 @@
 import UIKit
+import Darwin
 import ArchiveTuneShared
 
 /// One application-owned graph. Controller detach, recreation and backgrounding never release its services.
@@ -70,16 +71,23 @@ final class ArchiveTuneSession {
     }
 }
 
-/// The fatal Objective-C exception path runs with the runtime state already undefined, so it may only use POSIX calls:
-/// no Kotlin runtime, no report objects, no file open. The record goes through a descriptor opened at launch, and the
-/// next launch classifies it into the normal crash report.
+/// The fatal Objective-C exception path runs with the runtime state already undefined, so it uses fixed local byte
+/// operations and POSIX calls rather than allocating formatters: no Kotlin runtime, no report objects, no file open.
+/// The record goes through a descriptor opened at launch, and the next launch classifies it into the normal crash report.
 private enum IosFatalExceptionRecord {
     private static let capacity = 4096
-    private static let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: IosFatalExceptionRecord.capacity)
+    private static let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: IosFatalExceptionRecord.capacity)
     private static var descriptor: Int32 = -1
 
+    // C-variadic snprintf is unavailable from Swift, so the record is emitted as bytes with no formatter allocation.
+    private static let exceptionPrefix: StaticString = "Objective-C uncaught exception: "
+    private static let nameByteLimit = 200
+    private static let reasonByteLimit = 2000
+
     /// Opens the record once, at launch, and never truncates it here: the previous launch's record is read first.
+    /// The fatal path may allocate nothing, so the lazily allocated static buffer is initialized here as well.
     static func prepare() {
+        buffer.initialize(repeating: 0, count: capacity)
         guard let path = IosCrashHooksKt.iosNativeCrashRecordPath() else { return }
         descriptor = path.withCString { open($0, O_WRONLY | O_CREAT, 0o600) }
     }
@@ -90,16 +98,59 @@ private enum IosFatalExceptionRecord {
         guard descriptor >= 0 else { return }
         _ = ftruncate(descriptor, 0)
         _ = lseek(descriptor, 0, SEEK_SET)
-        let reason = exception.reason ?? ""
-        exception.name.rawValue.withCString { name in
-            reason.withCString { detail in
-                _ = snprintf(
-                    buffer, capacity, "%lld\nObjective-C uncaught exception: %.200s\n%.2000s\n",
-                    Int64(time(nil)), name, detail
-                )
-            }
+        var used = 0
+        writeInt64(Int64(time(nil)), into: &used)
+        writeByte(0x0A, into: &used)
+        writeStaticString(exceptionPrefix, into: &used)
+        writeUTF8(exception.name.rawValue.utf8, limit: nameByteLimit, into: &used)
+        writeByte(0x0A, into: &used)
+        if let reason = exception.reason {
+            writeUTF8(reason.utf8, limit: reasonByteLimit, into: &used)
         }
-        _ = write(descriptor, buffer, strlen(buffer))
+        writeByte(0x0A, into: &used)
+        buffer[used] = 0
+        _ = write(descriptor, UnsafeRawPointer(buffer), used)
+    }
+
+    private static func writeByte(_ byte: UInt8, into used: inout Int) {
+        guard used < capacity - 1 else { return }
+        buffer[used] = byte
+        used += 1
+    }
+
+    private static func writeStaticString(_ value: StaticString, into used: inout Int) {
+        var index = 0
+        while index < value.utf8CodeUnitCount {
+            let byte = value.utf8Start[index]
+            if byte == 0 { return }
+            writeByte(byte, into: &used)
+            index += 1
+        }
+    }
+
+    private static func writeUTF8(_ value: String.UTF8View, limit: Int, into used: inout Int) {
+        var copied = 0
+        for byte in value {
+            if byte == 0 || copied >= limit || used >= capacity - 1 { return }
+            writeByte(byte, into: &used)
+            copied += 1
+        }
+    }
+
+    private static func writeInt64(_ value: Int64, into used: inout Int) {
+        if value < 0 { writeByte(0x2D, into: &used) }
+        // `magnitude` is the unsigned two's-complement value, so Int64.min needs no negation.
+        let magnitude = value.magnitude
+        if magnitude == 0 {
+            writeByte(0x30, into: &used)
+            return
+        }
+        var divisor: UInt64 = 1
+        while divisor <= magnitude / 10 { divisor *= 10 }
+        while divisor > 0 {
+            writeByte(UInt8(0x30) &+ UInt8((magnitude / divisor) % 10), into: &used)
+            divisor /= 10
+        }
     }
 }
 
