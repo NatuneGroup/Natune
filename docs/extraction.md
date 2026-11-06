@@ -91,8 +91,10 @@ the desktop Echo tier answers null.
 - The desktop primary walk states the player's `signatureTimestamp` for the clients that ask for it, deciphers
   `signatureCipher`/`cipher` formats and rewrites the throttling `n` parameter through the same NewPipe JavaScript
   player the NewPipe tier uses. Ciphered formats are therefore no longer dropped. Without a minted PoToken the walk
-  leads with the token-free clients (`ANDROID_VR`, `VISIONOS`, `IOS`) and moves `WEB_REMIX` behind them; a manual
-  client choice still leads. The walk is bounded to 15 s and six player requests, and the BotGuard mint is bounded
+  leads with the token-free clients `VISIONOS`, `ANDROID_VR`, `IOS` (in that order) and moves `WEB_REMIX` behind
+  them; a manual client choice still leads. VISIONOS leads because its googlevideo URLs accept the arbitrary bounded
+  ranges the host lease needs, while the ANDROID_VR 1.65.10 URLs measured here reject later ranges with HTTP 403.
+  The walk is bounded to 15 s and six player requests, and the BotGuard mint is bounded
   inside it, so a bot-checked network fails over to the extractor tiers instead of spending the caller's whole budget.
   PO tokens still need BotGuard credentials injected at build time or supplied through `ARCHIVETUNE_POTOKEN_*`
   environment/system properties; an explicitly configured deployment mints by default, a blank build leaves the stored
