@@ -21,6 +21,7 @@ class DeviceConnectServer(
 
     suspend fun start(): Int = withContext(Dispatchers.Default) {
         check(server == null) { "Device Connect server already started" }
+        println("dc-server build")
         val started = embeddedServer(CIO, port = 0, host = "0.0.0.0") {
             install(WebSockets) {
                 maxFrameSize = DeviceConnectLimits.MAX_FRAME_BYTES.toLong()
@@ -34,9 +35,12 @@ class DeviceConnectServer(
                     onChannel(KtorDeviceChannel(this))
                 }
             }
-        }.start(wait = false)
+        }.also { println("dc-server built") }.start(wait = false)
+        println("dc-server started")
         server = started
+        println("dc-server resolving")
         val port = started.engine.resolvedConnectors().firstOrNull()?.port
+        println("dc-server resolved $port")
         if (port == null) {
             started.stop(500, 1_000)
             server = null

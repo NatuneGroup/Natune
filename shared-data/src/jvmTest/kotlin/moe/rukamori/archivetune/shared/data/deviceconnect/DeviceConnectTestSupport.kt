@@ -43,6 +43,7 @@ internal class MemoryChannel : DeviceFrameChannel {
     override val frames: Flow<DeviceFrame> = decoded.receiveAsFlow()
 
     override suspend fun send(bytes: ByteArray) {
+        println("dc-channel send ${bytes.size}")
         wire.send(bytes)
     }
 
@@ -52,7 +53,9 @@ internal class MemoryChannel : DeviceFrameChannel {
     }
 
     fun accept(bytes: ByteArray) {
-        DeviceFrameCodec.decode(bytes)?.let { decoded.trySend(it) }
+        val frame = DeviceFrameCodec.decode(bytes)
+        println("dc-channel accept ${bytes.size} frame=${frame?.header?.type} seq=${frame?.header?.seq}")
+        frame?.let { decoded.trySend(it) }
     }
 }
 
