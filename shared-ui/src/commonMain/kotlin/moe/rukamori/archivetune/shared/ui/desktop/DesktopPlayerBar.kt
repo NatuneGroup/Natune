@@ -49,7 +49,7 @@ import moe.rukamori.archivetune.shared.ui.player.PlayerSymbol
 import moe.rukamori.archivetune.shared.ui.player.matches
 import moe.rukamori.archivetune.shared.ui.player.spaceTogglesPlayback
 import moe.rukamori.archivetune.shared.ui.player.withNativeState
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.screens.ContentArtwork
 import moe.rukamori.archivetune.shared.ui.screens.mediainfo.formatTrackDuration
 import moe.rukamori.archivetune.shared.ui.theme.IconSizes

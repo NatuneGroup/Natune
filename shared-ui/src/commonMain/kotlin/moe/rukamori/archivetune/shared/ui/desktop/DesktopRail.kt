@@ -30,7 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import moe.rukamori.archivetune.shared.ui.navigation.ShellNavigation
-import moe.rukamori.archivetune.shared.ui.resources.Res
+import moe.rukamori.archivetune.shared.ui.resources.*
 import moe.rukamori.archivetune.shared.ui.theme.Space
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource

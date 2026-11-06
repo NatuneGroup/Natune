@@ -6,11 +6,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -69,7 +71,9 @@ class DesktopShellTest {
         runOnIdle { state.open(DesktopPane.Queue) }
         onNodeWithTag("desktop-pane-overlay").assertIsDisplayed()
         onNodeWithTag("desktop-pane-queue").assertIsDisplayed()
-        onNodeWithTag("desktop-pane-scrim").performClick()
+        // The overlay pane sits at the end of the surface, so at this width it covers the scrim's centre; the part of
+        // the scrim a user can actually hit is the strip to its left.
+        onNodeWithTag("desktop-pane-scrim").performTouchInput { click(Offset(8f, height / 2f)) }
         runOnIdle { assertFalse(state.queueOpen) }
     }
 

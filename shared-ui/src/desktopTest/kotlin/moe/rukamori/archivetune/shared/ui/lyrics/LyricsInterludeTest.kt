@@ -46,7 +46,9 @@ class LyricsInterludeTest {
     fun theDotsScaleIsContinuousAcrossTheSwellWindow() {
         val interlude = LyricsInterlude(0L, 10_000L)
         var previous = LyricsInterludeMotion.scale(interlude, 0L, reduceMotion = false)
-        for (position in 0L..10_000L step 16L) {
+        // The break's own window, end excluded: the indicator fades out over its last 400 ms and draws nothing from
+        // endMs on (pinned below), so the frames a jump could be seen on are the ones inside this loop.
+        for (position in 0L until 10_000L step 16L) {
             val scale = LyricsInterludeMotion.scale(interlude, position, reduceMotion = false)
             assertTrue(
                 abs(scale - previous) < 0.02f,
@@ -54,6 +56,7 @@ class LyricsInterludeTest {
             )
             previous = scale
         }
+        assertEquals(0f, LyricsInterludeMotion.visibility(interlude, 10_000L), 0.0001f)
     }
 
     @Test
