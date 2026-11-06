@@ -76,6 +76,8 @@ fun BottomSheetPlayer(
         // The desktop presents one bounded portrait column; the style dispatch sees a portrait surface even when the
         // window is wider than it is tall, so no style falls back to its two-pane tablet split.
         val desktop=LocalDesktopLayout.current
+        // Captured here: the BoxWithConstraints receiver is not implicit inside the Row lambda used for the side panel.
+        val windowWidth=maxWidth
         val styleLandscape=landscape && !desktop
         val surfaces=playerSurfaceActivity(presentation.style,interaction.panel,interaction.fullscreenLyrics,landscape,state.active)
         // Occluded or hidden shells get a static artwork policy, so decorative blur and motion stop with their surface.
@@ -122,7 +124,7 @@ fun BottomSheetPlayer(
                                 val sidePanel = presentation.style != PlayerDesignStyle.FLAMINGO &&
                                     (interaction.panel != PlayerPanel.ARTWORK || presentation.style == PlayerDesignStyle.METROLIST_KMP)
                                 if (sidePanel) {
-                                    val panelWidth = if (maxWidth >= 1200.dp) 420.dp else maxWidth * 0.42f
+                                    val panelWidth = if (windowWidth >= 1200.dp) 420.dp else windowWidth * 0.42f
                                     Box(Modifier.width(panelWidth).fillMaxHeight()) {
                                         SelectedPlayerPanel(c, Modifier.fillMaxSize())
                                     }
