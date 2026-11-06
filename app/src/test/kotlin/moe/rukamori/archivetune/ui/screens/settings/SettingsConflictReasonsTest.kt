@@ -32,9 +32,11 @@ class SettingsConflictReasonsTest {
         assertEquals(R.string.settings_liquid_glass_required, reason(LiquidGlassNavBarEnabledKey, emptyPreferences()))
     }
 
-    @Test fun miniPlayerMaterialReasonsStayBoundToTheirInputs() {
-        // The V2 animation-reason helper went with the restored reference lyrics settings page, which
-        // has no unavailable-control rows; only the mini-player reason remains to pin here.
+    @Test fun reducedMotionBlocksOnlyTheEffectsTheV2RendererActuallyBypasses() {
+        assertEquals(R.string.lyrics_animation_style_v2_only, lyricsAnimationDisabledReason(false, false, false))
+        assertEquals(R.string.settings_lyrics_motion_disabled, lyricsAnimationDisabledReason(true, true, true))
+        assertNull(lyricsAnimationDisabledReason(true, true, false))
+        assertNull(lyricsAnimationDisabledReason(true, false, true))
         assertEquals(R.string.settings_liquid_glass_required,
             miniPlayerMaterialDisabledReason(MiniPlayerBackgroundStyle.LIQUID_GLASS, false, true, false))
         assertNull(miniPlayerMaterialDisabledReason(MiniPlayerBackgroundStyle.THEME, true, false, false))

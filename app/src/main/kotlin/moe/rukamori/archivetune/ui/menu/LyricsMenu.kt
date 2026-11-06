@@ -8,8 +8,8 @@
 
 package moe.rukamori.archivetune.ui.menu
 
-import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.component.LocalMenuState
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.border
 import androidx.activity.compose.BackHandler
@@ -128,29 +128,27 @@ import me.bush.translator.Translator
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ai.AiLyricsDocumentParser
 import moe.rukamori.archivetune.ai.AiLyricsSegment
-import moe.rukamori.archivetune.constants.AiApiKeyKey
+import moe.rukamori.archivetune.ai.toAiServiceConfig
 import moe.rukamori.archivetune.constants.AiApiValidationStatus
 import moe.rukamori.archivetune.constants.AiApiValidationStatusKey
-import moe.rukamori.archivetune.constants.AiCustomEndpointKey
-import moe.rukamori.archivetune.constants.AiProvider
-import moe.rukamori.archivetune.constants.AiProviderKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
+import moe.rukamori.archivetune.extensions.toEnum
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsUtils
+import moe.rukamori.archivetune.lyrics.isAiTranslationAvailable
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.MediaMetadataListItem
 import moe.rukamori.archivetune.ui.component.MenuHeaderCard
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
-import moe.rukamori.archivetune.ui.component.NewActionGrid
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.utils.TranslatorLang
 import moe.rukamori.archivetune.utils.TranslatorLanguages
 import moe.rukamori.archivetune.utils.dataStore
-import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
 import moe.rukamori.archivetune.viewmodels.LyricsSearchResultUiModel
 import moe.rukamori.archivetune.viewmodels.LyricsSearchScreenState
@@ -233,24 +231,19 @@ fun LyricsMenu(
     val lyricsSearchState by viewModel.lyricsSearchState.collectAsStateWithLifecycle()
     val isAiTranslating by viewModel.isAiTranslating.collectAsStateWithLifecycle()
     val translationUndo by viewModel.translationUndo.collectAsStateWithLifecycle()
-    val (aiProvider) = rememberEnumPreference(AiProviderKey, AiProvider.NONE)
-    val (aiApiKey) = rememberPreference(AiApiKeyKey, "")
-    val (aiCustomEndpoint) = rememberPreference(AiCustomEndpointKey, "")
-    val (aiValidationStatus) = rememberEnumPreference(AiApiValidationStatusKey, AiApiValidationStatus.UNKNOWN)
+    val aiPreferences = rememberPreferenceSnapshot()
+    val aiServiceConfig = aiPreferences.current.toAiServiceConfig()
+    val aiValidationStatus =
+        aiPreferences.current[AiApiValidationStatusKey].toEnum(AiApiValidationStatus.UNKNOWN)
     var expandedSearchResultId by rememberSaveable { mutableStateOf<String?>(null) }
     val currentLyrics = lyricsProvider()?.lyrics.orEmpty()
     val isTranslateEnabled =
         currentLyrics.isNotBlank() &&
             currentLyrics != LyricsEntity.LYRICS_NOT_FOUND
     val canUndoTranslation = translationUndo?.mediaId == mediaMetadataProvider().id
-    val isAiProviderConfigured = aiProvider != AiProvider.NONE
     val isAiTranslationEnabled =
-        currentLyrics.isNotBlank() &&
-            currentLyrics != LyricsEntity.LYRICS_NOT_FOUND &&
-            isAiProviderConfigured &&
-            aiApiKey.isNotBlank() &&
-            (aiProvider != AiProvider.CUSTOM || aiCustomEndpoint.isNotBlank()) &&
-            aiValidationStatus != AiApiValidationStatus.FAILED
+        isTranslateEnabled &&
+            isAiTranslationAvailable(aiServiceConfig, aiValidationStatus)
 
     var translationJob by remember { mutableStateOf<Job?>(null) }
     var isStandardTranslating by remember { mutableStateOf(false) }
@@ -262,11 +255,6 @@ fun LyricsMenu(
     // coordinator joins an in-flight call and serves a cached one — so a second tap is free.
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
     val isAiRomanizing by AiLyricsRomanization.running.collectAsStateWithLifecycle()
-    val isAiRomanizationEnabled =
-        aiRomanizationSettings.active &&
-            currentLyrics.isNotBlank() &&
-            currentLyrics != LyricsEntity.LYRICS_NOT_FOUND &&
-            !isAiRomanizing
 
     LaunchedEffect(Unit) {
         viewModel.aiTranslationEvents.collect { message ->
@@ -368,7 +356,7 @@ fun LyricsMenu(
                 showLyricsSyncOffsetDialog = false
             },
             icon = {
-                Icon(painter = painterResource(R.drawable.speed), contentDescription = null)
+                Icon(painter = painterResource(R.drawable.timer), contentDescription = null)
             },
             title = { Text(stringResource(R.string.lyrics_sync_offset)) },
             buttons = {
@@ -744,7 +732,7 @@ fun LyricsMenu(
     }
 
     val menuActions: List<AppleMusicLyricsMenuItem> =
-        listOf(
+        listOfNotNull(
             AppleMusicLyricsMenuItem(
                 label = stringResource(R.string.edit),
                 iconRes = R.drawable.edit,
@@ -766,7 +754,7 @@ fun LyricsMenu(
             AppleMusicLyricsMenuItem(
                 label = stringResource(R.string.ai_romanize_now),
                 iconRes = R.drawable.language,
-                enabled = isAiRomanizationEnabled,
+                enabled = !isAiRomanizing,
                 onClick = {
                     val lyricsText = lyricsProvider()?.lyrics.orEmpty()
                     val sourceLanguageHints = LyricsUtils.sourceLanguageHints(lyricsText)
@@ -785,18 +773,18 @@ fun LyricsMenu(
                         .makeText(context, context.getString(R.string.ai_romanize_started), Toast.LENGTH_SHORT)
                         .show()
                 },
-            ),
+            ).takeIf { aiRomanizationSettings.active && isTranslateEnabled },
             AppleMusicLyricsMenuItem(
                 label = stringResource(R.string.undo_translation),
                 iconRes = R.drawable.restore,
-                // Apple Music marks the action that throws work away in red.
+                // Apple Music marks the action that throws work away in red; the row exists only
+                // while a translation on this track is there to undo.
                 isDestructive = true,
-                enabled = canUndoTranslation,
                 onClick = { viewModel.undoTranslation(mediaMetadataProvider().id) },
-            ),
+            ).takeIf { canUndoTranslation },
             AppleMusicLyricsMenuItem(
                 label = stringResource(R.string.lyrics_sync_offset),
-                iconRes = R.drawable.speed,
+                iconRes = R.drawable.timer,
                 onClick = { showLyricsSyncOffsetDialog = true },
             ),
             AppleMusicLyricsMenuItem(
@@ -858,7 +846,7 @@ fun LyricsMenu(
 
             item {
                 MenuSurfaceSection(modifier = Modifier.padding(vertical = 6.dp)) {
-                    NewActionGrid(
+                    PlayerMenuActionBlock(
                         actions =
                             menuActions.map { item ->
                                 NewAction(
@@ -1215,7 +1203,7 @@ private fun LyricsSearchResultItem(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = result.providerName,
+                        text = LyricsEntity.providerDisplayName(result.providerName),
                         style = MaterialTheme.typography.labelLarge,
                         color = contentColor,
                         maxLines = 1,
@@ -1503,6 +1491,37 @@ private suspend fun translateLyricsWithTranslator(
         document.rebuild(translatedSegments)
     }
 
+private fun List<AiLyricsSegment>.chunkedForTranslator(): List<List<AiLyricsSegment>> {
+    val chunks = ArrayList<List<AiLyricsSegment>>()
+    val current = ArrayList<AiLyricsSegment>()
+    var currentChars = 0
+
+    forEach { segment ->
+        val nextSize = currentChars + segment.text.length
+        if (current.isNotEmpty() && (current.size >= MaxTranslatorItemsPerBatch || nextSize > MaxTranslatorCharsPerBatch)) {
+            chunks.add(current.toList())
+            current.clear()
+            currentChars = 0
+        }
+        current.add(segment)
+        currentChars += segment.text.length
+    }
+
+    if (current.isNotEmpty()) chunks.add(current.toList())
+    return chunks
+}
+
+private fun uniqueTranslationSeparator(segments: List<AiLyricsSegment>): String {
+    var separator = "<<<SEP-${UUID.randomUUID()}>>>"
+    while (segments.any { segment -> segment.text.contains(separator) }) {
+        separator = "<<<SEP-${UUID.randomUUID()}>>>"
+    }
+    return separator
+}
+
+private const val MaxTranslatorItemsPerBatch = 50
+private const val MaxTranslatorCharsPerBatch = 4000
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchLyricsInputDialog(
@@ -1719,9 +1738,8 @@ private fun LyricsSearchInputActions(
 }
 
 /**
- * The lyrics three-dot menu. Outside the Apple Music Experience it is the ordinary menu sheet every
- * other three-dot opens; inside it, it is Apple Music's anchored action list growing out of the
- * button that was tapped.
+ * The lyrics three-dot menu. Outside the Apple Music appearance it is the ordinary menu sheet every
+ * other three-dot opens; under Apple Music it is the anchored action list growing out of the button.
  */
 @Composable
 fun AnchoredLyricsOverflowMenu(
