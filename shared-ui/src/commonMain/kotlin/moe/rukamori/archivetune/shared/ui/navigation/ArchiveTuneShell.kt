@@ -286,7 +286,13 @@ private fun Modifier.navigationMaterial(
  */
 @Composable
 private fun Modifier.miniPlayerStrip(): Modifier =
-    background(MaterialTheme.colorScheme.surfaceContainer).pointerInput(Unit, MiniPlayerStripHitTarget)
+    if (LocalDesktopLayout.current) {
+        // The desktop transport bar is part of the window, not a card: it takes the page colour, and the bar's own
+        // seek line separates it from the content above.
+        background(MaterialTheme.colorScheme.background).pointerInput(Unit, MiniPlayerStripHitTarget)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceContainer).pointerInput(Unit, MiniPlayerStripHitTarget)
+    }
 
 /** Watches the strip's pointer events without consuming, so presence in the chain claims the region and nothing else. */
 private val MiniPlayerStripHitTarget: suspend PointerInputScope.() -> Unit = {
