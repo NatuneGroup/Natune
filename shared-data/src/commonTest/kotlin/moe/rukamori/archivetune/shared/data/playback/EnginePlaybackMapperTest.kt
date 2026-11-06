@@ -158,13 +158,37 @@ class EnginePlaybackMapperTest {
             "decode failed"
         }
 
-        mapper.failure(state(), message)
-        mapper.failure(state(load = 0L, errorCode = EnginePlaybackState.ERROR_DECODE), message)
+        mapper.failure(state(), message = message)
+        mapper.failure(state(load = 0L, errorCode = EnginePlaybackState.ERROR_DECODE), message = message)
         assertEquals(0, evaluations)
 
-        mapper.failure(state(errorCode = EnginePlaybackState.ERROR_DECODE), message)
-        mapper.failure(state(errorCode = EnginePlaybackState.ERROR_DECODE), message)
+        mapper.failure(state(errorCode = EnginePlaybackState.ERROR_DECODE), message = message)
+        mapper.failure(state(errorCode = EnginePlaybackState.ERROR_DECODE), message = message)
         assertEquals(1, evaluations)
+    }
+
+    @Test
+    fun aCarriedHttpStatusTravelsWithTheFailure() {
+        val mapper = EnginePlaybackMapper()
+        mapper.beginRequest(request, engineLoadGeneration = 1L)
+        var statusReads = 0
+
+        val failure = mapper.failure(
+            state(errorCode = EnginePlaybackState.ERROR_DECODE),
+            httpStatus = {
+                statusReads++
+                403
+            },
+        ) { "the source answered HTTP 403" }
+
+        assertEquals(403, failure?.httpStatus)
+        assertEquals(
+            moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureCategory.CDN_FORBIDDEN,
+            moe.rukamori.archivetune.shared.domain.playback.PlaybackFailureClassifier.categorize(requireNotNull(failure)),
+        )
+        // The status is read only for the one failure the mapper reports.
+        mapper.failure(state(errorCode = EnginePlaybackState.ERROR_DECODE), httpStatus = { 500 }) { "again" }
+        assertEquals(1, statusReads)
     }
 
     @Test

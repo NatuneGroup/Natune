@@ -19,6 +19,7 @@
 #include <jni.h>
 
 #include "archivetune_engine.h"
+#include "archivetune_device.h"
 #include "archivetune_jni_utf8.h"
 
 #define BINDING(name) Java_moe_rukamori_archivetune_desktop_playback_PlaybackEngineNative_##name
@@ -49,6 +50,20 @@ JNIEXPORT jint JNICALL BINDING(abiVersion)(JNIEnv *env, jclass type) {
     (void)env;
     (void)type;
     return (jint)AE_ABI_VERSION;
+}
+
+/*
+ * The startup output self-check: opens a real device, starts it and closes it again. The answer is a refusal message
+ * or null, so the host can tell the user why nothing will be audible before they press play.
+ */
+JNIEXPORT jstring JNICALL BINDING(probeOutputDevice)(JNIEnv *env, jclass type, jint sample_rate) {
+    (void)type;
+    char error[AE_ERROR_MESSAGE_CAPACITY];
+    error[0] = '\0';
+    if (ae_device_probe((uint32_t)sample_rate, error, sizeof error) == 0) {
+        return NULL;
+    }
+    return jni_string_from_utf8(env, error[0] ? error : "the audio output could not be opened");
 }
 
 JNIEXPORT jlong JNICALL BINDING(create)(JNIEnv *env, jclass type, jint output_mode, jint backend, jint sample_rate,

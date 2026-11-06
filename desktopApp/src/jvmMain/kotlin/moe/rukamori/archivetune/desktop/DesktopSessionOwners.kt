@@ -24,11 +24,13 @@ import moe.rukamori.archivetune.shared.data.playlistimport.YouTubePlaylistImport
 import moe.rukamori.archivetune.desktop.integration.DesktopTransportState
 import moe.rukamori.archivetune.desktop.integration.auth.DesktopSecureCredentialStore
 import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackPort
+import moe.rukamori.archivetune.desktop.playback.DesktopPlaybackSelfCheck
 import moe.rukamori.archivetune.desktop.potoken.DesktopPoTokenOwner
 import moe.rukamori.archivetune.desktop.potoken.desktopLocalPoTokenHelper
 import moe.rukamori.archivetune.desktop.playback.NativeStreamLease
 import moe.rukamori.archivetune.desktop.playback.TelegramFileBinding
 import moe.rukamori.archivetune.desktop.provider.DesktopPlaybackPool
+import moe.rukamori.archivetune.desktop.provider.DesktopResolvedStreamCache
 import moe.rukamori.archivetune.desktop.provider.DesktopSourceAdmissions
 import moe.rukamori.archivetune.desktop.provider.DesktopYouTubeResolver
 import moe.rukamori.archivetune.desktop.provider.youTubeSignIn
@@ -237,6 +239,10 @@ internal suspend fun assembleDesktopSessionOwners(
         search = youtubeTransport,
         signIn = { vault.snapshots.value.youTubeSignIn() },
         poTokens = poTokens,
+        // A resolved googlevideo URL is reused only for the same video, quality, account and route, and only while its
+        // own `expire` still leaves the engine room to read it.
+        cache = DesktopResolvedStreamCache(),
+        networkScope = { network.routeScope() },
     )
     // The shipped app warms BotGuard once the auth state names a session, so a cold mint never
     // lands inside a bounded tier; the same warm runs off the graph scope and stays a no-op while
@@ -644,6 +650,12 @@ internal suspend fun assembleDesktopSessionOwners(
         }
     }
     network.start(scope)
+    // The startup playback self-check. The engine warm answers whether the library loaded; this adds the output device
+    // and the attestation path, so a host that cannot make a sound names which of the three failed in the window
+    // instead of playing nothing on the first press of play.
+    scope.launch {
+        DesktopPlaybackSelfCheck(attestation = { poTokens.attestationStatus() }, report = graph::notify).run()
+    }
     lastFm.start()
     lyrics.start()
     listenerPresence.start()

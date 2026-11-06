@@ -120,6 +120,19 @@ internal class DesktopNetworkOwner(
 
     fun activeRotationCount(): Int = if (rotating) rotation.activeCount() else 0
 
+    /**
+     * The routing identity a resolved media URL was minted under: the direct route, the configured proxy, or the
+     * rotation that was active. A googlevideo URL is bound to the address that asked for it, so the resolver cache keys
+     * on this and never reuses a stream across routes. Credentials and full proxy URLs stay out of the identity.
+     */
+    fun routeScope(): String {
+        val configured = config ?: return "direct"
+        val address = configured.proxy.address() as? InetSocketAddress
+        val endpoint = address?.let { "${it.hostString}:${it.port}" } ?: "unresolved"
+        val rotationScope = if (rotating) ":rotation-${activeRotationCount()}" else ""
+        return "${configured.proxy.type()}:$endpoint$rotationScope"
+    }
+
     suspend fun applyIpRotation(enabled: Boolean, refresh: Boolean): Int = withContext(Dispatchers.IO) {
         lock.withLock {
             check(!closed)

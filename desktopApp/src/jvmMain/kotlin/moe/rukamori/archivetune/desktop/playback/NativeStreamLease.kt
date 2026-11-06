@@ -146,6 +146,9 @@ internal class NativeStreamLease private constructor(
     /** The sanitized reason the lease last refused a request, for the playback failure message. */
     fun failureDetail(): String? = failure.read()
 
+    /** The HTTP status the lease last saw, when the refusal was one. Recovery classifies it without parsing text. */
+    fun failureStatus(): Int? = failure.statusOrNull()
+
     /** The context for a call the producer waits on: the read's own token, so an interrupt ends only the read in flight. */
     private fun blockingContext(): CoroutineContext = lifetimes?.start() ?: EmptyCoroutineContext
 
@@ -342,17 +345,24 @@ internal class StreamSizing(val sizeBytes: Long, val seekable: Boolean)
 /**
  * The sanitized reason the most recent host call refused. A native error code carries no HTTP status or expiry text,
  * so the lease records it here for the playback failure message; the value only names a status or an expiry, never a
- * URL, header or credential.
+ * URL, header or credential. The status travels beside the text because an engine error code cannot carry it across
+ * JNI and the queue's classifier prefers a real status over parsed wording.
  */
 internal class StreamFailureDetail {
     @Volatile
     private var detail: String? = null
 
-    fun record(reason: String) {
+    @Volatile
+    private var status: Int? = null
+
+    fun record(reason: String, httpStatus: Int? = null) {
         detail = reason
+        status = httpStatus
     }
 
     fun read(): String? = detail
+
+    fun statusOrNull(): Int? = status
 }
 
 /**

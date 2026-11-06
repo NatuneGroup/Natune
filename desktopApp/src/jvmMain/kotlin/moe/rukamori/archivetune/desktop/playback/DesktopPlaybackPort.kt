@@ -723,7 +723,10 @@ class DesktopPlaybackPort(
             for (index in 0 until DECK_COUNT) {
                 val engine = mix.deck(index)
                 val state = engine.snapshot()
-                failureMappers[index].failure(state) {
+                failureMappers[index].failure(
+                    state,
+                    httpStatus = { sessions[index]?.lease?.failureStatus() },
+                ) {
                     // The lease knows the HTTP status or expiry the native code collapsed into a generic read error.
                     val detail = sessions[index]?.lease?.failureDetail()
                     if (detail == null) engine.lastError() else "${engine.lastError()} ($detail)"

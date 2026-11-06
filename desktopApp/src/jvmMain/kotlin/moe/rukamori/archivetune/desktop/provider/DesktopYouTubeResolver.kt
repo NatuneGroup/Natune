@@ -1,5 +1,6 @@
 package moe.rukamori.archivetune.desktop.provider
 
+import com.metrolist.innertubex.extraction.ContentHints
 import io.ktor.client.HttpClient
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
@@ -62,6 +63,13 @@ internal class DesktopYouTubeResolver(
         locale,
         mint = { videoId, visitorData -> poTokens?.mintForPlayback(videoId, signIn(), visitorData) },
     ),
+    /**
+     * Resolutions this process may hand out again. A googlevideo URL is bound to the video, the quality, the account
+     * and the route that minted it, and it expires on its own, so the cache is keyed on those and honours the window.
+     */
+    private val cache: DesktopResolvedStreamCache = DesktopResolvedStreamCache(),
+    /** The routing identity the cache keys on: the direct route, the configured proxy, or the active rotation. */
+    private val networkScope: () -> String = { "direct" },
     private val log: (String) -> Unit = { DesktopDiagnosticLog.playbackTier(it) },
 ) : YouTubeResolutionPort {
     private val visitorLock = Mutex()
@@ -88,16 +96,86 @@ internal class DesktopYouTubeResolver(
     override suspend fun primary(request: AudioResolveRequest): PreparedAudio? {
         val started = System.nanoTime()
         val target = targetFor(request) ?: return null
+        val key = cacheKey(target.videoId)
+        // A refresh the queue asked for after a rejection must never read the entry it is replacing.
+        if (!request.forceFreshStream) {
+            cache.get(key)?.let { cached ->
+                // The line Android writes for a tier that answered, with `cache` naming why no request was made.
+                logTier("shipped", true, started, "cache")
+                return cached
+            }
+        }
         return try {
-            resolveVideo(target.videoId, target.trusted)
+            resolvePrimary(target.videoId, target.trusted)?.also { resolved ->
+                if (resolved is PreparedAudio.Progressive) cache.put(key, resolved)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
+            // A rejected video keeps none of its old URLs: the next attempt resolves fresh before it trusts anything.
+            cache.invalidate(target.videoId)
             // Android logs the shipped tier only when it failed; a resolved primary writes nothing.
             logTier("shipped", false, started, failure.javaClass.simpleName)
             throw failure
         }
     }
+
+    /**
+     * InnerTubeX answers first, with its own content-aware client walk and health tracker; the hand-rolled client walk
+     * below is the fallback and runs on whatever budget the first tier left. That order is the point of the port: the
+     * library's selection is the one Metrolist proves, and the Natune walk that used to lead it cannot demote a failing
+     * client and re-walks six of them per track.
+     */
+    private suspend fun resolvePrimary(videoId: String, trusted: Boolean): PreparedAudio? {
+        val started = System.nanoTime()
+        innerTubeXPrimary(videoId, trusted)?.let { return it }
+        val spentMs = elapsedMs(started)
+        if (spentMs >= PRIMARY_TOTAL_BUDGET_MS) {
+            logTier(CLIENT_WALK_TIER, false, started, "the InnerTubeX tier spent the walk's budget")
+            return null
+        }
+        return resolveVideo(videoId, trusted)
+    }
+
+    /** The InnerTubeX attempt, bounded so a cold watch-page fetch cannot spend the caller's whole resolve budget. */
+    private suspend fun innerTubeXPrimary(videoId: String, trusted: Boolean): PreparedAudio? {
+        val started = System.nanoTime()
+        val quality = DesktopYouTubeAudioQuality.fromRequestValue(preferences()?.get(AudioQualityKey))
+        val audio = try {
+            withTimeoutOrNull(INNERTUBEX_PRIMARY_BUDGET_MS) {
+                innerTubeX.resolve(videoId, quality, trusted, contentHints())
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (auth: TerminalPlaybackAuthentication) {
+            logTier(INNERTUBEX_TIER, false, started, auth.javaClass.simpleName)
+            throw auth
+        } catch (failure: Throwable) {
+            // A refused transport shape or a library failure is not fatal: the client walk below may still answer.
+            logTier(INNERTUBEX_TIER, false, started, failure.javaClass.simpleName)
+            return null
+        }
+        logTier(INNERTUBEX_TIER, audio != null, started, if (audio == null) "timeout-or-no-stream" else null)
+        return audio
+    }
+
+    /**
+     * The hints one request carries: the manual client the settings page pinned, if InnerTubeX knows that id. The
+     * content facts stay null because a resolution only knows the video id here; the walk then treats the content as
+     * ordinary and lets the player response say what it is. An unknown client id is dropped instead of being passed
+     * through, because the library matches it against its own catalog.
+     */
+    private fun contentHints(): ContentHints =
+        defaultContentHints(playbackClientOverrideId = playbackClientOverrideId(preferences()))
+
+    /** The settings client choice in InnerTubeX's own catalog vocabulary; null is the automatic walk. */
+    private fun playbackClientOverrideId(snapshot: PreferenceSnapshot?): String? =
+        when (snapshot?.manualPlaybackClient()?.uppercase(Locale.US)) {
+            "ANDROID_VR" -> "ANDROID_VR_1_65_10"
+            "IOS" -> "IOS"
+            "TVHTML5" -> "TVHTML5"
+            else -> null
+        }
 
     override suspend fun fallback(tier: YouTubeFallbackTier, request: AudioResolveRequest): PreparedAudio? {
         if (tier == YouTubeFallbackTier.ECHO) return null
@@ -154,6 +232,26 @@ internal class DesktopYouTubeResolver(
         newPipe.resolveVideo(videoId, maxHeight, visitor())
 
     private fun elapsedMs(startedNanos: Long): Long = (System.nanoTime() - startedNanos) / 1_000_000L
+
+    /**
+     * The cache identity of one resolution: everything a googlevideo URL is bound to. The quality is the ladder the
+     * request asked for, the session is the account that minted it, and the network scope is the route it was minted
+     * over. Neither the session id nor a proxy endpoint is secret, and neither is logged.
+     */
+    private fun cacheKey(videoId: String): DesktopResolvedStreamCache.Key =
+        DesktopResolvedStreamCache.Key(
+            videoId = videoId,
+            quality = DesktopYouTubeAudioQuality.fromRequestValue(preferences()?.get(AudioQualityKey)).name,
+            session = sessionScope(),
+            network = networkScope(),
+        )
+
+    /** The account a resolution belongs to. A visitor request and a signed-in one never share a URL. */
+    private fun sessionScope(): String {
+        val session = signIn() ?: return "anonymous"
+        val account = session.dataSyncId?.takeIf(String::isNotBlank) ?: return "session"
+        return "session:$account"
+    }
 
     private suspend fun targetFor(request: AudioResolveRequest): Target? {
         val direct = request.directIds[AudioSourceType.YOUTUBE] ?: request.mediaId.takeIf { VIDEO_ID.matches(it) }
@@ -332,11 +430,24 @@ internal class DesktopYouTubeResolver(
          */
         const val PRIMARY_WALK_BUDGET_MS = 15_000L
 
+        /**
+         * InnerTubeX's share of the caller's 30 s. Its own extraction budget is 30 s, which would leave the fallback
+         * walk nothing; a resolve that has not answered in this long is handed to the walk instead.
+         */
+        const val INNERTUBEX_PRIMARY_BUDGET_MS = 12_000L
+
+        /** The whole primary resolution: InnerTubeX first, then the walk, inside the caller's 30 s. */
+        const val PRIMARY_TOTAL_BUDGET_MS = 28_000L
+
         /** Player requests per walk. Six covers the token-free clients, WEB_REMIX and the two fallback web clients. */
         const val MAX_PLAYER_REQUESTS = 6
 
         /** A cold BotGuard mint may need the WebView/QuickJS boot; it leaves the rest of the walk its time. */
         const val MINT_BUDGET_MS = 4_000L
+
+        /** The diagnostic names of the two tiers of the primary resolution, distinct from the fallback tier lines. */
+        const val INNERTUBEX_TIER = "innertubex-primary"
+        const val CLIENT_WALK_TIER = "client-walk"
     }
 }
 
