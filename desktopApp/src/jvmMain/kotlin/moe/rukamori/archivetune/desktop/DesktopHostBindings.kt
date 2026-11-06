@@ -60,10 +60,11 @@ import moe.rukamori.archivetune.shared.ui.player.playerLyricsSettings
 import moe.rukamori.archivetune.shared.ui.player.playerLyricsSlots
 
 /**
- * Blur is the one optical effect this host draws. Refraction stays off until a native owner reports it, so the
- * glass policy never promises an effect the window cannot show.
+ * Blur is the one optical effect this host draws, and only while a GPU renderer is drawing: software rasterisation
+ * reports false here instead of paying a per-frame CPU blur. Refraction stays off until a native owner reports it, so
+ * the glass policy never promises an effect the window cannot show.
  */
-internal val DesktopOpticalCapabilities = OpticalCapabilities(blur = true, refraction = false)
+internal val DesktopOpticalCapabilities: OpticalCapabilities get() = DesktopRendererDiagnostics.capabilities
 
 /**
  * The root's bindings over the one session graph. The queue, the player, the settings and the external links are real.
