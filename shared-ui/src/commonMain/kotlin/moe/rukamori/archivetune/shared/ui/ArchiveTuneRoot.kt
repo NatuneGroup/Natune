@@ -326,12 +326,15 @@ private fun ArchiveTuneLoadedRoot(
             colorScheme = colorScheme) {
             CompositionLocalProvider(LocalDesktopLayout provides desktopShell) {
             ProvideBackdropSources(policy) { pageSource ->
-                // The background is drawn before the safe-area padding, so the strips keep the app's own colour; the
-                // padding is physical and consumes the bar insets, so no screen below reserves them a second time.
+                // The background is drawn before the safe-area padding, so the strips keep the app's own colour. The
+                // pages reserve the host's measured safe area in the inner box below; the expansion surface published
+                // here lets the expanded player paint the strips itself while its controls stay inside the inset.
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-                    .safeAreaPadding(safeArea)
                     .rootKeyTarget(rootKeyFocus, navigation.route)
                     .playerShortcuts(textInputActive = { textInputs.active }, dispatch = ::handleKeymap)) {
+                    CompositionLocalProvider(LocalHostSafeArea provides safeArea) {
+                    // Physical padding, consumed here, so no screen below reserves the bar insets a second time.
+                    Box(Modifier.fillMaxSize().safeAreaPadding(safeArea)) {
                     Column(Modifier.fillMaxSize()) {
                         // The top bar is host chrome above the shell, so it survives every route including Settings.
                         if (desktopTopBar != null) {
@@ -371,6 +374,7 @@ private fun ArchiveTuneLoadedRoot(
                     }
                         }
                     }
+                    }
                     // Keep the interaction owner above style dispatch; a saved style edit cannot reset
                     // seek ownership, queue/lyrics panels or the fullscreen scroll owner.
                     val slots = host.playerSlots(expanded, active, interaction)
@@ -389,6 +393,7 @@ private fun ArchiveTuneLoadedRoot(
                         interaction = interaction,
                     )
                     if (shortcutsVisible) KeyboardShortcutsDialog(onDismiss = { shortcutsVisible = false })
+                    }
                 }
             }
             }

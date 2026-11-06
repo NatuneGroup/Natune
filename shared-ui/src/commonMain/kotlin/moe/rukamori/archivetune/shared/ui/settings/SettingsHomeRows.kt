@@ -16,6 +16,8 @@ fun settingsHomeRows(
     openShortcuts: () -> Unit,
     /** Desktop keeps the Metrolist shell, so the phone navigation-style page is not offered; its keys stay stored. */
     desktop: Boolean = false,
+    /** False on a host with no key path to the shortcut overlay (the iOS root never takes key focus). */
+    keyboardShortcuts: Boolean = true,
 ): List<SettingsRow> {
     fun entry(anchor: String, title: StringResource, description: StringResource, route: String) =
         SettingsRow.Action(anchor, title, run = { navigate(route) }, description = description, navRoute = route)
@@ -83,15 +85,18 @@ fun settingsHomeRows(
             ))
         }
         // The shortcut table belongs next to the other reference entries, and it opens the same overlay the
-        // Ctrl/Cmd + / key does, so the two can never disagree.
-        add(SettingsRow.Header("shortcut_group", Res.string.shortcut_settings_group))
-        add(
-            SettingsRow.Action(
-                "keyboard_shortcuts", Res.string.shortcut_settings_title,
-                run = openShortcuts,
-                description = Res.string.shortcut_settings_description,
-            ),
-        )
+        // Ctrl/Cmd + / key does, so the two can never disagree. A host whose root never takes key focus (iOS has no
+        // hardware shortcut path) leaves the group out rather than offering a table whose chords cannot fire.
+        if (keyboardShortcuts) {
+            add(SettingsRow.Header("shortcut_group", Res.string.shortcut_settings_group))
+            add(
+                SettingsRow.Action(
+                    "keyboard_shortcuts", Res.string.shortcut_settings_title,
+                    run = openShortcuts,
+                    description = Res.string.shortcut_settings_description,
+                ),
+            )
+        }
         add(SettingsRow.Header("group_about", Res.string.m6_settings_home_group_about))
         add(entry("developer_options", Res.string.m6_settings_home_developer_options,
             Res.string.m6_settings_home_developer_options_desc, "settings/misc"))
